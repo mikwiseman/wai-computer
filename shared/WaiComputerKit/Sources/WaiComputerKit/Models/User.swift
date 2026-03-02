@@ -1,0 +1,68 @@
+import Foundation
+
+/// User model
+public struct User: Codable, Identifiable, Sendable {
+    public let id: String
+    public let email: String
+    public let createdAt: Date
+
+    public init(id: String, email: String, createdAt: Date) {
+        self.id = id
+        self.email = email
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case createdAt = "created_at"
+    }
+}
+
+/// Authentication token response
+public struct TokenResponse: Codable, Sendable {
+    public let accessToken: String
+    public let tokenType: String
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+    }
+}
+
+/// Auth request payloads
+public struct LoginRequest: Codable, Sendable {
+    public let email: String
+    public let password: String
+
+    public init(email: String, password: String) {
+        self.email = email
+        self.password = password
+    }
+}
+
+public struct RegisterRequest: Codable, Sendable {
+    public let email: String
+    public let password: String
+
+    public init(email: String, password: String) {
+        self.email = email
+        self.password = password
+    }
+}
+
+public struct MagicLinkRequest: Codable, Sendable {
+    public let email: String
+
+    public init(email: String) {
+        self.email = email
+    }
+}
+
+public struct VerifyMagicLinkRequest: Codable, Sendable {
+    public let token: String
+
+    public init(token: String) {
+        self.token = token
+    }
+}

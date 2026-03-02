@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+artifacts
+ios
+macos
+shared
+backend/.venv
+backend/__pycache__
+backend/**/__pycache__
+backend/.pytest_cache
+web/node_modules
+web/.next
+web/test-results
