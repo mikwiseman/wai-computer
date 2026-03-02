@@ -59,7 +59,7 @@ class StorageClient:
         """
         import asyncio
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             self._upload_sync,
@@ -93,18 +93,14 @@ class StorageClient:
 
     async def get_presigned_url(
         self,
-        user_id: uuid.UUID,
-        recording_id: uuid.UUID,
-        ext: str = "opus",
+        s3_key: str,
         expires_in: int = 3600,
     ) -> str:
         """
         Get a presigned URL for downloading an audio file.
 
         Args:
-            user_id: User ID
-            recording_id: Recording ID
-            ext: File extension
+            s3_key: The S3 key (as returned by upload_audio)
             expires_in: URL expiration time in seconds
 
         Returns:
@@ -112,61 +108,49 @@ class StorageClient:
         """
         import asyncio
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             self._get_presigned_url_sync,
-            user_id,
-            recording_id,
-            ext,
+            s3_key,
             expires_in,
         )
 
     def _get_presigned_url_sync(
         self,
-        user_id: uuid.UUID,
-        recording_id: uuid.UUID,
-        ext: str,
+        s3_key: str,
         expires_in: int,
     ) -> str:
         """Synchronous presigned URL generation."""
         client = self._get_client()
-        key = self._generate_key(user_id, recording_id, ext)
 
         return client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": settings.s3_bucket, "Key": key},
+            Params={"Bucket": settings.s3_bucket, "Key": s3_key},
             ExpiresIn=expires_in,
         )
 
     async def delete_audio(
         self,
-        user_id: uuid.UUID,
-        recording_id: uuid.UUID,
-        ext: str = "opus",
+        s3_key: str,
     ) -> None:
         """Delete an audio file from storage."""
         import asyncio
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None,
             self._delete_sync,
-            user_id,
-            recording_id,
-            ext,
+            s3_key,
         )
 
     def _delete_sync(
         self,
-        user_id: uuid.UUID,
-        recording_id: uuid.UUID,
-        ext: str,
+        s3_key: str,
     ) -> None:
         """Synchronous delete."""
         client = self._get_client()
-        key = self._generate_key(user_id, recording_id, ext)
-        client.delete_object(Bucket=settings.s3_bucket, Key=key)
+        client.delete_object(Bucket=settings.s3_bucket, Key=s3_key)
 
 
 # Global instance

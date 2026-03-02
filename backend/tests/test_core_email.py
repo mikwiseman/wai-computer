@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 
 class TestSendMagicLinkEmail:
-    def test_successful_send_calls_resend_with_correct_params(self):
+    async def test_successful_send_calls_resend_with_correct_params(self):
         """Successful send calls resend.Emails.send with correct from, to, subject, html."""
         mock_settings = MagicMock()
         mock_settings.resend_api_key = "re_test_key_123"
@@ -18,7 +18,7 @@ class TestSendMagicLinkEmail:
              patch("app.core.email.resend") as mock_resend:
             from app.core.email import send_magic_link_email
 
-            send_magic_link_email("user@example.com", "abc123token")
+            await send_magic_link_email("user@example.com", "abc123token")
 
             assert mock_resend.api_key == "re_test_key_123"
             mock_resend.Emails.send.assert_called_once()
@@ -29,7 +29,7 @@ class TestSendMagicLinkEmail:
             assert call_args["subject"] == "Sign in to WaiComputer"
             assert "https://app.wai.computer/auth/verify?token=abc123token" in call_args["html"]
 
-    def test_resend_failure_raises_http_502(self):
+    async def test_resend_failure_raises_http_502(self):
         """When resend.Emails.send raises, an HTTPException with status 502 is raised."""
         mock_settings = MagicMock()
         mock_settings.resend_api_key = "re_test_key"
@@ -43,12 +43,12 @@ class TestSendMagicLinkEmail:
             from app.core.email import send_magic_link_email
 
             with pytest.raises(HTTPException) as exc_info:
-                send_magic_link_email("user@example.com", "token123")
+                await send_magic_link_email("user@example.com", "token123")
 
             assert exc_info.value.status_code == 502
             assert "Failed to send email" in exc_info.value.detail
 
-    def test_magic_link_url_format(self):
+    async def test_magic_link_url_format(self):
         """Magic link URL is formatted as {frontend_url}/auth/verify?token={token}."""
         mock_settings = MagicMock()
         mock_settings.resend_api_key = "re_test_key"
@@ -59,7 +59,7 @@ class TestSendMagicLinkEmail:
              patch("app.core.email.resend") as mock_resend:
             from app.core.email import send_magic_link_email
 
-            send_magic_link_email("user@example.com", "my-special-token")
+            await send_magic_link_email("user@example.com", "my-special-token")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
             expected_url = (
