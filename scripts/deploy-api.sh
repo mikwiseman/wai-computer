@@ -3,7 +3,7 @@
 # Usage:
 #   VPS_USER=root ./scripts/deploy-api.sh
 # Optional:
-#   VPS_HOST=89.167.125.46
+#   VPS_HOST=157.180.47.68
 #   SSH_KEY_PATH=~/.ssh/id_ed25519
 #   REMOTE_ROOT=/opt/waicomputer
 
