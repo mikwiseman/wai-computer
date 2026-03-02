@@ -59,13 +59,14 @@ target-version = ["py311"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = """
-    -m "not integration"
+    -m "not integration and not slow"
     --cov=app
     --cov-report=term-missing
     --cov-fail-under=100
 """
 markers = [
     "integration: live API integration tests against the deployed server (run with: pytest -q -m integration --no-cov)",
+    "slow: performance and stress tests (run with: pytest -m slow --no-cov)",
 ]
 
 [tool.coverage.run]
