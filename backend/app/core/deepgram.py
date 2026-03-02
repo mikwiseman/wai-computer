@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import websockets  # noqa: F401 — used via patch() in tests
 
 from app.config import get_settings
 
