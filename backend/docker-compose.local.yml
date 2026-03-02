@@ -1,0 +1,24 @@
+# Local development override — exposes ports directly, no Caddy TLS.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  api:
+    ports:
+      - "8000:8000"
+    networks:
+      - internal
+      - web
+
+  web:
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000"
+
+  caddy:
+    profiles:
+      - disabled

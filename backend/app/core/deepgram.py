@@ -1,0 +1,177 @@
+"""Deepgram streaming transcription client."""
+
+import asyncio
+import base64
+import json
+from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+
+from app.config import get_settings
+
+settings = get_settings()
+
+
+@dataclass
+class TranscriptResult:
+    """Result from transcription."""
+
+    text: str
+    speaker: str | None
+    is_final: bool
+    start_ms: int
+    end_ms: int
+    confidence: float
+
+
+class DeepgramStreamingClient:
+    """Client for Deepgram real-time streaming transcription."""
+
+    DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
+
+    def __init__(
+        self,
+        on_transcript: Callable[[TranscriptResult], None] | None = None,
+        language: str = "en",
+        model: str = "nova-2",
+    ):
+        self.on_transcript = on_transcript
+        self.language = language
+        self.model = model
+        self._ws: Any = None
+        self._running = False
+
+    def _build_url(self) -> str:
+        """Build WebSocket URL with parameters."""
+        params = [
+            f"model={self.model}",
+            f"language={self.language}",
+            "punctuate=true",
+            "diarize=true",
+            "interim_results=true",
+            "utterance_end_ms=1000",
+            "vad_events=true",
+            "encoding=opus",
+            "sample_rate=16000",
+        ]
+        return f"{self.DEEPGRAM_WS_URL}?{'&'.join(params)}"
+
+    async def connect(self) -> bool:
+        """Connect to Deepgram WebSocket."""
+        if not settings.deepgram_api_key:
+            raise ValueError("DEEPGRAM_API_KEY not configured")
+
+        try:
+            import websockets
+
+            self._ws = await websockets.connect(
+                self._build_url(),
+                extra_headers={"Authorization": f"Token {settings.deepgram_api_key}"},
+            )
+            self._running = True
+            return True
+        except Exception as e:
+            raise RuntimeError(f"Failed to connect to Deepgram: {e}") from e
+
+    async def send_audio(self, audio_data: bytes) -> None:
+        """Send audio data to Deepgram."""
+        if self._ws and self._running:
+            await self._ws.send(audio_data)
+
+    async def receive_transcripts(self) -> AsyncGenerator[TranscriptResult, None]:
+        """Receive transcripts from Deepgram."""
+        if not self._ws:
+            return
+
+        try:
+            async for message in self._ws:
+                if not self._running:
+                    break
+
+                data = json.loads(message)
+                if data.get("type") == "Results":
+                    channel = data.get("channel", {})
+                    alternatives = channel.get("alternatives", [])
+                    if alternatives:
+                        alt = alternatives[0]
+                        transcript = alt.get("transcript", "")
+                        if transcript:
+                            words = alt.get("words", [])
+                            speaker = None
+                            start_ms = 0
+                            end_ms = 0
+
+                            if words:
+                                speaker = f"Speaker {words[0].get('speaker', 0)}"
+                                start_ms = int(words[0].get("start", 0) * 1000)
+                                end_ms = int(words[-1].get("end", 0) * 1000)
+
+                            yield TranscriptResult(
+                                text=transcript,
+                                speaker=speaker,
+                                is_final=data.get("is_final", False),
+                                start_ms=start_ms,
+                                end_ms=end_ms,
+                                confidence=alt.get("confidence", 0.0),
+                            )
+        except Exception:
+            self._running = False
+            raise
+
+    async def close(self) -> None:
+        """Close the WebSocket connection."""
+        self._running = False
+        if self._ws:
+            await self._ws.close()
+            self._ws = None
+
+
+async def transcribe_audio_file(
+    audio_data: bytes,
+    language: str = "en",
+    model: str = "nova-2",
+) -> list[TranscriptResult]:
+    """Transcribe an audio file using Deepgram's REST API."""
+    if not settings.deepgram_api_key:
+        raise ValueError("DEEPGRAM_API_KEY not configured")
+
+    url = "https://api.deepgram.com/v1/listen"
+    params = {
+        "model": model,
+        "language": language,
+        "punctuate": "true",
+        "diarize": "true",
+        "utterances": "true",
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            url,
+            params=params,
+            headers={
+                "Authorization": f"Token {settings.deepgram_api_key}",
+                "Content-Type": "audio/opus",
+            },
+            content=audio_data,
+            timeout=300.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    results = []
+    utterances = data.get("results", {}).get("utterances", [])
+    for utt in utterances:
+        results.append(
+            TranscriptResult(
+                text=utt.get("transcript", ""),
+                speaker=f"Speaker {utt.get('speaker', 0)}",
+                is_final=True,
+                start_ms=int(utt.get("start", 0) * 1000),
+                end_ms=int(utt.get("end", 0) * 1000),
+                confidence=utt.get("confidence", 0.0),
+            )
+        )
+
+    return results

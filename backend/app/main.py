@@ -1,0 +1,90 @@
+"""FastAPI application entry point."""
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes import auth, recordings, search, settings as settings_routes, action_items, entities, chat
+from app.api.websocket import router as websocket_router
+from app.config import get_settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+app_settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler."""
+    # Validate service keys at startup
+    if not app_settings.deepgram_api_key:
+        logger.warning("DEEPGRAM_API_KEY is not configured — transcription will not work")
+    if not app_settings.anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY is not configured — summarization will not work")
+    if not app_settings.resend_api_key:
+        logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
+    if not app_settings.s3_endpoint or not app_settings.s3_access_key or not app_settings.s3_secret_key:
+        logger.warning("S3 credentials are not fully configured — audio storage will not work")
+
+    # Startup: pre-load sentence-transformers model
+    logger.info("Pre-loading sentence-transformers embedding model...")
+    from app.core.embeddings import get_embedding_generator
+
+    generator = get_embedding_generator()
+    generator._load_model()
+    logger.info("Embedding model loaded successfully.")
+
+    yield
+    # Shutdown
+    logger.info("Application shutting down.")
+
+
+app = FastAPI(
+    title=app_settings.app_name,
+    description="AI Second Brain - Audio Recording, Transcription, and Organization",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS middleware - use configured origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=app_settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+# Include routers
+app.include_router(auth.router, prefix="/api")
+app.include_router(recordings.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
+app.include_router(settings_routes.router, prefix="/api")
+app.include_router(action_items.router, prefix="/api")
+app.include_router(entities.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
+app.include_router(websocket_router, prefix="/api")
+
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {"message": "WaiComputer API", "version": "0.1.0"}
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint with database connectivity verification."""
+    from sqlalchemy import text
+
+    from app.db.session import async_session_maker
+
+    async with async_session_maker() as session:
+        await session.execute(text("SELECT 1"))
+    return {"status": "healthy", "database": "connected"}

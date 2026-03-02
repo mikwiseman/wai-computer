@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.venv*/
+venv/
+ENV/
+.eggs/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Backend
+backend/.env
+backend/*.db
+backend/*.sqlite3
+
+# Temp files
+.tmp_*
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Xcode
+ios/WaiComputer/WaiComputer.xcodeproj/xcuserdata/
+ios/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcuserdata/
+macos/WaiComputer/WaiComputer.xcodeproj/xcuserdata/
+macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+DerivedData/
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# IDE
+.idea/
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+*.xccheckout
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+artifacts/
+web/node_modules/
+web/.next/
+web/coverage/
+web/test-results/
+web/playwright-report/
+
+# Audio files (don't commit recordings)
+*.opus
+*.wav
+*.mp3
+*.m4a
+
+# Secrets
+*.pem
+*.key
+credentials.json
