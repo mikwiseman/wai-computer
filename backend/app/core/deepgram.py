@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-import websockets  # noqa: F401 — used via patch() in tests
+import websockets
 
 from app.config import get_settings
 
@@ -63,8 +63,6 @@ class DeepgramStreamingClient:
             raise ValueError("DEEPGRAM_API_KEY not configured")
 
         try:
-            import websockets
-
             self._ws = await websockets.connect(
                 self._build_url(),
                 extra_headers={"Authorization": f"Token {settings.deepgram_api_key}"},
