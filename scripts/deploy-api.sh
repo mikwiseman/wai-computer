@@ -3,7 +3,7 @@
 # Usage:
 #   VPS_USER=<release-user> ./scripts/deploy-api.sh
 # Optional:
-#   VPS_HOST=89.167.125.46
+#   VPS_HOST=<release-host>
 #   SSH_KEY_PATH=~/.ssh/id_ed25519
 #   REMOTE_ROOT=<remote-root>
 
