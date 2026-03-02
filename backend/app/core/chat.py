@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 
 import anthropic
+from fastapi import HTTPException, status
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,7 +170,10 @@ async def chat_with_recordings(
     6. Returns the response with source info
     """
     if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat service not configured",
+        )
 
     # Get or create session
     if session_id:
@@ -178,7 +182,10 @@ async def chat_with_recordings(
         )
         session = result.scalar_one_or_none()
         if session is None:
-            raise ValueError(f"Chat session {session_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat session not found",
+            )
     else:
         rec_ids = (
             [str(rid) for rid in recording_ids]

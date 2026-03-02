@@ -125,34 +125,35 @@ class TestUploadSync:
 
 class TestPresignedUrlSync:
     def test_calls_generate_presigned_url_correctly(
-        self, storage_with_mock_client, mock_boto3_client, user_id, recording_id
+        self, storage_with_mock_client, mock_boto3_client
     ):
         """_get_presigned_url_sync() calls generate_presigned_url with correct params."""
+        s3_key = "some-user/2026/03/02/some-recording.opus"
         with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            url = storage_with_mock_client._get_presigned_url_sync(
-                user_id, recording_id, "opus", 7200
-            )
+            url = storage_with_mock_client._get_presigned_url_sync(s3_key, 7200)
 
         mock_boto3_client.generate_presigned_url.assert_called_once()
         call_args = mock_boto3_client.generate_presigned_url.call_args
         assert call_args.args[0] == "get_object"
         assert call_args.kwargs["Params"]["Bucket"] == "test-bucket"
+        assert call_args.kwargs["Params"]["Key"] == s3_key
         assert call_args.kwargs["ExpiresIn"] == 7200
         assert url == "https://presigned.example.com/file"
 
 
 class TestDeleteSync:
     def test_calls_delete_object_correctly(
-        self, storage_with_mock_client, mock_boto3_client, user_id, recording_id
+        self, storage_with_mock_client, mock_boto3_client
     ):
         """_delete_sync() calls delete_object with correct Bucket and Key."""
+        s3_key = "some-user/2026/03/02/some-recording.opus"
         with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            storage_with_mock_client._delete_sync(user_id, recording_id, "opus")
+            storage_with_mock_client._delete_sync(s3_key)
 
         mock_boto3_client.delete_object.assert_called_once()
         call_kwargs = mock_boto3_client.delete_object.call_args
         assert call_kwargs.kwargs["Bucket"] == "test-bucket"
-        assert str(recording_id) in call_kwargs.kwargs["Key"]
+        assert call_kwargs.kwargs["Key"] == s3_key
 
 
 class TestAsyncWrappers:
@@ -169,22 +170,22 @@ class TestAsyncWrappers:
         assert str(user_id) in key
 
     async def test_get_presigned_url_delegates(
-        self, storage_with_mock_client, user_id, recording_id
+        self, storage_with_mock_client
     ):
         """get_presigned_url() async wrapper delegates to _get_presigned_url_sync."""
+        s3_key = "some-user/2026/03/02/some-recording.opus"
         with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            url = await storage_with_mock_client.get_presigned_url(
-                user_id, recording_id, "opus", 3600
-            )
+            url = await storage_with_mock_client.get_presigned_url(s3_key, 3600)
 
         assert url == "https://presigned.example.com/file"
 
     async def test_delete_audio_delegates(
-        self, storage_with_mock_client, mock_boto3_client, user_id, recording_id
+        self, storage_with_mock_client, mock_boto3_client
     ):
         """delete_audio() async wrapper delegates to _delete_sync."""
+        s3_key = "some-user/2026/03/02/some-recording.opus"
         with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            await storage_with_mock_client.delete_audio(user_id, recording_id, "opus")
+            await storage_with_mock_client.delete_audio(s3_key)
 
         mock_boto3_client.delete_object.assert_called_once()
 

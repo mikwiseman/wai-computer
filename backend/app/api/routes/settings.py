@@ -1,7 +1,7 @@
 """User settings routes."""
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.api.deps import CurrentUser, Database
 from app.core.security import hash_password, verify_password
@@ -14,6 +14,13 @@ class ChangePasswordRequest(BaseModel):
 
     current_password: str
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
 
 
 class MessageResponse(BaseModel):

@@ -63,7 +63,7 @@ class EmbeddingGenerator:
         Returns:
             List of floats representing the embedding
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.generate_sync, text)
 
     async def generate_batch(self, texts: list[str]) -> list[list[float]]:
@@ -76,7 +76,7 @@ class EmbeddingGenerator:
         Returns:
             List of embeddings
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.generate_batch_sync, texts)
 
 

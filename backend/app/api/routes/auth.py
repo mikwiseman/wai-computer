@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
@@ -25,6 +25,13 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
 
 
 class LoginRequest(BaseModel):
@@ -162,7 +169,7 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     # Send magic link email via Resend
     from app.core.email import send_magic_link_email
 
-    send_magic_link_email(user.email, token)
+    await send_magic_link_email(user.email, token)
 
     return MessageResponse(message="Magic link sent to your email")
 
