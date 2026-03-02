@@ -40,7 +40,8 @@ ssh \
    fi;
    cd backend;
    docker compose build api web;
-   docker compose up -d api web caddy;
+   docker compose up -d api web;
+   docker compose restart caddy;
    sleep 10;
    docker compose exec -T api curl -fsS http://localhost:8000/health > /dev/null;
    docker compose exec -T web node -e \"fetch('http://localhost:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\";
