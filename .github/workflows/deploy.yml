@@ -49,6 +49,7 @@ jobs:
       - name: Test
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
           JWT_SECRET: test-secret-for-ci
         run: pytest -x -q
 
