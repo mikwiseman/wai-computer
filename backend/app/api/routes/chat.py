@@ -87,7 +87,11 @@ async def send_chat_message(
 ) -> ChatResponse:
     """Send a question and get a RAG-powered answer from meeting transcripts."""
     session_id = uuid.UUID(request.session_id) if request.session_id else None
-    recording_ids = [uuid.UUID(rid) for rid in request.recording_ids] if request.recording_ids else None
+    recording_ids = (
+        [uuid.UUID(rid) for rid in request.recording_ids]
+        if request.recording_ids
+        else None
+    )
 
     result: ChatResult = await chat_with_recordings(
         db=db,

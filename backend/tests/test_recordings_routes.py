@@ -176,7 +176,10 @@ async def test_generate_summary_creates_summary_and_action_items(
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", fake_summarize_transcript)
 
-    response = await client.post(f"/api/recordings/{recording_id}/generate-summary", headers=auth_headers)
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
     assert response.status_code == 200
     assert response.json()["summary"]
 
@@ -238,11 +241,17 @@ async def test_generate_summary_regeneration_replaces_action_items(
         )
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize_v1)
-    first = await client.post(f"/api/recordings/{recording_id}/generate-summary", headers=auth_headers)
+    first = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
     assert first.status_code == 200
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize_v2)
-    second = await client.post(f"/api/recordings/{recording_id}/generate-summary", headers=auth_headers)
+    second = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
     assert second.status_code == 200
 
     detail_response = await client.get(f"/api/recordings/{recording_id}", headers=auth_headers)
@@ -289,7 +298,10 @@ async def test_generate_summary_preserves_manual_action_items(
             summary="Summary.",
             key_points=[],
             decisions=[],
-            action_items=[{"task": "Generated task", "owner": None, "due": None, "priority": "medium"}],
+            action_items=[{
+                "task": "Generated task", "owner": None,
+                "due": None, "priority": "medium",
+            }],
             topics=[],
             people_mentioned=[],
             follow_up_questions=[],
@@ -297,7 +309,10 @@ async def test_generate_summary_preserves_manual_action_items(
         )
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize)
-    response = await client.post(f"/api/recordings/{recording_id}/generate-summary", headers=auth_headers)
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
     assert response.status_code == 200
 
     detail_response = await client.get(f"/api/recordings/{recording_id}", headers=auth_headers)

@@ -4,12 +4,10 @@ import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.main import app
-
 
 # ---------------------------------------------------------------------------
 # Helper: build a mock async-context-manager that yields a mock session
@@ -133,7 +131,7 @@ class TestWebSocketAuth:
     @patch("app.api.websocket.decode_access_token", return_value=None)
     def test_invalid_token_closes_4004(self, _mock_decode, mock_session_maker):
         """An invalid JWT (decode returns None) yields close 4004."""
-        user = _fake_user()
+        _fake_user()
         session_factory, _ = _make_mock_session(user=None)
         mock_session_maker.side_effect = lambda: session_factory()
 

@@ -62,4 +62,7 @@ class TestSendMagicLinkEmail:
             send_magic_link_email("user@example.com", "my-special-token")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "https://custom.domain.com/auth/verify?token=my-special-token" in call_args["html"]
+            expected_url = (
+                "https://custom.domain.com/auth/verify?token=my-special-token"
+            )
+            assert expected_url in call_args["html"]

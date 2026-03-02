@@ -578,7 +578,8 @@ async def test_password_change():
             headers=auth_header(token),
         )
         assert resp.status_code == 200
-        assert "changed" in resp.json()["message"].lower() or "set" in resp.json()["message"].lower()
+        msg = resp.json()["message"].lower()
+        assert "changed" in msg or "set" in msg
 
         # Login with old password -> 401
         resp = await client.post(

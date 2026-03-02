@@ -25,10 +25,16 @@ async def test_change_password_success_and_login_with_new_password(client: Async
     )
     assert change_response.status_code == 200
 
-    old_login = await client.post("/api/auth/login", json={"email": email, "password": old_password})
+    old_login = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": old_password},
+    )
     assert old_login.status_code == 401
 
-    new_login = await client.post("/api/auth/login", json={"email": email, "password": new_password})
+    new_login = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": new_password},
+    )
     assert new_login.status_code == 200
     assert new_login.json()["access_token"]
 

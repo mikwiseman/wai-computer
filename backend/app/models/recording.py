@@ -1,7 +1,7 @@
 """Recording and related models."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Date, Float, ForeignKey, Integer, String, Text
@@ -108,5 +108,5 @@ class ActionItem(Base, UUIDMixin, TimestampMixin):
 
 
 # Import at bottom to avoid circular imports
-from app.models.user import User
-from app.models.entity import RecordingTag
+from app.models.entity import RecordingTag  # noqa: E402
+from app.models.user import User  # noqa: E402

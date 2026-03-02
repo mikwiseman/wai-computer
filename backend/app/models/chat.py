@@ -23,7 +23,10 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="chat_sessions")
     messages: Mapped[list["ChatMessage"]] = relationship(
-        "ChatMessage", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at"
+        "ChatMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at",
     )
 
 
@@ -33,7 +36,10 @@ class ChatMessage(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "chat_messages"
 
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" or "assistant"
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,4 +51,4 @@ class ChatMessage(Base, UUIDMixin, TimestampMixin):
 
 
 # Import at bottom to avoid circular imports
-from app.models.user import User
+from app.models.user import User  # noqa: E402

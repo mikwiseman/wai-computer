@@ -1,10 +1,8 @@
 """User model."""
 
-import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -36,6 +34,6 @@ class User(Base, UUIDMixin, TimestampMixin):
 
 
 # Import at bottom to avoid circular imports
-from app.models.recording import Recording
-from app.models.entity import Entity, Tag
-from app.models.chat import ChatSession
+from app.models.chat import ChatSession  # noqa: E402
+from app.models.entity import Entity, Tag  # noqa: E402
+from app.models.recording import Recording  # noqa: E402

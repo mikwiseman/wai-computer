@@ -1,7 +1,5 @@
 """Deepgram streaming transcription client."""
 
-import asyncio
-import base64
 import json
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass

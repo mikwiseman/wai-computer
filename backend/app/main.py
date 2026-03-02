@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, recordings, search, settings as settings_routes, action_items, entities, chat
+from app.api.routes import action_items, auth, chat, entities, recordings, search
+from app.api.routes import settings as settings_routes
 from app.api.websocket import router as websocket_router
 from app.config import get_settings
 
@@ -29,7 +30,11 @@ async def lifespan(app: FastAPI):
         logger.warning("ANTHROPIC_API_KEY is not configured — summarization will not work")
     if not app_settings.resend_api_key:
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
-    if not app_settings.s3_endpoint or not app_settings.s3_access_key or not app_settings.s3_secret_key:
+    if (
+        not app_settings.s3_endpoint
+        or not app_settings.s3_access_key
+        or not app_settings.s3_secret_key
+    ):
         logger.warning("S3 credentials are not fully configured — audio storage will not work")
 
     # Startup: pre-load sentence-transformers model
