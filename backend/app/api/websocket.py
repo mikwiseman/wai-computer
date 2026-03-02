@@ -10,7 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deepgram import DeepgramStreamingClient, TranscriptResult
+from app.core.deepgram import DeepgramStreamingClient
 from app.core.embeddings import generate_embedding
 from app.core.security import decode_access_token
 from app.core.storage import get_storage_client
@@ -39,7 +39,8 @@ async def audio_websocket(websocket: WebSocket):
 
     Protocol:
     - Client sends: {"type": "audio", "data": "<base64 opus>", "timestamp": 123}
-    - Server sends: {"type": "transcript", "text": "...", "speaker": "...", "is_final": true, "start_ms": 0, "end_ms": 1000}
+    - Server sends: {"type": "transcript", "text": "...",
+      "speaker": "...", "is_final": true, "start_ms": 0, "end_ms": 1000}
     - Server sends: {"type": "status", "status": "ready|processing|error", "message": "..."}
 
     Query params:
@@ -110,7 +111,9 @@ async def audio_websocket(websocket: WebSocket):
         await websocket.close(code=5001)
         return
 
-    await websocket.send_json({"type": "status", "status": "ready", "message": "Ready to receive audio"})
+    await websocket.send_json(
+        {"type": "status", "status": "ready", "message": "Ready to receive audio"}
+    )
 
     # Track segments to save with thread-safe lock
     pending_segments: list[dict] = []

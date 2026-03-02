@@ -130,7 +130,10 @@ class TestSummarizeTranscript:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client) as mock_cls:
+        with patch(
+            "app.core.summarizer.anthropic.AsyncAnthropic",
+            return_value=mock_client,
+        ) as mock_cls:
             await summarize_transcript("My meeting notes")
 
         mock_cls.assert_called_once_with(api_key="sk-ant-test-key")

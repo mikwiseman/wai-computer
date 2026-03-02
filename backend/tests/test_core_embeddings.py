@@ -49,8 +49,19 @@ class TestLoadModel:
         gen = EmbeddingGenerator(model_name="all-MiniLM-L6-v2")
         assert gen._model is None
 
-        with patch("app.core.embeddings.SentenceTransformer", mock_st_class, create=True), \
-             patch.dict("sys.modules", {"sentence_transformers": MagicMock(SentenceTransformer=mock_st_class)}):
+        with (
+            patch(
+                "app.core.embeddings.SentenceTransformer",
+                mock_st_class,
+                create=True,
+            ),
+            patch.dict(
+                "sys.modules",
+                {"sentence_transformers": MagicMock(
+                    SentenceTransformer=mock_st_class,
+                )},
+            ),
+        ):
             # We need to clear the cached model and call _load_model
             # The module does a lazy import: from sentence_transformers import SentenceTransformer
             # We patch at the point of import inside _load_model

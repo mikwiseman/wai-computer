@@ -28,7 +28,8 @@ Analyze this meeting transcript. Output ONLY valid JSON:
     {"decision": "...", "context": "..."}
   ],
   "action_items": [
-    {"task": "...", "owner": "name or null", "due": "YYYY-MM-DD or null", "priority": "high|medium|low"}
+    {"task": "...", "owner": "name or null",
+     "due": "YYYY-MM-DD or null", "priority": "high|medium|low"}
   ],
   "topics": ["Topic 1", "Topic 2"],
   "people_mentioned": ["Name 1", "Name 2"],

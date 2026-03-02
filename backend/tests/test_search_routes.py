@@ -22,7 +22,10 @@ def _vector_literal(index: int) -> str:
 
 
 async def _register(client: AsyncClient, email: str) -> dict:
-    response = await client.post("/api/auth/register", json={"email": email, "password": "password123"})
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "password123"},
+    )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

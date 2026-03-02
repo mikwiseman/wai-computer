@@ -1,9 +1,6 @@
 """Embeddings generation using sentence-transformers."""
 
 import asyncio
-from functools import lru_cache
-
-import numpy as np
 
 
 class EmbeddingGenerator:

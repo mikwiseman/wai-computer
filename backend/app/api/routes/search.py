@@ -59,8 +59,11 @@ async def hybrid_search(
                 s.content,
                 s.start_ms,
                 s.end_ms,
-                ts_rank(to_tsvector('english', s.content), plainto_tsquery('english', :query)) as fts_rank,
-                ROW_NUMBER() OVER (ORDER BY ts_rank(to_tsvector('english', s.content), plainto_tsquery('english', :query)) DESC) as fts_rn
+                ts_rank(to_tsvector('english', s.content),
+                    plainto_tsquery('english', :query)) as fts_rank,
+                ROW_NUMBER() OVER (ORDER BY ts_rank(
+                    to_tsvector('english', s.content),
+                    plainto_tsquery('english', :query)) DESC) as fts_rn
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id

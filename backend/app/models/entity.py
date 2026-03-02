@@ -107,5 +107,5 @@ class RecordingTag(Base):
 
 
 # Import at bottom to avoid circular imports
-from app.models.user import User
-from app.models.recording import Recording
+from app.models.recording import Recording  # noqa: E402
+from app.models.user import User  # noqa: E402

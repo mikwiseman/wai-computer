@@ -5,11 +5,8 @@ behaviour against the real test database via the ``client`` / ``auth_headers``
 fixtures from conftest.
 """
 
-import uuid
 
-import pytest
 from httpx import AsyncClient
-
 
 # ---------------------------------------------------------------------------
 # 1. UUID injection / SQL-injection-like strings

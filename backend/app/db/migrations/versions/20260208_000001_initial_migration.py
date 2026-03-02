@@ -7,10 +7,10 @@ Create Date: 2026-02-08
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+from alembic import op
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '000001'
@@ -26,13 +26,24 @@ def upgrade() -> None:
     # Create users table
     op.create_table(
         'users',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('email', sa.String(255), nullable=False),
         sa.Column('password_hash', sa.String(255), nullable=True),
         sa.Column('magic_link_token', sa.String(255), nullable=True),
-        sa.Column('magic_link_expires', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column(
+            'magic_link_expires', sa.DateTime(timezone=True), nullable=True,
+        ),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.Column(
+            'updated_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('email')
     )
@@ -41,15 +52,24 @@ def upgrade() -> None:
     # Create recordings table
     op.create_table(
         'recordings',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('title', sa.String(500), nullable=True),
         sa.Column('type', sa.String(50), nullable=False),
         sa.Column('audio_url', sa.String(1000), nullable=True),
         sa.Column('duration_seconds', sa.Integer(), nullable=True),
         sa.Column('language', sa.String(10), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.Column(
+            'updated_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
@@ -58,7 +78,10 @@ def upgrade() -> None:
     # Create segments table
     op.create_table(
         'segments',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('recording_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('speaker', sa.String(100), nullable=True),
         sa.Column('content', sa.Text(), nullable=False),
@@ -72,15 +95,24 @@ def upgrade() -> None:
     op.create_index('ix_segments_recording_id', 'segments', ['recording_id'])
 
     # Create vector index for segments
-    op.execute('CREATE INDEX idx_segments_embedding ON segments USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)')
+    op.execute(
+        'CREATE INDEX idx_segments_embedding ON segments '
+        'USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
+    )
 
     # Create FTS index for segments
-    op.execute("CREATE INDEX idx_segments_content_fts ON segments USING gin (to_tsvector('english', content))")
+    op.execute(
+        "CREATE INDEX idx_segments_content_fts ON segments "
+        "USING gin (to_tsvector('english', content))"
+    )
 
     # Create summaries table
     op.create_table(
         'summaries',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('recording_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('summary', sa.Text(), nullable=True),
         sa.Column('key_points', postgresql.JSONB(), nullable=True),
@@ -88,9 +120,17 @@ def upgrade() -> None:
         sa.Column('topics', postgresql.JSONB(), nullable=True),
         sa.Column('people_mentioned', postgresql.JSONB(), nullable=True),
         sa.Column('sentiment', sa.String(20), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['recording_id'], ['recordings.id'], ondelete='CASCADE'),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.Column(
+            'updated_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ['recording_id'], ['recordings.id'], ondelete='CASCADE',
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('recording_id')
     )
@@ -98,16 +138,30 @@ def upgrade() -> None:
     # Create action_items table
     op.create_table(
         'action_items',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('recording_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('task', sa.Text(), nullable=False),
         sa.Column('owner', sa.String(200), nullable=True),
         sa.Column('due_date', sa.Date(), nullable=True),
         sa.Column('priority', sa.String(20), nullable=True),
-        sa.Column('status', sa.String(20), nullable=False, server_default='pending'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['recording_id'], ['recordings.id'], ondelete='CASCADE'),
+        sa.Column(
+            'status', sa.String(20),
+            nullable=False, server_default='pending',
+        ),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.Column(
+            'updated_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.ForeignKeyConstraint(
+            ['recording_id'], ['recordings.id'], ondelete='CASCADE',
+        ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_action_items_recording_id', 'action_items', ['recording_id'])
@@ -115,24 +169,39 @@ def upgrade() -> None:
     # Create entities table
     op.create_table(
         'entities',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('type', sa.String(50), nullable=False),
         sa.Column('name', sa.String(500), nullable=False),
         sa.Column('metadata', postgresql.JSONB(), nullable=True),
         sa.Column('embedding', Vector(384), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
+        sa.Column(
+            'updated_at', sa.DateTime(timezone=True),
+            server_default=sa.text('now()'), nullable=False,
+        ),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_entities_user_id', 'entities', ['user_id'])
-    op.execute('CREATE INDEX idx_entities_embedding ON entities USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)')
+    op.execute(
+        'CREATE INDEX idx_entities_embedding ON entities '
+        'USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)'
+    )
 
     # Create entity_relations table
     op.create_table(
         'entity_relations',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('source_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('target_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('relation_type', sa.String(100), nullable=True),
@@ -147,7 +216,10 @@ def upgrade() -> None:
     # Create tags table
     op.create_table(
         'tags',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text('gen_random_uuid()')),
+        sa.Column(
+            'id', postgresql.UUID(as_uuid=True),
+            nullable=False, server_default=sa.text('gen_random_uuid()'),
+        ),
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('color', sa.String(20), nullable=True),

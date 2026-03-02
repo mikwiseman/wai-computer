@@ -14,9 +14,12 @@ from app.models.chat import ChatMessage, ChatSession
 settings = get_settings()
 
 SYSTEM_PROMPT = (
-    "You are a helpful meeting assistant. Answer questions based on the provided meeting transcript context. "
-    "If the context doesn't contain enough information to answer, say so clearly. "
-    "Always reference specific details from the transcripts when possible."
+    "You are a helpful meeting assistant. Answer questions based on "
+    "the provided meeting transcript context. "
+    "If the context doesn't contain enough information to answer, "
+    "say so clearly. "
+    "Always reference specific details from the transcripts "
+    "when possible."
 )
 
 
@@ -67,8 +70,11 @@ async def retrieve_context(
                 s.content,
                 s.start_ms,
                 s.end_ms,
-                ts_rank(to_tsvector('english', s.content), plainto_tsquery('english', :query)) as fts_rank,
-                ROW_NUMBER() OVER (ORDER BY ts_rank(to_tsvector('english', s.content), plainto_tsquery('english', :query)) DESC) as fts_rn
+                ts_rank(to_tsvector('english', s.content),
+                    plainto_tsquery('english', :query)) as fts_rank,
+                ROW_NUMBER() OVER (ORDER BY ts_rank(
+                    to_tsvector('english', s.content),
+                    plainto_tsquery('english', :query)) DESC) as fts_rn
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
@@ -174,7 +180,12 @@ async def chat_with_recordings(
         if session is None:
             raise ValueError(f"Chat session {session_id} not found")
     else:
-        session = ChatSession(user_id=user_id, recording_ids=[str(rid) for rid in recording_ids] if recording_ids else None)
+        rec_ids = (
+            [str(rid) for rid in recording_ids]
+            if recording_ids
+            else None
+        )
+        session = ChatSession(user_id=user_id, recording_ids=rec_ids)
         db.add(session)
         await db.flush()
 

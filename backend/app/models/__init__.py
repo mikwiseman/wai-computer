@@ -1,10 +1,10 @@
 """SQLAlchemy models."""
 
 from app.models.base import Base
+from app.models.chat import ChatMessage, ChatSession
+from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
+from app.models.recording import ActionItem, Recording, Segment, Summary
 from app.models.user import User
-from app.models.recording import Recording, Segment, Summary, ActionItem
-from app.models.entity import Entity, EntityRelation, Tag, RecordingTag
-from app.models.chat import ChatSession, ChatMessage
 
 __all__ = [
     "Base",
