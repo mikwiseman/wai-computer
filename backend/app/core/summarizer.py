@@ -95,11 +95,11 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     if "```json" in response_text:
         start = response_text.find("```json") + 7
         end = response_text.find("```", start)
-        json_str = response_text[start:end].strip()
+        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
     elif "```" in response_text:
         start = response_text.find("```") + 3
         end = response_text.find("```", start)
-        json_str = response_text[start:end].strip()
+        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
     else:
         json_str = response_text.strip()
 
@@ -191,11 +191,11 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
     if "```json" in response_text:
         start = response_text.find("```json") + 7
         end = response_text.find("```", start)
-        json_str = response_text[start:end].strip()
+        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
     elif "```" in response_text:
         start = response_text.find("```") + 3
         end = response_text.find("```", start)
-        json_str = response_text[start:end].strip()
+        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
     else:
         json_str = response_text.strip()
 

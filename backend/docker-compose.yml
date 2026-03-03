@@ -69,6 +69,8 @@ services:
       dockerfile: web/Dockerfile
     container_name: waicomputer-web
     environment:
+      # Empty string enables relative URLs (/api/*) which Caddy proxies correctly.
+      # Do NOT remove — without this override, the default https://api.wai.computer kicks in.
       NEXT_PUBLIC_API_BASE_URL: ""
     networks:
       - web

@@ -26,6 +26,7 @@ struct WaiComputerMacApp: App {
 @MainActor
 class MacAppState: ObservableObject {
     @Published var isAuthenticated = false
+    @Published var isCheckingAuth = true
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var error: String?
@@ -40,7 +41,7 @@ class MacAppState: ObservableObject {
         #if DEBUG
         let baseURL = URL(string: "http://localhost:8000")!
         #else
-        let baseURL = URL(string: "https://wai.computer")!
+        let baseURL = URL(string: "https://api.wai.computer")!
         #endif
         apiClient = APIClient(baseURL: baseURL)
         webSocketManager = WebSocketManager(baseURL: baseURL)
@@ -50,7 +51,10 @@ class MacAppState: ObservableObject {
                 await apiClient.setAccessToken(token)
                 await webSocketManager.setAccessToken(token)
                 await loadCurrentUser()
+                isCheckingAuth = false
             }
+        } else {
+            isCheckingAuth = false
         }
     }
 

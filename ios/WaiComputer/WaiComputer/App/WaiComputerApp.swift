@@ -17,6 +17,7 @@ struct WaiComputerApp: App {
 @MainActor
 class AppState: ObservableObject {
     @Published var isAuthenticated = false
+    @Published var isCheckingAuth = true
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var error: String?
@@ -40,7 +41,10 @@ class AppState: ObservableObject {
                 await apiClient.setAccessToken(token)
                 await webSocketManager.setAccessToken(token)
                 await loadCurrentUser()
+                isCheckingAuth = false
             }
+        } else {
+            isCheckingAuth = false
         }
     }
 

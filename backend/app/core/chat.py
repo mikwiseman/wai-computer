@@ -56,7 +56,7 @@ async def retrieve_context(
 ) -> list:
     """Retrieve relevant transcript segments using hybrid search (RRF)."""
     query_embedding_list = await generate_embedding(question)
-    query_embedding = str(query_embedding_list)
+    query_embedding = "[" + ",".join(str(x) for x in query_embedding_list) + "]"
 
     recording_filter = ""
     if recording_ids:
@@ -222,13 +222,34 @@ async def chat_with_recordings(
 
     # Call Claude
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    response = await client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    )
-    answer = response.content[0].text
+    try:
+        response = await client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+        )
+        if not response.content:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Empty response from AI service",
+            )
+        answer = response.content[0].text
+    except anthropic.APIConnectionError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to connect to AI service",
+        )
+    except anthropic.RateLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="AI service rate limit exceeded. Please try again later.",
+        )
+    except anthropic.APIStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service error: {e.message}",
+        )
 
     # Build source segments
     source_segments = [
