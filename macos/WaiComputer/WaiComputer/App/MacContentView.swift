@@ -6,7 +6,10 @@ struct MacContentView: View {
 
     var body: some View {
         Group {
-            if appState.isAuthenticated {
+            if appState.isCheckingAuth {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if appState.isAuthenticated {
                 MacMainView()
             } else {
                 MacAuthView()

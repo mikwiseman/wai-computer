@@ -52,16 +52,34 @@ public actor APIClient {
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
 
-            // Try ISO8601 with fractional seconds
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: dateString) {
+            // Try ISO8601 with fractional seconds and timezone
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = isoFormatter.date(from: dateString) {
                 return date
             }
 
-            // Try ISO8601 without fractional seconds
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: dateString) {
+            // Try ISO8601 without fractional seconds but with timezone
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            if let date = isoFormatter.date(from: dateString) {
+                return date
+            }
+
+            // Try timezone-less with fractional seconds (Python's .isoformat())
+            let dfWithFrac = DateFormatter()
+            dfWithFrac.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            dfWithFrac.locale = Locale(identifier: "en_US_POSIX")
+            dfWithFrac.timeZone = TimeZone(secondsFromGMT: 0)
+            if let date = dfWithFrac.date(from: dateString) {
+                return date
+            }
+
+            // Try timezone-less without fractional seconds
+            let dfNoFrac = DateFormatter()
+            dfNoFrac.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dfNoFrac.locale = Locale(identifier: "en_US_POSIX")
+            dfNoFrac.timeZone = TimeZone(secondsFromGMT: 0)
+            if let date = dfNoFrac.date(from: dateString) {
                 return date
             }
 
@@ -196,6 +214,15 @@ public actor APIClient {
         return try await request(.GET, path: "/api/auth/me")
     }
 
+    public func changePassword(currentPassword: String, newPassword: String) async throws -> MessageResponse {
+        let body = ChangePasswordRequest(currentPassword: currentPassword, newPassword: newPassword)
+        return try await request(.POST, path: "/api/settings/change-password", body: body)
+    }
+
+    public func logout() async throws -> MessageResponse {
+        return try await request(.POST, path: "/api/auth/logout")
+    }
+
     // MARK: - Recording Endpoints
 
     public func listRecordings(skip: Int = 0, limit: Int = 50, type: RecordingType? = nil) async throws -> [Recording] {
@@ -216,6 +243,13 @@ public actor APIClient {
 
     public func getRecording(id: String) async throws -> RecordingDetail {
         return try await request(.GET, path: "/api/recordings/\(id)")
+    }
+
+    public func updateRecording(id: String, title: String? = nil, type: RecordingType? = nil) async throws -> Recording {
+        var body: [String: String] = [:]
+        if let title { body["title"] = title }
+        if let type { body["type"] = type.rawValue }
+        return try await request(.PATCH, path: "/api/recordings/\(id)", body: body)
     }
 
     public func deleteRecording(id: String) async throws {
@@ -279,6 +313,10 @@ public actor APIClient {
     public func updateActionItem(id: String, status: ActionItem.Status) async throws -> ActionItem {
         let body = ["status": status.rawValue]
         return try await request(.PATCH, path: "/api/action-items/\(id)", body: body)
+    }
+
+    public func deleteActionItem(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/action-items/\(id)")
     }
 
     // MARK: - Chat Endpoints

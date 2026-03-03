@@ -105,6 +105,7 @@ public struct ActionItem: Codable, Identifiable, Sendable {
     public let dueDate: String?
     public let priority: Priority?
     public var status: Status
+    public let source: String?
     public let createdAt: String?
 
     public enum Priority: String, Codable, Sendable, CaseIterable {
@@ -128,6 +129,7 @@ public struct ActionItem: Codable, Identifiable, Sendable {
         case dueDate = "due_date"
         case priority
         case status
+        case source
         case createdAt = "created_at"
     }
 }

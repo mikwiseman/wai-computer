@@ -6,7 +6,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if appState.isAuthenticated {
+            if appState.isCheckingAuth {
+                ProgressView("Loading...")
+            } else if appState.isAuthenticated {
                 MainTabView()
             } else {
                 AuthView()

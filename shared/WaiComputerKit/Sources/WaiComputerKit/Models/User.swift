@@ -66,3 +66,18 @@ public struct VerifyMagicLinkRequest: Codable, Sendable {
         self.token = token
     }
 }
+
+public struct ChangePasswordRequest: Codable, Sendable {
+    public let currentPassword: String
+    public let newPassword: String
+
+    public init(currentPassword: String, newPassword: String) {
+        self.currentPassword = currentPassword
+        self.newPassword = newPassword
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case currentPassword = "current_password"
+        case newPassword = "new_password"
+    }
+}

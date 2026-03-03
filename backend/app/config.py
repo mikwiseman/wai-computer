@@ -30,6 +30,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:8080",
         "https://wai.computer",
+        "https://api.wai.computer",
     ]
 
     # Deepgram
