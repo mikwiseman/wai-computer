@@ -536,6 +536,9 @@ async def upload_audio_file(
 
     await db.flush()
 
+    # Expire cached recording so selectinload refetches relationships
+    db.expire(recording)
+
     # Reload to get the new segments
     result = await db.execute(
         select(Recording)
