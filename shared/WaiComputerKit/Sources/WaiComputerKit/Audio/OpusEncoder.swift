@@ -1,10 +1,9 @@
 import Foundation
 import AVFoundation
 
-/// Opus encoder for audio compression
-/// Note: This is a placeholder that outputs raw PCM data.
-/// For production, integrate with libopus via a C wrapper or use AVAudioConverter.
-public final class OpusEncoder: @unchecked Sendable {
+/// Audio encoder that converts PCM buffers to 16-bit PCM data for transmission.
+/// The backend expects raw linear16 PCM at 16kHz.
+public final class AudioEncoder: @unchecked Sendable {
     public let sampleRate: Int
     public let channels: Int
     public let bitrate: Int
@@ -15,7 +14,7 @@ public final class OpusEncoder: @unchecked Sendable {
         self.bitrate = bitrate
     }
 
-    /// Encode PCM audio buffer to compressed format
+    /// Encode PCM audio buffer to 16-bit linear PCM data
     /// Returns the audio data suitable for transmission
     public func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floatData = buffer.floatChannelData else { return nil }
@@ -34,20 +33,17 @@ public final class OpusEncoder: @unchecked Sendable {
             }
         }
 
-        // In production, this would use libopus to compress the PCM data
-        // For now, return PCM data which the backend can handle
         return pcmData
     }
 
-    /// Encode raw PCM data
+    /// Encode raw PCM data (passthrough)
     public func encode(_ pcmData: Data) -> Data? {
-        // Passthrough for now - would be Opus-encoded in production
         return pcmData
     }
 }
 
-/// Opus decoder for audio decompression
-public final class OpusDecoder: @unchecked Sendable {
+/// Audio decoder that converts 16-bit PCM data back to float PCM buffers
+public final class AudioDecoder: @unchecked Sendable {
     public let sampleRate: Int
     public let channels: Int
 
@@ -56,7 +52,7 @@ public final class OpusDecoder: @unchecked Sendable {
         self.channels = channels
     }
 
-    /// Decode compressed audio to PCM buffer
+    /// Decode 16-bit PCM data to float PCM buffer
     public func decode(_ data: Data) -> AVAudioPCMBuffer? {
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -85,3 +81,9 @@ public final class OpusDecoder: @unchecked Sendable {
         return buffer
     }
 }
+
+// Backwards compatibility typealiases
+@available(*, deprecated, renamed: "AudioEncoder")
+public typealias OpusEncoder = AudioEncoder
+@available(*, deprecated, renamed: "AudioDecoder")
+public typealias OpusDecoder = AudioDecoder

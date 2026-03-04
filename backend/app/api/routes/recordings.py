@@ -1,17 +1,23 @@
 """Recording CRUD routes."""
 
+import logging
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.core.deepgram import transcribe_audio_file
+from app.core.embeddings import generate_embedding
+from app.core.storage import get_storage_client
 from app.core.summarizer import summarize_transcript
-from app.models.recording import ActionItem, Recording, Summary
+from app.models.recording import ActionItem, Recording, Segment, Summary
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
@@ -431,4 +437,158 @@ async def generate_summary(
         topics=recording.summary.topics,
         people_mentioned=recording.summary.people_mentioned,
         sentiment=recording.summary.sentiment,
+    )
+
+
+ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"}
+EXTENSION_TO_CONTENT_TYPE = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "webm": "audio/webm",
+    "opus": "audio/opus",
+    "flac": "audio/flac",
+}
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+
+
+@router.post("/{recording_id}/upload", response_model=RecordingDetailResponse)
+async def upload_audio_file(
+    recording_id: UUID,
+    file: UploadFile,
+    user: CurrentUser,
+    db: Database,
+) -> RecordingDetailResponse:
+    """Upload an audio file to an existing recording for transcription."""
+    # Validate recording exists and belongs to user
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.segments),
+            selectinload(Recording.summary),
+            selectinload(Recording.action_items),
+        )
+    )
+    recording = result.scalar_one_or_none()
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    # Validate file extension
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type '.{ext}'. "
+            f"Allowed: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}",
+        )
+
+    # Read file data and validate size
+    audio_data = await file.read()
+    if len(audio_data) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB",
+        )
+
+    content_type = EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
+
+    # Upload to S3
+    storage = get_storage_client()
+    s3_key = await storage.upload_audio(audio_data, user.id, recording_id, content_type)
+    recording.audio_url = s3_key
+
+    # Transcribe via Deepgram
+    transcript_results = await transcribe_audio_file(
+        audio_data, language=recording.language or "en", content_type=content_type
+    )
+
+    # Save segments with embeddings
+    for tr in transcript_results:
+        embedding = None
+        if tr.text.strip():
+            try:
+                embedding = await generate_embedding(tr.text)
+            except Exception as e:
+                logger.warning(f"Failed to generate embedding: {e}")
+
+        segment = Segment(
+            recording_id=recording_id,
+            speaker=tr.speaker,
+            content=tr.text,
+            start_ms=tr.start_ms,
+            end_ms=tr.end_ms,
+            confidence=tr.confidence,
+            embedding=embedding,
+        )
+        db.add(segment)
+
+    # Update duration from last segment
+    if transcript_results:
+        max_end_ms = max(tr.end_ms for tr in transcript_results)
+        recording.duration_seconds = max_end_ms // 1000
+
+    # Set title from filename if not set
+    if not recording.title:
+        recording.title = filename.rsplit(".", 1)[0] if "." in filename else filename
+
+    await db.flush()
+
+    # Reload to get the new segments
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id)
+        .options(
+            selectinload(Recording.segments),
+            selectinload(Recording.summary),
+            selectinload(Recording.action_items),
+        )
+    )
+    recording = result.scalar_one_or_none()
+
+    return RecordingDetailResponse(
+        id=str(recording.id),
+        title=recording.title,
+        type=recording.type,
+        audio_url=recording.audio_url,
+        duration_seconds=recording.duration_seconds,
+        language=recording.language,
+        created_at=recording.created_at,
+        segments=[
+            SegmentResponse(
+                id=str(s.id),
+                speaker=s.speaker,
+                content=s.content,
+                start_ms=s.start_ms,
+                end_ms=s.end_ms,
+                confidence=s.confidence,
+            )
+            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+        ],
+        summary=SummaryResponse(
+            summary=recording.summary.summary,
+            key_points=recording.summary.key_points,
+            decisions=recording.summary.decisions,
+            topics=recording.summary.topics,
+            people_mentioned=recording.summary.people_mentioned,
+            sentiment=recording.summary.sentiment,
+        )
+        if recording.summary
+        else None,
+        action_items=[
+            ActionItemResponse(
+                id=str(a.id),
+                recording_id=str(a.recording_id),
+                task=a.task,
+                owner=a.owner,
+                due_date=a.due_date.isoformat() if a.due_date else None,
+                priority=a.priority,
+                status=a.status,
+                source=a.source,
+                created_at=a.created_at.isoformat(),
+            )
+            for a in recording.action_items
+        ],
     )

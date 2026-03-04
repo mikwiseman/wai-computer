@@ -108,7 +108,7 @@ async def audio_websocket(websocket: WebSocket):
         await websocket.send_json(
             {"type": "status", "status": "error", "message": f"Transcription service error: {e}"}
         )
-        await websocket.close(code=5001)
+        await websocket.close(code=4006)
         return
 
     await websocket.send_json(

@@ -43,7 +43,7 @@ class StorageClient:
         audio_data: bytes,
         user_id: uuid.UUID,
         recording_id: uuid.UUID,
-        content_type: str = "audio/opus",
+        content_type: str = "audio/pcm",
     ) -> str:
         """
         Upload audio data to S3.
@@ -78,7 +78,13 @@ class StorageClient:
     ) -> str:
         """Synchronous upload."""
         client = self._get_client()
-        ext = "opus" if "opus" in content_type else "wav"
+        ext_map = {
+            "audio/opus": "opus", "audio/wav": "wav", "audio/mpeg": "mp3",
+            "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/webm": "webm",
+            "audio/flac": "flac", "audio/pcm": "pcm", "audio/x-wav": "wav",
+            "audio/x-m4a": "m4a",
+        }
+        ext = ext_map.get(content_type, "bin")
         key = self._generate_key(user_id, recording_id, ext)
 
         client.put_object(

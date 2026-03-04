@@ -351,6 +351,68 @@ public actor APIClient {
     public func getEntity(id: String) async throws -> EntityDetail {
         return try await request(.GET, path: "/api/entities/\(id)")
     }
+
+    // MARK: - File Upload
+
+    public func uploadAudio(recordingId: String, fileURL: URL) async throws -> RecordingDetail {
+        let path = "/api/recordings/\(recordingId)/upload"
+        let url = baseURL.appendingPathComponent(path)
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 300
+
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let fileData = try Data(contentsOf: fileURL)
+        let filename = fileURL.lastPathComponent
+        let ext = fileURL.pathExtension.lowercased()
+        let mimeType: String
+        switch ext {
+        case "mp3": mimeType = "audio/mpeg"
+        case "wav": mimeType = "audio/wav"
+        case "m4a": mimeType = "audio/mp4"
+        case "ogg": mimeType = "audio/ogg"
+        case "webm": mimeType = "audio/webm"
+        case "opus": mimeType = "audio/opus"
+        case "flac": mimeType = "audio/flac"
+        default: mimeType = "application/octet-stream"
+        }
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(URLError(.badServerResponse))
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let message = String(data: data, encoding: .utf8)
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        do {
+            return try decoder.decode(RecordingDetail.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
 }
 
 /// Simple message response

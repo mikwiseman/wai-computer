@@ -181,10 +181,10 @@ class TestWebSocketDeepgram:
     @patch("app.api.websocket.DeepgramStreamingClient")
     @patch("app.api.websocket.async_session_maker")
     @patch("app.api.websocket.decode_access_token")
-    def test_deepgram_connect_failure_closes_5001(
+    def test_deepgram_connect_failure_closes_4006(
         self, mock_decode, mock_session_maker, mock_deepgram_cls
     ):
-        """If Deepgram connect() raises, the server sends error and closes 5001."""
+        """If Deepgram connect() raises, the server sends error and closes 4006."""
         user_id = uuid.uuid4()
         recording_id = uuid.uuid4()
         mock_decode.return_value = str(user_id)
@@ -214,7 +214,7 @@ class TestWebSocketDeepgram:
             try:
                 ws.receive_json()
             except WebSocketDisconnect as exc:
-                assert exc.code == 5001
+                assert exc.code == 4006
 
     @patch("app.api.websocket.get_storage_client")
     @patch("app.api.websocket.generate_embedding")
