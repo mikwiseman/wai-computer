@@ -23,6 +23,7 @@ struct MacContentView: View {
 struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @StateObject private var libraryViewModel = MacLibraryViewModel()
+    @StateObject private var importViewModel = MacImportViewModel()
     @State private var selectedSection: SidebarSection = .allRecordings
     @State private var selectedRecordingId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -87,11 +88,21 @@ struct MacMainView: View {
                     Button("New Reflection") {
                         startRecording(type: .reflection)
                     }
+                    Divider()
+                    Button("Import Audio File...") {
+                        importAudioFile()
+                    }
+                    .disabled(importViewModel.isImporting)
                 } label: {
                     Label("New Recording", systemImage: "plus")
                 }
                 .disabled(appState.isRecording)
             }
+        }
+        .alert("Import Error", isPresented: $importViewModel.showError) {
+            Button("OK") {}
+        } message: {
+            Text(importViewModel.errorMessage)
         }
         .task {
             await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
@@ -195,7 +206,15 @@ struct MacMainView: View {
     private func startRecording(type: RecordingType) {
         Task {
             await appState.startRecording(type: type)
-            // Reload recordings when recording stops later
+        }
+    }
+
+    private func importAudioFile() {
+        Task {
+            await importViewModel.pickAndUpload(apiClient: appState.getAPIClient())
+            if importViewModel.importState == .done {
+                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+            }
         }
     }
 }

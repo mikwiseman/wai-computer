@@ -14,7 +14,7 @@ class RecordingViewModel: ObservableObject {
 
     private var recording: Recording?
     private var audioCapture: MicrophoneCapture?
-    private var opusEncoder: OpusEncoder?
+    private var audioEncoder: AudioEncoder?
     private var webSocketManager: WebSocketManager?
     private var timer: Timer?
     private var audioTask: Task<Void, Never>?
@@ -68,7 +68,7 @@ class RecordingViewModel: ObservableObject {
 
             // Initialize audio capture
             audioCapture = MicrophoneCapture()
-            opusEncoder = OpusEncoder()
+            audioEncoder = AudioEncoder()
 
             // Start audio capture
             try await audioCapture?.startRecording()
@@ -85,7 +85,7 @@ class RecordingViewModel: ObservableObject {
             audioTask = Task { [weak self] in
                 guard let self = self,
                       let audioCapture = self.audioCapture,
-                      let encoder = self.opusEncoder,
+                      let encoder = self.audioEncoder,
                       let ws = self.webSocketManager else { return }
 
                 for await buffer in audioCapture.audioBuffers {

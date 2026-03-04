@@ -1,11 +1,13 @@
 """Tests for recording endpoints and summary generation flows."""
 
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.deepgram import TranscriptResult
 from app.core.summarizer import SummaryResult
 from app.models.recording import ActionItem, Segment
 
@@ -319,3 +321,81 @@ async def test_generate_summary_preserves_manual_action_items(
     detail = detail_response.json()
     tasks = sorted(item["task"] for item in detail["action_items"])
     assert tasks == ["Generated task", "Manual task"]
+
+
+# ---- Upload endpoint tests ----
+
+
+@pytest.mark.asyncio
+async def test_upload_nonexistent_recording_returns_404(client: AsyncClient, auth_headers: dict):
+    """Upload to a nonexistent recording should return 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.post(
+        f"/api/recordings/{fake_id}/upload",
+        headers=auth_headers,
+        files={"file": ("test.mp3", b"fake-audio", "audio/mpeg")},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_unsupported_file_type_returns_415(client: AsyncClient, auth_headers: dict):
+    """Upload with unsupported file extension should return 415."""
+    recording = await _create_recording(client, auth_headers)
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("test.txt", b"not-audio", "text/plain")},
+    )
+    assert response.status_code == 415
+    assert "Unsupported file type" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_success_with_mocked_services(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Successful upload should transcribe and return recording detail."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    fake_transcripts = [
+        TranscriptResult(
+            text="Hello world",
+            speaker="Speaker 0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.98,
+        ),
+    ]
+
+    mock_storage = AsyncMock()
+    mock_storage.upload_audio = AsyncMock(return_value="user/2026/01/01/rec.mp3")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(return_value=fake_transcripts),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.get_storage_client",
+        lambda: mock_storage,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "meeting"
+    assert data["audio_url"] == "user/2026/01/01/rec.mp3"
+    assert data["duration_seconds"] == 1
+    assert len(data["segments"]) == 1
+    assert data["segments"][0]["content"] == "Hello world"

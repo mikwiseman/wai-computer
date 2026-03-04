@@ -52,7 +52,7 @@ class DeepgramStreamingClient:
             "interim_results=true",
             "utterance_end_ms=1000",
             "vad_events=true",
-            "encoding=opus",
+            "encoding=linear16",
             "sample_rate=16000",
         ]
         return f"{self.DEEPGRAM_WS_URL}?{'&'.join(params)}"
@@ -129,6 +129,7 @@ async def transcribe_audio_file(
     audio_data: bytes,
     language: str = "en",
     model: str = "nova-2",
+    content_type: str = "audio/wav",
 ) -> list[TranscriptResult]:
     """Transcribe an audio file using Deepgram's REST API."""
     if not settings.deepgram_api_key:
@@ -149,7 +150,7 @@ async def transcribe_audio_file(
             params=params,
             headers={
                 "Authorization": f"Token {settings.deepgram_api_key}",
-                "Content-Type": "audio/opus",
+                "Content-Type": content_type,
             },
             content=audio_data,
             timeout=300.0,

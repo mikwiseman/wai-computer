@@ -33,7 +33,7 @@ class TestBuildUrl:
         assert "interim_results=true" in url
         assert "utterance_end_ms=1000" in url
         assert "vad_events=true" in url
-        assert "encoding=opus" in url
+        assert "encoding=linear16" in url
         assert "sample_rate=16000" in url
 
     def test_base_url_is_deepgram_ws(self):
@@ -320,7 +320,7 @@ class TestTranscribeAudioFile:
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.args[0] == "https://api.deepgram.com/v1/listen"
         assert call_kwargs.kwargs["headers"]["Authorization"] == "Token dg-test-key-123"
-        assert call_kwargs.kwargs["headers"]["Content-Type"] == "audio/opus"
+        assert call_kwargs.kwargs["headers"]["Content-Type"] == "audio/wav"
         assert call_kwargs.kwargs["content"] == b"fake-audio"
         assert call_kwargs.kwargs["params"]["model"] == "nova-2"
         assert call_kwargs.kwargs["params"]["language"] == "en"
