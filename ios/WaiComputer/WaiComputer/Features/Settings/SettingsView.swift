@@ -120,18 +120,27 @@ struct AudioSettingsView: View {
 }
 
 struct TranscriptionSettingsView: View {
-    @State private var language = "en"
+    @AppStorage("transcriptionLanguage") private var language = "multi"
     @State private var enableDiarization = true
+
+    private let languageOptions: [(label: String, value: String)] = [
+        ("Auto-detect (Multi-language)", "multi"),
+        ("English", "en"),
+        ("Russian", "ru"),
+        ("Spanish", "es"),
+        ("German", "de"),
+        ("French", "fr"),
+        ("Japanese", "ja"),
+        ("Chinese", "zh"),
+    ]
 
     var body: some View {
         List {
             Section("Language") {
                 Picker("Primary Language", selection: $language) {
-                    Text("English").tag("en")
-                    Text("Spanish").tag("es")
-                    Text("French").tag("fr")
-                    Text("German").tag("de")
-                    Text("Russian").tag("ru")
+                    ForEach(languageOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
                 }
             }
 

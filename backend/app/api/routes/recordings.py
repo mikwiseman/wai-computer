@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
@@ -84,6 +84,15 @@ class CreateRecordingRequest(BaseModel):
     title: str | None = None
     type: Literal["meeting", "note", "reflection"] = "note"
     language: str | None = None
+
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip().lower()
+        return normalized or None
 
 
 class UpdateRecordingRequest(BaseModel):

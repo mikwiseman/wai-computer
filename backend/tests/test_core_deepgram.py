@@ -23,10 +23,10 @@ def mock_deepgram_settings():
 class TestBuildUrl:
     def test_constructs_correct_url_with_all_params(self):
         """_build_url() includes model, language, punctuate, diarize, and other params."""
-        client = DeepgramStreamingClient(language="en", model="nova-2")
+        client = DeepgramStreamingClient(language="en", model="nova-3")
         url = client._build_url()
 
-        assert "model=nova-2" in url
+        assert "model=nova-3" in url
         assert "language=en" in url
         assert "punctuate=true" in url
         assert "diarize=true" in url
@@ -35,6 +35,14 @@ class TestBuildUrl:
         assert "vad_events=true" in url
         assert "encoding=linear16" in url
         assert "sample_rate=16000" in url
+
+    def test_uses_nova_3_by_default(self):
+        """The default model favors the current multilingual streaming model."""
+        client = DeepgramStreamingClient(language="multi")
+        url = client._build_url()
+
+        assert "model=nova-3" in url
+        assert "language=multi" in url
 
     def test_base_url_is_deepgram_ws(self):
         """_build_url() uses the correct Deepgram WebSocket base URL."""
@@ -67,7 +75,7 @@ class TestConnect:
         with patch("app.core.deepgram.websockets") as mock_websockets:
             mock_websockets.connect = AsyncMock(return_value=mock_ws)
 
-            client = DeepgramStreamingClient(language="en", model="nova-2")
+            client = DeepgramStreamingClient(language="en", model="nova-3")
             result = await client.connect()
 
         assert result is True
@@ -94,14 +102,14 @@ class TestSendAudio:
 
         mock_ws.send.assert_called_once_with(audio_data)
 
-    async def test_does_nothing_when_not_connected(self):
-        """send_audio() does nothing when websocket is not connected."""
+    async def test_raises_when_not_connected(self):
+        """send_audio() fails fast when the stream is no longer active."""
         client = DeepgramStreamingClient()
         client._ws = None
         client._running = False
 
-        # Should not raise
-        await client.send_audio(b"audio-data")
+        with pytest.raises(RuntimeError, match="not active"):
+            await client.send_audio(b"audio-data")
 
 
 class TestReceiveTranscripts:

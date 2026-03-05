@@ -81,10 +81,11 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         key=settings.auth_cookie_name,
         value=token,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=settings.auth_cookie_secure_resolved,
         samesite=settings.auth_cookie_samesite,
         max_age=settings.jwt_expire_minutes * 60,
         path="/",
+        domain=settings.auth_cookie_domain_resolved,
     )
 
 
@@ -93,9 +94,10 @@ def _clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(
         key=settings.auth_cookie_name,
         httponly=True,
-        secure=settings.auth_cookie_secure,
+        secure=settings.auth_cookie_secure_resolved,
         samesite=settings.auth_cookie_samesite,
         path="/",
+        domain=settings.auth_cookie_domain_resolved,
     )
 
 

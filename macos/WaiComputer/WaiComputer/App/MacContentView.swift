@@ -22,6 +22,7 @@ struct MacContentView: View {
 
 struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var recordingViewModel: MacRecordingViewModel
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
     @State private var selectedSection: SidebarSection? = .allRecordings
@@ -76,7 +77,7 @@ struct MacMainView: View {
                     Image(systemName: "plus")
                         .foregroundStyle(Palette.textSecondary)
                 }
-                .disabled(appState.isRecording)
+                .disabled(recordingViewModel.shouldPresentLiveView)
                 .help("New Recording")
 
                 Button {
@@ -85,7 +86,7 @@ struct MacMainView: View {
                     Image(systemName: "square.and.arrow.down")
                         .foregroundStyle(Palette.textSecondary)
                 }
-                .disabled(importViewModel.isImporting || appState.isRecording)
+                .disabled(importViewModel.isImporting || recordingViewModel.shouldPresentLiveView)
                 .help("Import Audio File")
             }
         }
@@ -114,8 +115,8 @@ struct MacMainView: View {
         .task {
             await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
         }
-        .onChange(of: appState.isRecording) { wasRecording, isNowRecording in
-            if wasRecording && !isNowRecording {
+        .onChange(of: recordingViewModel.phase) { oldPhase, newPhase in
+            if oldPhase != .idle && newPhase == .idle {
                 handleRecordingStop()
             }
         }
@@ -208,7 +209,7 @@ struct MacMainView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if appState.isRecording {
+        if recordingViewModel.shouldPresentLiveView {
             LiveRecordingView()
         } else {
             switch selectedSection {
@@ -240,7 +241,7 @@ struct MacMainView: View {
     /// When recording state changes from recording to not-recording,
     /// select the completed recording and refresh the library.
     private func handleRecordingStop() {
-        if let completedId = appState.recordingViewModel.currentRecordingId {
+        if let completedId = recordingViewModel.currentRecordingId {
             selectedRecordingId = completedId
             selectedSection = .allRecordings
             appState.resetRecordingState()

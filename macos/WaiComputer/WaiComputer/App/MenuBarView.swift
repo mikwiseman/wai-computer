@@ -27,15 +27,15 @@ struct MenuBarView: View {
             // Recording status
             HStack(spacing: Spacing.sm) {
                 Circle()
-                    .fill(appState.isRecording ? Palette.recording : Palette.textTertiary)
+                    .fill(appState.isRecordingSessionActive ? Palette.recording : Palette.textTertiary)
                     .frame(width: 6, height: 6)
 
-                Text(appState.isRecording ? "Recording" : "Ready")
+                Text(appState.isRecordingSessionActive ? recordingVM.statusText : "Ready")
                     .font(Typography.headingSmall)
 
                 Spacer()
 
-                if appState.isRecording {
+                if appState.isRecordingSessionActive {
                     Text(recordingVM.formattedDuration)
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
@@ -46,7 +46,7 @@ struct MenuBarView: View {
 
             // Quick actions
             VStack(spacing: Spacing.xs) {
-                if appState.isRecording {
+                if appState.isRecordingSessionActive {
                     Button {
                         Task {
                             await appState.stopRecording()
@@ -54,9 +54,9 @@ struct MenuBarView: View {
                         }
                     } label: {
                         HStack {
-                            Image(systemName: "stop.circle.fill")
-                                .foregroundStyle(Palette.recording)
-                            Text("Stop Recording")
+                            Image(systemName: recordingVM.canStopRecording ? "stop.circle.fill" : "hourglass.circle")
+                                .foregroundStyle(recordingVM.canStopRecording ? Palette.recording : Palette.textSecondary)
+                            Text(recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText)
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}R")
@@ -68,6 +68,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .disabled(!recordingVM.canStopRecording)
                 } else {
                     Button {
                         Task { await appState.startRecording(type: .note) }

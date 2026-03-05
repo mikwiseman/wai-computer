@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const host = "localhost";
 const port = 3000;
 
 export default defineConfig({
@@ -8,12 +9,12 @@ export default defineConfig({
   retries: 1,
   workers: process.env.CI ? 1 : undefined,
   use: {
-    baseURL: `http://127.0.0.1:${port}`,
+    baseURL: `http://${host}:${port}`,
     trace: "on-first-retry",
   },
   webServer: {
     command: "pnpm build && pnpm start --port 3000",
-    url: `http://127.0.0.1:${port}`,
+    url: `http://${host}:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 240_000,
   },

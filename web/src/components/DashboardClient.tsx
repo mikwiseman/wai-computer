@@ -47,7 +47,8 @@ function formatError(error: unknown): string {
 export function DashboardClient() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -82,9 +83,14 @@ export function DashboardClient() {
     setEntities(response);
   }
 
-  async function initialize() {
+  async function initialize(options?: { preserveView?: boolean }) {
+    const preserveView = options?.preserveView ?? false;
     try {
-      setLoading(true);
+      if (preserveView) {
+        setRefreshing(true);
+      } else {
+        setInitializing(true);
+      }
       const currentUser = await getCurrentUser();
       setUser(currentUser);
       await Promise.all([loadRecordingsState(), loadActionItemsState(), loadEntitiesState()]);
@@ -96,7 +102,8 @@ export function DashboardClient() {
       }
       setMessage(text);
     } finally {
-      setLoading(false);
+      setInitializing(false);
+      setRefreshing(false);
     }
   }
 
@@ -112,7 +119,7 @@ export function DashboardClient() {
       await createRecording({
         title: recordingTitle.length > 0 ? recordingTitle : null,
         type: recordingType,
-        language: "en",
+        language: "multi",
       });
       setRecordingTitle("");
       await loadRecordingsState();
@@ -235,7 +242,7 @@ export function DashboardClient() {
     }
   }
 
-  if (loading) {
+  if (initializing) {
     return <p data-testid="dashboard-loading">Loading dashboard...</p>;
   }
 
@@ -245,10 +252,16 @@ export function DashboardClient() {
         <div>
           <h1>WaiComputer Web</h1>
           <p data-testid="user-email">{user?.email ?? "No user"}</p>
+          {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
         </div>
         <div className="row">
-          <button data-testid="reload-dashboard" type="button" onClick={initialize}>
-            Reload
+          <button
+            data-testid="reload-dashboard"
+            type="button"
+            onClick={() => void initialize({ preserveView: true })}
+            disabled={refreshing}
+          >
+            {refreshing ? "Reloading..." : "Reload"}
           </button>
           <button data-testid="logout-button" type="button" onClick={handleLogout}>
             Logout

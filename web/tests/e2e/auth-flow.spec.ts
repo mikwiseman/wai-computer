@@ -1,11 +1,21 @@
 import { test, expect, Page } from "@playwright/test";
 
+const apiBaseUrls = [
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+  "https://api.wai.computer",
+];
+
 const corsHeaders = {
-  "access-control-allow-origin": "http://127.0.0.1:3000",
+  "access-control-allow-origin": "http://localhost:3000",
   "access-control-allow-credentials": "true",
   "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
   "access-control-allow-headers": "Content-Type,Authorization",
   "content-type": "application/json",
+};
+
+const authCookieHeader = {
+  "set-cookie": "wai_access_token=mock-token; Path=/; SameSite=Lax",
 };
 
 /**
@@ -14,7 +24,7 @@ const corsHeaders = {
  * Magic link verify: token "valid-token" succeeds, anything else fails.
  */
 async function installAuthMocks(page: Page) {
-  await page.route("https://api.wai.computer/**", async (route) => {
+  const handler = async (route: Parameters<Page["route"]>[1] extends (route: infer T) => unknown ? T : never) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -32,7 +42,7 @@ async function installAuthMocks(page: Page) {
       if (body?.email === "test@example.com" && body?.password === "password123") {
         await route.fulfill({
           status: 200,
-          headers: corsHeaders,
+          headers: { ...corsHeaders, ...authCookieHeader },
           body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
         });
         return;
@@ -49,7 +59,7 @@ async function installAuthMocks(page: Page) {
     if (path === "/api/auth/register" && method === "POST") {
       await route.fulfill({
         status: 200,
-        headers: corsHeaders,
+        headers: { ...corsHeaders, ...authCookieHeader },
         body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
       });
       return;
@@ -71,7 +81,7 @@ async function installAuthMocks(page: Page) {
       if (body?.token === "valid-token") {
         await route.fulfill({
           status: 200,
-          headers: corsHeaders,
+          headers: { ...corsHeaders, ...authCookieHeader },
           body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
         });
         return;
@@ -88,7 +98,10 @@ async function installAuthMocks(page: Page) {
     if (path === "/api/auth/logout" && method === "POST") {
       await route.fulfill({
         status: 200,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          "set-cookie": "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax",
+        },
         body: JSON.stringify({ message: "Logged out" }),
       });
       return;
@@ -150,7 +163,11 @@ async function installAuthMocks(page: Page) {
       headers: corsHeaders,
       body: JSON.stringify({ detail: `Unhandled mock route: ${method} ${path}` }),
     });
-  });
+  };
+
+  for (const baseUrl of apiBaseUrls) {
+    await page.route(`${baseUrl}/**`, handler);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +226,8 @@ test.describe("Auth flow", () => {
   });
 
   test("middleware redirects unauthenticated users from /dashboard to /login", async ({ page }) => {
+    await page.context().clearCookies();
+
     // Navigate directly to dashboard without any auth cookie
     await page.goto("/dashboard");
 

@@ -9,6 +9,8 @@ from app.core.embeddings import generate_embedding
 
 router = APIRouter(prefix="/search", tags=["search"])
 
+HYBRID_SEMANTIC_THRESHOLD = 0.3
+
 
 class SearchResultResponse(BaseModel):
     """Response for a search result."""
@@ -83,6 +85,7 @@ async def hybrid_search(
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
               AND s.embedding IS NOT NULL
+              AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         ),
         combined AS (
             SELECT
@@ -120,6 +123,7 @@ async def hybrid_search(
             "embedding": query_embedding,
             "limit": limit,
             "offset": offset,
+            "semantic_threshold": HYBRID_SEMANTIC_THRESHOLD,
         },
     )
     rows = result.fetchall()
@@ -139,7 +143,7 @@ async def hybrid_search(
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
               AND s.embedding IS NOT NULL
-              AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > 0.3
+              AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         )
         SELECT COUNT(DISTINCT COALESCE(f.id, s.id))
         FROM fts_results f
@@ -148,7 +152,12 @@ async def hybrid_search(
 
     count_result = await db.execute(
         count_query,
-        {"query": q, "user_id": str(user.id), "embedding": query_embedding},
+        {
+            "query": q,
+            "user_id": str(user.id),
+            "embedding": query_embedding,
+            "semantic_threshold": HYBRID_SEMANTIC_THRESHOLD,
+        },
     )
     total = count_result.scalar() or 0
 

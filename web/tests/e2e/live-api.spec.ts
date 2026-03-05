@@ -25,7 +25,7 @@ describeOrSkip("Live API", () => {
   test.setTimeout(60_000);
 
   test("health check returns 200", async ({ request }) => {
-    const response = await request.get(`${API_URL}/api/health`);
+    const response = await request.get(`${API_URL}/health`);
     expect(response.status()).toBe(200);
   });
 

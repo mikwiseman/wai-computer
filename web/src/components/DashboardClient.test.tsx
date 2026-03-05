@@ -57,7 +57,7 @@ const baseRecording = {
   type: "note",
   audio_url: null,
   duration_seconds: null,
-  language: "en",
+  language: "multi",
   created_at: "2026-02-27T00:00:00Z",
 };
 
@@ -118,6 +118,16 @@ function arrangeHappyPathMocks() {
   mockLogout.mockResolvedValue({ message: "Logged out" });
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("DashboardClient", () => {
   beforeEach(() => {
     [
@@ -160,6 +170,35 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("user-email")).toHaveTextContent("No user");
   });
 
+  it("keeps the dashboard mounted during reload", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+    const deferredRecordings = createDeferred<typeof baseRecording[]>();
+
+    mockListRecordings
+      .mockResolvedValueOnce([baseRecording])
+      .mockImplementationOnce(() => deferredRecordings.promise);
+
+    render(<DashboardClient />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    await user.click(screen.getByTestId("reload-dashboard"));
+
+    expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    expect(screen.getByTestId("dashboard-refreshing")).toHaveTextContent("Refreshing dashboard...");
+    expect(screen.queryByTestId("dashboard-loading")).not.toBeInTheDocument();
+    expect(screen.getByTestId("reload-dashboard")).toBeDisabled();
+
+    deferredRecordings.resolve([baseRecording]);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("dashboard-refreshing")).not.toBeInTheDocument();
+    });
+  });
+
   it("covers success and per-handler error branches", async () => {
     arrangeHappyPathMocks();
     const user = userEvent.setup();
@@ -176,7 +215,7 @@ describe("DashboardClient", () => {
       expect(mockCreateRecording).toHaveBeenCalledWith({
         title: null,
         type: "note",
-        language: "en",
+        language: "multi",
       });
     });
 
@@ -187,7 +226,7 @@ describe("DashboardClient", () => {
       expect(mockCreateRecording).toHaveBeenCalledWith({
         title: "Sprint",
         type: "reflection",
-        language: "en",
+        language: "multi",
       });
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording created.");
     });

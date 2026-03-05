@@ -40,6 +40,17 @@ class UpdateSettingsRequest(BaseModel):
 
     default_language: str | None = None
 
+    @field_validator("default_language")
+    @classmethod
+    def normalize_default_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("default_language cannot be empty")
+        return normalized
+
 
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
