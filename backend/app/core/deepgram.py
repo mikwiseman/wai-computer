@@ -32,12 +32,13 @@ class DeepgramStreamingClient:
     """Client for Deepgram real-time streaming transcription."""
 
     DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
+    DEFAULT_MODEL = "nova-3"
 
     def __init__(
         self,
         on_transcript: Callable[[TranscriptResult], None] | None = None,
         language: str = "en",
-        model: str = "nova-2",
+        model: str = DEFAULT_MODEL,
     ):
         self.on_transcript = on_transcript
         self.language = language
@@ -79,8 +80,10 @@ class DeepgramStreamingClient:
 
     async def send_audio(self, audio_data: bytes) -> None:
         """Send audio data to Deepgram."""
-        if self._ws and self._running:
-            await self._ws.send(audio_data)
+        if not self._ws or not self._running:
+            raise RuntimeError("Deepgram connection is not active")
+
+        await self._ws.send(audio_data)
 
     async def receive_transcripts(self) -> AsyncGenerator[TranscriptResult, None]:
         """Receive transcripts from Deepgram."""
@@ -161,7 +164,7 @@ class DeepgramStreamingClient:
 async def transcribe_audio_file(
     audio_data: bytes,
     language: str = "en",
-    model: str = "nova-2",
+    model: str = DeepgramStreamingClient.DEFAULT_MODEL,
     content_type: str = "audio/wav",
 ) -> list[TranscriptResult]:
     """Transcribe an audio file using Deepgram's REST API."""

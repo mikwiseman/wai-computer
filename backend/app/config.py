@@ -1,6 +1,8 @@
 """Application configuration using pydantic-settings."""
 
 from functools import lru_cache
+from ipaddress import ip_address
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,7 +24,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 10080  # 7 days
     auth_cookie_name: str = "wai_access_token"
-    auth_cookie_secure: bool = True
+    auth_cookie_secure: bool | None = None
+    auth_cookie_domain: str | None = None
     auth_cookie_samesite: str = "lax"
 
     # CORS - Configure allowed origins
@@ -53,6 +56,43 @@ class Settings(BaseSettings):
 
     # URLs
     frontend_url: str = "http://localhost:3000"
+
+    @property
+    def auth_cookie_secure_resolved(self) -> bool:
+        """Use secure cookies on HTTPS frontends unless explicitly overridden."""
+        if self.auth_cookie_secure is not None:
+            return self.auth_cookie_secure
+        return self.frontend_url.startswith("https://")
+
+    @property
+    def auth_cookie_domain_resolved(self) -> str | None:
+        """Share auth cookies across the app/API subdomains when possible."""
+        if self.auth_cookie_domain:
+            return self.auth_cookie_domain
+
+        hostname = urlparse(self.frontend_url).hostname
+        if not hostname:
+            return None
+
+        try:
+            ip_address(hostname)
+            return None
+        except ValueError:
+            pass
+
+        if hostname in {"localhost"}:
+            return None
+
+        parts = hostname.split(".")
+        if len(parts) < 2:
+            return None
+
+        # Basic public-suffix heuristic that keeps example.co.uk intact while
+        # still collapsing app.example.com -> example.com.
+        if len(parts) >= 3 and len(parts[-1]) == 2 and len(parts[-2]) <= 3:
+            return ".".join(parts[-3:])
+
+        return ".".join(parts[-2:])
 
 
 @lru_cache

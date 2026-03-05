@@ -25,6 +25,7 @@ class TestDeepgramMultiLanguage:
         """When language is 'multi', _build_url includes endpointing=100."""
         client = DeepgramStreamingClient(language="multi")
         url = client._build_url()
+        assert "model=nova-3" in url
         assert "language=multi" in url
         assert "endpointing=100" in url
 

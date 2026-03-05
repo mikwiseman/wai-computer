@@ -1,5 +1,7 @@
 """Tests for the WebSocket audio streaming endpoint."""
 
+import asyncio
+import base64
 import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -278,11 +280,15 @@ class TestWebSocketDeepgram:
         async def _noop_close():
             pass
 
+        async def _noop_finish_stream():
+            pass
+
         async def _empty_transcripts():
             return
             yield  # make it an async generator that yields nothing
 
         deepgram_instance.connect = _noop_connect
+        deepgram_instance.finish_stream = _noop_finish_stream
         deepgram_instance.close = _noop_close
         deepgram_instance.receive_transcripts = _empty_transcripts
         mock_deepgram_cls.return_value = deepgram_instance
@@ -298,6 +304,197 @@ class TestWebSocketDeepgram:
 
             # Send end-of-stream so the server finishes cleanly
             ws.send_json({"type": "end"})
+
+    @patch("app.api.websocket.get_storage_client")
+    @patch("app.api.websocket.generate_embedding")
+    @patch("app.api.websocket.DeepgramStreamingClient")
+    @patch("app.api.websocket.async_session_maker")
+    @patch("app.api.websocket.decode_access_token")
+    def test_transcription_error_is_terminal(
+        self,
+        mock_decode,
+        mock_session_maker,
+        mock_deepgram_cls,
+        _mock_gen_embedding,
+        _mock_storage,
+    ):
+        """A transcription failure yields a terminal error status and never 'complete'."""
+        user_id = uuid.uuid4()
+        recording_id = uuid.uuid4()
+        mock_decode.return_value = str(user_id)
+
+        user = _fake_user(user_id=user_id)
+        recording = _fake_recording(recording_id=recording_id, user_id=user_id)
+
+        def _session_factory():
+            call_count_inner = 0
+
+            async def _exec(*_a, **_kw):
+                nonlocal call_count_inner
+                call_count_inner += 1
+                res = MagicMock()
+                if call_count_inner == 1:
+                    res.scalar_one_or_none.return_value = user
+                elif call_count_inner == 2:
+                    res.scalar_one_or_none.return_value = recording
+                else:
+                    res.scalar_one_or_none.return_value = recording
+                    res.scalar.return_value = None
+                return res
+
+            sess = MagicMock()
+            sess.execute = _exec
+            sess.commit = AsyncMock()
+            sess.add = MagicMock()
+
+            @asynccontextmanager
+            async def _ctx():
+                yield sess
+
+            return _ctx()
+
+        mock_session_maker.side_effect = _session_factory
+
+        deepgram_instance = MagicMock()
+
+        async def _noop_connect():
+            pass
+
+        async def _noop_close():
+            pass
+
+        async def _noop_finish_stream():
+            pass
+
+        async def _failing_transcripts():
+            raise RuntimeError("Deepgram stream failed")
+            yield
+
+        deepgram_instance.connect = _noop_connect
+        deepgram_instance.close = _noop_close
+        deepgram_instance.finish_stream = _noop_finish_stream
+        deepgram_instance.receive_transcripts = _failing_transcripts
+        mock_deepgram_cls.return_value = deepgram_instance
+
+        client = TestClient(app)
+        with client.websocket_connect(
+            f"/api/ws/audio?token=tok&recording_id={recording_id}"
+        ) as ws:
+            ready = ws.receive_json()
+            assert ready["status"] == "ready"
+
+            error = ws.receive_json()
+            assert error["type"] == "status"
+            assert error["status"] == "error"
+            assert "Deepgram stream failed" in error["message"]
+
+            try:
+                ws.receive_json()
+            except WebSocketDisconnect:
+                pass
+
+    @patch("app.api.websocket.get_storage_client")
+    @patch("app.api.websocket.generate_embedding")
+    @patch("app.api.websocket.DeepgramStreamingClient")
+    @patch("app.api.websocket.async_session_maker")
+    @patch("app.api.websocket.decode_access_token")
+    def test_finalization_failure_is_terminal(
+        self,
+        mock_decode,
+        mock_session_maker,
+        mock_deepgram_cls,
+        _mock_gen_embedding,
+        _mock_storage,
+    ):
+        """Finalization errors must surface as terminal error instead of 'complete'."""
+        user_id = uuid.uuid4()
+        recording_id = uuid.uuid4()
+        mock_decode.return_value = str(user_id)
+
+        user = _fake_user(user_id=user_id)
+        recording = _fake_recording(recording_id=recording_id, user_id=user_id)
+
+        validation_session = MagicMock()
+        validation_execute_count = 0
+
+        async def _validation_execute(*_args, **_kwargs):
+            nonlocal validation_execute_count
+            validation_execute_count += 1
+            result = MagicMock()
+            if validation_execute_count == 1:
+                result.scalar_one_or_none.return_value = user
+            else:
+                result.scalar_one_or_none.return_value = recording
+            return result
+
+        validation_session.execute = _validation_execute
+
+        finalize_session = MagicMock()
+        finalize_execute_count = 0
+
+        async def _finalize_execute(*_args, **_kwargs):
+            nonlocal finalize_execute_count
+            finalize_execute_count += 1
+            result = MagicMock()
+            if finalize_execute_count == 1:
+                result.scalar_one_or_none.return_value = recording
+            else:
+                result.scalar.return_value = None
+            return result
+
+        finalize_session.execute = _finalize_execute
+        finalize_session.commit = AsyncMock(side_effect=RuntimeError("Final DB commit failed"))
+        finalize_session.add = MagicMock()
+
+        @asynccontextmanager
+        async def _validation_ctx():
+            yield validation_session
+
+        @asynccontextmanager
+        async def _finalize_ctx():
+            yield finalize_session
+
+        session_contexts = iter([_validation_ctx(), _finalize_ctx()])
+        mock_session_maker.side_effect = lambda: next(session_contexts)
+
+        deepgram_instance = MagicMock()
+
+        async def _noop_connect():
+            pass
+
+        async def _noop_close():
+            pass
+
+        stream_finished = asyncio.Event()
+
+        async def _noop_finish_stream():
+            stream_finished.set()
+
+        async def _wait_for_finish_then_exit():
+            await stream_finished.wait()
+            return
+            yield
+
+        deepgram_instance.connect = _noop_connect
+        deepgram_instance.close = _noop_close
+        deepgram_instance.finish_stream = _noop_finish_stream
+        deepgram_instance.receive_transcripts = _wait_for_finish_then_exit
+        deepgram_instance.send_audio = AsyncMock()
+        mock_deepgram_cls.return_value = deepgram_instance
+
+        client = TestClient(app)
+        with client.websocket_connect(
+            f"/api/ws/audio?token=tok&recording_id={recording_id}"
+        ) as ws:
+            ready = ws.receive_json()
+            assert ready["status"] == "ready"
+
+            ws.send_json({"type": "end"})
+
+            terminal = ws.receive_json()
+            assert terminal["type"] == "status"
+            assert terminal["status"] == "error"
+            assert terminal["message"] == "Final DB commit failed"
 
 
 class TestWebSocketQueryParamEdgeCases:

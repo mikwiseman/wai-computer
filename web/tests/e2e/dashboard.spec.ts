@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+const apiBaseUrls = [
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+  "https://api.wai.computer",
+];
+
 interface MockState {
   recordings: Array<{
     id: string;
@@ -31,7 +37,7 @@ interface MockState {
 }
 
 const corsHeaders = {
-  "access-control-allow-origin": "http://127.0.0.1:3000",
+  "access-control-allow-origin": "http://localhost:3000",
   "access-control-allow-credentials": "true",
   "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
   "access-control-allow-headers": "Content-Type,Authorization",
@@ -39,7 +45,11 @@ const corsHeaders = {
 };
 
 async function installApiMock(page: Parameters<typeof test>[0]["page"], state: MockState) {
-  await page.route("https://api.wai.computer/**", async (route) => {
+  const handler = async (
+    route: Parameters<Parameters<typeof test>[0]["page"]["route"]>[1] extends (route: infer T) => unknown
+      ? T
+      : never,
+  ) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -57,7 +67,10 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
     if (path === "/api/auth/login" && method === "POST") {
       await route.fulfill({
         status: 200,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          "set-cookie": "wai_access_token=token; Path=/; SameSite=Lax",
+        },
         body: JSON.stringify({ access_token: "token", token_type: "bearer" }),
       });
       return;
@@ -66,7 +79,10 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
     if (path === "/api/auth/logout" && method === "POST") {
       await route.fulfill({
         status: 200,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          "set-cookie": "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax",
+        },
         body: JSON.stringify({ message: "Logged out" }),
       });
       return;
@@ -88,7 +104,10 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
     if (path === "/api/auth/register" && method === "POST") {
       await route.fulfill({
         status: 200,
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          "set-cookie": "wai_access_token=token; Path=/; SameSite=Lax",
+        },
         body: JSON.stringify({ access_token: "token", token_type: "bearer" }),
       });
       return;
@@ -120,7 +139,7 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
         type: payload.type,
         audio_url: null,
         duration_seconds: null,
-        language: "en",
+        language: "multi",
         created_at: "2026-02-26T00:00:00Z",
       };
       state.recordings.unshift(created);
@@ -271,7 +290,11 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
       headers: corsHeaders,
       body: JSON.stringify({ detail: `Unhandled route: ${method} ${path}` }),
     });
-  });
+  };
+
+  for (const baseUrl of apiBaseUrls) {
+    await page.route(`${baseUrl}/**`, handler);
+  }
 }
 
 test("web dashboard flow covers core features", async ({ page }) => {
@@ -283,7 +306,7 @@ test("web dashboard flow covers core features", async ({ page }) => {
         type: "note",
         audio_url: null,
         duration_seconds: null,
-        language: "en",
+        language: "multi",
         created_at: "2026-02-26T00:00:00Z",
       },
     ],

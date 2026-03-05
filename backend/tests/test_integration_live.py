@@ -19,7 +19,7 @@ BASE_URL = os.getenv("LIVE_API_URL", "https://api.wai.computer")
 pytestmark = pytest.mark.integration
 
 
-def test_email(name: str) -> str:
+def make_test_email(name: str) -> str:
     """Generate a unique test email address."""
     return f"test.{name}.{int(time.time())}@example.com"
 
@@ -161,7 +161,7 @@ async def test_health_endpoints():
 @pytest.mark.asyncio
 async def test_auth_lifecycle():
     """Register -> /me -> login -> new token -> logout -> cookie cleared."""
-    email = test_email("auth_lifecycle")
+    email = make_test_email("auth_lifecycle")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         # Register
@@ -198,7 +198,7 @@ async def test_auth_lifecycle():
 @pytest.mark.asyncio
 async def test_duplicate_registration():
     """Registering the same email twice returns 400."""
-    email = test_email("dup_reg")
+    email = make_test_email("dup_reg")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         await register_user(client, email)
@@ -219,7 +219,7 @@ async def test_duplicate_registration():
 @pytest.mark.asyncio
 async def test_wrong_password_login():
     """Login with incorrect password returns 401."""
-    email = test_email("wrong_pw")
+    email = make_test_email("wrong_pw")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         await register_user(client, email)
@@ -239,7 +239,7 @@ async def test_wrong_password_login():
 @pytest.mark.asyncio
 async def test_magic_link_and_invalid_verify():
     """POST /api/auth/magic-link returns 200. Invalid token verify returns 401."""
-    email = test_email("magic")
+    email = make_test_email("magic")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         # Request magic link -- the server will attempt to send an email.
@@ -273,7 +273,7 @@ async def test_magic_link_and_invalid_verify():
 @pytest.mark.asyncio
 async def test_recording_crud():
     """Create -> list -> get detail -> update title -> get transcript -> delete -> 404."""
-    email = test_email("rec_crud")
+    email = make_test_email("rec_crud")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         token = await register_user(client, email)
@@ -338,7 +338,7 @@ async def test_recording_crud():
 @pytest.mark.asyncio
 async def test_recording_type_filtering():
     """Create 3 recordings of different types and filter by each type."""
-    email = test_email("rec_filter")
+    email = make_test_email("rec_filter")
     created_ids: list[str] = []
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
@@ -380,7 +380,7 @@ async def test_recording_type_filtering():
 @pytest.mark.asyncio
 async def test_search_endpoints():
     """All three search endpoints return 200 with correct response shape."""
-    email = test_email("search")
+    email = make_test_email("search")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         token = await register_user(client, email)
@@ -437,7 +437,7 @@ async def test_search_endpoints():
 @pytest.mark.asyncio
 async def test_entity_crud():
     """Create -> list -> filter by type -> get detail -> delete -> 404."""
-    email = test_email("entity_crud")
+    email = make_test_email("entity_crud")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         token = await register_user(client, email)
@@ -505,8 +505,8 @@ async def test_entity_crud():
 @pytest.mark.asyncio
 async def test_entity_isolation():
     """User B cannot see User A's entities."""
-    email_a = test_email("iso_a")
-    email_b = test_email("iso_b")
+    email_a = make_test_email("iso_a")
+    email_b = make_test_email("iso_b")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         token_a = await register_user(client, email_a)
@@ -542,7 +542,7 @@ async def test_entity_isolation():
 @pytest.mark.asyncio
 async def test_action_items_list():
     """GET /api/action-items returns 200 with a list."""
-    email = test_email("action_items")
+    email = make_test_email("action_items")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
         token = await register_user(client, email)
@@ -562,7 +562,7 @@ async def test_action_items_list():
 @pytest.mark.asyncio
 async def test_password_change():
     """Change password -> old password fails -> new password works."""
-    email = test_email("pw_change")
+    email = make_test_email("pw_change")
     new_password = "NewP@ssw0rd456!"
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:

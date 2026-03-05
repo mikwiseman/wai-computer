@@ -16,7 +16,7 @@ struct LiveRecordingView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                         if recordingVM.currentTranscript.isEmpty {
-                            Text("Listening...")
+                            Text(recordingVM.emptyTranscriptText)
                                 .font(Typography.reading)
                                 .foregroundStyle(Palette.textSecondary)
                                 .italic()
@@ -50,17 +50,24 @@ struct LiveRecordingView: View {
                     }
                 } label: {
                     HStack(spacing: Spacing.sm) {
-                        Image(systemName: "stop.fill")
-                        Text("Stop Recording")
+                        if recordingVM.canStopRecording {
+                            Image(systemName: "stop.fill")
+                            Text("Stop Recording")
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(recordingVM.statusText)
+                        }
                     }
                     .font(Typography.headingSmall)
                     .foregroundStyle(.white)
                     .padding(.horizontal, Spacing.xl)
                     .padding(.vertical, Spacing.md)
-                    .background(Palette.recording)
+                    .background(recordingVM.canStopRecording ? Palette.recording : Palette.border)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
+                .disabled(!recordingVM.canStopRecording)
 
                 Spacer()
             }
@@ -70,13 +77,18 @@ struct LiveRecordingView: View {
 
     private var recordingHeader: some View {
         HStack(spacing: Spacing.md) {
-            // Pulsing red indicator
-            Circle()
-                .fill(Palette.recording)
-                .frame(width: 12, height: 12)
-                .modifier(PulseModifier())
+            if recordingVM.phase == .recording {
+                Circle()
+                    .fill(Palette.recording)
+                    .frame(width: 12, height: 12)
+                    .modifier(PulseModifier())
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 12, height: 12)
+            }
 
-            Text("Recording")
+            Text(recordingVM.statusText)
                 .font(Typography.displaySmall)
 
             Text(recordingVM.formattedDuration)

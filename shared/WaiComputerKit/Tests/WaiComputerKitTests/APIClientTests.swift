@@ -243,7 +243,7 @@ final class APIClientTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/api/recordings")
 
-            let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let body = self.bodyJSON(from: request)
             XCTAssertEqual(body?["title"] as? String, "My Meeting")
             XCTAssertEqual(body?["type"] as? String, "meeting")
             XCTAssertEqual(body?["language"] as? String, "en")

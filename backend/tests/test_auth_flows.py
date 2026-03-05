@@ -7,10 +7,29 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.models.user import User
 
 settings = get_settings()
+
+
+def test_auth_cookie_secure_defaults_follow_frontend_url_scheme():
+    """Local HTTP frontend should not require secure cookies; HTTPS should."""
+    http_settings = Settings(jwt_secret="test-secret", frontend_url="http://localhost:3000")
+    https_settings = Settings(jwt_secret="test-secret", frontend_url="https://wai.computer")
+    app_subdomain_settings = Settings(jwt_secret="test-secret", frontend_url="https://app.wai.computer")
+    override_settings = Settings(
+        jwt_secret="test-secret",
+        frontend_url="http://localhost:3000",
+        auth_cookie_secure=True,
+    )
+
+    assert http_settings.auth_cookie_secure_resolved is False
+    assert https_settings.auth_cookie_secure_resolved is True
+    assert http_settings.auth_cookie_domain_resolved is None
+    assert https_settings.auth_cookie_domain_resolved == "wai.computer"
+    assert app_subdomain_settings.auth_cookie_domain_resolved == "wai.computer"
+    assert override_settings.auth_cookie_secure_resolved is True
 
 
 @pytest.mark.asyncio
@@ -42,6 +61,9 @@ async def test_register_sets_auth_cookie(client: AsyncClient):
     set_cookie = response.headers.get("set-cookie", "")
     assert settings.auth_cookie_name in set_cookie
     assert "HttpOnly" in set_cookie
+    assert ("Secure" in set_cookie) is settings.auth_cookie_secure_resolved
+    if settings.auth_cookie_domain_resolved:
+        assert f"Domain={settings.auth_cookie_domain_resolved}" in set_cookie
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,17 @@
 import Foundation
 
+private struct AnyEncodable: Encodable {
+    private let encodeImpl: (Encoder) throws -> Void
+
+    init(_ value: any Encodable) {
+        self.encodeImpl = value.encode(to:)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try encodeImpl(encoder)
+    }
+}
+
 /// API errors
 public enum APIError: Error, Sendable {
     case invalidURL
@@ -123,7 +135,7 @@ public actor APIClient {
         }
 
         if let body = body {
-            request.httpBody = try encoder.encode(body)
+            request.httpBody = try encoder.encode(AnyEncodable(body))
         }
 
         let (data, response) = try await session.data(for: request)
@@ -165,7 +177,7 @@ public actor APIClient {
         }
 
         if let body = body {
-            request.httpBody = try encoder.encode(body)
+            request.httpBody = try encoder.encode(AnyEncodable(body))
         }
 
         let (data, response) = try await session.data(for: request)

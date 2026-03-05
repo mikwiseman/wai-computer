@@ -25,7 +25,7 @@ struct WaiComputerMacApp: App {
                     Task { await appState.startRecording(type: .note) }
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(appState.isRecording || !appState.isAuthenticated)
+                .disabled(appState.isRecordingSessionActive || !appState.isAuthenticated)
             }
 
             // Remove the default "New Window" from the Window menu
@@ -33,7 +33,7 @@ struct WaiComputerMacApp: App {
         }
 
         // Menu bar extra
-        MenuBarExtra("WaiComputer", systemImage: appState.isRecording ? "waveform.circle.fill" : "brain.head.profile") {
+        MenuBarExtra("WaiComputer", systemImage: appState.isRecordingSessionActive ? "waveform.circle.fill" : "brain.head.profile") {
             MenuBarView()
                 .environmentObject(appState)
                 .environmentObject(appState.recordingViewModel)
@@ -52,6 +52,7 @@ class MacAppState: ObservableObject {
     @Published var error: String?
     @Published var magicLinkSent = false
     @Published var isRecording = false
+    @Published var isRecordingSessionActive = false
     @Published var currentRecordingId: String?
     @Published var selectedRecordingFromMenu: String?
 
@@ -194,11 +195,7 @@ class MacAppState: ObservableObject {
     }
 
     func startRecording(type: RecordingType) async {
-        // Set isRecording IMMEDIATELY so the UI switches to LiveRecordingView
-        // before the async setup (API call, WebSocket connect, audio start) completes.
-        // If setup fails, the view model will set its own isRecording back to false,
-        // and we sync that state below.
-        isRecording = true
+        isRecordingSessionActive = true
 
         await recordingViewModel.startRecording(
             apiClient: apiClient,
@@ -206,17 +203,16 @@ class MacAppState: ObservableObject {
             type: type
         )
 
-        // Sync state after setup completes — if setup failed,
-        // recordingViewModel.isRecording will be false
         isRecording = recordingViewModel.isRecording
+        isRecordingSessionActive = recordingViewModel.shouldPresentLiveView
         currentRecordingId = recordingViewModel.currentRecordingId
     }
 
     func stopRecording() async {
         await recordingViewModel.stopRecording()
-        isRecording = false
-        // Keep currentRecordingId from recordingViewModel so the UI
-        // can navigate to the completed recording detail view
+        isRecording = recordingViewModel.isRecording
+        isRecordingSessionActive = recordingViewModel.shouldPresentLiveView
+        currentRecordingId = recordingViewModel.currentRecordingId
     }
 
     /// Reset recording state after navigating away from live recording view.
@@ -225,6 +221,8 @@ class MacAppState: ObservableObject {
         // Only reset transcript/display state, not lifecycle state.
         // The cleanup task in MacRecordingViewModel manages its own lifecycle.
         recordingViewModel.resetState()
+        isRecording = false
+        isRecordingSessionActive = false
         currentRecordingId = nil
     }
 

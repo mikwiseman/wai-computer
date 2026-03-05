@@ -104,6 +104,53 @@ async def test_hybrid_search_returns_ranked_results_for_current_user(
 
 
 @pytest.mark.asyncio
+async def test_hybrid_search_excludes_low_similarity_results_from_rows_and_total(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Hybrid search should not return semantic-only noise below its threshold."""
+    headers = await _register(client, "search.hybrid.threshold@example.com")
+    recording_id = await _create_recording(client, headers, "Hybrid Threshold Recording")
+
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording_id,
+                content="Relevant vector only",
+                start_ms=0,
+                end_ms=500,
+                embedding=_vector_list(0),
+            ),
+            Segment(
+                recording_id=recording_id,
+                content="Irrelevant vector only",
+                start_ms=500,
+                end_ms=1000,
+                embedding=_vector_list(2),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def fake_generate_embedding(_: str) -> str:
+        return _vector_literal(0)
+
+    monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
+
+    response = await client.get(
+        "/api/search",
+        headers=headers,
+        params={"q": "nonmatching-query", "limit": 20},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["content"] == "Relevant vector only"
+
+
+@pytest.mark.asyncio
 async def test_semantic_search_honors_threshold(
     client: AsyncClient,
     db_session: AsyncSession,

@@ -65,14 +65,14 @@ describe("api client wrappers", () => {
   });
 
   it("calls recording CRUD", async () => {
-    await api.createRecording({ title: null, type: "note", language: "en" });
+    await api.createRecording({ title: null, type: "note", language: "multi" });
     await api.getRecording("rec");
     await api.updateRecording("rec", { title: "New" });
     await api.deleteRecording("rec");
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/recordings", {
       method: "POST",
-      body: JSON.stringify({ title: null, type: "note", language: "en" }),
+      body: JSON.stringify({ title: null, type: "note", language: "multi" }),
     });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/recordings/rec");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/recordings/rec", {
@@ -88,7 +88,7 @@ describe("api client wrappers", () => {
     await api.createRecording({});
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings", {
       method: "POST",
-      body: JSON.stringify({ title: null, type: "note", language: "en" }),
+      body: JSON.stringify({ title: null, type: "note", language: "multi" }),
     });
   });
 

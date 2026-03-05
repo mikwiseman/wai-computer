@@ -95,7 +95,7 @@ export function createRecording(input: {
     body: JSON.stringify({
       title: input.title ?? null,
       type: input.type ?? "note",
-      language: input.language ?? "en",
+      language: input.language ?? "multi",
     }),
   });
 }
