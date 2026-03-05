@@ -13,12 +13,12 @@ struct MacTranscriptView: View {
             )
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                     ForEach(segments) { segment in
                         SegmentRowView(segment: segment)
                     }
                 }
-                .padding()
+                .padding(Spacing.lg)
             }
         }
     }
@@ -26,35 +26,26 @@ struct MacTranscriptView: View {
 
 struct SegmentRowView: View {
     let segment: Segment
-    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
                 if let speaker = segment.speaker {
                     Text(speaker)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.blue)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.accent)
                 }
 
                 Text(segment.formattedTimestamp)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.mono)
+                    .foregroundStyle(Palette.textTertiary)
             }
 
             Text(segment.content)
-                .font(.body)
-                .lineLimit(isExpanded ? nil : 3)
+                .font(Typography.reading)
+                .lineSpacing(6)
+                .textSelection(.enabled)
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.gray.opacity(0.06))
-        .cornerRadius(8)
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isExpanded.toggle()
-            }
-        }
     }
 }

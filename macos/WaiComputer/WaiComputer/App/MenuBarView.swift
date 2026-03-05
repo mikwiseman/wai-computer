@@ -4,19 +4,6 @@ import WaiComputerKit
 struct MenuBarView: View {
     @EnvironmentObject var appState: MacAppState
     @State private var recentRecordings: [Recording] = []
-    @State private var audioSource: AudioSource = .microphone
-
-    enum AudioSource: String {
-        case microphone, system, both
-
-        var description: String {
-            switch self {
-            case .microphone: return "Microphone"
-            case .system: return "System Audio"
-            case .both: return "Mic + System"
-            }
-        }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +13,7 @@ struct MenuBarView: View {
                 unauthenticatedMenu
             }
         }
-        .frame(width: 280)
+        .frame(width: 260)
         .task {
             if appState.isAuthenticated {
                 await loadRecentRecordings()
@@ -35,29 +22,29 @@ struct MenuBarView: View {
     }
 
     private var authenticatedMenu: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.md) {
             // Recording status
-            HStack {
+            HStack(spacing: Spacing.sm) {
                 Circle()
-                    .fill(appState.isRecording ? Color.red : Color.gray)
-                    .frame(width: 8, height: 8)
+                    .fill(appState.isRecording ? Palette.recording : Palette.textTertiary)
+                    .frame(width: 6, height: 6)
 
-                Text(appState.isRecording ? "Recording..." : "Ready")
-                    .font(.headline)
+                Text(appState.isRecording ? "Recording" : "Ready")
+                    .font(Typography.headingSmall)
 
                 Spacer()
 
                 if appState.isRecording {
                     Text(appState.recordingViewModel.formattedDuration)
-                        .font(.system(.body, design: .monospaced))
+                        .font(Typography.mono)
+                        .foregroundStyle(Palette.textSecondary)
                 }
             }
-            .padding()
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(8)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.top, Spacing.lg)
 
             // Quick actions
-            VStack(spacing: 8) {
+            VStack(spacing: Spacing.xs) {
                 if appState.isRecording {
                     Button {
                         Task {
@@ -67,99 +54,88 @@ struct MenuBarView: View {
                     } label: {
                         HStack {
                             Image(systemName: "stop.circle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Palette.recording)
                             Text("Stop Recording")
+                                .font(Typography.body)
                             Spacer()
-                            Text("⌘R")
-                                .foregroundStyle(.secondary)
+                            Text("\u{2318}R")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
                         }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
-                    .padding(8)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
                 } else {
-                    // Start recording buttons by type
                     Button {
                         Task { await appState.startRecording(type: .meeting) }
                     } label: {
                         HStack {
-                            Image(systemName: "person.2.fill")
+                            Image(systemName: "person.2")
+                                .foregroundStyle(Palette.textSecondary)
                             Text("New Meeting")
+                                .font(Typography.body)
                             Spacer()
                         }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
-                    .padding(8)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(6)
 
                     Button {
                         Task { await appState.startRecording(type: .note) }
                     } label: {
                         HStack {
                             Image(systemName: "note.text")
+                                .foregroundStyle(Palette.textSecondary)
                             Text("New Note")
+                                .font(Typography.body)
                             Spacer()
                         }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
-                    .padding(8)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(6)
-
-                    // Audio source selector
-                    Menu {
-                        Button("Microphone Only") { audioSource = .microphone }
-                        Button("System Audio (BlackHole)") { audioSource = .system }
-                        Button("Microphone + System") { audioSource = .both }
-                    } label: {
-                        HStack {
-                            Image(systemName: "speaker.wave.2")
-                            Text(audioSource.description)
-                            Spacer()
-                            Image(systemName: "chevron.down")
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(8)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(6)
                 }
             }
 
-            Divider()
+            WaiDivider()
+                .padding(.horizontal, Spacing.lg)
 
             // Recent recordings
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recent")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("RECENT")
+                    .waiSectionHeader()
+                    .padding(.horizontal, Spacing.lg)
 
                 if recentRecordings.isEmpty {
                     Text("No recordings yet")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .padding(6)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.xs)
                 } else {
                     ForEach(recentRecordings.prefix(3)) { recording in
                         HStack {
                             Text(recording.title ?? "Untitled")
+                                .font(Typography.bodySmall)
                                 .lineLimit(1)
                             Spacer()
                             Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
                         }
-                        .padding(6)
-                        .background(Color.gray.opacity(0.05))
-                        .cornerRadius(4)
+                        .padding(.vertical, Spacing.xs)
+                        .padding(.horizontal, Spacing.lg)
                     }
                 }
             }
 
-            Divider()
+            WaiDivider()
+                .padding(.horizontal, Spacing.lg)
 
             // Bottom actions
             HStack {
@@ -174,32 +150,33 @@ struct MenuBarView: View {
                 }
             }
             .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.bottom, Spacing.lg)
         }
-        .padding()
     }
 
     private var unauthenticatedMenu: some View {
-        VStack(spacing: 12) {
-            Text("Not logged in")
-                .font(.headline)
+        VStack(spacing: Spacing.md) {
+            Text("Not signed in")
+                .font(Typography.headingSmall)
 
-            Button("Open App to Login") {
+            Button("Open App") {
                 NSApp.activate(ignoringOtherApps: true)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
 
-            Divider()
+            WaiDivider()
 
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textSecondary)
         }
-        .padding()
+        .padding(Spacing.lg)
     }
 
     private func loadRecentRecordings() async {

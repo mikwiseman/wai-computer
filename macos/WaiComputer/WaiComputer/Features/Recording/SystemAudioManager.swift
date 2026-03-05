@@ -149,7 +149,7 @@ class SystemAudioManager: ObservableObject {
             channels: 1,
             interleaved: false
         ) else {
-            throw AudioCaptureError.invalidFormat
+            throw SystemAudioError.invalidFormat
         }
 
         let converter = AVAudioConverter(from: inputFormat, to: targetFormat)
@@ -211,7 +211,7 @@ struct BlackHoleSetupInstructions {
     """
 }
 
-enum AudioCaptureError: Error {
+enum SystemAudioError: Error {
     case invalidFormat
     case deviceNotFound
     case permissionDenied

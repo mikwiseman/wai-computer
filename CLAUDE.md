@@ -229,6 +229,28 @@ Local dev uses `localhost` URLs. Production `.env` on server uses Docker interna
 | web | waicomputer-web | 3000 | — | web |
 | caddy | waicomputer-caddy | 80, 443 | 80, 443 | web |
 
+## macOS App
+
+| | |
+|---|---|
+| **API base URL** | `https://wai.computer` (all builds, no localhost) |
+| **Xcode project** | `macos/WaiComputer/WaiComputer.xcodeproj` |
+| **Shared package** | `shared/WaiComputerKit/` (SPM, linked by Xcode) |
+| **Design system** | `macos/WaiComputer/WaiComputer/Core/DesignSystem.swift` |
+| **Bundle ID** | Check Xcode project for current value |
+| **Signing** | "Sign to Run Locally" for debug; needs Apple Developer for release |
+
+**Build:**
+```bash
+# Debug
+xcodebuild -scheme WaiComputer -configuration Debug build
+
+# Release archive
+xcodebuild -scheme WaiComputer -configuration Release archive -archivePath /tmp/WaiComputer.xcarchive
+```
+
+**Design tokens:** All colors in `Palette`, all fonts in `Typography`, all spacing in `Spacing` (8pt grid). Accent color is warm amber `(0.82, 0.49, 0.18)`.
+
 ## Caddyfile
 
 - `wai.computer` block: auto-TLS, security headers, reverse proxy to api + web

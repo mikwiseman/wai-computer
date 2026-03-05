@@ -11,6 +11,7 @@ class RecordingViewModel: ObservableObject {
     @Published var recordingType: RecordingType = .note
     @Published var duration: TimeInterval = 0
     @Published var currentTranscript = ""
+    @Published var currentRecordingId: String?
 
     private var recording: Recording?
     private var audioCapture: MicrophoneCapture?
@@ -62,8 +63,24 @@ class RecordingViewModel: ObservableObject {
                 return
             }
 
-            // Connect WebSocket
+            currentRecordingId = recordingId
+
+            // Set up WebSocket and event stream BEFORE connecting
+            // to ensure no events are missed
             self.webSocketManager = webSocketManager
+            let eventStream = await webSocketManager.events
+
+            // Start receiving transcripts BEFORE connecting
+            // so the listener is ready when events start flowing
+            transcriptTask = Task { [weak self] in
+                guard let self = self else { return }
+
+                for await event in eventStream {
+                    await self.handleWebSocketEvent(event)
+                }
+            }
+
+            // Now connect WebSocket
             try await webSocketManager.connect(recordingId: recordingId)
 
             // Initialize audio capture
@@ -100,17 +117,6 @@ class RecordingViewModel: ObservableObject {
                 }
             }
 
-            // Start receiving transcripts with weak self
-            // Note: ws.events is an AsyncStream property, not an async method
-            transcriptTask = Task { [weak self] in
-                guard let self = self,
-                      let ws = self.webSocketManager else { return }
-
-                for await event in ws.events {
-                    await self.handleWebSocketEvent(event)
-                }
-            }
-
             isRecording = true
             isLoading = false
 
@@ -125,21 +131,26 @@ class RecordingViewModel: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        // Stop audio capture
+        // Stop audio capture first so no more audio is generated
         await audioCapture?.stopRecording()
         audioCapture = nil
 
-        // Send end signal
+        // Cancel the audio sending task
+        audioTask?.cancel()
+        audioTask = nil
+
+        // Send end signal to tell the server we're done
         do {
             try await webSocketManager?.sendEnd()
         } catch {
             print("Failed to send end signal: \(error)")
         }
 
-        // Cancel tasks
-        audioTask?.cancel()
+        // Wait briefly for final transcripts from the server
+        try? await Task.sleep(for: .seconds(2))
+
+        // Now cancel transcript task and disconnect
         transcriptTask?.cancel()
-        audioTask = nil
         transcriptTask = nil
 
         // Disconnect WebSocket
@@ -148,7 +159,16 @@ class RecordingViewModel: ObservableObject {
 
         isRecording = false
         duration = 0
+        // NOTE: Do NOT clear currentTranscript or currentRecordingId here.
+        // The transcript should remain visible after stopping.
+    }
+
+    /// Reset transcript and recording state.
+    /// Call this when navigating away from the recording or starting a new one.
+    func resetState() {
         currentTranscript = ""
+        currentRecordingId = nil
+        duration = 0
     }
 
     private func handleWebSocketEvent(_ event: WebSocketEvent) async {

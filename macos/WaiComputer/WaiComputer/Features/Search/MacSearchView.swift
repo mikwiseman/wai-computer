@@ -7,15 +7,15 @@ struct MacSearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search bar + mode picker
-            VStack(spacing: 12) {
-                HStack {
+            VStack(spacing: Spacing.md) {
+                // Large search input
+                HStack(spacing: Spacing.sm) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textTertiary)
 
                     TextField("Search recordings...", text: $viewModel.query)
                         .textFieldStyle(.plain)
-                        .font(.body)
+                        .font(Typography.headingMedium)
                         .onSubmit {
                             performSearch()
                         }
@@ -26,25 +26,28 @@ struct MacSearchView: View {
                             viewModel.results = []
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Palette.textTertiary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(10)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
+                .padding(Spacing.md)
+                .background(Palette.surfaceSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                Picker("Search Mode", selection: $viewModel.searchMode) {
-                    Text("Hybrid").tag(MacSearchViewModel.SearchMode.hybrid)
-                    Text("Semantic").tag(MacSearchViewModel.SearchMode.semantic)
-                    Text("Full Text").tag(MacSearchViewModel.SearchMode.fts)
-                }
-                .pickerStyle(.segmented)
+                // Mode tabs (text-based)
+                WaiTabBar(
+                    tabs: [
+                        ("Hybrid", MacSearchViewModel.SearchMode.hybrid),
+                        ("Semantic", MacSearchViewModel.SearchMode.semantic),
+                        ("Full Text", MacSearchViewModel.SearchMode.fts),
+                    ],
+                    selection: $viewModel.searchMode
+                )
             }
-            .padding()
+            .padding(Spacing.lg)
 
-            Divider()
+            WaiDivider()
 
             // Results
             if viewModel.isLoading {
@@ -61,17 +64,17 @@ struct MacSearchView: View {
                 )
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                         Text("\(viewModel.totalResults) result\(viewModel.totalResults == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
+                            .font(Typography.label)
+                            .foregroundStyle(Palette.textTertiary)
+                            .padding(.horizontal, Spacing.lg)
 
                         ForEach(viewModel.results) { result in
                             SearchResultRow(result: result)
                         }
                     }
-                    .padding()
+                    .padding(.vertical, Spacing.lg)
                 }
             }
         }
@@ -89,46 +92,33 @@ struct SearchResultRow: View {
     let result: SearchResult
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
                 Text(result.recordingTitle ?? "Untitled")
-                    .font(.headline)
+                    .font(Typography.headingMedium)
                     .lineLimit(1)
 
                 Spacer()
 
-                // Relevance score
                 Text(String(format: "%.0f%%", result.score * 100))
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(scoreColor(result.score).opacity(0.15))
-                    .foregroundStyle(scoreColor(result.score))
-                    .clipShape(Capsule())
+                    .font(Typography.mono)
+                    .foregroundStyle(Palette.textTertiary)
             }
 
             if let speaker = result.speaker {
                 Text(speaker)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.blue)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.accent)
             }
 
             Text(result.content)
-                .font(.body)
+                .font(Typography.reading)
+                .lineSpacing(6)
                 .lineLimit(3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
         }
-        .padding(12)
-        .background(Color.gray.opacity(0.04))
-        .cornerRadius(8)
-    }
-
-    private func scoreColor(_ score: Double) -> Color {
-        if score >= 0.7 { return .green }
-        if score >= 0.4 { return .orange }
-        return .gray
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
     }
 }
 
@@ -136,7 +126,7 @@ struct SearchResultRow: View {
 
 @MainActor
 class MacSearchViewModel: ObservableObject {
-    enum SearchMode {
+    enum SearchMode: Hashable {
         case hybrid, semantic, fts
     }
 
