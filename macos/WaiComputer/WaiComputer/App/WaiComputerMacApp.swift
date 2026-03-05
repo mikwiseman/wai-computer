@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import WaiComputerKit
 
@@ -12,9 +13,36 @@ struct WaiComputerMacApp: App {
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
+                .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
         }
+        .handlesExternalEvents(matching: Set(["main"]))
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
+        .commands {
+            // Replace default Cmd+N (new window) with new recording
+            CommandGroup(replacing: .newItem) {
+                Button("New Meeting") {
+                    Task { await appState.startRecording(type: .meeting) }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(appState.isRecording || !appState.isAuthenticated)
+
+                Button("New Note") {
+                    Task { await appState.startRecording(type: .note) }
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(appState.isRecording || !appState.isAuthenticated)
+
+                Button("New Reflection") {
+                    Task { await appState.startRecording(type: .reflection) }
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(appState.isRecording || !appState.isAuthenticated)
+            }
+
+            // Remove the default "New Window" from the Window menu
+            CommandGroup(replacing: .windowList) {}
+        }
 
         // Menu bar extra
         MenuBarExtra("WaiComputer", systemImage: appState.isRecording ? "waveform.circle.fill" : "brain.head.profile") {
@@ -40,15 +68,20 @@ class MacAppState: ObservableObject {
 
     private let apiClient: APIClient
     private let webSocketManager: WebSocketManager
+    private var recordingViewModelCancellable: AnyCancellable?
 
     init() {
-        #if DEBUG
-        let baseURL = URL(string: "http://localhost:8000")!
-        #else
-        let baseURL = URL(string: "https://api.wai.computer")!
-        #endif
+        let baseURL = URL(string: "https://wai.computer")!
         apiClient = APIClient(baseURL: baseURL)
         webSocketManager = WebSocketManager(baseURL: baseURL)
+
+        // Forward objectWillChange from the nested recordingViewModel so that
+        // any SwiftUI view observing MacAppState also picks up changes to
+        // recordingViewModel's @Published properties (duration, transcript, etc.)
+        recordingViewModelCancellable = recordingViewModel.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
 
         if let token = UserDefaults.standard.string(forKey: "accessToken") {
             Task {
@@ -176,11 +209,20 @@ class MacAppState: ObservableObject {
     }
 
     func startRecording(type: RecordingType) async {
+        // Set isRecording IMMEDIATELY so the UI switches to LiveRecordingView
+        // before the async setup (API call, WebSocket connect, audio start) completes.
+        // If setup fails, the view model will set its own isRecording back to false,
+        // and we sync that state below.
+        isRecording = true
+
         await recordingViewModel.startRecording(
             apiClient: apiClient,
             webSocketManager: webSocketManager,
             type: type
         )
+
+        // Sync state after setup completes — if setup failed,
+        // recordingViewModel.isRecording will be false
         isRecording = recordingViewModel.isRecording
         currentRecordingId = recordingViewModel.currentRecordingId
     }
@@ -188,6 +230,16 @@ class MacAppState: ObservableObject {
     func stopRecording() async {
         await recordingViewModel.stopRecording()
         isRecording = false
+        // Keep currentRecordingId from recordingViewModel so the UI
+        // can navigate to the completed recording detail view
+    }
+
+    /// Reset recording state after navigating away from live recording view.
+    /// Safe to call while cleanup is in progress — only resets display state.
+    func resetRecordingState() {
+        // Only reset transcript/display state, not lifecycle state.
+        // The cleanup task in MacRecordingViewModel manages its own lifecycle.
+        recordingViewModel.resetState()
         currentRecordingId = nil
     }
 

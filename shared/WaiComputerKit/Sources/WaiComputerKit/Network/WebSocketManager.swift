@@ -66,17 +66,18 @@ public actor WebSocketManager {
     private var accessToken: String?
 
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
-    private var cachedEvents: AsyncStream<WebSocketEvent>?
+    private var eventStream: AsyncStream<WebSocketEvent>?
+    private var connectionId: UInt64 = 0
 
-    /// Stream of WebSocket events - must be accessed from async context
+    /// Stream of WebSocket events - must be accessed from async context.
+    /// Returns a FRESH stream for the current connection.
+    /// Call this BEFORE connect() to ensure no events are missed.
     public var events: AsyncStream<WebSocketEvent> {
-        if let cached = cachedEvents {
-            return cached
-        }
-        let stream = AsyncStream<WebSocketEvent> { continuation in
-            self.eventContinuation = continuation
-        }
-        cachedEvents = stream
+        // Always create a fresh stream — prevents events leaking between recordings
+        let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
+        eventContinuation?.finish()  // finish any old stream
+        eventContinuation = continuation
+        eventStream = stream
         return stream
     }
 
@@ -94,11 +95,29 @@ public actor WebSocketManager {
         self.accessToken = token
     }
 
-    /// Connect to WebSocket for a recording
+    /// Connect to WebSocket for a recording.
+    /// Disconnects any existing connection first to prevent event leakage.
     public func connect(recordingId: String) async throws {
         guard let token = accessToken else {
             throw APIError.unauthorized
         }
+
+        // Disconnect any previous connection cleanly
+        if webSocket != nil {
+            print("[WS] Disconnecting previous connection before new one")
+            disconnect()
+        }
+
+        // Ensure event stream exists (caller should have called .events already)
+        if eventContinuation == nil {
+            let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
+            eventContinuation = continuation
+            eventStream = stream
+        }
+
+        connectionId &+= 1
+        let thisConnection = connectionId
+        sendCount = 0
 
         // Build WebSocket URL
         var wsURLString = baseURL.absoluteString
@@ -110,23 +129,29 @@ public actor WebSocketManager {
             throw APIError.invalidURL
         }
 
+        print("[WS] Connecting to: \(wsURL.host ?? "?")\(wsURL.path)")
+
         var request = URLRequest(url: wsURL)
-        request.timeoutInterval = 60
+        request.timeoutInterval = 300
 
         webSocket = session.webSocketTask(with: request)
         webSocket?.resume()
 
+        print("[WS] WebSocket task resumed, state: active")
         eventContinuation?.yield(.connected)
 
-        // Start receiving messages in background
+        // Start receiving messages in background — scoped to this connection
         Task { [weak self] in
-            await self?.receiveMessages()
+            await self?.receiveMessages(forConnection: thisConnection)
         }
     }
+
+    private var sendCount = 0
 
     /// Send audio data
     public func sendAudio(data: Data) async throws {
         guard let webSocket = webSocket else {
+            print("[WS] sendAudio: no webSocket task!")
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
 
@@ -139,6 +164,11 @@ public actor WebSocketManager {
         let jsonData = try encoder.encode(message)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
             throw APIError.noData
+        }
+
+        sendCount += 1
+        if sendCount <= 3 || sendCount % 50 == 0 {
+            print("[WS] sendAudio #\(sendCount): \(data.count) bytes raw, \(jsonString.count) chars JSON")
         }
 
         try await webSocket.send(.string(jsonString))
@@ -162,20 +192,32 @@ public actor WebSocketManager {
         eventContinuation?.yield(.disconnected(nil))
         eventContinuation?.finish()
         eventContinuation = nil
-        cachedEvents = nil
+        eventStream = nil
     }
 
-    private func receiveMessages() async {
-        guard let webSocket = webSocket else { return }
+    private func receiveMessages(forConnection expectedId: UInt64) async {
+        guard let webSocket = webSocket else {
+            print("[WS] receiveMessages: no webSocket task")
+            return
+        }
 
+        print("[WS] receiveMessages: started listening (connection \(expectedId))")
         do {
             while true {
+                // Stop if this connection has been superseded
+                guard connectionId == expectedId else {
+                    print("[WS] receiveMessages: connection \(expectedId) superseded, stopping")
+                    return
+                }
+
                 let message = try await webSocket.receive()
 
                 switch message {
                 case .string(let text):
+                    print("[WS] Received: \(String(text.prefix(120)))")
                     handleMessage(text)
                 case .data(let data):
+                    print("[WS] Received binary: \(data.count) bytes")
                     if let text = String(data: data, encoding: .utf8) {
                         handleMessage(text)
                     }
@@ -184,8 +226,14 @@ public actor WebSocketManager {
                 }
             }
         } catch {
-            eventContinuation?.yield(.disconnected(error))
-            eventContinuation?.finish()
+            // Only emit disconnected if this is still the active connection
+            if connectionId == expectedId {
+                print("[WS] receiveMessages error: \(error)")
+                eventContinuation?.yield(.disconnected(error))
+                eventContinuation?.finish()
+            } else {
+                print("[WS] receiveMessages: old connection \(expectedId) closed (expected)")
+            }
         }
     }
 

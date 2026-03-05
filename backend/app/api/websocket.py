@@ -101,9 +101,11 @@ async def audio_websocket(websocket: WebSocket):
 
     # Initialize Deepgram client
     deepgram = DeepgramStreamingClient(language=language)
+    logger.info(f"Connecting to Deepgram for recording {recording_id}")
 
     try:
         await deepgram.connect()
+        logger.info("Deepgram connected successfully")
     except Exception as e:
         logger.error(f"Deepgram connection failed: {e}")
         await websocket.send_json(
@@ -115,6 +117,7 @@ async def audio_websocket(websocket: WebSocket):
     await websocket.send_json(
         {"type": "status", "status": "ready", "message": "Ready to receive audio"}
     )
+    logger.info("Sent 'ready' status to client, starting audio pipeline")
 
     # Track segments to save with thread-safe lock
     pending_segments: list[dict] = []
@@ -160,8 +163,12 @@ async def audio_websocket(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"Failed to save segments: {e}")
 
+    audio_msg_count = 0
+
     async def receive_audio():
         """Receive audio from client and send to Deepgram."""
+        nonlocal audio_msg_count
+        logger.info("receive_audio: started, waiting for messages")
         try:
             while True:
                 data = await websocket.receive_text()
@@ -171,22 +178,39 @@ async def audio_websocket(websocket: WebSocket):
                     logger.warning(f"Invalid JSON received: {e}")
                     continue
 
-                if message.get("type") == "audio":
+                msg_type = message.get("type")
+                if msg_type == "audio":
                     audio_b64 = message.get("data")
                     if audio_b64:
                         try:
                             audio_bytes = base64.b64decode(audio_b64)
                             audio_chunks.append(audio_bytes)
+                            audio_msg_count += 1
+                            if audio_msg_count <= 3 or audio_msg_count % 50 == 0:
+                                logger.info(
+                                    f"receive_audio: msg #{audio_msg_count}, "
+                                    f"{len(audio_bytes)} bytes"
+                                )
                             await deepgram.send_audio(audio_bytes)
                         except Exception as e:
                             logger.warning(f"Failed to decode/send audio: {e}")
+                    else:
+                        logger.warning("receive_audio: audio message with empty data field")
 
-                elif message.get("type") == "end":
-                    # Client signaling end of stream
+                elif msg_type == "end":
+                    logger.info(
+                        f"receive_audio: end signal received after {audio_msg_count} audio messages"
+                    )
+                    # Tell Deepgram we're done — it will send final results then close cleanly
+                    await deepgram.finish_stream()
                     break
+                else:
+                    logger.warning(f"receive_audio: unknown message type: {msg_type}")
 
         except WebSocketDisconnect:
-            logger.info("WebSocket disconnected")
+            logger.info(
+                f"WebSocket disconnected after {audio_msg_count} audio messages"
+            )
         except Exception as e:
             logger.error(f"Error in receive_audio: {e}")
             try:
@@ -198,6 +222,7 @@ async def audio_websocket(websocket: WebSocket):
 
     async def send_transcripts():
         """Receive transcripts from Deepgram and send to client."""
+        logger.info("send_transcripts: started, waiting for Deepgram results")
         try:
             async for result in deepgram.receive_transcripts():
                 transcript_msg = {
@@ -235,13 +260,33 @@ async def audio_websocket(websocket: WebSocket):
 
     # Start background tasks
     save_task = asyncio.create_task(save_segments())
+    send_task = asyncio.create_task(send_transcripts())
 
     try:
-        # Run receive and send concurrently
-        await asyncio.gather(
-            receive_audio(),
-            send_transcripts(),
-        )
+        # Run receive_audio until client sends "end" or disconnects.
+        # Then cancel send_transcripts — Deepgram will have closed after
+        # CloseStream, so send_transcripts should exit soon, but we don't
+        # want to hang if it doesn't.
+        await receive_audio()
+
+        # Give send_transcripts a brief window to finish (Deepgram sends
+        # final results after CloseStream, typically <2s)
+        try:
+            await asyncio.wait_for(send_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("send_transcripts timed out after 5s, cancelling")
+            send_task.cancel()
+            try:
+                await send_task
+            except asyncio.CancelledError:
+                pass
+    except Exception as e:
+        logger.error(f"Audio pipeline error: {e}")
+        send_task.cancel()
+        try:
+            await send_task
+        except asyncio.CancelledError:
+            pass
     finally:
         # Cleanup - cancel save task gracefully
         if save_task is not None:
@@ -284,7 +329,16 @@ async def audio_websocket(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"Failed to save final segments: {e}")
 
-        # Upload accumulated audio to S3 and calculate duration
+        # Send "complete" BEFORE S3 upload so the client unblocks immediately
+        try:
+            await websocket.send_json(
+                {"type": "status", "status": "complete", "message": "Transcription complete"}
+            )
+            logger.info("Sent 'complete' status to client")
+        except Exception:
+            pass  # WebSocket may already be closed
+
+        # Upload accumulated audio to S3 and calculate duration (background work)
         try:
             async with async_session_maker() as db:
                 rec_result = await db.execute(
@@ -316,10 +370,3 @@ async def audio_websocket(websocket: WebSocket):
                     await db.commit()
         except Exception as e:
             logger.error(f"Failed to finalize recording: {e}")
-
-        try:
-            await websocket.send_json(
-                {"type": "status", "status": "complete", "message": "Transcription complete"}
-            )
-        except Exception:
-            pass  # WebSocket may already be closed

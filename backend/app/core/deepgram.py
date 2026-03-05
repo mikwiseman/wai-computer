@@ -136,11 +136,23 @@ class DeepgramStreamingClient:
             self._running = False
             raise
 
+    async def finish_stream(self) -> None:
+        """Tell Deepgram we're done sending audio. It will send final results then close."""
+        if self._ws and self._running:
+            try:
+                await self._ws.send(json.dumps({"type": "CloseStream"}))
+                logger.info("Sent CloseStream to Deepgram")
+            except Exception as e:
+                logger.warning(f"Failed to send CloseStream: {e}")
+
     async def close(self) -> None:
         """Close the WebSocket connection."""
         self._running = False
         if self._ws:
-            await self._ws.close()
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
             self._ws = None
 
 

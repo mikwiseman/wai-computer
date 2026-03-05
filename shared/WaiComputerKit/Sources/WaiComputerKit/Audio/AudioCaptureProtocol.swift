@@ -1,5 +1,8 @@
 import Foundation
 import AVFoundation
+import os
+
+private let micLog = Logger(subsystem: "com.waicomputer.kit", category: "mic")
 
 /// Protocol for audio capture implementations
 public protocol AudioCaptureProtocol: AnyObject, Sendable {
@@ -61,13 +64,19 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     private func setupBufferStream() {
-        audioBuffers = AsyncStream { continuation in
-            self.bufferContinuation = continuation
-        }
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        audioBuffers = stream
+        bufferContinuation = continuation
     }
 
     /// Start recording from microphone
     public func startRecording() async throws {
+        // Guard against double-start
+        if _isRecording {
+            micLog.warning("[Mic] startRecording called while already recording — stopping first")
+            await stopRecording()
+        }
+
         #if os(iOS)
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.record, mode: .default)
@@ -75,37 +84,88 @@ public final class MicrophoneCapture: @unchecked Sendable {
         #endif
 
         let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let nativeFormat = inputNode.outputFormat(forBus: 0)
+        let nativeSR = nativeFormat.sampleRate
+        let nativeCh = nativeFormat.channelCount
+        micLog.warning("[Mic] Native input format: \(nativeSR)Hz, \(nativeCh)ch")
 
-        // Create converter to target format
         guard let targetFormat = config.format else {
             throw AudioCaptureError.invalidFormat
         }
+        let targetSR = config.sampleRate
+        let targetCh = config.channelCount
+        micLog.warning("[Mic] Target format: \(targetSR)Hz, \(targetCh)ch")
 
-        let converter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        // On macOS, installTap on inputNode does NOT support format conversion —
+        // passing a non-nil format different from native throws an NSException.
+        // Install with nil (= native format) and convert manually.
+        var tapCount = 0
+        inputNode.installTap(
+            onBus: 0,
+            bufferSize: AVAudioFrameCount(config.bufferSize),
+            format: nil
+        ) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            tapCount += 1
 
-        inputNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(config.bufferSize), format: inputFormat) { [weak self] buffer, _ in
-            guard let self = self, let converter = converter else { return }
+            // Manual conversion: native format → 16kHz mono float32
+            guard let floatData = buffer.floatChannelData else {
+                if tapCount <= 5 { micLog.error("[Mic] Tap #\(tapCount): no float data") }
+                return
+            }
+            let srcFrames = Int(buffer.frameLength)
+            if srcFrames == 0 { return }
 
-            // Convert to target format
-            guard let convertedBuffer = AVAudioPCMBuffer(
+            // Take channel 0 (mono from potentially stereo)
+            let srcSamples = floatData[0]
+
+            // Downsample: simple decimation with averaging
+            let ratio = nativeSR / targetSR
+            let outFrames = Int(Double(srcFrames) / ratio)
+            if outFrames == 0 { return }
+
+            guard let outBuffer = AVAudioPCMBuffer(
                 pcmFormat: targetFormat,
-                frameCapacity: AVAudioFrameCount(self.config.bufferSize)
-            ) else { return }
+                frameCapacity: AVAudioFrameCount(outFrames)
+            ) else {
+                if tapCount <= 5 { micLog.error("[Mic] Failed to create output buffer") }
+                return
+            }
+            outBuffer.frameLength = AVAudioFrameCount(outFrames)
 
-            var error: NSError?
-            let status = converter.convert(to: convertedBuffer, error: &error) { inNumPackets, outStatus in
-                outStatus.pointee = .haveData
-                return buffer
+            guard let outData = outBuffer.floatChannelData else { return }
+            let dst = outData[0]
+
+            if ratio <= 1.01 {
+                // No resampling needed — just copy
+                for i in 0..<outFrames {
+                    dst[i] = srcSamples[i]
+                }
+            } else {
+                // Downsample with simple averaging (good enough for speech)
+                let intRatio = Int(ratio.rounded())
+                for i in 0..<outFrames {
+                    let srcStart = Int(Double(i) * ratio)
+                    var sum: Float = 0
+                    let count = min(intRatio, srcFrames - srcStart)
+                    for j in 0..<count {
+                        sum += srcSamples[srcStart + j]
+                    }
+                    dst[i] = sum / Float(count)
+                }
             }
 
-            if status == .haveData {
-                self.bufferContinuation?.yield(convertedBuffer)
+            if tapCount <= 3 || tapCount % 100 == 0 {
+                micLog.warning("[Mic] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz → \(outFrames)@\(targetSR)Hz")
             }
+
+            self.bufferContinuation?.yield(outBuffer)
         }
 
+        micLog.warning("[Mic] Starting engine...")
         try engine.start()
         _isRecording = true
+        micLog.warning("[Mic] Engine started, recording = true")
     }
 
     /// Stop recording
