@@ -4,6 +4,18 @@ import WaiComputerKit
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
     @State private var showSignOutConfirmation = false
+    @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
+
+    private let languageOptions: [(label: String, value: String)] = [
+        ("Auto-detect (Multi-language)", "multi"),
+        ("English", "en"),
+        ("Russian", "ru"),
+        ("Spanish", "es"),
+        ("German", "de"),
+        ("French", "fr"),
+        ("Japanese", "ja"),
+        ("Chinese", "zh"),
+    ]
 
     var body: some View {
         Form {
@@ -52,6 +64,18 @@ struct MacSettingsView: View {
                 }
             } header: {
                 Text("Audio")
+                    .waiSectionHeader()
+            }
+
+            Section {
+                Picker("Language", selection: $transcriptionLanguage) {
+                    ForEach(languageOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .font(Typography.body)
+            } header: {
+                Text("Transcription")
                     .waiSectionHeader()
             }
 

@@ -30,9 +30,8 @@ struct MacMainView: View {
 
     enum SidebarSection: Hashable {
         case allRecordings
-        case meetings
+        case calls
         case notes
-        case reflections
         case chat
         case search
         case settings
@@ -40,7 +39,7 @@ struct MacMainView: View {
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .reflections, .none:
+        case .allRecordings, .calls, .notes, .none:
             return true
         case .chat, .search, .settings:
             return false
@@ -49,9 +48,8 @@ struct MacMainView: View {
 
     private var currentTypeFilter: RecordingType? {
         switch selectedSection {
-        case .meetings: return .meeting
+        case .calls: return .meeting
         case .notes: return .note
-        case .reflections: return .reflection
         default: return nil
         }
     }
@@ -72,26 +70,40 @@ struct MacMainView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Button("New Meeting") {
-                        startRecording(type: .meeting)
-                    }
-                    Button("New Note") {
-                        startRecording(type: .note)
-                    }
-                    Button("New Reflection") {
-                        startRecording(type: .reflection)
-                    }
-                    Divider()
-                    Button("Import Audio File...") {
-                        importAudioFile()
-                    }
-                    .disabled(importViewModel.isImporting)
+                Button {
+                    startRecording(type: .note)
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .disabled(appState.isRecording)
+                .help("New Recording")
+
+                Button {
+                    importAudioFile()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .disabled(importViewModel.isImporting || appState.isRecording)
+                .help("Import Audio File")
+            }
+        }
+        .overlay {
+            if importViewModel.isImporting {
+                VStack(spacing: Spacing.md) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Importing \(importViewModel.currentFilename)...")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                }
+                .padding(Spacing.lg)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, Spacing.xl)
             }
         }
         .alert("Import Error", isPresented: $importViewModel.showError) {
@@ -107,6 +119,13 @@ struct MacMainView: View {
                 handleRecordingStop()
             }
         }
+        .onChange(of: appState.selectedRecordingFromMenu) { _, newId in
+            if let id = newId {
+                selectedSection = .allRecordings
+                selectedRecordingId = id
+                appState.selectedRecordingFromMenu = nil
+            }
+        }
     }
 
     // MARK: - Sidebar
@@ -115,9 +134,8 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
-                sidebarRow("Meetings", icon: "person.2", section: .meetings)
+                sidebarRow("Calls", icon: "phone", section: .calls)
                 sidebarRow("Notes", icon: "note.text", section: .notes)
-                sidebarRow("Reflections", icon: "brain.head.profile", section: .reflections)
             } header: {
                 Text("Library")
                     .waiSectionHeader()
@@ -194,9 +212,14 @@ struct MacMainView: View {
             LiveRecordingView()
         } else {
             switch selectedSection {
-            case .allRecordings, .meetings, .notes, .reflections, .none:
+            case .allRecordings, .calls, .notes, .none:
                 if let recordingId = selectedRecordingId {
-                    MacRecordingDetailView(recordingId: recordingId)
+                    MacRecordingDetailView(recordingId: recordingId) {
+                        selectedRecordingId = nil
+                        Task {
+                            await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+                        }
+                    }
                 } else {
                     ContentUnavailableView(
                         "Select a Recording",

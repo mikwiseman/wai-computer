@@ -3,8 +3,10 @@ import WaiComputerKit
 
 struct MacRecordingDetailView: View {
     let recordingId: String
+    var onDelete: (() -> Void)?
     @EnvironmentObject var appState: MacAppState
     @StateObject private var viewModel = MacRecordingDetailViewModel()
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         Group {
@@ -87,6 +89,29 @@ struct MacRecordingDetailView: View {
             }
 
             Spacer()
+
+            Button {
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Delete Recording")
+            .confirmationDialog(
+                "Delete this recording?",
+                isPresented: $showDeleteConfirmation
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await viewModel.deleteRecording(apiClient: appState.getAPIClient())
+                        onDelete?()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This action cannot be undone.")
+            }
         }
         .padding(Spacing.lg)
     }
@@ -296,6 +321,15 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
 
         isGeneratingSummary = false
+    }
+
+    func deleteRecording(apiClient: APIClient) async {
+        guard let id = recordingDetail?.id else { return }
+        do {
+            try await apiClient.deleteRecording(id: id)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func updateActionItemStatus(id: String, status: ActionItem.Status, apiClient: APIClient) async {
