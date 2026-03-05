@@ -78,7 +78,7 @@ class TestConnect:
         call_kwargs = mock_websockets.connect.call_args
         url_arg = call_kwargs.args[0]
         assert url_arg.startswith("wss://api.deepgram.com/v1/listen?")
-        assert call_kwargs.kwargs["extra_headers"]["Authorization"] == "Token dg-test-key-123"
+        assert call_kwargs.kwargs["additional_headers"]["Authorization"] == "Token dg-test-key-123"
 
 
 class TestSendAudio:
