@@ -1,12 +1,15 @@
 """Deepgram streaming transcription client."""
 
 import json
+import logging
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 import websockets
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 
@@ -80,15 +83,26 @@ class DeepgramStreamingClient:
     async def receive_transcripts(self) -> AsyncGenerator[TranscriptResult, None]:
         """Receive transcripts from Deepgram."""
         if not self._ws:
+            logger.warning("receive_transcripts: no WebSocket connection")
             return
 
+        msg_count = 0
         try:
             async for message in self._ws:
                 if not self._running:
                     break
 
+                msg_count += 1
                 data = json.loads(message)
-                if data.get("type") == "Results":
+                msg_type = data.get("type", "unknown")
+
+                if msg_count <= 5 or msg_count % 20 == 0:
+                    logger.info(
+                        f"Deepgram msg #{msg_count}: type={msg_type}, "
+                        f"is_final={data.get('is_final', 'N/A')}"
+                    )
+
+                if msg_type == "Results":
                     channel = data.get("channel", {})
                     alternatives = channel.get("alternatives", [])
                     if alternatives:
@@ -105,6 +119,10 @@ class DeepgramStreamingClient:
                                 start_ms = int(words[0].get("start", 0) * 1000)
                                 end_ms = int(words[-1].get("end", 0) * 1000)
 
+                            logger.info(
+                                f"Deepgram transcript (final={data.get('is_final')}): "
+                                f"{transcript[:80]}"
+                            )
                             yield TranscriptResult(
                                 text=transcript,
                                 speaker=speaker,
@@ -113,7 +131,8 @@ class DeepgramStreamingClient:
                                 end_ms=end_ms,
                                 confidence=alt.get("confidence", 0.0),
                             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"receive_transcripts error after {msg_count} msgs: {e}")
             self._running = False
             raise
 
