@@ -254,7 +254,7 @@ async def test_auth_route_direct_paths(
 
     sent: list[tuple[str, str]] = []
 
-    async def fake_send_magic_link_email(to_email: str, token: str) -> None:
+    async def fake_send_magic_link_email(to_email: str, token: str, **kwargs) -> None:
         sent.append((to_email, token))
 
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
