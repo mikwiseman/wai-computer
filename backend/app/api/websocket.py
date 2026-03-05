@@ -105,6 +105,7 @@ async def audio_websocket(websocket: WebSocket):
     try:
         await deepgram.connect()
     except Exception as e:
+        logger.error(f"Deepgram connection failed: {e}")
         await websocket.send_json(
             {"type": "status", "status": "error", "message": f"Transcription service error: {e}"}
         )

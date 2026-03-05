@@ -65,7 +65,7 @@ class DeepgramStreamingClient:
         try:
             self._ws = await websockets.connect(
                 self._build_url(),
-                extra_headers={"Authorization": f"Token {settings.deepgram_api_key}"},
+                additional_headers={"Authorization": f"Token {settings.deepgram_api_key}"},
             )
             self._running = True
             return True
