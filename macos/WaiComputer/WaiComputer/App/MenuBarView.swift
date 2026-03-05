@@ -3,6 +3,7 @@ import WaiComputerKit
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var recordingVM: MacRecordingViewModel
     @State private var recentRecordings: [Recording] = []
 
     var body: some View {
@@ -35,7 +36,7 @@ struct MenuBarView: View {
                 Spacer()
 
                 if appState.isRecording {
-                    Text(appState.recordingViewModel.formattedDuration)
+                    Text(recordingVM.formattedDuration)
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -183,6 +184,8 @@ struct MenuBarView: View {
 }
 
 #Preview {
+    let appState = MacAppState()
     MenuBarView()
-        .environmentObject(MacAppState())
+        .environmentObject(appState)
+        .environmentObject(appState.recordingViewModel)
 }

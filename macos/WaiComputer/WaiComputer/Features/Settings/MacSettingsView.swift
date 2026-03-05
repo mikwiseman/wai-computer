@@ -32,42 +32,6 @@ struct MacSettingsView: View {
             }
 
             Section {
-                let devices = SystemAudioManager.shared.availableDevices
-                if devices.isEmpty {
-                    Text("No audio input devices found")
-                        .font(Typography.body)
-                        .foregroundStyle(Palette.textSecondary)
-                } else {
-                    ForEach(devices) { device in
-                        HStack {
-                            Image(systemName: device.isBlackHole ? "speaker.wave.2" : "mic")
-                                .foregroundStyle(Palette.textTertiary)
-                            Text(device.name)
-                                .font(Typography.body)
-                            Spacer()
-                            if device.isInput {
-                                Text("Input")
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Palette.textTertiary)
-                            }
-                        }
-                    }
-                }
-
-                if !SystemAudioManager.shared.isBlackHoleInstalled {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(Palette.accent)
-                        Text("BlackHole not installed — system audio capture unavailable")
-                            .font(Typography.bodySmall)
-                    }
-                }
-            } header: {
-                Text("Audio")
-                    .waiSectionHeader()
-            }
-
-            Section {
                 Picker("Language", selection: $transcriptionLanguage) {
                     ForEach(languageOptions, id: \.value) { option in
                         Text(option.label).tag(option.value)
@@ -105,9 +69,6 @@ struct MacSettingsView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
-        }
-        .onAppear {
-            SystemAudioManager.shared.refreshDevices()
         }
     }
 }

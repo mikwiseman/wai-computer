@@ -3,6 +3,7 @@ import WaiComputerKit
 
 struct LiveRecordingView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var recordingVM: MacRecordingViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,14 +15,14 @@ struct LiveRecordingView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                        if appState.recordingViewModel.currentTranscript.isEmpty {
+                        if recordingVM.currentTranscript.isEmpty {
                             Text("Listening...")
                                 .font(Typography.reading)
                                 .foregroundStyle(Palette.textSecondary)
                                 .italic()
                                 .padding(Spacing.lg)
                         } else {
-                            Text(appState.recordingViewModel.currentTranscript)
+                            Text(recordingVM.currentTranscript)
                                 .font(Typography.reading)
                                 .lineSpacing(6)
                                 .textSelection(.enabled)
@@ -30,7 +31,7 @@ struct LiveRecordingView: View {
                         }
                     }
                 }
-                .onChange(of: appState.recordingViewModel.currentTranscript) { _, _ in
+                .onChange(of: recordingVM.currentTranscript) { _, _ in
                     withAnimation {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
@@ -78,15 +79,15 @@ struct LiveRecordingView: View {
             Text("Recording")
                 .font(Typography.displaySmall)
 
-            Text(appState.recordingViewModel.formattedDuration)
+            Text(recordingVM.formattedDuration)
                 .font(Typography.monoLarge)
                 .foregroundStyle(Palette.textSecondary)
 
             Spacer()
 
-            Text(appState.recordingViewModel.recordingType.rawValue.capitalized)
+            Text(recordingVM.recordingType.rawValue.capitalized)
                 .font(Typography.label)
-                .foregroundStyle(Palette.typeColor(appState.recordingViewModel.recordingType))
+                .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
         }
         .padding(Spacing.lg)
     }

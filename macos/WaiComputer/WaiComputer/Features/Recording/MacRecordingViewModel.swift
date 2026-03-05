@@ -10,7 +10,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isLoading = false
     @Published var error: String?
-    @Published var recordingType: RecordingType = .meeting
+    @Published var recordingType: RecordingType = .note
     @Published var duration: TimeInterval = 0
     @Published var currentTranscript = ""
     @Published var currentRecordingId: String?
@@ -86,8 +86,9 @@ class MacRecordingViewModel: ObservableObject {
                 }
             }
 
-            // Create recording on server
-            recording = try await apiClient.createRecording(type: recordingType, language: "en")
+            // Create recording on server — use language from Settings
+            let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            recording = try await apiClient.createRecording(type: recordingType, language: language)
 
             guard let recordingId = recording?.id else {
                 error = "Failed to create recording"
