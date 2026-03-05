@@ -16,7 +16,6 @@
 		4F5A778B7DB5B69113852A9B /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8720A51453F6A00129C44413 /* MenuBarView.swift */; };
 		50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */; };
 		51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */; };
-		6218C1D24ADB1EC39EEC810E /* SystemAudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0101EAFAD4775FD2049A4AA3 /* SystemAudioManager.swift */; };
 		833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */; };
 		83CB01D05304F022D5A2188E /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9FED7AFDFB3BD38C93665B6 /* WaiComputerKit */; };
 		8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299E722D1B0554D90131758 /* MacSettingsView.swift */; };
@@ -28,7 +27,6 @@
 
 /* Begin PBXFileReference section */
 		F1E2D3C4B5A6978869706152 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
-		0101EAFAD4775FD2049A4AA3 /* SystemAudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioManager.swift; sourceTree = "<group>"; };
 		10E4E623F7FC6EEBED7495A6 /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
 		31B51F48FF32F6BC868F2C12 /* WaiComputer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
@@ -157,7 +155,6 @@
 				A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */,
 				C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */,
 				525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */,
-				0101EAFAD4775FD2049A4AA3 /* SystemAudioManager.swift */,
 			);
 			path = Recording;
 			sourceTree = "<group>";
@@ -267,7 +264,6 @@
 				EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */,
 				4F5A778B7DB5B69113852A9B /* MenuBarView.swift in Sources */,
 				D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */,
-				6218C1D24ADB1EC39EEC810E /* SystemAudioManager.swift in Sources */,
 				3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

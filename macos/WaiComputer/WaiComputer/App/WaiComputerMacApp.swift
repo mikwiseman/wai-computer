@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 import WaiComputerKit
 
@@ -10,6 +9,7 @@ struct WaiComputerMacApp: App {
         WindowGroup {
             MacContentView()
                 .environmentObject(appState)
+                .environmentObject(appState.recordingViewModel)
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
@@ -36,6 +36,7 @@ struct WaiComputerMacApp: App {
         MenuBarExtra("WaiComputer", systemImage: appState.isRecording ? "waveform.circle.fill" : "brain.head.profile") {
             MenuBarView()
                 .environmentObject(appState)
+                .environmentObject(appState.recordingViewModel)
         }
         .menuBarExtraStyle(.window)
     }
@@ -52,25 +53,20 @@ class MacAppState: ObservableObject {
     @Published var magicLinkSent = false
     @Published var isRecording = false
     @Published var currentRecordingId: String?
-    @Published var recordingViewModel = MacRecordingViewModel()
     @Published var selectedRecordingFromMenu: String?
+
+    /// Recording view model — observed directly by recording views via @EnvironmentObject,
+    /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
+    /// view hierarchy from rebuilding on every timer tick and transcript update.
+    let recordingViewModel = MacRecordingViewModel()
 
     private let apiClient: APIClient
     private let webSocketManager: WebSocketManager
-    private var recordingViewModelCancellable: AnyCancellable?
 
     init() {
         let baseURL = URL(string: "https://wai.computer")!
         apiClient = APIClient(baseURL: baseURL)
         webSocketManager = WebSocketManager(baseURL: baseURL)
-
-        // Forward objectWillChange from the nested recordingViewModel so that
-        // any SwiftUI view observing MacAppState also picks up changes to
-        // recordingViewModel's @Published properties (duration, transcript, etc.)
-        recordingViewModelCancellable = recordingViewModel.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
 
         if let token = UserDefaults.standard.string(forKey: "accessToken") {
             Task {

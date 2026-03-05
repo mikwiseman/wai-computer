@@ -445,6 +445,8 @@ struct MacAuthView: View {
 }
 
 #Preview {
+    let appState = MacAppState()
     MacContentView()
-        .environmentObject(MacAppState())
+        .environmentObject(appState)
+        .environmentObject(appState.recordingViewModel)
 }
