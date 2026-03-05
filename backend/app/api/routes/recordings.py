@@ -83,7 +83,7 @@ class CreateRecordingRequest(BaseModel):
 
     title: str | None = None
     type: Literal["meeting", "note", "reflection"] = "note"
-    language: str = "en"
+    language: str | None = None
 
 
 class UpdateRecordingRequest(BaseModel):
@@ -133,11 +133,12 @@ async def create_recording(
     db: Database,
 ) -> RecordingResponse:
     """Create a new recording."""
+    language = request.language if request.language is not None else user.default_language
     recording = Recording(
         user_id=user.id,
         title=request.title,
         type=request.type,
-        language=request.language,
+        language=language,
     )
     db.add(recording)
     await db.flush()

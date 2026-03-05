@@ -23,6 +23,7 @@
 		D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA555164F098038E385713E6 /* RecordingListView.swift */; };
 		DED3994205172291160E4F83 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A8999379655635D74EC3514 /* MacChatView.swift */; };
 		EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */; };
+		F3A4B5C6D7E8091A2B3C4D5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6071829304152 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +44,7 @@
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
+		D1A2B3C4E5F6071829304152 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +57,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E2B3C4D5F6071829304152A3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F3A4B5C6D7E8091A2B3C4D5E /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		0543B2B27726308F5C10C36E /* Search */ = {
@@ -153,6 +166,7 @@
 			isa = PBXGroup;
 			children = (
 				80368ACBB24566AA7B8D7B0B /* App */,
+				D1A2B3C4E5F6071829304152 /* Assets.xcassets */,
 				E1A98E16AC8A5557AE9585A0 /* Core */,
 				5D15DE54E4FDA3B1560A15A6 /* Features */,
 				8C9F74D9A3A5DF8C28E76AD9 /* Resources */,
@@ -185,6 +199,7 @@
 			buildPhases = (
 				3E35E7FA525FD79A396698F0 /* Sources */,
 				833D494F588DA1C7E4D67737 /* Frameworks */,
+				E2B3C4D5F6071829304152A3 /* Resources */,
 			);
 			buildRules = (
 			);

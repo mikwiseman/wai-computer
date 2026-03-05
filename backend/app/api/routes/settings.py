@@ -29,6 +29,39 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class SettingsResponse(BaseModel):
+    """Response for user settings."""
+
+    default_language: str
+
+
+class UpdateSettingsRequest(BaseModel):
+    """Request to update user settings."""
+
+    default_language: str | None = None
+
+
+@router.get("", response_model=SettingsResponse)
+async def get_settings(
+    user: CurrentUser,
+) -> SettingsResponse:
+    """Get user settings."""
+    return SettingsResponse(default_language=user.default_language)
+
+
+@router.patch("", response_model=SettingsResponse)
+async def update_settings(
+    request: UpdateSettingsRequest,
+    user: CurrentUser,
+    db: Database,
+) -> SettingsResponse:
+    """Update user settings."""
+    if request.default_language is not None:
+        user.default_language = request.default_language
+    await db.flush()
+    return SettingsResponse(default_language=user.default_language)
+
+
 @router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     request: ChangePasswordRequest,
