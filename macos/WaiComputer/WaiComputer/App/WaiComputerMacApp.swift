@@ -21,22 +21,10 @@ struct WaiComputerMacApp: App {
         .commands {
             // Replace default Cmd+N (new window) with new recording
             CommandGroup(replacing: .newItem) {
-                Button("New Meeting") {
-                    Task { await appState.startRecording(type: .meeting) }
-                }
-                .keyboardShortcut("n", modifiers: .command)
-                .disabled(appState.isRecording || !appState.isAuthenticated)
-
-                Button("New Note") {
+                Button("New Recording") {
                     Task { await appState.startRecording(type: .note) }
                 }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(appState.isRecording || !appState.isAuthenticated)
-
-                Button("New Reflection") {
-                    Task { await appState.startRecording(type: .reflection) }
-                }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .keyboardShortcut("n", modifiers: .command)
                 .disabled(appState.isRecording || !appState.isAuthenticated)
             }
 
@@ -65,6 +53,7 @@ class MacAppState: ObservableObject {
     @Published var isRecording = false
     @Published var currentRecordingId: String?
     @Published var recordingViewModel = MacRecordingViewModel()
+    @Published var selectedRecordingFromMenu: String?
 
     private let apiClient: APIClient
     private let webSocketManager: WebSocketManager

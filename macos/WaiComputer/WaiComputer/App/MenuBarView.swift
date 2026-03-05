@@ -69,30 +69,17 @@ struct MenuBarView: View {
                     .buttonStyle(.plain)
                 } else {
                     Button {
-                        Task { await appState.startRecording(type: .meeting) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "person.2")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text("New Meeting")
-                                .font(Typography.body)
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
                         Task { await appState.startRecording(type: .note) }
                     } label: {
                         HStack {
-                            Image(systemName: "note.text")
+                            Image(systemName: "plus.circle")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("New Note")
+                            Text("New Recording")
                                 .font(Typography.body)
                             Spacer()
+                            Text("\u{2318}N")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
                         }
                         .contentShape(Rectangle())
                         .padding(.vertical, Spacing.sm)
@@ -119,17 +106,24 @@ struct MenuBarView: View {
                         .padding(.vertical, Spacing.xs)
                 } else {
                     ForEach(recentRecordings.prefix(3)) { recording in
-                        HStack {
-                            Text(recording.title ?? "Untitled")
-                                .font(Typography.bodySmall)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
+                        Button {
+                            appState.selectedRecordingFromMenu = recording.id
+                            NSApp.activate(ignoringOtherApps: true)
+                        } label: {
+                            HStack {
+                                Text(recording.title ?? "Untitled")
+                                    .font(Typography.bodySmall)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Palette.textTertiary)
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, Spacing.xs)
+                            .padding(.horizontal, Spacing.lg)
                         }
-                        .padding(.vertical, Spacing.xs)
-                        .padding(.horizontal, Spacing.lg)
+                        .buttonStyle(.plain)
                     }
                 }
             }

@@ -15,6 +15,7 @@ class MacImportViewModel: ObservableObject {
     @Published var isImporting = false
     @Published var showError = false
     @Published var errorMessage = ""
+    @Published var currentFilename = ""
 
     private let allowedTypes = ["mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"]
 
@@ -30,6 +31,8 @@ class MacImportViewModel: ObservableObject {
         let result = panel.runModal()
         guard result == .OK, let fileURL = panel.url else { return }
 
+        let filename = fileURL.lastPathComponent
+        currentFilename = filename
         isImporting = true
         importState = .importing
 
