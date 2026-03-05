@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 import websockets
+
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
