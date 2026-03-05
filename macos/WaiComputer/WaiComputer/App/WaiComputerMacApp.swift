@@ -9,6 +9,9 @@ struct WaiComputerMacApp: App {
         WindowGroup {
             MacContentView()
                 .environmentObject(appState)
+                .onOpenURL { url in
+                    Task { await appState.handleIncomingURL(url) }
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
@@ -30,6 +33,7 @@ class MacAppState: ObservableObject {
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var error: String?
+    @Published var magicLinkSent = false
     @Published var isRecording = false
     @Published var currentRecordingId: String?
     @Published var recordingViewModel = MacRecordingViewModel()
@@ -86,6 +90,49 @@ class MacAppState: ObservableObject {
             await apiClient.setAccessToken(response.accessToken)
             await webSocketManager.setAccessToken(response.accessToken)
             UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            await loadCurrentUser()
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    func requestMagicLink(email: String) async {
+        isLoading = true
+        error = nil
+
+        do {
+            _ = try await apiClient.requestMagicLink(email: email, client: "macos")
+            magicLinkSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        guard url.scheme == "waicomputer",
+              url.host == "auth",
+              url.path == "/verify" || url.path == "verify",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let token = components.queryItems?.first(where: { $0.name == "token" })?.value
+        else { return }
+
+        isLoading = true
+        error = nil
+
+        do {
+            let response = try await apiClient.verifyMagicLink(token: token)
+            await apiClient.setAccessToken(response.accessToken)
+            await webSocketManager.setAccessToken(response.accessToken)
+            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            magicLinkSent = false
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)

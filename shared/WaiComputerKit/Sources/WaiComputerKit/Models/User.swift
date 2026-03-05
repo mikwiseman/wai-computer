@@ -53,9 +53,11 @@ public struct RegisterRequest: Codable, Sendable {
 
 public struct MagicLinkRequest: Codable, Sendable {
     public let email: String
+    public let client: String?
 
-    public init(email: String) {
+    public init(email: String, client: String? = nil) {
         self.email = email
+        self.client = client
     }
 }
 

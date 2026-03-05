@@ -223,7 +223,14 @@ struct MacMainView: View {
 
 struct MacAuthView: View {
     @EnvironmentObject var appState: MacAppState
-    @State private var isLoginMode = true
+
+    enum AuthMode: String, CaseIterable {
+        case login = "Login"
+        case register = "Register"
+        case magicLink = "Magic Link"
+    }
+
+    @State private var authMode: AuthMode = .login
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -238,27 +245,18 @@ struct MacAuthView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Picker("", selection: $isLoginMode) {
-                Text("Login").tag(true)
-                Text("Register").tag(false)
+            Picker("", selection: $authMode) {
+                ForEach(AuthMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
             }
             .pickerStyle(.segmented)
-            .frame(width: 200)
+            .frame(width: 300)
 
-            VStack(spacing: 12) {
-                TextField("Email", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 300)
-
-                SecureField("Password", text: $password)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 300)
-
-                if !isLoginMode {
-                    SecureField("Confirm Password", text: $confirmPassword)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 300)
-                }
+            if authMode == .magicLink && appState.magicLinkSent {
+                magicLinkSentView
+            } else {
+                formView
             }
 
             if let error = appState.error {
@@ -272,7 +270,7 @@ struct MacAuthView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Text(isLoginMode ? "Login" : "Create Account")
+                    Text(buttonTitle)
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -281,25 +279,88 @@ struct MacAuthView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(60)
+        .onChange(of: authMode) {
+            appState.magicLinkSent = false
+            appState.error = nil
+        }
+    }
+
+    @ViewBuilder
+    private var formView: some View {
+        VStack(spacing: 12) {
+            TextField("Email", text: $email)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+
+            if authMode != .magicLink {
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 300)
+
+                if authMode == .register {
+                    SecureField("Confirm Password", text: $confirmPassword)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+            }
+        }
+    }
+
+    private var magicLinkSentView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "envelope.badge")
+                .font(.system(size: 48))
+                .foregroundStyle(.green)
+
+            Text("Check your email")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("We sent a sign-in link to \(email)")
+                .foregroundStyle(.secondary)
+
+            Button("Send again") {
+                appState.magicLinkSent = false
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+        }
+    }
+
+    private var buttonTitle: String {
+        switch authMode {
+        case .login: return "Login"
+        case .register: return "Create Account"
+        case .magicLink: return "Send Magic Link"
+        }
     }
 
     private var isFormValid: Bool {
-        let emailValid = email.contains("@") && email.contains(".")
-        let passwordValid = password.count >= 6
+        if authMode == .magicLink && appState.magicLinkSent {
+            return false
+        }
 
-        if isLoginMode {
-            return emailValid && passwordValid
-        } else {
-            return emailValid && passwordValid && password == confirmPassword
+        let emailValid = email.contains("@") && email.contains(".")
+
+        switch authMode {
+        case .login:
+            return emailValid && password.count >= 6
+        case .register:
+            return emailValid && password.count >= 6 && password == confirmPassword
+        case .magicLink:
+            return emailValid
         }
     }
 
     private func submit() {
         Task {
-            if isLoginMode {
+            switch authMode {
+            case .login:
                 await appState.login(email: email, password: password)
-            } else {
+            case .register:
                 await appState.register(email: email, password: password)
+            case .magicLink:
+                await appState.requestMagicLink(email: email)
             }
         }
     }

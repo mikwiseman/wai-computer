@@ -45,6 +45,7 @@ class MagicLinkRequest(BaseModel):
     """Request body for magic link."""
 
     email: EmailStr
+    client: str | None = None
 
 
 class VerifyMagicLinkRequest(BaseModel):
@@ -169,7 +170,7 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     # Send magic link email via Resend
     from app.core.email import send_magic_link_email
 
-    await send_magic_link_email(user.email, token)
+    await send_magic_link_email(user.email, token, client=request.client)
 
     return MessageResponse(message="Magic link sent to your email")
 
