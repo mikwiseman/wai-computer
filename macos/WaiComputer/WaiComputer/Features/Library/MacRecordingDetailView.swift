@@ -19,21 +19,21 @@ struct MacRecordingDetailView: View {
                 )
             } else if let detail = viewModel.recordingDetail {
                 VStack(spacing: 0) {
-                    // Header
                     detailHeader(detail)
 
-                    Divider()
+                    WaiDivider()
 
-                    // Tabbed content
-                    Picker("", selection: $viewModel.selectedTab) {
-                        Text("Transcript").tag(MacRecordingDetailViewModel.Tab.transcript)
-                        Text("Summary").tag(MacRecordingDetailViewModel.Tab.summary)
-                        Text("Action Items").tag(MacRecordingDetailViewModel.Tab.actions)
-                    }
-                    .pickerStyle(.segmented)
-                    .padding()
+                    WaiTabBar(
+                        tabs: [
+                            ("Transcript", MacRecordingDetailViewModel.Tab.transcript),
+                            ("Summary", MacRecordingDetailViewModel.Tab.summary),
+                            ("Action Items", MacRecordingDetailViewModel.Tab.actions),
+                        ],
+                        selection: $viewModel.selectedTab
+                    )
 
-                    // Tab content
+                    WaiDivider()
+
                     switch viewModel.selectedTab {
                     case .transcript:
                         MacTranscriptView(segments: detail.segments)
@@ -63,122 +63,109 @@ struct MacRecordingDetailView: View {
 
     private func detailHeader(_ detail: RecordingDetail) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(detail.title ?? "Untitled")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .font(Typography.displayMedium)
 
-                HStack(spacing: 8) {
-                    TypeBadge(type: detail.type)
+                HStack(spacing: Spacing.sm) {
+                    Text(detail.type.rawValue.capitalized)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.typeColor(detail.type))
 
                     Text(detail.createdAt.formatted(date: .long, time: .shortened))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
 
                     if let duration = detail.durationSeconds, duration > 0 {
-                        let mins = Int(duration) / 60
-                        let secs = Int(duration) % 60
+                        let mins = duration / 60
+                        let secs = duration % 60
                         Text(String(format: "%d:%02d", mins, secs))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.mono)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
             }
 
             Spacer()
         }
-        .padding()
+        .padding(Spacing.lg)
     }
 
     @ViewBuilder
     private func summaryTab(_ detail: RecordingDetail) -> some View {
         if let summary = detail.summary {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
                     // Summary text
                     if let text = summary.summary {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                             Text("Summary")
-                                .font(.headline)
+                                .waiSectionHeader()
                             Text(text)
-                                .font(.body)
+                                .font(Typography.reading)
+                                .lineSpacing(6)
+                                .textSelection(.enabled)
                         }
                     }
 
-                    // Key points
+                    // Key points — em dash prefix
                     if let points = summary.keyPoints, !points.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                             Text("Key Points")
-                                .font(.headline)
+                                .waiSectionHeader()
                             ForEach(points, id: \.self) { point in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Circle()
-                                        .fill(.blue)
-                                        .frame(width: 6, height: 6)
-                                        .padding(.top, 6)
+                                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                                    Text("\u{2014}")
+                                        .font(Typography.reading)
+                                        .foregroundStyle(Palette.textTertiary)
                                     Text(point)
-                                        .font(.body)
+                                        .font(Typography.reading)
+                                        .lineSpacing(6)
                                 }
                             }
                         }
                     }
 
-                    // Topics
+                    // Topics — middle-dot separated inline text
                     if let topics = summary.topics, !topics.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                             Text("Topics")
-                                .font(.headline)
-                            FlowLayout(spacing: 6) {
-                                ForEach(topics, id: \.self) { topic in
-                                    Text(topic)
-                                        .font(.caption)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(Color.blue.opacity(0.1))
-                                        .clipShape(Capsule())
-                                }
-                            }
+                                .waiSectionHeader()
+                            Text(topics.joined(separator: " \u{00B7} "))
+                                .font(Typography.body)
+                                .foregroundStyle(Palette.textSecondary)
                         }
                     }
 
-                    // People mentioned
+                    // People mentioned — comma-separated
                     if let people = summary.peopleMentioned, !people.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("People Mentioned")
-                                .font(.headline)
-                            FlowLayout(spacing: 6) {
-                                ForEach(people, id: \.self) { person in
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "person.fill")
-                                            .font(.caption2)
-                                        Text(person)
-                                            .font(.caption)
-                                    }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Color.gray.opacity(0.1))
-                                    .clipShape(Capsule())
-                                }
-                            }
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            Text("People")
+                                .waiSectionHeader()
+                            Text(people.joined(separator: ", "))
+                                .font(Typography.body)
+                                .foregroundStyle(Palette.textSecondary)
                         }
                     }
                 }
-                .padding()
+                .padding(Spacing.lg)
             }
         } else {
-            VStack(spacing: 16) {
+            VStack(spacing: Spacing.lg) {
                 ContentUnavailableView(
                     "No Summary",
                     systemImage: "doc.text",
                     description: Text("Generate a summary to see key points and insights.")
                 )
 
-                Button("Generate Summary") {
+                Button(action: {
                     Task {
                         await viewModel.generateSummary(apiClient: appState.getAPIClient())
                     }
+                }) {
+                    Text("Generate Summary")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
                 .disabled(viewModel.isGeneratingSummary)
 
                 if viewModel.isGeneratingSummary {
@@ -193,7 +180,7 @@ struct MacRecordingDetailView: View {
     private func actionsTab(_ detail: RecordingDetail) -> some View {
         if !detail.actionItems.isEmpty {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                     ForEach(detail.actionItems) { item in
                         ActionItemRow(item: item) { newStatus in
                             Task {
@@ -206,7 +193,7 @@ struct MacRecordingDetailView: View {
                         }
                     }
                 }
-                .padding()
+                .padding(Spacing.lg)
             }
         } else {
             ContentUnavailableView(
@@ -223,109 +210,49 @@ struct ActionItemRow: View {
     let onStatusChange: (ActionItem.Status) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
             Button {
                 let newStatus: ActionItem.Status = item.status == .completed ? .pending : .completed
                 onStatusChange(newStatus)
             } label: {
                 Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(item.status == .completed ? .green : .secondary)
-                    .font(.title3)
+                    .foregroundStyle(item.status == .completed ? Palette.accent : Palette.textSecondary)
+                    .font(Typography.headingLarge)
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(item.task)
-                    .font(.body)
+                    .font(Typography.body)
                     .strikethrough(item.status == .completed)
-                    .foregroundStyle(item.status == .completed ? .secondary : .primary)
+                    .foregroundStyle(item.status == .completed ? Palette.textSecondary : Palette.textPrimary)
 
-                HStack(spacing: 8) {
+                HStack(spacing: Spacing.sm) {
                     if let owner = item.owner {
-                        HStack(spacing: 2) {
-                            Image(systemName: "person.fill")
-                                .font(.caption2)
-                            Text(owner)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
+                        Text(owner)
+                            .font(Typography.label)
+                            .foregroundStyle(Palette.textTertiary)
                     }
 
                     if let priority = item.priority {
-                        PriorityBadge(priority: priority)
+                        Text(priority.rawValue.capitalized)
+                            .font(Typography.label)
+                            .foregroundStyle(priorityColor(priority))
                     }
                 }
             }
 
             Spacer()
         }
-        .padding(10)
-        .background(Color.gray.opacity(0.04))
-        .cornerRadius(8)
-    }
-}
-
-struct PriorityBadge: View {
-    let priority: ActionItem.Priority
-
-    var body: some View {
-        Text(priority.rawValue.capitalized)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
+        .padding(.vertical, Spacing.sm)
     }
 
-    private var color: Color {
+    private func priorityColor(_ priority: ActionItem.Priority) -> Color {
         switch priority {
-        case .high: return .red
-        case .medium: return .orange
-        case .low: return .gray
+        case .high: return Palette.priorityHigh
+        case .medium: return Palette.priorityMedium
+        case .low: return Palette.priorityLow
         }
-    }
-}
-
-/// Simple flow layout for tags
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        return result.size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = arrange(proposal: proposal, subviews: subviews)
-        for (index, position) in result.positions.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
-        }
-    }
-
-    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
-        let maxWidth = proposal.width ?? .infinity
-        var positions: [CGPoint] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var totalHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth && x > 0 {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            positions.append(CGPoint(x: x, y: y))
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
-            totalHeight = y + rowHeight
-        }
-
-        return (CGSize(width: maxWidth, height: totalHeight), positions)
     }
 }
 
@@ -333,7 +260,7 @@ struct FlowLayout: Layout {
 
 @MainActor
 class MacRecordingDetailViewModel: ObservableObject {
-    enum Tab {
+    enum Tab: Hashable {
         case transcript, summary, actions
     }
 
@@ -362,7 +289,6 @@ class MacRecordingDetailViewModel: ObservableObject {
 
         do {
             _ = try await apiClient.generateSummary(recordingId: id)
-            // Reload to get updated detail with summary and action items
             recordingDetail = try await apiClient.getRecording(id: id)
             selectedTab = .summary
         } catch {
@@ -375,7 +301,6 @@ class MacRecordingDetailViewModel: ObservableObject {
     func updateActionItemStatus(id: String, status: ActionItem.Status, apiClient: APIClient) async {
         do {
             _ = try await apiClient.updateActionItem(id: id, status: status)
-            // Reload to reflect changes
             if let recordingId = recordingDetail?.id {
                 recordingDetail = try await apiClient.getRecording(id: recordingId)
             }

@@ -6,13 +6,15 @@ struct MacChatView: View {
     @StateObject private var viewModel = MacChatViewModel()
 
     var body: some View {
-        HSplitView {
-            // Session list
+        HStack(spacing: 0) {
             sessionList
-                .frame(minWidth: 200, idealWidth: 250, maxWidth: 300)
+                .frame(width: 220)
 
-            // Conversation
+            Palette.border
+                .frame(width: 1)
+
             conversationView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task {
             await viewModel.loadSessions(apiClient: appState.getAPIClient())
@@ -24,19 +26,20 @@ struct MacChatView: View {
     private var sessionList: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Chat Sessions")
-                    .font(.headline)
+                Text("Sessions")
+                    .waiSectionHeader()
                 Spacer()
                 Button {
                     viewModel.startNewChat()
                 } label: {
                     Image(systemName: "plus")
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding()
+            .padding(Spacing.lg)
 
-            Divider()
+            WaiDivider()
 
             if viewModel.sessions.isEmpty {
                 ContentUnavailableView(
@@ -46,13 +49,13 @@ struct MacChatView: View {
                 )
             } else {
                 List(viewModel.sessions, selection: $viewModel.selectedSessionId) { session in
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
                         Text(session.title ?? "New Chat")
-                            .font(.body)
+                            .font(Typography.body)
                             .lineLimit(1)
                         Text("\(session.messageCount) messages")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.textTertiary)
                     }
                     .tag(session.id)
                     .contextMenu {
@@ -63,7 +66,7 @@ struct MacChatView: View {
                         }
                     }
                 }
-                .listStyle(.inset)
+                .listStyle(.sidebar)
             }
         }
         .onChange(of: viewModel.selectedSessionId) { _, newId in
@@ -79,40 +82,41 @@ struct MacChatView: View {
     private var conversationView: some View {
         VStack(spacing: 0) {
             if viewModel.messages.isEmpty && viewModel.selectedSessionId == nil {
-                // Empty state for new chat
                 Spacer()
-                VStack(spacing: 12) {
-                    Image(systemName: "bubble.left.and.bubble.right.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.secondary)
+                VStack(spacing: Spacing.md) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: Spacing.xxxl))
+                        .foregroundStyle(Palette.textTertiary)
                     Text("Ask anything about your recordings")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 Spacer()
             } else {
-                // Messages
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                             ForEach(viewModel.messages) { message in
-                                ChatBubble(message: message, sources: viewModel.sourcesForMessage(message))
-                                    .id(message.id)
+                                ChatMessageRow(
+                                    message: message,
+                                    sources: viewModel.sourcesForMessage(message)
+                                )
+                                .id(message.id)
                             }
 
                             if viewModel.isLoading {
-                                HStack {
+                                HStack(spacing: Spacing.sm) {
                                     ProgressView()
                                         .controlSize(.small)
                                     Text("Thinking...")
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
+                                        .font(Typography.bodySmall)
+                                        .foregroundStyle(Palette.textTertiary)
                                 }
-                                .padding(.horizontal)
+                                .padding(.horizontal, Spacing.lg)
                                 .id("loading")
                             }
                         }
-                        .padding()
+                        .padding(Spacing.lg)
                     }
                     .onChange(of: viewModel.messages.count) { _, _ in
                         if let lastId = viewModel.messages.last?.id {
@@ -124,33 +128,43 @@ struct MacChatView: View {
                 }
             }
 
-            Divider()
+            WaiDivider()
 
-            // Input
             chatInput
         }
     }
 
     private var chatInput: some View {
-        HStack(spacing: 10) {
-            TextField("Ask about your recordings...", text: $viewModel.inputText)
+        HStack(alignment: .bottom, spacing: Spacing.md) {
+            TextField("Ask about your recordings...", text: $viewModel.inputText, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.body)
+                .font(Typography.bodyLarge)
+                .lineLimit(1...5)
                 .onSubmit {
                     sendMessage()
                 }
+                .padding(Spacing.md)
+                .background(Palette.surfaceSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Button {
                 sendMessage()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty ? .gray : .blue)
+                Image(systemName: "arrow.up")
+                    .font(Typography.headingSmall)
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? Palette.textTertiary
+                            : Palette.accent
+                    )
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isLoading)
         }
-        .padding()
+        .padding(Spacing.lg)
     }
 
     private func sendMessage() {
@@ -162,9 +176,9 @@ struct MacChatView: View {
     }
 }
 
-// MARK: - Chat Bubble
+// MARK: - Chat Message Row (flat thread, no bubbles)
 
-struct ChatBubble: View {
+struct ChatMessageRow: View {
     let message: ChatMessageResponse
     let sources: [ChatSource]
     @State private var showSources = false
@@ -172,63 +186,67 @@ struct ChatBubble: View {
     var isUser: Bool { message.role == "user" }
 
     var body: some View {
-        HStack {
-            if isUser { Spacer(minLength: 60) }
+        HStack(alignment: .top, spacing: Spacing.md) {
+            // Accent left bar for assistant, invisible spacer for user (consistent alignment)
+            RoundedRectangle(cornerRadius: 1)
+                .fill(isUser ? Color.clear : Palette.accent)
+                .frame(width: 2)
 
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                // Role label
+                Text(isUser ? "YOU" : "WAI")
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+                    .tracking(1.2)
+
+                // Message content
                 Text(message.content)
-                    .font(.body)
-                    .padding(12)
-                    .background(isUser ? Color.blue : Color.gray.opacity(0.15))
-                    .foregroundStyle(isUser ? .white : .primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .font(Typography.reading)
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
 
-                // Source citations
+                // Sources
                 if !isUser && !sources.isEmpty {
                     Button {
                         withAnimation { showSources.toggle() }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "doc.text")
+                        HStack(spacing: Spacing.xs) {
                             Text("\(sources.count) source\(sources.count == 1 ? "" : "s")")
+                                .font(Typography.label)
                             Image(systemName: showSources ? "chevron.up" : "chevron.down")
+                                .font(Typography.caption)
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.accent)
                     }
                     .buttonStyle(.plain)
+                    .padding(.top, Spacing.xs)
 
                     if showSources {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
                             ForEach(sources) { source in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 4) {
+                                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                    HStack(spacing: Spacing.xs) {
                                         if let title = source.recordingTitle {
                                             Text(title)
-                                                .font(.caption)
-                                                .fontWeight(.medium)
+                                                .font(Typography.label)
                                         }
                                         if let speaker = source.speaker {
                                             Text("(\(speaker))")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
+                                                .font(Typography.caption)
+                                                .foregroundStyle(Palette.textTertiary)
                                         }
                                     }
                                     Text(source.content)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .font(Typography.bodySmall)
+                                        .foregroundStyle(Palette.textSecondary)
                                         .lineLimit(2)
                                 }
-                                .padding(8)
-                                .background(Color.gray.opacity(0.08))
-                                .cornerRadius(6)
                             }
                         }
+                        .padding(.top, Spacing.xs)
                     }
                 }
             }
-
-            if !isUser { Spacer(minLength: 60) }
         }
     }
 }
@@ -244,7 +262,6 @@ class MacChatViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
-    // Store sources keyed by message ID from the latest response
     private var messageSourcesMap: [String: [ChatSource]] = [:]
 
     func sourcesForMessage(_ message: ChatMessageResponse) -> [ChatSource] {
@@ -276,7 +293,6 @@ class MacChatViewModel: ObservableObject {
     }
 
     func sendMessage(_ text: String, apiClient: APIClient) async {
-        // Add user message locally for immediate display
         let tempUserMessage = ChatMessageResponse(
             id: UUID().uuidString,
             role: "user",
@@ -295,18 +311,13 @@ class MacChatViewModel: ObservableObject {
                 sessionId: selectedSessionId
             )
 
-            // Update session ID (may be new)
             selectedSessionId = response.sessionId
 
-            // Replace temp user message and add assistant response
-            // Reload full session to get proper message IDs
             let detail = try await apiClient.getChatSession(id: response.sessionId)
             messages = detail.messages
 
-            // Store sources for the assistant's response message
             messageSourcesMap[response.messageId] = response.sources
 
-            // Reload sessions list
             sessions = try await apiClient.listChatSessions()
 
         } catch {

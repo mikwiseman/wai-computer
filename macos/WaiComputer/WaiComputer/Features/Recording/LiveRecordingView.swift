@@ -6,24 +6,26 @@ struct LiveRecordingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Recording header
             recordingHeader
 
-            Divider()
+            WaiDivider()
 
             // Live transcript
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                         if appState.recordingViewModel.currentTranscript.isEmpty {
                             Text("Listening...")
-                                .foregroundStyle(.secondary)
+                                .font(Typography.reading)
+                                .foregroundStyle(Palette.textSecondary)
                                 .italic()
-                                .padding()
+                                .padding(Spacing.lg)
                         } else {
                             Text(appState.recordingViewModel.currentTranscript)
-                                .font(.body)
-                                .padding()
+                                .font(Typography.reading)
+                                .lineSpacing(6)
+                                .textSelection(.enabled)
+                                .padding(Spacing.lg)
                                 .id("transcript-bottom")
                         }
                     }
@@ -35,7 +37,7 @@ struct LiveRecordingView: View {
                 }
             }
 
-            Divider()
+            WaiDivider()
 
             // Stop button
             HStack {
@@ -46,46 +48,47 @@ struct LiveRecordingView: View {
                         await appState.stopRecording()
                     }
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: Spacing.sm) {
                         Image(systemName: "stop.fill")
                         Text("Stop Recording")
                     }
-                    .font(.headline)
+                    .font(Typography.headingSmall)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(.red)
-                    .clipShape(Capsule())
+                    .padding(.horizontal, Spacing.xl)
+                    .padding(.vertical, Spacing.md)
+                    .background(Palette.recording)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
             }
-            .padding()
+            .padding(Spacing.lg)
         }
     }
 
     private var recordingHeader: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.md) {
             // Pulsing red indicator
             Circle()
-                .fill(.red)
+                .fill(Palette.recording)
                 .frame(width: 12, height: 12)
                 .modifier(PulseModifier())
 
             Text("Recording")
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(Typography.displaySmall)
 
             Text(appState.recordingViewModel.formattedDuration)
-                .font(.system(.title3, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(Typography.monoLarge)
+                .foregroundStyle(Palette.textSecondary)
 
             Spacer()
 
-            TypeBadge(type: appState.recordingViewModel.recordingType)
+            Text(appState.recordingViewModel.recordingType.rawValue.capitalized)
+                .font(Typography.label)
+                .foregroundStyle(Palette.typeColor(appState.recordingViewModel.recordingType))
         }
-        .padding()
+        .padding(Spacing.lg)
     }
 }
 

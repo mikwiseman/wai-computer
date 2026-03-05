@@ -24,33 +24,29 @@ struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
-    @State private var selectedSection: SidebarSection = .allRecordings
+    @State private var selectedSection: SidebarSection? = .allRecordings
     @State private var selectedRecordingId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     enum SidebarSection: Hashable {
-        // Library sections (show middle column)
         case allRecordings
         case meetings
         case notes
         case reflections
-        // Tool sections (hide middle column, full-width detail)
         case chat
         case search
         case settings
     }
 
-    /// Whether the current section has a list (middle) column
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .reflections:
+        case .allRecordings, .meetings, .notes, .reflections, .none:
             return true
         case .chat, .search, .settings:
             return false
         }
     }
 
-    /// The recording type filter for the current section
     private var currentTypeFilter: RecordingType? {
         switch selectedSection {
         case .meetings: return .meeting
@@ -63,16 +59,14 @@ struct MacMainView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+                .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
         } content: {
-            if hasListColumn {
-                listColumn
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 360)
-            } else {
-                // For tool sections, show an empty content column (collapsed)
-                EmptyView()
-                    .navigationSplitViewColumnWidth(0)
-            }
+            listColumn
+                .navigationSplitViewColumnWidth(
+                    min: hasListColumn ? 220 : 0,
+                    ideal: hasListColumn ? 280 : 0,
+                    max: hasListColumn ? 360 : 0
+                )
         } detail: {
             detailColumn
         }
@@ -94,7 +88,8 @@ struct MacMainView: View {
                     }
                     .disabled(importViewModel.isImporting)
                 } label: {
-                    Label("New Recording", systemImage: "plus")
+                    Image(systemName: "plus")
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .disabled(appState.isRecording)
             }
@@ -107,46 +102,61 @@ struct MacMainView: View {
         .task {
             await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
         }
+        .onChange(of: appState.isRecording) { wasRecording, isNowRecording in
+            if wasRecording && !isNowRecording {
+                handleRecordingStop()
+            }
+        }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(selection: $selectedSection) {
-            Section("Library") {
-                Label("All Recordings", systemImage: "folder.fill")
-                    .tag(SidebarSection.allRecordings)
-
-                Label("Meetings", systemImage: "person.2.fill")
-                    .tag(SidebarSection.meetings)
-
-                Label("Notes", systemImage: "note.text")
-                    .tag(SidebarSection.notes)
-
-                Label("Reflections", systemImage: "brain.head.profile")
-                    .tag(SidebarSection.reflections)
+        List {
+            Section {
+                sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
+                sidebarRow("Meetings", icon: "person.2", section: .meetings)
+                sidebarRow("Notes", icon: "note.text", section: .notes)
+                sidebarRow("Reflections", icon: "brain.head.profile", section: .reflections)
+            } header: {
+                Text("Library")
+                    .waiSectionHeader()
             }
 
-            Section("Tools") {
-                Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
-                    .tag(SidebarSection.chat)
-
-                Label("Search", systemImage: "magnifyingglass")
-                    .tag(SidebarSection.search)
-
-                Label("Settings", systemImage: "gear")
-                    .tag(SidebarSection.settings)
+            Section {
+                sidebarRow("Chat", icon: "bubble.left.and.bubble.right", section: .chat)
+                sidebarRow("Search", icon: "magnifyingglass", section: .search)
+                sidebarRow("Settings", icon: "gear", section: .settings)
+            } header: {
+                Text("Tools")
+                    .waiSectionHeader()
             }
         }
         .listStyle(.sidebar)
     }
 
+    private func sidebarRow(_ title: String, icon: String, section: SidebarSection) -> some View {
+        Button {
+            selectedSection = section
+        } label: {
+            Label(title, systemImage: icon)
+                .font(Typography.body)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            selectedSection == section
+                ? Color.accentColor.opacity(0.15)
+                : Color.clear
+        )
+    }
+
     // MARK: - List Column
 
+    @ViewBuilder
     private var listColumn: some View {
-        let filtered = libraryViewModel.filteredRecordings(for: currentTypeFilter)
+        if hasListColumn {
+            let filtered = libraryViewModel.filteredRecordings(for: currentTypeFilter)
 
-        return Group {
             if libraryViewModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -170,6 +180,9 @@ struct MacMainView: View {
                     }
                 )
             }
+        } else {
+            // Non-list sections: empty content column
+            Color.clear
         }
     }
 
@@ -181,7 +194,7 @@ struct MacMainView: View {
             LiveRecordingView()
         } else {
             switch selectedSection {
-            case .allRecordings, .meetings, .notes, .reflections:
+            case .allRecordings, .meetings, .notes, .reflections, .none:
                 if let recordingId = selectedRecordingId {
                     MacRecordingDetailView(recordingId: recordingId)
                 } else {
@@ -197,6 +210,24 @@ struct MacMainView: View {
                 MacSearchView()
             case .settings:
                 MacSettingsView()
+            }
+        }
+    }
+
+    /// When recording state changes from recording to not-recording,
+    /// select the completed recording and refresh the library.
+    private func handleRecordingStop() {
+        if let completedId = appState.recordingViewModel.currentRecordingId {
+            selectedRecordingId = completedId
+            selectedSection = .allRecordings
+            appState.resetRecordingState()
+            Task {
+                // Load immediately so the recording appears in the list
+                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+                // Reload again after a short delay — the server may still be
+                // saving segments, generating embeddings, and uploading audio
+                try? await Task.sleep(for: .seconds(3))
+                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
             }
         }
     }
@@ -224,7 +255,7 @@ struct MacMainView: View {
 struct MacAuthView: View {
     @EnvironmentObject var appState: MacAppState
 
-    enum AuthMode: String, CaseIterable {
+    enum AuthMode: String, CaseIterable, Hashable {
         case login = "Login"
         case register = "Register"
         case magicLink = "Magic Link"
@@ -234,25 +265,42 @@ struct MacAuthView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @FocusState private var focusedField: Field?
+
+    enum Field: Hashable {
+        case email, password, confirmPassword
+    }
 
     var body: some View {
-        VStack(spacing: 32) {
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 80))
-                .foregroundStyle(.blue)
+        VStack(spacing: Spacing.xxl) {
+            Spacer()
 
-            Text("WaiComputer")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            // Icon + wordmark
+            VStack(spacing: Spacing.lg) {
+                WaiTriangleIcon(size: 48)
 
-            Picker("", selection: $authMode) {
-                ForEach(AuthMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
+                HStack(spacing: 0) {
+                    Text("wai")
+                        .font(Typography.displayLarge)
+                    Text("computer")
+                        .font(.system(size: 32, weight: .light, design: .serif))
                 }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 300)
 
+                Text("YOUR SECOND BRAIN")
+                    .waiSectionHeader()
+            }
+
+            // Tab bar
+            WaiTabBar(
+                tabs: [
+                    ("Login", AuthMode.login),
+                    ("Register", AuthMode.register),
+                    ("Magic Link", AuthMode.magicLink),
+                ],
+                selection: $authMode
+            )
+
+            // Form
             if authMode == .magicLink && appState.magicLinkSent {
                 magicLinkSentView
             } else {
@@ -261,10 +309,11 @@ struct MacAuthView: View {
 
             if let error = appState.error {
                 Text(error)
-                    .foregroundStyle(.red)
-                    .font(.caption)
+                    .foregroundStyle(Palette.recording)
+                    .font(Typography.caption)
             }
 
+            // Submit button
             Button(action: submit) {
                 if appState.isLoading {
                     ProgressView()
@@ -273,12 +322,13 @@ struct MacAuthView: View {
                     Text(buttonTitle)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
             .disabled(!isFormValid || appState.isLoading)
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(60)
+        .padding(Spacing.huge)
         .onChange(of: authMode) {
             appState.magicLinkSent = false
             appState.error = nil
@@ -287,43 +337,48 @@ struct MacAuthView: View {
 
     @ViewBuilder
     private var formView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.md) {
             TextField("Email", text: $email)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 300)
+                .textFieldStyle(.plain)
+                .waiTextField(isActive: focusedField == .email)
+                .focused($focusedField, equals: .email)
+                .frame(maxWidth: 380)
 
             if authMode != .magicLink {
                 SecureField("Password", text: $password)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 300)
+                    .textFieldStyle(.plain)
+                    .waiTextField(isActive: focusedField == .password)
+                    .focused($focusedField, equals: .password)
+                    .frame(maxWidth: 380)
 
                 if authMode == .register {
                     SecureField("Confirm Password", text: $confirmPassword)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 300)
+                        .textFieldStyle(.plain)
+                        .waiTextField(isActive: focusedField == .confirmPassword)
+                        .focused($focusedField, equals: .confirmPassword)
+                        .frame(maxWidth: 380)
                 }
             }
         }
     }
 
     private var magicLinkSentView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: Spacing.lg) {
             Image(systemName: "envelope.badge")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
+                .font(.system(size: Spacing.xxxl))
+                .foregroundStyle(Palette.textSecondary)
 
             Text("Check your email")
-                .font(.title2)
-                .fontWeight(.semibold)
+                .font(Typography.displaySmall)
 
             Text("We sent a sign-in link to \(email)")
-                .foregroundStyle(.secondary)
+                .font(Typography.body)
+                .foregroundStyle(Palette.textSecondary)
 
             Button("Send again") {
                 appState.magicLinkSent = false
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.blue)
+            .buttonStyle(WaiGhostButtonStyle())
         }
     }
 

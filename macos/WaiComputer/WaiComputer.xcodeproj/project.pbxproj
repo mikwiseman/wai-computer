@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A6978869706152 /* DesignSystem.swift */; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */; };
 		29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */; };
 		35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */; };
 		3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */; };
@@ -24,11 +26,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F1E2D3C4B5A6978869706152 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		0101EAFAD4775FD2049A4AA3 /* SystemAudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioManager.swift; sourceTree = "<group>"; };
 		10E4E623F7FC6EEBED7495A6 /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
 		31B51F48FF32F6BC868F2C12 /* WaiComputer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		4A8999379655635D74EC3514 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
+		C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingViewModel.swift; sourceTree = "<group>"; };
 		6299E722D1B0554D90131758 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
@@ -138,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */,
+				C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */,
 				525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */,
 				0101EAFAD4775FD2049A4AA3 /* SystemAudioManager.swift */,
 			);
@@ -166,6 +171,7 @@
 		E1A98E16AC8A5557AE9585A0 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				F1E2D3C4B5A6978869706152 /* DesignSystem.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -233,7 +239,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* DesignSystem.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* MacImportViewModel.swift in Sources */,
 				DED3994205172291160E4F83 /* MacChatView.swift in Sources */,
 				43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */,
 				50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */,
