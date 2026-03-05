@@ -196,8 +196,8 @@ public actor APIClient {
         return try await self.request(.POST, path: "/api/auth/login", body: request)
     }
 
-    public func requestMagicLink(email: String) async throws -> MessageResponse {
-        let request = MagicLinkRequest(email: email)
+    public func requestMagicLink(email: String, client: String? = nil) async throws -> MessageResponse {
+        let request = MagicLinkRequest(email: email, client: client)
         return try await self.request(.POST, path: "/api/auth/magic-link", body: request)
     }
 
