@@ -58,6 +58,8 @@ class DeepgramStreamingClient:
             "encoding=linear16",
             "sample_rate=16000",
         ]
+        if self.language == "multi":
+            params.append("endpointing=100")
         return f"{self.DEEPGRAM_WS_URL}?{'&'.join(params)}"
 
     async def connect(self) -> bool:

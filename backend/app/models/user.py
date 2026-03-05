@@ -17,6 +17,9 @@ class User(Base, UUIDMixin, TimestampMixin):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    default_language: Mapped[str] = mapped_column(
+        String(10), default="multi", server_default="multi"
+    )
 
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(
