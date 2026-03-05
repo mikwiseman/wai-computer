@@ -61,7 +61,7 @@ async def test_magic_link_user_can_set_password(
     """Magic-link users without password hash should be able to set a password."""
     captured: dict[str, str] = {}
 
-    async def fake_send_magic_link_email(_: str, token: str) -> None:
+    async def fake_send_magic_link_email(_: str, token: str, **kwargs) -> None:
         captured["token"] = token
 
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)

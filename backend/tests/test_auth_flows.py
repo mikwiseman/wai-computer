@@ -80,7 +80,7 @@ async def test_magic_link_creates_user_and_stores_token(
     """Magic-link request creates user when missing and stores token/expiry."""
     captured: dict[str, str] = {}
 
-    async def fake_send_magic_link_email(to_email: str, token: str) -> None:
+    async def fake_send_magic_link_email(to_email: str, token: str, **kwargs) -> None:
         captured["to_email"] = to_email
         captured["token"] = token
 
@@ -108,7 +108,7 @@ async def test_verify_magic_link_success_clears_token(
     """Successful verify should return JWT and clear magic-link token fields."""
     captured: dict[str, str] = {}
 
-    async def fake_send_magic_link_email(to_email: str, token: str) -> None:
+    async def fake_send_magic_link_email(to_email: str, token: str, **kwargs) -> None:
         captured["token"] = token
 
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
