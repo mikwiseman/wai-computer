@@ -1,7 +1,6 @@
 """Tests for the WebSocket audio streaming endpoint."""
 
 import asyncio
-import base64
 import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch

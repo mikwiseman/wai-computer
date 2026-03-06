@@ -90,11 +90,11 @@ async def test_unicode_entity_name(client: AsyncClient, auth_headers: dict):
 
 
 async def test_cascade_delete_removes_recording(client: AsyncClient, auth_headers: dict):
-    """Deleting a recording cascades to segments, summary, and action items.
+    """Deleting a recording soft-deletes first, then permanent delete removes it.
 
-    We create a recording, then delete it, and confirm it is gone.
-    (The DB schema uses ``cascade='all, delete-orphan'`` on the
-    relationships, so child rows are removed automatically.)
+    First delete sets ``deleted_at`` (soft delete / trash).
+    Second delete with ``permanent=true`` or deleting a trashed recording
+    hard-deletes it and cascades to segments, summary, and action items.
     """
     # Create recording
     create_resp = await client.post(
@@ -108,14 +108,69 @@ async def test_cascade_delete_removes_recording(client: AsyncClient, auth_header
     # Verify it exists
     get_resp = await client.get(f"/api/recordings/{rec_id}", headers=auth_headers)
     assert get_resp.status_code == 200
+    assert get_resp.json()["deleted_at"] is None
 
-    # Delete it
+    # Soft-delete it (move to trash)
     del_resp = await client.delete(f"/api/recordings/{rec_id}", headers=auth_headers)
     assert del_resp.status_code == 204
 
-    # Verify it is gone
+    # Verify it is soft-deleted (still accessible but has deleted_at)
     get_resp2 = await client.get(f"/api/recordings/{rec_id}", headers=auth_headers)
-    assert get_resp2.status_code == 404
+    assert get_resp2.status_code == 200
+    assert get_resp2.json()["deleted_at"] is not None
+
+    # Permanently delete it (already trashed, so second delete is permanent)
+    del_resp2 = await client.delete(f"/api/recordings/{rec_id}", headers=auth_headers)
+    assert del_resp2.status_code == 204
+
+    # Verify it is gone
+    get_resp3 = await client.get(f"/api/recordings/{rec_id}", headers=auth_headers)
+    assert get_resp3.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 4b. Restore from trash
+# ---------------------------------------------------------------------------
+
+
+async def test_restore_recording_from_trash(client: AsyncClient, auth_headers: dict):
+    """Soft-deleted recordings can be restored."""
+    create_resp = await client.post(
+        "/api/recordings",
+        json={"title": "Restore Me", "type": "note"},
+        headers=auth_headers,
+    )
+    rec_id = create_resp.json()["id"]
+
+    # Soft-delete
+    await client.delete(f"/api/recordings/{rec_id}", headers=auth_headers)
+
+    # Appears in trash list
+    trash_resp = await client.get("/api/recordings?trashed=true", headers=auth_headers)
+    assert any(r["id"] == rec_id for r in trash_resp.json())
+
+    # Not in normal list
+    normal_resp = await client.get("/api/recordings", headers=auth_headers)
+    assert all(r["id"] != rec_id for r in normal_resp.json())
+
+    # Restore
+    restore_resp = await client.post(
+        f"/api/recordings/{rec_id}/restore", headers=auth_headers
+    )
+    assert restore_resp.status_code == 200
+    assert restore_resp.json()["deleted_at"] is None
+
+    # Back in normal list
+    normal_resp2 = await client.get("/api/recordings", headers=auth_headers)
+    assert any(r["id"] == rec_id for r in normal_resp2.json())
+
+
+async def test_restore_nonexistent_recording_404(client: AsyncClient, auth_headers: dict):
+    resp = await client.post(
+        "/api/recordings/00000000-0000-0000-0000-000000000000/restore",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

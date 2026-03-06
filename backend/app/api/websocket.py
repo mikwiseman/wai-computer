@@ -326,7 +326,7 @@ async def audio_websocket(websocket: WebSocket):
             if send_task in pending:
                 try:
                     await asyncio.wait_for(send_task, timeout=15.0)
-                except asyncio.TimeoutError as exc:
+                except asyncio.TimeoutError:
                     logger.error("Timed out waiting for Deepgram final transcripts")
                     terminal_error = terminal_error or RuntimeError(
                         "Timed out waiting for final transcripts"

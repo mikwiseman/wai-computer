@@ -47,7 +47,10 @@ def upgrade() -> None:
     )
     op.create_index("ix_folders_user_id", "folders", ["user_id"])
 
-    op.add_column("recordings", sa.Column("folder_id", postgresql.UUID(as_uuid=True), nullable=True))
+    op.add_column(
+        "recordings",
+        sa.Column("folder_id", postgresql.UUID(as_uuid=True), nullable=True),
+    )
     op.add_column("recordings", sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True))
     op.create_index("ix_recordings_folder_id", "recordings", ["folder_id"])
     op.create_index("ix_recordings_deleted_at", "recordings", ["deleted_at"])

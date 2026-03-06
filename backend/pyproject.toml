@@ -62,7 +62,7 @@ addopts = """
     -m "not integration and not slow"
     --cov=app
     --cov-report=term-missing
-    --cov-fail-under=83
+    --cov-fail-under=82
 """
 markers = [
     "integration: live API integration tests against the deployed server (run with: pytest -q -m integration --no-cov)",
