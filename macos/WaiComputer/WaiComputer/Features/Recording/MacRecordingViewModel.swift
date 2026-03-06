@@ -5,6 +5,38 @@ import WaiComputerKit
 
 private let audioLog = Logger(subsystem: "com.waicomputer.app", category: "audio")
 
+enum MacRecordingInputSource: String, CaseIterable, Equatable {
+    case microphone
+    case systemAudio = "system_audio"
+
+    var label: String {
+        switch self {
+        case .microphone:
+            return "Microphone"
+        case .systemAudio:
+            return "System Audio"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .microphone:
+            return "mic"
+        case .systemAudio:
+            return "speaker.wave.2"
+        }
+    }
+
+    var preparingText: String {
+        switch self {
+        case .microphone:
+            return "Preparing microphone and connection..."
+        case .systemAudio:
+            return "Preparing system audio and connection..."
+        }
+    }
+}
+
 enum MacRecordingPhase: Equatable {
     case idle
     case preparing
@@ -18,6 +50,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var recordingType: RecordingType = .note
+    @Published var recordingInputSource: MacRecordingInputSource = .microphone
     @Published var duration: TimeInterval = 0
     @Published var currentTranscript = ""
     @Published var currentRecordingId: String?
@@ -31,9 +64,10 @@ class MacRecordingViewModel: ObservableObject {
 
     /// Guards against starting a new recording while cleanup is in progress
     private var isCleaningUp = false
+    private let testingMode: MacTestingMode
 
     private var recording: Recording?
-    private var audioCapture: MicrophoneCapture?
+    private var audioCapture: (any AudioCaptureProtocol)?
     private var audioEncoder: AudioEncoder?
     private var webSocketManager: WebSocketManager?
     private var timerTask: Task<Void, Never>?
@@ -73,7 +107,7 @@ class MacRecordingViewModel: ObservableObject {
         case .idle:
             return "Ready to record."
         case .preparing:
-            return "Preparing microphone and connection..."
+            return recordingInputSource.preparingText
         case .recording:
             return "Listening..."
         case .finalizing:
@@ -81,18 +115,35 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
-    func startRecording(apiClient: APIClient, webSocketManager: WebSocketManager, type: RecordingType) async {
+    init(testingMode: MacTestingMode = .current) {
+        self.testingMode = testingMode
+    }
+
+    func startRecording(
+        apiClient: APIClient,
+        webSocketManager: WebSocketManager,
+        type: RecordingType,
+        inputSource: MacRecordingInputSource = .microphone
+    ) async {
         // Wait for any in-progress cleanup to finish before starting a new recording
         if isCleaningUp {
             NSLog("[Recording] Waiting for previous cleanup to complete...")
             await cleanupTask?.value
         }
 
-        // If somehow still recording, stop first
-        if shouldPresentLiveView {
+        if phase == .preparing {
+            NSLog("[Recording] Ignoring start while a recording is still preparing")
+            return
+        }
+
+        if phase == .recording || phase == .finalizing {
             NSLog("[Recording] Force-stopping previous recording before starting new one")
             await stopRecording()
-            await cleanupTask?.value
+        }
+
+        guard phase == .idle else {
+            NSLog("[Recording] Ignoring start while phase is %@", String(describing: phase))
+            return
         }
 
         isLoading = true
@@ -103,6 +154,7 @@ class MacRecordingViewModel: ObservableObject {
         isServerComplete = false
         currentRecordingId = nil
         recordingType = type
+        recordingInputSource = inputSource
         duration = 0
         recording = nil
         audioCapture = nil
@@ -110,13 +162,25 @@ class MacRecordingViewModel: ObservableObject {
 
         setPhase(.preparing)
 
+        #if DEBUG
+        if testingMode.isRecordingFlow {
+            currentRecordingId = MacUITestFixtures.recording.id
+            currentTranscript = "UI test live transcript."
+            duration = TimeInterval(MacUITestFixtures.recording.durationSeconds ?? 0)
+            setPhase(.recording)
+            isLoading = false
+            return
+        }
+        #endif
+
         do {
-            // Request microphone permission
-            let granted = await AVAudioApplication.requestRecordPermission()
-            guard granted else {
-                error = "Microphone permission denied"
-                await resetAfterStartFailure()
-                return
+            if inputSource == .microphone {
+                let granted = await AVAudioApplication.requestRecordPermission()
+                guard granted else {
+                    error = "Microphone permission denied"
+                    await resetAfterStartFailure()
+                    return
+                }
             }
 
             // Create recording on server — use language from Settings
@@ -150,7 +214,7 @@ class MacRecordingViewModel: ObservableObject {
             try await webSocketManager.connect(recordingId: recordingId)
 
             // Initialize audio capture and encoder
-            let capture = MicrophoneCapture()
+            let capture = try makeAudioCapture(for: inputSource)
             let encoder = AudioEncoder()
             audioCapture = capture
             audioEncoder = encoder
@@ -163,7 +227,8 @@ class MacRecordingViewModel: ObservableObject {
             // compete with UI work on the main actor.
             NSLog("[Recording] Starting audio task (detached)...")
             var bufferCount = 0
-            audioTask = Task.detached(priority: .userInitiated) {
+            audioTask = Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self else { return }
                 NSLog("[Recording] Audio task started, waiting for buffers...")
                 for await buffer in capture.audioBuffers {
                     bufferCount += 1
@@ -181,10 +246,8 @@ class MacRecordingViewModel: ObservableObject {
                             }
                         } catch {
                             NSLog("[Recording] Failed to send audio: %@", "\(error)")
-                            await MainActor.run {
-                                self.error = error.localizedDescription
-                            }
-                            break
+                            await self.failActiveRecording(with: error.localizedDescription)
+                            return
                         }
                     } else {
                         NSLog("[Recording] Encoder returned nil for buffer #%d", bufferCount)
@@ -203,17 +266,46 @@ class MacRecordingViewModel: ObservableObject {
             isLoading = false
 
         } catch {
-            self.error = error.localizedDescription
+            self.error = recordingErrorMessage(for: error, inputSource: inputSource)
             await resetAfterStartFailure()
         }
     }
 
     func stopRecording() async {
+        if phase == .finalizing {
+            await cleanupTask?.value
+            return
+        }
+
         guard phase == .recording else { return }
+        setPhase(.finalizing)
 
         // Stop timer
         timerTask?.cancel()
         timerTask = nil
+
+        #if DEBUG
+        if testingMode.isRecordingFlow {
+            isCleaningUp = true
+
+            let task = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(150))
+
+                await MainActor.run {
+                    self?.isServerComplete = true
+                    self?.recording = nil
+                    self?.audioEncoder = nil
+                    self?.setPhase(.idle)
+                    self?.isCleaningUp = false
+                    self?.cleanupTask = nil
+                }
+            }
+
+            cleanupTask = task
+            await task.value
+            return
+        }
+        #endif
 
         // Stop audio capture first so no more audio is generated
         await audioCapture?.stopRecording()
@@ -224,7 +316,6 @@ class MacRecordingViewModel: ObservableObject {
         audioTask = nil
 
         // Keep the live view mounted while the server flushes final transcript/audio.
-        setPhase(.finalizing)
         isCleaningUp = true
 
         // Capture references for background cleanup
@@ -282,6 +373,10 @@ class MacRecordingViewModel: ObservableObject {
         duration = 0
     }
 
+    func clearError() {
+        error = nil
+    }
+
     private func startTimer() {
         timerTask?.cancel()
         timerTask = Task { [weak self] in
@@ -313,6 +408,7 @@ class MacRecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         isServerComplete = false
+        recordingInputSource = .microphone
         setPhase(.idle)
     }
 
@@ -352,10 +448,83 @@ class MacRecordingViewModel: ObservableObject {
                 isServerComplete = true
             }
         case .disconnected(let err):
-            if let err = err {
+            if let err = err, phase == .recording {
+                await failActiveRecording(with: err.localizedDescription)
+            } else if let err = err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
             }
         }
+    }
+
+    private func failActiveRecording(with message: String) async {
+        guard phase == .recording else {
+            error = message
+            return
+        }
+
+        error = message
+
+        timerTask?.cancel()
+        timerTask = nil
+        audioTask?.cancel()
+        audioTask = nil
+        transcriptTask?.cancel()
+        transcriptTask = nil
+        cleanupTask?.cancel()
+        cleanupTask = nil
+
+        await audioCapture?.stopRecording()
+        audioCapture = nil
+        audioEncoder = nil
+
+        let ws = webSocketManager
+        webSocketManager = nil
+        await ws?.disconnect()
+
+        recording = nil
+        isServerComplete = false
+        isCleaningUp = false
+        recordingInputSource = .microphone
+        setPhase(.idle)
+    }
+
+    private func makeAudioCapture(
+        for inputSource: MacRecordingInputSource
+    ) throws -> any AudioCaptureProtocol {
+        switch inputSource {
+        case .microphone:
+            return MicrophoneCapture()
+        case .systemAudio:
+            guard #available(macOS 14.2, *) else {
+                throw NSError(
+                    domain: "MacRecordingViewModel",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "System audio capture requires macOS 14.2 or newer."]
+                )
+            }
+            return SystemAudioCapture()
+        }
+    }
+
+    private func recordingErrorMessage(
+        for error: Error,
+        inputSource: MacRecordingInputSource
+    ) -> String {
+        if inputSource == .systemAudio {
+            if #available(macOS 14.2, *),
+               let systemError = error as? SystemAudioCaptureError {
+                return "System audio capture couldn't start (\(systemError)). Check Audio Capture permission in System Settings and try again."
+            }
+
+            switch error {
+            case AudioCaptureError.invalidFormat:
+                return "System audio capture returned an unsupported format."
+            default:
+                break
+            }
+        }
+
+        return error.localizedDescription
     }
 
     deinit {

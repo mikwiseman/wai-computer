@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1B2C3D4E5F6A7B8C9D0E1F2 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A6978869706152 /* DesignSystem.swift */; };
-		B2C3D4E5F6A7B8C9D0E1F2A3 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */; };
 		29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */; };
 		35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */; };
 		3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */; };
@@ -16,33 +14,50 @@
 		4F5A778B7DB5B69113852A9B /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8720A51453F6A00129C44413 /* MenuBarView.swift */; };
 		50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */; };
 		51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */; };
+		72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */; };
+		7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */; };
 		833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */; };
 		83CB01D05304F022D5A2188E /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9FED7AFDFB3BD38C93665B6 /* WaiComputerKit */; };
+		87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 864F5988EFF4C90C1885EAD1 /* Assets.xcassets */; };
 		8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299E722D1B0554D90131758 /* MacSettingsView.swift */; };
+		D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */; };
 		D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA555164F098038E385713E6 /* RecordingListView.swift */; };
 		DED3994205172291160E4F83 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A8999379655635D74EC3514 /* MacChatView.swift */; };
+		E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */; };
 		EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */; };
-		F3A4B5C6D7E8091A2B3C4D5E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D1A2B3C4E5F6071829304152 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		E5DF6CEAB56B61F0F500E9CE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 658E3EA6F491B911F68B7FA8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0950F2D4CFDE46D8C8A41CC6;
+			remoteInfo = WaiComputer;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		F1E2D3C4B5A6978869706152 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		10E4E623F7FC6EEBED7495A6 /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
+		268030C91DA972CD39219719 /* WaiComputerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaiComputerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		31B51F48FF32F6BC868F2C12 /* WaiComputer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		4A8999379655635D74EC3514 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
-		C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingViewModel.swift; sourceTree = "<group>"; };
+		5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
+		5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		6299E722D1B0554D90131758 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
 		78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
 		7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTranscriptView.swift; sourceTree = "<group>"; };
+		864F5988EFF4C90C1885EAD1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8720A51453F6A00129C44413 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerMacApp.swift; sourceTree = "<group>"; };
 		99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
+		D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFlowUITests.swift; sourceTree = "<group>"; };
+		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
-		D1A2B3C4E5F6071829304152 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,17 +70,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXResourcesBuildPhase section */
-		E2B3C4D5F6071829304152A3 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				F3A4B5C6D7E8091A2B3C4D5E /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		0543B2B27726308F5C10C36E /* Search */ = {
@@ -81,6 +85,7 @@
 			children = (
 				5CAA8B375370FA674DF40DF8 /* Packages */,
 				C302D34B9210F9FA7170AD26 /* WaiComputer */,
+				39076C3E8529DCCFEAEF0385 /* WaiComputerUITests */,
 				1FEE0A2022C656526CD39DA0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -89,8 +94,17 @@
 			isa = PBXGroup;
 			children = (
 				31B51F48FF32F6BC868F2C12 /* WaiComputer.app */,
+				268030C91DA972CD39219719 /* WaiComputerUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		39076C3E8529DCCFEAEF0385 /* WaiComputerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */,
+			);
+			path = WaiComputerUITests;
 			sourceTree = "<group>";
 		};
 		4724807600A515F7146E57A3 /* Chat */ = {
@@ -125,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				4A467DA7396A262853AB8271 /* MacContentView.swift */,
+				5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */,
 				8720A51453F6A00129C44413 /* MenuBarView.swift */,
 				899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */,
 			);
@@ -153,7 +168,7 @@
 			isa = PBXGroup;
 			children = (
 				A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */,
-				C3D4E5F6A7B8C9D0E1F2A3B4 /* MacImportViewModel.swift */,
+				EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */,
 				525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */,
 			);
 			path = Recording;
@@ -162,8 +177,8 @@
 		C302D34B9210F9FA7170AD26 /* WaiComputer */ = {
 			isa = PBXGroup;
 			children = (
+				864F5988EFF4C90C1885EAD1 /* Assets.xcassets */,
 				80368ACBB24566AA7B8D7B0B /* App */,
-				D1A2B3C4E5F6071829304152 /* Assets.xcassets */,
 				E1A98E16AC8A5557AE9585A0 /* Core */,
 				5D15DE54E4FDA3B1560A15A6 /* Features */,
 				8C9F74D9A3A5DF8C28E76AD9 /* Resources */,
@@ -182,7 +197,7 @@
 		E1A98E16AC8A5557AE9585A0 /* Core */ = {
 			isa = PBXGroup;
 			children = (
-				F1E2D3C4B5A6978869706152 /* DesignSystem.swift */,
+				5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -190,13 +205,31 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		002E17216F14CA6B6083D143 /* WaiComputerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 059053B55F7A36080B5EC36D /* Build configuration list for PBXNativeTarget "WaiComputerUITests" */;
+			buildPhases = (
+				E5B7D1C9BB4EFDA7AF06A096 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				45F46E397C3890E4ACAFB9B0 /* PBXTargetDependency */,
+			);
+			name = WaiComputerUITests;
+			packageProductDependencies = (
+			);
+			productName = WaiComputerUITests;
+			productReference = 268030C91DA972CD39219719 /* WaiComputerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		0950F2D4CFDE46D8C8A41CC6 /* WaiComputer */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1CBEA9D2537AC659AE2915E5 /* Build configuration list for PBXNativeTarget "WaiComputer" */;
 			buildPhases = (
 				3E35E7FA525FD79A396698F0 /* Sources */,
+				B9E719998EEC8C3624D6C58F /* Resources */,
 				833D494F588DA1C7E4D67737 /* Frameworks */,
-				E2B3C4D5F6071829304152A3 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -219,6 +252,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					002E17216F14CA6B6083D143 = {
+						TestTargetID = 0950F2D4CFDE46D8C8A41CC6;
+					};
 					0950F2D4CFDE46D8C8A41CC6 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -242,25 +278,38 @@
 			projectRoot = "";
 			targets = (
 				0950F2D4CFDE46D8C8A41CC6 /* WaiComputer */,
+				002E17216F14CA6B6083D143 /* WaiComputerUITests */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B9E719998EEC8C3624D6C58F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3E35E7FA525FD79A396698F0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1B2C3D4E5F6A7B8C9D0E1F2 /* DesignSystem.swift in Sources */,
+				72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
-				B2C3D4E5F6A7B8C9D0E1F2A3 /* MacImportViewModel.swift in Sources */,
 				DED3994205172291160E4F83 /* MacChatView.swift in Sources */,
 				43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */,
+				E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */,
 				50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */,
 				35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */,
 				29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */,
 				51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */,
 				8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */,
+				D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */,
 				EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */,
 				4F5A778B7DB5B69113852A9B /* MenuBarView.swift in Sources */,
 				D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */,
@@ -268,9 +317,43 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E5B7D1C9BB4EFDA7AF06A096 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		45F46E397C3890E4ACAFB9B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0950F2D4CFDE46D8C8A41CC6 /* WaiComputer */;
+			targetProxy = E5DF6CEAB56B61F0F500E9CE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		122E7AE47E23CD929A7B9704 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.uitests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_TARGET_NAME = WaiComputer;
+			};
+			name = Debug;
+		};
 		1F509874943B7BFAB01A2F76 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -279,6 +362,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -355,6 +439,24 @@
 			};
 			name = Debug;
 		};
+		A42D11D9AEC31E05F7049F34 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.uitests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_TARGET_NAME = WaiComputer;
+			};
+			name = Release;
+		};
 		CE66E74DA9230CE68A3896DC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -426,7 +528,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.dev;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
@@ -435,6 +537,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		059053B55F7A36080B5EC36D /* Build configuration list for PBXNativeTarget "WaiComputerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				122E7AE47E23CD929A7B9704 /* Debug */,
+				A42D11D9AEC31E05F7049F34 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		1CBEA9D2537AC659AE2915E5 /* Build configuration list for PBXNativeTarget "WaiComputer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

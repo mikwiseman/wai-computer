@@ -164,9 +164,15 @@ public actor APIClient {
     public func requestNoContent(
         _ method: HTTPMethod,
         path: String,
-        body: (any Encodable)? = nil
+        body: (any Encodable)? = nil,
+        queryItems: [URLQueryItem]? = nil
     ) async throws {
-        let url = baseURL.appendingPathComponent(path)
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
+        urlComponents?.queryItems = queryItems
+
+        guard let url = urlComponents?.url else {
+            throw APIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
@@ -237,19 +243,34 @@ public actor APIClient {
 
     // MARK: - Recording Endpoints
 
-    public func listRecordings(skip: Int = 0, limit: Int = 50, type: RecordingType? = nil) async throws -> [Recording] {
+    public func listRecordings(
+        skip: Int = 0,
+        limit: Int = 50,
+        type: RecordingType? = nil,
+        folderId: String? = nil,
+        trashed: Bool = false
+    ) async throws -> [Recording] {
         var queryItems = [
             URLQueryItem(name: "skip", value: "\(skip)"),
-            URLQueryItem(name: "limit", value: "\(limit)")
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "trashed", value: trashed ? "true" : "false")
         ]
         if let type = type {
             queryItems.append(URLQueryItem(name: "type", value: type.rawValue))
         }
+        if let folderId {
+            queryItems.append(URLQueryItem(name: "folder_id", value: folderId))
+        }
         return try await request(.GET, path: "/api/recordings", queryItems: queryItems)
     }
 
-    public func createRecording(title: String? = nil, type: RecordingType = .note, language: String = "en") async throws -> Recording {
-        let request = CreateRecordingRequest(title: title, type: type, language: language)
+    public func createRecording(
+        title: String? = nil,
+        type: RecordingType = .note,
+        language: String = "en",
+        folderId: String? = nil
+    ) async throws -> Recording {
+        let request = CreateRecordingRequest(title: title, type: type, language: language, folderId: folderId)
         return try await self.request(.POST, path: "/api/recordings", body: request)
     }
 
@@ -258,14 +279,22 @@ public actor APIClient {
     }
 
     public func updateRecording(id: String, title: String? = nil, type: RecordingType? = nil) async throws -> Recording {
-        var body: [String: String] = [:]
-        if let title { body["title"] = title }
-        if let type { body["type"] = type.rawValue }
+        let body = UpdateRecordingRequestBody(title: title, type: type?.rawValue)
         return try await request(.PATCH, path: "/api/recordings/\(id)", body: body)
     }
 
-    public func deleteRecording(id: String) async throws {
-        try await requestNoContent(.DELETE, path: "/api/recordings/\(id)")
+    public func moveRecording(id: String, folderId: String?) async throws -> Recording {
+        let body = UpdateRecordingRequestBody(folderId: folderId, includeFolderId: true)
+        return try await request(.PATCH, path: "/api/recordings/\(id)", body: body)
+    }
+
+    public func deleteRecording(id: String, permanent: Bool = false) async throws {
+        let queryItems = permanent ? [URLQueryItem(name: "permanent", value: "true")] : nil
+        try await requestNoContent(.DELETE, path: "/api/recordings/\(id)", queryItems: queryItems)
+    }
+
+    public func restoreRecording(id: String) async throws -> Recording {
+        return try await request(.POST, path: "/api/recordings/\(id)/restore")
     }
 
     public func getTranscript(recordingId: String) async throws -> [Segment] {
@@ -352,6 +381,22 @@ public actor APIClient {
 
     // MARK: - Entity Endpoints
 
+    public func listFolders() async throws -> [Folder] {
+        return try await request(.GET, path: "/api/folders")
+    }
+
+    public func createFolder(name: String) async throws -> Folder {
+        return try await request(.POST, path: "/api/folders", body: FolderNameRequest(name: name))
+    }
+
+    public func updateFolder(id: String, name: String) async throws -> Folder {
+        return try await request(.PATCH, path: "/api/folders/\(id)", body: FolderNameRequest(name: name))
+    }
+
+    public func deleteFolder(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/folders/\(id)")
+    }
+
     public func listEntities(type: EntityType? = nil) async throws -> [Entity] {
         var queryItems: [URLQueryItem]? = nil
         if let type = type {
@@ -425,6 +470,40 @@ public actor APIClient {
             throw APIError.decodingError(error)
         }
     }
+}
+
+private struct UpdateRecordingRequestBody: Encodable {
+    var title: String?
+    var type: String?
+    var folderId: String?
+    var includeFolderId = false
+
+    private enum CodingKeys: String, CodingKey {
+        case title
+        case type
+        case folderId = "folder_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let title {
+            try container.encode(title, forKey: .title)
+        }
+        if let type {
+            try container.encode(type, forKey: .type)
+        }
+        if includeFolderId {
+            if let folderId {
+                try container.encode(folderId, forKey: .folderId)
+            } else {
+                try container.encodeNil(forKey: .folderId)
+            }
+        }
+    }
+}
+
+private struct FolderNameRequest: Encodable {
+    let name: String
 }
 
 /// Simple message response

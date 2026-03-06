@@ -2,11 +2,38 @@ import SwiftUI
 import WaiComputerKit
 
 struct MacRecordingDetailView: View {
+    enum Mode {
+        case active
+        case trash
+    }
+
     let recordingId: String
+    let mode: Mode
+    let folders: [Folder]
     var onDelete: (() -> Void)?
+    var onRestore: (() -> Void)?
+    var onMoveToFolder: ((String?) -> Void)?
     @EnvironmentObject var appState: MacAppState
-    @StateObject private var viewModel = MacRecordingDetailViewModel()
+    @StateObject private var viewModel: MacRecordingDetailViewModel
     @State private var showDeleteConfirmation = false
+
+    init(
+        recordingId: String,
+        initialDetail: RecordingDetail? = nil,
+        mode: Mode = .active,
+        folders: [Folder] = [],
+        onDelete: (() -> Void)? = nil,
+        onRestore: (() -> Void)? = nil,
+        onMoveToFolder: ((String?) -> Void)? = nil
+    ) {
+        self.recordingId = recordingId
+        self.mode = mode
+        self.folders = folders
+        self.onDelete = onDelete
+        self.onRestore = onRestore
+        self.onMoveToFolder = onMoveToFolder
+        _viewModel = StateObject(wrappedValue: MacRecordingDetailViewModel(initialDetail: initialDetail))
+    }
 
     var body: some View {
         Group {
@@ -29,7 +56,12 @@ struct MacRecordingDetailView: View {
                         tabs: [
                             ("Transcript", MacRecordingDetailViewModel.Tab.transcript),
                             ("Summary", MacRecordingDetailViewModel.Tab.summary),
-                            ("Action Items", MacRecordingDetailViewModel.Tab.actions),
+                            (
+                                detail.actionItems.isEmpty
+                                    ? "Action Items"
+                                    : "Action Items (\(detail.actionItems.count))",
+                                MacRecordingDetailViewModel.Tab.actions
+                            ),
                         ],
                         selection: $viewModel.selectedTab
                     )
@@ -45,6 +77,8 @@ struct MacRecordingDetailView: View {
                         actionsTab(detail)
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("recording-detail-root")
             } else {
                 ContentUnavailableView(
                     "Recording Not Found",
@@ -54,11 +88,19 @@ struct MacRecordingDetailView: View {
             }
         }
         .task {
-            await viewModel.load(recordingId: recordingId, apiClient: appState.getAPIClient())
+            await viewModel.load(
+                recordingId: recordingId,
+                apiClient: appState.getAPIClient(),
+                showLoading: viewModel.recordingDetail?.id != recordingId
+            )
         }
         .onChange(of: recordingId) { _, newId in
             Task {
-                await viewModel.load(recordingId: newId, apiClient: appState.getAPIClient())
+                await viewModel.load(
+                    recordingId: newId,
+                    apiClient: appState.getAPIClient(),
+                    showLoading: viewModel.recordingDetail?.id != newId
+                )
             }
         }
     }
@@ -68,6 +110,8 @@ struct MacRecordingDetailView: View {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(detail.title ?? "Untitled")
                     .font(Typography.displayMedium)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("recording-title")
 
                 HStack(spacing: Spacing.sm) {
                     Text(detail.type.rawValue.capitalized)
@@ -90,27 +134,89 @@ struct MacRecordingDetailView: View {
 
             Spacer()
 
-            Button {
-                showDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(Palette.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("Delete Recording")
-            .confirmationDialog(
-                "Delete this recording?",
-                isPresented: $showDeleteConfirmation
-            ) {
-                Button("Delete", role: .destructive) {
-                    Task {
-                        await viewModel.deleteRecording(apiClient: appState.getAPIClient())
-                        onDelete?()
+            HStack(spacing: Spacing.md) {
+                if mode == .active {
+                    Menu {
+                        Button("Unfiled") {
+                            Task {
+                                let didMove = await viewModel.moveRecording(
+                                    to: nil,
+                                    apiClient: appState.getAPIClient()
+                                )
+                                if didMove {
+                                    onMoveToFolder?(nil)
+                                }
+                            }
+                        }
+
+                        ForEach(folders) { folder in
+                            Button(folder.name) {
+                                Task {
+                                    let didMove = await viewModel.moveRecording(
+                                        to: folder.id,
+                                        apiClient: appState.getAPIClient()
+                                    )
+                                    if didMove {
+                                        onMoveToFolder?(folder.id)
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "folder")
+                            .foregroundStyle(Palette.textSecondary)
                     }
+                    .buttonStyle(.plain)
+                    .help("Move to Folder")
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This action cannot be undone.")
+
+                if mode == .trash {
+                    Button {
+                        Task {
+                            let restored = await viewModel.restoreRecording(apiClient: appState.getAPIClient())
+                            if restored {
+                                onRestore?()
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Restore Recording")
+                }
+
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: mode == .trash ? "trash.slash" : "trash")
+                        .foregroundStyle(mode == .trash ? Palette.recording : Palette.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(mode == .trash ? "Delete Permanently" : "Move to Trash")
+                .confirmationDialog(
+                    mode == .trash ? "Delete this recording permanently?" : "Move this recording to trash?",
+                    isPresented: $showDeleteConfirmation
+                ) {
+                    Button(mode == .trash ? "Delete Permanently" : "Move to Trash", role: .destructive) {
+                        Task {
+                            let didDelete = await viewModel.deleteRecording(
+                                apiClient: appState.getAPIClient(),
+                                permanent: mode == .trash
+                            )
+                            if didDelete {
+                                onDelete?()
+                            }
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text(
+                        mode == .trash
+                            ? "This action cannot be undone."
+                            : "You can restore it later from Trash."
+                    )
+                }
             }
         }
         .padding(Spacing.lg)
@@ -205,9 +311,12 @@ struct MacRecordingDetailView: View {
     private func actionsTab(_ detail: RecordingDetail) -> some View {
         if !detail.actionItems.isEmpty {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    Text("Action Items")
+                        .waiSectionHeader()
+
                     ForEach(detail.actionItems) { item in
-                        ActionItemRow(item: item) { newStatus in
+                        ActionItemCard(item: item) { newStatus in
                             Task {
                                 await viewModel.updateActionItemStatus(
                                     id: item.id,
@@ -218,24 +327,44 @@ struct MacRecordingDetailView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.lg)
             }
-        } else {
+        } else if detail.summary != nil {
             ContentUnavailableView(
-                "No Action Items",
+                "No Action Items Found",
                 systemImage: "checklist",
-                description: Text("Generate a summary first to extract action items.")
+                description: Text("This summary did not include any concrete follow-ups.")
             )
+        } else {
+            VStack(spacing: Spacing.lg) {
+                ContentUnavailableView(
+                    "No Action Items",
+                    systemImage: "checklist",
+                    description: Text("Generate a summary first to extract action items.")
+                )
+
+                Button(action: {
+                    Task {
+                        await viewModel.generateSummary(apiClient: appState.getAPIClient())
+                    }
+                }) {
+                    Text("Generate Summary")
+                }
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
+                .disabled(viewModel.isGeneratingSummary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
-struct ActionItemRow: View {
+struct ActionItemCard: View {
     let item: ActionItem
     let onStatusChange: (ActionItem.Status) -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
+        HStack(alignment: .top, spacing: Spacing.md) {
             Button {
                 let newStatus: ActionItem.Status = item.status == .completed ? .pending : .completed
                 onStatusChange(newStatus)
@@ -243,33 +372,36 @@ struct ActionItemRow: View {
                 Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(item.status == .completed ? Palette.accent : Palette.textSecondary)
                     .font(Typography.headingLarge)
+                    .padding(.top, Spacing.xxs)
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 Text(item.task)
-                    .font(Typography.body)
+                    .font(Typography.reading)
+                    .lineSpacing(5)
                     .strikethrough(item.status == .completed)
                     .foregroundStyle(item.status == .completed ? Palette.textSecondary : Palette.textPrimary)
 
                 HStack(spacing: Spacing.sm) {
-                    if let owner = item.owner {
-                        Text(owner)
-                            .font(Typography.label)
-                            .foregroundStyle(Palette.textTertiary)
+                    if let owner = item.owner, !owner.isEmpty {
+                        metadataBadge(owner, color: Palette.textSecondary)
+                    }
+
+                    if let dueDate = item.dueDate, !dueDate.isEmpty {
+                        metadataBadge(dueDate, color: Palette.textSecondary)
                     }
 
                     if let priority = item.priority {
-                        Text(priority.rawValue.capitalized)
-                            .font(Typography.label)
-                            .foregroundStyle(priorityColor(priority))
+                        metadataBadge(priority.rawValue.capitalized, color: priorityColor(priority))
                     }
+
+                    metadataBadge(statusLabel, color: statusColor)
                 }
             }
-
-            Spacer()
         }
-        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .waiCard()
     }
 
     private func priorityColor(_ priority: ActionItem.Priority) -> Color {
@@ -278,6 +410,42 @@ struct ActionItemRow: View {
         case .medium: return Palette.priorityMedium
         case .low: return Palette.priorityLow
         }
+    }
+
+    private var statusLabel: String {
+        switch item.status {
+        case .pending:
+            return "Pending"
+        case .inProgress:
+            return "In Progress"
+        case .completed:
+            return "Completed"
+        case .cancelled:
+            return "Cancelled"
+        }
+    }
+
+    private var statusColor: Color {
+        switch item.status {
+        case .completed:
+            return Palette.accent
+        case .inProgress:
+            return Palette.priorityMedium
+        case .cancelled:
+            return Palette.textTertiary
+        case .pending:
+            return Palette.textSecondary
+        }
+    }
+
+    private func metadataBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(Typography.label)
+            .foregroundStyle(color)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(Palette.surfaceSubtle)
+            .clipShape(Capsule())
     }
 }
 
@@ -295,17 +463,27 @@ class MacRecordingDetailViewModel: ObservableObject {
     @Published var selectedTab: Tab = .transcript
     @Published var isGeneratingSummary = false
 
-    func load(recordingId: String, apiClient: APIClient) async {
-        isLoading = true
+    init(initialDetail: RecordingDetail? = nil) {
+        recordingDetail = initialDetail
+    }
+
+    func load(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
         error = nil
 
         do {
             recordingDetail = try await apiClient.getRecording(id: recordingId)
         } catch {
-            self.error = error.localizedDescription
+            if recordingDetail?.id != recordingId {
+                self.error = error.localizedDescription
+            }
         }
 
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     func generateSummary(apiClient: APIClient) async {
@@ -314,8 +492,9 @@ class MacRecordingDetailViewModel: ObservableObject {
 
         do {
             _ = try await apiClient.generateSummary(recordingId: id)
-            recordingDetail = try await apiClient.getRecording(id: id)
-            selectedTab = .summary
+            let detail = try await apiClient.getRecording(id: id)
+            recordingDetail = detail
+            selectedTab = detail.actionItems.isEmpty ? .summary : .actions
         } catch {
             self.error = error.localizedDescription
         }
@@ -323,12 +502,37 @@ class MacRecordingDetailViewModel: ObservableObject {
         isGeneratingSummary = false
     }
 
-    func deleteRecording(apiClient: APIClient) async {
-        guard let id = recordingDetail?.id else { return }
+    func deleteRecording(apiClient: APIClient, permanent: Bool = false) async -> Bool {
+        guard let id = recordingDetail?.id else { return false }
         do {
-            try await apiClient.deleteRecording(id: id)
+            try await apiClient.deleteRecording(id: id, permanent: permanent)
+            return true
         } catch {
             self.error = error.localizedDescription
+            return false
+        }
+    }
+
+    func restoreRecording(apiClient: APIClient) async -> Bool {
+        guard let id = recordingDetail?.id else { return false }
+        do {
+            _ = try await apiClient.restoreRecording(id: id)
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+
+    func moveRecording(to folderId: String?, apiClient: APIClient) async -> Bool {
+        guard let id = recordingDetail?.id else { return false }
+        do {
+            _ = try await apiClient.moveRecording(id: id, folderId: folderId)
+            recordingDetail = try await apiClient.getRecording(id: id)
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
         }
     }
 

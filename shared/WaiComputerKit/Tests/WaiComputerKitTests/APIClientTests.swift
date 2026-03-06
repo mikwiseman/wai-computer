@@ -236,6 +236,28 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(recordings[1].type, .note)
     }
 
+    func testListRecordingsIncludesFolderAndTrashFilters() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings")
+            let query = request.url?.query ?? ""
+            XCTAssertTrue(query.contains("folder_id=folder-1"))
+            XCTAssertTrue(query.contains("trashed=true"))
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("[]".utf8))
+        }
+
+        _ = try await client.listRecordings(folderId: "folder-1", trashed: true)
+    }
+
     func testCreateRecordingUsesPostMethod() async throws {
         let client = makeClient()
 
@@ -283,6 +305,98 @@ final class APIClientTests: XCTestCase {
         }
 
         try await client.deleteRecording(id: "rec-del")
+    }
+
+    func testDeleteRecordingPermanentAddsQueryFlag() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-del")
+            XCTAssertTrue(request.url?.query?.contains("permanent=true") == true)
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 204,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        try await client.deleteRecording(id: "rec-del", permanent: true)
+    }
+
+    func testRestoreRecordingUsesRestoreEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-del/restore")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"rec-del","title":"Restored","type":"note","deleted_at":null,"created_at":"2026-01-15T10:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let restored = try await client.restoreRecording(id: "rec-del")
+        XCTAssertEqual(restored.id, "rec-del")
+        XCTAssertNil(restored.deletedAt)
+    }
+
+    func testFolderEndpointsUseExpectedPaths() async throws {
+        let client = makeClient()
+        final class RequestCounter: @unchecked Sendable {
+            var value = 0
+        }
+        let counter = RequestCounter()
+
+        MockURLProtocol.requestHandler = { request in
+            counter.value += 1
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: request.httpMethod == "DELETE" ? 204 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+
+            switch counter.value {
+            case 1:
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.path, "/api/folders")
+                return (response, Data("[]".utf8))
+            case 2:
+                XCTAssertEqual(request.httpMethod, "POST")
+                XCTAssertEqual(request.url?.path, "/api/folders")
+                return (response, Data("{\"id\":\"folder-1\",\"name\":\"Projects\",\"created_at\":\"2026-01-01T00:00:00Z\"}".utf8))
+            case 3:
+                XCTAssertEqual(request.httpMethod, "PATCH")
+                XCTAssertEqual(request.url?.path, "/api/folders/folder-1")
+                return (response, Data("{\"id\":\"folder-1\",\"name\":\"Renamed\",\"created_at\":\"2026-01-01T00:00:00Z\"}".utf8))
+            default:
+                XCTAssertEqual(request.httpMethod, "DELETE")
+                XCTAssertEqual(request.url?.path, "/api/folders/folder-1")
+                return (response, Data())
+            }
+        }
+
+        let listed = try await client.listFolders()
+        XCTAssertTrue(listed.isEmpty)
+
+        let created = try await client.createFolder(name: "Projects")
+        XCTAssertEqual(created.name, "Projects")
+
+        let updated = try await client.updateFolder(id: "folder-1", name: "Renamed")
+        XCTAssertEqual(updated.name, "Renamed")
+
+        try await client.deleteFolder(id: "folder-1")
     }
 
     func testGetTranscriptReturnsSegments() async throws {

@@ -56,6 +56,67 @@ async def test_list_recordings_can_filter_by_type(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
+async def test_delete_recording_moves_to_trash_and_can_be_restored(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Delete should soft-delete into trash until explicitly restored or removed."""
+    recording = await _create_recording(client, auth_headers, title="Trash Me")
+
+    delete_response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert delete_response.status_code == 204
+
+    active_response = await client.get("/api/recordings", headers=auth_headers)
+    assert active_response.status_code == 200
+    assert active_response.json() == []
+
+    trashed_response = await client.get(
+        "/api/recordings",
+        headers=auth_headers,
+        params={"trashed": "true"},
+    )
+    assert trashed_response.status_code == 200
+    assert [item["id"] for item in trashed_response.json()] == [recording["id"]]
+    assert trashed_response.json()[0]["deleted_at"] is not None
+
+    restore_response = await client.post(
+        f"/api/recordings/{recording['id']}/restore",
+        headers=auth_headers,
+    )
+    assert restore_response.status_code == 200
+    assert restore_response.json()["deleted_at"] is None
+
+    restored_response = await client.get("/api/recordings", headers=auth_headers)
+    assert restored_response.status_code == 200
+    assert [item["id"] for item in restored_response.json()] == [recording["id"]]
+
+
+@pytest.mark.asyncio
+async def test_delete_recording_can_permanently_delete_from_trash(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """A trashed recording should be removable permanently."""
+    recording = await _create_recording(client, auth_headers, title="Permanent Delete")
+
+    first_delete = await client.delete(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert first_delete.status_code == 204
+
+    second_delete = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        params={"permanent": "true"},
+    )
+    assert second_delete.status_code == 204
+
+    detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert detail_response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_list_recordings_rejects_negative_skip(client: AsyncClient, auth_headers: dict):
     """Skip should not allow negative values."""
     response = await client.get(

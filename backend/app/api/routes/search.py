@@ -69,6 +69,7 @@ async def hybrid_search(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
         ),
         semantic_results AS (
@@ -84,6 +85,7 @@ async def hybrid_search(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND s.embedding IS NOT NULL
               AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         ),
@@ -110,7 +112,7 @@ async def hybrid_search(
             r.title as recording_title,
             r.type as recording_type
         FROM combined c
-        JOIN recordings r ON c.recording_id = r.id
+        JOIN recordings r ON c.recording_id = r.id AND r.deleted_at IS NULL
         ORDER BY c.rrf_score DESC
         LIMIT :limit OFFSET :offset
     """)
@@ -135,6 +137,7 @@ async def hybrid_search(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
         ),
         semantic_results AS (
@@ -142,6 +145,7 @@ async def hybrid_search(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND s.embedding IS NOT NULL
               AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         )
@@ -211,6 +215,7 @@ async def semantic_search(
         FROM segments s
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
+          AND r.deleted_at IS NULL
           AND s.embedding IS NOT NULL
           AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :threshold
         ORDER BY s.embedding <=> CAST(:embedding AS vector)
@@ -233,6 +238,7 @@ async def semantic_search(
         FROM segments s
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
+          AND r.deleted_at IS NULL
           AND s.embedding IS NOT NULL
           AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :threshold
     """)
@@ -286,6 +292,7 @@ async def fulltext_search(
         FROM segments s
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
+          AND r.deleted_at IS NULL
           AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
         ORDER BY rank DESC
         LIMIT :limit OFFSET :offset
@@ -303,6 +310,7 @@ async def fulltext_search(
         FROM segments s
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
+          AND r.deleted_at IS NULL
           AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
     """)
     count_result = await db.execute(count_query, {"query": q, "user_id": str(user.id)})

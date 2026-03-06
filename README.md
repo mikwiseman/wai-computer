@@ -117,6 +117,10 @@ open WaiComputer.xcodeproj
 
 The apps use the shared `WaiComputerKit` Swift package for common code.
 
+For a signed direct-download macOS installer, use `scripts/build-macos-dmg.sh`. The DMG builder generates a Finder-ready install window with drag-to-`Applications` guidance and can also compose a custom background via `MACOS_DMG_BACKGROUND=/absolute/path/background.png`. For a strict production release, add `MACOS_RELEASE_STRICT=1` so the build fails unless Gatekeeper and notarization pass. Distribution details and notarization options are documented in `docs/macos-distribution.md`.
+
+Before running a release smoke on a developer machine, clear old desktop app state with `scripts/reset-macos-app-state.sh` so Debug/UI-test caches do not contaminate the Release app.
+
 ### Web Development
 
 ```bash

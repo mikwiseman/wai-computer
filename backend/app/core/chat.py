@@ -79,6 +79,7 @@ async def retrieve_context(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
               {recording_filter}
         ),
@@ -95,6 +96,7 @@ async def retrieve_context(
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
               AND s.embedding IS NOT NULL
               {recording_filter}
         ),
@@ -120,7 +122,7 @@ async def retrieve_context(
             c.rrf_score,
             r.title as recording_title
         FROM combined c
-        JOIN recordings r ON c.recording_id = r.id
+        JOIN recordings r ON c.recording_id = r.id AND r.deleted_at IS NULL
         ORDER BY c.rrf_score DESC
         LIMIT :limit
     """)

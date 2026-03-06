@@ -39,6 +39,20 @@ final class ModelTests: XCTestCase {
 
     // MARK: - Recording Tests
 
+    func testFolderDecodeFromJSON() throws {
+        let json = """
+        {
+            "id": "folder-1",
+            "name": "Projects",
+            "created_at": "2026-01-15T10:30:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let folder = try makeDecoder().decode(Folder.self, from: json)
+        XCTAssertEqual(folder.id, "folder-1")
+        XCTAssertEqual(folder.name, "Projects")
+    }
+
     func testRecordingDecodeFromJSON() throws {
         let json = """
         {
@@ -48,6 +62,8 @@ final class ModelTests: XCTestCase {
             "audio_url": "https://storage.example.com/audio/rec-1.opus",
             "duration_seconds": 3600,
             "language": "en",
+            "folder_id": "folder-1",
+            "deleted_at": null,
             "created_at": "2026-01-15T10:30:00.123Z"
         }
         """.data(using: .utf8)!
@@ -59,6 +75,8 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(recording.audioUrl, "https://storage.example.com/audio/rec-1.opus")
         XCTAssertEqual(recording.durationSeconds, 3600)
         XCTAssertEqual(recording.language, "en")
+        XCTAssertEqual(recording.folderId, "folder-1")
+        XCTAssertNil(recording.deletedAt)
         XCTAssertNotNil(recording.createdAt)
     }
 

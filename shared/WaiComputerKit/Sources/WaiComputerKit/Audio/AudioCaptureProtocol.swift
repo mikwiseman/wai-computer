@@ -48,19 +48,21 @@ public struct AudioCaptureConfig: Sendable {
 }
 
 /// Microphone audio capture using AVAudioEngine
-public final class MicrophoneCapture: @unchecked Sendable {
+public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let config: AudioCaptureConfig
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
-    public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>!
+    public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
 
     private var _isRecording = false
     public var isRecording: Bool { _isRecording }
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
-        setupBufferStream()
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        self.audioBuffers = stream
+        self.bufferContinuation = continuation
     }
 
     private func setupBufferStream() {
