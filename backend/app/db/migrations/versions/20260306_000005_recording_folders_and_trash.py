@@ -1,7 +1,7 @@
 """Add recording folders and trash support.
 
-Revision ID: 000002
-Revises: 000001
+Revision ID: 000005
+Revises: 000004
 Create Date: 2026-03-06
 
 """
@@ -13,8 +13,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "000002"
-down_revision: Union[str, None] = "000001"
+revision: str = "000005"
+down_revision: Union[str, None] = "000004"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
