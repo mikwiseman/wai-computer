@@ -26,13 +26,20 @@ struct MacMainView: View {
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
     @State private var selectedSection: SidebarSection? = .allRecordings
-    @State private var selectedRecordingId: String?
+    @State private var selectedRecordingIds: Set<String> = []
+    @State private var prefetchedRecordingDetail: RecordingDetail?
+    @State private var completionTask: Task<Void, Never>?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var isShowingCreateFolderSheet = false
+    @State private var newFolderName = ""
+    @State private var shouldAssignNewFolderToSelection = true
 
     enum SidebarSection: Hashable {
         case allRecordings
-        case calls
+        case meetings
         case notes
+        case folder(String)
+        case trash
         case chat
         case search
         case settings
@@ -40,7 +47,7 @@ struct MacMainView: View {
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .calls, .notes, .none:
+        case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
             return true
         case .chat, .search, .settings:
             return false
@@ -49,10 +56,66 @@ struct MacMainView: View {
 
     private var currentTypeFilter: RecordingType? {
         switch selectedSection {
-        case .calls: return .meeting
+        case .meetings: return .meeting
         case .notes: return .note
         default: return nil
         }
+    }
+
+    private var currentFolderId: String? {
+        switch selectedSection {
+        case .folder(let folderId):
+            return folderId
+        default:
+            return nil
+        }
+    }
+
+    private var isTrashSection: Bool {
+        if case .trash = selectedSection {
+            return true
+        }
+        return false
+    }
+
+    private var displayedRecordings: [Recording] {
+        libraryViewModel.filteredRecordings(
+            type: currentTypeFilter,
+            folderId: currentFolderId,
+            trashed: isTrashSection
+        )
+    }
+
+    private var selectedRecordingId: String? {
+        guard selectedRecordingIds.count == 1 else { return nil }
+        return selectedRecordingIds.first
+    }
+
+    private var currentListTitle: String {
+        switch selectedSection {
+        case .allRecordings:
+            return "All Recordings"
+        case .meetings:
+            return "Meetings"
+        case .notes:
+            return "Notes"
+        case .folder(let folderId):
+            return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
+        case .trash:
+            return "Trash"
+        case .chat:
+            return "Chat"
+        case .search:
+            return "Search"
+        case .settings:
+            return "Settings"
+        case .none:
+            return "Library"
+        }
+    }
+
+    private var isRecordingHandoffActive: Bool {
+        recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 
     var body: some View {
@@ -72,13 +135,24 @@ struct MacMainView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
-                    startRecording(type: .note)
+                    startRecording(type: .note, inputSource: .microphone)
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(Palette.textSecondary)
                 }
-                .disabled(recordingViewModel.shouldPresentLiveView)
+                .disabled(isRecordingHandoffActive)
                 .help("New Recording")
+                .accessibilityIdentifier("start-recording-button")
+
+                Button {
+                    startRecording(type: .meeting, inputSource: .systemAudio)
+                } label: {
+                    Image(systemName: "speaker.wave.2")
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .disabled(isRecordingHandoffActive)
+                .help("Record System Audio")
+                .accessibilityIdentifier("start-system-audio-button")
 
                 Button {
                     importAudioFile()
@@ -86,8 +160,67 @@ struct MacMainView: View {
                     Image(systemName: "square.and.arrow.down")
                         .foregroundStyle(Palette.textSecondary)
                 }
-                .disabled(importViewModel.isImporting || recordingViewModel.shouldPresentLiveView)
+                .disabled(importViewModel.isImporting || isRecordingHandoffActive)
                 .help("Import Audio File")
+
+                if hasListColumn && !isTrashSection {
+                    Button {
+                        shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
+                        isShowingCreateFolderSheet = true
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .help("New Folder")
+
+                    Menu {
+                        Button("Unfiled") {
+                            moveSelectedRecordings(to: nil)
+                        }
+                        .disabled(selectedRecordingIds.isEmpty)
+
+                        ForEach(libraryViewModel.folders) { folder in
+                            Button(folder.name) {
+                                moveSelectedRecordings(to: folder.id)
+                            }
+                            .disabled(selectedRecordingIds.isEmpty)
+                        }
+                    } label: {
+                        Image(systemName: "folder")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .help("Move to Folder")
+                    .disabled(selectedRecordingIds.isEmpty)
+
+                    Button {
+                        moveSelectedRecordingsToTrash()
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .help("Move to Trash")
+                    .disabled(selectedRecordingIds.isEmpty)
+                }
+
+                if isTrashSection {
+                    Button {
+                        restoreSelectedRecordings()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .help("Restore")
+                    .disabled(selectedRecordingIds.isEmpty)
+
+                    Button {
+                        permanentlyDeleteSelectedRecordings()
+                    } label: {
+                        Image(systemName: "trash.slash")
+                            .foregroundStyle(Palette.recording)
+                    }
+                    .help("Delete Permanently")
+                    .disabled(selectedRecordingIds.isEmpty)
+                }
             }
         }
         .overlay {
@@ -112,20 +245,72 @@ struct MacMainView: View {
         } message: {
             Text(importViewModel.errorMessage)
         }
-        .task {
-            await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
-        }
-        .onChange(of: recordingViewModel.phase) { oldPhase, newPhase in
-            if oldPhase != .idle && newPhase == .idle {
-                handleRecordingStop()
+        .alert(
+            "Library Error",
+            isPresented: Binding(
+                get: { libraryViewModel.error != nil },
+                set: { if !$0 { libraryViewModel.error = nil } }
+            )
+        ) {
+            Button("OK") {
+                libraryViewModel.error = nil
             }
+        } message: {
+            Text(libraryViewModel.error ?? "The library could not be updated.")
+        }
+        .alert(
+            "Recording Error",
+            isPresented: Binding(
+                get: { recordingViewModel.error != nil },
+                set: { if !$0 { recordingViewModel.clearError() } }
+            )
+        ) {
+            Button("OK") {
+                recordingViewModel.clearError()
+            }
+        } message: {
+            Text(recordingViewModel.error ?? "The recording could not continue.")
+        }
+        .sheet(isPresented: $isShowingCreateFolderSheet) {
+            CreateFolderSheet(
+                folderName: $newFolderName,
+                moveSelectionIntoFolder: $shouldAssignNewFolderToSelection,
+                selectionCount: selectedRecordingIds.count,
+                canMoveSelection: !selectedRecordingIds.isEmpty && !isTrashSection,
+                onCancel: {
+                    newFolderName = ""
+                    isShowingCreateFolderSheet = false
+                },
+                onCreate: {
+                    Task {
+                        await createFolder()
+                    }
+                }
+            )
+        }
+        .task {
+            await reloadLibrary()
+        }
+        .onAppear {
+            handleCompletedRecordingChange()
+        }
+        .onChange(of: selectedSection) { _, _ in
+            selectedRecordingIds.removeAll()
+            prefetchedRecordingDetail = nil
+        }
+        .onChange(of: appState.completedRecordingContext?.recordingId) { _, _ in
+            handleCompletedRecordingChange()
         }
         .onChange(of: appState.selectedRecordingFromMenu) { _, newId in
             if let id = newId {
                 selectedSection = .allRecordings
-                selectedRecordingId = id
+                selectedRecordingIds = [id]
+                prefetchedRecordingDetail = nil
                 appState.selectedRecordingFromMenu = nil
             }
+        }
+        .onDisappear {
+            completionTask?.cancel()
         }
     }
 
@@ -135,10 +320,29 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
-                sidebarRow("Calls", icon: "phone", section: .calls)
+                sidebarRow("Meetings", icon: "video", section: .meetings)
                 sidebarRow("Notes", icon: "note.text", section: .notes)
+                sidebarRow("Trash", icon: "trash", section: .trash)
             } header: {
                 Text("Library")
+                    .waiSectionHeader()
+            }
+
+            Section {
+                Button {
+                    shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
+                    isShowingCreateFolderSheet = true
+                } label: {
+                    Label("New Folder", systemImage: "folder.badge.plus")
+                        .font(Typography.body)
+                }
+                .buttonStyle(.plain)
+
+                ForEach(libraryViewModel.folders) { folder in
+                    sidebarRow(folder.name, icon: "folder", section: .folder(folder.id))
+                }
+            } header: {
+                Text("Folders")
                     .waiSectionHeader()
             }
 
@@ -174,30 +378,56 @@ struct MacMainView: View {
     @ViewBuilder
     private var listColumn: some View {
         if hasListColumn {
-            let filtered = libraryViewModel.filteredRecordings(for: currentTypeFilter)
+            VStack(spacing: 0) {
+                HStack(spacing: Spacing.sm) {
+                    Text(currentListTitle)
+                        .font(Typography.displaySmall)
 
-            if libraryViewModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if filtered.isEmpty {
-                ContentUnavailableView(
-                    "No Recordings",
-                    systemImage: "waveform",
-                    description: Text("Start a recording to see it here.")
-                )
-            } else {
-                RecordingListView(
-                    recordings: filtered,
-                    selectedRecordingId: $selectedRecordingId,
-                    onDelete: { id in
-                        Task {
-                            await libraryViewModel.deleteRecording(id: id, apiClient: appState.getAPIClient())
-                            if selectedRecordingId == id {
-                                selectedRecordingId = nil
-                            }
-                        }
+                    Text("\(displayedRecordings.count)")
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+
+                    Spacer()
+
+                    if libraryViewModel.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
                     }
-                )
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.md)
+
+                WaiDivider()
+
+                if libraryViewModel.isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if displayedRecordings.isEmpty {
+                    ContentUnavailableView(
+                        isTrashSection ? "Trash is Empty" : "No Recordings",
+                        systemImage: isTrashSection ? "trash" : "waveform",
+                        description: Text(emptyStateDescription)
+                    )
+                } else {
+                    RecordingListView(
+                        recordings: displayedRecordings,
+                        folders: libraryViewModel.folders,
+                        isTrash: isTrashSection,
+                        selectedRecordingIds: $selectedRecordingIds,
+                        onTrash: { ids in
+                            trashRecordings(ids)
+                        },
+                        onRestore: { ids in
+                            restoreRecordings(ids)
+                        },
+                        onPermanentDelete: { ids in
+                            permanentlyDeleteRecordings(ids)
+                        },
+                        onMoveToFolder: { ids, folderId in
+                            moveRecordings(ids, to: folderId)
+                        }
+                    )
+                }
             }
         } else {
             // Non-list sections: empty content column
@@ -211,16 +441,51 @@ struct MacMainView: View {
     private var detailColumn: some View {
         if recordingViewModel.shouldPresentLiveView {
             LiveRecordingView()
+        } else if let transition = appState.completedRecordingContext {
+            CompletedRecordingTransitionView(transition: transition)
         } else {
             switch selectedSection {
-            case .allRecordings, .calls, .notes, .none:
-                if let recordingId = selectedRecordingId {
-                    MacRecordingDetailView(recordingId: recordingId) {
-                        selectedRecordingId = nil
-                        Task {
-                            await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+            case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
+                if selectedRecordingIds.count > 1 {
+                    BulkSelectionDetailView(
+                        selectionCount: selectedRecordingIds.count,
+                        isTrash: isTrashSection,
+                        onTrash: moveSelectedRecordingsToTrash,
+                        onRestore: restoreSelectedRecordings,
+                        onPermanentDelete: permanentlyDeleteSelectedRecordings
+                    )
+                } else if let recordingId = selectedRecordingId {
+                    let detailMode: MacRecordingDetailView.Mode = isTrashSection ? .trash : .active
+                    let activeFolders = libraryViewModel.folders
+                    MacRecordingDetailView(
+                        recordingId: recordingId,
+                        initialDetail: prefetchedRecordingDetail?.id == recordingId ? prefetchedRecordingDetail : nil,
+                        mode: detailMode,
+                        folders: activeFolders,
+                        onDelete: {
+                            selectedRecordingIds.removeAll()
+                            prefetchedRecordingDetail = nil
+                            Task {
+                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                            }
+                        },
+                        onRestore: {
+                            selectedRecordingIds.removeAll()
+                            prefetchedRecordingDetail = nil
+                            Task {
+                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                            }
+                        },
+                        onMoveToFolder: { folderId in
+                            if currentFolderId != nil, currentFolderId != folderId {
+                                selectedRecordingIds.removeAll()
+                            }
+                            prefetchedRecordingDetail = nil
+                            Task {
+                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                            }
                         }
-                    }
+                    )
                 } else {
                     ContentUnavailableView(
                         "Select a Recording",
@@ -240,27 +505,75 @@ struct MacMainView: View {
 
     /// When recording state changes from recording to not-recording,
     /// select the completed recording and refresh the library.
-    private func handleRecordingStop() {
-        if let completedId = recordingViewModel.currentRecordingId {
-            selectedRecordingId = completedId
-            selectedSection = .allRecordings
-            appState.resetRecordingState()
-            Task {
-                // Load immediately so the recording appears in the list
-                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
-                // Reload again after a short delay — the server may still be
-                // saving segments, generating embeddings, and uploading audio
-                try? await Task.sleep(for: .seconds(3))
-                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+    private func handleCompletedRecordingChange() {
+        completionTask?.cancel()
+
+        guard let completedContext = appState.completedRecordingContext else { return }
+
+        selectedSection = .allRecordings
+        selectedRecordingIds.removeAll()
+        prefetchedRecordingDetail = nil
+
+        completionTask = Task {
+            let detail = await resolveCompletedRecording(id: completedContext.recordingId)
+            guard !Task.isCancelled else { return }
+            guard appState.completedRecordingContext?.recordingId == completedContext.recordingId else { return }
+
+            if let selectedRecordingId, selectedRecordingId != completedContext.recordingId {
+                appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
+                return
             }
+
+            prefetchedRecordingDetail = detail
+            selectedRecordingIds = [completedContext.recordingId]
+            appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
         }
+    }
+
+    private func resolveCompletedRecording(id: String) async -> RecordingDetail? {
+        if let detail = await appState.uiTestRecordingDetail(id: id) {
+            libraryViewModel.setRecordings(appState.uiTestRecordings() ?? [])
+            libraryViewModel.setFolders([])
+            return detail
+        }
+
+        let apiClient = appState.getAPIClient()
+
+        for attempt in 0..<5 {
+            await reloadLibrary()
+
+            do {
+                return try await apiClient.getRecording(id: id)
+            } catch {
+                if attempt == 4 {
+                    break
+                }
+            }
+
+            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 500 : 1000))
+        }
+
+        return nil
+    }
+
+    private func reloadLibrary() async {
+        if let recordings = appState.uiTestRecordings() {
+            libraryViewModel.setRecordings(recordings)
+            libraryViewModel.setFolders([])
+            return
+        }
+
+        await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
     }
 
     // MARK: - Actions
 
-    private func startRecording(type: RecordingType) {
+    private func startRecording(
+        type: RecordingType,
+        inputSource: MacRecordingInputSource = .microphone
+    ) {
         Task {
-            await appState.startRecording(type: type)
+            await appState.startRecording(type: type, inputSource: inputSource)
         }
     }
 
@@ -268,9 +581,226 @@ struct MacMainView: View {
         Task {
             await importViewModel.pickAndUpload(apiClient: appState.getAPIClient())
             if importViewModel.importState == .done {
-                await libraryViewModel.loadRecordings(apiClient: appState.getAPIClient())
+                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
             }
         }
+    }
+
+    private var emptyStateDescription: String {
+        if isTrashSection {
+            return "Deleted recordings appear here until you permanently remove them."
+        }
+        if currentFolderId != nil {
+            return "Move recordings into this folder to organize them here."
+        }
+        return "Start a recording to see it here."
+    }
+
+    private func createFolder() async {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let selectedIds = Array(selectedRecordingIds)
+        if let folder = await libraryViewModel.createFolder(name: name, apiClient: appState.getAPIClient()) {
+            if shouldAssignNewFolderToSelection && !selectedIds.isEmpty && !isTrashSection {
+                await libraryViewModel.moveRecordings(ids: selectedIds, to: folder.id, apiClient: appState.getAPIClient())
+                selectedRecordingIds.removeAll()
+            }
+            selectedSection = .folder(folder.id)
+            newFolderName = ""
+            shouldAssignNewFolderToSelection = true
+            isShowingCreateFolderSheet = false
+        }
+    }
+
+    private func moveRecordings(_ ids: [String], to folderId: String?) {
+        guard !ids.isEmpty else { return }
+        Task {
+            await libraryViewModel.moveRecordings(ids: ids, to: folderId, apiClient: appState.getAPIClient())
+            selectedRecordingIds.removeAll()
+        }
+    }
+
+    private func moveSelectedRecordings(to folderId: String?) {
+        moveRecordings(Array(selectedRecordingIds), to: folderId)
+    }
+
+    private func trashRecordings(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        Task {
+            await libraryViewModel.trashRecordings(ids: ids, apiClient: appState.getAPIClient())
+            selectedRecordingIds.subtract(ids)
+            prefetchedRecordingDetail = nil
+        }
+    }
+
+    private func moveSelectedRecordingsToTrash() {
+        trashRecordings(Array(selectedRecordingIds))
+    }
+
+    private func restoreRecordings(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        Task {
+            await libraryViewModel.restoreRecordings(ids: ids, apiClient: appState.getAPIClient())
+            selectedRecordingIds.subtract(ids)
+            prefetchedRecordingDetail = nil
+        }
+    }
+
+    private func restoreSelectedRecordings() {
+        restoreRecordings(Array(selectedRecordingIds))
+    }
+
+    private func permanentlyDeleteRecordings(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        Task {
+            await libraryViewModel.permanentlyDeleteRecordings(ids: ids, apiClient: appState.getAPIClient())
+            selectedRecordingIds.subtract(ids)
+            prefetchedRecordingDetail = nil
+        }
+    }
+
+    private func permanentlyDeleteSelectedRecordings() {
+        permanentlyDeleteRecordings(Array(selectedRecordingIds))
+    }
+}
+
+private struct CreateFolderSheet: View {
+    @Binding var folderName: String
+    @Binding var moveSelectionIntoFolder: Bool
+    let selectionCount: Int
+    let canMoveSelection: Bool
+    let onCancel: () -> Void
+    let onCreate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            Text("New Folder")
+                .font(Typography.displaySmall)
+
+            TextField("Folder name", text: $folderName)
+                .textFieldStyle(.plain)
+                .waiTextField()
+
+            if canMoveSelection {
+                Toggle(
+                    "Move \(selectionCount) selected \(selectionCount == 1 ? "recording" : "recordings") into this folder",
+                    isOn: $moveSelectionIntoFolder
+                )
+                .toggleStyle(.checkbox)
+            }
+
+            HStack {
+                Spacer()
+
+                Button("Cancel", action: onCancel)
+
+                Button("Create", action: onCreate)
+                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(Spacing.xl)
+        .frame(width: 420)
+    }
+}
+
+private struct BulkSelectionDetailView: View {
+    let selectionCount: Int
+    let isTrash: Bool
+    let onTrash: () -> Void
+    let onRestore: () -> Void
+    let onPermanentDelete: () -> Void
+
+    var body: some View {
+        VStack(spacing: Spacing.lg) {
+            ContentUnavailableView(
+                "\(selectionCount) Recordings Selected",
+                systemImage: isTrash ? "trash" : "checklist",
+                description: Text(
+                    isTrash
+                        ? "Restore them or delete them permanently."
+                        : "Use the toolbar to move them into folders or send them to trash."
+                )
+            )
+
+            HStack(spacing: Spacing.md) {
+                if isTrash {
+                    Button("Restore", action: onRestore)
+                        .buttonStyle(WaiGhostButtonStyle())
+
+                    Button("Delete Permanently", action: onPermanentDelete)
+                        .buttonStyle(WaiGhostButtonStyle())
+                } else {
+                    Button("Move to Trash", action: onTrash)
+                        .buttonStyle(WaiGhostButtonStyle())
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Spacing.huge)
+    }
+}
+
+private struct CompletedRecordingTransitionView: View {
+    let transition: CompletedRecordingContext
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: Spacing.md) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 12, height: 12)
+
+                Text("Saving Recording")
+                    .font(Typography.displaySmall)
+
+                Text(formatDuration(transition.duration))
+                    .font(Typography.monoLarge)
+                    .foregroundStyle(Palette.textSecondary)
+
+                Spacer()
+
+                Text(transition.recordingType.rawValue.capitalized)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.typeColor(transition.recordingType))
+            }
+            .padding(Spacing.lg)
+
+            WaiDivider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    Group {
+                        if transition.transcript.isEmpty {
+                            Text("Finalizing transcript...")
+                                .italic()
+                                .foregroundStyle(Palette.textSecondary)
+                        } else {
+                            Text(transition.transcript)
+                                .foregroundStyle(Palette.textPrimary)
+                        }
+                    }
+                    .font(Typography.reading)
+                    .lineSpacing(6)
+
+                    Text("Opening the saved recording once the final segments are ready.")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Spacing.lg)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("completed-recording-transition")
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let totalSeconds = Int(duration)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -446,8 +976,9 @@ struct MacAuthView: View {
 }
 
 #Preview {
-    let appState = MacAppState()
+    let recordingViewModel = MacRecordingViewModel()
+    let appState = MacAppState(recordingViewModel: recordingViewModel)
     MacContentView()
         .environmentObject(appState)
-        .environmentObject(appState.recordingViewModel)
+        .environmentObject(recordingViewModel)
 }

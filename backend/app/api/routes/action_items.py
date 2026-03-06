@@ -53,7 +53,7 @@ async def list_action_items(
     query = (
         select(ActionItem)
         .join(Recording)
-        .where(Recording.user_id == user.id)
+        .where(Recording.user_id == user.id, Recording.deleted_at.is_(None))
     )
 
     if status_filter:
@@ -92,7 +92,11 @@ async def get_action_item(
     result = await db.execute(
         select(ActionItem)
         .join(Recording)
-        .where(ActionItem.id == item_id, Recording.user_id == user.id)
+        .where(
+            ActionItem.id == item_id,
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+        )
     )
     item = result.scalar_one_or_none()
 
@@ -126,7 +130,11 @@ async def update_action_item(
     result = await db.execute(
         select(ActionItem)
         .join(Recording)
-        .where(ActionItem.id == item_id, Recording.user_id == user.id)
+        .where(
+            ActionItem.id == item_id,
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+        )
     )
     item = result.scalar_one_or_none()
 
@@ -181,7 +189,11 @@ async def delete_action_item(
     result = await db.execute(
         select(ActionItem)
         .join(Recording)
-        .where(ActionItem.id == item_id, Recording.user_id == user.id)
+        .where(
+            ActionItem.id == item_id,
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+        )
     )
     item = result.scalar_one_or_none()
 

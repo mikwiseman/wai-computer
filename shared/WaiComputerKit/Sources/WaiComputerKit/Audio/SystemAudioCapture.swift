@@ -11,11 +11,11 @@ private let sysLog = Logger(subsystem: "com.waicomputer.kit", category: "system-
 /// Produces `AsyncStream<AVAudioPCMBuffer>` at 16kHz mono, matching
 /// the same interface pattern as `MicrophoneCapture`.
 @available(macOS 14.2, *)
-public final class SystemAudioCapture: @unchecked Sendable {
+public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let config: AudioCaptureConfig
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
-    public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>!
+    public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
 
     private var _isCapturing = false
     public var isCapturing: Bool { _isCapturing }
@@ -27,8 +27,12 @@ public final class SystemAudioCapture: @unchecked Sendable {
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
-        setupBufferStream()
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        self.audioBuffers = stream
+        self.bufferContinuation = continuation
     }
+
+    public var isRecording: Bool { isCapturing }
 
     private func setupBufferStream() {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
@@ -77,15 +81,17 @@ public final class SystemAudioCapture: @unchecked Sendable {
         sysLog.warning("[SysAudio] Created process tap ID: \(self.tapID)")
 
         // 3. Get the output device UID
-        var uid: CFString = "" as CFString
+        var uid: CFString?
         var uidAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceUID,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var uidSize = UInt32(MemoryLayout<CFString>.size)
-        status = AudioObjectGetPropertyData(defaultOutputID, &uidAddress, 0, nil, &uidSize, &uid)
-        guard status == noErr else {
+        var uidSize = UInt32(MemoryLayout<CFString?>.size)
+        status = withUnsafeMutablePointer(to: &uid) { uidPointer in
+            AudioObjectGetPropertyData(defaultOutputID, &uidAddress, 0, nil, &uidSize, uidPointer)
+        }
+        guard status == noErr, let uid else {
             throw SystemAudioCaptureError.failedToGetDeviceUID(status)
         }
         sysLog.warning("[SysAudio] Output device UID: \(uid as String)")
@@ -289,6 +295,14 @@ public final class SystemAudioCapture: @unchecked Sendable {
         if _isCapturing {
             stopCapture()
         }
+    }
+
+    public func startRecording() async throws {
+        try startCapture()
+    }
+
+    public func stopRecording() async {
+        stopCapture()
     }
 }
 

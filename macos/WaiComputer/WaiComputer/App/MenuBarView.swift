@@ -6,6 +6,29 @@ struct MenuBarView: View {
     @EnvironmentObject var recordingVM: MacRecordingViewModel
     @State private var recentRecordings: [Recording] = []
 
+    private var isRecordingActivityVisible: Bool {
+        recordingVM.shouldPresentLiveView || appState.completedRecordingContext != nil
+    }
+
+    private var menuStatusText: String {
+        if appState.completedRecordingContext != nil {
+            return "Saving recording"
+        }
+
+        return recordingVM.shouldPresentLiveView ? recordingVM.statusText : "Ready"
+    }
+
+    private var menuDurationText: String? {
+        if let completedContext = appState.completedRecordingContext {
+            let totalSeconds = Int(completedContext.duration)
+            let minutes = totalSeconds / 60
+            let seconds = totalSeconds % 60
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+
+        return recordingVM.shouldPresentLiveView ? recordingVM.formattedDuration : nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if appState.isAuthenticated {
@@ -27,16 +50,16 @@ struct MenuBarView: View {
             // Recording status
             HStack(spacing: Spacing.sm) {
                 Circle()
-                    .fill(appState.isRecordingSessionActive ? Palette.recording : Palette.textTertiary)
+                    .fill(isRecordingActivityVisible ? Palette.recording : Palette.textTertiary)
                     .frame(width: 6, height: 6)
 
-                Text(appState.isRecordingSessionActive ? recordingVM.statusText : "Ready")
+                Text(menuStatusText)
                     .font(Typography.headingSmall)
 
                 Spacer()
 
-                if appState.isRecordingSessionActive {
-                    Text(recordingVM.formattedDuration)
+                if let durationText = menuDurationText {
+                    Text(durationText)
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -46,7 +69,7 @@ struct MenuBarView: View {
 
             // Quick actions
             VStack(spacing: Spacing.xs) {
-                if appState.isRecordingSessionActive {
+                if recordingVM.shouldPresentLiveView {
                     Button {
                         Task {
                             await appState.stopRecording()
@@ -69,17 +92,50 @@ struct MenuBarView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!recordingVM.canStopRecording)
+                } else if appState.completedRecordingContext != nil {
+                    HStack {
+                        Image(systemName: "hourglass.circle")
+                            .foregroundStyle(Palette.textSecondary)
+                        Text("Saving Recording")
+                            .font(Typography.body)
+                        Spacer()
+                    }
+                    .padding(.vertical, Spacing.sm)
+                    .padding(.horizontal, Spacing.lg)
                 } else {
                     Button {
-                        Task { await appState.startRecording(type: .note) }
+                        Task {
+                            await appState.startRecording(type: .note, inputSource: .microphone)
+                        }
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("New Recording")
+                            Text("Record Microphone")
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}N")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        Task {
+                            await appState.startRecording(type: .meeting, inputSource: .systemAudio)
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "speaker.wave.2.circle")
+                                .foregroundStyle(Palette.textSecondary)
+                            Text("Record System Audio")
+                                .font(Typography.body)
+                            Spacer()
+                            Text("\u{2318}\u{21E7}N")
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }
@@ -176,6 +232,11 @@ struct MenuBarView: View {
     }
 
     private func loadRecentRecordings() async {
+        if let uiTestRecordings = appState.uiTestRecordings() {
+            recentRecordings = uiTestRecordings
+            return
+        }
+
         do {
             recentRecordings = try await appState.getAPIClient().listRecordings(limit: 3)
         } catch {
@@ -185,8 +246,9 @@ struct MenuBarView: View {
 }
 
 #Preview {
-    let appState = MacAppState()
+    let recordingViewModel = MacRecordingViewModel()
+    let appState = MacAppState(recordingViewModel: recordingViewModel)
     MenuBarView()
         .environmentObject(appState)
-        .environmentObject(appState.recordingViewModel)
+        .environmentObject(recordingViewModel)
 }

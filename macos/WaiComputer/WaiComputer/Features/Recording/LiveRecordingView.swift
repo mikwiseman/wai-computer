@@ -68,11 +68,16 @@ struct LiveRecordingView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!recordingVM.canStopRecording)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText)
+                .accessibilityIdentifier("stop-recording-button")
 
                 Spacer()
             }
             .padding(Spacing.lg)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("live-recording-view")
     }
 
     private var recordingHeader: some View {
@@ -97,9 +102,15 @@ struct LiveRecordingView: View {
 
             Spacer()
 
-            Text(recordingVM.recordingType.rawValue.capitalized)
-                .font(Typography.label)
-                .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
+            HStack(spacing: Spacing.sm) {
+                Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+
+                Text(recordingVM.recordingType.rawValue.capitalized)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
+            }
         }
         .padding(Spacing.lg)
     }

@@ -3,13 +3,27 @@ import WaiComputerKit
 
 @main
 struct WaiComputerMacApp: App {
-    @StateObject private var appState = MacAppState()
+    @StateObject private var recordingViewModel: MacRecordingViewModel
+    @StateObject private var appState: MacAppState
+
+    init() {
+        let testingMode = MacTestingMode.current
+        let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
+
+        _recordingViewModel = StateObject(wrappedValue: recordingViewModel)
+        _appState = StateObject(
+            wrappedValue: MacAppState(
+                recordingViewModel: recordingViewModel,
+                testingMode: testingMode
+            )
+        )
+    }
 
     var body: some Scene {
         WindowGroup {
             MacContentView()
                 .environmentObject(appState)
-                .environmentObject(appState.recordingViewModel)
+                .environmentObject(recordingViewModel)
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
@@ -22,10 +36,16 @@ struct WaiComputerMacApp: App {
             // Replace default Cmd+N (new window) with new recording
             CommandGroup(replacing: .newItem) {
                 Button("New Recording") {
-                    Task { await appState.startRecording(type: .note) }
+                    Task { await appState.startRecording(type: .note, inputSource: .microphone) }
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(appState.isRecordingSessionActive || !appState.isAuthenticated)
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Button("Record System Audio") {
+                    Task { await appState.startRecording(type: .meeting, inputSource: .systemAudio) }
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
             }
 
             // Remove the default "New Window" from the Window menu
@@ -33,12 +53,16 @@ struct WaiComputerMacApp: App {
         }
 
         // Menu bar extra
-        MenuBarExtra("WaiComputer", systemImage: appState.isRecordingSessionActive ? "waveform.circle.fill" : "brain.head.profile") {
+        MenuBarExtra("WaiComputer", systemImage: isRecordingActivityVisible ? "waveform.circle.fill" : "brain.head.profile") {
             MenuBarView()
                 .environmentObject(appState)
-                .environmentObject(appState.recordingViewModel)
+                .environmentObject(recordingViewModel)
         }
         .menuBarExtraStyle(.window)
+    }
+
+    private var isRecordingActivityVisible: Bool {
+        recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 }
 
@@ -51,23 +75,34 @@ class MacAppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var magicLinkSent = false
-    @Published var isRecording = false
-    @Published var isRecordingSessionActive = false
-    @Published var currentRecordingId: String?
+    @Published var completedRecordingContext: CompletedRecordingContext?
     @Published var selectedRecordingFromMenu: String?
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
     /// view hierarchy from rebuilding on every timer tick and transcript update.
-    let recordingViewModel = MacRecordingViewModel()
+    let recordingViewModel: MacRecordingViewModel
+    let testingMode: MacTestingMode
 
     private let apiClient: APIClient
     private let webSocketManager: WebSocketManager
 
-    init() {
+    init(recordingViewModel: MacRecordingViewModel, testingMode: MacTestingMode = .current) {
+        self.recordingViewModel = recordingViewModel
+        self.testingMode = testingMode
+
         let baseURL = URL(string: "https://wai.computer")!
         apiClient = APIClient(baseURL: baseURL)
         webSocketManager = WebSocketManager(baseURL: baseURL)
+
+        #if DEBUG
+        if testingMode.isRecordingFlow {
+            currentUser = MacUITestFixtures.user
+            isAuthenticated = true
+            isCheckingAuth = false
+            return
+        }
+        #endif
 
         if let token = UserDefaults.standard.string(forKey: "accessToken") {
             Task {
@@ -194,36 +229,39 @@ class MacAppState: ObservableObject {
         }
     }
 
-    func startRecording(type: RecordingType) async {
-        isRecordingSessionActive = true
+    func startRecording(
+        type: RecordingType,
+        inputSource: MacRecordingInputSource = .microphone
+    ) async {
+        completedRecordingContext = nil
 
         await recordingViewModel.startRecording(
             apiClient: apiClient,
             webSocketManager: webSocketManager,
-            type: type
+            type: type,
+            inputSource: inputSource
         )
-
-        isRecording = recordingViewModel.isRecording
-        isRecordingSessionActive = recordingViewModel.shouldPresentLiveView
-        currentRecordingId = recordingViewModel.currentRecordingId
     }
 
     func stopRecording() async {
+        if completedRecordingContext == nil,
+           let recordingId = recordingViewModel.currentRecordingId {
+            completedRecordingContext = CompletedRecordingContext(
+                recordingId: recordingId,
+                transcript: recordingViewModel.currentTranscript,
+                duration: recordingViewModel.duration,
+                recordingType: recordingViewModel.recordingType
+            )
+        }
+
         await recordingViewModel.stopRecording()
-        isRecording = recordingViewModel.isRecording
-        isRecordingSessionActive = recordingViewModel.shouldPresentLiveView
-        currentRecordingId = recordingViewModel.currentRecordingId
     }
 
-    /// Reset recording state after navigating away from live recording view.
-    /// Safe to call while cleanup is in progress — only resets display state.
-    func resetRecordingState() {
-        // Only reset transcript/display state, not lifecycle state.
-        // The cleanup task in MacRecordingViewModel manages its own lifecycle.
+    func finishCompletedRecordingTransition(recordingId: String) {
+        guard completedRecordingContext?.recordingId == recordingId else { return }
+
         recordingViewModel.resetState()
-        isRecording = false
-        isRecordingSessionActive = false
-        currentRecordingId = nil
+        completedRecordingContext = nil
     }
 
     func getAPIClient() -> APIClient {
@@ -232,5 +270,25 @@ class MacAppState: ObservableObject {
 
     func getWebSocketManager() -> WebSocketManager {
         return webSocketManager
+    }
+
+    func uiTestRecordings() -> [Recording]? {
+        #if DEBUG
+        guard testingMode.isRecordingFlow else { return nil }
+        return [MacUITestFixtures.recording]
+        #else
+        return nil
+        #endif
+    }
+
+    func uiTestRecordingDetail(id: String) async -> RecordingDetail? {
+        #if DEBUG
+        guard testingMode.isRecordingFlow, id == MacUITestFixtures.recording.id else { return nil }
+
+        try? await Task.sleep(for: .milliseconds(200))
+        return MacUITestFixtures.recordingDetail
+        #else
+        return nil
+        #endif
     }
 }

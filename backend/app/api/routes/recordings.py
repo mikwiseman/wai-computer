@@ -1,7 +1,7 @@
 """Recording CRUD routes."""
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import UUID
 
@@ -15,7 +15,7 @@ from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
 from app.core.storage import get_storage_client
 from app.core.summarizer import summarize_transcript
-from app.models.recording import ActionItem, Recording, Segment, Summary
+from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,8 @@ class RecordingResponse(BaseModel):
     audio_url: str | None
     duration_seconds: int | None
     language: str | None
+    folder_id: str | None
+    deleted_at: datetime | None
     created_at: datetime
 
 
@@ -84,6 +86,7 @@ class CreateRecordingRequest(BaseModel):
     title: str | None = None
     type: Literal["meeting", "note", "reflection"] = "note"
     language: str | None = None
+    folder_id: UUID | None = None
 
     @field_validator("language")
     @classmethod
@@ -100,6 +103,91 @@ class UpdateRecordingRequest(BaseModel):
 
     title: str | None = None
     type: Literal["meeting", "note", "reflection"] | None = None
+    folder_id: UUID | None = None
+
+
+class MessageResponse(BaseModel):
+    """Simple message response."""
+
+    message: str
+
+
+def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
+    if summary is None:
+        return None
+
+    return SummaryResponse(
+        summary=summary.summary,
+        key_points=summary.key_points,
+        decisions=summary.decisions,
+        topics=summary.topics,
+        people_mentioned=summary.people_mentioned,
+        sentiment=summary.sentiment,
+    )
+
+
+def _serialize_action_item(action_item: ActionItem) -> ActionItemResponse:
+    return ActionItemResponse(
+        id=str(action_item.id),
+        recording_id=str(action_item.recording_id),
+        task=action_item.task,
+        owner=action_item.owner,
+        due_date=action_item.due_date.isoformat() if action_item.due_date else None,
+        priority=action_item.priority,
+        status=action_item.status,
+        source=action_item.source,
+        created_at=action_item.created_at.isoformat(),
+    )
+
+
+def _serialize_recording(recording: Recording) -> RecordingResponse:
+    return RecordingResponse(
+        id=str(recording.id),
+        title=recording.title,
+        type=recording.type,
+        audio_url=recording.audio_url,
+        duration_seconds=recording.duration_seconds,
+        language=recording.language,
+        folder_id=str(recording.folder_id) if recording.folder_id else None,
+        deleted_at=recording.deleted_at,
+        created_at=recording.created_at,
+    )
+
+
+def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse:
+    return RecordingDetailResponse(
+        **_serialize_recording(recording).model_dump(),
+        segments=[
+            SegmentResponse(
+                id=str(s.id),
+                speaker=s.speaker,
+                content=s.content,
+                start_ms=s.start_ms,
+                end_ms=s.end_ms,
+                confidence=s.confidence,
+            )
+            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+        ],
+        summary=_serialize_summary(recording.summary),
+        action_items=[_serialize_action_item(a) for a in recording.action_items],
+    )
+
+
+async def _require_folder(
+    folder_id: UUID | None,
+    user_id: UUID,
+    db: Database,
+) -> Folder | None:
+    if folder_id is None:
+        return None
+
+    folder_result = await db.execute(
+        select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+    )
+    folder = folder_result.scalar_one_or_none()
+    if folder is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    return folder
 
 
 @router.get("", response_model=list[RecordingResponse])
@@ -109,30 +197,28 @@ async def list_recordings(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     type: Literal["meeting", "note", "reflection"] | None = None,
+    folder_id: UUID | None = None,
+    trashed: bool = False,
 ) -> list[RecordingResponse]:
     """List user's recordings."""
     query = select(Recording).where(Recording.user_id == user.id)
 
+    if trashed:
+        query = query.where(Recording.deleted_at.is_not(None))
+    else:
+        query = query.where(Recording.deleted_at.is_(None))
+
     if type:
         query = query.where(Recording.type == type)
+    if folder_id is not None:
+        query = query.where(Recording.folder_id == folder_id)
 
     query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
     recordings = result.scalars().all()
 
-    return [
-        RecordingResponse(
-            id=str(r.id),
-            title=r.title,
-            type=r.type,
-            audio_url=r.audio_url,
-            duration_seconds=r.duration_seconds,
-            language=r.language,
-            created_at=r.created_at,
-        )
-        for r in recordings
-    ]
+    return [_serialize_recording(recording) for recording in recordings]
 
 
 @router.post("", response_model=RecordingResponse, status_code=status.HTTP_201_CREATED)
@@ -143,24 +229,18 @@ async def create_recording(
 ) -> RecordingResponse:
     """Create a new recording."""
     language = request.language if request.language is not None else user.default_language
+    folder = await _require_folder(request.folder_id, user.id, db)
     recording = Recording(
         user_id=user.id,
         title=request.title,
         type=request.type,
         language=language,
+        folder_id=folder.id if folder else None,
     )
     db.add(recording)
     await db.flush()
 
-    return RecordingResponse(
-        id=str(recording.id),
-        title=recording.title,
-        type=recording.type,
-        audio_url=recording.audio_url,
-        duration_seconds=recording.duration_seconds,
-        language=recording.language,
-        created_at=recording.created_at,
-    )
+    return _serialize_recording(recording)
 
 
 @router.get("/{recording_id}", response_model=RecordingDetailResponse)
@@ -184,50 +264,7 @@ async def get_recording(
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
-    return RecordingDetailResponse(
-        id=str(recording.id),
-        title=recording.title,
-        type=recording.type,
-        audio_url=recording.audio_url,
-        duration_seconds=recording.duration_seconds,
-        language=recording.language,
-        created_at=recording.created_at,
-        segments=[
-            SegmentResponse(
-                id=str(s.id),
-                speaker=s.speaker,
-                content=s.content,
-                start_ms=s.start_ms,
-                end_ms=s.end_ms,
-                confidence=s.confidence,
-            )
-            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
-        ],
-        summary=SummaryResponse(
-            summary=recording.summary.summary,
-            key_points=recording.summary.key_points,
-            decisions=recording.summary.decisions,
-            topics=recording.summary.topics,
-            people_mentioned=recording.summary.people_mentioned,
-            sentiment=recording.summary.sentiment,
-        )
-        if recording.summary
-        else None,
-        action_items=[
-            ActionItemResponse(
-                id=str(a.id),
-                recording_id=str(a.recording_id),
-                task=a.task,
-                owner=a.owner,
-                due_date=a.due_date.isoformat() if a.due_date else None,
-                priority=a.priority,
-                status=a.status,
-                source=a.source,
-                created_at=a.created_at.isoformat(),
-            )
-            for a in recording.action_items
-        ],
-    )
+    return _serialize_recording_detail(recording)
 
 
 @router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -235,6 +272,7 @@ async def delete_recording(
     recording_id: UUID,
     user: CurrentUser,
     db: Database,
+    permanent: bool = False,
 ) -> None:
     """Delete a recording."""
     result = await db.execute(
@@ -245,7 +283,31 @@ async def delete_recording(
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
-    await db.delete(recording)
+    if permanent or recording.deleted_at is not None:
+        await db.delete(recording)
+        return
+
+    recording.deleted_at = datetime.now(timezone.utc)
+
+
+@router.post("/{recording_id}/restore", response_model=RecordingResponse)
+async def restore_recording(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> RecordingResponse:
+    """Restore a recording from trash."""
+    result = await db.execute(
+        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    recording.deleted_at = None
+    await db.flush()
+    return _serialize_recording(recording)
 
 
 @router.patch("/{recording_id}", response_model=RecordingResponse)
@@ -268,18 +330,13 @@ async def update_recording(
         recording.title = request.title
     if request.type is not None:
         recording.type = request.type
+    if "folder_id" in request.model_fields_set:
+        folder = await _require_folder(request.folder_id, user.id, db)
+        recording.folder_id = folder.id if folder else None
 
     await db.flush()
 
-    return RecordingResponse(
-        id=str(recording.id),
-        title=recording.title,
-        type=recording.type,
-        audio_url=recording.audio_url,
-        duration_seconds=recording.duration_seconds,
-        language=recording.language,
-        created_at=recording.created_at,
-    )
+    return _serialize_recording(recording)
 
 
 @router.get("/{recording_id}/transcript", response_model=list[SegmentResponse])
@@ -332,14 +389,10 @@ async def get_summary(
     if recording.summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
 
-    return SummaryResponse(
-        summary=recording.summary.summary,
-        key_points=recording.summary.key_points,
-        decisions=recording.summary.decisions,
-        topics=recording.summary.topics,
-        people_mentioned=recording.summary.people_mentioned,
-        sentiment=recording.summary.sentiment,
-    )
+    summary = _serialize_summary(recording.summary)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
+    return summary
 
 
 @router.post("/{recording_id}/generate-summary", response_model=SummaryResponse)
@@ -440,14 +493,13 @@ async def generate_summary(
 
     await db.flush()
 
-    return SummaryResponse(
-        summary=recording.summary.summary,
-        key_points=recording.summary.key_points,
-        decisions=recording.summary.decisions,
-        topics=recording.summary.topics,
-        people_mentioned=recording.summary.people_mentioned,
-        sentiment=recording.summary.sentiment,
-    )
+    summary = _serialize_summary(recording.summary)
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Summary not saved",
+        )
+    return summary
 
 
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"}
@@ -561,47 +613,4 @@ async def upload_audio_file(
     )
     recording = result.scalar_one_or_none()
 
-    return RecordingDetailResponse(
-        id=str(recording.id),
-        title=recording.title,
-        type=recording.type,
-        audio_url=recording.audio_url,
-        duration_seconds=recording.duration_seconds,
-        language=recording.language,
-        created_at=recording.created_at,
-        segments=[
-            SegmentResponse(
-                id=str(s.id),
-                speaker=s.speaker,
-                content=s.content,
-                start_ms=s.start_ms,
-                end_ms=s.end_ms,
-                confidence=s.confidence,
-            )
-            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
-        ],
-        summary=SummaryResponse(
-            summary=recording.summary.summary,
-            key_points=recording.summary.key_points,
-            decisions=recording.summary.decisions,
-            topics=recording.summary.topics,
-            people_mentioned=recording.summary.people_mentioned,
-            sentiment=recording.summary.sentiment,
-        )
-        if recording.summary
-        else None,
-        action_items=[
-            ActionItemResponse(
-                id=str(a.id),
-                recording_id=str(a.recording_id),
-                task=a.task,
-                owner=a.owner,
-                due_date=a.due_date.isoformat() if a.due_date else None,
-                priority=a.priority,
-                status=a.status,
-                source=a.source,
-                created_at=a.created_at.isoformat(),
-            )
-            for a in recording.action_items
-        ],
-    )
+    return _serialize_recording_detail(recording)

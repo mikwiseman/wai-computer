@@ -25,6 +25,9 @@ class User(Base, UUIDMixin, TimestampMixin):
     recordings: Mapped[list["Recording"]] = relationship(
         "Recording", back_populates="user", cascade="all, delete-orphan"
     )
+    folders: Mapped[list["Folder"]] = relationship(
+        "Folder", back_populates="user", cascade="all, delete-orphan"
+    )
     entities: Mapped[list["Entity"]] = relationship(
         "Entity", back_populates="user", cascade="all, delete-orphan"
     )
@@ -39,4 +42,4 @@ class User(Base, UUIDMixin, TimestampMixin):
 # Import at bottom to avoid circular imports
 from app.models.chat import ChatSession  # noqa: E402
 from app.models.entity import Entity, Tag  # noqa: E402
-from app.models.recording import Recording  # noqa: E402
+from app.models.recording import Folder, Recording  # noqa: E402

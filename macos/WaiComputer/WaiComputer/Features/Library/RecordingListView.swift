@@ -3,20 +3,65 @@ import WaiComputerKit
 
 struct RecordingListView: View {
     let recordings: [Recording]
-    @Binding var selectedRecordingId: String?
-    let onDelete: (String) -> Void
+    let folders: [Folder]
+    let isTrash: Bool
+    @Binding var selectedRecordingIds: Set<String>
+    let onTrash: ([String]) -> Void
+    let onRestore: ([String]) -> Void
+    let onPermanentDelete: ([String]) -> Void
+    let onMoveToFolder: ([String], String?) -> Void
 
     var body: some View {
-        List(recordings, selection: $selectedRecordingId) { recording in
+        List(recordings, selection: $selectedRecordingIds) { recording in
             RecordingRowView(recording: recording)
                 .tag(recording.id)
                 .contextMenu {
-                    Button("Delete", role: .destructive) {
-                        onDelete(recording.id)
+                    let contextSelection = selection(for: recording.id)
+
+                    if isTrash {
+                        Button("Restore") {
+                            onRestore(contextSelection)
+                        }
+
+                        Button("Delete Permanently", role: .destructive) {
+                            onPermanentDelete(contextSelection)
+                        }
+                    } else {
+                        Menu("Move to Folder") {
+                            Button("Unfiled") {
+                                onMoveToFolder(contextSelection, nil)
+                            }
+
+                            ForEach(folders) { folder in
+                                Button(folder.name) {
+                                    onMoveToFolder(contextSelection, folder.id)
+                                }
+                            }
+                        }
+
+                        Button("Move to Trash", role: .destructive) {
+                            onTrash(contextSelection)
+                        }
                     }
                 }
         }
         .listStyle(.inset)
+        .onDeleteCommand {
+            let ids = Array(selectedRecordingIds)
+            guard !ids.isEmpty else { return }
+            if isTrash {
+                onPermanentDelete(ids)
+            } else {
+                onTrash(ids)
+            }
+        }
+    }
+
+    private func selection(for recordingId: String) -> [String] {
+        if selectedRecordingIds.contains(recordingId) {
+            return Array(selectedRecordingIds)
+        }
+        return [recordingId]
     }
 }
 

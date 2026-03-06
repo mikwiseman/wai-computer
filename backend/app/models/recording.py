@@ -1,14 +1,29 @@
 """Recording and related models."""
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Date, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+
+class Folder(Base, UUIDMixin, TimestampMixin):
+    """Folder for organizing recordings."""
+
+    __tablename__ = "folders"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="folders")
+    recordings: Mapped[list["Recording"]] = relationship("Recording", back_populates="folder")
 
 
 class Recording(Base, UUIDMixin, TimestampMixin):
@@ -24,9 +39,21 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     audio_url: Mapped[str | None] = mapped_column(String(1000))
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     language: Mapped[str | None] = mapped_column(String(10))
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="recordings")
+    folder: Mapped["Folder | None"] = relationship("Folder", back_populates="recordings")
     segments: Mapped[list["Segment"]] = relationship(
         "Segment", back_populates="recording", cascade="all, delete-orphan"
     )

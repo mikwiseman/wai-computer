@@ -3,13 +3,14 @@
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
-from app.models.recording import ActionItem, Recording, Segment, Summary
+from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 from app.models.user import User
 
 __all__ = [
     "Base",
     "User",
     "Recording",
+    "Folder",
     "Segment",
     "Summary",
     "ActionItem",

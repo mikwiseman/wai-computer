@@ -29,5 +29,27 @@ targets:
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.waiwai.waicomputer.macos.dev
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
     dependencies:
       - package: WaiComputerKit
+    scheme:
+      testTargets:
+        - WaiComputerUITests
+
+  WaiComputerUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: WaiComputerUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.waiwai.waicomputer.macos.uitests
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: WaiComputer
+    dependencies:
+      - target: WaiComputer
