@@ -91,10 +91,10 @@ backend/
         recordings.py   # /api/recordings/* (CRUD, upload)
         search.py       # /api/search/* (hybrid, semantic, fulltext)
         chat.py         # /api/chat/* (RAG chat with transcripts)
+        deepgram.py     # /api/deepgram-token (temp JWT for direct Deepgram)
         action_items.py # /api/action-items/*
         entities.py     # /api/entities/*
         settings.py     # /api/settings/*
-      websocket.py      # /api/ws (real-time audio streaming)
       deps.py           # Dependency injection (get_db, get_current_user)
     core/
       security.py       # JWT, password hashing
@@ -198,7 +198,7 @@ All API routes are prefixed with `/api` in FastAPI. Caddy proxies `/api/*` → `
 | `DELETE /api/entities/:id` | Delete entity |
 | `GET /api/settings` | Get user settings |
 | `GET /health` | Health check (not under /api) |
-| `WS /api/ws` | Real-time audio streaming |
+| `GET /api/deepgram-token` | Get temporary Deepgram JWT for direct client connection |
 
 ## Environment Variables (backend/.env)
 

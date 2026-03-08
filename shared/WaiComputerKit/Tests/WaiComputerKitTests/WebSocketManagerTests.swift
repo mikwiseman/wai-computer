@@ -7,87 +7,79 @@ final class WebSocketManagerTests: XCTestCase {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    // MARK: - AudioMessage Tests
+    // MARK: - LiveTranscriptSegment Tests
 
-    func testAudioMessageEncoding() throws {
-        let base64Data = "SGVsbG8gV29ybGQ="
-        let timestamp: Int64 = 1706745600000
-        let message = AudioMessage(data: base64Data, timestamp: timestamp)
+    func testLiveTranscriptSegmentEncoding() throws {
+        let segment = LiveTranscriptSegment(
+            text: "Hello, how are you today?",
+            speaker: "Speaker 0",
+            isFinal: true,
+            startMs: 500,
+            endMs: 3200,
+            confidence: 0.95
+        )
 
-        let jsonData = try encoder.encode(message)
+        let jsonData = try encoder.encode(segment)
         let dict = try JSONSerialization.jsonObject(with: jsonData) as! [String: Any]
 
-        XCTAssertEqual(dict["type"] as? String, "audio")
-        XCTAssertEqual(dict["data"] as? String, "SGVsbG8gV29ybGQ=")
-        XCTAssertEqual(dict["timestamp"] as? Int64, 1706745600000)
+        XCTAssertEqual(dict["text"] as? String, "Hello, how are you today?")
+        XCTAssertEqual(dict["speaker"] as? String, "Speaker 0")
+        XCTAssertEqual(dict["is_final"] as? Bool, true)
+        XCTAssertEqual(dict["start_ms"] as? Int, 500)
+        XCTAssertEqual(dict["end_ms"] as? Int, 3200)
+        XCTAssertEqual(dict["confidence"] as? Double, 0.95)
     }
 
-    // MARK: - TranscriptMessage Tests
-
-    func testTranscriptMessageDecoding() throws {
+    func testLiveTranscriptSegmentDecoding() throws {
         let json = """
         {
-            "type": "transcript",
             "text": "Hello, how are you today?",
-            "speaker": "Alice",
+            "speaker": "Speaker 0",
             "is_final": true,
             "start_ms": 500,
-            "end_ms": 3200
+            "end_ms": 3200,
+            "confidence": 0.95
         }
         """.data(using: .utf8)!
 
-        let message = try decoder.decode(TranscriptMessage.self, from: json)
-        XCTAssertEqual(message.type, "transcript")
-        XCTAssertEqual(message.text, "Hello, how are you today?")
-        XCTAssertEqual(message.speaker, "Alice")
-        XCTAssertTrue(message.isFinal)
-        XCTAssertEqual(message.startMs, 500)
-        XCTAssertEqual(message.endMs, 3200)
+        let segment = try decoder.decode(LiveTranscriptSegment.self, from: json)
+        XCTAssertEqual(segment.text, "Hello, how are you today?")
+        XCTAssertEqual(segment.speaker, "Speaker 0")
+        XCTAssertTrue(segment.isFinal)
+        XCTAssertEqual(segment.startMs, 500)
+        XCTAssertEqual(segment.endMs, 3200)
+        XCTAssertEqual(segment.confidence, 0.95)
+    }
 
-        // Test without optional speaker
-        let noSpeakerJSON = """
+    func testLiveTranscriptSegmentWithNullSpeaker() throws {
+        let json = """
         {
-            "type": "transcript",
             "text": "Partial result",
             "is_final": false,
             "start_ms": 3200,
-            "end_ms": 4000
+            "end_ms": 4000,
+            "confidence": 0.8
         }
         """.data(using: .utf8)!
 
-        let noSpeaker = try decoder.decode(TranscriptMessage.self, from: noSpeakerJSON)
-        XCTAssertNil(noSpeaker.speaker)
-        XCTAssertFalse(noSpeaker.isFinal)
-        XCTAssertEqual(noSpeaker.startMs, 3200)
+        let segment = try decoder.decode(LiveTranscriptSegment.self, from: json)
+        XCTAssertNil(segment.speaker)
+        XCTAssertFalse(segment.isFinal)
+        XCTAssertEqual(segment.startMs, 3200)
     }
 
-    // MARK: - StatusMessage Tests
+    // MARK: - DeepgramTokenResponse Tests
 
-    func testStatusMessageDecoding() throws {
+    func testDeepgramTokenResponseDecoding() throws {
         let json = """
         {
-            "type": "status",
-            "status": "processing",
-            "message": "Transcription in progress"
+            "access_token": "dg-temp-jwt-123",
+            "expires_in": 300
         }
         """.data(using: .utf8)!
 
-        let message = try decoder.decode(StatusMessage.self, from: json)
-        XCTAssertEqual(message.type, "status")
-        XCTAssertEqual(message.status, "processing")
-        XCTAssertEqual(message.message, "Transcription in progress")
-
-        // Status without message
-        let noMsgJSON = """
-        {
-            "type": "status",
-            "status": "ready"
-        }
-        """.data(using: .utf8)!
-
-        let noMsg = try decoder.decode(StatusMessage.self, from: noMsgJSON)
-        XCTAssertEqual(noMsg.status, "ready")
-        XCTAssertNil(noMsg.message)
+        let response = try decoder.decode(DeepgramTokenResponse.self, from: json)
+        XCTAssertEqual(response.accessToken, "dg-temp-jwt-123")
     }
 
     // MARK: - WebSocketEvent Tests
@@ -100,34 +92,20 @@ final class WebSocketManagerTests: XCTestCase {
         }
 
         // .transcript
-        let transcriptJSON = """
-        {
-            "type": "transcript",
-            "text": "Test",
-            "is_final": true,
-            "start_ms": 0,
-            "end_ms": 1000
-        }
-        """.data(using: .utf8)!
-        let transcriptMsg = try decoder.decode(TranscriptMessage.self, from: transcriptJSON)
-        let transcriptEvent = WebSocketEvent.transcript(transcriptMsg)
-        if case .transcript(let msg) = transcriptEvent {
-            XCTAssertEqual(msg.text, "Test")
-            XCTAssertTrue(msg.isFinal)
+        let segment = LiveTranscriptSegment(
+            text: "Test",
+            speaker: nil,
+            isFinal: true,
+            startMs: 0,
+            endMs: 1000,
+            confidence: 0.9
+        )
+        let transcriptEvent = WebSocketEvent.transcript(segment)
+        if case .transcript(let seg) = transcriptEvent {
+            XCTAssertEqual(seg.text, "Test")
+            XCTAssertTrue(seg.isFinal)
         } else {
             XCTFail("Expected .transcript")
-        }
-
-        // .status
-        let statusJSON = """
-        {"type": "status", "status": "connected"}
-        """.data(using: .utf8)!
-        let statusMsg = try decoder.decode(StatusMessage.self, from: statusJSON)
-        let statusEvent = WebSocketEvent.status(statusMsg)
-        if case .status(let msg) = statusEvent {
-            XCTAssertEqual(msg.status, "connected")
-        } else {
-            XCTFail("Expected .status")
         }
 
         // .disconnected with nil error
@@ -147,5 +125,21 @@ final class WebSocketManagerTests: XCTestCase {
         } else {
             XCTFail("Expected .disconnected with error")
         }
+    }
+
+    // MARK: - WebSocketConnectionError Tests
+
+    func testConnectionErrorDescriptions() {
+        let disconnected = WebSocketConnectionError.disconnected(nil)
+        XCTAssertNotNil(disconnected.errorDescription)
+
+        let tokenFailed = WebSocketConnectionError.tokenFetchFailed("timeout")
+        XCTAssertTrue(tokenFailed.errorDescription!.contains("timeout"))
+
+        let serverError = WebSocketConnectionError.serverError("bad request")
+        XCTAssertTrue(serverError.errorDescription!.contains("bad request"))
+
+        let superseded = WebSocketConnectionError.superseded
+        XCTAssertNotNil(superseded.errorDescription)
     }
 }

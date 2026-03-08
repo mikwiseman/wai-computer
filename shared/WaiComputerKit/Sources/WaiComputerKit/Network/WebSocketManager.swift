@@ -1,149 +1,86 @@
 import Foundation
 
+/// Deepgram token response from backend
+public struct DeepgramTokenResponse: Codable, Sendable {
+    public let accessToken: String
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+    }
+}
+
+/// Transcript segment collected during a live recording session
+public struct LiveTranscriptSegment: Codable, Sendable {
+    public let text: String
+    public let speaker: String?
+    public let isFinal: Bool
+    public let startMs: Int
+    public let endMs: Int
+    public let confidence: Double
+
+    public init(text: String, speaker: String?, isFinal: Bool, startMs: Int, endMs: Int, confidence: Double) {
+        self.text = text
+        self.speaker = speaker
+        self.isFinal = isFinal
+        self.startMs = startMs
+        self.endMs = endMs
+        self.confidence = confidence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text, speaker
+        case isFinal = "is_final"
+        case startMs = "start_ms"
+        case endMs = "end_ms"
+        case confidence
+    }
+}
+
 public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
     case disconnected(Error?)
-    case readyTimeout
+    case tokenFetchFailed(String)
     case serverError(String?)
     case superseded
 
     public var errorDescription: String? {
         switch self {
         case .disconnected(let error):
-            return error?.localizedDescription ?? "The WebSocket disconnected before it was ready."
-        case .readyTimeout:
-            return "Timed out waiting for the recording WebSocket to become ready."
+            return error?.localizedDescription ?? "The WebSocket disconnected."
+        case .tokenFetchFailed(let message):
+            return "Failed to get transcription token: \(message)"
         case .serverError(let message):
-            return message ?? "The server rejected the recording WebSocket connection."
+            return message ?? "Transcription service error."
         case .superseded:
             return "The WebSocket connection was replaced by a newer connection attempt."
         }
     }
 }
 
-/// WebSocket message types
-public enum WebSocketMessageType: String, Codable, Sendable {
-    case audio
-    case transcript
-    case status
-    case end
-}
-
-/// Outgoing audio message
-public struct AudioMessage: Codable, Sendable {
-    public var type: String = "audio"
-    public let data: String
-    public let timestamp: Int64
-
-    public init(data: String, timestamp: Int64) {
-        self.data = data
-        self.timestamp = timestamp
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case type, data, timestamp
-    }
-}
-
-/// Incoming transcript message
-public struct TranscriptMessage: Codable, Sendable {
-    public let type: String
-    public let text: String
-    public let speaker: String?
-    public let isFinal: Bool
-    public let startMs: Int
-    public let endMs: Int
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case text
-        case speaker
-        case isFinal = "is_final"
-        case startMs = "start_ms"
-        case endMs = "end_ms"
-    }
-}
-
-/// Status message
-public struct StatusMessage: Codable, Sendable {
-    public let type: String
-    public let status: String
-    public let message: String?
-}
-
 /// WebSocket event
 public enum WebSocketEvent: Sendable {
     case connected
-    case transcript(TranscriptMessage)
-    case status(StatusMessage)
+    case transcript(LiveTranscriptSegment)
     case disconnected(Error?)
 }
 
-private protocol WebSocketTasking: Sendable {
-    func resume()
-    func send(_ message: URLSessionWebSocketTask.Message) async throws
-    func receive() async throws -> URLSessionWebSocketTask.Message
-    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
-}
-
-private final class URLSessionWebSocketTransport: WebSocketTasking, @unchecked Sendable {
-    private let task: URLSessionWebSocketTask
-
-    init(task: URLSessionWebSocketTask) {
-        self.task = task
-    }
-
-    func resume() {
-        task.resume()
-    }
-
-    func send(_ message: URLSessionWebSocketTask.Message) async throws {
-        try await task.send(message)
-    }
-
-    func receive() async throws -> URLSessionWebSocketTask.Message {
-        try await task.receive()
-    }
-
-    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        task.cancel(with: closeCode, reason: reason)
-    }
-}
-
-/// WebSocket manager for real-time audio streaming
+/// WebSocket manager for direct Deepgram streaming.
+///
+/// Connects directly to `wss://api.deepgram.com/v1/listen` using a short-lived
+/// JWT obtained from the backend's `/api/deepgram-token` endpoint.
 public actor WebSocketManager {
-    private typealias WebSocketFactory = @Sendable (URLRequest) -> any WebSocketTasking
+    private let apiClient: APIClient
+    private let language: String
 
-    private enum ReadyHandshakeState {
-        case idle
-        case waiting(CheckedContinuation<Void, Error>)
-        case ready
-        case failed(Error)
-    }
-
-    private enum MessageHandlingResult {
-        case continueListening
-        case stopListening
-    }
-
-    private let baseURL: URL
-    private let webSocketFactory: WebSocketFactory
-    private let readyTimeout: Duration
-    private var webSocket: (any WebSocketTasking)?
-    private var accessToken: String?
-
+    private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
     private var receiveTask: Task<Void, Never>?
     private var connectionId: UInt64 = 0
-    private var readyHandshakeState: ReadyHandshakeState = .idle
-    private var hasEmittedConnected = false
     private var sendCount = 0
 
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    /// All final transcript segments collected during this session.
+    public private(set) var collectedSegments: [LiveTranscriptSegment] = []
 
-    /// Stream of WebSocket events - must be accessed from async context.
-    /// Returns a FRESH stream for the current connection.
-    /// Call this BEFORE connect() to ensure no events are missed.
+    /// Stream of WebSocket events. Call BEFORE connect() to not miss events.
     public var events: AsyncStream<WebSocketEvent> {
         let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
         eventContinuation?.finish()
@@ -151,41 +88,13 @@ public actor WebSocketManager {
         return stream
     }
 
-    public init(baseURL: URL, accessToken: String? = nil) {
-        self.baseURL = baseURL
-        self.accessToken = accessToken
-        self.readyTimeout = .seconds(10)
-
-        let session = URLSession(configuration: .default)
-        self.webSocketFactory = { request in
-            URLSessionWebSocketTransport(task: session.webSocketTask(with: request))
-        }
+    public init(apiClient: APIClient, language: String = "multi") {
+        self.apiClient = apiClient
+        self.language = language
     }
 
-    private init(
-        baseURL: URL,
-        accessToken: String? = nil,
-        readyTimeout: Duration,
-        webSocketFactory: @escaping WebSocketFactory
-    ) {
-        self.baseURL = baseURL
-        self.accessToken = accessToken
-        self.readyTimeout = readyTimeout
-        self.webSocketFactory = webSocketFactory
-    }
-
-    /// Set access token
-    public func setAccessToken(_ token: String?) {
-        self.accessToken = token
-    }
-
-    /// Connect to WebSocket for a recording.
-    /// Disconnects any existing connection first to prevent event leakage.
-    public func connect(recordingId: String) async throws {
-        guard let token = accessToken else {
-            throw APIError.unauthorized
-        }
-
+    /// Connect to Deepgram directly using a temporary token from the backend.
+    public func connect() async throws {
         if webSocket != nil || receiveTask != nil {
             print("[WS] Disconnecting previous connection before new one")
             closeConnection(
@@ -203,17 +112,26 @@ public actor WebSocketManager {
 
         connectionId &+= 1
         let thisConnection = connectionId
-        readyHandshakeState = .idle
-        hasEmittedConnected = false
         sendCount = 0
+        collectedSegments = []
 
-        let wsURL = try makeWebSocketURL(token: token, recordingId: recordingId)
-        print("[WS] Connecting to: \(wsURL.host ?? "?")\(wsURL.path)")
+        // Fetch temporary Deepgram JWT from backend
+        let tokenResponse: DeepgramTokenResponse = try await apiClient.request(
+            .GET, path: "/api/deepgram-token"
+        )
+        let dgToken = tokenResponse.accessToken
 
-        var request = URLRequest(url: wsURL)
+        // Build Deepgram WebSocket URL with token as query param
+        // (more reliable than header for WebSocket upgrade handshake)
+        let url = buildDeepgramURL(token: dgToken)
+        print("[WS] Connecting to Deepgram: \(url.host ?? "")\(url.path)")
+
+        var request = URLRequest(url: url)
         request.timeoutInterval = 300
+        request.setValue("Token \(dgToken)", forHTTPHeaderField: "Authorization")
 
-        let socket = webSocketFactory(request)
+        let session = URLSession(configuration: .default)
+        let socket = session.webSocketTask(with: request)
         webSocket = socket
         socket.resume()
 
@@ -221,67 +139,67 @@ public actor WebSocketManager {
             await self?.receiveMessages(forConnection: thisConnection)
         }
 
-        do {
-            try await waitForReady(forConnection: thisConnection)
-        } catch {
-            closeConnection(forConnection: thisConnection, error: error, emitDisconnected: true)
-            throw error
-        }
+        eventContinuation?.yield(.connected)
     }
 
-    /// Send audio data
+    /// Send raw PCM audio data directly to Deepgram.
     public func sendAudio(data: Data) async throws {
-        guard let webSocket = webSocket else {
-            print("[WS] sendAudio: no webSocket task")
+        guard let webSocket else {
             throw APIError.networkError(URLError(.notConnectedToInternet))
-        }
-
-        let base64 = data.base64EncodedString()
-        let message = AudioMessage(
-            data: base64,
-            timestamp: Int64(Date().timeIntervalSince1970 * 1000)
-        )
-
-        let jsonData = try encoder.encode(message)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-            throw APIError.noData
         }
 
         sendCount += 1
         if sendCount <= 3 || sendCount % 50 == 0 {
-            print("[WS] sendAudio #\(sendCount): \(data.count) bytes raw, \(jsonString.count) chars JSON")
+            print("[WS] sendAudio #\(sendCount): \(data.count) bytes")
         }
 
-        try await webSocket.send(.string(jsonString))
+        try await webSocket.send(.data(data))
     }
 
-    /// Send end signal
+    /// Signal end of audio stream. Deepgram will send final results then close.
     public func sendEnd() async throws {
-        guard let webSocket = webSocket else { return }
+        guard let webSocket else { return }
 
-        let message = ["type": "end"]
-        let jsonData = try encoder.encode(message)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-
-        try await webSocket.send(.string(jsonString))
+        let closeMessage = "{\"type\":\"CloseStream\"}"
+        try await webSocket.send(.string(closeMessage))
+        print("[WS] Sent CloseStream to Deepgram")
     }
 
-    /// Disconnect the active socket and finish the current event stream.
+    /// Disconnect and clean up.
     public func disconnect() {
         closeConnection(forConnection: connectionId, error: nil, emitDisconnected: true)
     }
 
-    private func receiveMessages(forConnection expectedId: UInt64) async {
-        guard let webSocket = webSocket else {
-            print("[WS] receiveMessages: no webSocket task")
-            return
+    // MARK: - Private
+
+    private func buildDeepgramURL(token: String) -> URL {
+        var params = [
+            "model=nova-3",
+            "language=\(language)",
+            "punctuate=true",
+            "diarize=true",
+            "interim_results=true",
+            "utterance_end_ms=1000",
+            "vad_events=true",
+            "encoding=linear16",
+            "sample_rate=16000",
+            "token=\(token)",
+        ]
+        if language == "multi" {
+            params.append("endpointing=100")
         }
+        let queryString = params.joined(separator: "&")
+        return URL(string: "wss://api.deepgram.com/v1/listen?\(queryString)")!
+    }
+
+    private func receiveMessages(forConnection expectedId: UInt64) async {
+        guard let webSocket else { return }
 
         print("[WS] receiveMessages: started listening (connection \(expectedId))")
         do {
             while true {
                 guard connectionId == expectedId else {
-                    print("[WS] receiveMessages: connection \(expectedId) superseded, stopping")
+                    print("[WS] receiveMessages: connection \(expectedId) superseded")
                     return
                 }
 
@@ -289,15 +207,13 @@ public actor WebSocketManager {
 
                 switch message {
                 case .string(let text):
-                    print("[WS] Received: \(String(text.prefix(120)))")
-                    if handleMessage(text, forConnection: expectedId) == .stopListening {
-                        return
+                    if connectionId == expectedId {
+                        handleDeepgramMessage(text)
                     }
                 case .data(let data):
-                    print("[WS] Received binary: \(data.count) bytes")
                     if let text = String(data: data, encoding: .utf8),
-                       handleMessage(text, forConnection: expectedId) == .stopListening {
-                        return
+                       connectionId == expectedId {
+                        handleDeepgramMessage(text)
                     }
                 @unknown default:
                     break
@@ -311,148 +227,57 @@ public actor WebSocketManager {
                     error: WebSocketConnectionError.disconnected(error),
                     emitDisconnected: true
                 )
-            } else {
-                print("[WS] receiveMessages: old connection \(expectedId) closed (expected)")
             }
         }
     }
 
-    private func handleMessage(_ text: String, forConnection expectedId: UInt64) -> MessageHandlingResult {
-        guard let data = text.data(using: .utf8) else {
-            return .continueListening
+    private func handleDeepgramMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        let msgType = json["type"] as? String ?? ""
+
+        guard msgType == "Results" else { return }
+
+        let isFinal = json["is_final"] as? Bool ?? false
+        guard let channel = json["channel"] as? [String: Any],
+              let alternatives = channel["alternatives"] as? [[String: Any]],
+              let alt = alternatives.first,
+              let transcript = alt["transcript"] as? String,
+              !transcript.isEmpty
+        else { return }
+
+        let words = alt["words"] as? [[String: Any]] ?? []
+        var speaker: String? = nil
+        var startMs = 0
+        var endMs = 0
+
+        if let firstWord = words.first {
+            let speakerIdx = firstWord["speaker"] as? Int ?? 0
+            speaker = "Speaker \(speakerIdx)"
+            startMs = Int((firstWord["start"] as? Double ?? 0) * 1000)
+        }
+        if let lastWord = words.last {
+            endMs = Int((lastWord["end"] as? Double ?? 0) * 1000)
         }
 
-        if let status = try? decoder.decode(StatusMessage.self, from: data), status.type == "status" {
-            if status.status == "ready" {
-                emitConnectedIfNeeded()
-                eventContinuation?.yield(.status(status))
-                markReady()
-                return .continueListening
-            }
+        let confidence = alt["confidence"] as? Double ?? 0.0
 
-            eventContinuation?.yield(.status(status))
+        let segment = LiveTranscriptSegment(
+            text: transcript,
+            speaker: speaker,
+            isFinal: isFinal,
+            startMs: startMs,
+            endMs: endMs,
+            confidence: confidence
+        )
 
-            if status.status == "error", !isReady {
-                closeConnection(
-                    forConnection: expectedId,
-                    error: WebSocketConnectionError.serverError(status.message),
-                    emitDisconnected: true
-                )
-                return .stopListening
-            }
-
-            return .continueListening
+        if isFinal {
+            collectedSegments.append(segment)
         }
 
-        if let transcript = try? decoder.decode(TranscriptMessage.self, from: data),
-           transcript.type == "transcript" {
-            eventContinuation?.yield(.transcript(transcript))
-        }
-
-        return .continueListening
-    }
-
-    private var isReady: Bool {
-        if case .ready = readyHandshakeState {
-            return true
-        }
-        return false
-    }
-
-    private func emitConnectedIfNeeded() {
-        guard !hasEmittedConnected else { return }
-        hasEmittedConnected = true
-        eventContinuation?.yield(.connected)
-    }
-
-    private func markReady() {
-        switch readyHandshakeState {
-        case .waiting(let continuation):
-            readyHandshakeState = .ready
-            continuation.resume()
-        case .idle, .failed:
-            readyHandshakeState = .ready
-        case .ready:
-            break
-        }
-    }
-
-    private func failReadyHandshake(with error: Error) {
-        switch readyHandshakeState {
-        case .waiting(let continuation):
-            readyHandshakeState = .failed(error)
-            continuation.resume(throwing: error)
-        case .idle:
-            readyHandshakeState = .failed(error)
-        case .ready, .failed:
-            break
-        }
-    }
-
-    private func resetConnectionState() {
-        webSocket = nil
-        receiveTask?.cancel()
-        receiveTask = nil
-        readyHandshakeState = .idle
-        hasEmittedConnected = false
-        sendCount = 0
-    }
-
-    private func waitForReady(forConnection expectedId: UInt64) async throws {
-        if case .ready = readyHandshakeState {
-            return
-        }
-
-        if case .failed(let error) = readyHandshakeState {
-            throw error
-        }
-
-        let timeout = readyTimeout
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { [self] in
-                try await waitForReadyContinuation(forConnection: expectedId)
-            }
-
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw WebSocketConnectionError.readyTimeout
-            }
-
-            do {
-                _ = try await group.next()
-                group.cancelAll()
-            } catch {
-                group.cancelAll()
-                throw error
-            }
-        }
-    }
-
-    private func waitForReadyContinuation(forConnection expectedId: UInt64) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            storeReadyContinuation(continuation, forConnection: expectedId)
-        }
-    }
-
-    private func storeReadyContinuation(
-        _ continuation: CheckedContinuation<Void, Error>,
-        forConnection expectedId: UInt64
-    ) {
-        guard connectionId == expectedId else {
-            continuation.resume(throwing: WebSocketConnectionError.superseded)
-            return
-        }
-
-        switch readyHandshakeState {
-        case .ready:
-            continuation.resume()
-        case .failed(let error):
-            continuation.resume(throwing: error)
-        case .waiting:
-            continuation.resume(throwing: WebSocketConnectionError.superseded)
-        case .idle:
-            readyHandshakeState = .waiting(continuation)
-        }
+        eventContinuation?.yield(.transcript(segment))
     }
 
     private func closeConnection(
@@ -461,56 +286,19 @@ public actor WebSocketManager {
         emitDisconnected: Bool
     ) {
         guard connectionId == expectedId else { return }
-        guard webSocket != nil || receiveTask != nil || eventContinuation != nil else {
-            resetConnectionState()
-            return
-        }
-
-        if let error {
-            failReadyHandshake(with: error)
-        } else if !isReady {
-            failReadyHandshake(with: WebSocketConnectionError.disconnected(nil))
-        }
 
         webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+
+        receiveTask?.cancel()
+        receiveTask = nil
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))
         }
         eventContinuation?.finish()
         eventContinuation = nil
-        resetConnectionState()
-    }
 
-    private func makeWebSocketURL(token: String, recordingId: String) throws -> URL {
-        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) else {
-            throw APIError.invalidURL
-        }
-
-        switch components.scheme?.lowercased() {
-        case "http":
-            components.scheme = "ws"
-        case "https":
-            components.scheme = "wss"
-        case "ws", "wss":
-            break
-        default:
-            throw APIError.invalidURL
-        }
-
-        let trimmedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let prefix = trimmedPath.isEmpty ? "" : "/\(trimmedPath)"
-        components.path = "\(prefix)/api/ws/audio"
-
-        var queryItems = components.queryItems ?? []
-        queryItems.append(URLQueryItem(name: "token", value: token))
-        queryItems.append(URLQueryItem(name: "recording_id", value: recordingId))
-        components.queryItems = queryItems
-
-        guard let url = components.url else {
-            throw APIError.invalidURL
-        }
-
-        return url
+        sendCount = 0
     }
 }

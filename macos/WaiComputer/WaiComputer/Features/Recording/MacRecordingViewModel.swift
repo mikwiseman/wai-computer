@@ -30,9 +30,9 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
     var preparingText: String {
         switch self {
         case .microphone:
-            return "Preparing microphone and connection..."
+            return "Preparing microphone..."
         case .systemAudio:
-            return "Preparing system audio and connection..."
+            return "Preparing system audio..."
         }
     }
 }
@@ -67,6 +67,7 @@ class MacRecordingViewModel: ObservableObject {
     private let testingMode: MacTestingMode
 
     private var recording: Recording?
+    private var apiClient: APIClient?
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioEncoder: AudioEncoder?
     private var webSocketManager: WebSocketManager?
@@ -74,6 +75,9 @@ class MacRecordingViewModel: ObservableObject {
     private var audioTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
+
+    /// Audio data accumulated during recording for local save
+    private var audioChunks: [Data] = []
 
     var formattedDuration: String {
         let minutes = Int(duration) / 60
@@ -98,7 +102,7 @@ class MacRecordingViewModel: ObservableObject {
         case .recording:
             return "Recording"
         case .finalizing:
-            return "Finalizing recording"
+            return "Saving recording..."
         }
     }
 
@@ -111,7 +115,7 @@ class MacRecordingViewModel: ObservableObject {
         case .recording:
             return "Listening..."
         case .finalizing:
-            return "Finalizing transcript..."
+            return "Saving..."
         }
     }
 
@@ -121,7 +125,6 @@ class MacRecordingViewModel: ObservableObject {
 
     func startRecording(
         apiClient: APIClient,
-        webSocketManager: WebSocketManager,
         type: RecordingType,
         inputSource: MacRecordingInputSource = .microphone
     ) async {
@@ -157,8 +160,10 @@ class MacRecordingViewModel: ObservableObject {
         recordingInputSource = inputSource
         duration = 0
         recording = nil
+        self.apiClient = apiClient
         audioCapture = nil
         audioEncoder = nil
+        audioChunks = []
 
         setPhase(.preparing)
 
@@ -183,7 +188,7 @@ class MacRecordingViewModel: ObservableObject {
                 }
             }
 
-            // Create recording on server — use language from Settings
+            // Create recording on server
             let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
             recording = try await apiClient.createRecording(type: recordingType, language: language)
 
@@ -195,36 +200,31 @@ class MacRecordingViewModel: ObservableObject {
 
             currentRecordingId = recordingId
 
-            // Set up WebSocket and event stream BEFORE connecting
-            // to ensure no events are missed
-            self.webSocketManager = webSocketManager
-            let eventStream = await webSocketManager.events
+            // Create direct Deepgram WebSocket connection
+            let ws = WebSocketManager(apiClient: apiClient, language: language)
+            self.webSocketManager = ws
+
+            // Set up event stream BEFORE connecting
+            let eventStream = await ws.events
 
             // Start receiving transcripts BEFORE connecting
-            // so the listener is ready when events start flowing
             transcriptTask = Task { [weak self] in
-                guard let self = self else { return }
-
+                guard let self else { return }
                 for await event in eventStream {
                     await self.handleWebSocketEvent(event)
                 }
             }
 
-            // Now connect WebSocket
-            try await webSocketManager.connect(recordingId: recordingId)
+            // Connect to Deepgram directly (fetches temp token from backend)
+            try await ws.connect()
 
             // Initialize audio capture and encoder
             let capture = try makeAudioCapture(for: inputSource)
             let encoder = AudioEncoder()
             audioCapture = capture
             audioEncoder = encoder
-            let ws = webSocketManager
 
-            // Start the audio-sending loop BEFORE starting the engine so
-            // the `for await` consumer is ready when the first buffer arrives.
-            // Use Task.detached to avoid inheriting @MainActor — the audio tap
-            // fires on an audio thread, and the WebSocket send should not
-            // compete with UI work on the main actor.
+            // Start the audio-sending loop
             NSLog("[Recording] Starting audio task (detached)...")
             var bufferCount = 0
             audioTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -236,27 +236,25 @@ class MacRecordingViewModel: ObservableObject {
                         NSLog("[Recording] Buffer #%d: %d frames", bufferCount, buffer.frameLength)
                     }
                     if let data = encoder.encode(buffer) {
+                        // Accumulate audio chunks for local file
+                        await self.appendAudioChunk(data)
+
                         if bufferCount <= 5 || bufferCount % 50 == 0 {
                             NSLog("[Recording] Encoded %d bytes, sending...", data.count)
                         }
                         do {
                             try await ws.sendAudio(data: data)
-                            if bufferCount <= 5 {
-                                NSLog("[Recording] Audio sent successfully!")
-                            }
                         } catch {
                             NSLog("[Recording] Failed to send audio: %@", "\(error)")
                             await self.failActiveRecording(with: error.localizedDescription)
                             return
                         }
-                    } else {
-                        NSLog("[Recording] Encoder returned nil for buffer #%d", bufferCount)
                     }
                 }
                 NSLog("[Recording] Audio task loop ended (stream finished)")
             }
 
-            // Now start the engine — the consumer loop above is already waiting
+            // Start the audio engine
             NSLog("[Recording] Starting audio engine...")
             try await capture.startRecording()
             NSLog("[Recording] Audio engine started successfully")
@@ -307,7 +305,7 @@ class MacRecordingViewModel: ObservableObject {
         }
         #endif
 
-        // Stop audio capture first so no more audio is generated
+        // Stop audio capture first
         await audioCapture?.stopRecording()
         audioCapture = nil
 
@@ -315,44 +313,60 @@ class MacRecordingViewModel: ObservableObject {
         audioTask?.cancel()
         audioTask = nil
 
-        // Keep the live view mounted while the server flushes final transcript/audio.
         isCleaningUp = true
 
-        // Capture references for background cleanup
         let ws = webSocketManager
         let tTask = transcriptTask
+        let recordingId = currentRecordingId
+        let chunks = audioChunks
+        let client = self.apiClient
         webSocketManager = nil
         transcriptTask = nil
+        self.apiClient = nil
 
-        // Track the cleanup task so startRecording can await it
         let task = Task { [weak self] in
-            // Send end signal to tell the server we're done
+            // Send end signal to Deepgram
             do {
                 try await ws?.sendEnd()
             } catch {
                 NSLog("[Recording] Failed to send end signal: \(error)")
             }
 
-            // Brief wait for final transcripts (server sends Close to Deepgram)
-            let deadline = Date().addingTimeInterval(3.0)
-            while await self?.isServerComplete != true && Date() < deadline {
-                try? await Task.sleep(for: .milliseconds(200))
-            }
+            // Brief wait for final transcripts from Deepgram
+            try? await Task.sleep(for: .seconds(2))
 
-            // Clean up
+            // Collect final segments from the WebSocket manager
+            let segments = await ws?.collectedSegments ?? []
+
+            // Clean up WebSocket
             tTask?.cancel()
             await ws?.disconnect()
 
-            if await self?.isServerComplete == true {
-                NSLog("[Recording] Server confirmed complete")
-            } else {
-                NSLog("[Recording] Server complete not received (timed out)")
+            // Save audio locally and upload with segments
+            if let recordingId, let client, !chunks.isEmpty {
+                do {
+                    let audioFileURL = try await self?.saveLocalAudioFile(chunks: chunks, recordingId: recordingId)
+                    if let audioFileURL {
+                        NSLog("[Recording] Uploading audio + %d segments for recording %@", segments.count, recordingId)
+                        _ = try await client.uploadAudio(
+                            recordingId: recordingId,
+                            fileURL: audioFileURL,
+                            segments: segments.isEmpty ? nil : segments
+                        )
+                        // Clean up local file after successful upload
+                        try? FileManager.default.removeItem(at: audioFileURL)
+                        NSLog("[Recording] Upload complete for recording %@", recordingId)
+                    }
+                } catch {
+                    NSLog("[Recording] Upload failed: \(error)")
+                }
             }
 
-            // Mark cleanup as done (on MainActor since self is @MainActor)
             await MainActor.run {
+                self?.isServerComplete = true
                 self?.recording = nil
                 self?.audioEncoder = nil
+                self?.audioChunks = []
                 self?.setPhase(.idle)
                 self?.isCleaningUp = false
                 self?.cleanupTask = nil
@@ -363,7 +377,6 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     /// Reset transcript and recording state.
-    /// Call this when navigating away from the recording or starting a new one.
     func resetState() {
         currentTranscript = ""
         committedTranscript = ""
@@ -375,6 +388,49 @@ class MacRecordingViewModel: ObservableObject {
 
     func clearError() {
         error = nil
+    }
+
+    // MARK: - Private
+
+    private func appendAudioChunk(_ data: Data) {
+        audioChunks.append(data)
+    }
+
+    private func saveLocalAudioFile(chunks: [Data], recordingId: String) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("\(recordingId).wav")
+
+        // Write WAV file with proper header
+        let pcmData = chunks.reduce(Data()) { $0 + $1 }
+        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        try wavData.write(to: fileURL)
+
+        return fileURL
+    }
+
+    private func createWAVData(from pcmData: Data, sampleRate: Int, channels: Int, bitsPerSample: Int) -> Data {
+        let dataSize = UInt32(pcmData.count)
+        let fileSize = 36 + dataSize
+        let byteRate = UInt32(sampleRate * channels * bitsPerSample / 8)
+        let blockAlign = UInt16(channels * bitsPerSample / 8)
+
+        var header = Data()
+        header.append("RIFF".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
+        header.append("WAVE".data(using: .ascii)!)
+        header.append("fmt ".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })  // chunk size
+        header.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })   // PCM format
+        header.append(withUnsafeBytes(of: UInt16(channels).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt16(bitsPerSample).littleEndian) { Data($0) })
+        header.append("data".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        header.append(pcmData)
+
+        return header
     }
 
     private func startTimer() {
@@ -400,9 +456,11 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil
+        apiClient = nil
         await ws?.disconnect()
 
         recording = nil
@@ -422,35 +480,26 @@ class MacRecordingViewModel: ObservableObject {
         switch event {
         case .connected:
             break
-        case .transcript(let message):
-            if message.isFinal {
-                // Append final text to committed transcript
+        case .transcript(let segment):
+            if segment.isFinal {
                 if !committedTranscript.isEmpty {
                     committedTranscript += " "
                 }
-                committedTranscript += message.text
-                // Clear interim since final replaces it
+                committedTranscript += segment.text
                 interimText = ""
                 currentTranscript = committedTranscript
             } else {
-                // Show interim result for real-time feedback
-                interimText = message.text
+                interimText = segment.text
                 if committedTranscript.isEmpty {
                     currentTranscript = interimText
                 } else {
                     currentTranscript = committedTranscript + " " + interimText
                 }
             }
-        case .status(let status):
-            if status.status == "error" {
-                error = status.message
-            } else if status.status == "complete" {
-                isServerComplete = true
-            }
         case .disconnected(let err):
-            if let err = err, phase == .recording {
+            if let err, phase == .recording {
                 await failActiveRecording(with: err.localizedDescription)
-            } else if let err = err, phase != .finalizing, phase != .idle {
+            } else if let err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
             }
         }
@@ -476,6 +525,7 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil

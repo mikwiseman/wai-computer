@@ -76,8 +76,7 @@ struct RecordingView: View {
                             await viewModel.stopRecording()
                         } else if viewModel.canStartRecording {
                             await viewModel.startRecording(
-                                apiClient: appState.getAPIClient(),
-                                webSocketManager: appState.getWebSocketManager()
+                                apiClient: appState.getAPIClient()
                             )
                         }
                     }
