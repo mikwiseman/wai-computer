@@ -128,7 +128,7 @@ public actor WebSocketManager {
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 300
-        request.setValue("Token \(dgToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(dgToken)", forHTTPHeaderField: "Authorization")
 
         let session = URLSession(configuration: .default)
         let socket = session.webSocketTask(with: request)
