@@ -105,37 +105,16 @@ struct MenuBarView: View {
                 } else {
                     Button {
                         Task {
-                            await appState.startRecording(type: .note, inputSource: .microphone)
+                            await appState.startRecording(type: .note)
                         }
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("Record Microphone")
+                            Text("New Recording")
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}N")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        Task {
-                            await appState.startRecording(type: .meeting, inputSource: .systemAudio)
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "speaker.wave.2.circle")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text("Record System Audio")
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{2318}\u{21E7}N")
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }

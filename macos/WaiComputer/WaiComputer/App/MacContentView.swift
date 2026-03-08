@@ -135,7 +135,7 @@ struct MacMainView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
-                    startRecording(type: .note, inputSource: .microphone)
+                    startRecording(type: .note, inputSource: .dual)
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(Palette.textSecondary)
@@ -143,16 +143,6 @@ struct MacMainView: View {
                 .disabled(isRecordingHandoffActive)
                 .help("New Recording")
                 .accessibilityIdentifier("start-recording-button")
-
-                Button {
-                    startRecording(type: .meeting, inputSource: .systemAudio)
-                } label: {
-                    Image(systemName: "speaker.wave.2")
-                        .foregroundStyle(Palette.textSecondary)
-                }
-                .disabled(isRecordingHandoffActive)
-                .help("Record System Audio")
-                .accessibilityIdentifier("start-system-audio-button")
 
                 Button {
                     importAudioFile()
@@ -441,69 +431,94 @@ struct MacMainView: View {
 
     // MARK: - Detail Column
 
+    /// Stable key for driving detail column cross-fade animation.
+    private var detailPhaseKey: String {
+        if recordingViewModel.shouldPresentLiveView {
+            return "live"
+        } else if appState.completedRecordingContext != nil {
+            return "transition"
+        } else {
+            return "content"
+        }
+    }
+
     @ViewBuilder
     private var detailColumn: some View {
-        if recordingViewModel.shouldPresentLiveView {
-            LiveRecordingView()
-        } else if let transition = appState.completedRecordingContext {
-            CompletedRecordingTransitionView(transition: transition)
-        } else {
-            switch selectedSection {
-            case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
-                if selectedRecordingIds.count > 1 {
-                    BulkSelectionDetailView(
-                        selectionCount: selectedRecordingIds.count,
-                        isTrash: isTrashSection,
-                        onTrash: moveSelectedRecordingsToTrash,
-                        onRestore: restoreSelectedRecordings,
-                        onPermanentDelete: permanentlyDeleteSelectedRecordings
-                    )
-                } else if let recordingId = selectedRecordingId {
-                    let detailMode: MacRecordingDetailView.Mode = isTrashSection ? .trash : .active
-                    let activeFolders = libraryViewModel.folders
-                    MacRecordingDetailView(
-                        recordingId: recordingId,
-                        initialDetail: prefetchedRecordingDetail?.id == recordingId ? prefetchedRecordingDetail : nil,
-                        mode: detailMode,
-                        folders: activeFolders,
-                        onDelete: {
-                            selectedRecordingIds.removeAll()
-                            prefetchedRecordingDetail = nil
-                            Task {
-                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
-                            }
-                        },
-                        onRestore: {
-                            selectedRecordingIds.removeAll()
-                            prefetchedRecordingDetail = nil
-                            Task {
-                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
-                            }
-                        },
-                        onMoveToFolder: { folderId in
-                            if currentFolderId != nil, currentFolderId != folderId {
-                                selectedRecordingIds.removeAll()
-                            }
-                            prefetchedRecordingDetail = nil
-                            Task {
-                                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
-                            }
-                        }
-                    )
-                } else {
-                    ContentUnavailableView(
-                        "Select a Recording",
-                        systemImage: "waveform",
-                        description: Text("Choose a recording from the list to view its details.")
-                    )
-                }
-            case .chat:
-                MacChatView()
-            case .search:
-                MacSearchView()
-            case .settings:
-                MacSettingsView()
+        ZStack {
+            if recordingViewModel.shouldPresentLiveView {
+                LiveRecordingView()
+                    .zIndex(2)
+                    .transition(.opacity)
+            } else if let transition = appState.completedRecordingContext {
+                CompletedRecordingTransitionView(transition: transition)
+                    .zIndex(1)
+                    .transition(.opacity)
+            } else {
+                detailContentView
+                    .zIndex(0)
+                    .transition(.opacity)
             }
+        }
+        .animation(.easeInOut(duration: 0.3), value: detailPhaseKey)
+    }
+
+    @ViewBuilder
+    private var detailContentView: some View {
+        switch selectedSection {
+        case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
+            if selectedRecordingIds.count > 1 {
+                BulkSelectionDetailView(
+                    selectionCount: selectedRecordingIds.count,
+                    isTrash: isTrashSection,
+                    onTrash: moveSelectedRecordingsToTrash,
+                    onRestore: restoreSelectedRecordings,
+                    onPermanentDelete: permanentlyDeleteSelectedRecordings
+                )
+            } else if let recordingId = selectedRecordingId {
+                let detailMode: MacRecordingDetailView.Mode = isTrashSection ? .trash : .active
+                let activeFolders = libraryViewModel.folders
+                MacRecordingDetailView(
+                    recordingId: recordingId,
+                    initialDetail: prefetchedRecordingDetail?.id == recordingId ? prefetchedRecordingDetail : nil,
+                    mode: detailMode,
+                    folders: activeFolders,
+                    onDelete: {
+                        selectedRecordingIds.removeAll()
+                        prefetchedRecordingDetail = nil
+                        Task {
+                            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                        }
+                    },
+                    onRestore: {
+                        selectedRecordingIds.removeAll()
+                        prefetchedRecordingDetail = nil
+                        Task {
+                            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                        }
+                    },
+                    onMoveToFolder: { folderId in
+                        if currentFolderId != nil, currentFolderId != folderId {
+                            selectedRecordingIds.removeAll()
+                        }
+                        prefetchedRecordingDetail = nil
+                        Task {
+                            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                        }
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    "Select a Recording",
+                    systemImage: "waveform",
+                    description: Text("Choose a recording from the list to view its details.")
+                )
+            }
+        case .chat:
+            MacChatView()
+        case .search:
+            MacSearchView()
+        case .settings:
+            MacSettingsView()
         }
     }
 
@@ -519,12 +534,20 @@ struct MacMainView: View {
         prefetchedRecordingDetail = nil
 
         completionTask = Task {
+            // Wait for the upload to finish (phase goes idle when cleanup completes)
+            await waitForUploadToFinish()
+            guard !Task.isCancelled else { return }
+            guard appState.completedRecordingContext?.recordingId == completedContext.recordingId else { return }
+
+            // Now fetch the recording detail (title should be generated by now)
             let detail = await resolveCompletedRecording(id: completedContext.recordingId)
             guard !Task.isCancelled else { return }
             guard appState.completedRecordingContext?.recordingId == completedContext.recordingId else { return }
 
             if let selectedRecordingId, selectedRecordingId != completedContext.recordingId {
-                appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
+                }
                 return
             }
 
@@ -532,13 +555,25 @@ struct MacMainView: View {
             prefetchedRecordingDetail = detail
             selectedRecordingIds = [completedContext.recordingId]
 
-            // Small delay to let SwiftUI batch the state updates before clearing transition
-            try? await Task.sleep(for: .milliseconds(50))
-            guard !Task.isCancelled else { return }
-
             withAnimation(.easeInOut(duration: 0.25)) {
                 appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
             }
+
+            // Final library reload to pick up the AI-generated title in the sidebar
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            await reloadLibrary()
+        }
+    }
+
+    /// Wait until the recording view model finishes its upload/cleanup.
+    private func waitForUploadToFinish() async {
+        // Poll until phase is idle (upload done) — max ~15 seconds
+        for _ in 0..<30 {
+            if recordingViewModel.phase == .idle {
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
         }
     }
 
@@ -551,18 +586,12 @@ struct MacMainView: View {
 
         let apiClient = appState.getAPIClient()
 
-        for attempt in 0..<5 {
-            await reloadLibrary()
+        await reloadLibrary()
 
-            do {
-                return try await apiClient.getRecording(id: id)
-            } catch {
-                if attempt == 4 {
-                    break
-                }
-            }
-
-            try? await Task.sleep(for: .milliseconds(attempt == 0 ? 500 : 1000))
+        do {
+            return try await apiClient.getRecording(id: id)
+        } catch {
+            NSLog("[Recording] Failed to fetch completed recording %@: %@", id, error.localizedDescription)
         }
 
         return nil
@@ -582,7 +611,7 @@ struct MacMainView: View {
 
     private func startRecording(
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .microphone
+        inputSource: MacRecordingInputSource = .dual
     ) {
         Task {
             await appState.startRecording(type: type, inputSource: inputSource)

@@ -36,15 +36,9 @@ struct WaiComputerMacApp: App {
             // Replace default Cmd+N (new window) with new recording
             CommandGroup(replacing: .newItem) {
                 Button("New Recording") {
-                    Task { await appState.startRecording(type: .note, inputSource: .microphone) }
+                    Task { await appState.startRecording(type: .note) }
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
-
-                Button("Record System Audio") {
-                    Task { await appState.startRecording(type: .meeting, inputSource: .systemAudio) }
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
             }
 
@@ -224,7 +218,7 @@ class MacAppState: ObservableObject {
 
     func startRecording(
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .microphone
+        inputSource: MacRecordingInputSource = .dual
     ) async {
         completedRecordingContext = nil
 

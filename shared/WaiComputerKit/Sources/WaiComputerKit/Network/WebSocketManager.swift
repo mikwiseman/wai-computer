@@ -70,6 +70,7 @@ public enum WebSocketEvent: Sendable {
 public actor WebSocketManager {
     private let apiClient: APIClient
     private let language: String
+    private let channels: Int
 
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
@@ -88,9 +89,10 @@ public actor WebSocketManager {
         return stream
     }
 
-    public init(apiClient: APIClient, language: String = "multi") {
+    public init(apiClient: APIClient, language: String = "multi", channels: Int = 1) {
         self.apiClient = apiClient
         self.language = language
+        self.channels = channels
     }
 
     /// Connect to Deepgram directly using a temporary token from the backend.
@@ -185,6 +187,10 @@ public actor WebSocketManager {
             "sample_rate=16000",
             "token=\(token)",
         ]
+        if channels > 1 {
+            params.append("channels=\(channels)")
+            params.append("multichannel=true")
+        }
         if language == "multi" {
             params.append("endpointing=100")
         }
@@ -241,6 +247,10 @@ public actor WebSocketManager {
         guard msgType == "Results" else { return }
 
         let isFinal = json["is_final"] as? Bool ?? false
+
+        // Multichannel: Deepgram returns channel_index for each result
+        let channelIndex = (json["channel_index"] as? [Int])?.first ?? 0
+
         guard let channel = json["channel"] as? [String: Any],
               let alternatives = channel["alternatives"] as? [[String: Any]],
               let alt = alternatives.first,
@@ -254,8 +264,14 @@ public actor WebSocketManager {
         var endMs = 0
 
         if let firstWord = words.first {
-            let speakerIdx = firstWord["speaker"] as? Int ?? 0
-            speaker = "Speaker \(speakerIdx)"
+            if channels > 1 {
+                // In multichannel mode, use channel index for speaker label
+                // ch0 = mic (user), ch1 = system audio (others)
+                speaker = channelIndex == 0 ? "You" : "Speaker \(channelIndex)"
+            } else {
+                let speakerIdx = firstWord["speaker"] as? Int ?? 0
+                speaker = "Speaker \(speakerIdx)"
+            }
             startMs = Int((firstWord["start"] as? Double ?? 0) * 1000)
         }
         if let lastWord = words.last {

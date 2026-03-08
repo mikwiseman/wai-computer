@@ -283,6 +283,7 @@ struct MacRecordingDetailView: View {
             }
         } else {
             VStack(spacing: Spacing.lg) {
+                Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
                     "No Summary",
                     systemImage: "doc.text",
@@ -302,8 +303,8 @@ struct MacRecordingDetailView: View {
                 if viewModel.isGeneratingSummary {
                     ProgressView("Generating summary...")
                 }
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -331,13 +332,18 @@ struct MacRecordingDetailView: View {
                 .padding(Spacing.lg)
             }
         } else if detail.summary != nil {
-            ContentUnavailableView(
-                "No Action Items Found",
-                systemImage: "checklist",
-                description: Text("This summary did not include any concrete follow-ups.")
-            )
+            VStack {
+                Spacer().frame(height: Spacing.xxxl)
+                ContentUnavailableView(
+                    "No Action Items Found",
+                    systemImage: "checklist",
+                    description: Text("This summary did not include any concrete follow-ups.")
+                )
+                Spacer()
+            }
         } else {
             VStack(spacing: Spacing.lg) {
+                Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
                     "No Action Items",
                     systemImage: "checklist",
@@ -353,8 +359,8 @@ struct MacRecordingDetailView: View {
                 }
                 .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
                 .disabled(viewModel.isGeneratingSummary)
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
