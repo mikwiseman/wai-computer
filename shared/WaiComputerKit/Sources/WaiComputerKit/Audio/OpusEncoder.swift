@@ -14,26 +14,41 @@ public final class AudioEncoder: @unchecked Sendable {
         self.bitrate = bitrate
     }
 
-    /// Encode PCM audio buffer to 16-bit linear PCM data
-    /// Returns the audio data suitable for transmission
+    /// Encode PCM audio buffer to 16-bit linear PCM data.
+    /// Handles both mono (non-interleaved) and multichannel (interleaved) buffers.
     public func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floatData = buffer.floatChannelData else { return nil }
 
         let frameLength = Int(buffer.frameLength)
-        let channelData = floatData[0]
+        let isInterleaved = buffer.format.isInterleaved
+        let bufferChannels = Int(buffer.format.channelCount)
 
-        // Convert float samples to 16-bit PCM
-        var pcmData = Data(capacity: frameLength * 2)
-
-        for i in 0..<frameLength {
-            let sample = max(-1.0, min(1.0, channelData[i]))
-            let intSample = Int16(sample * 32767)
-            withUnsafeBytes(of: intSample.littleEndian) { bytes in
-                pcmData.append(contentsOf: bytes)
+        if isInterleaved && bufferChannels > 1 {
+            // Interleaved: samples are [L0, R0, L1, R1, ...] all in floatData[0]
+            let totalSamples = frameLength * bufferChannels
+            var pcmData = Data(capacity: totalSamples * 2)
+            let src = floatData[0]
+            for i in 0..<totalSamples {
+                let sample = max(-1.0, min(1.0, src[i]))
+                let intSample = Int16(sample * 32767)
+                withUnsafeBytes(of: intSample.littleEndian) { bytes in
+                    pcmData.append(contentsOf: bytes)
+                }
             }
+            return pcmData
+        } else {
+            // Non-interleaved mono: just channel 0
+            let channelData = floatData[0]
+            var pcmData = Data(capacity: frameLength * 2)
+            for i in 0..<frameLength {
+                let sample = max(-1.0, min(1.0, channelData[i]))
+                let intSample = Int16(sample * 32767)
+                withUnsafeBytes(of: intSample.littleEndian) { bytes in
+                    pcmData.append(contentsOf: bytes)
+                }
+            }
+            return pcmData
         }
-
-        return pcmData
     }
 
     /// Encode raw PCM data (passthrough)

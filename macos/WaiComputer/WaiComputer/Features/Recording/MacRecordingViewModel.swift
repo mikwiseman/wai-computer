@@ -1,16 +1,20 @@
 import Foundation
 import AVFoundation
+import SwiftUI
 import os
 import WaiComputerKit
 
 private let audioLog = Logger(subsystem: "com.waicomputer.app", category: "audio")
 
 enum MacRecordingInputSource: String, CaseIterable, Equatable {
-    case microphone
+    case dual        // mic + system audio (default)
+    case microphone  // mic only (fallback)
     case systemAudio = "system_audio"
 
     var label: String {
         switch self {
+        case .dual:
+            return "Mic + System Audio"
         case .microphone:
             return "Microphone"
         case .systemAudio:
@@ -20,6 +24,8 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
 
     var systemImage: String {
         switch self {
+        case .dual:
+            return "waveform"
         case .microphone:
             return "mic"
         case .systemAudio:
@@ -29,6 +35,8 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
 
     var preparingText: String {
         switch self {
+        case .dual:
+            return "Preparing audio capture..."
         case .microphone:
             return "Preparing microphone..."
         case .systemAudio:
@@ -50,8 +58,9 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var recordingType: RecordingType = .note
-    @Published var recordingInputSource: MacRecordingInputSource = .microphone
+    @Published var recordingInputSource: MacRecordingInputSource = .dual
     @Published var duration: TimeInterval = 0
+    @Published var hasSystemAudio = false
     @Published var currentTranscript = ""
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
@@ -106,6 +115,14 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
+    /// Number of audio channels being sent to Deepgram (1 = mono, 2 = multichannel)
+    var audioChannels: Int {
+        if recordingInputSource == .dual && hasSystemAudio {
+            return 2
+        }
+        return 1
+    }
+
     var emptyTranscriptText: String {
         switch phase {
         case .idle:
@@ -126,7 +143,7 @@ class MacRecordingViewModel: ObservableObject {
     func startRecording(
         apiClient: APIClient,
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .microphone
+        inputSource: MacRecordingInputSource = .dual
     ) async {
         // Wait for any in-progress cleanup to finish before starting a new recording
         if isCleaningUp {
@@ -158,6 +175,7 @@ class MacRecordingViewModel: ObservableObject {
         currentRecordingId = nil
         recordingType = type
         recordingInputSource = inputSource
+        hasSystemAudio = false
         duration = 0
         recording = nil
         self.apiClient = apiClient
@@ -179,7 +197,8 @@ class MacRecordingViewModel: ObservableObject {
         #endif
 
         do {
-            if inputSource == .microphone {
+            // Mic permission is always needed (dual and mic-only both use mic)
+            if inputSource == .dual || inputSource == .microphone {
                 let granted = await AVAudioApplication.requestRecordPermission()
                 guard granted else {
                     error = "Microphone permission denied"
@@ -200,8 +219,28 @@ class MacRecordingViewModel: ObservableObject {
 
             currentRecordingId = recordingId
 
-            // Create direct Deepgram WebSocket connection
-            let ws = WebSocketManager(apiClient: apiClient, language: language)
+            // Initialize audio capture first to know channel count
+            let capture = try makeAudioCapture(for: inputSource)
+            audioCapture = capture
+
+            // Check if dual capture actually got system audio
+            if #available(macOS 14.2, *), let dualCapture = capture as? DualAudioCapture {
+                // We'll know after startRecording whether system audio is available
+                // For now, start it to find out
+                NSLog("[Recording] Starting dual audio capture...")
+                try await capture.startRecording()
+                hasSystemAudio = dualCapture.hasSystemAudio
+                NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO (mic-only)")
+            } else {
+                NSLog("[Recording] Starting audio capture...")
+                try await capture.startRecording()
+            }
+
+            // Now we know the real channel count — create WebSocket with correct params
+            let channels = audioChannels
+            NSLog("[Recording] Audio channels: %d", channels)
+
+            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: channels)
             self.webSocketManager = ws
 
             // Set up event stream BEFORE connecting
@@ -218,10 +257,7 @@ class MacRecordingViewModel: ObservableObject {
             // Connect to Deepgram directly (fetches temp token from backend)
             try await ws.connect()
 
-            // Initialize audio capture and encoder
-            let capture = try makeAudioCapture(for: inputSource)
-            let encoder = AudioEncoder()
-            audioCapture = capture
+            let encoder = AudioEncoder(channels: channels)
             audioEncoder = encoder
 
             // Start the audio-sending loop
@@ -253,11 +289,6 @@ class MacRecordingViewModel: ObservableObject {
                 }
                 NSLog("[Recording] Audio task loop ended (stream finished)")
             }
-
-            // Start the audio engine
-            NSLog("[Recording] Starting audio engine...")
-            try await capture.startRecording()
-            NSLog("[Recording] Audio engine started successfully")
 
             startTimer()
             setPhase(.recording)
@@ -320,6 +351,7 @@ class MacRecordingViewModel: ObservableObject {
         let recordingId = currentRecordingId
         let chunks = audioChunks
         let client = self.apiClient
+        let wavChannels = audioChannels
         webSocketManager = nil
         transcriptTask = nil
         self.apiClient = nil
@@ -345,7 +377,7 @@ class MacRecordingViewModel: ObservableObject {
             // Save audio locally and upload with segments
             if let recordingId, let client, !chunks.isEmpty {
                 do {
-                    let audioFileURL = try await self?.saveLocalAudioFile(chunks: chunks, recordingId: recordingId)
+                    let audioFileURL = try await self?.saveLocalAudioFile(chunks: chunks, recordingId: recordingId, channels: wavChannels)
                     if let audioFileURL {
                         NSLog("[Recording] Uploading audio + %d segments for recording %@", segments.count, recordingId)
                         _ = try await client.uploadAudio(
@@ -396,13 +428,13 @@ class MacRecordingViewModel: ObservableObject {
         audioChunks.append(data)
     }
 
-    private func saveLocalAudioFile(chunks: [Data], recordingId: String) throws -> URL {
+    private func saveLocalAudioFile(chunks: [Data], recordingId: String, channels: Int) throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent("\(recordingId).wav")
 
         // Write WAV file with proper header
         let pcmData = chunks.reduce(Data()) { $0 + $1 }
-        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: channels, bitsPerSample: 16)
         try wavData.write(to: fileURL)
 
         return fileURL
@@ -466,14 +498,23 @@ class MacRecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         isServerComplete = false
-        recordingInputSource = .microphone
+        recordingInputSource = .dual
         setPhase(.idle)
     }
 
     private func setPhase(_ newPhase: MacRecordingPhase) {
-        phase = newPhase
-        isRecording = newPhase == .recording
-        isLoading = newPhase == .preparing
+        // Animate transitions to/from idle so the detail column cross-fades smoothly
+        if newPhase == .idle || phase == .idle {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                phase = newPhase
+                isRecording = newPhase == .recording
+                isLoading = newPhase == .preparing
+            }
+        } else {
+            phase = newPhase
+            isRecording = newPhase == .recording
+            isLoading = newPhase == .preparing
+        }
     }
 
     private func handleWebSocketEvent(_ event: WebSocketEvent) async {
@@ -534,7 +575,7 @@ class MacRecordingViewModel: ObservableObject {
         recording = nil
         isServerComplete = false
         isCleaningUp = false
-        recordingInputSource = .microphone
+        recordingInputSource = .dual
         setPhase(.idle)
     }
 
@@ -542,6 +583,13 @@ class MacRecordingViewModel: ObservableObject {
         for inputSource: MacRecordingInputSource
     ) throws -> any AudioCaptureProtocol {
         switch inputSource {
+        case .dual:
+            guard #available(macOS 14.2, *) else {
+                // Fall back to mic-only on older macOS
+                NSLog("[Recording] macOS < 14.2 — falling back to mic-only")
+                return MicrophoneCapture()
+            }
+            return DualAudioCapture()
         case .microphone:
             return MicrophoneCapture()
         case .systemAudio:
@@ -560,7 +608,7 @@ class MacRecordingViewModel: ObservableObject {
         for error: Error,
         inputSource: MacRecordingInputSource
     ) -> String {
-        if inputSource == .systemAudio {
+        if inputSource == .systemAudio || inputSource == .dual {
             if #available(macOS 14.2, *),
                let systemError = error as? SystemAudioCaptureError {
                 return "System audio capture couldn't start (\(systemError)). Check Audio Capture permission in System Settings and try again."
