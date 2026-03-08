@@ -403,11 +403,15 @@ struct MacMainView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if displayedRecordings.isEmpty {
-                    ContentUnavailableView(
-                        isTrashSection ? "Trash is Empty" : "No Recordings",
-                        systemImage: isTrashSection ? "trash" : "waveform",
-                        description: Text(emptyStateDescription)
-                    )
+                    VStack {
+                        Spacer().frame(height: Spacing.xxxl)
+                        ContentUnavailableView(
+                            isTrashSection ? "Trash is Empty" : "No Recordings",
+                            systemImage: isTrashSection ? "trash" : "waveform",
+                            description: Text(emptyStateDescription)
+                        )
+                        Spacer()
+                    }
                 } else {
                     RecordingListView(
                         recordings: displayedRecordings,
@@ -524,9 +528,17 @@ struct MacMainView: View {
                 return
             }
 
+            // Set prefetched detail first so MacRecordingDetailView won't show a loading state
             prefetchedRecordingDetail = detail
             selectedRecordingIds = [completedContext.recordingId]
-            appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
+
+            // Small delay to let SwiftUI batch the state updates before clearing transition
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
+
+            withAnimation(.easeInOut(duration: 0.25)) {
+                appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
+            }
         }
     }
 
@@ -752,14 +764,15 @@ private struct CompletedRecordingTransitionView: View {
                     .controlSize(.small)
                     .frame(width: 12, height: 12)
 
-                Text("Saving Recording")
+                Text("Saving recording...")
                     .font(Typography.displaySmall)
+                    .foregroundStyle(Palette.textSecondary)
+
+                Spacer()
 
                 Text(formatDuration(transition.duration))
                     .font(Typography.monoLarge)
                     .foregroundStyle(Palette.textSecondary)
-
-                Spacer()
 
                 Text(transition.recordingType.rawValue.capitalized)
                     .font(Typography.label)
@@ -769,27 +782,24 @@ private struct CompletedRecordingTransitionView: View {
 
             WaiDivider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    Group {
-                        if transition.transcript.isEmpty {
-                            Text("Finalizing transcript...")
-                                .italic()
-                                .foregroundStyle(Palette.textSecondary)
-                        } else {
-                            Text(transition.transcript)
-                                .foregroundStyle(Palette.textPrimary)
-                        }
-                    }
-                    .font(Typography.reading)
-                    .lineSpacing(6)
-
-                    Text("Opening the saved recording once the final segments are ready.")
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.textSecondary)
+            if !transition.transcript.isEmpty {
+                ScrollView {
+                    Text(transition.transcript)
+                        .font(Typography.reading)
+                        .lineSpacing(6)
+                        .foregroundStyle(Palette.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(Spacing.lg)
+                        .textSelection(.enabled)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.lg)
+            } else {
+                VStack {
+                    Spacer()
+                    ProgressView("Processing audio...")
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .accessibilityElement(children: .contain)

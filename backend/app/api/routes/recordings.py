@@ -15,7 +15,7 @@ from app.api.deps import CurrentUser, Database
 from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
 from app.core.storage import get_storage_client
-from app.core.summarizer import summarize_transcript
+from app.core.summarizer import generate_title, summarize_transcript
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 
 logger = logging.getLogger(__name__)
@@ -637,9 +637,22 @@ async def upload_audio_file(
             max_end_ms = max(tr.end_ms for tr in transcript_results)
             recording.duration_seconds = max_end_ms // 1000
 
-    # Set title from filename if not set
+    # Generate AI title from transcript if title not already set
     if not recording.title:
-        recording.title = filename.rsplit(".", 1)[0] if "." in filename else filename
+        transcript_text = ""
+        if client_segments is not None:
+            transcript_text = " ".join(
+                s.get("text", "").strip() for s in client_segments if s.get("text", "").strip()
+            )
+        elif transcript_results:
+            transcript_text = " ".join(tr.text for tr in transcript_results if tr.text.strip())
+
+        if transcript_text.strip():
+            try:
+                recording.title = await generate_title(transcript_text)
+            except Exception as e:
+                logger.warning(f"Title generation failed: {e}")
+                recording.title = None
 
     await db.flush()
 
