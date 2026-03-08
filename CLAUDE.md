@@ -249,6 +249,17 @@ xcodebuild -scheme WaiComputer -configuration Debug build
 xcodebuild -scheme WaiComputer -configuration Release archive -archivePath /tmp/WaiComputer.xcarchive
 ```
 
+**Signed DMG (after every build):**
+```bash
+# Build signed DMG — must run after each macOS build
+./scripts/build-macos-dmg.sh
+```
+- Output: `artifacts/releases/macos/<version>-<build>/WaiComputer-<version>-<build>.dmg`
+- Signs with Developer ID Application: WaiWai, LLC (R4A779QVVY)
+- Universal binary (arm64 + x86_64), hardened runtime enabled
+- Set `NOTARY_KEYCHAIN_PROFILE` or `NOTARY_KEY` + `NOTARY_KEY_ID` for notarization
+- **Always create a new signed DMG after each macOS build**
+
 **Design tokens:** All colors in `Palette`, all fonts in `Typography`, all spacing in `Spacing` (8pt grid). Accent color is warm amber `(0.82, 0.49, 0.18)`.
 
 ## Caddyfile
