@@ -447,6 +447,10 @@ async def test_upload_success_with_mocked_services(
         "app.api.routes.recordings.generate_embedding",
         AsyncMock(return_value=[0.1] * 384),
     )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Hello World Meeting"),
+    )
 
     response = await client.post(
         f"/api/recordings/{recording['id']}/upload",
@@ -455,7 +459,7 @@ async def test_upload_success_with_mocked_services(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["title"] == "meeting"
+    assert data["title"] == "Hello World Meeting"
     assert data["audio_url"] == "user/2026/01/01/rec.mp3"
     assert data["duration_seconds"] == 1
     assert len(data["segments"]) == 1

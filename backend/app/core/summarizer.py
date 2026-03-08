@@ -123,6 +123,36 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     )
 
 
+async def generate_title(transcript: str) -> str:
+    """Generate a short descriptive title from transcript text using Claude."""
+    if not settings.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY not configured")
+
+    # Use first ~500 chars of transcript for speed
+    snippet = transcript[:500]
+
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    message = await client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=50,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Generate a short title (3-7 words) for this audio recording based on "
+                    "its transcript. Return ONLY the title text, nothing else.\n\n"
+                    f"Transcript:\n{snippet}"
+                ),
+            }
+        ],
+    )
+    title = message.content[0].text.strip().strip('"').strip("'")
+    # Truncate if model returned something too long
+    if len(title) > 100:
+        title = title[:97] + "..."
+    return title
+
+
 ENTITY_EXTRACTION_PROMPT = """
 Extract entities from this transcript. Output ONLY valid JSON:
 
