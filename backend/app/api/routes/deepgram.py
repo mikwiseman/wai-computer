@@ -1,5 +1,6 @@
-"""Deepgram token endpoint."""
+"""Deepgram temporary token endpoint."""
 
+import httpx
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentUser
@@ -12,11 +13,23 @@ settings = get_settings()
 
 @router.get("/deepgram-token")
 async def get_deepgram_token(user: CurrentUser) -> dict:
-    """Return a Deepgram token for direct client WebSocket connection."""
+    """Get a short-lived Deepgram JWT for direct client WebSocket connection."""
     if not settings.deepgram_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Transcription service not configured",
         )
 
-    return {"access_token": settings.deepgram_api_key}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://api.deepgram.com/v1/auth/grant",
+            headers={"Authorization": f"Token {settings.deepgram_api_key}"},
+            json={"ttl_seconds": 300},
+            timeout=10.0,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Deepgram token request failed: {resp.text}",
+            )
+        return resp.json()
