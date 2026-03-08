@@ -6,9 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import action_items, auth, chat, entities, folders, recordings, search
+from app.api.routes import action_items, auth, chat, deepgram, entities, folders, recordings, search
 from app.api.routes import settings as settings_routes
-from app.api.websocket import router as websocket_router
 from app.config import get_settings
 
 logging.basicConfig(
@@ -75,7 +74,7 @@ app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
-app.include_router(websocket_router, prefix="/api")
+app.include_router(deepgram.router, prefix="/api")
 
 
 @app.get("/")

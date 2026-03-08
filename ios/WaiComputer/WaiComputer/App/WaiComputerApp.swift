@@ -23,7 +23,6 @@ class AppState: ObservableObject {
     @Published var error: String?
 
     private let apiClient: APIClient
-    private let webSocketManager: WebSocketManager
 
     init() {
         // Configure API client
@@ -33,13 +32,11 @@ class AppState: ObservableObject {
         let baseURL = URL(string: "https://api.wai.computer")!
         #endif
         apiClient = APIClient(baseURL: baseURL)
-        webSocketManager = WebSocketManager(baseURL: baseURL)
 
         // Check for saved token
         if let token = UserDefaults.standard.string(forKey: "accessToken") {
             Task {
                 await apiClient.setAccessToken(token)
-                await webSocketManager.setAccessToken(token)
                 await loadCurrentUser()
                 isCheckingAuth = false
             }
@@ -55,7 +52,6 @@ class AppState: ObservableObject {
         do {
             let response = try await apiClient.login(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            await webSocketManager.setAccessToken(response.accessToken)
             UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
             await loadCurrentUser()
         } catch let apiError as APIError {
@@ -74,7 +70,6 @@ class AppState: ObservableObject {
         do {
             let response = try await apiClient.register(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            await webSocketManager.setAccessToken(response.accessToken)
             UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
             await loadCurrentUser()
         } catch let apiError as APIError {
@@ -88,7 +83,6 @@ class AppState: ObservableObject {
 
     func logout() async {
         await apiClient.setAccessToken(nil)
-        await webSocketManager.setAccessToken(nil)
         UserDefaults.standard.removeObject(forKey: "accessToken")
         currentUser = nil
         isAuthenticated = false
@@ -120,9 +114,5 @@ class AppState: ObservableObject {
 
     func getAPIClient() -> APIClient {
         return apiClient
-    }
-
-    func getWebSocketManager() -> WebSocketManager {
-        return webSocketManager
     }
 }

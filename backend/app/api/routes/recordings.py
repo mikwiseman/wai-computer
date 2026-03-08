@@ -1,11 +1,12 @@
 """Recording CRUD routes."""
 
+import json
 import logging
 from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
@@ -521,8 +522,18 @@ async def upload_audio_file(
     file: UploadFile,
     user: CurrentUser,
     db: Database,
+    segments_json: str | None = Form(None),
 ) -> RecordingDetailResponse:
-    """Upload an audio file to an existing recording for transcription."""
+    """Upload an audio file to an existing recording.
+
+    If ``segments_json`` is provided (JSON array of transcript segments from
+    a direct Deepgram connection), those segments are stored and server-side
+    transcription is skipped.  Each segment object should have: ``text``,
+    ``speaker`` (optional), ``start_ms``, ``end_ms``, ``confidence`` (optional).
+
+    If ``segments_json`` is omitted, the audio is transcribed server-side via
+    the Deepgram REST API (legacy behaviour).
+    """
     # Validate recording exists and belongs to user
     result = await db.execute(
         select(Recording)
@@ -562,35 +573,69 @@ async def upload_audio_file(
     s3_key = await storage.upload_audio(audio_data, user.id, recording_id, content_type)
     recording.audio_url = s3_key
 
-    # Transcribe via Deepgram
-    transcript_results = await transcribe_audio_file(
-        audio_data, language=recording.language or "en", content_type=content_type
-    )
+    # Parse client-provided segments or transcribe server-side
+    client_segments: list[dict] | None = None
+    if segments_json is not None:
+        client_segments = json.loads(segments_json)
 
-    # Save segments with embeddings
-    for tr in transcript_results:
-        embedding = None
-        if tr.text.strip():
+    if client_segments is not None:
+        # Client already transcribed via direct Deepgram connection
+        for seg in client_segments:
+            text = seg.get("text", "").strip()
+            if not text:
+                continue
+
+            embedding = None
             try:
-                embedding = await generate_embedding(tr.text)
+                embedding = await generate_embedding(text)
             except Exception as e:
                 logger.warning(f"Failed to generate embedding: {e}")
 
-        segment = Segment(
-            recording_id=recording_id,
-            speaker=tr.speaker,
-            content=tr.text,
-            start_ms=tr.start_ms,
-            end_ms=tr.end_ms,
-            confidence=tr.confidence,
-            embedding=embedding,
-        )
-        db.add(segment)
+            db.add(
+                Segment(
+                    recording_id=recording_id,
+                    speaker=seg.get("speaker"),
+                    content=text,
+                    start_ms=seg.get("start_ms", 0),
+                    end_ms=seg.get("end_ms", 0),
+                    confidence=seg.get("confidence"),
+                    embedding=embedding,
+                )
+            )
 
-    # Update duration from last segment
-    if transcript_results:
-        max_end_ms = max(tr.end_ms for tr in transcript_results)
-        recording.duration_seconds = max_end_ms // 1000
+        # Update duration from last segment
+        end_times = [s.get("end_ms", 0) for s in client_segments if s.get("text", "").strip()]
+        if end_times:
+            recording.duration_seconds = max(end_times) // 1000
+    else:
+        # Transcribe via Deepgram REST API (legacy / file-upload path)
+        transcript_results = await transcribe_audio_file(
+            audio_data, language=recording.language or "en", content_type=content_type
+        )
+
+        for tr in transcript_results:
+            embedding = None
+            if tr.text.strip():
+                try:
+                    embedding = await generate_embedding(tr.text)
+                except Exception as e:
+                    logger.warning(f"Failed to generate embedding: {e}")
+
+            db.add(
+                Segment(
+                    recording_id=recording_id,
+                    speaker=tr.speaker,
+                    content=tr.text,
+                    start_ms=tr.start_ms,
+                    end_ms=tr.end_ms,
+                    confidence=tr.confidence,
+                    embedding=embedding,
+                )
+            )
+
+        if transcript_results:
+            max_end_ms = max(tr.end_ms for tr in transcript_results)
+            recording.duration_seconds = max_end_ms // 1000
 
     # Set title from filename if not set
     if not recording.title:

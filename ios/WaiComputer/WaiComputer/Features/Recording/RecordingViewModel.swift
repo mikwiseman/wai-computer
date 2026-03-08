@@ -25,12 +25,16 @@ class RecordingViewModel: ObservableObject {
     private var committedTranscript = ""
     private var interimText = ""
     private var recording: Recording?
+    private var apiClient: APIClient?
     private var audioCapture: MicrophoneCapture?
     private var audioEncoder: AudioEncoder?
     private var webSocketManager: WebSocketManager?
     private var timerTask: Task<Void, Never>?
     private var audioTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
+
+    /// Audio data accumulated during recording for local save
+    private var audioChunks: [Data] = []
 
     var formattedDuration: String {
         let minutes = Int(duration) / 60
@@ -47,7 +51,7 @@ class RecordingViewModel: ObservableObject {
         case .recording:
             return "Recording..."
         case .finalizing:
-            return "Finalizing recording..."
+            return "Saving recording..."
         }
     }
 
@@ -60,11 +64,11 @@ class RecordingViewModel: ObservableObject {
         case .idle:
             return "Start a recording to see live transcription."
         case .preparing:
-            return "Preparing microphone and connection..."
+            return "Preparing microphone..."
         case .recording:
             return "Listening..."
         case .finalizing:
-            return "Finalizing transcript..."
+            return "Saving..."
         }
     }
 
@@ -80,7 +84,7 @@ class RecordingViewModel: ObservableObject {
         phase == .preparing || phase == .finalizing
     }
 
-    func startRecording(apiClient: APIClient, webSocketManager: WebSocketManager) async {
+    func startRecording(apiClient: APIClient) async {
         guard phase == .idle else { return }
 
         error = nil
@@ -91,8 +95,10 @@ class RecordingViewModel: ObservableObject {
         isServerComplete = false
         duration = 0
         recording = nil
+        self.apiClient = apiClient
         audioCapture = nil
         audioEncoder = nil
+        audioChunks = []
         setPhase(.preparing)
 
         do {
@@ -118,33 +124,31 @@ class RecordingViewModel: ObservableObject {
 
             currentRecordingId = recordingId
 
-            // Set up WebSocket and event stream BEFORE connecting
-            // to ensure no events are missed
-            self.webSocketManager = webSocketManager
-            let eventStream = await webSocketManager.events
+            // Create direct Deepgram WebSocket connection
+            let ws = WebSocketManager(apiClient: apiClient, language: language)
+            self.webSocketManager = ws
+            let eventStream = await ws.events
 
-            // Start receiving transcripts BEFORE connecting
-            // so the listener is ready when events start flowing
             transcriptTask = Task { [weak self] in
-                guard let self = self else { return }
-
+                guard let self else { return }
                 for await event in eventStream {
                     await self.handleWebSocketEvent(event)
                 }
             }
 
-            // Now connect WebSocket
-            try await webSocketManager.connect(recordingId: recordingId)
+            // Connect to Deepgram directly
+            try await ws.connect()
 
             let capture = MicrophoneCapture()
             let encoder = AudioEncoder()
             audioCapture = capture
             audioEncoder = encoder
-            let ws = webSocketManager
 
-            audioTask = Task {
+            audioTask = Task { [weak self] in
+                guard let self else { return }
                 for await buffer in capture.audioBuffers {
                     if let data = encoder.encode(buffer) {
+                        await self.appendAudioChunk(data)
                         do {
                             try await ws.sendAudio(data: data)
                         } catch {
@@ -184,35 +188,51 @@ class RecordingViewModel: ObservableObject {
 
         setPhase(.finalizing)
 
-        // Send end signal to tell the server we're done
+        // Send end signal to Deepgram
         do {
             try await webSocketManager?.sendEnd()
         } catch {
             print("Failed to send end signal: \(error)")
         }
 
-        let deadline = Date().addingTimeInterval(3.0)
-        while !isServerComplete && Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(200))
-        }
+        // Brief wait for final transcripts
+        try? await Task.sleep(for: .seconds(2))
+
+        // Collect final segments
+        let segments = await webSocketManager?.collectedSegments ?? []
 
         // Now cancel transcript task and disconnect
         transcriptTask?.cancel()
         transcriptTask = nil
 
-        // Disconnect WebSocket
         await webSocketManager?.disconnect()
         webSocketManager = nil
 
+        // Upload audio + segments
+        let client = self.apiClient
+        self.apiClient = nil
+        if let recordingId = currentRecordingId, let client, !audioChunks.isEmpty {
+            do {
+                let audioFileURL = try saveLocalAudioFile(chunks: audioChunks, recordingId: recordingId)
+                _ = try await client.uploadAudio(
+                    recordingId: recordingId,
+                    fileURL: audioFileURL,
+                    segments: segments.isEmpty ? nil : segments
+                )
+                try? FileManager.default.removeItem(at: audioFileURL)
+            } catch {
+                print("Upload failed: \(error)")
+            }
+        }
+
+        isServerComplete = true
         recording = nil
         audioEncoder = nil
+        audioChunks = []
         setPhase(.idle)
-        // NOTE: Do NOT clear currentTranscript or currentRecordingId here.
-        // The transcript should remain visible after stopping.
     }
 
     /// Reset transcript and recording state.
-    /// Call this when navigating away from the recording or starting a new one.
     func resetState() {
         currentTranscript = ""
         committedTranscript = ""
@@ -220,6 +240,48 @@ class RecordingViewModel: ObservableObject {
         currentRecordingId = nil
         isServerComplete = false
         duration = 0
+    }
+
+    // MARK: - Private
+
+    private func appendAudioChunk(_ data: Data) {
+        audioChunks.append(data)
+    }
+
+    private func saveLocalAudioFile(chunks: [Data], recordingId: String) throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("\(recordingId).wav")
+
+        let pcmData = chunks.reduce(Data()) { $0 + $1 }
+        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
+        try wavData.write(to: fileURL)
+
+        return fileURL
+    }
+
+    private func createWAVData(from pcmData: Data, sampleRate: Int, channels: Int, bitsPerSample: Int) -> Data {
+        let dataSize = UInt32(pcmData.count)
+        let fileSize = 36 + dataSize
+        let byteRate = UInt32(sampleRate * channels * bitsPerSample / 8)
+        let blockAlign = UInt16(channels * bitsPerSample / 8)
+
+        var header = Data()
+        header.append("RIFF".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
+        header.append("WAVE".data(using: .ascii)!)
+        header.append("fmt ".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt16(channels).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
+        header.append(withUnsafeBytes(of: UInt16(bitsPerSample).littleEndian) { Data($0) })
+        header.append("data".data(using: .ascii)!)
+        header.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        header.append(pcmData)
+
+        return header
     }
 
     private func startTimer() {
@@ -245,9 +307,11 @@ class RecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil
+        apiClient = nil
         await ws?.disconnect()
 
         recording = nil
@@ -266,30 +330,24 @@ class RecordingViewModel: ObservableObject {
         switch event {
         case .connected:
             break
-        case .transcript(let message):
-            if message.isFinal {
+        case .transcript(let segment):
+            if segment.isFinal {
                 if !committedTranscript.isEmpty {
                     committedTranscript += " "
                 }
-                committedTranscript += message.text
+                committedTranscript += segment.text
                 interimText = ""
                 currentTranscript = committedTranscript
             } else {
-                interimText = message.text
+                interimText = segment.text
                 if committedTranscript.isEmpty {
                     currentTranscript = interimText
                 } else {
                     currentTranscript = committedTranscript + " " + interimText
                 }
             }
-        case .status(let status):
-            if status.status == "error" {
-                error = status.message
-            } else if status.status == "complete" {
-                isServerComplete = true
-            }
         case .disconnected(let err):
-            if let err = err {
+            if let err {
                 error = err.localizedDescription
             }
         }

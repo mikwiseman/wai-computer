@@ -412,6 +412,18 @@ public actor APIClient {
     // MARK: - File Upload
 
     public func uploadAudio(recordingId: String, fileURL: URL) async throws -> RecordingDetail {
+        return try await uploadAudio(recordingId: recordingId, fileURL: fileURL, segments: nil)
+    }
+
+    /// Upload audio file with optional pre-transcribed segments.
+    ///
+    /// When ``segments`` is provided, the backend stores them directly instead
+    /// of transcribing server-side. This is used after a direct Deepgram session.
+    public func uploadAudio(
+        recordingId: String,
+        fileURL: URL,
+        segments: [LiveTranscriptSegment]?
+    ) async throws -> RecordingDetail {
         let path = "/api/recordings/\(recordingId)/upload"
         let url = baseURL.appendingPathComponent(path)
 
@@ -441,11 +453,26 @@ public actor APIClient {
         }
 
         var body = Data()
+
+        // File part
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(fileData)
-        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append("\r\n".data(using: .utf8)!)
+
+        // Segments JSON part (optional)
+        if let segments {
+            let segmentsData = try JSONEncoder().encode(segments)
+            if let segmentsString = String(data: segmentsData, encoding: .utf8) {
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"segments_json\"\r\n\r\n".data(using: .utf8)!)
+                body.append(segmentsString.data(using: .utf8)!)
+                body.append("\r\n".data(using: .utf8)!)
+            }
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
         request.httpBody = body
 
