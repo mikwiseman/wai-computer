@@ -13,13 +13,30 @@ private struct AnyEncodable: Encodable {
 }
 
 /// API errors
-public enum APIError: Error, Sendable {
+public enum APIError: Error, LocalizedError, Sendable {
     case invalidURL
     case noData
     case decodingError(Error)
     case httpError(statusCode: Int, message: String?)
     case networkError(Error)
     case unauthorized
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid URL."
+        case .noData:
+            return "No data received from server."
+        case .decodingError(let error):
+            return "Failed to parse server response: \(error.localizedDescription)"
+        case .httpError(let statusCode, let message):
+            return "Server error (\(statusCode)): \(message ?? "Unknown error")"
+        case .networkError(let error):
+            return "Network error: \(error.localizedDescription)"
+        case .unauthorized:
+            return "Session expired. Please log in again."
+        }
+    }
 }
 
 /// HTTP methods

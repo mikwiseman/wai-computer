@@ -1,9 +1,8 @@
-"""Tests for the Deepgram temporary token endpoint."""
+"""Tests for the Deepgram token endpoint."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from httpx import Request, Response
 
 from app.main import app
 
@@ -25,18 +24,9 @@ def mock_authenticated_user():
 
 
 @pytest.mark.asyncio
-async def test_deepgram_token_returns_jwt(mock_authenticated_user):
-    """Happy path: returns Deepgram JWT when API key is configured."""
-    fake_response = Response(
-        200,
-        json={"access_token": "dg-temp-jwt", "expires_in": 300},
-        request=Request("POST", "https://api.deepgram.com/v1/auth/grant"),
-    )
-
-    with (
-        patch("app.api.routes.deepgram.settings") as mock_settings,
-        patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_response),
-    ):
+async def test_deepgram_token_returns_key(mock_authenticated_user):
+    """Happy path: returns Deepgram API key when configured."""
+    with patch("app.api.routes.deepgram.settings") as mock_settings:
         mock_settings.deepgram_api_key = "test-deepgram-test-key"
 
         from httpx import ASGITransport, AsyncClient
@@ -51,8 +41,7 @@ async def test_deepgram_token_returns_jwt(mock_authenticated_user):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["access_token"] == "dg-temp-jwt"
-    assert data["expires_in"] == 300
+    assert data["access_token"] == "test-deepgram-test-key"
 
 
 @pytest.mark.asyncio
