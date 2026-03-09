@@ -9,6 +9,7 @@ import app.core.deepgram as deepgram_module
 from app.core.deepgram import (
     DeepgramStreamingClient,
     TranscriptResult,
+    detect_wav_channels,
     transcribe_audio_file,
 )
 
@@ -265,6 +266,37 @@ class TestClose:
         assert client._running is False
 
 
+class TestDetectWavChannels:
+    def test_mono_wav(self):
+        """detect_wav_channels() returns 1 for mono WAV."""
+        # Minimal WAV header: RIFF...WAVE...fmt with 1 channel at byte 22
+        header = bytearray(44)
+        header[0:4] = b"RIFF"
+        header[8:12] = b"WAVE"
+        header[22:24] = (1).to_bytes(2, "little")
+        assert detect_wav_channels(bytes(header)) == 1
+
+    def test_stereo_wav(self):
+        """detect_wav_channels() returns 2 for stereo WAV."""
+        header = bytearray(44)
+        header[0:4] = b"RIFF"
+        header[8:12] = b"WAVE"
+        header[22:24] = (2).to_bytes(2, "little")
+        assert detect_wav_channels(bytes(header)) == 2
+
+    def test_not_wav(self):
+        """detect_wav_channels() returns 1 for non-WAV data."""
+        assert detect_wav_channels(b"not a wav file at all") == 1
+
+    def test_too_short(self):
+        """detect_wav_channels() returns 1 for data shorter than a WAV header."""
+        assert detect_wav_channels(b"RIFF") == 1
+
+    def test_empty(self):
+        """detect_wav_channels() returns 1 for empty data."""
+        assert detect_wav_channels(b"") == 1
+
+
 class TestTranscribeAudioFile:
     async def test_missing_api_key_raises_value_error(self):
         """transcribe_audio_file() raises ValueError when API key is empty."""
@@ -335,6 +367,75 @@ class TestTranscribeAudioFile:
         assert call_kwargs.kwargs["params"]["punctuate"] == "true"
         assert call_kwargs.kwargs["params"]["diarize"] == "true"
         assert call_kwargs.kwargs["timeout"] == 300.0
+
+    async def test_multichannel_wav_auto_detected(self):
+        """transcribe_audio_file() auto-detects 2-channel WAV and uses multichannel mode."""
+        # Build minimal 2-channel WAV header
+        wav_header = bytearray(44)
+        wav_header[0:4] = b"RIFF"
+        wav_header[8:12] = b"WAVE"
+        wav_header[22:24] = (2).to_bytes(2, "little")  # 2 channels
+        audio_data = bytes(wav_header) + b"\x00" * 100
+
+        deepgram_response = {
+            "results": {
+                "channels": [
+                    {
+                        "alternatives": [
+                            {
+                                "transcript": "Hello from mic",
+                                "confidence": 0.95,
+                                "words": [
+                                    {"word": "Hello", "start": 0.0, "end": 0.5},
+                                    {"word": "from", "start": 0.5, "end": 0.8},
+                                    {"word": "mic", "start": 0.8, "end": 1.0},
+                                ],
+                            }
+                        ]
+                    },
+                    {
+                        "alternatives": [
+                            {
+                                "transcript": "Hi from system",
+                                "confidence": 0.92,
+                                "words": [
+                                    {"word": "Hi", "start": 0.2, "end": 0.4},
+                                    {"word": "from", "start": 0.4, "end": 0.6},
+                                    {"word": "system", "start": 0.6, "end": 0.9},
+                                ],
+                            }
+                        ]
+                    },
+                ]
+            }
+        }
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = deepgram_response
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.core.deepgram.httpx.AsyncClient", return_value=mock_client):
+            results = await transcribe_audio_file(audio_data, content_type="audio/wav")
+
+        assert len(results) == 2
+
+        # Sorted by start_ms: ch1 "Hi" at 200ms comes after ch0 "Hello" at 0ms
+        assert results[0].speaker == "You"
+        assert results[0].text == "Hello from mic"
+        assert results[0].start_ms == 0
+        assert results[1].speaker == "Speaker 1"
+        assert results[1].text == "Hi from system"
+        assert results[1].start_ms == 200
+
+        # Verify multichannel params were sent
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs["params"]["multichannel"] == "true"
+        assert call_kwargs.kwargs["params"]["channels"] == "2"
 
     async def test_returns_empty_list_when_no_utterances(self):
         """transcribe_audio_file() returns empty list when no utterances in response."""

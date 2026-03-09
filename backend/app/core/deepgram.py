@@ -161,24 +161,57 @@ class DeepgramStreamingClient:
             self._ws = None
 
 
+def detect_wav_channels(audio_data: bytes) -> int:
+    """Detect the number of channels from a WAV file header.
+
+    Returns the channel count (1 for mono, 2 for stereo, etc.), or 1 if
+    the data is not a valid WAV file.
+    """
+    if len(audio_data) < 44:
+        return 1
+    # Check RIFF/WAVE header
+    if audio_data[:4] != b"RIFF" or audio_data[8:12] != b"WAVE":
+        return 1
+    # Channels are at bytes 22-23 (little-endian uint16)
+    channels = int.from_bytes(audio_data[22:24], byteorder="little")
+    return channels if channels > 0 else 1
+
+
 async def transcribe_audio_file(
     audio_data: bytes,
     language: str = "en",
     model: str = DeepgramStreamingClient.DEFAULT_MODEL,
     content_type: str = "audio/wav",
+    channels: int | None = None,
 ) -> list[TranscriptResult]:
-    """Transcribe an audio file using Deepgram's REST API."""
+    """Transcribe an audio file using Deepgram's REST API.
+
+    When ``channels`` > 1, enables Deepgram's multichannel mode so that
+    each audio channel is transcribed independently (e.g. mic on ch0,
+    system audio on ch1).
+    """
     if not settings.deepgram_api_key:
         raise ValueError("DEEPGRAM_API_KEY not configured")
 
+    # Auto-detect channels from WAV header when not specified
+    if channels is None and content_type == "audio/wav":
+        channels = detect_wav_channels(audio_data)
+        if channels > 1:
+            logger.info(f"Detected {channels}-channel WAV file, enabling multichannel")
+
+    multichannel = channels is not None and channels > 1
+
     url = "https://api.deepgram.com/v1/listen"
-    params = {
+    params: dict[str, str] = {
         "model": model,
         "language": language,
         "punctuate": "true",
         "diarize": "true",
         "utterances": "true",
     }
+    if multichannel:
+        params["multichannel"] = "true"
+        params["channels"] = str(channels)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -195,17 +228,65 @@ async def transcribe_audio_file(
         data = response.json()
 
     results = []
-    utterances = data.get("results", {}).get("utterances", [])
-    for utt in utterances:
-        results.append(
-            TranscriptResult(
-                text=utt.get("transcript", ""),
-                speaker=f"Speaker {utt.get('speaker', 0)}",
-                is_final=True,
-                start_ms=int(utt.get("start", 0) * 1000),
-                end_ms=int(utt.get("end", 0) * 1000),
-                confidence=utt.get("confidence", 0.0),
+
+    if multichannel:
+        # Multichannel: Deepgram returns per-channel results
+        channels_results = data.get("results", {}).get("channels", [])
+        for ch_idx, channel_data in enumerate(channels_results):
+            alternatives = channel_data.get("alternatives", [])
+            if not alternatives:
+                continue
+            alt = alternatives[0]
+            paragraphs = alt.get("paragraphs", {}).get("paragraphs", [])
+            if paragraphs:
+                # Use paragraphs for better sentence boundaries
+                for para in paragraphs:
+                    for sentence in para.get("sentences", []):
+                        speaker = "You" if ch_idx == 0 else f"Speaker {ch_idx}"
+                        results.append(
+                            TranscriptResult(
+                                text=sentence.get("text", ""),
+                                speaker=speaker,
+                                is_final=True,
+                                start_ms=int(sentence.get("start", 0) * 1000),
+                                end_ms=int(sentence.get("end", 0) * 1000),
+                                confidence=alt.get("confidence", 0.0),
+                            )
+                        )
+            else:
+                # Fallback: use the full transcript for this channel
+                transcript = alt.get("transcript", "")
+                if transcript:
+                    words = alt.get("words", [])
+                    start_ms = int(words[0].get("start", 0) * 1000) if words else 0
+                    end_ms = int(words[-1].get("end", 0) * 1000) if words else 0
+                    speaker = "You" if ch_idx == 0 else f"Speaker {ch_idx}"
+                    results.append(
+                        TranscriptResult(
+                            text=transcript,
+                            speaker=speaker,
+                            is_final=True,
+                            start_ms=start_ms,
+                            end_ms=end_ms,
+                            confidence=alt.get("confidence", 0.0),
+                        )
+                    )
+
+        # Sort by start time for chronological order
+        results.sort(key=lambda r: r.start_ms)
+    else:
+        # Single channel: use utterances as before
+        utterances = data.get("results", {}).get("utterances", [])
+        for utt in utterances:
+            results.append(
+                TranscriptResult(
+                    text=utt.get("transcript", ""),
+                    speaker=f"Speaker {utt.get('speaker', 0)}",
+                    is_final=True,
+                    start_ms=int(utt.get("start", 0) * 1000),
+                    end_ms=int(utt.get("end", 0) * 1000),
+                    confidence=utt.get("confidence", 0.0),
+                )
             )
-        )
 
     return results
