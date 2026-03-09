@@ -4,11 +4,11 @@ import os
 
 private let dualLog = Logger(subsystem: "com.waicomputer.kit", category: "dual-audio")
 
-/// Captures both microphone and system audio simultaneously, producing
-/// 2-channel interleaved PCM buffers (ch0 = mic, ch1 = system audio).
+/// Captures both microphone and system audio simultaneously.
 ///
-/// If system audio capture fails (e.g. no permission on macOS < 14.2),
-/// falls back to mic-only with silence on channel 2.
+/// When both sources are active, produces 2-channel non-interleaved PCM buffers
+/// (ch0 = mic, ch1 = system audio). When system audio is unavailable,
+/// produces mono buffers from mic only.
 @available(macOS 14.2, *)
 public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let mic: MicrophoneCapture
@@ -21,17 +21,16 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private var _isRecording = false
     public var isRecording: Bool { _isRecording }
 
-    /// Whether system audio is active (false = mic-only mode)
+    /// Whether system audio is active (false = mic-only)
     public private(set) var hasSystemAudio = false
 
     private var micTask: Task<Void, Never>?
     private var systemTask: Task<Void, Never>?
+    private var flushTask: Task<Void, Never>?
 
-    /// Ring buffer for interleaving: holds latest mic/system chunks keyed by approximate timestamp
     private let lock = NSLock()
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
-    private var flushTask: Task<Void, Never>?
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
@@ -58,19 +57,27 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         try await mic.startRecording()
         dualLog.warning("[Dual] Microphone started")
 
-        // Try system audio (optional — may fail without permission)
+        // Try system audio
         do {
             try await system.startRecording()
             hasSystemAudio = true
-            dualLog.warning("[Dual] System audio started")
+            dualLog.warning("[Dual] System audio started — 2-channel mode")
         } catch {
             hasSystemAudio = false
-            dualLog.warning("[Dual] System audio unavailable: \(error.localizedDescription) — mic-only mode")
+            dualLog.warning("[Dual] System audio unavailable: \(error.localizedDescription) — mic-only")
         }
 
         _isRecording = true
 
-        // Forward mic buffers into our accumulator
+        if hasSystemAudio {
+            startDualMode()
+        } else {
+            startMicOnlyMode()
+        }
+    }
+
+    /// Dual mode: accumulate both streams, flush as 2-channel buffers.
+    private func startDualMode() {
         micTask = Task { [weak self] in
             guard let self else { return }
             for await buffer in self.mic.audioBuffers {
@@ -83,28 +90,33 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             }
         }
 
-        // Forward system audio buffers (if available)
-        if hasSystemAudio {
-            systemTask = Task { [weak self] in
-                guard let self else { return }
-                for await buffer in self.system.audioBuffers {
-                    guard let floatData = buffer.floatChannelData else { continue }
-                    let frames = Int(buffer.frameLength)
-                    let samples = Array(UnsafeBufferPointer(start: floatData[0], count: frames))
-                    self.lock.lock()
-                    self.systemBuffer.append(contentsOf: samples)
-                    self.lock.unlock()
-                }
+        systemTask = Task { [weak self] in
+            guard let self else { return }
+            for await buffer in self.system.audioBuffers {
+                guard let floatData = buffer.floatChannelData else { continue }
+                let frames = Int(buffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: floatData[0], count: frames))
+                self.lock.lock()
+                self.systemBuffer.append(contentsOf: samples)
+                self.lock.unlock()
             }
         }
 
-        // Periodic flush: interleave accumulated samples into 2-channel buffers
-        let flushInterval = 0.16 // ~160ms, matching buffer size
         flushTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(flushInterval))
+                try? await Task.sleep(for: .seconds(0.16))
                 guard !Task.isCancelled else { break }
-                self?.flushBuffers()
+                self?.flushDualBuffers()
+            }
+        }
+    }
+
+    /// Mic-only mode: forward mic buffers directly (mono).
+    private func startMicOnlyMode() {
+        micTask = Task { [weak self] in
+            guard let self else { return }
+            for await buffer in self.mic.audioBuffers {
+                self.bufferContinuation?.yield(buffer)
             }
         }
     }
@@ -122,10 +134,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         await mic.stopRecording()
         if hasSystemAudio {
             await system.stopRecording()
+            flushDualBuffers()
         }
-
-        // Flush any remaining samples
-        flushBuffers()
 
         lock.lock()
         micBuffer.removeAll()
@@ -137,29 +147,26 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         setupBufferStream()
     }
 
-    /// Interleave mic + system samples into a 2-channel PCM buffer.
-    private func flushBuffers() {
+    /// Interleave mic + system samples into a 2-channel non-interleaved PCM buffer.
+    private func flushDualBuffers() {
         lock.lock()
         let micSamples = micBuffer
         let sysSamples = systemBuffer
-        // Use the shorter length to keep channels aligned
-        let frames = hasSystemAudio ? min(micSamples.count, sysSamples.count) : micSamples.count
+        let frames = min(micSamples.count, sysSamples.count)
         if frames > 0 {
-            micBuffer.removeFirst(min(frames, micBuffer.count))
-            if hasSystemAudio {
-                systemBuffer.removeFirst(min(frames, systemBuffer.count))
-            }
+            micBuffer.removeFirst(frames)
+            systemBuffer.removeFirst(frames)
         }
         lock.unlock()
 
         guard frames > 0 else { return }
 
-        // Create 2-channel interleaved buffer
+        // Non-interleaved 2-channel: floatChannelData[0] = mic, floatChannelData[1] = system
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: config.sampleRate,
             channels: 2,
-            interleaved: true
+            interleaved: false
         ) else { return }
 
         guard let outBuffer = AVAudioPCMBuffer(
@@ -169,12 +176,12 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         outBuffer.frameLength = AVAudioFrameCount(frames)
 
         guard let outData = outBuffer.floatChannelData else { return }
-        // For interleaved format, all data is in channel 0's pointer
-        let dst = outData[0]
+        let ch0 = outData[0] // mic
+        let ch1 = outData[1] // system
 
         for i in 0..<frames {
-            dst[i * 2] = micSamples[i]           // channel 0 = mic
-            dst[i * 2 + 1] = hasSystemAudio ? sysSamples[i] : 0.0  // channel 1 = system (or silence)
+            ch0[i] = micSamples[i]
+            ch1[i] = sysSamples[i]
         }
 
         bufferContinuation?.yield(outBuffer)
