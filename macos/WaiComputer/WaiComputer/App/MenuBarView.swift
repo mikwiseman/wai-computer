@@ -104,17 +104,57 @@ struct MenuBarView: View {
                     .padding(.horizontal, Spacing.lg)
                 } else {
                     Button {
-                        Task {
-                            await appState.startRecording(type: .note)
-                        }
+                        Task { await appState.startRecording(type: .note, inputSource: .dual) }
                     } label: {
                         HStack {
-                            Image(systemName: "plus.circle")
+                            Image(systemName: "waveform")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("New Recording")
+                            Text("Mic + System Audio")
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}N")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        Task { await appState.startRecording(type: .note, inputSource: .microphone) }
+                    } label: {
+                        HStack {
+                            Image(systemName: "mic")
+                                .foregroundStyle(Palette.textSecondary)
+                            Text("Mic Only")
+                                .font(Typography.body)
+                            Spacer()
+                            Text("\u{21E7}\u{2318}N")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+
+                    WaiDivider()
+                        .padding(.horizontal, Spacing.lg)
+
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NotificationCenter.default.post(name: .importAudioFile, object: nil)
+                    } label: {
+                        HStack {
+                            Image(systemName: "square.and.arrow.down")
+                                .foregroundStyle(Palette.textSecondary)
+                            Text("Import File")
+                                .font(Typography.body)
+                            Spacer()
+                            Text("\u{2318}I")
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }

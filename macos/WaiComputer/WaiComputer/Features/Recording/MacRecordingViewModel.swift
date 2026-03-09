@@ -8,7 +8,7 @@ private let audioLog = Logger(subsystem: "com.waicomputer.app", category: "audio
 
 enum MacRecordingInputSource: String, CaseIterable, Equatable {
     case dual        // mic + system audio (default)
-    case microphone  // mic only (fallback)
+    case microphone  // mic only
     case systemAudio = "system_audio"
 
     var label: String {

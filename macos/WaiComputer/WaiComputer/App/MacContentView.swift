@@ -134,24 +134,42 @@ struct MacMainView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    startRecording(type: .note, inputSource: .dual)
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(Palette.textSecondary)
-                }
-                .disabled(isRecordingHandoffActive)
-                .help("New Recording")
-                .accessibilityIdentifier("start-recording-button")
+                Menu {
+                    Button {
+                        startRecording(type: .note, inputSource: .dual)
+                    } label: {
+                        Text("Mic + System Audio")
+                        Text("Records your mic and computer audio")
+                    }
 
-                Button {
-                    importAudioFile()
+                    Button {
+                        startRecording(type: .note, inputSource: .microphone)
+                    } label: {
+                        Text("Mic Only")
+                        Text("Records from your microphone only")
+                    }
+
+                    Divider()
+
+                    Button {
+                        importAudioFile()
+                    } label: {
+                        Text("Import Audio File")
+                        Text("Transcribe an existing audio file")
+                    }
+                    .disabled(importViewModel.isImporting)
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    Label("New Recording", systemImage: "plus")
+                        .labelStyle(.iconOnly)
                         .foregroundStyle(Palette.textSecondary)
+                } primaryAction: {
+                    startRecording(type: .note, inputSource: .dual)
                 }
-                .disabled(importViewModel.isImporting || isRecordingHandoffActive)
-                .help("Import Audio File")
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(isRecordingHandoffActive)
+                .help("New Recording (click to record, hold for options)")
+                .accessibilityIdentifier("start-recording-button")
 
                 if hasListColumn && !isTrashSection {
                     Button {
@@ -298,6 +316,9 @@ struct MacMainView: View {
                 prefetchedRecordingDetail = nil
                 appState.selectedRecordingFromMenu = nil
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
+            importAudioFile()
         }
         .onDisappear {
             completionTask?.cancel()

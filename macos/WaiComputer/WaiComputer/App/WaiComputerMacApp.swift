@@ -1,6 +1,10 @@
 import SwiftUI
 import WaiComputerKit
 
+extension Notification.Name {
+    static let importAudioFile = Notification.Name("importAudioFile")
+}
+
 @main
 struct WaiComputerMacApp: App {
     @StateObject private var recordingViewModel: MacRecordingViewModel
@@ -33,12 +37,26 @@ struct WaiComputerMacApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
-            // Replace default Cmd+N (new window) with new recording
+            // Replace default Cmd+N (new window) with recording commands
             CommandGroup(replacing: .newItem) {
-                Button("New Recording") {
-                    Task { await appState.startRecording(type: .note) }
+                Button("Record Mic + System Audio") {
+                    Task { await appState.startRecording(type: .note, inputSource: .dual) }
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Button("Record Mic Only") {
+                    Task { await appState.startRecording(type: .note, inputSource: .microphone) }
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Divider()
+
+                Button("Import Audio File") {
+                    NotificationCenter.default.post(name: .importAudioFile, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
             }
 

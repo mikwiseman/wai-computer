@@ -13,7 +13,9 @@ final class RecordingFlowUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        let startButton = app.buttons.matching(identifier: "start-recording-button").firstMatch
+        let startButton = app.descendants(matching: .any)
+            .matching(identifier: "start-recording-button")
+            .firstMatch
         XCTAssertTrue(startButton.waitForExistence(timeout: 5))
         app.activate()
         startButton.tap()
