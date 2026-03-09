@@ -21,6 +21,7 @@ public final class AudioEncoder: @unchecked Sendable {
         guard let floatData = buffer.floatChannelData else { return nil }
 
         let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return nil }
         let bufferChannels = Int(buffer.format.channelCount)
 
         if bufferChannels > 1 {

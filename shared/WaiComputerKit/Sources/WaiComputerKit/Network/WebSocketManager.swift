@@ -140,8 +140,6 @@ public actor WebSocketManager {
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
         }
-
-        eventContinuation?.yield(.connected)
     }
 
     /// Send raw PCM audio data directly to Deepgram.
@@ -202,6 +200,7 @@ public actor WebSocketManager {
         guard let webSocket else { return }
 
         print("[WS] receiveMessages: started listening (connection \(expectedId))")
+        eventContinuation?.yield(.connected)
         do {
             while true {
                 guard connectionId == expectedId else {
