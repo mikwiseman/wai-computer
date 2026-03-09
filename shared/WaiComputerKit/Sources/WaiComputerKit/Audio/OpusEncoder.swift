@@ -15,29 +15,31 @@ public final class AudioEncoder: @unchecked Sendable {
     }
 
     /// Encode PCM audio buffer to 16-bit linear PCM data.
-    /// Handles both mono (non-interleaved) and multichannel (interleaved) buffers.
+    /// Handles mono and non-interleaved multichannel buffers.
+    /// For multichannel, interleaves channels into [L0,R0,L1,R1,...] for Deepgram.
     public func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floatData = buffer.floatChannelData else { return nil }
 
         let frameLength = Int(buffer.frameLength)
-        let isInterleaved = buffer.format.isInterleaved
         let bufferChannels = Int(buffer.format.channelCount)
 
-        if isInterleaved && bufferChannels > 1 {
-            // Interleaved: samples are [L0, R0, L1, R1, ...] all in floatData[0]
+        if bufferChannels > 1 {
+            // Non-interleaved multichannel: floatData[0] = ch0, floatData[1] = ch1, ...
+            // Interleave into linear16: [ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...]
             let totalSamples = frameLength * bufferChannels
             var pcmData = Data(capacity: totalSamples * 2)
-            let src = floatData[0]
-            for i in 0..<totalSamples {
-                let sample = max(-1.0, min(1.0, src[i]))
-                let intSample = Int16(sample * 32767)
-                withUnsafeBytes(of: intSample.littleEndian) { bytes in
-                    pcmData.append(contentsOf: bytes)
+            for i in 0..<frameLength {
+                for ch in 0..<bufferChannels {
+                    let sample = max(-1.0, min(1.0, floatData[ch][i]))
+                    let intSample = Int16(sample * 32767)
+                    withUnsafeBytes(of: intSample.littleEndian) { bytes in
+                        pcmData.append(contentsOf: bytes)
+                    }
                 }
             }
             return pcmData
         } else {
-            // Non-interleaved mono: just channel 0
+            // Mono: just channel 0
             let channelData = floatData[0]
             var pcmData = Data(capacity: frameLength * 2)
             for i in 0..<frameLength {
