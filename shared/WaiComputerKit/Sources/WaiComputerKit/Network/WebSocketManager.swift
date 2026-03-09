@@ -75,6 +75,7 @@ public actor WebSocketManager {
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
     private var receiveTask: Task<Void, Never>?
+    private var keepAliveTask: Task<Void, Never>?
     private var connectionId: UInt64 = 0
     private var sendCount = 0
 
@@ -139,6 +140,15 @@ public actor WebSocketManager {
 
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
+        }
+
+        // Send KeepAlive every 5s to prevent Deepgram's 10s silence timeout
+        keepAliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { break }
+                try? await self?.webSocket?.send(.string("{\"type\":\"KeepAlive\"}"))
+            }
         }
     }
 
@@ -307,6 +317,8 @@ public actor WebSocketManager {
 
         receiveTask?.cancel()
         receiveTask = nil
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))

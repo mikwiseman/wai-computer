@@ -148,19 +148,39 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     }
 
     /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
+    /// Uses mic sample count as the frame count — if system has fewer samples, pads with silence.
     private func flushDualBuffers() {
         lock.lock()
-        let micSamples = micBuffer
-        let sysSamples = systemBuffer
-        let frames = min(micSamples.count, sysSamples.count)
-        if frames > 0 {
-            micBuffer.removeFirst(frames)
-            systemBuffer.removeFirst(frames)
+        let micCount = micBuffer.count
+        let sysCount = systemBuffer.count
+
+        // Use mic as the driver — mic always produces continuous samples.
+        // System may lag behind or produce fewer samples; pad with silence.
+        let frames = micCount
+        guard frames > 0 else {
+            lock.unlock()
+            return
         }
+
+        let micSamples = Array(micBuffer.prefix(frames))
+        micBuffer.removeFirst(frames)
+
+        let sysSamples: [Float]
+        if sysCount >= frames {
+            sysSamples = Array(systemBuffer.prefix(frames))
+            systemBuffer.removeFirst(frames)
+        } else {
+            // System audio has fewer samples — take what's available, pad rest with silence
+            sysSamples = Array(systemBuffer) + Array(repeating: 0.0, count: frames - sysCount)
+            systemBuffer.removeAll()
+        }
+
         let continuation = bufferContinuation
         lock.unlock()
 
-        guard frames > 0 else { return }
+        if frames % 16000 == 0 || frames < 100 {
+            dualLog.warning("[Dual] flush: \(frames) frames (mic=\(micCount), sys=\(sysCount))")
+        }
 
         // Non-interleaved 2-channel: floatChannelData[0] = mic, floatChannelData[1] = system
         guard let format = AVAudioFormat(
