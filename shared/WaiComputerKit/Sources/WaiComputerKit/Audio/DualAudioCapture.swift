@@ -147,7 +147,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         setupBufferStream()
     }
 
-    /// Interleave mic + system samples into a 2-channel non-interleaved PCM buffer.
+    /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
     private func flushDualBuffers() {
         lock.lock()
         let micSamples = micBuffer
@@ -157,6 +157,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             micBuffer.removeFirst(frames)
             systemBuffer.removeFirst(frames)
         }
+        let continuation = bufferContinuation
         lock.unlock()
 
         guard frames > 0 else { return }
@@ -184,6 +185,6 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             ch1[i] = sysSamples[i]
         }
 
-        bufferContinuation?.yield(outBuffer)
+        continuation?.yield(outBuffer)
     }
 }

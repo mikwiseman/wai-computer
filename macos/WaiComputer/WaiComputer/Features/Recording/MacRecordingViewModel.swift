@@ -336,11 +336,7 @@ class MacRecordingViewModel: ObservableObject {
         }
         #endif
 
-        // Stop audio capture first
-        await audioCapture?.stopRecording()
-        audioCapture = nil
-
-        // Cancel the audio sending task
+        // Cancel the audio sending task (stops sending new buffers)
         audioTask?.cancel()
         audioTask = nil
 
@@ -352,17 +348,18 @@ class MacRecordingViewModel: ObservableObject {
         let chunks = audioChunks
         let client = self.apiClient
         let wavChannels = audioChannels
+        let capture = audioCapture
         webSocketManager = nil
         transcriptTask = nil
         self.apiClient = nil
+        audioCapture = nil
 
         let task = Task { [weak self] in
-            // Send end signal to Deepgram
-            do {
-                try await ws?.sendEnd()
-            } catch {
-                NSLog("[Recording] Failed to send end signal: \(error)")
-            }
+            // Send end signal to Deepgram BEFORE stopping capture
+            try? await ws?.sendEnd()
+
+            // Now stop audio capture (flushes remaining buffers)
+            await capture?.stopRecording()
 
             // Brief wait for final transcripts from Deepgram
             try? await Task.sleep(for: .seconds(2))
@@ -385,12 +382,14 @@ class MacRecordingViewModel: ObservableObject {
                             fileURL: audioFileURL,
                             segments: segments.isEmpty ? nil : segments
                         )
-                        // Clean up local file after successful upload
                         try? FileManager.default.removeItem(at: audioFileURL)
                         NSLog("[Recording] Upload complete for recording %@", recordingId)
                     }
                 } catch {
                     NSLog("[Recording] Upload failed: \(error)")
+                    await MainActor.run {
+                        self?.error = "Failed to upload recording: \(error.localizedDescription)"
+                    }
                 }
             }
 
