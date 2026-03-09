@@ -66,10 +66,12 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
 
-    /// Committed (final) transcript text — only final Deepgram results
-    private var committedTranscript = ""
+    /// Committed (final) transcript lines — only final Deepgram results, with speaker labels
+    private var committedLines: [(speaker: String?, text: String)] = []
     /// Current interim text (replaced on each new interim result)
     private var interimText = ""
+    /// Speaker of the current interim result
+    private var interimSpeaker: String?
 
     /// Guards against starting a new recording while cleanup is in progress
     private var isCleaningUp = false
@@ -169,8 +171,9 @@ class MacRecordingViewModel: ObservableObject {
         isLoading = true
         error = nil
         currentTranscript = ""
-        committedTranscript = ""
+        committedLines = []
         interimText = ""
+        interimSpeaker = nil
         isServerComplete = false
         currentRecordingId = nil
         recordingType = type
@@ -225,12 +228,14 @@ class MacRecordingViewModel: ObservableObject {
 
             // Check if dual capture actually got system audio
             if #available(macOS 14.2, *), let dualCapture = capture as? DualAudioCapture {
-                // We'll know after startRecording whether system audio is available
-                // For now, start it to find out
                 NSLog("[Recording] Starting dual audio capture...")
                 try await capture.startRecording()
                 hasSystemAudio = dualCapture.hasSystemAudio
                 NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO (mic-only)")
+
+                if inputSource == .dual && !hasSystemAudio {
+                    error = "System audio unavailable — only your microphone will be recorded. Grant Audio Capture permission in System Settings > Privacy & Security."
+                }
             } else {
                 NSLog("[Recording] Starting audio capture...")
                 try await capture.startRecording()
@@ -410,8 +415,9 @@ class MacRecordingViewModel: ObservableObject {
     /// Reset transcript and recording state.
     func resetState() {
         currentTranscript = ""
-        committedTranscript = ""
+        committedLines = []
         interimText = ""
+        interimSpeaker = nil
         currentRecordingId = nil
         isServerComplete = false
         duration = 0
@@ -522,25 +528,75 @@ class MacRecordingViewModel: ObservableObject {
             break
         case .transcript(let segment):
             if segment.isFinal {
-                if !committedTranscript.isEmpty {
-                    committedTranscript += " "
-                }
-                committedTranscript += segment.text
+                committedLines.append((speaker: segment.speaker, text: segment.text))
                 interimText = ""
-                currentTranscript = committedTranscript
+                interimSpeaker = nil
+                currentTranscript = buildTranscriptText()
             } else {
                 interimText = segment.text
-                if committedTranscript.isEmpty {
-                    currentTranscript = interimText
-                } else {
-                    currentTranscript = committedTranscript + " " + interimText
-                }
+                interimSpeaker = segment.speaker
+                currentTranscript = buildTranscriptText()
             }
         case .disconnected(let err):
             if let err, phase == .recording {
                 await failActiveRecording(with: err.localizedDescription)
             } else if let err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
+            }
+        }
+    }
+
+    /// Build transcript text with speaker labels when multichannel is active.
+    private func buildTranscriptText() -> String {
+        let showSpeakers = audioChannels > 1
+
+        var parts: [String] = []
+        if showSpeakers {
+            // Group consecutive segments by same speaker for cleaner display
+            var currentSpeaker: String? = nil
+            var currentText = ""
+
+            for line in committedLines {
+                let speaker = line.speaker ?? "Speaker"
+                if speaker == currentSpeaker {
+                    currentText += " " + line.text
+                } else {
+                    if !currentText.isEmpty, let s = currentSpeaker {
+                        parts.append("\(s): \(currentText)")
+                    }
+                    currentSpeaker = speaker
+                    currentText = line.text
+                }
+            }
+            if !currentText.isEmpty, let s = currentSpeaker {
+                parts.append("\(s): \(currentText)")
+            }
+
+            // Add interim text
+            if !interimText.isEmpty {
+                let speaker = interimSpeaker ?? "..."
+                if speaker == currentSpeaker {
+                    // Append to last line
+                    if let last = parts.last {
+                        parts[parts.count - 1] = last + " " + interimText
+                    } else {
+                        parts.append("\(speaker): \(interimText)")
+                    }
+                } else {
+                    parts.append("\(speaker): \(interimText)")
+                }
+            }
+
+            return parts.joined(separator: "\n\n")
+        } else {
+            // Single channel — no speaker labels
+            let committed = committedLines.map(\.text).joined(separator: " ")
+            if interimText.isEmpty {
+                return committed
+            } else if committed.isEmpty {
+                return interimText
+            } else {
+                return committed + " " + interimText
             }
         }
     }

@@ -103,9 +103,23 @@ struct LiveRecordingView: View {
             Spacer()
 
             HStack(spacing: Spacing.sm) {
-                Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.textSecondary)
+                if recordingVM.recordingInputSource == .dual {
+                    HStack(spacing: 4) {
+                        Image(systemName: recordingVM.hasSystemAudio ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(recordingVM.hasSystemAudio ? .green : .yellow)
+                        Text(recordingVM.hasSystemAudio ? "Mic + System" : "Mic Only")
+                            .font(Typography.label)
+                            .foregroundStyle(recordingVM.hasSystemAudio ? Palette.textSecondary : .yellow)
+                    }
+                    .help(recordingVM.hasSystemAudio
+                        ? "Recording mic and system audio (2 channels)"
+                        : "System audio unavailable — only mic is recording")
+                } else {
+                    Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                }
 
                 Text(recordingVM.recordingType.rawValue.capitalized)
                     .font(Typography.label)
