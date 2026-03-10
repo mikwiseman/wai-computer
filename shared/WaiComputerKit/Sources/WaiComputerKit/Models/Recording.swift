@@ -285,10 +285,6 @@ public extension Recording {
     }
 
     var statusDisplayText: String? {
-        if let failureMessage, !failureMessage.isEmpty {
-            return failureMessage
-        }
-
         switch status {
         case .failed:
             return "Save failed"

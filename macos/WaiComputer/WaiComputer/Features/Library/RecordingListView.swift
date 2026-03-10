@@ -70,9 +70,21 @@ struct RecordingRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(recording.title ?? "Untitled")
-                .font(Typography.headingMedium)
-                .lineLimit(1)
+            HStack(spacing: Spacing.sm) {
+                Text(recording.title ?? "Untitled")
+                    .font(Typography.headingMedium)
+                    .lineLimit(1)
+
+                Spacer(minLength: Spacing.sm)
+
+                if let statusText = recording.statusDisplayText {
+                    Text(statusText)
+                        .font(Typography.label)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
 
             HStack(spacing: Spacing.sm) {
                 Circle()
@@ -97,5 +109,9 @@ struct RecordingRowView: View {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private var statusColor: Color {
+        recording.isFailedUpload ? Palette.recording : Palette.textSecondary
     }
 }
