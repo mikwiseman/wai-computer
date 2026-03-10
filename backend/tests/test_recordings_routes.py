@@ -1,5 +1,6 @@
 """Tests for recording endpoints and summary generation flows."""
 
+import json
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deepgram import TranscriptResult
 from app.core.summarizer import SummaryResult
-from app.models.recording import ActionItem, Segment
+from app.models.recording import ActionItem, Segment, Summary
 
 
 async def _create_recording(
@@ -433,7 +434,7 @@ async def test_upload_success_with_mocked_services(
     ]
 
     mock_storage = AsyncMock()
-    mock_storage.upload_audio = AsyncMock(return_value="user/2026/01/01/rec.mp3")
+    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
 
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",
@@ -461,6 +462,243 @@ async def test_upload_success_with_mocked_services(
     data = response.json()
     assert data["title"] == "Hello World Meeting"
     assert data["audio_url"] == "user/2026/01/01/rec.mp3"
+    assert data["status"] == "ready"
     assert data["duration_seconds"] == 1
     assert len(data["segments"]) == 1
     assert data["segments"][0]["content"] == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_upload_too_large_marks_recording_failed_and_keeps_it_visible(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Oversized upload should fail explicitly without hiding the recording."""
+    recording = await _create_recording(client, auth_headers)
+    monkeypatch.setattr("app.api.routes.recordings.MAX_UPLOAD_SIZE", 4)
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("large.mp3", b"12345", "audio/mpeg")},
+    )
+    assert response.status_code == 413
+    assert "Maximum size" in response.json()["detail"]
+
+    detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["status"] == "failed"
+    assert detail["failure_code"] == "file_too_large"
+    assert detail["audio_url"] is None
+
+    list_response = await client.get("/api/recordings", headers=auth_headers)
+    assert list_response.status_code == 200
+    items = {item["id"]: item for item in list_response.json()}
+    assert items[recording["id"]]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_persists_segments_before_audio_upload(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Live transcript segments should be savable before durable audio completes."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Transcript First"),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 3,
+            "segments": [
+                {
+                    "text": "Transcript saved first",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 2400,
+                    "confidence": 0.93,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["title"] == "Transcript First"
+    assert data["duration_seconds"] == 2
+    assert [segment["content"] for segment in data["segments"]] == ["Transcript saved first"]
+
+
+@pytest.mark.asyncio
+async def test_upload_processing_failure_returns_failed_recording_with_audio_preserved(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Audio should remain linked when post-upload processing fails."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    mock_storage = AsyncMock()
+    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.get_storage_client",
+        lambda: mock_storage,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(side_effect=RuntimeError("Deepgram unavailable")),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert data["failure_code"] == "processing_failed"
+    assert data["audio_url"] == "user/2026/01/01/rec.mp3"
+    assert data["segments"] == []
+
+
+@pytest.mark.asyncio
+async def test_upload_storage_failure_marks_recording_failed_and_keeps_record_visible(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """If durable storage fails, the recording should remain visible with a failed state."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    mock_storage = AsyncMock()
+    mock_storage.upload_audio_fileobj = AsyncMock(side_effect=RuntimeError("S3 unavailable"))
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.get_storage_client",
+        lambda: mock_storage,
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert response.status_code == 503
+    assert "failed to store imported audio" in response.json()["detail"].lower()
+
+    detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["status"] == "failed"
+    assert detail["failure_code"] == "storage_upload_failed"
+    assert detail["audio_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_reupload_replaces_segments_summary_and_generated_action_items(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Retrying an upload should replace derived content instead of appending to it."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+
+    mock_storage = AsyncMock()
+    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.get_storage_client",
+        lambda: mock_storage,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Recovered Recording"),
+    )
+
+    first_upload = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={
+            "segments_json": json.dumps(
+                [
+                    {
+                        "text": "First upload",
+                        "speaker": "Speaker 1",
+                        "start_ms": 0,
+                        "end_ms": 1000,
+                        "confidence": 0.9,
+                    }
+                ]
+            )
+        },
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert first_upload.status_code == 200
+
+    db_session.add(
+        Summary(
+            recording_id=recording_id,
+            summary="Old summary",
+        )
+    )
+    db_session.add(
+        ActionItem(
+            recording_id=recording_id,
+            task="Generated action",
+            priority="medium",
+            source="generated",
+        )
+    )
+    db_session.add(
+        ActionItem(
+            recording_id=recording_id,
+            task="Manual action",
+            priority="low",
+            source="manual",
+        )
+    )
+    await db_session.flush()
+
+    second_upload = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={
+            "segments_json": json.dumps(
+                [
+                    {
+                        "text": "Second upload",
+                        "speaker": "Speaker 2",
+                        "start_ms": 0,
+                        "end_ms": 1500,
+                        "confidence": 0.95,
+                    }
+                ]
+            )
+        },
+        files={"file": ("meeting.mp3", b"new-fake-mp3-data", "audio/mpeg")},
+    )
+    assert second_upload.status_code == 200
+    data = second_upload.json()
+    assert [segment["content"] for segment in data["segments"]] == ["Second upload"]
+    assert data["summary"] is None
+    assert [item["task"] for item in data["action_items"]] == ["Manual action"]

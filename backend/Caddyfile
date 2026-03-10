@@ -19,7 +19,7 @@ wai.computer {
     }
 
     request_body {
-        max_size 50MB
+        max_size 220MB
     }
 
     log {
@@ -42,7 +42,7 @@ api.wai.computer {
     }
 
     request_body {
-        max_size 50MB
+        max_size 220MB
     }
 
     log {

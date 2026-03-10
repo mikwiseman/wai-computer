@@ -87,9 +87,6 @@ class MacRecordingViewModel: ObservableObject {
     private var transcriptTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
 
-    /// Audio data accumulated during recording for local save
-    private var audioChunks: [Data] = []
-
     var formattedDuration: String {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
@@ -113,7 +110,7 @@ class MacRecordingViewModel: ObservableObject {
         case .recording:
             return "Recording"
         case .finalizing:
-            return "Saving recording..."
+            return "Saving transcript..."
         }
     }
 
@@ -184,7 +181,6 @@ class MacRecordingViewModel: ObservableObject {
         self.apiClient = apiClient
         audioCapture = nil
         audioEncoder = nil
-        audioChunks = []
 
         setPhase(.preparing)
 
@@ -277,9 +273,6 @@ class MacRecordingViewModel: ObservableObject {
                         NSLog("[Recording] Buffer #%d: %d frames", bufferCount, buffer.frameLength)
                     }
                     if let data = encoder.encode(buffer) {
-                        // Accumulate audio chunks for local file
-                        await self.appendAudioChunk(data)
-
                         if bufferCount <= 5 || bufferCount % 50 == 0 {
                             NSLog("[Recording] Encoded %d bytes, sending...", data.count)
                         }
@@ -341,71 +334,85 @@ class MacRecordingViewModel: ObservableObject {
         }
         #endif
 
-        // Cancel the audio sending task (stops sending new buffers)
-        audioTask?.cancel()
-        audioTask = nil
-
         isCleaningUp = true
 
         let ws = webSocketManager
         let tTask = transcriptTask
         let recordingId = currentRecordingId
-        let chunks = audioChunks
         let client = self.apiClient
-        let wavChannels = audioChannels
+        let recordingDuration = duration
         let capture = audioCapture
+        let sendingTask = audioTask
+        audioTask = nil
         webSocketManager = nil
         transcriptTask = nil
         self.apiClient = nil
         audioCapture = nil
 
         let task = Task { [weak self] in
-            // Send end signal to Deepgram BEFORE stopping capture
+            guard let self else { return }
+
+            // Stop audio capture first so the encoder can drain the final buffers.
+            await capture?.stopRecording()
+            _ = await sendingTask?.result
+
             try? await ws?.sendEnd()
 
-            // Now stop audio capture (flushes remaining buffers)
-            await capture?.stopRecording()
-
-            // Brief wait for final transcripts from Deepgram
             try? await Task.sleep(for: .seconds(2))
-
-            // Collect final segments from the WebSocket manager
             let segments = await ws?.collectedSegments ?? []
 
-            // Clean up WebSocket
             tTask?.cancel()
             await ws?.disconnect()
 
-            // Save audio locally and upload with segments
-            if let recordingId, let client, !chunks.isEmpty {
+            var transcriptSaved = false
+
+            if let recordingId, let client {
                 do {
-                    let audioFileURL = try await self?.saveLocalAudioFile(chunks: chunks, recordingId: recordingId, channels: wavChannels)
-                    if let audioFileURL {
-                        NSLog("[Recording] Uploading audio + %d segments for recording %@", segments.count, recordingId)
-                        _ = try await client.uploadAudio(
-                            recordingId: recordingId,
-                            fileURL: audioFileURL,
-                            segments: segments.isEmpty ? nil : segments
-                        )
-                        try? FileManager.default.removeItem(at: audioFileURL)
-                        NSLog("[Recording] Upload complete for recording %@", recordingId)
+                    NSLog("[Recording] Saving %d transcript segments for recording %@", segments.count, recordingId)
+                    let detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(recordingDuration.rounded())
+                    )
+                    transcriptSaved = detail.status != .failed
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+
+                    if detail.status == .failed {
+                        await MainActor.run {
+                            self.error = detail.failureMessage ?? "Transcript was saved, but processing failed."
+                        }
+                    } else {
+                        NSLog("[Recording] Transcript saved for recording %@", recordingId)
                     }
                 } catch {
-                    NSLog("[Recording] Upload failed: \(error)")
+                    NSLog("[Recording] Transcript save failed: \(error)")
+                    let failureMessage = error.localizedDescription
+                    let backup = try? await MainActor.run {
+                        try self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
+                    }
+                    _ = try? RecordingBackupStore.recordSaveFailure(
+                        recordingId: recordingId,
+                        message: failureMessage
+                    )
+                    try? await client.deleteRecording(id: recordingId, permanent: true)
+
                     await MainActor.run {
-                        self?.error = "Failed to upload recording: \(error.localizedDescription)"
+                        if let backup {
+                            self.error = "Transcript save failed. A local backup was saved at \(backup.directoryURL.path).\n\n\(failureMessage)"
+                        } else {
+                            self.error = "Transcript save failed: \(failureMessage)"
+                        }
                     }
                 }
             }
 
             await MainActor.run {
-                self?.isServerComplete = true
-                self?.recording = nil
-                self?.audioEncoder = nil
-                self?.audioChunks = []
-                self?.setPhase(.idle)
-                self?.isCleaningUp = false
-                self?.cleanupTask = nil
+                self.isServerComplete = transcriptSaved
+                self.recording = nil
+                self.audioEncoder = nil
+                self.setPhase(.idle)
+                self.isCleaningUp = false
+                self.cleanupTask = nil
             }
         }
         cleanupTask = task
@@ -429,45 +436,18 @@ class MacRecordingViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private func appendAudioChunk(_ data: Data) {
-        audioChunks.append(data)
-    }
-
-    private func saveLocalAudioFile(chunks: [Data], recordingId: String, channels: Int) throws -> URL {
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("\(recordingId).wav")
-
-        // Write WAV file with proper header
-        let pcmData = chunks.reduce(Data()) { $0 + $1 }
-        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: channels, bitsPerSample: 16)
-        try wavData.write(to: fileURL)
-
-        return fileURL
-    }
-
-    private func createWAVData(from pcmData: Data, sampleRate: Int, channels: Int, bitsPerSample: Int) -> Data {
-        let dataSize = UInt32(pcmData.count)
-        let fileSize = 36 + dataSize
-        let byteRate = UInt32(sampleRate * channels * bitsPerSample / 8)
-        let blockAlign = UInt16(channels * bitsPerSample / 8)
-
-        var header = Data()
-        header.append("RIFF".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
-        header.append("WAVE".data(using: .ascii)!)
-        header.append("fmt ".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })  // chunk size
-        header.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })   // PCM format
-        header.append(withUnsafeBytes(of: UInt16(channels).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt16(bitsPerSample).littleEndian) { Data($0) })
-        header.append("data".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
-        header.append(pcmData)
-
-        return header
+    private func saveTranscriptBackup(
+        recordingId: String,
+        segments: [LiveTranscriptSegment]
+    ) throws -> RecordingBackup {
+        return try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: recording?.title,
+            recordingType: recordingType,
+            durationSeconds: duration,
+            transcript: currentTranscript.isEmpty ? nil : currentTranscript,
+            segments: segments
+        )
     }
 
     private func startTimer() {
@@ -493,7 +473,6 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
-        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil
@@ -607,7 +586,25 @@ class MacRecordingViewModel: ObservableObject {
             return
         }
 
-        error = message
+        if let recordingId = currentRecordingId {
+            let segments = await webSocketManager?.collectedSegments ?? []
+            let backupMessage = "Recording connection failed. A local transcript backup was saved on this Mac."
+            let backup = try? saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments
+            )
+            _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+            if let client = apiClient {
+                try? await client.deleteRecording(id: recordingId, permanent: true)
+            }
+            if let backup {
+                error = "\(backupMessage)\n\n\(backup.directoryURL.path)\n\n\(message)"
+            } else {
+                error = message
+            }
+        } else {
+            error = message
+        }
 
         timerTask?.cancel()
         timerTask = nil
@@ -621,7 +618,6 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
-        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil

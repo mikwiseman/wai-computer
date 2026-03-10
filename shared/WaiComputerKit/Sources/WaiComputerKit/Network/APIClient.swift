@@ -30,11 +30,23 @@ public enum APIError: Error, LocalizedError, Sendable {
         case .decodingError(let error):
             return "Failed to parse server response: \(error.localizedDescription)"
         case .httpError(let statusCode, let message):
-            return "Server error (\(statusCode)): \(message ?? "Unknown error")"
+            if let message, !message.isEmpty {
+                return message
+            }
+            return "Server error (\(statusCode))"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .unauthorized:
             return "Session expired. Please log in again."
+        }
+    }
+
+    public var uploadFailureCode: String {
+        switch self {
+        case .httpError(let statusCode, _) where statusCode == 413:
+            return "file_too_large"
+        default:
+            return "upload_failed"
         }
     }
 }
@@ -50,6 +62,8 @@ public enum HTTPMethod: String, Sendable {
 
 /// API Client for WaiComputer backend
 public actor APIClient {
+    public static let maxRecordingUploadSizeBytes = 200 * 1024 * 1024
+
     private let baseURL: URL
     private var accessToken: String?
     private let session: URLSession
@@ -129,6 +143,37 @@ public actor APIClient {
         return accessToken
     }
 
+    private func apiError(from data: Data, response: HTTPURLResponse) -> APIError {
+        APIError.httpError(
+            statusCode: response.statusCode,
+            message: errorMessage(from: data, statusCode: response.statusCode)
+        )
+    }
+
+    private func errorMessage(from data: Data, statusCode: Int) -> String? {
+        if !data.isEmpty,
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = object["detail"] as? String,
+           !detail.isEmpty {
+            return detail
+        }
+
+        if !data.isEmpty,
+           let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty,
+           !text.hasPrefix("<!DOCTYPE"),
+           !text.hasPrefix("<html") {
+            return text
+        }
+
+        if statusCode == 413 {
+            return "File too large. Maximum size is \(Self.maxRecordingUploadSizeBytes / (1024 * 1024))MB."
+        }
+
+        return HTTPURLResponse.localizedString(forStatusCode: statusCode).capitalized
+    }
+
     /// Make an API request
     public func request<T: Decodable>(
         _ method: HTTPMethod,
@@ -166,8 +211,7 @@ public actor APIClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8)
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: message)
+            throw apiError(from: data, response: httpResponse)
         }
 
         do {
@@ -214,8 +258,7 @@ public actor APIClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8)
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: message)
+            throw apiError(from: data, response: httpResponse)
         }
     }
 
@@ -428,6 +471,18 @@ public actor APIClient {
 
     // MARK: - File Upload
 
+    public func saveLiveTranscript(
+        recordingId: String,
+        segments: [LiveTranscriptSegment],
+        durationSeconds: Int
+    ) async throws -> RecordingDetail {
+        let body = SaveTranscriptRequest(
+            segments: segments.map { TranscriptSegmentRequest(segment: $0) },
+            durationSeconds: durationSeconds
+        )
+        return try await request(.POST, path: "/api/recordings/\(recordingId)/transcript", body: body)
+    }
+
     public func uploadAudio(recordingId: String, fileURL: URL) async throws -> RecordingDetail {
         return try await uploadAudio(recordingId: recordingId, fileURL: fileURL, segments: nil)
     }
@@ -441,6 +496,14 @@ public actor APIClient {
         fileURL: URL,
         segments: [LiveTranscriptSegment]?
     ) async throws -> RecordingDetail {
+        let fileSize = try fileSize(at: fileURL)
+        if fileSize > Int64(Self.maxRecordingUploadSizeBytes) {
+            throw APIError.httpError(
+                statusCode: 413,
+                message: "File too large. Maximum size is \(Self.maxRecordingUploadSizeBytes / (1024 * 1024))MB."
+            )
+        }
+
         let path = "/api/recordings/\(recordingId)/upload"
         let url = baseURL.appendingPathComponent(path)
 
@@ -454,7 +517,6 @@ public actor APIClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        let fileData = try Data(contentsOf: fileURL)
         let filename = fileURL.lastPathComponent
         let ext = fileURL.pathExtension.lowercased()
         let mimeType: String
@@ -469,31 +531,16 @@ public actor APIClient {
         default: mimeType = "application/octet-stream"
         }
 
-        var body = Data()
+        let multipartFileURL = try createUploadRequestFile(
+            sourceFileURL: fileURL,
+            filename: filename,
+            mimeType: mimeType,
+            segments: segments,
+            boundary: boundary
+        )
+        defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        // File part
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
-        body.append(fileData)
-        body.append("\r\n".data(using: .utf8)!)
-
-        // Segments JSON part (optional)
-        if let segments {
-            let segmentsData = try JSONEncoder().encode(segments)
-            if let segmentsString = String(data: segmentsData, encoding: .utf8) {
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"segments_json\"\r\n\r\n".data(using: .utf8)!)
-                body.append(segmentsString.data(using: .utf8)!)
-                body.append("\r\n".data(using: .utf8)!)
-            }
-        }
-
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        request.httpBody = body
-
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.upload(for: request, fromFile: multipartFileURL)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.networkError(URLError(.badServerResponse))
@@ -504,8 +551,7 @@ public actor APIClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8)
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: message)
+            throw apiError(from: data, response: httpResponse)
         }
 
         do {
@@ -513,6 +559,75 @@ public actor APIClient {
         } catch {
             throw APIError.decodingError(error)
         }
+    }
+
+    private func fileSize(at url: URL) throws -> Int64 {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        return Int64(values.fileSize ?? 0)
+    }
+
+    private func mimeType(for fileURL: URL) -> String {
+        switch fileURL.pathExtension.lowercased() {
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a": return "audio/mp4"
+        case "ogg": return "audio/ogg"
+        case "webm": return "audio/webm"
+        case "opus": return "audio/opus"
+        case "flac": return "audio/flac"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private func createUploadRequestFile(
+        sourceFileURL: URL,
+        filename: String,
+        mimeType: String,
+        segments: [LiveTranscriptSegment]?,
+        boundary: String
+    ) throws -> URL {
+        let uploadURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-upload-\(UUID().uuidString).multipart")
+        FileManager.default.createFile(atPath: uploadURL.path, contents: nil)
+
+        let output = try FileHandle(forWritingTo: uploadURL)
+        defer { try? output.close() }
+
+        func writeString(_ string: String) throws {
+            try output.write(contentsOf: Data(string.utf8))
+        }
+
+        try writeString("--\(boundary)\r\n")
+        try writeString(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
+        )
+        try writeString("Content-Type: \(mimeType)\r\n\r\n")
+
+        let input = try FileHandle(forReadingFrom: sourceFileURL)
+        defer { try? input.close() }
+
+        while true {
+            let chunk = try input.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty {
+                break
+            }
+            try output.write(contentsOf: chunk)
+        }
+
+        try writeString("\r\n")
+
+        if let segments, !segments.isEmpty {
+            let segmentsData = try JSONEncoder().encode(segments)
+            if let segmentsString = String(data: segmentsData, encoding: .utf8) {
+                try writeString("--\(boundary)\r\n")
+                try writeString("Content-Disposition: form-data; name=\"segments_json\"\r\n\r\n")
+                try writeString(segmentsString)
+                try writeString("\r\n")
+            }
+        }
+
+        try writeString("--\(boundary)--\r\n")
+        return uploadURL
     }
 }
 
@@ -548,6 +663,44 @@ private struct UpdateRecordingRequestBody: Encodable {
 
 private struct FolderNameRequest: Encodable {
     let name: String
+}
+
+private struct TranscriptSegmentRequest: Encodable {
+    let text: String
+    let speaker: String?
+    let startMs: Int
+    let endMs: Int
+    let confidence: Double?
+
+    init(segment: LiveTranscriptSegment) {
+        text = segment.text
+        speaker = segment.speaker
+        startMs = segment.startMs
+        endMs = segment.endMs
+        confidence = segment.confidence
+    }
+
+    init(_ segment: LiveTranscriptSegment) {
+        self.init(segment: segment)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case speaker
+        case startMs = "start_ms"
+        case endMs = "end_ms"
+        case confidence
+    }
+}
+
+private struct SaveTranscriptRequest: Encodable {
+    let segments: [TranscriptSegmentRequest]
+    let durationSeconds: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case segments
+        case durationSeconds = "duration_seconds"
+    }
 }
 
 /// Simple message response

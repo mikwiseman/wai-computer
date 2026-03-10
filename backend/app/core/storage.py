@@ -1,7 +1,8 @@
-"""S3 storage for audio files (Hetzner Object Storage)."""
+"""S3 storage for imported audio files (Hetzner Object Storage)."""
 
 import uuid
 from datetime import datetime, timezone
+from typing import BinaryIO
 
 import boto3
 from botocore.config import Config
@@ -9,8 +10,6 @@ from botocore.config import Config
 from app.config import get_settings
 
 settings = get_settings()
-
-
 class StorageClient:
     """Client for S3 audio file storage."""
 
@@ -38,45 +37,34 @@ class StorageClient:
         date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         return f"{user_id}/{date_prefix}/{recording_id}.{ext}"
 
-    async def upload_audio(
+    async def upload_audio_fileobj(
         self,
-        audio_data: bytes,
+        file_obj: BinaryIO,
         user_id: uuid.UUID,
         recording_id: uuid.UUID,
         content_type: str = "audio/pcm",
     ) -> str:
-        """
-        Upload audio data to S3.
-
-        Args:
-            audio_data: Raw audio bytes
-            user_id: User ID
-            recording_id: Recording ID
-            content_type: MIME type of the audio
-
-        Returns:
-            S3 key of the uploaded file
-        """
+        """Upload an audio file object to S3 without loading it into a new bytes buffer."""
         import asyncio
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            self._upload_sync,
-            audio_data,
+            self._upload_fileobj_sync,
+            file_obj,
             user_id,
             recording_id,
             content_type,
         )
 
-    def _upload_sync(
+    def _upload_fileobj_sync(
         self,
-        audio_data: bytes,
+        file_obj: BinaryIO,
         user_id: uuid.UUID,
         recording_id: uuid.UUID,
         content_type: str,
     ) -> str:
-        """Synchronous upload."""
+        """Synchronous streaming upload."""
         client = self._get_client()
         ext_map = {
             "audio/opus": "opus", "audio/wav": "wav", "audio/mpeg": "mp3",
@@ -87,55 +75,20 @@ class StorageClient:
         ext = ext_map.get(content_type, "bin")
         key = self._generate_key(user_id, recording_id, ext)
 
-        client.put_object(
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        client.upload_fileobj(
+            Fileobj=file_obj,
             Bucket=settings.s3_bucket,
             Key=key,
-            Body=audio_data,
-            ContentType=content_type,
+            ExtraArgs={"ContentType": content_type},
         )
 
-        # Return the S3 key — clients should use presigned URLs for access
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
         return key
-
-    async def get_presigned_url(
-        self,
-        s3_key: str,
-        expires_in: int = 3600,
-    ) -> str:
-        """
-        Get a presigned URL for downloading an audio file.
-
-        Args:
-            s3_key: The S3 key (as returned by upload_audio)
-            expires_in: URL expiration time in seconds
-
-        Returns:
-            Presigned URL
-        """
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            self._get_presigned_url_sync,
-            s3_key,
-            expires_in,
-        )
-
-    def _get_presigned_url_sync(
-        self,
-        s3_key: str,
-        expires_in: int,
-    ) -> str:
-        """Synchronous presigned URL generation."""
-        client = self._get_client()
-
-        return client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": settings.s3_bucket, "Key": s3_key},
-            ExpiresIn=expires_in,
-        )
-
     async def delete_audio(
         self,
         s3_key: str,

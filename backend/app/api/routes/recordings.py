@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
@@ -12,13 +13,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
 from app.core.storage import get_storage_client
 from app.core.summarizer import generate_title, summarize_transcript
-from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
+from app.models.recording import ActionItem, Folder, Recording, RecordingStatus, Segment, Summary
 
 logger = logging.getLogger(__name__)
+app_settings = get_settings()
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
 
@@ -66,6 +69,10 @@ class RecordingResponse(BaseModel):
     title: str | None
     type: str
     audio_url: str | None
+    status: str
+    failure_code: str | None
+    failure_message: str | None
+    uploaded_at: datetime | None
     duration_seconds: int | None
     language: str | None
     folder_id: str | None
@@ -113,6 +120,23 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class TranscriptSegmentPayload(BaseModel):
+    """Transcript segment payload from the native client."""
+
+    text: str
+    speaker: str | None = None
+    start_ms: int = 0
+    end_ms: int = 0
+    confidence: float | None = None
+
+
+class SaveTranscriptRequest(BaseModel):
+    """Persist live transcript segments independent of audio upload."""
+
+    segments: list[TranscriptSegmentPayload]
+    duration_seconds: int | None = None
+
+
 def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
     if summary is None:
         return None
@@ -147,6 +171,10 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
         title=recording.title,
         type=recording.type,
         audio_url=recording.audio_url,
+        status=recording.status,
+        failure_code=recording.failure_code,
+        failure_message=recording.failure_message,
+        uploaded_at=recording.uploaded_at,
         duration_seconds=recording.duration_seconds,
         language=recording.language,
         folder_id=str(recording.folder_id) if recording.folder_id else None,
@@ -189,6 +217,197 @@ async def _require_folder(
     if folder is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
     return folder
+
+
+async def _load_recording_detail(
+    recording_id: UUID,
+    user_id: UUID,
+    db: Database,
+) -> Recording | None:
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user_id)
+        .options(
+            selectinload(Recording.segments),
+            selectinload(Recording.summary),
+            selectinload(Recording.action_items),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _mark_recording_failed(
+    recording: Recording,
+    db: Database,
+    failure_code: str,
+    failure_message: str,
+) -> None:
+    recording.status = RecordingStatus.FAILED.value
+    recording.failure_code = failure_code
+    recording.failure_message = failure_message
+    await db.commit()
+
+
+async def _reset_recording_processing_state(recording_id: UUID, db: Database) -> None:
+    """Replace transcript-derived data on re-upload instead of appending."""
+    await db.execute(
+        delete(ActionItem).where(
+            ActionItem.recording_id == recording_id,
+            ActionItem.source == "generated",
+        )
+    )
+    await db.execute(delete(Summary).where(Summary.recording_id == recording_id))
+    await db.execute(delete(Segment).where(Segment.recording_id == recording_id))
+
+
+def _measure_upload_size(file: UploadFile) -> int:
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    return size
+
+
+def _upload_limit_message() -> str:
+    return f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB"
+
+
+def _normalize_failure_message(error: Exception, fallback: str) -> str:
+    message = str(error).strip()
+    if not message:
+        return fallback
+    return message[:500]
+
+
+def _extension_from_upload(file_name: str, content_type: str) -> str:
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    if ext in ALLOWED_AUDIO_EXTENSIONS:
+        return ext
+
+    for candidate_ext, candidate_content_type in EXTENSION_TO_CONTENT_TYPE.items():
+        if candidate_content_type == content_type:
+            return candidate_ext
+
+    raise HTTPException(
+        status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        detail=(
+            f"Unsupported file type '.{ext}'. "
+            f"Allowed: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}"
+        ),
+    )
+
+
+async def _persist_client_segments(
+    recording: Recording,
+    db: Database,
+    segments: list[TranscriptSegmentPayload],
+    duration_seconds: int | None = None,
+) -> str:
+    await _reset_recording_processing_state(recording.id, db)
+
+    transcript_chunks: list[str] = []
+    end_times: list[int] = []
+
+    for segment in segments:
+        text = segment.text.strip()
+        if not text:
+            continue
+
+        embedding = None
+        try:
+            embedding = await generate_embedding(text)
+        except Exception as error:
+            logger.warning("Failed to generate embedding: %s", error)
+
+        db.add(
+            Segment(
+                recording_id=recording.id,
+                speaker=segment.speaker,
+                content=text,
+                start_ms=segment.start_ms,
+                end_ms=segment.end_ms,
+                confidence=segment.confidence,
+                embedding=embedding,
+            )
+        )
+        transcript_chunks.append(text)
+        end_times.append(segment.end_ms)
+
+    if end_times:
+        recording.duration_seconds = max(end_times) // 1000
+    elif duration_seconds is not None:
+        recording.duration_seconds = duration_seconds
+
+    transcript_text = " ".join(transcript_chunks)
+    if not recording.title and transcript_text:
+        try:
+            recording.title = await generate_title(transcript_text)
+        except Exception as error:
+            logger.warning("Title generation failed: %s", error)
+
+    recording.status = RecordingStatus.READY.value
+    recording.failure_code = None
+    recording.failure_message = None
+    await db.commit()
+    return transcript_text
+
+
+def _staging_directory_for_user(user_id: UUID) -> Path:
+    return Path(app_settings.upload_staging_dir) / str(user_id)
+
+
+def _staging_path(user_id: UUID, recording_id: UUID, ext: str) -> Path:
+    return _staging_directory_for_user(user_id) / f"{recording_id}.{ext}"
+
+
+def _delete_staged_file(path: str | None) -> None:
+    if not path:
+        return
+
+    try:
+        Path(path).unlink(missing_ok=True)
+    except Exception as error:
+        logger.warning("Failed to delete staged audio %s: %s", path, error)
+
+
+async def _stage_upload_to_disk(
+    *,
+    file: UploadFile,
+    user_id: UUID,
+    recording_id: UUID,
+    ext: str,
+) -> tuple[Path, int]:
+    """Persist the upload to the server staging volume before any external processing."""
+    staging_dir = _staging_directory_for_user(user_id)
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    final_path = _staging_path(user_id, recording_id, ext)
+    temp_path = final_path.with_suffix(f".{ext}.part")
+    total_size = 0
+
+    try:
+        with temp_path.open("wb") as staged_file:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=_upload_limit_message(),
+                    )
+
+                staged_file.write(chunk)
+
+        temp_path.replace(final_path)
+        return final_path, total_size
+    except Exception:
+        _delete_staged_file(str(temp_path))
+        _delete_staged_file(str(final_path))
+        raise
+    finally:
+        await file.close()
 
 
 @router.get("", response_model=list[RecordingResponse])
@@ -285,6 +504,11 @@ async def delete_recording(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     if permanent or recording.deleted_at is not None:
+        if recording.audio_url:
+            try:
+                await get_storage_client().delete_audio(recording.audio_url)
+            except Exception as error:
+                logger.warning("Failed to delete audio for recording %s: %s", recording.id, error)
         await db.delete(recording)
         return
 
@@ -368,6 +592,41 @@ async def get_transcript(
         )
         for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
     ]
+
+
+@router.post("/{recording_id}/transcript", response_model=RecordingDetailResponse)
+async def save_transcript(
+    recording_id: UUID,
+    request: SaveTranscriptRequest,
+    user: CurrentUser,
+    db: Database,
+) -> RecordingDetailResponse:
+    """Persist a live transcript without storing live-capture audio on the server."""
+    user_id = user.id
+    recording = await _load_recording_detail(recording_id, user_id, db)
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    try:
+        await _persist_client_segments(
+            recording,
+            db,
+            request.segments,
+            duration_seconds=request.duration_seconds,
+        )
+    except Exception as error:
+        logger.exception("Failed to save transcript for recording %s", recording_id)
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_normalize_failure_message(error, "Failed to save transcript"),
+        ) from error
+
+    db.expire_all()
+    refreshed = await _load_recording_detail(recording_id, user_id, db)
+    if refreshed is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+    return _serialize_recording_detail(refreshed)
 
 
 @router.get("/{recording_id}/summary", response_model=SummaryResponse)
@@ -513,7 +772,7 @@ EXTENSION_TO_CONTENT_TYPE = {
     "opus": "audio/opus",
     "flac": "audio/flac",
 }
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_UPLOAD_SIZE = app_settings.upload_max_bytes
 
 
 @router.post("/{recording_id}/upload", response_model=RecordingDetailResponse)
@@ -524,7 +783,7 @@ async def upload_audio_file(
     db: Database,
     segments_json: str | None = Form(None),
 ) -> RecordingDetailResponse:
-    """Upload an audio file to an existing recording.
+    """Upload an imported audio file to an existing recording.
 
     If ``segments_json`` is provided (JSON array of transcript segments from
     a direct Deepgram connection), those segments are stored and server-side
@@ -535,16 +794,8 @@ async def upload_audio_file(
     the Deepgram REST API (legacy behaviour).
     """
     # Validate recording exists and belongs to user
-    result = await db.execute(
-        select(Recording)
-        .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(
-            selectinload(Recording.segments),
-            selectinload(Recording.summary),
-            selectinload(Recording.action_items),
-        )
-    )
-    recording = result.scalar_one_or_none()
+    user_id = user.id
+    recording = await _load_recording_detail(recording_id, user_id, db)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
@@ -558,117 +809,215 @@ async def upload_audio_file(
             f"Allowed: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}",
         )
 
-    # Read file data and validate size
-    audio_data = await file.read()
-    if len(audio_data) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB",
-        )
+    upload_size = _measure_upload_size(file)
+    if upload_size > MAX_UPLOAD_SIZE:
+        detail = _upload_limit_message()
+        await _mark_recording_failed(recording, db, "file_too_large", detail)
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=detail)
+
+    client_segments: list[dict] | None = None
+    if segments_json is not None:
+        try:
+            parsed_segments = json.loads(segments_json)
+        except json.JSONDecodeError as exc:
+            detail = "Invalid transcript payload"
+            await _mark_recording_failed(recording, db, "invalid_segments", detail)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+        if not isinstance(parsed_segments, list):
+            detail = "Invalid transcript payload"
+            await _mark_recording_failed(recording, db, "invalid_segments", detail)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+        client_segments = parsed_segments
 
     content_type = EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
 
-    # Upload to S3
     storage = get_storage_client()
-    s3_key = await storage.upload_audio(audio_data, user.id, recording_id, content_type)
-    recording.audio_url = s3_key
+    old_audio_url = recording.audio_url
 
-    # Parse client-provided segments or transcribe server-side
-    client_segments: list[dict] | None = None
-    if segments_json is not None:
-        client_segments = json.loads(segments_json)
+    try:
+        staged_path, _ = await _stage_upload_to_disk(
+            file=file,
+            user_id=user_id,
+            recording_id=recording_id,
+            ext=ext,
+        )
+    except Exception as exc:
+        if isinstance(exc, HTTPException):
+            await _mark_recording_failed(recording, db, "file_too_large", str(exc.detail))
+            raise
+        logger.exception("Failed to stage audio for recording %s", recording_id)
+        detail = "Failed to save recording for upload"
+        await _mark_recording_failed(
+            recording,
+            db,
+            "staging_failed",
+            _normalize_failure_message(exc, detail),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+        ) from exc
 
-    if client_segments is not None:
-        # Client already transcribed via direct Deepgram connection
-        for seg in client_segments:
-            text = seg.get("text", "").strip()
-            if not text:
-                continue
+    recording.status = RecordingStatus.UPLOADING.value
+    recording.failure_code = None
+    recording.failure_message = None
+    await db.commit()
 
-            embedding = None
-            try:
-                embedding = await generate_embedding(text)
-            except Exception as e:
-                logger.warning(f"Failed to generate embedding: {e}")
-
-            db.add(
-                Segment(
-                    recording_id=recording_id,
-                    speaker=seg.get("speaker"),
-                    content=text,
-                    start_ms=seg.get("start_ms", 0),
-                    end_ms=seg.get("end_ms", 0),
-                    confidence=seg.get("confidence"),
-                    embedding=embedding,
-                )
+    try:
+        with staged_path.open("rb") as staged_file:
+            s3_key = await storage.upload_audio_fileobj(
+                staged_file,
+                user_id,
+                recording_id,
+                content_type,
             )
+    except Exception as exc:
+        logger.exception("Failed to store audio for recording %s", recording_id)
+        detail = "Failed to store imported audio"
+        await _mark_recording_failed(
+            recording,
+            db,
+            "storage_upload_failed",
+            _normalize_failure_message(exc, detail),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        ) from exc
 
-        # Update duration from last segment
-        end_times = [s.get("end_ms", 0) for s in client_segments if s.get("text", "").strip()]
-        if end_times:
-            recording.duration_seconds = max(end_times) // 1000
-    else:
-        # Transcribe via Deepgram REST API (legacy / file-upload path)
-        transcript_results = await transcribe_audio_file(
-            audio_data, language=recording.language or "en", content_type=content_type
+    recording.audio_url = s3_key
+    recording.status = RecordingStatus.PROCESSING.value
+    recording.failure_code = None
+    recording.failure_message = None
+    recording.uploaded_at = datetime.now(timezone.utc)
+    recording.duration_seconds = None
+
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            await storage.delete_audio(s3_key)
+        except Exception as cleanup_error:
+            logger.warning(
+                "Failed to clean up orphaned S3 audio %s for recording %s: %s",
+                s3_key,
+                recording_id,
+                cleanup_error,
+            )
+        raise
+
+    if old_audio_url and old_audio_url != s3_key:
+        try:
+            await storage.delete_audio(old_audio_url)
+        except Exception as exc:
+            logger.warning("Failed to delete superseded audio %s: %s", old_audio_url, exc)
+
+    transcript_results = []
+    transcript_text = ""
+    if client_segments is not None:
+        transcript_text = " ".join(
+            seg.get("text", "").strip() for seg in client_segments if seg.get("text", "").strip()
         )
 
-        for tr in transcript_results:
-            embedding = None
-            if tr.text.strip():
-                try:
-                    embedding = await generate_embedding(tr.text)
-                except Exception as e:
-                    logger.warning(f"Failed to generate embedding: {e}")
+    try:
+        await _reset_recording_processing_state(recording_id, db)
 
-            db.add(
-                Segment(
-                    recording_id=recording_id,
-                    speaker=tr.speaker,
-                    content=tr.text,
-                    start_ms=tr.start_ms,
-                    end_ms=tr.end_ms,
-                    confidence=tr.confidence,
-                    embedding=embedding,
-                )
-            )
-
-        if transcript_results:
-            max_end_ms = max(tr.end_ms for tr in transcript_results)
-            recording.duration_seconds = max_end_ms // 1000
-
-    # Generate AI title from transcript if title not already set
-    if not recording.title:
-        transcript_text = ""
         if client_segments is not None:
-            transcript_text = " ".join(
-                s.get("text", "").strip() for s in client_segments if s.get("text", "").strip()
-            )
-        elif transcript_results:
-            transcript_text = " ".join(tr.text for tr in transcript_results if tr.text.strip())
+            for seg in client_segments:
+                text = seg.get("text", "").strip()
+                if not text:
+                    continue
 
-        if transcript_text.strip():
+                embedding = None
+                try:
+                    embedding = await generate_embedding(text)
+                except Exception as exc:
+                    logger.warning("Failed to generate embedding: %s", exc)
+
+                db.add(
+                    Segment(
+                        recording_id=recording_id,
+                        speaker=seg.get("speaker"),
+                        content=text,
+                        start_ms=seg.get("start_ms", 0),
+                        end_ms=seg.get("end_ms", 0),
+                        confidence=seg.get("confidence"),
+                        embedding=embedding,
+                    )
+                )
+
+            end_times = [s.get("end_ms", 0) for s in client_segments if s.get("text", "").strip()]
+            if end_times:
+                recording.duration_seconds = max(end_times) // 1000
+        else:
+            with staged_path.open("rb") as staged_file:
+                transcript_results = await transcribe_audio_file(
+                    staged_file.read(),
+                    language=recording.language or "en",
+                    content_type=content_type,
+                )
+
+            for tr in transcript_results:
+                embedding = None
+                if tr.text.strip():
+                    try:
+                        embedding = await generate_embedding(tr.text)
+                    except Exception as exc:
+                        logger.warning("Failed to generate embedding: %s", exc)
+
+                db.add(
+                    Segment(
+                        recording_id=recording_id,
+                        speaker=tr.speaker,
+                        content=tr.text,
+                        start_ms=tr.start_ms,
+                        end_ms=tr.end_ms,
+                        confidence=tr.confidence,
+                        embedding=embedding,
+                    )
+                )
+
+            if transcript_results:
+                max_end_ms = max(tr.end_ms for tr in transcript_results)
+                recording.duration_seconds = max_end_ms // 1000
+                transcript_text = " ".join(tr.text for tr in transcript_results if tr.text.strip())
+
+        if not recording.title and transcript_text.strip():
             try:
                 recording.title = await generate_title(transcript_text)
-            except Exception as e:
-                logger.warning(f"Title generation failed: {e}")
+            except Exception as exc:
+                logger.warning("Title generation failed: %s", exc)
                 recording.title = None
 
-    await db.flush()
+        recording.status = RecordingStatus.READY.value
+        recording.failure_code = None
+        recording.failure_message = None
+        await db.commit()
+        _delete_staged_file(str(staged_path))
+    except Exception as exc:
+        logger.exception("Recording processing failed for %s", recording_id)
+        await db.rollback()
 
-    # Expire cached recording so selectinload refetches relationships
-    db.expire(recording)
+        recording = await _load_recording_detail(recording_id, user_id, db)
+        if recording is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Recording disappeared after upload",
+            ) from exc
 
-    # Reload to get the new segments
-    result = await db.execute(
-        select(Recording)
-        .where(Recording.id == recording_id)
-        .options(
-            selectinload(Recording.segments),
-            selectinload(Recording.summary),
-            selectinload(Recording.action_items),
+        recording.status = RecordingStatus.FAILED.value
+        recording.failure_code = "processing_failed"
+        recording.failure_message = _normalize_failure_message(
+            exc,
+            "Audio saved, but processing failed",
         )
-    )
-    recording = result.scalar_one_or_none()
+        await db.commit()
+        _delete_staged_file(str(staged_path))
+
+    db.expire_all()
+    recording = await _load_recording_detail(recording_id, user_id, db)
 
     return _serialize_recording_detail(recording)

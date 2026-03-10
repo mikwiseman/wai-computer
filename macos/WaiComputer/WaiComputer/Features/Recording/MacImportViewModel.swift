@@ -36,12 +36,17 @@ class MacImportViewModel: ObservableObject {
         isImporting = true
         importState = .importing
 
+        var recordingId: String?
         do {
             let filename = fileURL.deletingPathExtension().lastPathComponent
             let recording = try await apiClient.createRecording(title: filename, type: .note)
+            recordingId = recording.id
             _ = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: fileURL)
             importState = .done
         } catch {
+            if let recordingId {
+                try? await apiClient.deleteRecording(id: recordingId, permanent: true)
+            }
             errorMessage = error.localizedDescription
             showError = true
             importState = .error
