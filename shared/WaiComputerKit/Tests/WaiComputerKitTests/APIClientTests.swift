@@ -284,7 +284,7 @@ final class APIClientTests: XCTestCase {
                 headerFields: nil
             )!
             let payload = """
-            {"id":"rec-new","title":"My Meeting","type":"meeting","created_at":"2026-01-15T10:00:00Z"}
+            {"id":"rec-new","title":"My Meeting","type":"meeting","status":"pending_upload","created_at":"2026-01-15T10:00:00Z"}
             """.data(using: .utf8)!
             return (response, payload)
         }
@@ -307,7 +307,7 @@ final class APIClientTests: XCTestCase {
                 headerFields: nil
             )!
             let payload = """
-            {"id":"rec-legacy","title":"Legacy","type":"note","audio_url":"user/key.wav","created_at":"2026-01-15T10:00:00Z"}
+            {"id":"rec-legacy","title":"Legacy","type":"note","created_at":"2026-01-15T10:00:00Z"}
             """.data(using: .utf8)!
             return (response, payload)
         }

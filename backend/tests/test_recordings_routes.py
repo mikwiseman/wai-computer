@@ -1,6 +1,5 @@
 """Tests for recording endpoints and summary generation flows."""
 
-import json
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -542,6 +541,64 @@ async def test_save_transcript_persists_segments_before_audio_upload(
 
 
 @pytest.mark.asyncio
+async def test_save_transcript_rejects_empty_payload_without_erasing_existing_segments(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Empty transcript saves should fail before replacing existing content."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+
+    first_response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 3,
+            "segments": [
+                {
+                    "text": "Keep this transcript",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 2000,
+                    "confidence": 0.93,
+                }
+            ],
+        },
+    )
+    assert first_response.status_code == 200
+
+    empty_response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 3,
+            "segments": [
+                {
+                    "text": "   ",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 2000,
+                    "confidence": 0.93,
+                }
+            ],
+        },
+    )
+    assert empty_response.status_code == 400
+    assert empty_response.json()["detail"] == "Transcript is empty"
+
+    detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    assert [segment["content"] for segment in detail_response.json()["segments"]] == [
+        "Keep this transcript"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_upload_processing_failure_returns_failed_recording_with_audio_preserved(
     client: AsyncClient,
     auth_headers: dict,
@@ -609,23 +666,16 @@ async def test_upload_storage_failure_marks_recording_failed_and_keeps_record_vi
 
 
 @pytest.mark.asyncio
-async def test_reupload_replaces_segments_summary_and_generated_action_items(
+async def test_resaving_transcript_replaces_segments_summary_and_generated_action_items(
     client: AsyncClient,
     auth_headers: dict,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Retrying an upload should replace derived content instead of appending to it."""
+    """Retrying a transcript save should replace derived content instead of appending to it."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = UUID(recording["id"])
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
         AsyncMock(return_value=[0.1] * 384),
@@ -635,25 +685,23 @@ async def test_reupload_replaces_segments_summary_and_generated_action_items(
         AsyncMock(return_value="Recovered Recording"),
     )
 
-    first_upload = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
+    first_save = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
         headers=auth_headers,
-        data={
-            "segments_json": json.dumps(
-                [
-                    {
-                        "text": "First upload",
-                        "speaker": "Speaker 1",
-                        "start_ms": 0,
-                        "end_ms": 1000,
-                        "confidence": 0.9,
-                    }
-                ]
-            )
+        json={
+            "duration_seconds": 1,
+            "segments": [
+                {
+                    "text": "First save",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 1000,
+                    "confidence": 0.9,
+                }
+            ],
         },
-        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
-    assert first_upload.status_code == 200
+    assert first_save.status_code == 200
 
     db_session.add(
         Summary(
@@ -679,26 +727,24 @@ async def test_reupload_replaces_segments_summary_and_generated_action_items(
     )
     await db_session.flush()
 
-    second_upload = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
+    second_save = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
         headers=auth_headers,
-        data={
-            "segments_json": json.dumps(
-                [
-                    {
-                        "text": "Second upload",
-                        "speaker": "Speaker 2",
-                        "start_ms": 0,
-                        "end_ms": 1500,
-                        "confidence": 0.95,
-                    }
-                ]
-            )
+        json={
+            "duration_seconds": 2,
+            "segments": [
+                {
+                    "text": "Second save",
+                    "speaker": "Speaker 2",
+                    "start_ms": 0,
+                    "end_ms": 1500,
+                    "confidence": 0.95,
+                }
+            ],
         },
-        files={"file": ("meeting.mp3", b"new-fake-mp3-data", "audio/mpeg")},
     )
-    assert second_upload.status_code == 200
-    data = second_upload.json()
-    assert [segment["content"] for segment in data["segments"]] == ["Second upload"]
+    assert second_save.status_code == 200
+    data = second_save.json()
+    assert [segment["content"] for segment in data["segments"]] == ["Second save"]
     assert data["summary"] is None
     assert [item["task"] for item in data["action_items"]] == ["Manual action"]

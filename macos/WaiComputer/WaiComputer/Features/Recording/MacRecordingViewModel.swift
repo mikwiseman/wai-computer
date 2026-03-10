@@ -387,20 +387,34 @@ class MacRecordingViewModel: ObservableObject {
                 } catch {
                     NSLog("[Recording] Transcript save failed: \(error)")
                     let failureMessage = error.localizedDescription
-                    let backup = try? await MainActor.run {
-                        try self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
-                    }
-                    _ = try? RecordingBackupStore.recordSaveFailure(
+                    if let recoveredDetail = try? await self.recoverServerTranscript(
                         recordingId: recordingId,
-                        message: failureMessage
-                    )
-                    try? await client.deleteRecording(id: recordingId, permanent: true)
+                        client: client
+                    ) {
+                        try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                        transcriptSaved = recoveredDetail.status != .failed
+                        await MainActor.run {
+                            if recoveredDetail.status == .failed {
+                                self.error = recoveredDetail.failureMessage ?? "Transcript was saved, but processing failed."
+                            } else {
+                                self.error = nil
+                            }
+                        }
+                    } else {
+                        let backup = try? await MainActor.run {
+                            try self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
+                        }
+                        _ = try? RecordingBackupStore.recordSaveFailure(
+                            recordingId: recordingId,
+                            message: failureMessage
+                        )
 
-                    await MainActor.run {
-                        if let backup {
-                            self.error = "Transcript save failed. A local backup was saved at \(backup.directoryURL.path).\n\n\(failureMessage)"
-                        } else {
-                            self.error = "Transcript save failed: \(failureMessage)"
+                        await MainActor.run {
+                            if let backup {
+                                self.error = "Transcript save failed. A local backup was saved at \(backup.directoryURL.path).\n\n\(failureMessage)"
+                            } else {
+                                self.error = "Transcript save failed: \(failureMessage)"
+                            }
                         }
                     }
                 }
@@ -409,6 +423,7 @@ class MacRecordingViewModel: ObservableObject {
             await MainActor.run {
                 self.isServerComplete = transcriptSaved
                 self.recording = nil
+                self.currentRecordingId = nil
                 self.audioEncoder = nil
                 self.setPhase(.idle)
                 self.isCleaningUp = false
@@ -440,14 +455,46 @@ class MacRecordingViewModel: ObservableObject {
         recordingId: String,
         segments: [LiveTranscriptSegment]
     ) throws -> RecordingBackup {
+        let transcript = {
+            let finalized = transcriptText(from: segments)
+            if !finalized.isEmpty {
+                return finalized
+            }
+            return currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         return try RecordingBackupStore.saveRecording(
             recordingId: recordingId,
             title: recording?.title,
             recordingType: recordingType,
             durationSeconds: duration,
-            transcript: currentTranscript.isEmpty ? nil : currentTranscript,
+            transcript: transcript.isEmpty ? nil : transcript,
             segments: segments
         )
+    }
+
+    private func transcriptText(from segments: [LiveTranscriptSegment]) -> String {
+        segments
+            .map { segment in
+                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+                if let speaker = segment.speaker, !speaker.isEmpty {
+                    return "\(speaker): \(text)"
+                }
+                return text
+            }
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+    }
+
+    private func recoverServerTranscript(
+        recordingId: String,
+        client: APIClient
+    ) async throws -> RecordingDetail? {
+        let detail = try await client.getRecording(id: recordingId)
+        if !detail.segments.isEmpty || detail.status == .ready {
+            return detail
+        }
+        return nil
     }
 
     private func startTimer() {
@@ -586,6 +633,8 @@ class MacRecordingViewModel: ObservableObject {
             return
         }
 
+        setPhase(.finalizing)
+
         if let recordingId = currentRecordingId {
             let segments = await webSocketManager?.collectedSegments ?? []
             let backupMessage = "Recording connection failed. A local transcript backup was saved on this Mac."
@@ -624,6 +673,8 @@ class MacRecordingViewModel: ObservableObject {
         await ws?.disconnect()
 
         recording = nil
+        currentRecordingId = nil
+        apiClient = nil
         isServerComplete = false
         isCleaningUp = false
         recordingInputSource = .dual

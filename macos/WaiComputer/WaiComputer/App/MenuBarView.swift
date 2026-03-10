@@ -96,7 +96,7 @@ struct MenuBarView: View {
                     HStack {
                         Image(systemName: "hourglass.circle")
                             .foregroundStyle(Palette.textSecondary)
-                        Text("Saving Recording")
+                        Text("Saving Transcript")
                             .font(Typography.body)
                         Spacer()
                     }

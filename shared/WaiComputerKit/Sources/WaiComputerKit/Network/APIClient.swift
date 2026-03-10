@@ -484,18 +484,6 @@ public actor APIClient {
     }
 
     public func uploadAudio(recordingId: String, fileURL: URL) async throws -> RecordingDetail {
-        return try await uploadAudio(recordingId: recordingId, fileURL: fileURL, segments: nil)
-    }
-
-    /// Upload audio file with optional pre-transcribed segments.
-    ///
-    /// When ``segments`` is provided, the backend stores them directly instead
-    /// of transcribing server-side. This is used after a direct Deepgram session.
-    public func uploadAudio(
-        recordingId: String,
-        fileURL: URL,
-        segments: [LiveTranscriptSegment]?
-    ) async throws -> RecordingDetail {
         let fileSize = try fileSize(at: fileURL)
         if fileSize > Int64(Self.maxRecordingUploadSizeBytes) {
             throw APIError.httpError(
@@ -535,7 +523,6 @@ public actor APIClient {
             sourceFileURL: fileURL,
             filename: filename,
             mimeType: mimeType,
-            segments: segments,
             boundary: boundary
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
@@ -566,24 +553,10 @@ public actor APIClient {
         return Int64(values.fileSize ?? 0)
     }
 
-    private func mimeType(for fileURL: URL) -> String {
-        switch fileURL.pathExtension.lowercased() {
-        case "mp3": return "audio/mpeg"
-        case "wav": return "audio/wav"
-        case "m4a": return "audio/mp4"
-        case "ogg": return "audio/ogg"
-        case "webm": return "audio/webm"
-        case "opus": return "audio/opus"
-        case "flac": return "audio/flac"
-        default: return "application/octet-stream"
-        }
-    }
-
     private func createUploadRequestFile(
         sourceFileURL: URL,
         filename: String,
         mimeType: String,
-        segments: [LiveTranscriptSegment]?,
         boundary: String
     ) throws -> URL {
         let uploadURL = FileManager.default.temporaryDirectory
@@ -615,16 +588,6 @@ public actor APIClient {
         }
 
         try writeString("\r\n")
-
-        if let segments, !segments.isEmpty {
-            let segmentsData = try JSONEncoder().encode(segments)
-            if let segmentsString = String(data: segmentsData, encoding: .utf8) {
-                try writeString("--\(boundary)\r\n")
-                try writeString("Content-Disposition: form-data; name=\"segments_json\"\r\n\r\n")
-                try writeString(segmentsString)
-                try writeString("\r\n")
-            }
-        }
 
         try writeString("--\(boundary)--\r\n")
         return uploadURL
@@ -678,10 +641,6 @@ private struct TranscriptSegmentRequest: Encodable {
         startMs = segment.startMs
         endMs = segment.endMs
         confidence = segment.confidence
-    }
-
-    init(_ segment: LiveTranscriptSegment) {
-        self.init(segment: segment)
     }
 
     private enum CodingKeys: String, CodingKey {
