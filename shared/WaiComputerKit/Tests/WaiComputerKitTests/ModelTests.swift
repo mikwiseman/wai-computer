@@ -60,6 +60,10 @@ final class ModelTests: XCTestCase {
             "title": "Sprint Planning",
             "type": "meeting",
             "audio_url": "https://storage.example.com/audio/rec-1.opus",
+            "status": "failed",
+            "failure_code": "file_too_large",
+            "failure_message": "File too large",
+            "uploaded_at": "2026-01-15T10:31:00Z",
             "duration_seconds": 3600,
             "language": "en",
             "folder_id": "folder-1",
@@ -73,6 +77,10 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(recording.title, "Sprint Planning")
         XCTAssertEqual(recording.type, .meeting)
         XCTAssertEqual(recording.audioUrl, "https://storage.example.com/audio/rec-1.opus")
+        XCTAssertEqual(recording.status, .failed)
+        XCTAssertEqual(recording.failureCode, "file_too_large")
+        XCTAssertEqual(recording.failureMessage, "File too large")
+        XCTAssertNotNil(recording.uploadedAt)
         XCTAssertEqual(recording.durationSeconds, 3600)
         XCTAssertEqual(recording.language, "en")
         XCTAssertEqual(recording.folderId, "folder-1")

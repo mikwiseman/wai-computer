@@ -134,42 +134,20 @@ struct MacMainView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    Button {
-                        startRecording(type: .note, inputSource: .dual)
-                    } label: {
-                        Text("Mic + System Audio")
-                        Text("Records your mic and computer audio")
+                Button {
+                    selectedRecordingIds.removeAll()
+                    prefetchedRecordingDetail = nil
+                    if !hasListColumn {
+                        selectedSection = .allRecordings
                     }
-
-                    Button {
-                        startRecording(type: .note, inputSource: .microphone)
-                    } label: {
-                        Text("Mic Only")
-                        Text("Records from your microphone only")
-                    }
-
-                    Divider()
-
-                    Button {
-                        importAudioFile()
-                    } label: {
-                        Text("Import Audio File")
-                        Text("Transcribe an existing audio file")
-                    }
-                    .disabled(importViewModel.isImporting)
                 } label: {
                     Label("New Recording", systemImage: "plus")
                         .labelStyle(.iconOnly)
                         .foregroundStyle(Palette.textSecondary)
-                } primaryAction: {
-                    startRecording(type: .note, inputSource: .dual)
                 }
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .disabled(isRecordingHandoffActive)
-                .help("New Recording (click to record, hold for options)")
-                .accessibilityIdentifier("start-recording-button")
+                .disabled(isRecordingHandoffActive || (selectedRecordingIds.isEmpty && hasListColumn))
+                .help("New Recording")
+                .accessibilityIdentifier("new-recording-toolbar-button")
 
                 if hasListColumn && !isTrashSection {
                     Button {
@@ -319,6 +297,13 @@ struct MacMainView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
             importAudioFile()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showNewRecording)) { _ in
+            selectedRecordingIds.removeAll()
+            prefetchedRecordingDetail = nil
+            if !hasListColumn {
+                selectedSection = .allRecordings
+            }
         }
         .onDisappear {
             completionTask?.cancel()
@@ -527,11 +512,18 @@ struct MacMainView: View {
                         }
                     }
                 )
-            } else {
+            } else if isTrashSection {
                 ContentUnavailableView(
                     "Select a Recording",
-                    systemImage: "waveform",
-                    description: Text("Choose a recording from the list to view its details.")
+                    systemImage: "trash",
+                    description: Text("Choose a recording to view its details.")
+                )
+            } else {
+                NewRecordingView(
+                    onStartDual: { startRecording(type: .note, inputSource: .dual) },
+                    onStartMicOnly: { startRecording(type: .note, inputSource: .microphone) },
+                    onImportFile: { importAudioFile() },
+                    isImporting: importViewModel.isImporting
                 )
             }
         case .chat:
@@ -814,7 +806,7 @@ private struct CompletedRecordingTransitionView: View {
                     .controlSize(.small)
                     .frame(width: 12, height: 12)
 
-                Text("Saving recording...")
+                Text("Saving transcript...")
                     .font(Typography.displaySmall)
                     .foregroundStyle(Palette.textSecondary)
 

@@ -12,7 +12,7 @@ struct MenuBarView: View {
 
     private var menuStatusText: String {
         if appState.completedRecordingContext != nil {
-            return "Saving recording"
+            return "Saving transcript"
         }
 
         return recordingVM.shouldPresentLiveView ? recordingVM.statusText : "Ready"

@@ -22,9 +22,8 @@ def reset_storage_singleton():
 def mock_boto3_client():
     """Create a mock boto3 S3 client."""
     mock_client = MagicMock()
-    mock_client.put_object = MagicMock()
+    mock_client.upload_fileobj = MagicMock()
     mock_client.delete_object = MagicMock()
-    mock_client.generate_presigned_url = MagicMock(return_value="https://presigned.example.com/file")
     return mock_client
 
 
@@ -92,53 +91,19 @@ class TestGetClient:
 
 
 class TestUploadSync:
-    def test_calls_put_object_with_correct_params(
+    def test_upload_fileobj_uses_wav_extension_for_non_opus_content(
         self, storage_with_mock_client, mock_boto3_client, user_id, recording_id
     ):
-        """_upload_sync() calls put_object with correct Bucket, Key, Body, ContentType."""
-        audio_data = b"fake-audio-data"
-        content_type = "audio/opus"
-
+        """_upload_fileobj_sync() uses 'wav' extension for non-opus content types."""
         with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            key = storage_with_mock_client._upload_sync(
-                audio_data, user_id, recording_id, content_type
-            )
-
-        mock_boto3_client.put_object.assert_called_once()
-        call_kwargs = mock_boto3_client.put_object.call_args
-        assert call_kwargs.kwargs["Bucket"] == "test-bucket"
-        assert call_kwargs.kwargs["Body"] == audio_data
-        assert call_kwargs.kwargs["ContentType"] == content_type
-        assert key.endswith(".opus")
-
-    def test_uses_wav_extension_for_non_opus_content(
-        self, storage_with_mock_client, mock_boto3_client, user_id, recording_id
-    ):
-        """_upload_sync() uses 'wav' extension for non-opus content types."""
-        with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            key = storage_with_mock_client._upload_sync(
-                b"data", user_id, recording_id, "audio/wav"
+            key = storage_with_mock_client._upload_fileobj_sync(
+                file_obj=MagicMock(),
+                user_id=user_id,
+                recording_id=recording_id,
+                content_type="audio/wav",
             )
 
         assert key.endswith(".wav")
-
-
-class TestPresignedUrlSync:
-    def test_calls_generate_presigned_url_correctly(
-        self, storage_with_mock_client, mock_boto3_client
-    ):
-        """_get_presigned_url_sync() calls generate_presigned_url with correct params."""
-        s3_key = "some-user/2026/03/02/some-recording.opus"
-        with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            url = storage_with_mock_client._get_presigned_url_sync(s3_key, 7200)
-
-        mock_boto3_client.generate_presigned_url.assert_called_once()
-        call_args = mock_boto3_client.generate_presigned_url.call_args
-        assert call_args.args[0] == "get_object"
-        assert call_args.kwargs["Params"]["Bucket"] == "test-bucket"
-        assert call_args.kwargs["Params"]["Key"] == s3_key
-        assert call_args.kwargs["ExpiresIn"] == 7200
-        assert url == "https://presigned.example.com/file"
 
 
 class TestDeleteSync:
@@ -154,31 +119,7 @@ class TestDeleteSync:
         call_kwargs = mock_boto3_client.delete_object.call_args
         assert call_kwargs.kwargs["Bucket"] == "test-bucket"
         assert call_kwargs.kwargs["Key"] == s3_key
-
-
 class TestAsyncWrappers:
-    async def test_upload_audio_delegates_to_upload_sync(
-        self, storage_with_mock_client, user_id, recording_id
-    ):
-        """upload_audio() async wrapper delegates to _upload_sync."""
-        with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            key = await storage_with_mock_client.upload_audio(
-                b"audio-data", user_id, recording_id, "audio/opus"
-            )
-
-        assert key.endswith(".opus")
-        assert str(user_id) in key
-
-    async def test_get_presigned_url_delegates(
-        self, storage_with_mock_client
-    ):
-        """get_presigned_url() async wrapper delegates to _get_presigned_url_sync."""
-        s3_key = "some-user/2026/03/02/some-recording.opus"
-        with patch.object(storage_module.settings, "s3_bucket", "test-bucket"):
-            url = await storage_with_mock_client.get_presigned_url(s3_key, 3600)
-
-        assert url == "https://presigned.example.com/file"
-
     async def test_delete_audio_delegates(
         self, storage_with_mock_client, mock_boto3_client
     ):

@@ -46,9 +46,9 @@ final class APIClientTests: XCTestCase {
     }
 
     /// Reads the body from a URLRequest, checking both httpBody and httpBodyStream.
-    private func bodyJSON(from request: URLRequest) -> [String: Any]? {
+    private func bodyData(from request: URLRequest) -> Data? {
         if let data = request.httpBody {
-            return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return data
         }
         if let stream = request.httpBodyStream {
             stream.open()
@@ -62,9 +62,16 @@ final class APIClientTests: XCTestCase {
                 if read <= 0 { break }
                 data.append(buffer, count: read)
             }
-            return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return data
         }
         return nil
+    }
+
+    private func bodyJSON(from request: URLRequest) -> [String: Any]? {
+        guard let data = bodyData(from: request) else {
+            return nil
+        }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
     func testFulltextSearchUsesFTSEndpoint() async throws {
@@ -286,6 +293,99 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(recording.id, "rec-new")
         XCTAssertEqual(recording.title, "My Meeting")
         XCTAssertEqual(recording.type, .meeting)
+        XCTAssertEqual(recording.status, .pendingUpload)
+    }
+
+    func testRecordingDefaultsStatusWhenResponseOmitsIt() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"rec-legacy","title":"Legacy","type":"note","audio_url":"user/key.wav","created_at":"2026-01-15T10:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let recording = try await client.getRecording(id: "rec-legacy")
+        XCTAssertEqual(recording.status, .ready)
+    }
+
+    func testUploadAudioRejectsOversizedFileBeforeRequest() async throws {
+        let client = makeClient()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("oversized-\(UUID().uuidString).wav")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.truncate(atOffset: UInt64(APIClient.maxRecordingUploadSizeBytes + 1))
+        try handle.close()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        MockURLProtocol.requestHandler = { _ in
+            XCTFail("Oversized uploads should fail before making a request")
+            throw URLError(.badServerResponse)
+        }
+
+        do {
+            _ = try await client.uploadAudio(recordingId: "rec-oversized", fileURL: fileURL)
+            XCTFail("Expected file-too-large error")
+        } catch let error as APIError {
+            switch error {
+            case .httpError(let statusCode, let message):
+                XCTAssertEqual(statusCode, 413)
+                XCTAssertEqual(error.uploadFailureCode, "file_too_large")
+                XCTAssertEqual(message, "File too large. Maximum size is 200MB.")
+                XCTAssertEqual(error.localizedDescription, "File too large. Maximum size is 200MB.")
+            default:
+                XCTFail("Expected 413 httpError, got \(error)")
+            }
+        }
+    }
+
+    func testSaveLiveTranscriptUsesTranscriptEndpoint() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-live/transcript")
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["duration_seconds"] as? Int, 7)
+            let segments = body?["segments"] as? [[String: Any]]
+            XCTAssertEqual(segments?.count, 1)
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"rec-live","title":"Live","type":"note","status":"ready","duration_seconds":7,"segments":[{"id":"seg-1","content":"Hello","start_ms":0,"end_ms":1000}],"action_items":[],"created_at":"2026-03-10T10:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let detail = try await client.saveLiveTranscript(
+            recordingId: "rec-live",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Hello",
+                    speaker: "Speaker 1",
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 1000,
+                    confidence: 0.98
+                )
+            ],
+            durationSeconds: 7
+        )
+
+        XCTAssertEqual(detail.status, .ready)
+        XCTAssertEqual(detail.segments.count, 1)
     }
 
     func testDeleteRecordingUsesDeleteMethod() async throws {

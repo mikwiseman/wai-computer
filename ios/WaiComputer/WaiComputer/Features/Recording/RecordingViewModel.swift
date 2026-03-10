@@ -33,9 +33,6 @@ class RecordingViewModel: ObservableObject {
     private var audioTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
 
-    /// Audio data accumulated during recording for local save
-    private var audioChunks: [Data] = []
-
     var formattedDuration: String {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
@@ -51,7 +48,7 @@ class RecordingViewModel: ObservableObject {
         case .recording:
             return "Recording..."
         case .finalizing:
-            return "Saving recording..."
+            return "Saving transcript..."
         }
     }
 
@@ -98,7 +95,6 @@ class RecordingViewModel: ObservableObject {
         self.apiClient = apiClient
         audioCapture = nil
         audioEncoder = nil
-        audioChunks = []
         setPhase(.preparing)
 
         do {
@@ -148,14 +144,11 @@ class RecordingViewModel: ObservableObject {
                 guard let self else { return }
                 for await buffer in capture.audioBuffers {
                     if let data = encoder.encode(buffer) {
-                        await self.appendAudioChunk(data)
                         do {
                             try await ws.sendAudio(data: data)
                         } catch {
-                            await MainActor.run {
-                                self.error = error.localizedDescription
-                            }
-                            break
+                            await self.handleStreamingFailure(error.localizedDescription)
+                            return
                         }
                     }
                 }
@@ -174,6 +167,8 @@ class RecordingViewModel: ObservableObject {
     func stopRecording() async {
         guard phase == .recording else { return }
 
+        setPhase(.finalizing)
+
         // Stop timer
         timerTask?.cancel()
         timerTask = nil
@@ -182,11 +177,9 @@ class RecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
 
-        // Cancel the audio sending task
-        audioTask?.cancel()
+        let sendingTask = audioTask
         audioTask = nil
-
-        setPhase(.finalizing)
+        _ = await sendingTask?.result
 
         // Send end signal to Deepgram
         do {
@@ -211,24 +204,39 @@ class RecordingViewModel: ObservableObject {
         // Upload audio + segments
         let client = self.apiClient
         self.apiClient = nil
-        if let recordingId = currentRecordingId, let client, !audioChunks.isEmpty {
+        if let recordingId = currentRecordingId, let client {
             do {
-                let audioFileURL = try saveLocalAudioFile(chunks: audioChunks, recordingId: recordingId)
-                _ = try await client.uploadAudio(
+                let detail = try await client.saveLiveTranscript(
                     recordingId: recordingId,
-                    fileURL: audioFileURL,
-                    segments: segments.isEmpty ? nil : segments
+                    segments: segments,
+                    durationSeconds: Int(duration.rounded())
                 )
-                try? FileManager.default.removeItem(at: audioFileURL)
+                try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                if detail.status == .failed {
+                    error = detail.failureMessage ?? "Transcript was saved, but processing failed."
+                }
             } catch {
-                print("Upload failed: \(error)")
+                let failureMessage = error.localizedDescription
+                let backup = try? saveTranscriptBackup(
+                    recordingId: recordingId,
+                    segments: segments
+                )
+                _ = try? RecordingBackupStore.recordSaveFailure(
+                    recordingId: recordingId,
+                    message: failureMessage
+                )
+                try? await client.deleteRecording(id: recordingId, permanent: true)
+                if backup != nil {
+                    self.error = "Transcript save failed. A local backup was saved on this device.\n\n\(failureMessage)"
+                } else {
+                    self.error = "Transcript save failed: \(failureMessage)"
+                }
             }
         }
 
-        isServerComplete = true
+        isServerComplete = error == nil
         recording = nil
         audioEncoder = nil
-        audioChunks = []
         setPhase(.idle)
     }
 
@@ -244,44 +252,18 @@ class RecordingViewModel: ObservableObject {
 
     // MARK: - Private
 
-    private func appendAudioChunk(_ data: Data) {
-        audioChunks.append(data)
-    }
-
-    private func saveLocalAudioFile(chunks: [Data], recordingId: String) throws -> URL {
-        let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("\(recordingId).wav")
-
-        let pcmData = chunks.reduce(Data()) { $0 + $1 }
-        let wavData = createWAVData(from: pcmData, sampleRate: 16000, channels: 1, bitsPerSample: 16)
-        try wavData.write(to: fileURL)
-
-        return fileURL
-    }
-
-    private func createWAVData(from pcmData: Data, sampleRate: Int, channels: Int, bitsPerSample: Int) -> Data {
-        let dataSize = UInt32(pcmData.count)
-        let fileSize = 36 + dataSize
-        let byteRate = UInt32(sampleRate * channels * bitsPerSample / 8)
-        let blockAlign = UInt16(channels * bitsPerSample / 8)
-
-        var header = Data()
-        header.append("RIFF".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
-        header.append("WAVE".data(using: .ascii)!)
-        header.append("fmt ".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt16(channels).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })
-        header.append(withUnsafeBytes(of: UInt16(bitsPerSample).littleEndian) { Data($0) })
-        header.append("data".data(using: .ascii)!)
-        header.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
-        header.append(pcmData)
-
-        return header
+    private func saveTranscriptBackup(
+        recordingId: String,
+        segments: [LiveTranscriptSegment]
+    ) throws -> RecordingBackup {
+        return try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: recording?.title,
+            recordingType: recordingType,
+            durationSeconds: duration,
+            transcript: currentTranscript,
+            segments: segments
+        )
     }
 
     private func startTimer() {
@@ -307,7 +289,6 @@ class RecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
-        audioChunks = []
 
         let ws = webSocketManager
         webSocketManager = nil
@@ -318,6 +299,28 @@ class RecordingViewModel: ObservableObject {
         currentRecordingId = nil
         isServerComplete = false
         setPhase(.idle)
+    }
+
+    private func handleStreamingFailure(_ message: String) async {
+        if let recordingId = currentRecordingId {
+            let segments = await webSocketManager?.collectedSegments ?? []
+            let backup = try? saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments
+            )
+            if let backup {
+                _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+                if let apiClient {
+                    try? await apiClient.deleteRecording(id: recordingId, permanent: true)
+                }
+                error = "Recording connection failed. A local transcript backup was saved on this device.\n\n\(message)"
+                print("Saved local backup at \(backup.directoryURL.path)")
+            } else {
+                error = message
+            }
+        } else {
+            error = message
+        }
     }
 
     private func setPhase(_ newPhase: RecordingPhase) {
@@ -347,7 +350,9 @@ class RecordingViewModel: ObservableObject {
                 }
             }
         case .disconnected(let err):
-            if let err {
+            if let err, phase == .recording {
+                await handleStreamingFailure(err.localizedDescription)
+            } else if let err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
             }
         }

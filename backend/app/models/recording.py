@@ -1,5 +1,6 @@
 """Recording and related models."""
 
+import enum
 import uuid
 from datetime import date, datetime
 
@@ -9,6 +10,16 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+
+class RecordingStatus(str, enum.Enum):
+    """Lifecycle states for recording upload and processing."""
+
+    PENDING_UPLOAD = "pending_upload"
+    UPLOADING = "uploading"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
 
 
 class Folder(Base, UUIDMixin, TimestampMixin):
@@ -37,6 +48,14 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     title: Mapped[str | None] = mapped_column(String(500))
     type: Mapped[str] = mapped_column(String(50), nullable=False)  # meeting, note, reflection
     audio_url: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=RecordingStatus.PENDING_UPLOAD.value,
+    )
+    failure_code: Mapped[str | None] = mapped_column(String(100))
+    failure_message: Mapped[str | None] = mapped_column(Text)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     language: Mapped[str | None] = mapped_column(String(10))
     folder_id: Mapped[uuid.UUID | None] = mapped_column(

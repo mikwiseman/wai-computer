@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from ipaddress import ip_address
+from tempfile import gettempdir
 from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,6 +50,8 @@ class Settings(BaseSettings):
     s3_secret_key: str = ""
     s3_bucket: str = "wai-computer"
     s3_region: str = "eu-central"
+    upload_max_bytes: int = 200 * 1024 * 1024
+    upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
 
     # Email (Resend)
     resend_api_key: str = ""
