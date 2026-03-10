@@ -201,9 +201,10 @@ class RecordingViewModel: ObservableObject {
         await webSocketManager?.disconnect()
         webSocketManager = nil
 
-        // Upload audio + segments
+        // Persist the finalized live transcript
         let client = self.apiClient
         self.apiClient = nil
+        var transcriptSaved = false
         if let recordingId = currentRecordingId, let client {
             do {
                 let detail = try await client.saveLiveTranscript(
@@ -214,28 +215,44 @@ class RecordingViewModel: ObservableObject {
                 try? RecordingBackupStore.removeRecording(recordingId: recordingId)
                 if detail.status == .failed {
                     error = detail.failureMessage ?? "Transcript was saved, but processing failed."
+                } else {
+                    error = nil
+                    transcriptSaved = true
                 }
             } catch {
                 let failureMessage = error.localizedDescription
-                let backup = try? saveTranscriptBackup(
+                if let recoveredDetail = try? await recoverServerTranscript(
                     recordingId: recordingId,
-                    segments: segments
-                )
-                _ = try? RecordingBackupStore.recordSaveFailure(
-                    recordingId: recordingId,
-                    message: failureMessage
-                )
-                try? await client.deleteRecording(id: recordingId, permanent: true)
-                if backup != nil {
-                    self.error = "Transcript save failed. A local backup was saved on this device.\n\n\(failureMessage)"
+                    client: client
+                ) {
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    transcriptSaved = recoveredDetail.status != .failed
+                    if recoveredDetail.status == .failed {
+                        self.error = recoveredDetail.failureMessage ?? "Transcript was saved, but processing failed."
+                    } else {
+                        self.error = nil
+                    }
                 } else {
-                    self.error = "Transcript save failed: \(failureMessage)"
+                    let backup = try? saveTranscriptBackup(
+                        recordingId: recordingId,
+                        segments: segments
+                    )
+                    _ = try? RecordingBackupStore.recordSaveFailure(
+                        recordingId: recordingId,
+                        message: failureMessage
+                    )
+                    if backup != nil {
+                        self.error = "Transcript save failed. A local backup was saved on this device.\n\n\(failureMessage)"
+                    } else {
+                        self.error = "Transcript save failed: \(failureMessage)"
+                    }
                 }
             }
         }
 
-        isServerComplete = error == nil
+        isServerComplete = transcriptSaved
         recording = nil
+        currentRecordingId = nil
         audioEncoder = nil
         setPhase(.idle)
     }
@@ -256,14 +273,39 @@ class RecordingViewModel: ObservableObject {
         recordingId: String,
         segments: [LiveTranscriptSegment]
     ) throws -> RecordingBackup {
+        let transcript = {
+            let finalized = transcriptText(from: segments)
+            if !finalized.isEmpty {
+                return finalized
+            }
+            return currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
         return try RecordingBackupStore.saveRecording(
             recordingId: recordingId,
             title: recording?.title,
             recordingType: recordingType,
             durationSeconds: duration,
-            transcript: currentTranscript,
+            transcript: transcript.isEmpty ? nil : transcript,
             segments: segments
         )
+    }
+
+    private func transcriptText(from segments: [LiveTranscriptSegment]) -> String {
+        segments
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private func recoverServerTranscript(
+        recordingId: String,
+        client: APIClient
+    ) async throws -> RecordingDetail? {
+        let detail = try await client.getRecording(id: recordingId)
+        if !detail.segments.isEmpty || detail.status == .ready {
+            return detail
+        }
+        return nil
     }
 
     private func startTimer() {
@@ -302,6 +344,15 @@ class RecordingViewModel: ObservableObject {
     }
 
     private func handleStreamingFailure(_ message: String) async {
+        guard phase == .recording else {
+            if error == nil {
+                error = message
+            }
+            return
+        }
+
+        setPhase(.finalizing)
+
         if let recordingId = currentRecordingId {
             let segments = await webSocketManager?.collectedSegments ?? []
             let backup = try? saveTranscriptBackup(
@@ -321,6 +372,26 @@ class RecordingViewModel: ObservableObject {
         } else {
             error = message
         }
+
+        timerTask?.cancel()
+        timerTask = nil
+        audioTask?.cancel()
+        audioTask = nil
+        transcriptTask?.cancel()
+        transcriptTask = nil
+        await audioCapture?.stopRecording()
+        audioCapture = nil
+        audioEncoder = nil
+
+        let ws = webSocketManager
+        webSocketManager = nil
+        apiClient = nil
+        await ws?.disconnect()
+
+        recording = nil
+        currentRecordingId = nil
+        isServerComplete = false
+        setPhase(.idle)
     }
 
     private func setPhase(_ newPhase: RecordingPhase) {

@@ -28,9 +28,20 @@ def upgrade() -> None:
     op.add_column("recordings", sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=True))
     op.execute(
         """
-        UPDATE recordings
+        UPDATE recordings AS recording
         SET status = CASE
-            WHEN audio_url IS NOT NULL THEN 'ready'
+            WHEN recording.audio_url IS NOT NULL
+                OR EXISTS (
+                    SELECT 1
+                    FROM segments
+                    WHERE segments.recording_id = recording.id
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM summaries
+                    WHERE summaries.recording_id = recording.id
+                )
+            THEN 'ready'
             ELSE 'pending_upload'
         END
         """
