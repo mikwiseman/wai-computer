@@ -23,6 +23,7 @@
 		D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */; };
 		D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA555164F098038E385713E6 /* RecordingListView.swift */; };
 		DED3994205172291160E4F83 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A8999379655635D74EC3514 /* MacChatView.swift */; };
+		6A3D8F1E4B72C90A5E8F1D37 /* NewRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7F2E41D83A9C5067E1DA3F0 /* NewRecordingView.swift */; };
 		E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */; };
 		EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */; };
 /* End PBXBuildFile section */
@@ -54,6 +55,7 @@
 		899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerMacApp.swift; sourceTree = "<group>"; };
 		99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
+		B7F2E41D83A9C5067E1DA3F0 /* NewRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
 		D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFlowUITests.swift; sourceTree = "<group>"; };
 		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 				A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */,
 				EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */,
 				525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */,
+				B7F2E41D83A9C5067E1DA3F0 /* NewRecordingView.swift */,
 			);
 			path = Recording;
 			sourceTree = "<group>";
@@ -305,6 +308,7 @@
 				43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */,
 				E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */,
 				50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */,
+				6A3D8F1E4B72C90A5E8F1D37 /* NewRecordingView.swift in Sources */,
 				35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */,
 				29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */,
 				51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */,

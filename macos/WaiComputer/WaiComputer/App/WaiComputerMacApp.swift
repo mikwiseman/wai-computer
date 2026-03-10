@@ -3,6 +3,7 @@ import WaiComputerKit
 
 extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
+    static let showNewRecording = Notification.Name("showNewRecording")
 }
 
 @main
@@ -39,16 +40,24 @@ struct WaiComputerMacApp: App {
         .commands {
             // Replace default Cmd+N (new window) with recording commands
             CommandGroup(replacing: .newItem) {
+                Button("New Recording") {
+                    NotificationCenter.default.post(name: .showNewRecording, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Divider()
+
                 Button("Record Mic + System Audio") {
                     Task { await appState.startRecording(type: .note, inputSource: .dual) }
                 }
-                .keyboardShortcut("n", modifiers: .command)
+                .keyboardShortcut("r", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
                 Button("Record Mic Only") {
                     Task { await appState.startRecording(type: .note, inputSource: .microphone) }
                 }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
                 Divider()

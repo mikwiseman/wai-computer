@@ -73,6 +73,13 @@ struct RecordingRow: View {
                 TypeBadge(type: recording.type)
             }
 
+            if let statusText = recording.statusDisplayText {
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+                    .lineLimit(1)
+            }
+
             HStack {
                 Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
@@ -94,6 +101,10 @@ struct RecordingRow: View {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+
+    private var statusColor: Color {
+        recording.isFailedUpload ? .red : .secondary
     }
 }
 

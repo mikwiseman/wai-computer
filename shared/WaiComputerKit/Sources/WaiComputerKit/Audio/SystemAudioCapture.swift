@@ -67,8 +67,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
         sysLog.warning("[SysAudio] Default output device ID: \(defaultOutputID)")
 
-        // 2. Create process tap (empty process list = all system audio)
-        let tapDescription = CATapDescription(stereoMixdownOfProcesses: [])
+        // Use a global tap here: the include-list initializer with an empty array captures nothing.
+        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         tapDescription.uuid = UUID()
         tapDescription.muteBehavior = .unmuted
 
@@ -220,7 +220,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 }
             }
 
-            if tapCount <= 3 || tapCount % 100 == 0 {
+            if tapCount <= 5 || tapCount % 100 == 0 {
                 sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz -> \(outFrames)@\(targetSR)Hz")
             }
 
