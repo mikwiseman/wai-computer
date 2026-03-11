@@ -422,7 +422,7 @@ async def _stage_upload_to_disk(
                 total_size += len(chunk)
                 if total_size > MAX_UPLOAD_SIZE:
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail=_upload_limit_message(),
                     )
 
@@ -859,7 +859,7 @@ async def upload_audio_file(
     if upload_size > MAX_UPLOAD_SIZE:
         detail = _upload_limit_message()
         await _mark_recording_failed(recording, db, "file_too_large", detail)
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=detail)
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=detail)
 
     content_type = EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
 

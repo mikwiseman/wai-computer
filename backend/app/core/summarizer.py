@@ -4,9 +4,8 @@ import json
 import logging
 from dataclasses import dataclass
 
-import anthropic
-
 from app.config import get_settings
+from app.core.chat import _get_anthropic_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -75,7 +74,7 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_anthropic_client()
 
     message = await client.messages.create(
         model=settings.anthropic_model,
@@ -131,7 +130,7 @@ async def generate_title(transcript: str) -> str:
     # Use first ~500 chars of transcript for speed
     snippet = transcript[:500]
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_anthropic_client()
     message = await client.messages.create(
         model=settings.anthropic_model,
         max_tokens=50,
@@ -202,7 +201,7 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_anthropic_client()
 
     message = await client.messages.create(
         model=settings.anthropic_model,
