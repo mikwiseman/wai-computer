@@ -352,6 +352,7 @@ struct MacMainView: View {
             }
         }
         .listStyle(.sidebar)
+        .accessibilityIdentifier("sidebar")
     }
 
     private func sidebarRow(_ title: String, icon: String, section: SidebarSection) -> some View {
@@ -362,6 +363,7 @@ struct MacMainView: View {
                 .font(Typography.body)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
         .listRowBackground(
             selectedSection == section
                 ? Color.accentColor.opacity(0.15)
@@ -378,6 +380,7 @@ struct MacMainView: View {
                 HStack(spacing: Spacing.sm) {
                     Text(currentListTitle)
                         .font(Typography.displaySmall)
+                        .accessibilityIdentifier("library-list-title")
 
                     Text("\(displayedRecordings.count)")
                         .font(Typography.label)
@@ -933,6 +936,7 @@ struct MacAuthView: View {
                 Text(error)
                     .foregroundStyle(Palette.recording)
                     .font(Typography.caption)
+                    .accessibilityIdentifier("auth-error-text")
             }
 
             // Submit button
@@ -946,6 +950,7 @@ struct MacAuthView: View {
             }
             .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
             .disabled(!isFormValid || appState.isLoading)
+            .accessibilityIdentifier("auth-submit-button")
 
             Spacer()
         }
@@ -965,6 +970,7 @@ struct MacAuthView: View {
                 .waiTextField(isActive: focusedField == .email)
                 .focused($focusedField, equals: .email)
                 .frame(maxWidth: 380)
+                .accessibilityIdentifier("auth-email-field")
 
             if authMode != .magicLink {
                 SecureField("Password", text: $password)
@@ -972,6 +978,7 @@ struct MacAuthView: View {
                     .waiTextField(isActive: focusedField == .password)
                     .focused($focusedField, equals: .password)
                     .frame(maxWidth: 380)
+                    .accessibilityIdentifier("auth-password-field")
 
                 if authMode == .register {
                     SecureField("Confirm Password", text: $confirmPassword)
@@ -979,6 +986,7 @@ struct MacAuthView: View {
                         .waiTextField(isActive: focusedField == .confirmPassword)
                         .focused($focusedField, equals: .confirmPassword)
                         .frame(maxWidth: 380)
+                        .accessibilityIdentifier("auth-confirm-password-field")
                 }
             }
         }

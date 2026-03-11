@@ -4,6 +4,8 @@ import WaiComputerKit
 #if DEBUG
 enum MacUITestScenario: String {
     case recordingFlow = "recording_flow"
+    case mainView = "main_view"
+    case authFlow = "auth_flow"
 }
 #endif
 
@@ -31,6 +33,26 @@ enum MacTestingMode: Equatable {
     var isRecordingFlow: Bool {
         #if DEBUG
         if case .uiTest(.recordingFlow) = self {
+            return true
+        }
+        #endif
+
+        return false
+    }
+
+    var isMainView: Bool {
+        #if DEBUG
+        if case .uiTest(.mainView) = self {
+            return true
+        }
+        #endif
+
+        return false
+    }
+
+    var isAuthFlow: Bool {
+        #if DEBUG
+        if case .uiTest(.authFlow) = self {
             return true
         }
         #endif

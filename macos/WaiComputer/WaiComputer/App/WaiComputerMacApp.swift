@@ -127,9 +127,13 @@ class MacAppState: ObservableObject {
         apiClient = APIClient(baseURL: baseURL)
 
         #if DEBUG
-        if testingMode.isRecordingFlow {
+        if testingMode.isRecordingFlow || testingMode.isMainView {
             currentUser = MacUITestFixtures.user
             isAuthenticated = true
+            isCheckingAuth = false
+            return
+        }
+        if testingMode.isAuthFlow {
             isCheckingAuth = false
             return
         }
@@ -310,7 +314,7 @@ class MacAppState: ObservableObject {
 
     func uiTestRecordings() -> [Recording]? {
         #if DEBUG
-        guard testingMode.isRecordingFlow else { return nil }
+        guard testingMode.isRecordingFlow || testingMode.isMainView else { return nil }
         return [MacUITestFixtures.recording]
         #else
         return nil
@@ -319,7 +323,8 @@ class MacAppState: ObservableObject {
 
     func uiTestRecordingDetail(id: String) async -> RecordingDetail? {
         #if DEBUG
-        guard testingMode.isRecordingFlow, id == MacUITestFixtures.recording.id else { return nil }
+        guard testingMode.isRecordingFlow || testingMode.isMainView,
+              id == MacUITestFixtures.recording.id else { return nil }
 
         try? await Task.sleep(for: .milliseconds(200))
         return MacUITestFixtures.recordingDetail
