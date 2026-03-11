@@ -223,6 +223,7 @@ struct WaiTabBar<T: Hashable>: View {
                     .fixedSize(horizontal: true, vertical: false)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("tab-\(tab.label.lowercased().replacingOccurrences(of: " ", with: "-"))")
             }
         }
         .padding(.horizontal, Spacing.lg)

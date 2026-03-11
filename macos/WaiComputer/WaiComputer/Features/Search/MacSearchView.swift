@@ -34,6 +34,7 @@ struct MacSearchView: View {
                 .padding(Spacing.md)
                 .background(Palette.surfaceSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("search-bar")
 
                 // Mode tabs (text-based)
                 WaiTabBar(
@@ -67,6 +68,7 @@ struct MacSearchView: View {
                     systemImage: "magnifyingglass",
                     description: Text("Search across all your recording transcripts.")
                 )
+                .accessibilityIdentifier("search-empty-state")
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {

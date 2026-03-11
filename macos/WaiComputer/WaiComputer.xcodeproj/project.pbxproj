@@ -21,6 +21,10 @@
 		51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */; };
 		72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */; };
 		7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */; };
+		A1B2C3D400000001A1B2C3D4 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C400000001F1E2D3C4 /* AuthFlowUITests.swift */; };
+		A1B2C3D400000002A1B2C3D4 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C400000002F1E2D3C4 /* NavigationUITests.swift */; };
+		A1B2C3D400000003A1B2C3D4 /* SearchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C400000003F1E2D3C4 /* SearchUITests.swift */; };
+		A1B2C3D400000004A1B2C3D4 /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C400000004F1E2D3C4 /* LibraryUITests.swift */; };
 		833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */; };
 		83CB01D05304F022D5A2188E /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9FED7AFDFB3BD38C93665B6 /* WaiComputerKit */; };
 		87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 864F5988EFF4C90C1885EAD1 /* Assets.xcassets */; };
@@ -63,6 +67,10 @@
 		B7F2E41D83A9C5067E1DA3F0 /* NewRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
 		D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFlowUITests.swift; sourceTree = "<group>"; };
+		F1E2D3C400000001F1E2D3C4 /* AuthFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowUITests.swift; sourceTree = "<group>"; };
+		F1E2D3C400000002F1E2D3C4 /* NavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationUITests.swift; sourceTree = "<group>"; };
+		F1E2D3C400000003F1E2D3C4 /* SearchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchUITests.swift; sourceTree = "<group>"; };
+		F1E2D3C400000004F1E2D3C4 /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
 		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A60001F1E2D3C4 /* DictationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationManager.swift; sourceTree = "<group>"; };
@@ -114,7 +122,11 @@
 		39076C3E8529DCCFEAEF0385 /* WaiComputerUITests */ = {
 			isa = PBXGroup;
 			children = (
+				F1E2D3C400000001F1E2D3C4 /* AuthFlowUITests.swift */,
+				F1E2D3C400000004F1E2D3C4 /* LibraryUITests.swift */,
+				F1E2D3C400000002F1E2D3C4 /* NavigationUITests.swift */,
 				D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */,
+				F1E2D3C400000003F1E2D3C4 /* SearchUITests.swift */,
 			);
 			path = WaiComputerUITests;
 			sourceTree = "<group>";
@@ -353,7 +365,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D400000001A1B2C3D4 /* AuthFlowUITests.swift in Sources */,
+				A1B2C3D400000004A1B2C3D4 /* LibraryUITests.swift in Sources */,
+				A1B2C3D400000002A1B2C3D4 /* NavigationUITests.swift in Sources */,
 				7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */,
+				A1B2C3D400000003A1B2C3D4 /* SearchUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

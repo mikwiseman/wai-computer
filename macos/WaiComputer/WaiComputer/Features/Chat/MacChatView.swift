@@ -36,6 +36,7 @@ struct MacChatView: View {
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("chat-new-session-button")
             }
             .padding(Spacing.lg)
 
@@ -146,6 +147,7 @@ struct MacChatView: View {
                 .padding(Spacing.md)
                 .background(Palette.surfaceSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityIdentifier("chat-input-field")
 
             Button {
                 sendMessage()
