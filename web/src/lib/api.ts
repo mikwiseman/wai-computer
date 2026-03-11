@@ -31,18 +31,51 @@ function asQuery(params: Record<string, string | number | boolean | undefined | 
   return query ? `?${query}` : "";
 }
 
+function isLocalhostBrowser(): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+}
+
+function syncLocalhostAuthCookie(token: string | null): void {
+  if (!isLocalhostBrowser()) {
+    return;
+  }
+
+  if (!token) {
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+    return;
+  }
+
+  document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+}
+
+async function withLocalhostAuth<T extends TokenResponse>(promise: Promise<T>): Promise<T> {
+  const response = await promise;
+  if (typeof response.access_token === "string" && response.access_token.length > 0) {
+    syncLocalhostAuthCookie(response.access_token);
+  }
+  return response;
+}
+
 export function register(email: string, password: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+  return withLocalhostAuth(
+    apiFetch<TokenResponse>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  );
 }
 
 export function login(email: string, password: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+  return withLocalhostAuth(
+    apiFetch<TokenResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  );
 }
 
 export function requestMagicLink(email: string): Promise<MessageResponse> {
@@ -53,18 +86,22 @@ export function requestMagicLink(email: string): Promise<MessageResponse> {
 }
 
 export function verifyMagicLink(token: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/verify-magic", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  });
+  return withLocalhostAuth(
+    apiFetch<TokenResponse>("/api/auth/verify-magic", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  );
 }
 
 export function refreshToken(): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/refresh", { method: "POST" });
+  return withLocalhostAuth(apiFetch<TokenResponse>("/api/auth/refresh", { method: "POST" }));
 }
 
-export function logout(): Promise<MessageResponse> {
-  return apiFetch<MessageResponse>("/api/auth/logout", { method: "POST" });
+export async function logout(): Promise<MessageResponse> {
+  const response = await apiFetch<MessageResponse>("/api/auth/logout", { method: "POST" });
+  syncLocalhostAuthCookie(null);
+  return response;
 }
 
 export function getCurrentUser(): Promise<User> {
