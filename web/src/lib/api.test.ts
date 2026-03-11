@@ -232,10 +232,13 @@ describe("api client wrappers", () => {
   });
 
   it("calls exportRecording with correct URL and returns blob", async () => {
-    const mockBlob = new Blob(["# Test"], { type: "text/markdown" });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(mockBlob, { status: 200 }),
-    );
+    const mockBlob = new Blob(["# Test"]);
+    const mockResponse = {
+      ok: true,
+      status: 200,
+      blob: vi.fn().mockResolvedValue(mockBlob),
+    } as unknown as Response;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
 
     const result = await api.exportRecording("rec1", "markdown");
 
@@ -249,9 +252,12 @@ describe("api client wrappers", () => {
   });
 
   it("throws on export failure", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response("", { status: 404, statusText: "Not Found" }),
-    );
+    const mockResponse = {
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    } as unknown as Response;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
 
     await expect(api.exportRecording("rec1", "txt")).rejects.toThrow("Export failed: 404 Not Found");
 
