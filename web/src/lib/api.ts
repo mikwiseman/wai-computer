@@ -3,6 +3,7 @@ import type {
   ActionItem,
   ActionPriority,
   ActionStatus,
+  AnalyticsResponse,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -297,6 +298,10 @@ export function deleteChatSession(sessionId: string): Promise<void> {
 
 export function getWeeklyDigest(): Promise<WeeklyDigestResponse> {
   return apiFetch<WeeklyDigestResponse>("/api/recordings/digest/weekly");
+}
+
+export function getRecordingAnalytics(): Promise<AnalyticsResponse> {
+  return apiFetch<AnalyticsResponse>("/api/recordings/analytics");
 }
 
 export async function exportRecording(recordingId: string, format: ExportFormat): Promise<Blob> {

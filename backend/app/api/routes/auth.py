@@ -168,6 +168,7 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     token = generate_magic_link_token()
     user.magic_link_token = token
     user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.flush()
 
     # Send magic link email via Resend
     from app.core.email import send_magic_link_email

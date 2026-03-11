@@ -241,6 +241,24 @@ class UpdateRecordingRequest(BaseModel):
     folder_id: UUID | None = None
 
 
+class WeekCount(BaseModel):
+    """Recording count for a single week."""
+
+    week: str
+    count: int
+
+
+class AnalyticsResponse(BaseModel):
+    """Aggregate recording statistics."""
+
+    total_recordings: int
+    total_duration_seconds: int
+    average_duration_seconds: int
+    total_words: int
+    by_type: dict[str, int]
+    by_week: list[WeekCount]
+
+
 class MessageResponse(BaseModel):
     """Simple message response."""
 
@@ -748,6 +766,60 @@ async def get_weekly_digest(
     )
 
 
+@router.get("/analytics", response_model=AnalyticsResponse)
+async def get_recording_analytics(
+    user: CurrentUser,
+    db: Database,
+) -> AnalyticsResponse:
+    """Return aggregate statistics about the user's recordings."""
+    result = await db.execute(
+        select(Recording)
+        .where(
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+        )
+        .options(selectinload(Recording.segments))
+    )
+    recordings = list(result.scalars().all())
+
+    total_recordings = len(recordings)
+    total_duration = sum(r.duration_seconds or 0 for r in recordings)
+    avg_duration = total_duration // total_recordings if total_recordings > 0 else 0
+
+    # Count words across all segments
+    total_words = 0
+    for r in recordings:
+        for s in r.segments:
+            total_words += len(s.content.split())
+
+    # Type breakdown
+    type_counts: dict[str, int] = defaultdict(int)
+    for r in recordings:
+        type_counts[r.type] += 1
+
+    # Weekly breakdown
+    week_counts: dict[str, int] = defaultdict(int)
+    for r in recordings:
+        # ISO year-week format
+        iso_year, iso_week, _ = r.created_at.isocalendar()
+        week_key = f"{iso_year}-W{iso_week:02d}"
+        week_counts[week_key] += 1
+
+    by_week = [
+        WeekCount(week=w, count=c)
+        for w, c in sorted(week_counts.items())
+    ]
+
+    return AnalyticsResponse(
+        total_recordings=total_recordings,
+        total_duration_seconds=total_duration,
+        average_duration_seconds=avg_duration,
+        total_words=total_words,
+        by_type=dict(type_counts),
+        by_week=by_week,
+    )
+
+
 @router.post("", response_model=RecordingResponse, status_code=status.HTTP_201_CREATED)
 async def create_recording(
     request: CreateRecordingRequest,
@@ -1147,8 +1219,8 @@ async def get_speaker_stats(
 
             if first_spoke_ms is None or start < first_spoke_ms:
                 first_spoke_ms = start
-            if last_spoke_ms is None or start > last_spoke_ms:
-                last_spoke_ms = start
+            if last_spoke_ms is None or end > last_spoke_ms:
+                last_spoke_ms = end
 
         segment_count = len(segs)
         avg_duration = duration_ms // segment_count if segment_count > 0 else 0
@@ -1720,6 +1792,7 @@ async def upload_audio_file(
 
         recording = await _load_recording_detail(recording_id, user_id, db)
         if recording is None:
+            _delete_staged_file(str(staged_path))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Recording disappeared after upload",

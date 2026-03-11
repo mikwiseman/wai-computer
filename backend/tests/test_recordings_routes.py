@@ -797,3 +797,273 @@ async def test_resaving_transcript_replaces_segments_summary_and_generated_actio
     assert [segment["content"] for segment in data["segments"]] == ["Second save"]
     assert data["summary"] is None
     assert [item["task"] for item in data["action_items"]] == ["Manual action"]
+
+
+# ---- PATCH recording endpoint tests ----
+
+
+@pytest.mark.asyncio
+async def test_update_recording_title(client: AsyncClient, auth_headers: dict):
+    """PATCH should update the recording title."""
+    recording = await _create_recording(client, auth_headers, title="Old Title")
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"title": "New Title"},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] == "New Title"
+
+    detail = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+    assert detail.json()["title"] == "New Title"
+
+
+@pytest.mark.asyncio
+async def test_update_recording_type(client: AsyncClient, auth_headers: dict):
+    """PATCH should update the recording type."""
+    recording = await _create_recording(client, auth_headers, type_="note")
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"type": "meeting"},
+    )
+    assert response.status_code == 200
+    assert response.json()["type"] == "meeting"
+
+
+@pytest.mark.asyncio
+async def test_update_recording_nonexistent_returns_404(client: AsyncClient, auth_headers: dict):
+    """PATCH on nonexistent recording should return 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.patch(
+        f"/api/recordings/{fake_id}",
+        headers=auth_headers,
+        json={"title": "Nope"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_recording_folder_id(client: AsyncClient, auth_headers: dict):
+    """PATCH should move recording to a folder."""
+    folder_resp = await client.post(
+        "/api/folders", headers=auth_headers, json={"name": "Work"}
+    )
+    assert folder_resp.status_code == 201
+    folder_id = folder_resp.json()["id"]
+
+    recording = await _create_recording(client, auth_headers)
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"folder_id": folder_id},
+    )
+    assert response.status_code == 200
+    assert response.json()["folder_id"] == folder_id
+
+    # Clear folder_id
+    clear_response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"folder_id": None},
+    )
+    assert clear_response.status_code == 200
+    assert clear_response.json()["folder_id"] is None
+
+
+# ---- Export endpoint tests ----
+
+
+@pytest.mark.asyncio
+async def test_export_recording_markdown(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Export as markdown should return a markdown file."""
+    recording = await _create_recording(client, auth_headers, title="Export Test")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Hello from the test",
+            start_ms=0,
+            end_ms=2000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording_id}/export",
+        headers=auth_headers,
+        params={"format": "markdown"},
+    )
+    assert response.status_code == 200
+    assert "text/markdown" in response.headers["content-type"]
+    assert "Export_Test.md" in response.headers["content-disposition"]
+    assert "Hello from the test" in response.text
+
+
+@pytest.mark.asyncio
+async def test_export_recording_txt(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Export as txt should return plain text."""
+    recording = await _create_recording(client, auth_headers, title="Text Export")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Plain text content",
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.9,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording_id}/export",
+        headers=auth_headers,
+        params={"format": "txt"},
+    )
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "Text_Export.txt" in response.headers["content-disposition"]
+    assert "Plain text content" in response.text
+
+
+@pytest.mark.asyncio
+async def test_export_recording_srt(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Export as SRT should return subtitle format."""
+    recording = await _create_recording(client, auth_headers, title="SRT Export")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Subtitle line one",
+            start_ms=0,
+            end_ms=2000,
+            confidence=0.9,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording_id}/export",
+        headers=auth_headers,
+        params={"format": "srt"},
+    )
+    assert response.status_code == 200
+    assert "text/srt" in response.headers["content-type"]
+    assert "SRT_Export.srt" in response.headers["content-disposition"]
+    assert "Subtitle line one" in response.text
+    assert "00:00:00,000" in response.text
+
+
+@pytest.mark.asyncio
+async def test_export_nonexistent_recording_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Export for nonexistent recording returns 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.get(
+        f"/api/recordings/{fake_id}/export",
+        headers=auth_headers,
+        params={"format": "markdown"},
+    )
+    assert response.status_code == 404
+
+
+# ---- Related recordings endpoint tests ----
+
+
+@pytest.mark.asyncio
+async def test_related_recordings_returns_empty_when_no_embeddings(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Related recordings should return empty list when no embeddings exist."""
+    recording = await _create_recording(client, auth_headers, title="No Embeddings")
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/related",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["recording_id"] == recording["id"]
+    assert data["related"] == []
+
+
+@pytest.mark.asyncio
+async def test_related_recordings_nonexistent_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Related recordings for nonexistent recording returns 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.get(
+        f"/api/recordings/{fake_id}/related",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_related_recordings_auth_required(client: AsyncClient):
+    """Related recordings should require authentication."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.get(f"/api/recordings/{fake_id}/related")
+    assert response.status_code == 401
+
+
+# ---- Additional recording edge case tests ----
+
+
+@pytest.mark.asyncio
+async def test_get_recording_detail_not_found(client: AsyncClient, auth_headers: dict):
+    """GET detail for nonexistent recording returns 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.get(f"/api/recordings/{fake_id}", headers=auth_headers)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_recording_with_null_title(client: AsyncClient, auth_headers: dict):
+    """Creating a recording with null title should succeed."""
+    response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={"title": None, "type": "note", "language": "en"},
+    )
+    assert response.status_code == 201
+    assert response.json()["title"] is None
+
+
+@pytest.mark.asyncio
+async def test_restore_nonexistent_recording_returns_404(client: AsyncClient, auth_headers: dict):
+    """Restoring a nonexistent recording returns 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.post(
+        f"/api/recordings/{fake_id}/restore",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404

@@ -231,6 +231,11 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/digest/weekly");
   });
 
+  it("calls getRecordingAnalytics", async () => {
+    await api.getRecordingAnalytics();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/analytics");
+  });
+
   it("calls exportRecording with correct URL and returns blob", async () => {
     const mockBlob = new Blob(["# Test"]);
     const mockResponse = {
