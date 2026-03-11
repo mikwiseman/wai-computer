@@ -161,3 +161,39 @@ async def test_update_action_item_allows_clearing_nullable_fields(
     payload = response.json()
     assert payload["owner"] is None
     assert payload["due_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_action_item_nonexistent_returns_404(
+    client: AsyncClient,
+):
+    """Updating a nonexistent action item should return 404."""
+    headers = await _register(client, "action.noitem@example.com")
+    fake_uuid = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.patch(
+        f"/api/action-items/{fake_uuid}",
+        headers=headers,
+        json={"status": "completed"},
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_action_item_other_user_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Updating another user's action item should return 404."""
+    await _register(client, "action.owner2@example.com")
+    intruder_headers = await _register(client, "action.intruder@example.com")
+    item = await _seed_action_item(db_session, "action.owner2@example.com", "Private task")
+
+    response = await client.patch(
+        f"/api/action-items/{item.id}",
+        headers=intruder_headers,
+        json={"status": "completed"},
+    )
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()

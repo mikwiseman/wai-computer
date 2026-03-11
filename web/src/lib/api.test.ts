@@ -186,4 +186,42 @@ describe("api client wrappers", () => {
       }),
     });
   });
+
+  it("calls getSpeakerStats", async () => {
+    await api.getSpeakerStats("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/speaker-stats");
+  });
+
+  it("calls getRelatedRecordings with default limit", async () => {
+    await api.getRelatedRecordings("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/related");
+  });
+
+  it("calls getRelatedRecordings with explicit limit", async () => {
+    await api.getRelatedRecordings("rec1", 5);
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/related?limit=5");
+  });
+
+  it("calls chat endpoints", async () => {
+    await api.sendChatMessage({ question: "What happened?", session_id: "s1", recording_ids: ["r1"] });
+    await api.listChatSessions();
+    await api.getChatSession("s1");
+    await api.deleteChatSession("s1");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ question: "What happened?", session_id: "s1", recording_ids: ["r1"] }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/chat/sessions");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/chat/sessions/s1");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/chat/sessions/s1", { method: "DELETE" });
+  });
+
+  it("applies sendChatMessage defaults for optional fields", async () => {
+    await api.sendChatMessage({ question: "Hello" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ question: "Hello", session_id: null, recording_ids: null }),
+    });
+  });
 });

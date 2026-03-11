@@ -72,6 +72,45 @@ async def test_login_invalid_password(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_short_password(client: AsyncClient):
+    """Test registration with a password shorter than 8 characters is rejected."""
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": "short@example.com", "password": "abc"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_login_nonexistent_user(client: AsyncClient):
+    """Test login with email that doesn't exist returns 401."""
+    response = await client.post(
+        "/api/auth/login",
+        json={"email": "nobody@example.com", "password": "password123"},
+    )
+    assert response.status_code == 401
+    assert "Invalid email or password" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_me_endpoint_returns_user(client: AsyncClient):
+    """Test GET /api/auth/me returns full user data with valid token."""
+    reg_response = await client.post(
+        "/api/auth/register",
+        json={"email": "medata@example.com", "password": "password123"},
+    )
+    token = reg_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.get("/api/auth/me", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "medata@example.com"
+    assert "id" in data
+    assert "created_at" in data
+
+
+@pytest.mark.asyncio
 async def test_me(client: AsyncClient, auth_headers: dict):
     """Test getting current user info."""
     response = await client.get("/api/auth/me", headers=auth_headers)
