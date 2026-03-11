@@ -1,6 +1,7 @@
 """Recording CRUD routes."""
 
 import logging
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -74,6 +75,38 @@ class HighlightResponse(BaseModel):
     start_ms: int | None
     end_ms: int | None
     importance: str
+
+
+class SpeakerStatResponse(BaseModel):
+    """Per-speaker statistics."""
+
+    name: str
+    total_duration_ms: int
+    percentage: float
+    segment_count: int
+    avg_segment_duration_ms: int
+    word_count: int
+    words_per_minute: float
+    first_spoke_ms: int
+    last_spoke_ms: int
+
+
+class TimelineEntry(BaseModel):
+    """A single timeline entry."""
+
+    speaker: str
+    start_ms: int
+    end_ms: int
+
+
+class SpeakerStatsResponse(BaseModel):
+    """Full speaker stats response."""
+
+    recording_id: str
+    total_duration_ms: int
+    total_speakers: int
+    speakers: list[SpeakerStatResponse]
+    timeline: list[TimelineEntry]
 
 
 class RecordingResponse(BaseModel):
@@ -656,6 +689,108 @@ async def get_transcript(
         )
         for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
     ]
+
+
+@router.get("/{recording_id}/speaker-stats", response_model=SpeakerStatsResponse)
+async def get_speaker_stats(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SpeakerStatsResponse:
+    """Compute speaking statistics from transcript segments."""
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(selectinload(Recording.segments))
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
+
+    if not segments:
+        return SpeakerStatsResponse(
+            recording_id=str(recording.id),
+            total_duration_ms=0,
+            total_speakers=0,
+            speakers=[],
+            timeline=[],
+        )
+
+    # Group segments by speaker
+    speaker_segments: dict[str, list[Segment]] = defaultdict(list)
+    for seg in segments:
+        name = seg.speaker or "Unknown"
+        speaker_segments[name].append(seg)
+
+    # Compute total duration from segment spans
+    total_duration_ms = 0
+    for seg in segments:
+        start = seg.start_ms or 0
+        end = seg.end_ms or 0
+        total_duration_ms = max(total_duration_ms, end)
+
+    # Build per-speaker stats
+    speaker_stats: list[SpeakerStatResponse] = []
+    for name, segs in speaker_segments.items():
+        duration_ms = 0
+        word_count = 0
+        first_spoke_ms = None
+        last_spoke_ms = None
+
+        for seg in segs:
+            start = seg.start_ms or 0
+            end = seg.end_ms or 0
+            duration_ms += max(0, end - start)
+            word_count += len(seg.content.split())
+
+            if first_spoke_ms is None or start < first_spoke_ms:
+                first_spoke_ms = start
+            if last_spoke_ms is None or start > last_spoke_ms:
+                last_spoke_ms = start
+
+        segment_count = len(segs)
+        avg_duration = duration_ms // segment_count if segment_count > 0 else 0
+        percentage = (duration_ms / total_duration_ms * 100) if total_duration_ms > 0 else 0.0
+        duration_minutes = duration_ms / 60000
+        wpm = word_count / duration_minutes if duration_minutes > 0 else 0.0
+
+        speaker_stats.append(
+            SpeakerStatResponse(
+                name=name,
+                total_duration_ms=duration_ms,
+                percentage=round(percentage, 1),
+                segment_count=segment_count,
+                avg_segment_duration_ms=avg_duration,
+                word_count=word_count,
+                words_per_minute=round(wpm, 1),
+                first_spoke_ms=first_spoke_ms or 0,
+                last_spoke_ms=last_spoke_ms or 0,
+            )
+        )
+
+    # Sort by duration descending, then name ascending for ties
+    speaker_stats.sort(key=lambda s: (-s.total_duration_ms, s.name))
+
+    # Build timeline from segments
+    timeline = [
+        TimelineEntry(
+            speaker=seg.speaker or "Unknown",
+            start_ms=seg.start_ms or 0,
+            end_ms=seg.end_ms or 0,
+        )
+        for seg in segments
+    ]
+
+    return SpeakerStatsResponse(
+        recording_id=str(recording.id),
+        total_duration_ms=total_duration_ms,
+        total_speakers=len(speaker_stats),
+        speakers=speaker_stats,
+        timeline=timeline,
+    )
 
 
 @router.post("/{recording_id}/transcript", response_model=RecordingDetailResponse)
