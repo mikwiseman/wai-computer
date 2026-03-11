@@ -101,6 +101,14 @@ struct RecordingRowView: View {
                         .foregroundStyle(Palette.textSecondary)
                 }
             }
+
+            if let failurePreviewText = recording.failurePreviewText,
+               recording.isFailedUpload {
+                Text(failurePreviewText)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
         }
         .padding(.vertical, Spacing.sm)
     }

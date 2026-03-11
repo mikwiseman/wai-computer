@@ -388,6 +388,29 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(detail.segments.count, 1)
     }
 
+    func testCleanupDictationUsesCleanupEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/dictation/cleanup")
+            XCTAssertEqual(request.timeoutInterval, 60)
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["text"] as? String, "raw dictated text")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("{\"text\":\"Cleaned\"}".utf8))
+        }
+
+        let text = try await client.cleanupDictation(text: "raw dictated text")
+        XCTAssertEqual(text, "Cleaned")
+    }
+
     func testDeleteRecordingUsesDeleteMethod() async throws {
         let client = makeClient()
 

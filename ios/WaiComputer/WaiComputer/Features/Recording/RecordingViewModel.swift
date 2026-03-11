@@ -181,18 +181,13 @@ class RecordingViewModel: ObservableObject {
         audioTask = nil
         _ = await sendingTask?.result
 
-        // Send end signal to Deepgram
-        do {
-            try await webSocketManager?.sendEnd()
-        } catch {
-            print("Failed to send end signal: \(error)")
-        }
+        let didFinalize = await finishStreaming(webSocketManager)
 
-        // Brief wait for final transcripts
-        try? await Task.sleep(for: .seconds(2))
-
-        // Collect final segments
-        let segments = await webSocketManager?.collectedSegments ?? []
+        // Collect final segments, preserving the final interim phrase if Deepgram never finalized it.
+        let segments = finalizedSegments(
+            from: await webSocketManager?.collectedSegments ?? [],
+            didFinalize: didFinalize
+        )
 
         // Now cancel transcript task and disconnect
         transcriptTask?.cancel()
@@ -297,6 +292,33 @@ class RecordingViewModel: ObservableObject {
             .joined(separator: " ")
     }
 
+    private func finalizedSegments(
+        from segments: [LiveTranscriptSegment],
+        didFinalize: Bool
+    ) -> [LiveTranscriptSegment] {
+        let trimmedInterim = interimText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInterim.isEmpty else { return segments }
+        guard !didFinalize || segments.isEmpty else { return segments }
+
+        if let last = segments.last,
+           last.text.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedInterim {
+            return segments
+        }
+
+        let fallbackStart = max(segments.last?.endMs ?? 0, Int(max(duration, 0) * 1000) - 1_000)
+        let fallbackEnd = max(fallbackStart, Int(max(duration, 0) * 1000))
+        return segments + [
+            LiveTranscriptSegment(
+                text: trimmedInterim,
+                speaker: nil,
+                isFinal: true,
+                startMs: fallbackStart,
+                endMs: fallbackEnd,
+                confidence: 0
+            )
+        ]
+    }
+
     private func recoverServerTranscript(
         recordingId: String,
         client: APIClient
@@ -306,6 +328,16 @@ class RecordingViewModel: ObservableObject {
             return detail
         }
         return nil
+    }
+
+    private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {
+        guard let manager else { return true }
+        do {
+            return try await manager.finishStreaming(timeout: .seconds(5))
+        } catch {
+            print("Failed to finalize Deepgram stream: \(error)")
+            return false
+        }
     }
 
     private func startTimer() {
@@ -354,7 +386,10 @@ class RecordingViewModel: ObservableObject {
         setPhase(.finalizing)
 
         if let recordingId = currentRecordingId {
-            let segments = await webSocketManager?.collectedSegments ?? []
+            let segments = finalizedSegments(
+                from: await webSocketManager?.collectedSegments ?? [],
+                didFinalize: false
+            )
             let backup = try? saveTranscriptBackup(
                 recordingId: recordingId,
                 segments: segments

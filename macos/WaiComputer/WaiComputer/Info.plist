@@ -17,7 +17,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>WaiComputer needs microphone access to record meetings and notes.</string>
+	<string>WaiComputer needs microphone access to record meetings, notes, and live dictation.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>WaiComputer needs audio capture access to record system audio from meetings and calls.</string>
 	<key>CFBundleVersion</key>

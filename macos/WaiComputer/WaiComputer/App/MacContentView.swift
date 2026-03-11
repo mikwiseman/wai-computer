@@ -1040,8 +1040,10 @@ struct MacAuthView: View {
 
 #Preview {
     let recordingViewModel = MacRecordingViewModel()
-    let appState = MacAppState(recordingViewModel: recordingViewModel)
+    let dictation = DictationManager()
+    let appState = MacAppState(recordingViewModel: recordingViewModel, dictationManager: dictation)
     MacContentView()
         .environmentObject(appState)
         .environmentObject(recordingViewModel)
+        .environmentObject(dictation)
 }

@@ -179,7 +179,8 @@ public actor APIClient {
         _ method: HTTPMethod,
         path: String,
         body: (any Encodable)? = nil,
-        queryItems: [URLQueryItem]? = nil
+        queryItems: [URLQueryItem]? = nil,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> T {
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
         urlComponents?.queryItems = queryItems
@@ -191,6 +192,9 @@ public actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
 
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -226,7 +230,8 @@ public actor APIClient {
         _ method: HTTPMethod,
         path: String,
         body: (any Encodable)? = nil,
-        queryItems: [URLQueryItem]? = nil
+        queryItems: [URLQueryItem]? = nil,
+        timeoutInterval: TimeInterval? = nil
     ) async throws {
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
         urlComponents?.queryItems = queryItems
@@ -238,6 +243,9 @@ public actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
 
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -437,6 +445,24 @@ public actor APIClient {
 
     public func deleteChatSession(id: String) async throws {
         try await requestNoContent(.DELETE, path: "/api/chat/sessions/\(id)")
+    }
+
+    // MARK: - Dictation Endpoints
+
+    public func cleanupDictation(text: String) async throws -> String {
+        struct CleanupRequest: Encodable {
+            let text: String
+        }
+        struct CleanupResponse: Decodable {
+            let text: String
+        }
+        let response: CleanupResponse = try await request(
+            .POST,
+            path: "/api/dictation/cleanup",
+            body: CleanupRequest(text: text),
+            timeoutInterval: 60
+        )
+        return response.text
     }
 
     // MARK: - Entity Endpoints

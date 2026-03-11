@@ -356,10 +356,11 @@ class MacRecordingViewModel: ObservableObject {
             await capture?.stopRecording()
             _ = await sendingTask?.result
 
-            try? await ws?.sendEnd()
-
-            try? await Task.sleep(for: .seconds(2))
+            let didFinalize = await self.finishStreaming(ws)
             let segments = await ws?.collectedSegments ?? []
+            let finalizedSegments = await MainActor.run {
+                self.finalizedSegments(from: segments, didFinalize: didFinalize)
+            }
 
             tTask?.cancel()
             await ws?.disconnect()
@@ -371,7 +372,7 @@ class MacRecordingViewModel: ObservableObject {
                     NSLog("[Recording] Saving %d transcript segments for recording %@", segments.count, recordingId)
                     let detail = try await client.saveLiveTranscript(
                         recordingId: recordingId,
-                        segments: segments,
+                        segments: finalizedSegments,
                         durationSeconds: Int(recordingDuration.rounded())
                     )
                     transcriptSaved = detail.status != .failed
@@ -402,7 +403,7 @@ class MacRecordingViewModel: ObservableObject {
                         }
                     } else {
                         let backup = try? await MainActor.run {
-                            try self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
+                            try self.saveTranscriptBackup(recordingId: recordingId, segments: finalizedSegments)
                         }
                         _ = try? RecordingBackupStore.recordSaveFailure(
                             recordingId: recordingId,
@@ -495,6 +496,34 @@ class MacRecordingViewModel: ObservableObject {
             return detail
         }
         return nil
+    }
+
+    private func finalizedSegments(
+        from segments: [LiveTranscriptSegment],
+        didFinalize: Bool
+    ) -> [LiveTranscriptSegment] {
+        let trimmedInterim = interimText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedInterim.isEmpty else { return segments }
+        guard !didFinalize || segments.isEmpty else { return segments }
+
+        if let last = segments.last,
+           last.text.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedInterim,
+           last.speaker == interimSpeaker {
+            return segments
+        }
+
+        let fallbackStart = max(segments.last?.endMs ?? 0, Int(max(duration, 0) * 1000) - 1_000)
+        let fallbackEnd = max(fallbackStart, Int(max(duration, 0) * 1000))
+        return segments + [
+            LiveTranscriptSegment(
+                text: trimmedInterim,
+                speaker: interimSpeaker,
+                isFinal: true,
+                startMs: fallbackStart,
+                endMs: fallbackEnd,
+                confidence: 0
+            )
+        ]
     }
 
     private func startTimer() {
@@ -636,7 +665,10 @@ class MacRecordingViewModel: ObservableObject {
         setPhase(.finalizing)
 
         if let recordingId = currentRecordingId {
-            let segments = await webSocketManager?.collectedSegments ?? []
+            let segments = finalizedSegments(
+                from: await webSocketManager?.collectedSegments ?? [],
+                didFinalize: false
+            )
             let backupMessage = "Recording connection failed. A local transcript backup was saved on this Mac."
             let backup = try? saveTranscriptBackup(
                 recordingId: recordingId,
@@ -679,6 +711,16 @@ class MacRecordingViewModel: ObservableObject {
         isCleaningUp = false
         recordingInputSource = .dual
         setPhase(.idle)
+    }
+
+    private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {
+        guard let manager else { return true }
+        do {
+            return try await manager.finishStreaming(timeout: .seconds(5))
+        } catch {
+            audioLog.error("Failed to finalize Deepgram stream: \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func makeAudioCapture(

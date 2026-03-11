@@ -247,6 +247,31 @@ async def _mark_recording_failed(
     await db.commit()
 
 
+async def _mark_recording_failed_by_id(
+    recording_id: UUID,
+    db: Database,
+    failure_code: str,
+    failure_message: str,
+) -> None:
+    result = await db.execute(select(Recording).where(Recording.id == recording_id))
+    recording = result.scalar_one_or_none()
+    if recording is None:
+        return
+    await _mark_recording_failed(recording, db, failure_code, failure_message)
+
+
+def _transcript_failure_details(error: HTTPException) -> tuple[str, str]:
+    detail = str(error.detail) if error.detail is not None else "Failed to save transcript"
+    normalized_detail = _normalize_failure_message(detail, "Failed to save transcript")
+    is_empty_transcript = (
+        error.status_code == status.HTTP_400_BAD_REQUEST
+        and normalized_detail == "Transcript is empty"
+    )
+    if is_empty_transcript:
+        return "transcript_empty", normalized_detail
+    return "transcript_validation_failed", normalized_detail
+
+
 async def _reset_recording_processing_state(recording_id: UUID, db: Database) -> None:
     """Replace transcript-derived data on re-upload instead of appending."""
     await db.execute(
@@ -617,15 +642,40 @@ async def save_transcript(
             request.segments,
             duration_seconds=request.duration_seconds,
         )
-    except HTTPException:
+    except HTTPException as error:
         await db.rollback()
+        try:
+            failure_code, failure_message = _transcript_failure_details(error)
+            await _mark_recording_failed_by_id(
+                recording_id,
+                db,
+                failure_code,
+                failure_message,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to mark recording %s as failed after transcript validation error",
+                recording_id,
+            )
         raise
     except Exception as error:
         logger.exception("Failed to save transcript for recording %s", recording_id)
         await db.rollback()
+        try:
+            await _mark_recording_failed_by_id(
+                recording_id,
+                db,
+                "transcript_save_failed",
+                _normalize_failure_message(error, "Failed to save transcript"),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to mark recording %s as failed after transcript save error",
+                recording_id,
+            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=_normalize_failure_message(error, "Failed to save transcript"),
+            detail="Failed to save transcript",
         ) from error
 
     db.expire_all()
