@@ -11,6 +11,7 @@ const mockedApiFetch = vi.mocked(apiFetch);
 beforeEach(() => {
   mockedApiFetch.mockReset();
   mockedApiFetch.mockResolvedValue({} as never);
+  document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
 });
 
 describe("api client wrappers", () => {
@@ -52,6 +53,25 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/auth/refresh", { method: "POST" });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/auth/logout", { method: "POST" });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/auth/me");
+  });
+
+  it("mirrors auth tokens into the localhost cookie", async () => {
+    mockedApiFetch.mockResolvedValueOnce({
+      access_token: "local-token",
+      token_type: "bearer",
+    } as never);
+
+    await api.login("a@example.com", "p");
+
+    expect(document.cookie).toContain("wai_access_token=local-token");
+  });
+
+  it("clears the localhost cookie on logout", async () => {
+    document.cookie = "wai_access_token=local-token; Path=/; SameSite=Lax";
+
+    await api.logout();
+
+    expect(document.cookie).not.toContain("wai_access_token=local-token");
   });
 
   it("builds recording list query params", async () => {

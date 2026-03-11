@@ -16,7 +16,12 @@ describe("getApiBaseUrl", () => {
 
   it("returns default API base URL", () => {
     delete process.env.NEXT_PUBLIC_API_BASE_URL;
-    expect(getApiBaseUrl()).toBe("https://api.wai.computer");
+    expect(getApiBaseUrl()).toBe("");
+  });
+
+  it("preserves empty API base URL for same-origin proxy mode", () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "";
+    expect(getApiBaseUrl()).toBe("");
   });
 });
 
