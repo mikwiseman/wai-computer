@@ -32,6 +32,7 @@ struct MacSettingsView: View {
             } header: {
                 Text("Account")
                     .waiSectionHeader()
+                    .accessibilityIdentifier("settings-account-header")
             }
 
             Section {
@@ -44,6 +45,7 @@ struct MacSettingsView: View {
             } header: {
                 Text("Transcription")
                     .waiSectionHeader()
+                    .accessibilityIdentifier("settings-transcription-header")
             }
 
             // MARK: - Dictation Settings
@@ -112,6 +114,7 @@ struct MacSettingsView: View {
             } header: {
                 Text("About")
                     .waiSectionHeader()
+                    .accessibilityIdentifier("settings-about-header")
             }
 
             Section {
@@ -120,6 +123,7 @@ struct MacSettingsView: View {
                 }
                 .font(Typography.body)
                 .foregroundStyle(Palette.textSecondary)
+                .accessibilityIdentifier("settings-sign-out-button")
             }
         }
         .formStyle(.grouped)
