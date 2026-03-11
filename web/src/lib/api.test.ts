@@ -236,6 +236,20 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/analytics");
   });
 
+  it("calls searchTranscript", async () => {
+    await api.searchTranscript("rec1", "roadmap", 10);
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/recordings/rec1/transcript/search?q=roadmap&limit=10",
+    );
+  });
+
+  it("calls searchTranscript without limit", async () => {
+    await api.searchTranscript("rec1", "meeting");
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/recordings/rec1/transcript/search?q=meeting",
+    );
+  });
+
   it("calls exportRecording with correct URL and returns blob", async () => {
     const mockBlob = new Blob(["# Test"]);
     const mockResponse = {

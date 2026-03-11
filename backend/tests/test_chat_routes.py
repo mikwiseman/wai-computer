@@ -235,3 +235,43 @@ async def test_send_chat_message_rejects_empty_question(
         json={"question": ""},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_chat_sessions_empty(client: AsyncClient, db_session: AsyncSession):
+    """User with no chat sessions should get an empty list."""
+    headers, _ = await _register(client, "chat.route.empty@example.com")
+    response = await client.get("/api/chat/sessions", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_get_chat_session_with_no_messages(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Session with no messages should return empty messages array."""
+    headers, token = await _register(client, "chat.route.nomsg@example.com")
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(user_id=user.id, title="Empty Session", recording_ids=None)
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.get(f"/api/chat/sessions/{session.id}", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Empty Session"
+    assert data["messages"] == []
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_chat_session_returns_404(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Deleting a nonexistent session should return 404."""
+    headers, _ = await _register(client, "chat.route.delnone@example.com")
+    fake_id = str(uuid4())
+    response = await client.delete(f"/api/chat/sessions/{fake_id}", headers=headers)
+    assert response.status_code == 404

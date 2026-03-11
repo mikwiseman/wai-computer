@@ -53,6 +53,7 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
     private let config: AudioCaptureConfig
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
 
     private var _isRecording = false
@@ -60,6 +61,8 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
+        self.continuationLock = .allocate(capacity: 1)
+        self.continuationLock.initialize(to: os_unfair_lock())
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         self.audioBuffers = stream
         self.bufferContinuation = continuation
@@ -161,7 +164,9 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
                 micLog.warning("[Mic] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz → \(outFrames)@\(targetSR)Hz")
             }
 
+            os_unfair_lock_lock(self.continuationLock)
             self.bufferContinuation?.yield(outBuffer)
+            os_unfair_lock_unlock(self.continuationLock)
         }
 
         micLog.warning("[Mic] Starting engine...")
@@ -175,8 +180,15 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         _isRecording = false
+        os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
+        os_unfair_lock_unlock(continuationLock)
         setupBufferStream()
+    }
+
+    deinit {
+        continuationLock.deinitialize(count: 1)
+        continuationLock.deallocate()
     }
 }
 

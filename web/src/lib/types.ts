@@ -254,6 +254,22 @@ export interface AnalyticsResponse {
   by_week: WeekCount[];
 }
 
+export interface TranscriptSearchMatch {
+  segment_id: string;
+  speaker: string | null;
+  content: string;
+  start_ms: number | null;
+  end_ms: number | null;
+  match_count: number;
+}
+
+export interface TranscriptSearchResponse {
+  recording_id: string;
+  query: string;
+  total_matches: number;
+  segments: TranscriptSearchMatch[];
+}
+
 export interface WeeklyDigestResponse {
   period_start: string;
   period_end: string;
