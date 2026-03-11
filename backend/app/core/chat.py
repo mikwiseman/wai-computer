@@ -251,17 +251,17 @@ async def chat_with_recordings(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
-        )
+        ) from None
     except anthropic.RateLimitError:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
-        )
-    except anthropic.APIStatusError as e:
+        ) from None
+    except anthropic.APIStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI service error: {e.message}",
-        )
+            detail=f"AI service error: {exc.message}",
+        ) from exc
 
     # Build source segments
     source_segments = [

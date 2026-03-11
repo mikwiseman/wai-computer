@@ -15,6 +15,9 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     private let config: AudioCaptureConfig
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    /// Lock protecting `bufferContinuation` from concurrent access between the
+    /// real-time audio IO proc thread and the main/caller thread.
+    private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
 
     private var _isCapturing = false
@@ -27,6 +30,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
+        self.continuationLock = .allocate(capacity: 1)
+        self.continuationLock.initialize(to: os_unfair_lock())
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         self.audioBuffers = stream
         self.bufferContinuation = continuation
@@ -37,7 +42,9 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     private func setupBufferStream() {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         audioBuffers = stream
+        os_unfair_lock_lock(continuationLock)
         bufferContinuation = continuation
+        os_unfair_lock_unlock(continuationLock)
     }
 
     /// Start capturing system audio.
@@ -224,7 +231,9 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz -> \(outFrames)@\(targetSR)Hz")
             }
 
+            os_unfair_lock_lock(self.continuationLock)
             self.bufferContinuation?.yield(outBuffer)
+            os_unfair_lock_unlock(self.continuationLock)
         }
         guard status == noErr, let validProcID = procID else {
             destroyAggregateDevice()
@@ -262,7 +271,10 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         destroyTap()
 
         _isCapturing = false
+        os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
+        bufferContinuation = nil
+        os_unfair_lock_unlock(continuationLock)
         setupBufferStream()
 
         sysLog.warning("[SysAudio] System audio capture stopped")
@@ -295,6 +307,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         if _isCapturing {
             stopCapture()
         }
+        continuationLock.deinitialize(count: 1)
+        continuationLock.deallocate()
     }
 
     public func startRecording() async throws {
