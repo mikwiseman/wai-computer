@@ -14,6 +14,7 @@ import type {
   RecordingDetail,
   RecordingType,
   SearchResponse,
+  SpeakerStatsResponse,
   Summary,
   TokenResponse,
   User,
@@ -153,6 +154,10 @@ export function updateRecording(
 
 export function deleteRecording(recordingId: string): Promise<void> {
   return apiFetch<void>(`/api/recordings/${recordingId}`, { method: "DELETE" });
+}
+
+export function getSpeakerStats(recordingId: string): Promise<SpeakerStatsResponse> {
+  return apiFetch<SpeakerStatsResponse>(`/api/recordings/${recordingId}/speaker-stats`);
 }
 
 export function getSummary(recordingId: string): Promise<Summary> {

@@ -86,6 +86,32 @@ export interface RecordingDetail extends Recording {
   highlights: Highlight[];
 }
 
+export interface SpeakerStat {
+  name: string;
+  total_duration_ms: number;
+  percentage: number;
+  segment_count: number;
+  avg_segment_duration_ms: number;
+  word_count: number;
+  words_per_minute: number;
+  first_spoke_ms: number;
+  last_spoke_ms: number;
+}
+
+export interface SpeakerTimelineEntry {
+  speaker: string;
+  start_ms: number;
+  end_ms: number;
+}
+
+export interface SpeakerStatsResponse {
+  recording_id: string;
+  total_duration_ms: number;
+  total_speakers: number;
+  speakers: SpeakerStat[];
+  timeline: SpeakerTimelineEntry[];
+}
+
 export interface SearchResult {
   recording_id: string;
   recording_title: string | null;
