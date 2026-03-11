@@ -16,7 +16,8 @@ from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
 from app.core.storage import get_storage_client
-from app.core.summarizer import generate_title, summarize_transcript
+from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
+from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, RecordingStatus, Segment, Summary
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,20 @@ class ActionItemResponse(BaseModel):
     created_at: str
 
 
+class HighlightResponse(BaseModel):
+    """Response for a recording highlight / key moment."""
+
+    id: str
+    recording_id: str
+    category: str
+    title: str
+    description: str | None
+    speaker: str | None
+    start_ms: int | None
+    end_ms: int | None
+    importance: str
+
+
 class RecordingResponse(BaseModel):
     """Response for a recording."""
 
@@ -85,6 +100,7 @@ class RecordingDetailResponse(RecordingResponse):
     segments: list[SegmentResponse]
     summary: SummaryResponse | None
     action_items: list[ActionItemResponse]
+    highlights: list[HighlightResponse]
 
 
 class CreateRecordingRequest(BaseModel):
@@ -164,6 +180,20 @@ def _serialize_action_item(action_item: ActionItem) -> ActionItemResponse:
     )
 
 
+def _serialize_highlight(highlight: Highlight) -> HighlightResponse:
+    return HighlightResponse(
+        id=str(highlight.id),
+        recording_id=str(highlight.recording_id),
+        category=highlight.category,
+        title=highlight.title,
+        description=highlight.description,
+        speaker=highlight.speaker,
+        start_ms=highlight.start_ms,
+        end_ms=highlight.end_ms,
+        importance=highlight.importance,
+    )
+
+
 def _serialize_recording(recording: Recording) -> RecordingResponse:
     return RecordingResponse(
         id=str(recording.id),
@@ -198,6 +228,7 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
         ],
         summary=_serialize_summary(recording.summary),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
+        highlights=[_serialize_highlight(h) for h in recording.highlights],
     )
 
 
@@ -230,7 +261,9 @@ async def _load_recording_detail(
             selectinload(Recording.segments),
             selectinload(Recording.summary),
             selectinload(Recording.action_items),
+            selectinload(Recording.highlights),
         )
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -280,6 +313,7 @@ async def _reset_recording_processing_state(recording_id: UUID, db: Database) ->
             ActionItem.source == "generated",
         )
     )
+    await db.execute(delete(Highlight).where(Highlight.recording_id == recording_id))
     await db.execute(delete(Summary).where(Summary.recording_id == recording_id))
     await db.execute(delete(Segment).where(Segment.recording_id == recording_id))
 
@@ -505,7 +539,9 @@ async def get_recording(
             selectinload(Recording.segments),
             selectinload(Recording.summary),
             selectinload(Recording.action_items),
+            selectinload(Recording.highlights),
         )
+        .execution_options(populate_existing=True)
     )
     recording = result.scalar_one_or_none()
 
@@ -806,6 +842,44 @@ async def generate_summary(
             source="generated",
         )
         db.add(action)
+
+    # Replace highlights on regeneration.
+    await db.execute(
+        delete(Highlight).where(Highlight.recording_id == recording.id)
+    )
+
+    # Resolve highlight timestamps from segments and persist.
+    raw_highlights = summary_result.highlights or []
+    if raw_highlights:
+        segment_dicts = [
+            {
+                "content": seg.content,
+                "start_ms": seg.start_ms,
+                "end_ms": seg.end_ms,
+            }
+            for seg in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+        ]
+        resolved = resolve_highlight_timestamps(raw_highlights, segment_dicts)
+        for hl in resolved:
+            category = str(hl.get("category", "insight")).strip()[:30]
+            title = str(hl.get("title", "")).strip()
+            if not title:
+                continue
+            importance = hl.get("importance", "medium")
+            if importance not in {"high", "medium", "low"}:
+                importance = "medium"
+            db.add(
+                Highlight(
+                    recording_id=recording.id,
+                    category=category,
+                    title=title[:500],
+                    description=hl.get("description"),
+                    speaker=hl.get("speaker"),
+                    start_ms=hl.get("start_ms"),
+                    end_ms=hl.get("end_ms"),
+                    importance=importance,
+                )
+            )
 
     await db.flush()
 

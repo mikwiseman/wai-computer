@@ -85,6 +85,9 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     tags: Mapped[list["RecordingTag"]] = relationship(
         "RecordingTag", back_populates="recording", cascade="all, delete-orphan"
     )
+    highlights: Mapped[list["Highlight"]] = relationship(
+        "Highlight", back_populates="recording", cascade="all, delete-orphan"
+    )
 
 
 class Segment(Base, UUIDMixin):
@@ -155,4 +158,5 @@ class ActionItem(Base, UUIDMixin, TimestampMixin):
 
 # Import at bottom to avoid circular imports
 from app.models.entity import RecordingTag  # noqa: E402
+from app.models.highlight import Highlight  # noqa: E402
 from app.models.user import User  # noqa: E402
