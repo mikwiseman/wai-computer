@@ -1,4 +1,4 @@
-import { apiFetch } from "./http";
+import { apiFetch, getApiBaseUrl } from "./http";
 import type {
   ActionItem,
   ActionPriority,
@@ -9,6 +9,7 @@ import type {
   Entity,
   EntityDetail,
   EntityType,
+  ExportFormat,
   MessageResponse,
   Recording,
   RecordingDetail,
@@ -291,4 +292,13 @@ export function deleteChatSession(sessionId: string): Promise<void> {
   return apiFetch<void>(`/api/chat/sessions/${sessionId}`, {
     method: "DELETE",
   });
+}
+
+export async function exportRecording(recordingId: string, format: ExportFormat): Promise<Blob> {
+  const url = `${getApiBaseUrl()}/api/recordings/${recordingId}/export?format=${format}`;
+  const response = await fetch(url, { credentials: "include", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+  }
+  return response.blob();
 }

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import selectinload
@@ -600,6 +600,193 @@ async def get_recording(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     return _serialize_recording_detail(recording)
+
+
+# ---- Export helpers ----
+
+
+def _format_duration_mmss(seconds: int | None) -> str:
+    """Format seconds as M:SS or H:MM:SS."""
+    if seconds is None or seconds < 0:
+        return "0:00"
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_timestamp_short(ms: int | None) -> str:
+    """Format milliseconds as M:SS for markdown/txt."""
+    if ms is None:
+        return ""
+    total_seconds = ms // 1000
+    minutes = total_seconds // 60
+    secs = total_seconds % 60
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_timestamp_srt(ms: int | None) -> str:
+    """Format milliseconds as HH:MM:SS,mmm for SRT."""
+    if ms is None:
+        return "00:00:00,000"
+    hours = ms // 3_600_000
+    remainder = ms % 3_600_000
+    minutes = remainder // 60_000
+    remainder = remainder % 60_000
+    seconds = remainder // 1000
+    millis = remainder % 1000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+def _format_recording_date(created_at: datetime) -> str:
+    """Format recording creation date for export headers."""
+    return created_at.strftime("%B %d, %Y")
+
+
+def _export_markdown(recording: Recording) -> str:
+    """Export recording as Markdown."""
+    lines: list[str] = []
+
+    title = recording.title or "Untitled Recording"
+    lines.append(f"# {title}")
+
+    # Metadata line
+    date_str = _format_recording_date(recording.created_at)
+    duration_str = _format_duration_mmss(recording.duration_seconds)
+    lines.append(f"*Date: {date_str} | Duration: {duration_str} | Type: {recording.type}*")
+    lines.append("")
+
+    # Summary section (only if present)
+    if recording.summary and recording.summary.summary:
+        lines.append("## Summary")
+        lines.append(recording.summary.summary)
+        lines.append("")
+
+    # Key Highlights section (only if present)
+    if recording.highlights:
+        lines.append("## Key Highlights")
+        for h in sorted(recording.highlights, key=lambda x: x.start_ms or 0):
+            if h.speaker:
+                ts = _format_timestamp_short(h.start_ms)
+                speaker_part = f" ({h.speaker}, {ts})"
+            elif h.start_ms is not None:
+                speaker_part = f" ({_format_timestamp_short(h.start_ms)})"
+            else:
+                speaker_part = ""
+            category = h.category.capitalize()
+            lines.append(f"- **[{category}]** {h.title}{speaker_part}")
+        lines.append("")
+
+    # Transcript section
+    lines.append("## Transcript")
+    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
+    for seg in segments:
+        speaker = seg.speaker or "Unknown"
+        ts = _format_timestamp_short(seg.start_ms)
+        ts_part = f" ({ts})" if ts else ""
+        lines.append(f"**{speaker}**{ts_part}: {seg.content}")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _export_txt(recording: Recording) -> str:
+    """Export recording as plain text."""
+    lines: list[str] = []
+
+    title = recording.title or "Untitled Recording"
+    lines.append(title)
+
+    date_str = _format_recording_date(recording.created_at)
+    duration_str = _format_duration_mmss(recording.duration_seconds)
+    lines.append(f"Date: {date_str} | Duration: {duration_str}")
+    lines.append("")
+
+    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
+    for seg in segments:
+        speaker = seg.speaker or "Unknown"
+        ts = _format_timestamp_short(seg.start_ms)
+        if ts:
+            lines.append(f"[{speaker}, {ts}] {seg.content}")
+        else:
+            lines.append(f"[{speaker}] {seg.content}")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _export_srt(recording: Recording) -> str:
+    """Export recording as SRT subtitle format."""
+    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
+    if not segments:
+        return ""
+
+    entries: list[str] = []
+    for i, seg in enumerate(segments, start=1):
+        start_ts = _format_timestamp_srt(seg.start_ms)
+        end_ts = _format_timestamp_srt(seg.end_ms)
+        speaker = seg.speaker or "Unknown"
+        entries.append(f"{i}")
+        entries.append(f"{start_ts} --> {end_ts}")
+        entries.append(f"[{speaker}] {seg.content}")
+        entries.append("")
+
+    return "\n".join(entries)
+
+
+def _sanitize_filename(title: str | None) -> str:
+    """Create a safe filename from a recording title."""
+    name = title or "recording"
+    # Remove characters unsafe for filenames
+    safe = "".join(c if c.isalnum() or c in " -_" else "" for c in name)
+    safe = safe.strip().replace(" ", "_")
+    return safe[:100] or "recording"
+
+
+@router.get("/{recording_id}/export")
+async def export_recording(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+    format: Literal["markdown", "txt", "srt"] = Query(...),
+) -> Response:
+    """Export a recording transcript in the requested format."""
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.segments),
+            selectinload(Recording.summary),
+            selectinload(Recording.highlights),
+        )
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    if format == "markdown":
+        content = _export_markdown(recording)
+        media_type = "text/markdown; charset=utf-8"
+        ext = "md"
+    elif format == "txt":
+        content = _export_txt(recording)
+        media_type = "text/plain; charset=utf-8"
+        ext = "txt"
+    else:
+        content = _export_srt(recording)
+        media_type = "text/srt; charset=utf-8"
+        ext = "srt"
+
+    filename = f"{_sanitize_filename(recording.title)}.{ext}"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -2,6 +2,7 @@ export type RecordingType = "meeting" | "note" | "reflection";
 export type ActionStatus = "pending" | "in_progress" | "completed" | "cancelled";
 export type ActionPriority = "high" | "medium" | "low";
 export type EntityType = "person" | "organization" | "project" | "topic";
+export type ExportFormat = "markdown" | "txt" | "srt";
 
 export interface TokenResponse {
   access_token: string;
