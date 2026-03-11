@@ -336,3 +336,17 @@ async def test_semantic_search_rejects_empty_query(client: AsyncClient, auth_hea
     """Semantic endpoint should also reject empty query."""
     response = await client.get("/api/search/semantic", headers=auth_headers, params={"q": ""})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_fts_search_requires_auth(client: AsyncClient):
+    """FTS endpoint should require authentication."""
+    response = await client.get("/api/search/fts", params={"q": "anything"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_semantic_search_requires_auth(client: AsyncClient):
+    """Semantic endpoint should require authentication."""
+    response = await client.get("/api/search/semantic", params={"q": "anything"})
+    assert response.status_code == 401

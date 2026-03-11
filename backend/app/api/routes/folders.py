@@ -110,3 +110,4 @@ async def delete_folder(
         recording.folder_id = None
 
     await db.delete(folder)
+    await db.flush()

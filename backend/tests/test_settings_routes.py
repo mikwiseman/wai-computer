@@ -137,3 +137,24 @@ async def test_update_settings_rejects_empty_language(client: AsyncClient):
         json={"default_language": "  "},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_old_password(client: AsyncClient):
+    """Providing the wrong old password should be rejected with 400."""
+    headers = await _register(client, "settings.wrongold@example.com", "correct-password-123")
+
+    response = await client.post(
+        "/api/settings/change-password",
+        headers=headers,
+        json={"current_password": "totally-wrong-password", "new_password": "new-password-456"},
+    )
+    assert response.status_code == 400
+    assert "incorrect" in response.json()["detail"].lower()
+
+    # Verify the old password still works
+    login_response = await client.post(
+        "/api/auth/login",
+        json={"email": "settings.wrongold@example.com", "password": "correct-password-123"},
+    )
+    assert login_response.status_code == 200

@@ -20,6 +20,7 @@ import type {
   SpeakerStatsResponse,
   Summary,
   TokenResponse,
+  TranscriptSearchResponse,
   User,
   WeeklyDigestResponse,
 } from "./types";
@@ -162,6 +163,16 @@ export function deleteRecording(recordingId: string): Promise<void> {
 
 export function getSpeakerStats(recordingId: string): Promise<SpeakerStatsResponse> {
   return apiFetch<SpeakerStatsResponse>(`/api/recordings/${recordingId}/speaker-stats`);
+}
+
+export function searchTranscript(
+  recordingId: string,
+  query: string,
+  limit?: number,
+): Promise<TranscriptSearchResponse> {
+  return apiFetch<TranscriptSearchResponse>(
+    `/api/recordings/${recordingId}/transcript/search${asQuery({ q: query, limit })}`,
+  );
 }
 
 export function getRelatedRecordings(

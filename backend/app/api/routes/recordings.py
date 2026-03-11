@@ -259,6 +259,26 @@ class AnalyticsResponse(BaseModel):
     by_week: list[WeekCount]
 
 
+class TranscriptSearchMatch(BaseModel):
+    """A single segment matching a transcript search query."""
+
+    segment_id: str
+    speaker: str | None
+    content: str
+    start_ms: int | None
+    end_ms: int | None
+    match_count: int
+
+
+class TranscriptSearchResponse(BaseModel):
+    """Response from transcript search within a recording."""
+
+    recording_id: str
+    query: str
+    total_matches: int
+    segments: list[TranscriptSearchMatch]
+
+
 class MessageResponse(BaseModel):
     """Simple message response."""
 
@@ -1081,6 +1101,7 @@ async def delete_recording(
         return
 
     recording.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
 
 
 @router.post("/{recording_id}/restore", response_model=RecordingResponse)
@@ -1160,6 +1181,50 @@ async def get_transcript(
         )
         for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
     ]
+
+
+@router.get("/{recording_id}/transcript/search", response_model=TranscriptSearchResponse)
+async def search_transcript(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+    q: str = Query(min_length=1),
+    limit: int = Query(20, ge=1, le=200),
+) -> TranscriptSearchResponse:
+    """Search within a recording's transcript for matching segments."""
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(selectinload(Recording.segments))
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    query_lower = q.lower()
+    matches: list[TranscriptSearchMatch] = []
+
+    for s in sorted(recording.segments, key=lambda x: x.start_ms or 0):
+        count = s.content.lower().count(query_lower)
+        if count > 0:
+            matches.append(
+                TranscriptSearchMatch(
+                    segment_id=str(s.id),
+                    speaker=s.speaker,
+                    content=s.content,
+                    start_ms=s.start_ms,
+                    end_ms=s.end_ms,
+                    match_count=count,
+                )
+            )
+
+    return TranscriptSearchResponse(
+        recording_id=str(recording_id),
+        query=q,
+        total_matches=len(matches),
+        segments=matches[:limit],
+    )
 
 
 @router.get("/{recording_id}/speaker-stats", response_model=SpeakerStatsResponse)

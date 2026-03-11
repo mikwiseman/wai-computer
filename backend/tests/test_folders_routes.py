@@ -116,3 +116,26 @@ async def test_create_folder_strips_whitespace(client: AsyncClient, auth_headers
     )
     assert resp.status_code == 201
     assert resp.json()["name"] == "Trimmed"
+
+
+@pytest.mark.asyncio
+async def test_list_folders_empty(client: AsyncClient, auth_headers: dict):
+    """New user with no folders should get an empty folder list."""
+    response = await client.get("/api/folders", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_multiple_folders_sorted_alphabetically(
+    client: AsyncClient, auth_headers: dict
+):
+    """Folders should be returned sorted alphabetically by name."""
+    await _create_folder(client, auth_headers, name="Zebra")
+    await _create_folder(client, auth_headers, name="Alpha")
+    await _create_folder(client, auth_headers, name="Middle")
+
+    response = await client.get("/api/folders", headers=auth_headers)
+    assert response.status_code == 200
+    names = [folder["name"] for folder in response.json()]
+    assert names == sorted(names)
