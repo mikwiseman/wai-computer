@@ -285,3 +285,54 @@ async def test_search_rejects_empty_query(client: AsyncClient, auth_headers: dic
     """Query string should enforce min length."""
     response = await client.get("/api/search", headers=auth_headers, params={"q": ""})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_with_special_characters(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Search with special characters should not crash and should return valid results."""
+    headers = await _register(client, "search.special@example.com")
+    recording_id = await _create_recording(client, headers, "Special Chars Recording")
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            content="SQL injection test: DROP TABLE; --",
+            start_ms=0,
+            end_ms=500,
+            embedding=_vector_list(0),
+        ),
+    )
+    await db_session.flush()
+
+    async def fake_generate_embedding(_: str) -> str:
+        return _vector_literal(0)
+
+    monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
+
+    response = await client.get(
+        "/api/search",
+        headers=headers,
+        params={"q": "DROP TABLE; --"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload["results"], list)
+    assert isinstance(payload["total"], int)
+
+
+@pytest.mark.asyncio
+async def test_fts_search_rejects_empty_query(client: AsyncClient, auth_headers: dict):
+    """FTS endpoint should also reject empty query."""
+    response = await client.get("/api/search/fts", headers=auth_headers, params={"q": ""})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_semantic_search_rejects_empty_query(client: AsyncClient, auth_headers: dict):
+    """Semantic endpoint should also reject empty query."""
+    response = await client.get("/api/search/semantic", headers=auth_headers, params={"q": ""})
+    assert response.status_code == 422

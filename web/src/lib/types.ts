@@ -112,6 +112,20 @@ export interface SpeakerStatsResponse {
   timeline: SpeakerTimelineEntry[];
 }
 
+export interface RelatedRecording {
+  id: string;
+  title: string | null;
+  created_at: string;
+  recording_type: string;
+  similarity_score: number;
+  matching_topic: string | null;
+}
+
+export interface RelatedRecordingsResponse {
+  recording_id: string;
+  related: RelatedRecording[];
+}
+
 export interface SearchResult {
   recording_id: string;
   recording_title: string | null;

@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -107,6 +107,24 @@ class SpeakerStatsResponse(BaseModel):
     total_speakers: int
     speakers: list[SpeakerStatResponse]
     timeline: list[TimelineEntry]
+
+
+class RelatedRecordingItem(BaseModel):
+    """A single related recording result."""
+
+    id: str
+    title: str | None
+    created_at: datetime
+    recording_type: str
+    similarity_score: float
+    matching_topic: str | None
+
+
+class RelatedRecordingsResponse(BaseModel):
+    """Response containing related recordings."""
+
+    recording_id: str
+    related: list[RelatedRecordingItem]
 
 
 class RecordingResponse(BaseModel):
@@ -790,6 +808,116 @@ async def get_speaker_stats(
         total_speakers=len(speaker_stats),
         speakers=speaker_stats,
         timeline=timeline,
+    )
+
+
+@router.get("/{recording_id}/related", response_model=RelatedRecordingsResponse)
+async def get_related_recordings(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+    limit: int = Query(5, ge=1, le=20),
+) -> RelatedRecordingsResponse:
+    """Find recordings with semantically similar content using pgvector cosine distance."""
+    # Verify the recording exists and belongs to the user
+    result = await db.execute(
+        select(Recording).where(
+            Recording.id == recording_id,
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+        )
+    )
+    recording = result.scalar_one_or_none()
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    # Get segments with embeddings for this recording to compute centroid
+    centroid_query = text("""
+        SELECT AVG(embedding)::vector AS centroid
+        FROM segments
+        WHERE recording_id = :recording_id
+          AND embedding IS NOT NULL
+    """)
+    centroid_result = await db.execute(centroid_query, {"recording_id": str(recording_id)})
+    centroid_row = centroid_result.fetchone()
+
+    if centroid_row is None or centroid_row.centroid is None:
+        return RelatedRecordingsResponse(
+            recording_id=str(recording_id),
+            related=[],
+        )
+
+    centroid_str = str(centroid_row.centroid)
+
+    # Find segments from OTHER recordings closest to this centroid,
+    # grouped by recording, with average similarity score.
+    related_query = text("""
+        WITH segment_similarities AS (
+            SELECT
+                s.recording_id,
+                1 - (s.embedding <=> CAST(:centroid AS vector)) AS similarity
+            FROM segments s
+            JOIN recordings r ON s.recording_id = r.id
+            WHERE r.user_id = :user_id
+              AND r.deleted_at IS NULL
+              AND s.recording_id != :source_recording_id
+              AND s.embedding IS NOT NULL
+        )
+        SELECT
+            r.id,
+            r.title,
+            r.created_at,
+            r.type AS recording_type,
+            AVG(ss.similarity) AS avg_similarity,
+            MAX(ss.similarity) AS max_similarity
+        FROM segment_similarities ss
+        JOIN recordings r ON ss.recording_id = r.id
+        GROUP BY r.id, r.title, r.created_at, r.type
+        ORDER BY AVG(ss.similarity) DESC
+        LIMIT :limit
+    """)
+
+    related_result = await db.execute(
+        related_query,
+        {
+            "centroid": centroid_str,
+            "user_id": str(user.id),
+            "source_recording_id": str(recording_id),
+            "limit": limit,
+        },
+    )
+    related_rows = related_result.fetchall()
+
+    # Fetch summaries for related recordings to extract matching topics
+    topics_map: dict[str, str | None] = {}
+    if related_rows:
+        summary_result = await db.execute(
+            select(Summary.recording_id, Summary.topics).where(
+                Summary.recording_id.in_([row.id for row in related_rows])
+            )
+        )
+        for srow in summary_result.fetchall():
+            topics_list = srow.topics
+            if topics_list and isinstance(topics_list, list) and len(topics_list) > 0:
+                topics_map[str(srow.recording_id)] = topics_list[0]
+
+    related_items = []
+    for row in related_rows:
+        rid = str(row.id)
+        related_items.append(
+            RelatedRecordingItem(
+                id=rid,
+                title=row.title,
+                created_at=row.created_at,
+                recording_type=row.recording_type,
+                similarity_score=round(float(row.avg_similarity), 4),
+                matching_topic=topics_map.get(rid),
+            )
+        )
+
+    return RelatedRecordingsResponse(
+        recording_id=str(recording_id),
+        related=related_items,
     )
 
 

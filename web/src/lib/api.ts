@@ -13,6 +13,7 @@ import type {
   Recording,
   RecordingDetail,
   RecordingType,
+  RelatedRecordingsResponse,
   SearchResponse,
   SpeakerStatsResponse,
   Summary,
@@ -158,6 +159,15 @@ export function deleteRecording(recordingId: string): Promise<void> {
 
 export function getSpeakerStats(recordingId: string): Promise<SpeakerStatsResponse> {
   return apiFetch<SpeakerStatsResponse>(`/api/recordings/${recordingId}/speaker-stats`);
+}
+
+export function getRelatedRecordings(
+  recordingId: string,
+  limit?: number,
+): Promise<RelatedRecordingsResponse> {
+  return apiFetch<RelatedRecordingsResponse>(
+    `/api/recordings/${recordingId}/related${asQuery({ limit })}`,
+  );
 }
 
 export function getSummary(recordingId: string): Promise<Summary> {

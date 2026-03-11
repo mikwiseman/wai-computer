@@ -54,6 +54,7 @@ struct NewRecordingView: View {
                     isPrimary: false,
                     action: onImportFile
                 )
+                .accessibilityIdentifier("import-audio-button")
             }
             .background(Palette.surfaceSubtle)
             .clipShape(RoundedRectangle(cornerRadius: 8))

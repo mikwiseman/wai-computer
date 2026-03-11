@@ -281,6 +281,7 @@ struct MacRecordingDetailView: View {
                 }
                 .padding(Spacing.lg)
             }
+            .accessibilityIdentifier("summary-content")
         } else {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
@@ -305,6 +306,7 @@ struct MacRecordingDetailView: View {
                 }
                 Spacer()
             }
+            .accessibilityIdentifier("summary-empty-state")
         }
     }
 
@@ -331,6 +333,7 @@ struct MacRecordingDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.lg)
             }
+            .accessibilityIdentifier("actions-content")
         } else if detail.summary != nil {
             VStack {
                 Spacer().frame(height: Spacing.xxxl)
@@ -341,6 +344,7 @@ struct MacRecordingDetailView: View {
                 )
                 Spacer()
             }
+            .accessibilityIdentifier("actions-empty-state")
         } else {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
@@ -361,6 +365,7 @@ struct MacRecordingDetailView: View {
                 .disabled(viewModel.isGeneratingSummary)
                 Spacer()
             }
+            .accessibilityIdentifier("actions-empty-state")
         }
     }
 }
