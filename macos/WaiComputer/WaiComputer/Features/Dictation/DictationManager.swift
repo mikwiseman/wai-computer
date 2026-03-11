@@ -494,5 +494,6 @@ final class DictationManager: ObservableObject {
 
     private func hideOverlay() {
         overlayPanel?.hideAnimated()
+        overlayPanel = nil
     }
 }

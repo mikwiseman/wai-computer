@@ -61,3 +61,58 @@ async def test_delete_folder_clears_recording_folder_id(client: AsyncClient, aut
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
     assert detail_response.json()["folder_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_rename_folder(client: AsyncClient, auth_headers: dict):
+    """Renaming a folder updates its name."""
+    folder = await _create_folder(client, auth_headers, name="Old Name")
+
+    rename_response = await client.patch(
+        f"/api/folders/{folder['id']}",
+        headers=auth_headers,
+        json={"name": "New Name"},
+    )
+    assert rename_response.status_code == 200
+    assert rename_response.json()["name"] == "New Name"
+
+
+@pytest.mark.asyncio
+async def test_rename_nonexistent_folder_returns_404(client: AsyncClient, auth_headers: dict):
+    """Renaming a nonexistent folder returns 404."""
+    import uuid
+
+    fake_id = str(uuid.uuid4())
+    resp = await client.patch(
+        f"/api/folders/{fake_id}",
+        headers=auth_headers,
+        json={"name": "Whatever"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_folder_returns_404(client: AsyncClient, auth_headers: dict):
+    """Deleting a nonexistent folder returns 404."""
+    import uuid
+
+    fake_id = str(uuid.uuid4())
+    resp = await client.delete(f"/api/folders/{fake_id}", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_folder_empty_name_rejected(client: AsyncClient, auth_headers: dict):
+    """Creating a folder with empty name should fail validation."""
+    resp = await client.post("/api/folders", headers=auth_headers, json={"name": "   "})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_folder_strips_whitespace(client: AsyncClient, auth_headers: dict):
+    """Folder name should be stripped of leading/trailing whitespace."""
+    resp = await client.post(
+        "/api/folders", headers=auth_headers, json={"name": "  Trimmed  "}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["name"] == "Trimmed"

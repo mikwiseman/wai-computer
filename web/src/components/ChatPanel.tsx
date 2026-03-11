@@ -247,6 +247,7 @@ export function ChatPanel({ recordings }: ChatPanelProps) {
                     padding: "2px 4px",
                   }}
                   title="Delete session"
+                  aria-label="Delete session"
                 >
                   x
                 </button>

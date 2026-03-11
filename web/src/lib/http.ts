@@ -79,14 +79,18 @@ export async function apiFetch<T>(
 
   // On 401, attempt a single token refresh then retry
   if (response.status === 401) {
-    const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-      cache: "no-store",
-    });
+    try {
+      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
 
-    if (refreshResponse.ok) {
-      response = await doFetch(url, fetchInit);
+      if (refreshResponse.ok) {
+        response = await doFetch(url, fetchInit);
+      }
+    } catch {
+      // Refresh failed (e.g. network error) — fall through to the original 401
     }
   }
 

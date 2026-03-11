@@ -204,3 +204,52 @@ export interface ChatSessionDetail {
   created_at: string;
   messages: ChatMessageData[];
 }
+
+export interface TopicCount {
+  topic: string;
+  count: number;
+}
+
+export interface PersonCount {
+  name: string;
+  count: number;
+}
+
+export interface DigestActionItem {
+  id: string;
+  recording_id: string;
+  recording_title: string | null;
+  task: string;
+  owner: string | null;
+  priority: string | null;
+  status: string;
+}
+
+export interface DigestHighlight {
+  id: string;
+  recording_id: string;
+  recording_title: string | null;
+  category: string;
+  title: string;
+  importance: string;
+}
+
+export interface DailyBreakdown {
+  date: string;
+  count: number;
+  duration_seconds: number;
+}
+
+export interface WeeklyDigestResponse {
+  period_start: string;
+  period_end: string;
+  total_recordings: number;
+  total_duration_seconds: number;
+  recordings_by_type: Record<string, number>;
+  top_topics: TopicCount[];
+  top_people: PersonCount[];
+  pending_action_items: DigestActionItem[];
+  highlights: DigestHighlight[];
+  sentiment_breakdown: Record<string, number>;
+  daily_breakdown: DailyBreakdown[];
+}
