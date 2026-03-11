@@ -11,6 +11,7 @@ struct MacTranscriptView: View {
                 systemImage: "text.alignleft",
                 description: Text("This recording doesn't have a transcript yet.")
             )
+            .accessibilityIdentifier("transcript-empty-state")
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
@@ -20,6 +21,7 @@ struct MacTranscriptView: View {
                 }
                 .padding(Spacing.lg)
             }
+            .accessibilityIdentifier("transcript-content")
         }
     }
 }

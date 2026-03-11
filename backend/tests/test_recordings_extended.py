@@ -669,3 +669,107 @@ def test_measure_upload_size():
     assert size == len(content)
     # Verify file is reset to beginning
     assert file.file.tell() == 0
+
+
+# ---------------------------------------------------------------------------
+# Update recording
+# ---------------------------------------------------------------------------
+
+
+async def test_update_recording_title_and_type(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """PATCH should update title and type fields."""
+    recording = await _create_recording(client, auth_headers, title="Old Title", type_="note")
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"title": "New Title", "type": "meeting"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "New Title"
+    assert data["type"] == "meeting"
+
+
+async def test_update_nonexistent_recording_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """PATCH on nonexistent recording should return 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.patch(
+        f"/api/recordings/{fake_id}",
+        headers=auth_headers,
+        json={"title": "Nope"},
+    )
+    assert response.status_code == 404
+
+
+async def test_create_recording_with_null_language_uses_user_default(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Creating with language=None should fall back to user default."""
+    response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={"title": "Null Lang", "type": "note", "language": None},
+    )
+    assert response.status_code == 201
+
+
+async def test_update_recording_clear_folder_id(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """PATCH with folder_id=null should clear the folder assignment."""
+    recording = await _create_recording(client, auth_headers, title="Folder Test")
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"folder_id": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["folder_id"] is None
+
+
+async def test_update_recording_with_nonexistent_folder_returns_404(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """PATCH with a nonexistent folder_id should return 404."""
+    recording = await _create_recording(client, auth_headers, title="Bad Folder")
+    fake_folder_id = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"folder_id": fake_folder_id},
+    )
+    assert response.status_code == 404
+    assert "folder" in response.json()["detail"].lower()
+
+
+async def test_permanent_delete_recording(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Permanent delete with ?permanent=true should fully remove the recording."""
+    recording = await _create_recording(client, auth_headers, title="Gone Forever")
+
+    response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        params={"permanent": "true"},
+    )
+    assert response.status_code == 204
+
+    get_response = await client.get(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert get_response.status_code == 404

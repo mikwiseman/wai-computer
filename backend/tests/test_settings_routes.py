@@ -87,3 +87,53 @@ async def test_magic_link_user_can_set_password(
         json={"email": email, "password": "magic-password-123"},
     )
     assert login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_settings_returns_user_settings(client: AsyncClient):
+    """GET /api/settings returns the authenticated user's settings."""
+    headers = await _register(client, "settings.get@example.com", "password-123")
+
+    response = await client.get("/api/settings", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert "default_language" in data
+
+
+@pytest.mark.asyncio
+async def test_change_password_rejects_short_new_password(client: AsyncClient):
+    """New password shorter than 8 characters should be rejected with 422."""
+    headers = await _register(client, "settings.short@example.com", "password-123")
+
+    response = await client.post(
+        "/api/settings/change-password",
+        headers=headers,
+        json={"current_password": "password-123", "new_password": "short"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_missing_fields(client: AsyncClient):
+    """Missing required fields should be rejected with 422."""
+    headers = await _register(client, "settings.missing@example.com", "password-123")
+
+    response = await client.post(
+        "/api/settings/change-password",
+        headers=headers,
+        json={},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_settings_rejects_empty_language(client: AsyncClient):
+    """PATCH /api/settings with empty default_language should return 422."""
+    headers = await _register(client, "settings.empty.lang@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"default_language": "  "},
+    )
+    assert response.status_code == 422

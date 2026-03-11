@@ -151,4 +151,92 @@ describe("apiFetch", () => {
       payload: null,
     });
   });
+
+  it("retries original request after successful 401 token refresh", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 200
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 200 }),
+    );
+
+    // Retry of original call: 200 with data
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: "refreshed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await apiFetch<{ data: string }>("/protected");
+    expect(result).toEqual({ data: "refreshed" });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws original 401 error when token refresh fails", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 403
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiFetch("/protected")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      message: "Unauthorized",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws retry error when refresh succeeds but retry fails", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 200
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 200 }),
+    );
+
+    // Retry of original call: 500
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Internal Server Error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiFetch("/protected")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 500,
+      message: "Internal Server Error",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
 });
