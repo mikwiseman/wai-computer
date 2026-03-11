@@ -92,3 +92,6 @@ web/playwright-report/
 *.pem
 *.key
 credentials.json
+
+# pnpm
+.pnpm-home/

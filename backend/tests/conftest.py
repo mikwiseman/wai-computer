@@ -3,12 +3,14 @@
 import asyncio
 import os
 from typing import AsyncGenerator
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.db.session import get_db
 from app.main import app
@@ -33,12 +35,21 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a fresh database session for each test."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    schema_name = f"test_{uuid4().hex}"
+    admin_engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
+
+    async with admin_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text(f'CREATE SCHEMA "{schema_name}"'))
+
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        echo=False,
+        poolclass=NullPool,
+        connect_args={"server_settings": {"search_path": f"{schema_name},public"}},
+    )
 
     async with engine.begin() as conn:
-        # Enable pgvector extension
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -46,10 +57,10 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
     await engine.dispose()
+    async with admin_engine.begin() as conn:
+        await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+    await admin_engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -71,9 +82,10 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 @pytest_asyncio.fixture(scope="function")
 async def auth_headers(client: AsyncClient) -> dict:
     """Create a user and return auth headers."""
+    email = f"testuser-{uuid4().hex}@example.com"
     response = await client.post(
         "/api/auth/register",
-        json={"email": "testuser@example.com", "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123"},
     )
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}

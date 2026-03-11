@@ -591,14 +591,19 @@ struct MacMainView: View {
     }
 
     /// Wait until the recording view model finishes its upload/cleanup.
-    private func waitForUploadToFinish() async {
-        // Poll until phase is idle (upload done) — max ~15 seconds
-        for _ in 0..<30 {
+    /// Returns `true` if upload finished, `false` if timed out.
+    @discardableResult
+    private func waitForUploadToFinish() async -> Bool {
+        // Poll until phase is idle (upload done) — max ~30 seconds
+        for _ in 0..<60 {
             if recordingViewModel.phase == .idle {
-                return
+                return true
             }
             try? await Task.sleep(for: .milliseconds(500))
         }
+        NSLog("[Recording] waitForUploadToFinish timed out after 30s — phase is still %@",
+              String(describing: recordingViewModel.phase))
+        return false
     }
 
     private func resolveCompletedRecording(id: String) async -> RecordingDetail? {

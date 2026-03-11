@@ -50,7 +50,7 @@ async def test_folder_create_list_and_filter_recordings(client: AsyncClient, aut
 
 
 @pytest.mark.asyncio
-async def test_delete_folder_unassigns_recordings(client: AsyncClient, auth_headers: dict):
+async def test_delete_folder_clears_recording_folder_id(client: AsyncClient, auth_headers: dict):
     """Deleting a folder should keep recordings but clear their folder assignment."""
     folder = await _create_folder(client, auth_headers, name="Archive")
     recording = await _create_recording(client, auth_headers, folder_id=folder["id"])

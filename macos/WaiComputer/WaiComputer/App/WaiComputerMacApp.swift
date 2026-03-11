@@ -225,6 +225,13 @@ class MacAppState: ObservableObject {
     }
 
     func logout() async {
+        // Best-effort server logout — proceed with local cleanup regardless
+        do {
+            _ = try await apiClient.logout()
+        } catch {
+            NSLog("[Auth] Server logout failed (proceeding with local logout): %@", error.localizedDescription)
+        }
+
         dictationManager.disable()
         await apiClient.setAccessToken(nil)
         UserDefaults.standard.removeObject(forKey: "accessToken")

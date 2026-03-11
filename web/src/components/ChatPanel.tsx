@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   deleteChatSession,
   getChatSession,
@@ -55,22 +55,22 @@ export function ChatPanel({ recordings }: ChatPanelProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    void loadSessions();
-  }, []);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  async function loadSessions() {
+  const loadSessions = useCallback(async () => {
     try {
       const result = await listChatSessions();
       setSessions(result);
     } catch (err: unknown) {
       setError(formatError(err));
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   async function handleSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -414,7 +414,7 @@ export function ChatPanel({ recordings }: ChatPanelProps) {
 
           {/* Error */}
           {error && (
-            <p style={{ color: "#cc0000", fontSize: "13px", margin: "4px 0" }}>{error}</p>
+            <p role="alert" style={{ color: "#cc0000", fontSize: "13px", margin: "4px 0" }}>{error}</p>
           )}
 
           {/* Input */}

@@ -49,6 +49,11 @@ struct MacSearchView: View {
 
             WaiDivider()
 
+            // Re-trigger search when mode changes and there's an existing query
+            .onChange(of: viewModel.searchMode) { _, _ in
+                performSearch()
+            }
+
             // Results
             if viewModel.isLoading {
                 Spacer()

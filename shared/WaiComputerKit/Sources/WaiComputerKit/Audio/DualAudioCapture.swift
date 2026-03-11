@@ -125,6 +125,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         _isRecording = false
 
         flushTask?.cancel()
+        await flushTask?.value
         flushTask = nil
         micTask?.cancel()
         micTask = nil

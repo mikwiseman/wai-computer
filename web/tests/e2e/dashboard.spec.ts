@@ -1,10 +1,4 @@
-import { expect, test } from "@playwright/test";
-
-const apiBaseUrls = [
-  "http://localhost:8000",
-  "http://127.0.0.1:8000",
-  "https://api.wai.computer",
-];
+import { expect, test, Route, Page } from "@playwright/test";
 
 interface MockState {
   recordings: Array<{
@@ -44,12 +38,8 @@ const corsHeaders = {
   "content-type": "application/json",
 };
 
-async function installApiMock(page: Parameters<typeof test>[0]["page"], state: MockState) {
-  const handler = async (
-    route: Parameters<Parameters<typeof test>[0]["page"]["route"]>[1] extends (route: infer T) => unknown
-      ? T
-      : never,
-  ) => {
+async function installApiMock(page: Page, state: MockState) {
+  const handler = async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -292,9 +282,7 @@ async function installApiMock(page: Parameters<typeof test>[0]["page"], state: M
     });
   };
 
-  for (const baseUrl of apiBaseUrls) {
-    await page.route(`${baseUrl}/**`, handler);
-  }
+  await page.route("**/api/**", handler);
 }
 
 test("web dashboard flow covers core features", async ({ page }) => {

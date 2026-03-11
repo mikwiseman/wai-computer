@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, Database
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     """Request to send a chat question."""
 
-    question: str
+    question: str = Field(min_length=1)
     session_id: str | None = None
     recording_ids: list[str] | None = None
 
@@ -86,12 +86,18 @@ async def send_chat_message(
     db: Database,
 ) -> ChatResponse:
     """Send a question and get a RAG-powered answer from meeting transcripts."""
-    session_id = uuid.UUID(request.session_id) if request.session_id else None
-    recording_ids = (
-        [uuid.UUID(rid) for rid in request.recording_ids]
-        if request.recording_ids
-        else None
-    )
+    try:
+        session_id = uuid.UUID(request.session_id) if request.session_id else None
+        recording_ids = (
+            [uuid.UUID(rid) for rid in request.recording_ids]
+            if request.recording_ids
+            else None
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID: {exc}",
+        ) from exc
 
     result: ChatResult = await chat_with_recordings(
         db=db,
@@ -217,3 +223,4 @@ async def delete_chat_session(
         )
 
     await db.delete(session)
+    await db.flush()
