@@ -1,8 +1,9 @@
 """Tests for dictation cleanup routes."""
 
-import sys
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
+import anthropic
 import pytest
 from httpx import AsyncClient
 
@@ -12,30 +13,16 @@ class _FakeMessage:
         self.content = [SimpleNamespace(text=text)]
 
 
-class _FakeAnthropicClient:
-    def __init__(self, response_text: str = "", error: Exception | None = None):
-        self._response_text = response_text
-        self._error = error
-        self.messages = SimpleNamespace(create=self._create)
+def _make_mock_client(response_text: str = "", error: Exception | None = None) -> AsyncMock:
+    mock_client = AsyncMock()
 
-    async def _create(self, **_: object) -> _FakeMessage:
-        if self._error is not None:
-            raise self._error
-        return _FakeMessage(self._response_text)
+    async def _create(**_: object) -> _FakeMessage:
+        if error is not None:
+            raise error
+        return _FakeMessage(response_text)
 
-
-class _FakeAnthropicConnectionError(Exception):
-    pass
-
-
-class _FakeAnthropicRateLimitError(Exception):
-    pass
-
-
-class _FakeAnthropicAPIStatusError(Exception):
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
+    mock_client.messages.create = _create
+    return mock_client
 
 
 @pytest.mark.asyncio
@@ -48,13 +35,11 @@ async def test_cleanup_dictation_returns_cleaned_text(
         "app.api.routes.dictation.get_settings",
         lambda: SimpleNamespace(anthropic_api_key="test-key", anthropic_model="test-model"),
     )
-    fake_module = SimpleNamespace(
-        AsyncAnthropic=lambda api_key: _FakeAnthropicClient(response_text="Cleaned text."),
-        APIConnectionError=_FakeAnthropicConnectionError,
-        RateLimitError=_FakeAnthropicRateLimitError,
-        APIStatusError=_FakeAnthropicAPIStatusError,
+    mock_client = _make_mock_client(response_text="Cleaned text.")
+    monkeypatch.setattr(
+        "app.api.routes.dictation._get_anthropic_client",
+        lambda: mock_client,
     )
-    monkeypatch.setitem(sys.modules, "anthropic", fake_module)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -76,13 +61,13 @@ async def test_cleanup_dictation_maps_upstream_connection_errors(
         "app.api.routes.dictation.get_settings",
         lambda: SimpleNamespace(anthropic_api_key="test-key", anthropic_model="test-model"),
     )
-    fake_module = SimpleNamespace(
-        AsyncAnthropic=lambda api_key: _FakeAnthropicClient(error=_FakeAnthropicConnectionError()),
-        APIConnectionError=_FakeAnthropicConnectionError,
-        RateLimitError=_FakeAnthropicRateLimitError,
-        APIStatusError=_FakeAnthropicAPIStatusError,
+    mock_client = _make_mock_client(
+        error=anthropic.APIConnectionError(request=None),
     )
-    monkeypatch.setitem(sys.modules, "anthropic", fake_module)
+    monkeypatch.setattr(
+        "app.api.routes.dictation._get_anthropic_client",
+        lambda: mock_client,
+    )
 
     response = await client.post(
         "/api/dictation/cleanup",

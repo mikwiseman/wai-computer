@@ -71,7 +71,7 @@ class TestSummarizeTranscript:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             result = await summarize_transcript("Some transcript text")
 
         assert isinstance(result, SummaryResult)
@@ -89,7 +89,7 @@ class TestSummarizeTranscript:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             result = await summarize_transcript("Transcript here")
 
         assert isinstance(result, SummaryResult)
@@ -102,7 +102,7 @@ class TestSummarizeTranscript:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             result = await summarize_transcript("Transcript here")
 
         assert isinstance(result, SummaryResult)
@@ -120,7 +120,7 @@ class TestSummarizeTranscript:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Invalid JSON response from Claude"):
                 await summarize_transcript("Transcript")
 
@@ -131,12 +131,11 @@ class TestSummarizeTranscript:
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
         with patch(
-            "app.core.summarizer.anthropic.AsyncAnthropic",
+            "app.core.summarizer._get_anthropic_client",
             return_value=mock_client,
-        ) as mock_cls:
+        ):
             await summarize_transcript("My meeting notes")
 
-        mock_cls.assert_called_once_with(api_key="sk-ant-test-key")
         mock_client.messages.create.assert_called_once()
         call_kwargs = mock_client.messages.create.call_args.kwargs
         assert call_kwargs["model"] == "claude-sonnet-4-20250514"
@@ -151,7 +150,7 @@ class TestExtractEntities:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             results = await extract_entities("Transcript with entities")
 
         assert len(results) == 2
@@ -172,7 +171,7 @@ class TestExtractEntities:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Invalid JSON response from Claude"):
                 await extract_entities("Transcript")
 
@@ -189,7 +188,7 @@ class TestExtractEntities:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
             results = await extract_entities("Transcript")
 
         assert len(results) == 2

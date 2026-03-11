@@ -2,11 +2,13 @@
 
 import logging
 
+import anthropic
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser
 from app.config import get_settings
+from app.core.chat import _get_anthropic_client
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)
@@ -48,9 +50,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         return CleanupResponse(text=text)
 
     try:
-        import anthropic
-
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        client = _get_anthropic_client()
 
         message = await client.messages.create(
             model=settings.anthropic_model,
