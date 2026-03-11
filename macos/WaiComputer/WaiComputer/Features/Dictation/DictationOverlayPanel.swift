@@ -47,8 +47,8 @@ final class DictationOverlayPanel: NSPanel {
             context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
-        }, completionHandler: {
-            self.orderOut(nil)
+        }, completionHandler: { [weak self] in
+            self?.orderOut(nil)
         })
     }
 

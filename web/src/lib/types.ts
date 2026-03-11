@@ -240,6 +240,20 @@ export interface DailyBreakdown {
   duration_seconds: number;
 }
 
+export interface WeekCount {
+  week: string;
+  count: number;
+}
+
+export interface AnalyticsResponse {
+  total_recordings: number;
+  total_duration_seconds: number;
+  average_duration_seconds: number;
+  total_words: number;
+  by_type: Record<string, number>;
+  by_week: WeekCount[];
+}
+
 export interface WeeklyDigestResponse {
   period_start: string;
   period_end: string;

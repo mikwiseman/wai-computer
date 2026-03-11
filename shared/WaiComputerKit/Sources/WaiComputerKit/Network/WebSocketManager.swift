@@ -41,6 +41,7 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
     case tokenFetchFailed(String)
     case serverError(String?)
     case superseded
+    case invalidURL
 
     public var errorDescription: String? {
         switch self {
@@ -52,6 +53,8 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
             return message ?? "Transcription service error."
         case .superseded:
             return "The WebSocket connection was replaced by a newer connection attempt."
+        case .invalidURL:
+            return "Failed to construct a valid Deepgram WebSocket URL."
         }
     }
 }
@@ -132,7 +135,7 @@ public actor WebSocketManager {
 
         // Build Deepgram WebSocket URL with token as query param
         // (more reliable than header for WebSocket upgrade handshake)
-        let url = buildDeepgramURL(token: dgToken)
+        let url = try buildDeepgramURL(token: dgToken)
         print("[WS] Connecting to Deepgram: \(url.host ?? "")\(url.path)")
 
         var request = URLRequest(url: url)
@@ -210,7 +213,7 @@ public actor WebSocketManager {
 
     // MARK: - Private
 
-    private func buildDeepgramURL(token: String) -> URL {
+    private func buildDeepgramURL(token: String) throws -> URL {
         var params = [
             "model=nova-3",
             "language=\(language)",
@@ -231,7 +234,10 @@ public actor WebSocketManager {
             params.append("endpointing=100")
         }
         let queryString = params.joined(separator: "&")
-        return URL(string: "wss://api.deepgram.com/v1/listen?\(queryString)")!
+        guard let url = URL(string: "wss://api.deepgram.com/v1/listen?\(queryString)") else {
+            throw WebSocketConnectionError.invalidURL
+        }
+        return url
     }
 
     private func receiveMessages(forConnection expectedId: UInt64) async {

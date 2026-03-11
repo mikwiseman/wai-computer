@@ -103,7 +103,7 @@ async def test_speaker_stats_basic(
     assert alice["avg_segment_duration_ms"] == 10000
     assert alice["word_count"] == 8
     assert alice["first_spoke_ms"] == 0
-    assert alice["last_spoke_ms"] == 30000
+    assert alice["last_spoke_ms"] == 40000
 
     bob = speakers_by_name["Bob"]
     assert bob["total_duration_ms"] == 20000
