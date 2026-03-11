@@ -185,3 +185,53 @@ async def test_chat_session_endpoints_return_not_found_for_other_users(
     delete_response = await client.delete(f"/api/chat/sessions/{session.id}", headers=other_headers)
     assert delete_response.status_code == 404
     assert delete_response.json()["detail"] == "Chat session not found"
+
+
+@pytest.mark.asyncio
+async def test_send_chat_message_rejects_malformed_session_id(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, _ = await _register(client, "chat.route.badsession@example.com")
+
+    response = await client.post(
+        "/api/chat",
+        headers=headers,
+        json={"question": "Hello?", "session_id": "not-a-uuid"},
+    )
+    assert response.status_code == 422
+    assert "Invalid UUID" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_send_chat_message_rejects_malformed_recording_id(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, _ = await _register(client, "chat.route.badrecording@example.com")
+
+    response = await client.post(
+        "/api/chat",
+        headers=headers,
+        json={
+            "question": "Hello?",
+            "recording_ids": [str(uuid4()), "garbage"],
+        },
+    )
+    assert response.status_code == 422
+    assert "Invalid UUID" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_send_chat_message_rejects_empty_question(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, _ = await _register(client, "chat.route.emptyq@example.com")
+
+    response = await client.post(
+        "/api/chat",
+        headers=headers,
+        json={"question": ""},
+    )
+    assert response.status_code == 422
