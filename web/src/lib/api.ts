@@ -20,6 +20,7 @@ import type {
   Summary,
   TokenResponse,
   User,
+  WeeklyDigestResponse,
 } from "./types";
 
 function asQuery(params: Record<string, string | number | boolean | undefined | null>): string {
@@ -292,6 +293,10 @@ export function deleteChatSession(sessionId: string): Promise<void> {
   return apiFetch<void>(`/api/chat/sessions/${sessionId}`, {
     method: "DELETE",
   });
+}
+
+export function getWeeklyDigest(): Promise<WeeklyDigestResponse> {
+  return apiFetch<WeeklyDigestResponse>("/api/recordings/digest/weekly");
 }
 
 export async function exportRecording(recordingId: string, format: ExportFormat): Promise<Blob> {

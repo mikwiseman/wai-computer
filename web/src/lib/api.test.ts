@@ -4,6 +4,7 @@ import { apiFetch } from "./http";
 
 vi.mock("./http", () => ({
   apiFetch: vi.fn(),
+  getApiBaseUrl: vi.fn(() => ""),
 }));
 
 const mockedApiFetch = vi.mocked(apiFetch);
@@ -223,5 +224,37 @@ describe("api client wrappers", () => {
       method: "POST",
       body: JSON.stringify({ question: "Hello", session_id: null, recording_ids: null }),
     });
+  });
+
+  it("calls getWeeklyDigest", async () => {
+    await api.getWeeklyDigest();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/digest/weekly");
+  });
+
+  it("calls exportRecording with correct URL and returns blob", async () => {
+    const mockBlob = new Blob(["# Test"], { type: "text/markdown" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(mockBlob, { status: 200 }),
+    );
+
+    const result = await api.exportRecording("rec1", "markdown");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining("/api/recordings/rec1/export?format=markdown"),
+      expect.objectContaining({ credentials: "include", cache: "no-store" }),
+    );
+    expect(result).toBeInstanceOf(Blob);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws on export failure", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("", { status: 404, statusText: "Not Found" }),
+    );
+
+    await expect(api.exportRecording("rec1", "txt")).rejects.toThrow("Export failed: 404 Not Found");
+
+    fetchSpy.mockRestore();
   });
 });

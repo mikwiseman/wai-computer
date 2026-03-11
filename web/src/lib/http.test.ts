@@ -239,4 +239,38 @@ describe("apiFetch", () => {
     });
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
+
+  it("falls through to original 401 when token refresh throws network error", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Token expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: network error (throws)
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await expect(apiFetch("/protected")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      message: "Token expired",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws ApiError for network error on initial request", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+      new TypeError("Network unavailable"),
+    );
+
+    await expect(apiFetch("/fail")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 0,
+      message: "Network error — check your connection",
+    });
+  });
 });

@@ -2,7 +2,7 @@
 
 import logging
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -125,6 +125,67 @@ class RelatedRecordingsResponse(BaseModel):
 
     recording_id: str
     related: list[RelatedRecordingItem]
+
+
+class TopicCount(BaseModel):
+    """A topic with its occurrence count."""
+
+    topic: str
+    count: int
+
+
+class PersonCount(BaseModel):
+    """A person with their mention count."""
+
+    name: str
+    count: int
+
+
+class DigestActionItem(BaseModel):
+    """Action item in digest context."""
+
+    id: str
+    recording_id: str
+    recording_title: str | None
+    task: str
+    owner: str | None
+    priority: str | None
+    status: str
+
+
+class DigestHighlight(BaseModel):
+    """Highlight in digest context."""
+
+    id: str
+    recording_id: str
+    recording_title: str | None
+    category: str
+    title: str
+    importance: str
+
+
+class DailyBreakdown(BaseModel):
+    """Per-day recording counts and duration."""
+
+    date: str
+    count: int
+    duration_seconds: int
+
+
+class WeeklyDigestResponse(BaseModel):
+    """Aggregated weekly digest of recordings."""
+
+    period_start: str
+    period_end: str
+    total_recordings: int
+    total_duration_seconds: int
+    recordings_by_type: dict[str, int]
+    top_topics: list[TopicCount]
+    top_people: list[PersonCount]
+    pending_action_items: list[DigestActionItem]
+    highlights: list[DigestHighlight]
+    sentiment_breakdown: dict[str, int]
+    daily_breakdown: list[DailyBreakdown]
 
 
 class RecordingResponse(BaseModel):
@@ -552,6 +613,139 @@ async def list_recordings(
     recordings = result.scalars().all()
 
     return [_serialize_recording(recording) for recording in recordings]
+
+
+@router.get("/digest/weekly", response_model=WeeklyDigestResponse)
+async def get_weekly_digest(
+    user: CurrentUser,
+    db: Database,
+) -> WeeklyDigestResponse:
+    """Return an aggregated digest of the user's recordings from the past 7 days."""
+    now = datetime.now(timezone.utc)
+    period_end = now
+    period_start = now - timedelta(days=7)
+
+    # Fetch all non-deleted recordings from the last 7 days with related data
+    result = await db.execute(
+        select(Recording)
+        .where(
+            Recording.user_id == user.id,
+            Recording.deleted_at.is_(None),
+            Recording.created_at >= period_start,
+        )
+        .options(
+            selectinload(Recording.summary),
+            selectinload(Recording.action_items),
+            selectinload(Recording.highlights),
+        )
+        .order_by(Recording.created_at.asc())
+    )
+    recordings = list(result.scalars().all())
+
+    # Totals
+    total_recordings = len(recordings)
+    total_duration = sum(r.duration_seconds or 0 for r in recordings)
+
+    # Type breakdown
+    type_counts: dict[str, int] = defaultdict(int)
+    for r in recordings:
+        type_counts[r.type] += 1
+
+    # Topic aggregation from summaries
+    topic_counter: dict[str, int] = defaultdict(int)
+    people_counter: dict[str, int] = defaultdict(int)
+    sentiment_counter: dict[str, int] = defaultdict(int)
+
+    for r in recordings:
+        if r.summary:
+            if r.summary.topics:
+                for topic in r.summary.topics:
+                    topic_counter[topic] += 1
+            if r.summary.people_mentioned:
+                for person in r.summary.people_mentioned:
+                    people_counter[person] += 1
+            if r.summary.sentiment:
+                sentiment_counter[r.summary.sentiment] += 1
+
+    top_topics = [
+        TopicCount(topic=t, count=c)
+        for t, c in sorted(topic_counter.items(), key=lambda x: -x[1])[:10]
+    ]
+    top_people = [
+        PersonCount(name=p, count=c)
+        for p, c in sorted(people_counter.items(), key=lambda x: -x[1])[:10]
+    ]
+
+    # Pending action items
+    pending_items: list[DigestActionItem] = []
+    for r in recordings:
+        for ai in r.action_items:
+            if ai.status == "pending":
+                pending_items.append(
+                    DigestActionItem(
+                        id=str(ai.id),
+                        recording_id=str(r.id),
+                        recording_title=r.title,
+                        task=ai.task,
+                        owner=ai.owner,
+                        priority=ai.priority,
+                        status=ai.status,
+                    )
+                )
+
+    # Highlights (top ones by importance)
+    all_highlights: list[tuple[Highlight, Recording]] = []
+    for r in recordings:
+        for h in r.highlights:
+            all_highlights.append((h, r))
+
+    # Sort: high > medium > low
+    importance_order = {"high": 0, "medium": 1, "low": 2}
+    all_highlights.sort(key=lambda x: importance_order.get(x[0].importance, 1))
+
+    digest_highlights = [
+        DigestHighlight(
+            id=str(h.id),
+            recording_id=str(r.id),
+            recording_title=r.title,
+            category=h.category,
+            title=h.title,
+            importance=h.importance,
+        )
+        for h, r in all_highlights[:15]
+    ]
+
+    # Daily breakdown for the 7-day period (ending today)
+    daily: dict[str, dict] = {}
+    today = period_end.date()
+    for day_offset in range(7):
+        day = today - timedelta(days=6 - day_offset)
+        daily[day.isoformat()] = {"count": 0, "duration_seconds": 0}
+
+    for r in recordings:
+        day_key = r.created_at.date().isoformat()
+        if day_key in daily:
+            daily[day_key]["count"] += 1
+            daily[day_key]["duration_seconds"] += r.duration_seconds or 0
+
+    daily_breakdown = [
+        DailyBreakdown(date=d, count=v["count"], duration_seconds=v["duration_seconds"])
+        for d, v in sorted(daily.items())
+    ]
+
+    return WeeklyDigestResponse(
+        period_start=period_start.date().isoformat(),
+        period_end=period_end.date().isoformat(),
+        total_recordings=total_recordings,
+        total_duration_seconds=total_duration,
+        recordings_by_type=dict(type_counts),
+        top_topics=top_topics,
+        top_people=top_people,
+        pending_action_items=pending_items,
+        highlights=digest_highlights,
+        sentiment_breakdown=dict(sentiment_counter),
+        daily_breakdown=daily_breakdown,
+    )
 
 
 @router.post("", response_model=RecordingResponse, status_code=status.HTTP_201_CREATED)
