@@ -3,6 +3,7 @@
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
+from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 from app.models.user import User
 
@@ -14,6 +15,7 @@ __all__ = [
     "Segment",
     "Summary",
     "ActionItem",
+    "Highlight",
     "Entity",
     "EntityRelation",
     "Tag",

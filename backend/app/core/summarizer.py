@@ -33,7 +33,16 @@ Analyze this meeting transcript. Output ONLY valid JSON:
   "topics": ["Topic 1", "Topic 2"],
   "people_mentioned": ["Name 1", "Name 2"],
   "follow_up_questions": ["Question 1"],
-  "sentiment": "positive|neutral|negative|mixed"
+  "sentiment": "positive|neutral|negative|mixed",
+  "highlights": [
+    {
+      "category": "decision|insight|question|concern|topic_shift|quote",
+      "title": "Short title of the key moment (5-15 words)",
+      "description": "Brief description with context, or null",
+      "speaker": "Speaker name or null",
+      "importance": "high|medium|low"
+    }
+  ]
 }
 
 INSTRUCTIONS:
@@ -41,6 +50,10 @@ INSTRUCTIONS:
 - If information is missing, use null rather than assumptions
 - Keep descriptions specific: include names, dates, numbers
 - Identify speakers when possible
+- For highlights, extract the most important moments: decisions made, key insights,
+  important questions raised, concerns flagged, major topic shifts, and notable quotes
+- Each highlight should be a distinct, meaningful moment from the conversation
+- Limit highlights to the 5-10 most important moments
 
 Transcript:
 """
@@ -59,6 +72,7 @@ class SummaryResult:
     people_mentioned: list[str]
     follow_up_questions: list[str]
     sentiment: str
+    highlights: list[dict] | None = None
 
 
 async def summarize_transcript(transcript: str) -> SummaryResult:
@@ -119,6 +133,7 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
         people_mentioned=data.get("people_mentioned", []),
         follow_up_questions=data.get("follow_up_questions", []),
         sentiment=data.get("sentiment", "neutral"),
+        highlights=data.get("highlights", []),
     )
 
 
@@ -150,6 +165,55 @@ async def generate_title(transcript: str) -> str:
     if len(title) > 100:
         title = title[:97] + "..."
     return title
+
+
+def resolve_highlight_timestamps(
+    highlights: list[dict],
+    segments: list[dict],
+) -> list[dict]:
+    """Map each highlight to the best-matching segment's time range.
+
+    Uses simple word-overlap scoring between the highlight text (title +
+    description) and each segment's content.  The highlight dict is
+    returned with ``start_ms`` and ``end_ms`` populated from the
+    best-matching segment.
+
+    Args:
+        highlights: List of highlight dicts from Claude.
+        segments: List of dicts with ``content``, ``start_ms``, ``end_ms``.
+
+    Returns:
+        A new list of highlight dicts with timestamps resolved.
+    """
+    if not segments:
+        return highlights
+
+    def _words(text: str | None) -> set[str]:
+        if not text:
+            return set()
+        return set(text.lower().split())
+
+    resolved: list[dict] = []
+    for highlight in highlights:
+        hl = dict(highlight)
+        # Build a bag of words from the highlight's title and description
+        hl_words = _words(hl.get("title")) | _words(hl.get("description"))
+
+        best_score = -1
+        best_segment: dict | None = None
+        for seg in segments:
+            seg_words = _words(seg.get("content"))
+            overlap = len(hl_words & seg_words)
+            if overlap > best_score:
+                best_score = overlap
+                best_segment = seg
+
+        if best_segment and best_score > 0:
+            hl["start_ms"] = best_segment.get("start_ms")
+            hl["end_ms"] = best_segment.get("end_ms")
+
+        resolved.append(hl)
+    return resolved
 
 
 ENTITY_EXTRACTION_PROMPT = """

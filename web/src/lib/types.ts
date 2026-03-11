@@ -58,10 +58,32 @@ export interface ActionItem {
   created_at: string;
 }
 
+export type HighlightCategory =
+  | "decision"
+  | "insight"
+  | "question"
+  | "concern"
+  | "topic_shift"
+  | "quote";
+export type HighlightImportance = "high" | "medium" | "low";
+
+export interface Highlight {
+  id: string;
+  recording_id: string;
+  category: HighlightCategory;
+  title: string;
+  description: string | null;
+  speaker: string | null;
+  start_ms: number | null;
+  end_ms: number | null;
+  importance: HighlightImportance;
+}
+
 export interface RecordingDetail extends Recording {
   segments: Segment[];
   summary: Summary | null;
   action_items: ActionItem[];
+  highlights: Highlight[];
 }
 
 export interface SearchResult {
