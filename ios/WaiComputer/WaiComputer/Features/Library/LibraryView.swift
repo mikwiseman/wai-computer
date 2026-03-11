@@ -80,6 +80,14 @@ struct RecordingRow: View {
                     .lineLimit(1)
             }
 
+            if let failurePreviewText = recording.failurePreviewText,
+               recording.isFailedUpload {
+                Text(failurePreviewText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
             HStack {
                 Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)

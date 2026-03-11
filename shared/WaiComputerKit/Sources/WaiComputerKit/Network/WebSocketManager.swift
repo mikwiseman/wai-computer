@@ -175,6 +175,28 @@ public actor WebSocketManager {
         print("[WS] Sent CloseStream to Deepgram")
     }
 
+    /// Ask Deepgram to finalize the stream and wait for the socket to close.
+    @discardableResult
+    public func finishStreaming(timeout: Duration = .seconds(5)) async throws -> Bool {
+        try await sendEnd()
+        return await waitForDisconnect(timeout: timeout)
+    }
+
+    @discardableResult
+    public func waitForDisconnect(timeout: Duration = .seconds(5)) async -> Bool {
+        let expectedConnection = connectionId
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+
+        while connectionId == expectedConnection && (webSocket != nil || receiveTask != nil) {
+            if clock.now >= deadline {
+                return false
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return true
+    }
+
     /// Disconnect and clean up.
     public func disconnect() {
         closeConnection(forConnection: connectionId, error: nil, emitDisconnected: true)

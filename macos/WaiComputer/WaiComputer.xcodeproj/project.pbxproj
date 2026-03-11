@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4E5F60001A1B2C3D4 /* DictationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60001F1E2D3C4 /* DictationManager.swift */; };
+		A1B2C3D4E5F60002A1B2C3D4 /* DictationOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60002F1E2D3C4 /* DictationOverlayPanel.swift */; };
+		A1B2C3D4E5F60003A1B2C3D4 /* DictationOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60003F1E2D3C4 /* DictationOverlayView.swift */; };
+		A1B2C3D4E5F60004A1B2C3D4 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60004F1E2D3C4 /* GlobalHotkeyManager.swift */; };
+		A1B2C3D4E5F60005A1B2C3D4 /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60005F1E2D3C4 /* TextInserter.swift */; };
 		29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */; };
 		35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */; };
 		3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */; };
@@ -60,6 +65,11 @@
 		D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFlowUITests.swift; sourceTree = "<group>"; };
 		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A60001F1E2D3C4 /* DictationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationManager.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A60002F1E2D3C4 /* DictationOverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationOverlayPanel.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A60003F1E2D3C4 /* DictationOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationOverlayView.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A60004F1E2D3C4 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
+		F1E2D3C4B5A60005F1E2D3C4 /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,10 +135,23 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		D1C2B3A4E5F6000601020304 /* Dictation */ = {
+			isa = PBXGroup;
+			children = (
+				F1E2D3C4B5A60001F1E2D3C4 /* DictationManager.swift */,
+				F1E2D3C4B5A60002F1E2D3C4 /* DictationOverlayPanel.swift */,
+				F1E2D3C4B5A60003F1E2D3C4 /* DictationOverlayView.swift */,
+				F1E2D3C4B5A60004F1E2D3C4 /* GlobalHotkeyManager.swift */,
+				F1E2D3C4B5A60005F1E2D3C4 /* TextInserter.swift */,
+			);
+			path = Dictation;
+			sourceTree = "<group>";
+		};
 		5D15DE54E4FDA3B1560A15A6 /* Features */ = {
 			isa = PBXGroup;
 			children = (
 				4724807600A515F7146E57A3 /* Chat */,
+				D1C2B3A4E5F6000601020304 /* Dictation */,
 				A45B2EFE55B5BF47533D4858 /* Library */,
 				ACB83F31AAC0D0B4DF9397E0 /* Recording */,
 				0543B2B27726308F5C10C36E /* Search */,
@@ -302,6 +325,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60001A1B2C3D4 /* DictationManager.swift in Sources */,
+				A1B2C3D4E5F60002A1B2C3D4 /* DictationOverlayPanel.swift in Sources */,
+				A1B2C3D4E5F60003A1B2C3D4 /* DictationOverlayView.swift in Sources */,
+				A1B2C3D4E5F60004A1B2C3D4 /* GlobalHotkeyManager.swift in Sources */,
+				A1B2C3D4E5F60005A1B2C3D4 /* TextInserter.swift in Sources */,
 				72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
 				DED3994205172291160E4F83 /* MacChatView.swift in Sources */,

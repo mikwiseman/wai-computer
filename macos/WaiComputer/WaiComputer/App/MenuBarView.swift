@@ -4,6 +4,7 @@ import WaiComputerKit
 struct MenuBarView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingVM: MacRecordingViewModel
+    @EnvironmentObject var dictationManager: DictationManager
     @State private var recentRecordings: [Recording] = []
 
     private var isRecordingActivityVisible: Bool {
@@ -205,6 +206,23 @@ struct MenuBarView: View {
                 }
             }
 
+            // Dictation status
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("DICTATION")
+                    .waiSectionHeader()
+                    .padding(.horizontal, Spacing.lg)
+
+                HStack {
+                    Image(systemName: "mic.badge.plus")
+                        .foregroundStyle(Palette.textSecondary)
+                    Text(dictationHint)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.xs)
+            }
+
             WaiDivider()
                 .padding(.horizontal, Spacing.lg)
 
@@ -262,12 +280,21 @@ struct MenuBarView: View {
             recentRecordings = []
         }
     }
+
+    private var dictationHint: String {
+        if !dictationManager.isFeatureEnabled {
+            return "Dictation is disabled"
+        }
+        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
+    }
 }
 
 #Preview {
     let recordingViewModel = MacRecordingViewModel()
-    let appState = MacAppState(recordingViewModel: recordingViewModel)
+    let dictation = DictationManager()
+    let appState = MacAppState(recordingViewModel: recordingViewModel, dictationManager: dictation)
     MenuBarView()
         .environmentObject(appState)
         .environmentObject(recordingViewModel)
+        .environmentObject(dictation)
 }

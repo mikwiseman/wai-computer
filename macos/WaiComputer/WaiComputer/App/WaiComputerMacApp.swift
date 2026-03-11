@@ -10,15 +10,19 @@ extension Notification.Name {
 struct WaiComputerMacApp: App {
     @StateObject private var recordingViewModel: MacRecordingViewModel
     @StateObject private var appState: MacAppState
+    @StateObject private var dictationManager: DictationManager
 
     init() {
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
+        let dictation = DictationManager()
 
         _recordingViewModel = StateObject(wrappedValue: recordingViewModel)
+        _dictationManager = StateObject(wrappedValue: dictation)
         _appState = StateObject(
             wrappedValue: MacAppState(
                 recordingViewModel: recordingViewModel,
+                dictationManager: dictation,
                 testingMode: testingMode
             )
         )
@@ -29,6 +33,7 @@ struct WaiComputerMacApp: App {
             MacContentView()
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
+                .environmentObject(dictationManager)
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
@@ -78,6 +83,7 @@ struct WaiComputerMacApp: App {
             MenuBarView()
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
+                .environmentObject(dictationManager)
         }
         .menuBarExtraStyle(.window)
     }
@@ -103,12 +109,18 @@ class MacAppState: ObservableObject {
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
     /// view hierarchy from rebuilding on every timer tick and transcript update.
     let recordingViewModel: MacRecordingViewModel
+    let dictationManager: DictationManager
     let testingMode: MacTestingMode
 
     private let apiClient: APIClient
 
-    init(recordingViewModel: MacRecordingViewModel, testingMode: MacTestingMode = .current) {
+    init(
+        recordingViewModel: MacRecordingViewModel,
+        dictationManager: DictationManager,
+        testingMode: MacTestingMode = .current
+    ) {
         self.recordingViewModel = recordingViewModel
+        self.dictationManager = dictationManager
         self.testingMode = testingMode
 
         let baseURL = URL(string: "https://wai.computer")!
@@ -213,6 +225,7 @@ class MacAppState: ObservableObject {
     }
 
     func logout() async {
+        dictationManager.disable()
         await apiClient.setAccessToken(nil)
         UserDefaults.standard.removeObject(forKey: "accessToken")
         currentUser = nil
@@ -224,9 +237,13 @@ class MacAppState: ObservableObject {
             let user = try await apiClient.getCurrentUser()
             currentUser = user
             isAuthenticated = true
+            dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
+                recordingViewModel?.phase == .idle
+            }
         } catch {
             isAuthenticated = false
             currentUser = nil
+            dictationManager.disable()
         }
     }
 
@@ -248,6 +265,9 @@ class MacAppState: ObservableObject {
         inputSource: MacRecordingInputSource = .dual
     ) async {
         completedRecordingContext = nil
+        if dictationManager.state != .idle {
+            await dictationManager.cancelDictation()
+        }
 
         await recordingViewModel.startRecording(
             apiClient: apiClient,

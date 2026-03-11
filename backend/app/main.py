@@ -6,7 +6,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import action_items, auth, chat, deepgram, entities, folders, recordings, search
+from app.api.routes import (
+    action_items,
+    auth,
+    chat,
+    deepgram,
+    dictation,
+    entities,
+    folders,
+    recordings,
+    search,
+)
 from app.api.routes import settings as settings_routes
 from app.config import get_settings
 
@@ -26,7 +36,10 @@ async def lifespan(app: FastAPI):
     if not app_settings.deepgram_api_key:
         logger.warning("DEEPGRAM_API_KEY is not configured — transcription will not work")
     if not app_settings.anthropic_api_key:
-        logger.warning("ANTHROPIC_API_KEY is not configured — summarization will not work")
+        logger.warning(
+            "ANTHROPIC_API_KEY is not configured — summarization and dictation cleanup "
+            "will not work"
+        )
     if not app_settings.resend_api_key:
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
     if (
@@ -75,6 +88,7 @@ app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(deepgram.router, prefix="/api")
+app.include_router(dictation.router, prefix="/api")
 
 
 @app.get("/")

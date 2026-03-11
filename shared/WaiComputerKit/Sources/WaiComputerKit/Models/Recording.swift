@@ -284,6 +284,13 @@ public extension Recording {
         status == .failed || (failureMessage?.isEmpty == false)
     }
 
+    var failurePreviewText: String? {
+        guard let failureMessage, !failureMessage.isEmpty else { return nil }
+        let normalized = failureMessage.replacingOccurrences(of: "\n", with: " ")
+        guard normalized.count > 90 else { return normalized }
+        return String(normalized.prefix(87)) + "..."
+    }
+
     var statusDisplayText: String? {
         switch status {
         case .failed:

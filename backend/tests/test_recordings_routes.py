@@ -5,11 +5,12 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deepgram import TranscriptResult
 from app.core.summarizer import SummaryResult
-from app.models.recording import ActionItem, Segment, Summary
+from app.models.recording import ActionItem, Recording, Segment, Summary
 
 
 async def _create_recording(
@@ -593,9 +594,57 @@ async def test_save_transcript_rejects_empty_payload_without_erasing_existing_se
 
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
-    assert [segment["content"] for segment in detail_response.json()["segments"]] == [
+    detail = detail_response.json()
+    assert [segment["content"] for segment in detail["segments"]] == [
         "Keep this transcript"
     ]
+    assert detail["status"] == "failed"
+    assert detail["failure_code"] == "transcript_empty"
+    assert detail["failure_message"] == "Transcript is empty"
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_marks_recording_failed_when_server_processing_crashes(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None)
+    await db_session.commit()
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings._reset_recording_processing_state",
+        AsyncMock(side_effect=RuntimeError("database exploded")),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 3,
+            "segments": [
+                {
+                    "text": "Keep this transcript",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 2000,
+                    "confidence": 0.93,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to save transcript"
+
+    result = await db_session.execute(
+        select(Recording).where(Recording.id == UUID(recording["id"]))
+    )
+    failed_recording = result.scalar_one()
+    assert failed_recording.status == "failed"
+    assert failed_recording.failure_code == "transcript_save_failed"
+    assert failed_recording.failure_message == "database exploded"
 
 
 @pytest.mark.asyncio
