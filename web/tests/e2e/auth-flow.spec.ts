@@ -1,10 +1,4 @@
-import { test, expect, Page } from "@playwright/test";
-
-const apiBaseUrls = [
-  "http://localhost:8000",
-  "http://127.0.0.1:8000",
-  "https://api.wai.computer",
-];
+import { test, expect, Page, Route } from "@playwright/test";
 
 const corsHeaders = {
   "access-control-allow-origin": "http://localhost:3000",
@@ -24,7 +18,7 @@ const authCookieHeader = {
  * Magic link verify: token "valid-token" succeeds, anything else fails.
  */
 async function installAuthMocks(page: Page) {
-  const handler = async (route: Parameters<Page["route"]>[1] extends (route: infer T) => unknown ? T : never) => {
+  const handler = async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -165,9 +159,7 @@ async function installAuthMocks(page: Page) {
     });
   };
 
-  for (const baseUrl of apiBaseUrls) {
-    await page.route(`${baseUrl}/**`, handler);
-  }
+  await page.route("**/api/**", handler);
 }
 
 // ---------------------------------------------------------------------------

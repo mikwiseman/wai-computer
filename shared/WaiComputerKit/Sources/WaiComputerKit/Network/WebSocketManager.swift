@@ -83,7 +83,13 @@ public actor WebSocketManager {
     public private(set) var collectedSegments: [LiveTranscriptSegment] = []
 
     /// Stream of WebSocket events. Call BEFORE connect() to not miss events.
+    ///
+    /// If a continuation already exists (previous caller is still iterating),
+    /// replaces it and logs a warning — the previous stream will end.
     public var events: AsyncStream<WebSocketEvent> {
+        if eventContinuation != nil {
+            print("[WS] Warning: replacing active event stream — previous iterator will be terminated")
+        }
         let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
         eventContinuation?.finish()
         eventContinuation = continuation

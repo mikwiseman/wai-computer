@@ -2,7 +2,7 @@ export class ApiError extends Error {
   status: number;
   payload: unknown;
 
-  constructor(status: number, message: string, payload: unknown) {
+  constructor(status: number, message: string, payload: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL = "https://api.wai.computer";
+const DEFAULT_BASE_URL = "";
 
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL;

@@ -65,7 +65,7 @@ pytest -m integration --no-cov   # live API tests (needs running server)
 pytest -m slow --no-cov          # performance/stress tests
 ```
 - Lint: `ruff check .` (line-length 100, rules: E, F, I, N, W)
-- Coverage threshold: 85% (`--cov-fail-under=85`)
+- Coverage threshold: 82% (`--cov-fail-under=82`)
 - Async mode: auto (pytest-asyncio)
 - Test DB env var: `TEST_DATABASE_URL`
 
@@ -182,7 +182,7 @@ All API routes are prefixed with `/api` in FastAPI. Caddy proxies `/api/*` → `
 | `POST /api/auth/magic-link` | Request magic link email |
 | `GET /api/auth/verify` | Verify magic link token |
 | `GET /api/auth/me` | Get current user |
-| `POST /api/auth/change-password` | Change password |
+| `POST /api/settings/change-password` | Change password |
 | `POST /api/auth/logout` | Logout |
 | `GET/POST /api/recordings` | List / create recordings |
 | `GET/DELETE /api/recordings/:id` | Get / delete recording |

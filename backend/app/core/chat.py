@@ -14,6 +14,16 @@ from app.models.chat import ChatMessage, ChatSession
 
 settings = get_settings()
 
+_anthropic_client: anthropic.AsyncAnthropic | None = None
+
+
+def _get_anthropic_client() -> anthropic.AsyncAnthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return _anthropic_client
+
+
 SYSTEM_PROMPT = (
     "You are a helpful meeting assistant. Answer questions based on "
     "the provided meeting transcript context. "
@@ -223,7 +233,7 @@ async def chat_with_recordings(
     messages.append({"role": "user", "content": user_content})
 
     # Call Claude
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_anthropic_client()
     try:
         response = await client.messages.create(
             model=settings.anthropic_model,

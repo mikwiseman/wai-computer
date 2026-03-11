@@ -295,7 +295,7 @@ def _upload_limit_message() -> str:
     return f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)}MB"
 
 
-def _normalize_failure_message(error: Exception, fallback: str) -> str:
+def _normalize_failure_message(error: Exception | str, fallback: str) -> str:
     message = str(error).strip()
     if not message:
         return fallback
@@ -1018,5 +1018,10 @@ async def upload_audio_file(
 
     db.expire_all()
     recording = await _load_recording_detail(recording_id, user_id, db)
+    if recording is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Recording disappeared after upload",
+        )
 
     return _serialize_recording_detail(recording)
