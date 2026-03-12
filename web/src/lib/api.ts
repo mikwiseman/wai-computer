@@ -15,6 +15,7 @@ import type {
   ExportFormat,
   KeywordsResponse,
   MessageResponse,
+  PinSessionResponse,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -25,6 +26,7 @@ import type {
   Summary,
   TokenResponse,
   TranscriptSearchResponse,
+  TranscriptStatsResponse,
   User,
   WeeklyDigestResponse,
 } from "./types";
@@ -194,6 +196,10 @@ export function searchTranscript(
   );
 }
 
+export function getTranscriptStats(recordingId: string): Promise<TranscriptStatsResponse> {
+  return apiFetch<TranscriptStatsResponse>(`/api/recordings/${recordingId}/transcript-stats`);
+}
+
 export function getRecordingKeywords(
   recordingId: string,
   limit?: number,
@@ -354,6 +360,18 @@ export async function exportChatSession(sessionId: string): Promise<string> {
 
 export function deleteChatSession(sessionId: string): Promise<void> {
   return apiFetch<void>(`/api/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+  });
+}
+
+export function pinChatSession(sessionId: string): Promise<PinSessionResponse> {
+  return apiFetch<PinSessionResponse>(`/api/chat/sessions/${sessionId}/pin`, {
+    method: "POST",
+  });
+}
+
+export function unpinChatSession(sessionId: string): Promise<PinSessionResponse> {
+  return apiFetch<PinSessionResponse>(`/api/chat/sessions/${sessionId}/pin`, {
     method: "DELETE",
   });
 }

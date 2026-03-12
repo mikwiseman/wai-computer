@@ -443,6 +443,11 @@ public actor APIClient {
         return try await request(.GET, path: "/api/chat/sessions/\(id)")
     }
 
+    public func searchChatSessions(query: String) async throws -> [ChatSessionListItem] {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return try await request(.GET, path: "/api/chat/sessions/search?q=\(encoded)")
+    }
+
     public func renameChatSession(id: String, title: String?) async throws -> RenameSessionResponse {
         let body = RenameSessionRequest(title: title)
         return try await request(.PATCH, path: "/api/chat/sessions/\(id)", body: body)
