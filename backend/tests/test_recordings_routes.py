@@ -1067,3 +1067,55 @@ async def test_restore_nonexistent_recording_returns_404(client: AsyncClient, au
         headers=auth_headers,
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_recording_with_folder_id(client: AsyncClient, auth_headers: dict):
+    """Creating a recording with a valid folder_id should assign it to that folder."""
+    folder_resp = await client.post(
+        "/api/folders", headers=auth_headers, json={"name": "Projects"}
+    )
+    assert folder_resp.status_code == 201
+    folder_id = folder_resp.json()["id"]
+
+    response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={"title": "In Folder", "type": "note", "folder_id": folder_id},
+    )
+    assert response.status_code == 201
+    assert response.json()["folder_id"] == folder_id
+
+
+@pytest.mark.asyncio
+async def test_create_recording_with_invalid_folder_returns_404(
+    client: AsyncClient, auth_headers: dict
+):
+    """Creating a recording with a non-existent folder_id should return 404."""
+    fake_folder_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json={"title": "Orphan", "type": "note", "folder_id": fake_folder_id},
+    )
+    assert response.status_code == 404
+    assert "folder not found" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_recordings_type_filter(client: AsyncClient, auth_headers: dict):
+    """Filtering recordings by type should return only matching recordings."""
+    await _create_recording(client, auth_headers, title="Meeting 1", type_="meeting")
+    await _create_recording(client, auth_headers, title="Meeting 2", type_="meeting")
+    await _create_recording(client, auth_headers, title="Note 1", type_="note")
+    await _create_recording(client, auth_headers, title="Reflection 1", type_="reflection")
+
+    response = await client.get(
+        "/api/recordings",
+        headers=auth_headers,
+        params={"type": "meeting"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert all(r["type"] == "meeting" for r in data)

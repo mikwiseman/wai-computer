@@ -13,6 +13,7 @@ import type {
   EntityDetail,
   EntityType,
   ExportFormat,
+  KeywordsResponse,
   MessageResponse,
   Recording,
   RecordingDetail,
@@ -189,6 +190,15 @@ export function searchTranscript(
 ): Promise<TranscriptSearchResponse> {
   return apiFetch<TranscriptSearchResponse>(
     `/api/recordings/${recordingId}/transcript/search${asQuery({ q: query, limit })}`,
+  );
+}
+
+export function getRecordingKeywords(
+  recordingId: string,
+  limit?: number,
+): Promise<KeywordsResponse> {
+  return apiFetch<KeywordsResponse>(
+    `/api/recordings/${recordingId}/keywords${asQuery({ limit })}`,
   );
 }
 

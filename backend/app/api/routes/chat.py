@@ -50,7 +50,7 @@ class ChatSessionListItem(BaseModel):
 
     id: str
     title: str | None
-    recording_ids: list | None
+    recording_ids: list[str] | None
     created_at: str
     message_count: int
 
@@ -61,8 +61,8 @@ class ChatMessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    source_segment_ids: list | None
-    source_recording_ids: list | None
+    source_segment_ids: list[str] | None
+    source_recording_ids: list[str] | None
     created_at: str
 
 
@@ -71,7 +71,7 @@ class ChatSessionDetailResponse(BaseModel):
 
     id: str
     title: str | None
-    recording_ids: list | None
+    recording_ids: list[str] | None
     created_at: str
     messages: list[ChatMessageResponse]
 

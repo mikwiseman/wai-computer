@@ -114,3 +114,22 @@ async def test_entity_isolation_between_users(client: AsyncClient):
 
     delete_other = await client.delete(f"/api/entities/{entity_id}", headers=other_headers)
     assert delete_other.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_entities_empty(client: AsyncClient):
+    """A new user with no entities should get an empty list."""
+    headers = await _register(client, "entity.empty@example.com")
+    response = await client.get("/api/entities", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_entity_returns_404(client: AsyncClient):
+    """Deleting a non-existent entity should return 404."""
+    headers = await _register(client, "entity.delnone@example.com")
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.delete(f"/api/entities/{fake_id}", headers=headers)
+    assert response.status_code == 404
+    assert "entity not found" in response.json()["detail"].lower()
