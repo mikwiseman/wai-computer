@@ -443,6 +443,33 @@ public actor APIClient {
         return try await request(.GET, path: "/api/chat/sessions/\(id)")
     }
 
+    public func renameChatSession(id: String, title: String?) async throws -> RenameSessionResponse {
+        let body = RenameSessionRequest(title: title)
+        return try await request(.PATCH, path: "/api/chat/sessions/\(id)", body: body)
+    }
+
+    public func exportChatSession(id: String) async throws -> String {
+        let url = baseURL.appendingPathComponent("/api/chat/sessions/\(id)/export")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        if let token = accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(URLError(.badServerResponse))
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: "Export failed")
+        }
+        guard let markdown = String(data: data, encoding: .utf8) else {
+            throw APIError.decodingError(DecodingError.dataCorrupted(
+                .init(codingPath: [], debugDescription: "Invalid UTF-8 data")
+            ))
+        }
+        return markdown
+    }
+
     public func deleteChatSession(id: String) async throws {
         try await requestNoContent(.DELETE, path: "/api/chat/sessions/\(id)")
     }

@@ -106,6 +106,21 @@ public struct ChatMessageResponse: Codable, Identifiable, Sendable {
     }
 }
 
+/// Request body for PATCH /api/chat/sessions/{id}
+public struct RenameSessionRequest: Codable, Sendable {
+    public let title: String?
+
+    public init(title: String?) {
+        self.title = title
+    }
+}
+
+/// Response from PATCH /api/chat/sessions/{id}
+public struct RenameSessionResponse: Codable, Sendable {
+    public let id: String
+    public let title: String?
+}
+
 /// Full session detail from GET /api/chat/sessions/{id}
 public struct ChatSessionDetail: Codable, Identifiable, Sendable {
     public let id: String

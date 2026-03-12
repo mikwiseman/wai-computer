@@ -78,7 +78,7 @@ const baseRecordingDetail = {
     people_mentioned: [],
     sentiment: "neutral",
   },
-  action_items: [{ id: "a1", task: "Task", owner: null, due_date: null, priority: "medium", status: "pending" }],
+  action_items: [{ id: "a1", recording_id: "r1", task: "Task", owner: null, due_date: null, priority: "medium", status: "pending", source: "auto", created_at: "2026-02-27T00:00:00Z" }],
   highlights: [],
 };
 
