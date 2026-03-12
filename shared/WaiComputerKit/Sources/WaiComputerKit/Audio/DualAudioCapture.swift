@@ -29,6 +29,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private var flushTask: Task<Void, Never>?
 
     private let lock = NSLock()
+    private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
 
@@ -36,6 +37,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         self.config = config
         self.mic = MicrophoneCapture(config: config)
         self.system = SystemAudioCapture(config: config)
+        self.continuationLock = .allocate(capacity: 1)
+        self.continuationLock.initialize(to: os_unfair_lock())
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         self.audioBuffers = stream
         self.bufferContinuation = continuation
@@ -116,7 +119,9 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         micTask = Task { [weak self] in
             guard let self else { return }
             for await buffer in self.mic.audioBuffers {
+                os_unfair_lock_lock(self.continuationLock)
                 self.bufferContinuation?.yield(buffer)
+                os_unfair_lock_unlock(self.continuationLock)
             }
         }
     }
@@ -144,8 +149,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         lock.unlock()
 
         hasSystemAudio = false
+        os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
+        os_unfair_lock_unlock(continuationLock)
         setupBufferStream()
+    }
+
+    deinit {
+        continuationLock.deinitialize(count: 1)
+        continuationLock.deallocate()
     }
 
     /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
@@ -206,6 +218,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             ch1[i] = sysSamples[i]
         }
 
+        os_unfair_lock_lock(continuationLock)
         continuation?.yield(outBuffer)
+        os_unfair_lock_unlock(continuationLock)
     }
 }

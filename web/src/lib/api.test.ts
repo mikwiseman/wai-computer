@@ -250,6 +250,30 @@ describe("api client wrappers", () => {
     );
   });
 
+  it("calls bulkRecordingOperation for delete", async () => {
+    await api.bulkRecordingOperation(["id1", "id2"], "delete");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        recording_ids: ["id1", "id2"],
+        action: "delete",
+        folder_id: undefined,
+      }),
+    });
+  });
+
+  it("calls bulkRecordingOperation for move with folder", async () => {
+    await api.bulkRecordingOperation(["id1"], "move", "folder1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        recording_ids: ["id1"],
+        action: "move",
+        folder_id: "folder1",
+      }),
+    });
+  });
+
   it("calls exportRecording with correct URL and returns blob", async () => {
     const mockBlob = new Blob(["# Test"]);
     const mockResponse = {

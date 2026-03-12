@@ -8,7 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import selectinload
 
@@ -277,6 +277,31 @@ class TranscriptSearchResponse(BaseModel):
     query: str
     total_matches: int
     segments: list[TranscriptSearchMatch]
+
+
+class BulkOperationRequest(BaseModel):
+    """Request for bulk operations on recordings."""
+
+    recording_ids: list[str] = Field(min_length=1)
+    action: Literal["delete", "restore", "move"]
+    folder_id: str | None = None
+
+    @field_validator("recording_ids")
+    @classmethod
+    def validate_recording_ids(cls, value: list[str]) -> list[str]:
+        for rid in value:
+            try:
+                UUID(rid)
+            except ValueError as exc:
+                raise ValueError(f"Invalid UUID: {rid}") from exc
+        return value
+
+
+class BulkOperationResponse(BaseModel):
+    """Response from a bulk operation."""
+
+    processed: int
+    failed: int
 
 
 class MessageResponse(BaseModel):
@@ -837,6 +862,56 @@ async def get_recording_analytics(
         total_words=total_words,
         by_type=dict(type_counts),
         by_week=by_week,
+    )
+
+
+@router.post("/bulk", response_model=BulkOperationResponse)
+async def bulk_recording_operation(
+    request: BulkOperationRequest,
+    user: CurrentUser,
+    db: Database,
+) -> BulkOperationResponse:
+    """Perform a bulk operation on multiple recordings."""
+    recording_uuids = [UUID(rid) for rid in request.recording_ids]
+
+    # Validate folder if move action
+    if request.action == "move" and request.folder_id is not None:
+        folder = await _require_folder(UUID(request.folder_id), user.id, db)
+        folder_id = folder.id if folder else None
+    elif request.action == "move":
+        folder_id = None
+    else:
+        folder_id = None
+
+    # Fetch all recordings owned by the user
+    result = await db.execute(
+        select(Recording).where(
+            Recording.id.in_(recording_uuids),
+            Recording.user_id == user.id,
+        )
+    )
+    found_recordings = {r.id: r for r in result.scalars().all()}
+
+    processed = 0
+    for rid in recording_uuids:
+        recording = found_recordings.get(rid)
+        if recording is None:
+            continue
+
+        if request.action == "delete":
+            recording.deleted_at = datetime.now(timezone.utc)
+        elif request.action == "restore":
+            recording.deleted_at = None
+        elif request.action == "move":
+            recording.folder_id = folder_id
+
+        processed += 1
+
+    await db.flush()
+
+    return BulkOperationResponse(
+        processed=processed,
+        failed=len(recording_uuids) - processed,
     )
 
 
