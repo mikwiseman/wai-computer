@@ -234,6 +234,11 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls searchChatSessions", async () => {
+    await api.searchChatSessions("roadmap");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/search?q=roadmap");
+  });
+
   it("applies sendChatMessage defaults for optional fields", async () => {
     await api.sendChatMessage({ question: "Hello" });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat", {

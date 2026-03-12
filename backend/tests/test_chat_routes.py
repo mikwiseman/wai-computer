@@ -584,3 +584,193 @@ async def test_export_empty_chat_session(
     body = response.text
     assert "# Empty Chat" in body
     assert "**You:**" not in body
+
+
+@pytest.mark.asyncio
+async def test_export_chat_session_with_null_title(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Export session with null title should use default heading."""
+    headers, token = await _register(
+        client, "chat.route.export.null@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title=None, recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/chat/sessions/{session.id}/export",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "# Chat Session" in response.text
+
+
+@pytest.mark.asyncio
+async def test_search_chat_sessions(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Search should find sessions containing the query in messages."""
+    headers, token = await _register(
+        client, "chat.route.search@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+
+    s1 = ChatSession(
+        user_id=user.id, title="Roadmap Chat", recording_ids=None
+    )
+    s2 = ChatSession(
+        user_id=user.id, title="Budget Chat", recording_ids=None
+    )
+    db_session.add_all([s1, s2])
+    await db_session.flush()
+
+    db_session.add_all([
+        ChatMessage(
+            session_id=s1.id,
+            role="user",
+            content="Tell me about the roadmap",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+        ChatMessage(
+            session_id=s1.id,
+            role="assistant",
+            content="The roadmap includes Q3 milestones.",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+        ChatMessage(
+            session_id=s2.id,
+            role="user",
+            content="What is the budget?",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+    ])
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=headers,
+        params={"q": "roadmap"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == str(s1.id)
+    assert payload[0]["title"] == "Roadmap Chat"
+
+
+@pytest.mark.asyncio
+async def test_search_chat_sessions_no_results(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Search with no matching messages returns empty list."""
+    headers, _ = await _register(
+        client, "chat.route.search.empty@example.com"
+    )
+
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=headers,
+        params={"q": "nonexistent"},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_search_chat_sessions_other_user_excluded(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Search should not return other users' sessions."""
+    _, owner_token = await _register(
+        client, "chat.route.search.owner@example.com"
+    )
+    owner = await _user_from_token(db_session, owner_token)
+    session = ChatSession(
+        user_id=owner.id, title="Secret", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(
+            session_id=session.id,
+            role="user",
+            content="secret roadmap details",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        )
+    )
+    await db_session.flush()
+
+    other_headers, _ = await _register(
+        client, "chat.route.search.other@example.com"
+    )
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=other_headers,
+        params={"q": "roadmap"},
+    )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_search_chat_sessions_empty_query_rejected(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Empty query should return 422."""
+    headers, _ = await _register(
+        client, "chat.route.search.emptyq@example.com"
+    )
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=headers,
+        params={"q": ""},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_chat_sessions_case_insensitive(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Search should be case-insensitive."""
+    headers, token = await _register(
+        client, "chat.route.search.case@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Test", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(
+            session_id=session.id,
+            role="assistant",
+            content="The ROADMAP is ready.",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=headers,
+        params={"q": "roadmap"},
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 1

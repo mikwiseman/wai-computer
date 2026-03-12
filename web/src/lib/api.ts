@@ -325,6 +325,10 @@ export function listChatSessions(): Promise<ChatSession[]> {
   return apiFetch<ChatSession[]>("/api/chat/sessions");
 }
 
+export function searchChatSessions(q: string): Promise<ChatSession[]> {
+  return apiFetch<ChatSession[]>(`/api/chat/sessions/search${asQuery({ q })}`);
+}
+
 export function getChatSession(sessionId: string): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/chat/sessions/${sessionId}`);
 }

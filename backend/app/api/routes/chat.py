@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -140,6 +140,49 @@ async def list_chat_sessions(
         )
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .where(ChatSession.user_id == user.id)
+        .group_by(ChatSession.id)
+        .order_by(ChatSession.created_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        ChatSessionListItem(
+            id=str(session.id),
+            title=session.title,
+            recording_ids=session.recording_ids,
+            created_at=session.created_at.isoformat(),
+            message_count=message_count,
+        )
+        for session, message_count in rows
+    ]
+
+
+@router.get("/sessions/search", response_model=list[ChatSessionListItem])
+async def search_chat_sessions(
+    user: CurrentUser,
+    db: Database,
+    q: str = Query(min_length=1),
+) -> list[ChatSessionListItem]:
+    """Search chat sessions by message content."""
+    matching_session_ids = (
+        select(ChatMessage.session_id)
+        .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+        .where(
+            ChatSession.user_id == user.id,
+            ChatMessage.content.ilike(f"%{q}%"),
+        )
+        .distinct()
+    )
+
+    stmt = (
+        select(
+            ChatSession,
+            func.count(ChatMessage.id).label("message_count"),
+        )
+        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
+        .where(ChatSession.id.in_(matching_session_ids))
         .group_by(ChatSession.id)
         .order_by(ChatSession.created_at.desc())
     )
