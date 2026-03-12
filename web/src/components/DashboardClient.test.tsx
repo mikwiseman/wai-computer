@@ -64,6 +64,7 @@ const baseRecording = {
   language: "multi",
   folder_id: null,
   deleted_at: null,
+  starred_at: null,
   created_at: "2026-02-27T00:00:00Z",
 };
 

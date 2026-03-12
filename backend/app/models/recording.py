@@ -69,6 +69,10 @@ class Recording(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    starred_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="recordings")

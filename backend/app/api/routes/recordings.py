@@ -204,6 +204,7 @@ class RecordingResponse(BaseModel):
     language: str | None
     folder_id: str | None
     deleted_at: datetime | None
+    starred_at: datetime | None
     created_at: datetime
 
 
@@ -409,6 +410,7 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
         language=recording.language,
         folder_id=str(recording.folder_id) if recording.folder_id else None,
         deleted_at=recording.deleted_at,
+        starred_at=recording.starred_at,
         created_at=recording.created_at,
     )
 
@@ -682,6 +684,7 @@ async def list_recordings(
     type: Literal["meeting", "note", "reflection"] | None = None,
     folder_id: UUID | None = None,
     trashed: bool = False,
+    starred: bool = False,
 ) -> list[RecordingResponse]:
     """List user's recordings."""
     query = select(Recording).where(Recording.user_id == user.id)
@@ -695,6 +698,8 @@ async def list_recordings(
         query = query.where(Recording.type == type)
     if folder_id is not None:
         query = query.where(Recording.folder_id == folder_id)
+    if starred:
+        query = query.where(Recording.starred_at.is_not(None))
 
     query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
 
@@ -1223,6 +1228,55 @@ async def restore_recording(
     recording.deleted_at = None
     await db.flush()
     return _serialize_recording(recording)
+
+
+class StarRecordingResponse(BaseModel):
+    """Response for starring/unstarring a recording."""
+
+    id: str
+    starred_at: datetime | None
+
+
+@router.post("/{recording_id}/star", response_model=StarRecordingResponse)
+async def star_recording(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> StarRecordingResponse:
+    """Star a recording."""
+    result = await db.execute(
+        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    recording.starred_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    return StarRecordingResponse(id=str(recording.id), starred_at=recording.starred_at)
+
+
+@router.delete("/{recording_id}/star", response_model=StarRecordingResponse)
+async def unstar_recording(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> StarRecordingResponse:
+    """Unstar a recording."""
+    result = await db.execute(
+        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    recording.starred_at = None
+    await db.flush()
+
+    return StarRecordingResponse(id=str(recording.id), starred_at=None)
 
 
 @router.patch("/{recording_id}", response_model=RecordingResponse)

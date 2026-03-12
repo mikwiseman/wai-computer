@@ -336,6 +336,20 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls starRecording", async () => {
+    await api.starRecording("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/star", {
+      method: "POST",
+    });
+  });
+
+  it("calls unstarRecording", async () => {
+    await api.unstarRecording("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/star", {
+      method: "DELETE",
+    });
+  });
+
   it("calls bulkRecordingOperation for delete", async () => {
     await api.bulkRecordingOperation(["id1", "id2"], "delete");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/bulk", {
