@@ -339,6 +339,15 @@ export function renameChatSession(
   });
 }
 
+export async function exportChatSession(sessionId: string): Promise<string> {
+  const url = `${getApiBaseUrl()}/api/chat/sessions/${sessionId}/export`;
+  const response = await fetch(url, { credentials: "include", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+  }
+  return response.text();
+}
+
 export function deleteChatSession(sessionId: string): Promise<void> {
   return apiFetch<void>(`/api/chat/sessions/${sessionId}`, {
     method: "DELETE",

@@ -209,3 +209,58 @@ async def test_keywords_sorted_by_count_descending(
     assert counts == sorted(counts, reverse=True)
     assert keywords[0]["term"] == "apple"
     assert keywords[0]["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_keywords_with_only_stop_words(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Transcript with only stop words should return empty keywords."""
+    headers = await _register(client, "keywords.stoponly@example.com")
+    recording_id = await _create_recording(client, headers, "Stop Words")
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker",
+            content="the is a an and or but for to of in on at by",
+            start_ms=0,
+            end_ms=3000,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording_id}/keywords",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["keywords"] == []
+
+
+@pytest.mark.asyncio
+async def test_keywords_case_insensitive(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Keywords should be case-insensitive (lowercased)."""
+    headers = await _register(client, "keywords.case@example.com")
+    recording_id = await _create_recording(client, headers, "Case Test")
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker",
+            content="Roadmap roadmap ROADMAP",
+            start_ms=0,
+            end_ms=2000,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording_id}/keywords",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    terms = {k["term"]: k["count"] for k in response.json()["keywords"]}
+    assert terms["roadmap"] == 3

@@ -262,3 +262,20 @@ async def test_bulk_rejects_malformed_uuids(
         json={"recording_ids": ["not-a-uuid"], "action": "delete"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_bulk_move_rejects_malformed_folder_id(
+    client: AsyncClient, auth_headers: dict
+):
+    """Bulk move with a malformed folder_id should return 422."""
+    response = await client.post(
+        "/api/recordings/bulk",
+        headers=auth_headers,
+        json={
+            "recording_ids": [str(uuid4())],
+            "action": "move",
+            "folder_id": "not-a-uuid",
+        },
+    )
+    assert response.status_code == 422
