@@ -19,6 +19,7 @@ import type {
   RecordingDetail,
   RecordingType,
   RelatedRecordingsResponse,
+  RenameSessionResponse,
   SearchResponse,
   SpeakerStatsResponse,
   Summary,
@@ -326,6 +327,16 @@ export function listChatSessions(): Promise<ChatSession[]> {
 
 export function getChatSession(sessionId: string): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/chat/sessions/${sessionId}`);
+}
+
+export function renameChatSession(
+  sessionId: string,
+  title: string | null,
+): Promise<RenameSessionResponse> {
+  return apiFetch<RenameSessionResponse>(`/api/chat/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
 }
 
 export function deleteChatSession(sessionId: string): Promise<void> {

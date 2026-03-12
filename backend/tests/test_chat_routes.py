@@ -308,3 +308,123 @@ async def test_send_chat_message_without_optional_fields(
     assert payload["answer"] == "Here is a general answer."
     assert payload["session_id"] is not None
     assert payload["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Renaming a chat session should update the title."""
+    headers, token = await _register(client, "chat.route.rename@example.com")
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Old Title", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.patch(
+        f"/api/chat/sessions/{session.id}",
+        headers=headers,
+        json={"title": "New Title"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == str(session.id)
+    assert payload["title"] == "New Title"
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session_to_null(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Setting title to null should clear it."""
+    headers, token = await _register(
+        client, "chat.route.rename.null@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Has Title", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.patch(
+        f"/api/chat/sessions/{session.id}",
+        headers=headers,
+        json={"title": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["title"] is None
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session_not_found(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Renaming a nonexistent session should return 404."""
+    headers, _ = await _register(
+        client, "chat.route.rename.nf@example.com"
+    )
+    fake_id = str(uuid4())
+    response = await client.patch(
+        f"/api/chat/sessions/{fake_id}",
+        headers=headers,
+        json={"title": "X"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Chat session not found"
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session_other_user_denied(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Renaming another user's session should return 404."""
+    _, owner_token = await _register(
+        client, "chat.route.rename.owner@example.com"
+    )
+    owner = await _user_from_token(db_session, owner_token)
+    session = ChatSession(
+        user_id=owner.id, title="Owner Only", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    other_headers, _ = await _register(
+        client, "chat.route.rename.other@example.com"
+    )
+    response = await client.patch(
+        f"/api/chat/sessions/{session.id}",
+        headers=other_headers,
+        json={"title": "Hijacked"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session_empty_title_rejected(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Empty string title should be rejected."""
+    headers, token = await _register(
+        client, "chat.route.rename.empty@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Keep", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.patch(
+        f"/api/chat/sessions/{session.id}",
+        headers=headers,
+        json={"title": ""},
+    )
+    assert response.status_code == 422

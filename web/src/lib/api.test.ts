@@ -218,6 +218,22 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/chat/sessions/s1", { method: "DELETE" });
   });
 
+  it("calls renameChatSession", async () => {
+    await api.renameChatSession("s1", "New Title");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "New Title" }),
+    });
+  });
+
+  it("calls renameChatSession with null title", async () => {
+    await api.renameChatSession("s1", null);
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1", {
+      method: "PATCH",
+      body: JSON.stringify({ title: null }),
+    });
+  });
+
   it("applies sendChatMessage defaults for optional fields", async () => {
     await api.sendChatMessage({ question: "Hello" });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat", {

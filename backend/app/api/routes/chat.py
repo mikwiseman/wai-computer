@@ -204,6 +204,46 @@ async def get_chat_session(
     )
 
 
+class RenameSessionRequest(BaseModel):
+    """Request to rename a chat session."""
+
+    title: str | None = Field(min_length=1)
+
+
+class RenameSessionResponse(BaseModel):
+    """Response after renaming a chat session."""
+
+    id: str
+    title: str | None
+
+
+@router.patch("/sessions/{session_id}", response_model=RenameSessionResponse)
+async def rename_chat_session(
+    session_id: uuid.UUID,
+    request: RenameSessionRequest,
+    user: CurrentUser,
+    db: Database,
+) -> RenameSessionResponse:
+    """Rename a chat session."""
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id, ChatSession.user_id == user.id
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found",
+        )
+
+    session.title = request.title
+    await db.flush()
+
+    return RenameSessionResponse(id=str(session.id), title=session.title)
+
+
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_chat_session(
     session_id: uuid.UUID,
