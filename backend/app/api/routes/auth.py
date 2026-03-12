@@ -26,9 +26,16 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
 
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
+
     @field_validator("password")
     @classmethod
     def password_min_length(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Password cannot be only whitespace")
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
@@ -40,12 +47,22 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
+
 
 class MagicLinkRequest(BaseModel):
     """Request body for magic link."""
 
     email: EmailStr
     client: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.lower()
 
 
 class VerifyMagicLinkRequest(BaseModel):

@@ -122,6 +122,17 @@ export function ChatPanel({ recordings }: ChatPanelProps) {
         id: msg.id,
         role: msg.role,
         content: msg.content,
+        sources: msg.source_segment_ids?.length
+          ? msg.source_segment_ids.map((segId, idx) => ({
+              segment_id: segId,
+              recording_id: msg.source_recording_ids?.[idx] ?? "",
+              recording_title: null,
+              speaker: null,
+              content: "",
+              start_ms: null,
+              end_ms: null,
+            }))
+          : undefined,
       }));
       setMessages(displayMessages);
     } catch (err: unknown) {
