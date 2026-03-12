@@ -358,6 +358,21 @@ export function DashboardClient() {
           </button>
         </form>
         <p data-testid="search-total">Total: {searchResponse?.total ?? 0}</p>
+        {searchResponse?.results && searchResponse.results.length > 0 ? (
+          <ul data-testid="search-results">
+            {searchResponse.results.map((result) => (
+              <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
+                <strong>{result.recording_title ?? "(untitled)"}</strong>
+                {" "}
+                <span>{result.content}</span>
+                {result.speaker ? <small> — {result.speaker}</small> : null}
+                <small> (score: {result.score.toFixed(2)})</small>
+              </li>
+            ))}
+          </ul>
+        ) : searchResponse && searchResponse.total === 0 ? (
+          <p data-testid="search-no-results">No results found.</p>
+        ) : null}
       </section>
 
       <ChatPanel recordings={recordings} />

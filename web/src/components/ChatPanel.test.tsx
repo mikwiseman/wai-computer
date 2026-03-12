@@ -579,4 +579,48 @@ describe("ChatPanel", () => {
       expect(screen.getByRole("checkbox", { name: /Design Review/i })).not.toBeChecked();
     });
   });
+
+  // --- Sources from loaded sessions ---
+
+  it("maps source_segment_ids to sources when loading a session", async () => {
+    const sessionWithSources = {
+      ...baseSessionDetail,
+      messages: [
+        {
+          id: "m1",
+          role: "user" as const,
+          content: "What happened?",
+          source_segment_ids: null,
+          source_recording_ids: null,
+          created_at: "2026-03-01T00:01:00Z",
+        },
+        {
+          id: "m2",
+          role: "assistant" as const,
+          content: "The team discussed priorities.",
+          source_segment_ids: ["seg1", "seg2"],
+          source_recording_ids: ["r1", "r2"],
+          created_at: "2026-03-01T00:01:05Z",
+        },
+      ],
+    };
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(sessionWithSources);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Planning chat"));
+
+    await waitFor(() => {
+      expect(screen.getByText("The team discussed priorities.")).toBeInTheDocument();
+    });
+
+    // The assistant message should have a sources toggle since source_segment_ids were mapped
+    expect(screen.getByText("Show sources (2)")).toBeInTheDocument();
+  });
 });

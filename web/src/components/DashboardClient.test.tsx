@@ -423,4 +423,75 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("recording-detail")).toHaveTextContent("Summary: Not generated");
     });
   });
+
+  it("renders search results when results are returned", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    mockSearch.mockResolvedValue({
+      results: [
+        {
+          recording_id: "r1",
+          recording_title: "Planning",
+          recording_type: "note",
+          segment_id: "seg1",
+          speaker: "Alice",
+          content: "We discussed the roadmap",
+          start_ms: 1000,
+          end_ms: 5000,
+          score: 0.95,
+        },
+        {
+          recording_id: "r1",
+          recording_title: null,
+          recording_type: "note",
+          segment_id: "seg2",
+          speaker: null,
+          content: "Action items were assigned",
+          start_ms: 6000,
+          end_ms: 10000,
+          score: 0.82,
+        },
+      ],
+      total: 2,
+    });
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    await user.type(screen.getByTestId("search-query"), "roadmap");
+    await user.click(screen.getByTestId("search-submit"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 2");
+      expect(screen.getByTestId("search-results")).toBeInTheDocument();
+      expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("Planning");
+      expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("We discussed the roadmap");
+      expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("Alice");
+      expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("0.95");
+      expect(screen.getByTestId("search-result-seg2")).toHaveTextContent("(untitled)");
+    });
+  });
+
+  it("renders no-results message when search returns empty", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    mockSearch.mockResolvedValue({ results: [], total: 0 });
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    await user.type(screen.getByTestId("search-query"), "nonexistent");
+    await user.click(screen.getByTestId("search-submit"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+      expect(screen.getByTestId("search-no-results")).toHaveTextContent("No results found.");
+    });
+  });
 });
