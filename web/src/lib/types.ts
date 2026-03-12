@@ -32,6 +32,7 @@ export interface Recording {
   language: string | null;
   folder_id: string | null;
   deleted_at: string | null;
+  starred_at: string | null;
   created_at: string;
 }
 
@@ -207,6 +208,11 @@ export interface ChatSession {
 export interface PinSessionResponse {
   id: string;
   pinned_at: string | null;
+}
+
+export interface StarRecordingResponse {
+  id: string;
+  starred_at: string | null;
 }
 
 export interface ChatSessionDetail {

@@ -16,6 +16,7 @@ import type {
   KeywordsResponse,
   MessageResponse,
   PinSessionResponse,
+  StarRecordingResponse,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -179,6 +180,18 @@ export function bulkRecordingOperation(
       action,
       folder_id: folderId,
     }),
+  });
+}
+
+export function starRecording(recordingId: string): Promise<StarRecordingResponse> {
+  return apiFetch<StarRecordingResponse>(`/api/recordings/${recordingId}/star`, {
+    method: "POST",
+  });
+}
+
+export function unstarRecording(recordingId: string): Promise<StarRecordingResponse> {
+  return apiFetch<StarRecordingResponse>(`/api/recordings/${recordingId}/star`, {
+    method: "DELETE",
   });
 }
 
