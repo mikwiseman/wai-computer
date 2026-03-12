@@ -1,10 +1,11 @@
 """Chat routes for conversational RAG Q&A against recordings."""
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.api.deps import CurrentUser, Database
 from app.core.chat import ChatResult, chat_with_recordings
@@ -53,6 +54,7 @@ class ChatSessionListItem(BaseModel):
     recording_ids: list[str] | None
     created_at: str
     message_count: int
+    pinned_at: str | None = None
 
 
 class ChatMessageResponse(BaseModel):
@@ -95,7 +97,7 @@ async def send_chat_message(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail=f"Invalid UUID: {exc}",
         ) from exc
 
@@ -131,8 +133,8 @@ async def list_chat_sessions(
     user: CurrentUser,
     db: Database,
 ) -> list[ChatSessionListItem]:
-    """List all chat sessions for the current user, most recent first."""
-    # Query sessions with message counts
+    """List all chat sessions for the current user, pinned first then most recent."""
+    # Query sessions with message counts; pinned sessions come first
     stmt = (
         select(
             ChatSession,
@@ -141,7 +143,11 @@ async def list_chat_sessions(
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .where(ChatSession.user_id == user.id)
         .group_by(ChatSession.id)
-        .order_by(ChatSession.created_at.desc())
+        .order_by(
+            case((ChatSession.pinned_at.is_not(None), 0), else_=1),
+            ChatSession.pinned_at.desc().nulls_last(),
+            ChatSession.created_at.desc(),
+        )
     )
 
     result = await db.execute(stmt)
@@ -154,6 +160,7 @@ async def list_chat_sessions(
             recording_ids=session.recording_ids,
             created_at=session.created_at.isoformat(),
             message_count=message_count,
+            pinned_at=session.pinned_at.isoformat() if session.pinned_at else None,
         )
         for session, message_count in rows
     ]
@@ -166,12 +173,13 @@ async def search_chat_sessions(
     q: str = Query(min_length=1),
 ) -> list[ChatSessionListItem]:
     """Search chat sessions by message content."""
+    escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     matching_session_ids = (
         select(ChatMessage.session_id)
         .join(ChatSession, ChatMessage.session_id == ChatSession.id)
         .where(
             ChatSession.user_id == user.id,
-            ChatMessage.content.ilike(f"%{q}%"),
+            ChatMessage.content.ilike(f"%{escaped}%", escape="\\"),
         )
         .distinct()
     )
@@ -197,6 +205,7 @@ async def search_chat_sessions(
             recording_ids=session.recording_ids,
             created_at=session.created_at.isoformat(),
             message_count=message_count,
+            pinned_at=session.pinned_at.isoformat() if session.pinned_at else None,
         )
         for session, message_count in rows
     ]
@@ -352,3 +361,74 @@ async def delete_chat_session(
 
     await db.delete(session)
     await db.flush()
+
+
+class PinSessionResponse(BaseModel):
+    """Response after pinning/unpinning a chat session."""
+
+    id: str
+    pinned_at: str | None
+
+
+@router.post(
+    "/sessions/{session_id}/pin",
+    response_model=PinSessionResponse,
+)
+async def pin_chat_session(
+    session_id: uuid.UUID,
+    user: CurrentUser,
+    db: Database,
+) -> PinSessionResponse:
+    """Pin a chat session so it appears at the top of the list."""
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id, ChatSession.user_id == user.id
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found",
+        )
+
+    session.pinned_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    return PinSessionResponse(
+        id=str(session.id),
+        pinned_at=session.pinned_at.isoformat(),
+    )
+
+
+@router.delete(
+    "/sessions/{session_id}/pin",
+    response_model=PinSessionResponse,
+)
+async def unpin_chat_session(
+    session_id: uuid.UUID,
+    user: CurrentUser,
+    db: Database,
+) -> PinSessionResponse:
+    """Unpin a chat session."""
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id, ChatSession.user_id == user.id
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found",
+        )
+
+    session.pinned_at = None
+    await db.flush()
+
+    return PinSessionResponse(
+        id=str(session.id),
+        pinned_at=None,
+    )

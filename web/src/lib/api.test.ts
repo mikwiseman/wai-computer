@@ -303,6 +303,11 @@ describe("api client wrappers", () => {
     );
   });
 
+  it("calls getTranscriptStats", async () => {
+    await api.getTranscriptStats("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/transcript-stats");
+  });
+
   it("calls getRecordingKeywords", async () => {
     await api.getRecordingKeywords("rec1", 10);
     expect(mockedApiFetch).toHaveBeenCalledWith(
@@ -315,6 +320,20 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith(
       "/api/recordings/rec1/keywords",
     );
+  });
+
+  it("calls pinChatSession", async () => {
+    await api.pinChatSession("s1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1/pin", {
+      method: "POST",
+    });
+  });
+
+  it("calls unpinChatSession", async () => {
+    await api.unpinChatSession("s1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1/pin", {
+      method: "DELETE",
+    });
   });
 
   it("calls bulkRecordingOperation for delete", async () => {

@@ -1386,6 +1386,68 @@ async def get_recording_keywords(
     )
 
 
+class TranscriptStatsResponse(BaseModel):
+    """Aggregate statistics about a recording's transcript."""
+
+    recording_id: str
+    segment_count: int
+    word_count: int
+    unique_speakers: int
+    speakers: list[str]
+    avg_words_per_segment: float
+    longest_segment_ms: int | None
+    shortest_segment_ms: int | None
+
+
+@router.get(
+    "/{recording_id}/transcript-stats",
+    response_model=TranscriptStatsResponse,
+)
+async def get_transcript_stats(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> TranscriptStatsResponse:
+    """Get aggregate transcript statistics for a recording."""
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(selectinload(Recording.segments))
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recording not found",
+        )
+
+    segments = recording.segments or []
+    word_count = sum(len(s.content.split()) for s in segments)
+    speakers_seen: list[str] = []
+    for s in segments:
+        if s.speaker and s.speaker not in speakers_seen:
+            speakers_seen.append(s.speaker)
+
+    durations: list[int] = []
+    for s in segments:
+        if s.start_ms is not None and s.end_ms is not None:
+            durations.append(s.end_ms - s.start_ms)
+
+    avg_wps = round(word_count / len(segments), 1) if segments else 0.0
+
+    return TranscriptStatsResponse(
+        recording_id=str(recording_id),
+        segment_count=len(segments),
+        word_count=word_count,
+        unique_speakers=len(speakers_seen),
+        speakers=speakers_seen,
+        avg_words_per_segment=avg_wps,
+        longest_segment_ms=max(durations) if durations else None,
+        shortest_segment_ms=min(durations) if durations else None,
+    )
+
+
 @router.get("/{recording_id}/speaker-stats", response_model=SpeakerStatsResponse)
 async def get_speaker_stats(
     recording_id: UUID,

@@ -1,8 +1,9 @@
 """Chat session and message models."""
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +20,7 @@ class ChatSession(Base, UUIDMixin, TimestampMixin):
     )
     title: Mapped[str | None] = mapped_column(String(500))
     recording_ids: Mapped[list | None] = mapped_column(JSONB)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="chat_sessions")

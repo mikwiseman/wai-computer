@@ -201,6 +201,12 @@ export interface ChatSession {
   recording_ids: string[] | null;
   created_at: string;
   message_count: number;
+  pinned_at: string | null;
+}
+
+export interface PinSessionResponse {
+  id: string;
+  pinned_at: string | null;
 }
 
 export interface ChatSessionDetail {
@@ -287,6 +293,17 @@ export interface KeywordsResponse {
   recording_id: string;
   total_words: number;
   keywords: KeywordItem[];
+}
+
+export interface TranscriptStatsResponse {
+  recording_id: string;
+  segment_count: number;
+  word_count: number;
+  unique_speakers: number;
+  speakers: string[];
+  avg_words_per_segment: number;
+  longest_segment_ms: number | null;
+  shortest_segment_ms: number | null;
 }
 
 export interface TranscriptSearchMatch {

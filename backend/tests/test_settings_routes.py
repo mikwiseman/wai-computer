@@ -158,3 +158,49 @@ async def test_change_password_wrong_old_password(client: AsyncClient):
         json={"email": "settings.wrongold@example.com", "password": "correct-password-123"},
     )
     assert login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_settings_with_null_language(client: AsyncClient):
+    """PATCH /api/settings with null default_language should not change it."""
+    headers = await _register(client, "settings.null.lang@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"default_language": None},
+    )
+    assert response.status_code == 200
+    # null is a no-op; the default_language should remain unchanged
+    assert response.json()["default_language"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_settings_normalizes_language(client: AsyncClient):
+    """PATCH /api/settings should normalize language to lowercase."""
+    headers = await _register(client, "settings.norm.lang@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"default_language": "  EN  "},
+    )
+    assert response.status_code == 200
+    assert response.json()["default_language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_change_password_requires_auth(client: AsyncClient):
+    """Unauthenticated change-password should return 401."""
+    response = await client.post(
+        "/api/settings/change-password",
+        json={"current_password": "x", "new_password": "new-password-123"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_settings_requires_auth(client: AsyncClient):
+    """Unauthenticated GET /api/settings should return 401."""
+    response = await client.get("/api/settings")
+    assert response.status_code == 401
