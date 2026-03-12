@@ -1,7 +1,8 @@
 """Recording CRUD routes."""
 
 import logging
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -1343,9 +1344,6 @@ async def get_recording_keywords(
     limit: int = Query(20, ge=1, le=100),
 ) -> KeywordsResponse:
     """Extract key terms from a recording's transcript."""
-    import re
-    from collections import Counter
-
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)

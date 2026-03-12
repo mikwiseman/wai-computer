@@ -24,8 +24,14 @@ export interface Recording {
   title: string | null;
   type: RecordingType;
   audio_url: string | null;
+  status: string;
+  failure_code: string | null;
+  failure_message: string | null;
+  uploaded_at: string | null;
   duration_seconds: number | null;
   language: string | null;
+  folder_id: string | null;
+  deleted_at: string | null;
   created_at: string;
 }
 
@@ -203,6 +209,11 @@ export interface ChatSessionDetail {
   recording_ids: string[] | null;
   created_at: string;
   messages: ChatMessageData[];
+}
+
+export interface RenameSessionResponse {
+  id: string;
+  title: string | null;
 }
 
 export interface TopicCount {
