@@ -254,6 +254,19 @@ export interface AnalyticsResponse {
   by_week: WeekCount[];
 }
 
+export type BulkAction = "delete" | "restore" | "move";
+
+export interface BulkOperationRequest {
+  recording_ids: string[];
+  action: BulkAction;
+  folder_id?: string | null;
+}
+
+export interface BulkOperationResponse {
+  processed: number;
+  failed: number;
+}
+
 export interface TranscriptSearchMatch {
   segment_id: string;
   speaker: string | null;

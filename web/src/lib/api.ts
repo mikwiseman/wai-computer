@@ -4,6 +4,8 @@ import type {
   ActionPriority,
   ActionStatus,
   AnalyticsResponse,
+  BulkAction,
+  BulkOperationResponse,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -159,6 +161,21 @@ export function updateRecording(
 
 export function deleteRecording(recordingId: string): Promise<void> {
   return apiFetch<void>(`/api/recordings/${recordingId}`, { method: "DELETE" });
+}
+
+export function bulkRecordingOperation(
+  recordingIds: string[],
+  action: BulkAction,
+  folderId?: string | null,
+): Promise<BulkOperationResponse> {
+  return apiFetch<BulkOperationResponse>("/api/recordings/bulk", {
+    method: "POST",
+    body: JSON.stringify({
+      recording_ids: recordingIds,
+      action,
+      folder_id: folderId,
+    }),
+  });
 }
 
 export function getSpeakerStats(recordingId: string): Promise<SpeakerStatsResponse> {
