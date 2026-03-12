@@ -250,6 +250,20 @@ describe("api client wrappers", () => {
     );
   });
 
+  it("calls getRecordingKeywords", async () => {
+    await api.getRecordingKeywords("rec1", 10);
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/recordings/rec1/keywords?limit=10",
+    );
+  });
+
+  it("calls getRecordingKeywords without limit", async () => {
+    await api.getRecordingKeywords("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/recordings/rec1/keywords",
+    );
+  });
+
   it("calls bulkRecordingOperation for delete", async () => {
     await api.bulkRecordingOperation(["id1", "id2"], "delete");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/bulk", {

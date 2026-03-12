@@ -267,6 +267,17 @@ export interface BulkOperationResponse {
   failed: number;
 }
 
+export interface KeywordItem {
+  term: string;
+  count: number;
+}
+
+export interface KeywordsResponse {
+  recording_id: string;
+  total_words: number;
+  keywords: KeywordItem[];
+}
+
 export interface TranscriptSearchMatch {
   segment_id: string;
   speaker: string | null;

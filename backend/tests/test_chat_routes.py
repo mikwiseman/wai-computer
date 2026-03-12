@@ -275,3 +275,36 @@ async def test_delete_nonexistent_chat_session_returns_404(
     fake_id = str(uuid4())
     response = await client.delete(f"/api/chat/sessions/{fake_id}", headers=headers)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_send_chat_message_without_optional_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Sending just a question without session_id or recording_ids should succeed."""
+    headers, token = await _register(client, "chat.route.minimal@example.com")
+
+    async def fake_chat_with_recordings(
+        *, db, user_id, question, session_id=None, recording_ids=None
+    ):
+        return ChatResult(
+            answer="Here is a general answer.",
+            session_id=str(uuid4()),
+            message_id=str(uuid4()),
+            source_segments=[],
+        )
+
+    monkeypatch.setattr(chat_routes, "chat_with_recordings", fake_chat_with_recordings)
+
+    response = await client.post(
+        "/api/chat",
+        headers=headers,
+        json={"question": "What happened today?"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "Here is a general answer."
+    assert payload["session_id"] is not None
+    assert payload["sources"] == []

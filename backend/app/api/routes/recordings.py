@@ -304,6 +304,21 @@ class BulkOperationResponse(BaseModel):
     failed: int
 
 
+class KeywordItem(BaseModel):
+    """A single keyword/term with its frequency."""
+
+    term: str
+    count: int
+
+
+class KeywordsResponse(BaseModel):
+    """Response from keyword extraction."""
+
+    recording_id: str
+    total_words: int
+    keywords: list[KeywordItem]
+
+
 class MessageResponse(BaseModel):
     """Simple message response."""
 
@@ -1299,6 +1314,67 @@ async def search_transcript(
         query=q,
         total_matches=len(matches),
         segments=matches[:limit],
+    )
+
+
+# English stop words for keyword extraction
+_STOP_WORDS = frozenset(
+    "a about above after again against all am an and any are aren't as at be because been "
+    "before being below between both but by can't cannot could couldn't did didn't do does "
+    "doesn't doing don't down during each few for from further get got had hadn't has hasn't "
+    "have haven't having he he'd he'll he's her here here's hers herself him himself his how "
+    "how's i i'd i'll i'm i've if in into is isn't it it's its itself just let's me might more "
+    "most mustn't my myself no nor not of off on once only or other ought our ours ourselves "
+    "out over own really same shan't she she'd she'll she's should shouldn't so some such than "
+    "that that's the their theirs them themselves then there there's these they they'd they'll "
+    "they're they've this those through to too under until up upon us very was wasn't we we'd "
+    "we'll we're we've were weren't what what's when when's where where's which while who who's "
+    "whom why why's will with won't would wouldn't yes yet you you'd you'll you're you've your "
+    "yours yourself yourselves also going go like well think know right yeah okay sure thing "
+    "want need um uh ah oh ok hey hi hello thanks thank great good".split()
+)
+
+
+@router.get("/{recording_id}/keywords", response_model=KeywordsResponse)
+async def get_recording_keywords(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+    limit: int = Query(20, ge=1, le=100),
+) -> KeywordsResponse:
+    """Extract key terms from a recording's transcript."""
+    import re
+    from collections import Counter
+
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(selectinload(Recording.segments))
+    )
+    recording = result.scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    # Collect all words from segments
+    all_words: list[str] = []
+    for segment in recording.segments:
+        words = re.findall(r"[a-zA-Z]+", segment.content.lower())
+        all_words.extend(words)
+
+    total_words = len(all_words)
+
+    # Filter stop words and short words
+    meaningful = [w for w in all_words if w not in _STOP_WORDS and len(w) > 1]
+
+    # Count frequencies
+    counter = Counter(meaningful)
+    top_terms = counter.most_common(limit)
+
+    return KeywordsResponse(
+        recording_id=str(recording_id),
+        total_words=total_words,
+        keywords=[KeywordItem(term=term, count=count) for term, count in top_terms],
     )
 
 
