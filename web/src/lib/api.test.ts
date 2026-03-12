@@ -242,6 +242,38 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls exportChatSession and returns markdown text", async () => {
+    const mockResponse = {
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue("# Chat\n\n**You:**\nHello"),
+    } as unknown as Response;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+
+    const result = await api.exportChatSession("s1");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining("/api/chat/sessions/s1/export"),
+      expect.objectContaining({ credentials: "include", cache: "no-store" }),
+    );
+    expect(result).toContain("# Chat");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws on export chat session failure", async () => {
+    const mockResponse = {
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    } as unknown as Response;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+
+    await expect(api.exportChatSession("s1")).rejects.toThrow("Export failed: 404 Not Found");
+
+    fetchSpy.mockRestore();
+  });
+
   it("calls getWeeklyDigest", async () => {
     await api.getWeeklyDigest();
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/digest/weekly");

@@ -297,6 +297,16 @@ class BulkOperationRequest(BaseModel):
                 raise ValueError(f"Invalid UUID: {rid}") from exc
         return value
 
+    @field_validator("folder_id")
+    @classmethod
+    def validate_folder_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                UUID(value)
+            except ValueError as exc:
+                raise ValueError(f"Invalid UUID: {value}") from exc
+        return value
+
 
 class BulkOperationResponse(BaseModel):
     """Response from a bulk operation."""

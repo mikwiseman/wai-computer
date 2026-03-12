@@ -56,8 +56,14 @@ const baseRecording = {
   title: "Planning",
   type: "note",
   audio_url: null,
+  status: "processed",
+  failure_code: null,
+  failure_message: null,
+  uploaded_at: null,
   duration_seconds: null,
   language: "multi",
+  folder_id: null,
+  deleted_at: null,
   created_at: "2026-02-27T00:00:00Z",
 };
 
@@ -73,6 +79,7 @@ const baseRecordingDetail = {
     sentiment: "neutral",
   },
   action_items: [{ id: "a1", task: "Task", owner: null, due_date: null, priority: "medium", status: "pending" }],
+  highlights: [],
 };
 
 const baseActionItems = [

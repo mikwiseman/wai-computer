@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -242,6 +242,51 @@ async def rename_chat_session(
     await db.flush()
 
     return RenameSessionResponse(id=str(session.id), title=session.title)
+
+
+@router.get("/sessions/{session_id}/export")
+async def export_chat_session(
+    session_id: uuid.UUID,
+    user: CurrentUser,
+    db: Database,
+) -> Response:
+    """Export a chat session as markdown."""
+    result = await db.execute(
+        select(ChatSession).where(
+            ChatSession.id == session_id, ChatSession.user_id == user.id
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found",
+        )
+
+    msg_result = await db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    messages = msg_result.scalars().all()
+
+    title = session.title or "Chat Session"
+    lines = [f"# {title}\n"]
+
+    for msg in messages:
+        label = "**You:**" if msg.role == "user" else "**Assistant:**"
+        lines.append(f"{label}\n{msg.content}\n")
+
+    markdown = "\n".join(lines)
+
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="chat-{session_id}.md"',
+        },
+    )
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

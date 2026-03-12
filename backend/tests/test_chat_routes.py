@@ -428,3 +428,159 @@ async def test_rename_chat_session_empty_title_rejected(
         json={"title": ""},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_rename_chat_session_preserves_messages(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Renaming should not affect session messages."""
+    headers, token = await _register(
+        client, "chat.route.rename.msgs@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Old", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(
+            session_id=session.id,
+            role="user",
+            content="Hello",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        )
+    )
+    await db_session.flush()
+
+    await client.patch(
+        f"/api/chat/sessions/{session.id}",
+        headers=headers,
+        json={"title": "Renamed"},
+    )
+
+    detail = await client.get(
+        f"/api/chat/sessions/{session.id}", headers=headers
+    )
+    assert detail.status_code == 200
+    assert detail.json()["title"] == "Renamed"
+    assert len(detail.json()["messages"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_export_chat_session(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Export should return markdown formatted conversation."""
+    headers, token = await _register(
+        client, "chat.route.export@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Export Test", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+    db_session.add_all([
+        ChatMessage(
+            session_id=session.id,
+            role="user",
+            content="What happened in the meeting?",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+        ChatMessage(
+            session_id=session.id,
+            role="assistant",
+            content="Alice discussed the roadmap.",
+            source_segment_ids=[str(uuid4())],
+            source_recording_ids=[str(uuid4())],
+        ),
+    ])
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/chat/sessions/{session.id}/export",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/markdown; charset=utf-8"
+    body = response.text
+    assert "# Export Test" in body
+    assert "**You:**" in body
+    assert "What happened in the meeting?" in body
+    assert "**Assistant:**" in body
+    assert "Alice discussed the roadmap." in body
+
+
+@pytest.mark.asyncio
+async def test_export_chat_session_not_found(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Export of nonexistent session should return 404."""
+    headers, _ = await _register(
+        client, "chat.route.export.nf@example.com"
+    )
+    fake_id = str(uuid4())
+    response = await client.get(
+        f"/api/chat/sessions/{fake_id}/export",
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_chat_session_other_user_denied(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Export of another user's session should return 404."""
+    _, owner_token = await _register(
+        client, "chat.route.export.owner@example.com"
+    )
+    owner = await _user_from_token(db_session, owner_token)
+    session = ChatSession(
+        user_id=owner.id, title="Private", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    other_headers, _ = await _register(
+        client, "chat.route.export.other@example.com"
+    )
+    response = await client.get(
+        f"/api/chat/sessions/{session.id}/export",
+        headers=other_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_empty_chat_session(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Export of session with no messages returns markdown header only."""
+    headers, token = await _register(
+        client, "chat.route.export.empty@example.com"
+    )
+    user = await _user_from_token(db_session, token)
+    session = ChatSession(
+        user_id=user.id, title="Empty Chat", recording_ids=None
+    )
+    db_session.add(session)
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/chat/sessions/{session.id}/export",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "# Empty Chat" in body
+    assert "**You:**" not in body
