@@ -44,6 +44,9 @@ struct RecordingDetailView: View {
         .task {
             await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
         }
+        .onChange(of: recording.id) {
+            selectedTab = 0
+        }
         .overlay {
             if viewModel.isLoading {
                 ProgressView()

@@ -1,0 +1,6 @@
+{
+  "target": 0,
+  "comparator": "==",
+  "goal": "All tests pass across backend, frontend, and Swift",
+  "baseline_description": "Starting point for each cycle"
+}

@@ -71,6 +71,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["app"]
+concurrency = ["greenlet", "thread"]
 omit = [
     "app/db/*",
     "app/models/*",
