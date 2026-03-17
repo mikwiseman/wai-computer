@@ -187,11 +187,16 @@ class LibraryViewModel: ObservableObject {
     }
 
     func deleteRecordings(at indexSet: IndexSet, apiClient: APIClient) async {
-        for index in indexSet {
-            let recording = filteredRecordings[index]
+        // Map indices to recording IDs first to avoid index invalidation
+        // during iteration (filteredRecordings is a computed property).
+        let idsToDelete = indexSet.compactMap { index -> String? in
+            guard index < filteredRecordings.count else { return nil }
+            return filteredRecordings[index].id
+        }
+        for id in idsToDelete {
             do {
-                try await apiClient.deleteRecording(id: recording.id)
-                recordings.removeAll { $0.id == recording.id }
+                try await apiClient.deleteRecording(id: id)
+                recordings.removeAll { $0.id == id }
             } catch {
                 self.error = error.localizedDescription
             }

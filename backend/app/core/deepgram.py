@@ -242,10 +242,13 @@ async def transcribe_audio_file(
                 # Use paragraphs for better sentence boundaries
                 for para in paragraphs:
                     for sentence in para.get("sentences", []):
+                        sentence_text = sentence.get("text", "").strip()
+                        if not sentence_text:
+                            continue
                         speaker = "You" if ch_idx == 0 else f"Speaker {ch_idx}"
                         results.append(
                             TranscriptResult(
-                                text=sentence.get("text", ""),
+                                text=sentence_text,
                                 speaker=speaker,
                                 is_final=True,
                                 start_ms=int(sentence.get("start", 0) * 1000),

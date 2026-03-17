@@ -98,8 +98,8 @@ struct SettingsView: View {
 
 // Placeholder views for settings sub-screens
 struct AudioSettingsView: View {
-    @State private var sampleRate = 16000
-    @State private var enableNoiseSuppression = true
+    @AppStorage("audioSampleRate") private var sampleRate = 16000
+    @AppStorage("enableNoiseSuppression") private var enableNoiseSuppression = true
 
     var body: some View {
         List {
@@ -121,7 +121,7 @@ struct AudioSettingsView: View {
 
 struct TranscriptionSettingsView: View {
     @AppStorage("transcriptionLanguage") private var language = "multi"
-    @State private var enableDiarization = true
+    @AppStorage("enableDiarization") private var enableDiarization = true
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -153,8 +153,8 @@ struct TranscriptionSettingsView: View {
 }
 
 struct SummarySettingsView: View {
-    @State private var autoSummarize = true
-    @State private var summaryLength = "medium"
+    @AppStorage("autoSummarize") private var autoSummarize = true
+    @AppStorage("summaryLength") private var summaryLength = "medium"
 
     var body: some View {
         List {

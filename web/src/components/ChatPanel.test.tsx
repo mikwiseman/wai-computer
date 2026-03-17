@@ -943,4 +943,124 @@ describe("ChatPanel", () => {
       expect(screen.getByText("New Session")).toBeInTheDocument();
     });
   });
+
+  // --- handleNewChat clears selectedRecordingIds (bugfix verification) ---
+
+  it("handleNewChat unchecks all recording checkboxes", async () => {
+    const sessionWithMultipleRecordings = {
+      ...baseSessionDetail,
+      recording_ids: ["r1", "r2"],
+    };
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(sessionWithMultipleRecordings);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    // Load session that has both recordings selected
+    await user.click(screen.getByText("Planning chat"));
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /Design Review/i })).toBeChecked();
+    });
+
+    // Click New Chat — should clear ALL recording selections
+    await user.click(screen.getByRole("button", { name: "New Chat" }));
+
+    expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Design Review/i })).not.toBeChecked();
+  });
+
+  it("handleNewChat clears selectedRecordingIds so next message sends null", async () => {
+    const sessionWithRecordings = {
+      ...baseSessionDetail,
+      recording_ids: ["r1"],
+    };
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(sessionWithRecordings);
+    mockSendChatMessage.mockResolvedValue(baseChatResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    // Load session that restores recording selection
+    await user.click(screen.getByText("Planning chat"));
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).toBeChecked();
+    });
+
+    // Start a new chat
+    await user.click(screen.getByRole("button", { name: "New Chat" }));
+
+    // Send a message — recording_ids should be null since New Chat cleared them
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "After new chat");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(mockSendChatMessage).toHaveBeenCalledWith({
+        question: "After new chat",
+        session_id: null,
+        recording_ids: null,
+      });
+    });
+  });
+
+  // --- Loading a session sets selectedRecordingIds from session data ---
+
+  it("loading a session with multiple recording_ids checks all corresponding checkboxes", async () => {
+    const sessionWithBothRecordings = {
+      ...baseSessionDetail,
+      recording_ids: ["r1", "r2"],
+    };
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(sessionWithBothRecordings);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Planning chat"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /Design Review/i })).toBeChecked();
+    });
+  });
+
+  it("loading a session with null recording_ids clears all recording checkboxes", async () => {
+    // First manually check a recording
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(baseSessionDetail); // recording_ids is null
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    // Manually select a recording
+    await user.click(screen.getByRole("checkbox", { name: /Sprint Planning/i }));
+    expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).toBeChecked();
+
+    // Load a session that has no recording_ids (null) — should clear selection
+    await user.click(screen.getByText("Planning chat"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /Design Review/i })).not.toBeChecked();
+    });
+  });
 });

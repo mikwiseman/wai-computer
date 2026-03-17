@@ -16,6 +16,7 @@ struct MacRecordingDetailView: View {
     @EnvironmentObject var appState: MacAppState
     @StateObject private var viewModel: MacRecordingDetailViewModel
     @State private var showDeleteConfirmation = false
+    @State private var loadTask: Task<Void, Never>?
 
     init(
         recordingId: String,
@@ -87,15 +88,22 @@ struct MacRecordingDetailView: View {
                 )
             }
         }
-        .task {
-            await viewModel.load(
-                recordingId: recordingId,
-                apiClient: appState.getAPIClient(),
-                showLoading: viewModel.recordingDetail?.id != recordingId
-            )
+        .onAppear {
+            loadTask?.cancel()
+            loadTask = Task {
+                await viewModel.load(
+                    recordingId: recordingId,
+                    apiClient: appState.getAPIClient(),
+                    showLoading: viewModel.recordingDetail?.id != recordingId
+                )
+            }
+        }
+        .onDisappear {
+            loadTask?.cancel()
         }
         .onChange(of: recordingId) { _, newId in
-            Task {
+            loadTask?.cancel()
+            loadTask = Task {
                 await viewModel.load(
                     recordingId: newId,
                     apiClient: appState.getAPIClient(),

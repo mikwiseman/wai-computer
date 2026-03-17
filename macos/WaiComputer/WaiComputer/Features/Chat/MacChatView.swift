@@ -4,6 +4,7 @@ import WaiComputerKit
 struct MacChatView: View {
     @EnvironmentObject var appState: MacAppState
     @StateObject private var viewModel = MacChatViewModel()
+    @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -16,8 +17,14 @@ struct MacChatView: View {
             conversationView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .task {
-            await viewModel.loadSessions(apiClient: appState.getAPIClient())
+        .onAppear {
+            loadTask?.cancel()
+            loadTask = Task {
+                await viewModel.loadSessions(apiClient: appState.getAPIClient())
+            }
+        }
+        .onDisappear {
+            loadTask?.cancel()
         }
     }
 
@@ -72,7 +79,8 @@ struct MacChatView: View {
         }
         .onChange(of: viewModel.selectedSessionId) { _, newId in
             guard let id = newId else { return }
-            Task {
+            loadTask?.cancel()
+            loadTask = Task {
                 await viewModel.loadSession(id: id, apiClient: appState.getAPIClient())
             }
         }
