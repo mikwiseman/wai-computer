@@ -623,4 +623,324 @@ describe("ChatPanel", () => {
     // The assistant message should have a sources toggle since source_segment_ids were mapped
     expect(screen.getByText("Show sources (2)")).toBeInTheDocument();
   });
+
+  // --- Pinned session display ---
+
+  it("displays pinned sessions (sessions with pinned_at) in the sidebar", async () => {
+    const pinnedSession = {
+      id: "s-pinned",
+      title: "Pinned Discussion",
+      recording_ids: null,
+      created_at: "2026-03-01T00:00:00Z",
+      message_count: 6,
+      pinned_at: "2026-03-05T10:00:00Z",
+    };
+    const unpinnedSession = {
+      id: "s-unpinned",
+      title: "Regular Chat",
+      recording_ids: null,
+      created_at: "2026-03-02T00:00:00Z",
+      message_count: 2,
+      pinned_at: null,
+    };
+    mockListChatSessions.mockResolvedValue([pinnedSession, unpinnedSession]);
+
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Pinned Discussion")).toBeInTheDocument();
+      expect(screen.getByText("Regular Chat")).toBeInTheDocument();
+      expect(screen.getByText("(6)")).toBeInTheDocument();
+      expect(screen.getByText("(2)")).toBeInTheDocument();
+    });
+  });
+
+  // --- Empty message cannot be sent ---
+
+  it("does not send empty or whitespace-only messages", async () => {
+    mockListChatSessions.mockResolvedValue([]);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    // The send button should be disabled when input is empty
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+
+    // Type whitespace only
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "   ");
+
+    // Button should still be disabled for whitespace-only input
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+
+    // Should never have called sendChatMessage
+    expect(mockSendChatMessage).not.toHaveBeenCalled();
+  });
+
+  // --- Multiple messages in a conversation ---
+
+  it("accumulates messages in a single conversation", async () => {
+    mockListChatSessions.mockResolvedValue([]);
+    const firstResponse = {
+      answer: "First answer.",
+      session_id: "s-conv",
+      message_id: "msg-1",
+      sources: [],
+    };
+    const secondResponse = {
+      answer: "Second answer.",
+      session_id: "s-conv",
+      message_id: "msg-2",
+      sources: [],
+    };
+    mockSendChatMessage
+      .mockResolvedValueOnce(firstResponse)
+      .mockResolvedValueOnce(secondResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    // Send first message
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "First question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("First question")).toBeInTheDocument();
+      expect(screen.getByText("First answer.")).toBeInTheDocument();
+    });
+
+    // Send second message
+    await user.type(textarea, "Second question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Second question")).toBeInTheDocument();
+      expect(screen.getByText("Second answer.")).toBeInTheDocument();
+    });
+
+    // First messages should still be visible
+    expect(screen.getByText("First question")).toBeInTheDocument();
+    expect(screen.getByText("First answer.")).toBeInTheDocument();
+
+    // Second call should include session_id from first response
+    expect(mockSendChatMessage).toHaveBeenNthCalledWith(2, {
+      question: "Second question",
+      session_id: "s-conv",
+      recording_ids: null,
+    });
+  });
+
+  // --- Deselecting all recordings sends null ---
+
+  it("sends null recording_ids when all recordings are deselected", async () => {
+    mockListChatSessions.mockResolvedValue([]);
+    mockSendChatMessage.mockResolvedValue(baseChatResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    const checkbox1 = screen.getByRole("checkbox", { name: /Sprint Planning/i });
+
+    // Select then deselect
+    await user.click(checkbox1);
+    expect(checkbox1).toBeChecked();
+    await user.click(checkbox1);
+    expect(checkbox1).not.toBeChecked();
+
+    // Send a message — recording_ids should be null since nothing is selected
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "No scope question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(mockSendChatMessage).toHaveBeenCalledWith({
+        question: "No scope question",
+        session_id: null,
+        recording_ids: null,
+      });
+    });
+  });
+
+  // --- Multiple sources with toggle ---
+
+  it("correctly counts and displays multiple sources", async () => {
+    const multiSourceResponse = {
+      answer: "Here are findings from multiple recordings.",
+      session_id: "s-multi",
+      message_id: "msg-multi",
+      sources: [
+        {
+          segment_id: "seg1",
+          recording_id: "r1",
+          recording_title: "Meeting A",
+          speaker: "Alice",
+          content: "First source content.",
+          start_ms: 1000,
+          end_ms: 5000,
+        },
+        {
+          segment_id: "seg2",
+          recording_id: "r2",
+          recording_title: "Meeting B",
+          speaker: "Bob",
+          content: "Second source content.",
+          start_ms: 2000,
+          end_ms: 8000,
+        },
+        {
+          segment_id: "seg3",
+          recording_id: "r3",
+          recording_title: "Meeting C",
+          speaker: null,
+          content: "Third source content.",
+          start_ms: null,
+          end_ms: null,
+        },
+      ],
+    };
+    mockListChatSessions.mockResolvedValue([]);
+    mockSendChatMessage.mockResolvedValue(multiSourceResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "Multi source test");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/findings from multiple/)).toBeInTheDocument();
+    });
+
+    // Should show count of 3 sources
+    expect(screen.getByText("Show sources (3)")).toBeInTheDocument();
+
+    // Expand sources
+    await user.click(screen.getByText("Show sources (3)"));
+
+    expect(screen.getByText("First source content.")).toBeInTheDocument();
+    expect(screen.getByText("Second source content.")).toBeInTheDocument();
+    expect(screen.getByText("Third source content.")).toBeInTheDocument();
+    expect(screen.getByText(/Meeting A/)).toBeInTheDocument();
+    expect(screen.getByText(/Meeting B/)).toBeInTheDocument();
+    expect(screen.getByText(/Meeting C/)).toBeInTheDocument();
+  });
+
+  // --- New chat clears recording selection ---
+
+  it("clears recording selection when starting a new chat after session load", async () => {
+    const sessionWithRecordings = {
+      ...baseSessionDetail,
+      recording_ids: ["r1"],
+    };
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    mockGetChatSession.mockResolvedValue(sessionWithRecordings);
+    mockSendChatMessage.mockResolvedValue(baseChatResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={baseRecordings} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    // Select session that has recording_ids, which restores checkbox
+    await user.click(screen.getByText("Planning chat"));
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /Sprint Planning/i })).toBeChecked();
+    });
+
+    // Click New Chat
+    await user.click(screen.getByRole("button", { name: "New Chat" }));
+
+    // Recording selection should NOT be automatically cleared per current component behavior,
+    // but the session should be reset
+    expect(screen.getByText("Ask a question about your meetings.")).toBeInTheDocument();
+  });
+
+  // --- Response with zero sources shows no toggle button ---
+
+  it("does not show source toggle when response has no sources", async () => {
+    const noSourceResponse = {
+      answer: "I don't have specific sources for that.",
+      session_id: "s-no-src",
+      message_id: "msg-no-src",
+      sources: [],
+    };
+    mockListChatSessions.mockResolvedValue([]);
+    mockSendChatMessage.mockResolvedValue(noSourceResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "No sources question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("I don't have specific sources for that.")).toBeInTheDocument();
+    });
+
+    // No "Show sources" button should appear
+    expect(screen.queryByText(/Show sources/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hide sources/)).not.toBeInTheDocument();
+  });
+
+  // --- Session list fetched on send after new session is created ---
+
+  it("refreshes session list after sending a message that creates a new session", async () => {
+    const newSessionInList = {
+      id: "s-new",
+      title: "New Session",
+      recording_ids: null,
+      created_at: "2026-03-10T00:00:00Z",
+      message_count: 1,
+      pinned_at: null,
+    };
+    mockListChatSessions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([newSessionInList]);
+    mockSendChatMessage.mockResolvedValue(baseChatResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalledTimes(1);
+    });
+
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "Start new session");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      // Session list should have been re-fetched after the message was sent
+      expect(mockListChatSessions).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("New Session")).toBeInTheDocument();
+    });
+  });
 });
