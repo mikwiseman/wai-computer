@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
@@ -1129,12 +1130,35 @@ def _export_srt(recording: Recording) -> str:
 
 
 def _sanitize_filename(title: str | None) -> str:
-    """Create a safe filename from a recording title."""
+    """Create a safe filename from a recording title.
+
+    Preserves Unicode letters/digits but strips control characters and
+    filesystem-unsafe characters (/ \\ : * ? \" < > |).
+    """
     name = title or "recording"
-    # Remove characters unsafe for filenames
-    safe = "".join(c if c.isalnum() or c in " -_" else "" for c in name)
+    # Strip control characters and filesystem-unsafe characters
+    safe = re.sub(r'[/\\:*?"<>|\x00-\x1f\x7f]', "", name)
     safe = safe.strip().replace(" ", "_")
     return safe[:100] or "recording"
+
+
+def _content_disposition(filename: str) -> str:
+    """Build a Content-Disposition header value safe for all browsers.
+
+    Uses ASCII-only ``filename`` (quotes escaped) plus RFC 5987
+    ``filename*`` with UTF-8 percent-encoding for non-ASCII names.
+    """
+    # ASCII-safe fallback: keep only printable ASCII, escape quotes
+    ascii_name = filename.encode("ascii", "replace").decode("ascii")
+    ascii_name = ascii_name.replace('"', '\\"')
+
+    # RFC 5987 UTF-8 encoded version
+    utf8_name = quote(filename, safe="")
+
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{utf8_name}"
+    )
 
 
 @router.get("/{recording_id}/export")
@@ -1177,7 +1201,7 @@ async def export_recording(
     return Response(
         content=content,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
 
 
