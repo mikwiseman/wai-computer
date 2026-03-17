@@ -2,12 +2,17 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
+from app.core.rate_limit import (
+    check_login_rate_limit,
+    check_magic_link_rate_limit,
+    check_register_rate_limit,
+)
 from app.core.security import (
     create_access_token,
     generate_magic_link_token,
@@ -118,7 +123,11 @@ def _clear_auth_cookie(response: Response) -> None:
     )
 
 
-@router.post("/register", response_model=TokenResponse)
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    dependencies=[Depends(check_register_rate_limit)],
+)
 async def register(request: RegisterRequest, response: Response, db: Database) -> TokenResponse:
     """Register a new user."""
     # Check if email already exists
@@ -146,7 +155,7 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
     return TokenResponse(access_token=token)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(check_login_rate_limit)])
 async def login(request: LoginRequest, response: Response, db: Database) -> TokenResponse:
     """Login with email and password."""
     result = await db.execute(select(User).where(User.email == request.email))
@@ -169,7 +178,11 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Toke
     return TokenResponse(access_token=token)
 
 
-@router.post("/magic-link", response_model=MessageResponse)
+@router.post(
+    "/magic-link",
+    response_model=MessageResponse,
+    dependencies=[Depends(check_magic_link_rate_limit)],
+)
 async def request_magic_link(request: MagicLinkRequest, db: Database) -> MessageResponse:
     """Send a magic link to the user's email."""
     result = await db.execute(select(User).where(User.email == request.email))
