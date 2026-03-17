@@ -89,15 +89,16 @@ public actor WebSocketManager {
 
     /// Stream of WebSocket events. Call BEFORE connect() to not miss events.
     ///
-    /// If a continuation already exists (previous caller is still iterating),
-    /// replaces it and logs a warning — the previous stream will end.
+    /// Returns the same stream instance on each access. The stream is created
+    /// once and reused — no more race conditions from replacing continuations.
+    private var _eventStream: AsyncStream<WebSocketEvent>?
     public var events: AsyncStream<WebSocketEvent> {
-        if eventContinuation != nil {
-            wsLog.warning("Replacing active event stream — previous iterator will be terminated")
+        if let existing = _eventStream {
+            return existing
         }
         let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
-        eventContinuation?.finish()
         eventContinuation = continuation
+        _eventStream = stream
         return stream
     }
 

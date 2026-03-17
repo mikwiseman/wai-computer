@@ -157,6 +157,7 @@ export function ChatPanel({ recordings }: ChatPanelProps) {
     setSessionId(null);
     setMessages([]);
     setError(null);
+    setSelectedRecordingIds([]);
   }
 
   function toggleSources(messageId: string) {

@@ -347,7 +347,10 @@ export function DashboardClient() {
           <select
             data-testid="search-mode"
             value={searchMode}
-            onChange={(event) => setSearchMode(event.target.value as SearchMode)}
+            onChange={(event) => {
+              setSearchMode(event.target.value as SearchMode);
+              setSearchResponse(null);
+            }}
           >
             <option value="hybrid">hybrid</option>
             <option value="semantic">semantic</option>
