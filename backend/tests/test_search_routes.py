@@ -86,8 +86,8 @@ async def test_hybrid_search_returns_ranked_results_for_current_user(
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
 
@@ -133,8 +133,8 @@ async def test_hybrid_search_excludes_low_similarity_results_from_rows_and_total
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
 
@@ -180,8 +180,8 @@ async def test_semantic_search_honors_threshold(
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
 
@@ -226,8 +226,8 @@ async def test_semantic_search_total_counts_all_matches_with_limit(
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
 
@@ -308,8 +308,8 @@ async def test_search_with_special_characters(
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
 

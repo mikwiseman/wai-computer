@@ -101,6 +101,12 @@ def _vector_literal(index: int) -> str:
     return "[" + ",".join(values) + "]"
 
 
+def _vector_list(index: int) -> list[float]:
+    values = [0.0] * 384
+    values[index] = 1.0
+    return values
+
+
 @pytest.mark.asyncio
 async def test_deps_extract_token_and_optional_user_paths(
     db_session: AsyncSession,
@@ -764,8 +770,8 @@ async def test_search_route_direct_paths(db_session: AsyncSession, monkeypatch: 
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> str:
-        return _vector_literal(0)
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
 
     monkeypatch.setattr(search, "generate_embedding", fake_generate_embedding)
 

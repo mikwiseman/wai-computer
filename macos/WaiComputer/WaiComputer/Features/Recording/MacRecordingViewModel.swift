@@ -230,7 +230,7 @@ class MacRecordingViewModel: ObservableObject {
                 NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO (mic-only)")
 
                 if inputSource == .dual && !hasSystemAudio {
-                    error = "System audio unavailable — only your microphone will be recorded. Grant Audio Capture permission in System Settings > Privacy & Security."
+                    error = "System audio unavailable — only your microphone will be recorded. Other participants in calls (Zoom, Meet, etc.) will NOT be transcribed.\n\nTo fix: System Settings → Privacy & Security → Audio Capture → enable WaiComputer."
                 }
             } else {
                 NSLog("[Recording] Starting audio capture...")

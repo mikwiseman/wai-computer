@@ -102,3 +102,12 @@ async def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """Convenience function to generate multiple embeddings."""
     generator = get_embedding_generator()
     return await generator.generate_batch(texts)
+
+
+def format_embedding(embedding: list[float]) -> str:
+    """Format an embedding list as a PostgreSQL vector string.
+
+    Produces a consistent ``[0.1,0.2,0.3]`` format suitable for
+    ``CAST(:embedding AS vector)`` in raw SQL queries.
+    """
+    return "[" + ",".join(str(x) for x in embedding) + "]"

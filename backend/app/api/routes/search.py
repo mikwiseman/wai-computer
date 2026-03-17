@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.api.deps import CurrentUser, Database
-from app.core.embeddings import generate_embedding
+from app.core.embeddings import format_embedding, generate_embedding
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -48,7 +48,7 @@ async def hybrid_search(
     """
     # Generate embedding for semantic search
     query_embedding_list = await generate_embedding(q)
-    query_embedding = str(query_embedding_list)
+    query_embedding = format_embedding(query_embedding_list)
 
     # Build hybrid search query using RRF
     # This combines FTS ranking with vector similarity
@@ -198,7 +198,7 @@ async def semantic_search(
     Returns segments with embeddings similar to the query.
     """
     query_embedding_list = await generate_embedding(q)
-    query_embedding = str(query_embedding_list)
+    query_embedding = format_embedding(query_embedding_list)
 
     # Semantic search query
     query = text("""

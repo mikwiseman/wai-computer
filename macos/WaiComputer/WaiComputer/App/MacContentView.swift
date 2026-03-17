@@ -251,8 +251,20 @@ struct MacMainView: View {
                 set: { if !$0 { recordingViewModel.clearError() } }
             )
         ) {
-            Button("OK") {
-                recordingViewModel.clearError()
+            if recordingViewModel.error?.contains("System Settings") == true {
+                Button("Open System Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    recordingViewModel.clearError()
+                }
+                Button("Continue Mic-Only") {
+                    recordingViewModel.clearError()
+                }
+            } else {
+                Button("OK") {
+                    recordingViewModel.clearError()
+                }
             }
         } message: {
             Text(recordingViewModel.error ?? "The recording could not continue.")

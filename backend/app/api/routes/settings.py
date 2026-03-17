@@ -18,7 +18,7 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
+        if len(v.strip()) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
 
