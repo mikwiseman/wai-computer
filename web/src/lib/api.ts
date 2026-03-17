@@ -1,4 +1,4 @@
-import { apiFetch, getApiBaseUrl } from "./http";
+import { apiFetch, getApiBaseUrl, syncLocalhostAuthCookie } from "./http";
 import type {
   ActionItem,
   ActionPriority,
@@ -42,27 +42,6 @@ function asQuery(params: Record<string, string | number | boolean | undefined | 
   }
   const query = search.toString();
   return query ? `?${query}` : "";
-}
-
-function isLocalhostBrowser(): boolean {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return false;
-  }
-
-  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-}
-
-function syncLocalhostAuthCookie(token: string | null): void {
-  if (!isLocalhostBrowser()) {
-    return;
-  }
-
-  if (!token) {
-    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
-    return;
-  }
-
-  document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
 }
 
 async function withLocalhostAuth<T extends TokenResponse>(promise: Promise<T>): Promise<T> {

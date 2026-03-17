@@ -130,6 +130,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         sysLog.warning("[SysAudio] Created aggregate device ID: \(self.aggregateDeviceID)")
 
         // 5. Query the aggregate device's input stream format to get native sample rate
+        // The tap provides audio on the INPUT scope of the aggregate device.
+        // Try input scope first (correct for tapped audio), fall back to output if needed.
         var inputStreamFormat = AudioStreamBasicDescription()
         var formatAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamFormat,
@@ -147,15 +149,57 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
 
         let nativeSR: Double
         let nativeCh: UInt32
-        if status == noErr {
+        if status == noErr && inputStreamFormat.mSampleRate > 0 {
             nativeSR = inputStreamFormat.mSampleRate
             nativeCh = inputStreamFormat.mChannelsPerFrame
             sysLog.warning("[SysAudio] Native input format: \(nativeSR)Hz, \(nativeCh)ch")
         } else {
-            // Assume 48kHz stereo if we can't query
-            nativeSR = 48000
-            nativeCh = 2
-            sysLog.warning("[SysAudio] Could not query format (status \(status)), assuming \(nativeSR)Hz \(nativeCh)ch")
+            // Input scope query failed — try output scope (some aggregate devices expose format there)
+            sysLog.warning("[SysAudio] Input scope format query failed (status \(status)), trying output scope...")
+            var outputFormatAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamFormat,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var outputStreamFormat = AudioStreamBasicDescription()
+            var outputFormatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let outputStatus = AudioObjectGetPropertyData(
+                aggregateDeviceID,
+                &outputFormatAddress,
+                0, nil,
+                &outputFormatSize,
+                &outputStreamFormat
+            )
+            if outputStatus == noErr && outputStreamFormat.mSampleRate > 0 {
+                nativeSR = outputStreamFormat.mSampleRate
+                nativeCh = outputStreamFormat.mChannelsPerFrame
+                sysLog.warning("[SysAudio] Output scope format: \(nativeSR)Hz, \(nativeCh)ch")
+            } else {
+                // Fall back to querying the original output device directly
+                var deviceFormatAddress = AudioObjectPropertyAddress(
+                    mSelector: kAudioDevicePropertyNominalSampleRate,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                )
+                var deviceSR: Float64 = 0
+                var deviceSRSize = UInt32(MemoryLayout<Float64>.size)
+                let deviceStatus = AudioObjectGetPropertyData(
+                    defaultOutputID,
+                    &deviceFormatAddress,
+                    0, nil,
+                    &deviceSRSize,
+                    &deviceSR
+                )
+                if deviceStatus == noErr && deviceSR > 0 {
+                    nativeSR = deviceSR
+                    nativeCh = 2 // stereo is safe default for output devices
+                    sysLog.warning("[SysAudio] Using output device sample rate: \(nativeSR)Hz, assuming \(nativeCh)ch")
+                } else {
+                    nativeSR = 48000
+                    nativeCh = 2
+                    sysLog.warning("[SysAudio] All format queries failed, assuming \(nativeSR)Hz \(nativeCh)ch")
+                }
+            }
         }
 
         // 6. Set up IO proc to receive audio buffers

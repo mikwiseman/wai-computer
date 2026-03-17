@@ -377,6 +377,19 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(recordingId)/generate-summary")
     }
 
+    public func starRecording(id: String) async throws -> Recording {
+        return try await request(.POST, path: "/api/recordings/\(id)/star")
+    }
+
+    public func unstarRecording(id: String) async throws -> Recording {
+        return try await request(.DELETE, path: "/api/recordings/\(id)/star")
+    }
+
+    public func listStarredRecordings() async throws -> [Recording] {
+        let queryItems = [URLQueryItem(name: "starred", value: "true")]
+        return try await request(.GET, path: "/api/recordings", queryItems: queryItems)
+    }
+
     // MARK: - Search Endpoints
 
     public func search(query: String, limit: Int = 20, offset: Int = 0) async throws -> SearchResponse {
@@ -444,8 +457,8 @@ public actor APIClient {
     }
 
     public func searchChatSessions(query: String) async throws -> [ChatSessionListItem] {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        return try await request(.GET, path: "/api/chat/sessions/search?q=\(encoded)")
+        let queryItems = [URLQueryItem(name: "q", value: query)]
+        return try await request(.GET, path: "/api/chat/sessions/search", queryItems: queryItems)
     }
 
     public func renameChatSession(id: String, title: String?) async throws -> RenameSessionResponse {
@@ -473,6 +486,14 @@ public actor APIClient {
             ))
         }
         return markdown
+    }
+
+    public func pinChatSession(id: String) async throws -> ChatSessionListItem {
+        return try await request(.POST, path: "/api/chat/sessions/\(id)/pin")
+    }
+
+    public func unpinChatSession(id: String) async throws -> ChatSessionListItem {
+        return try await request(.DELETE, path: "/api/chat/sessions/\(id)/pin")
     }
 
     public func deleteChatSession(id: String) async throws {
