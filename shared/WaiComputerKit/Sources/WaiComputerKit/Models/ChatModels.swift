@@ -68,6 +68,7 @@ public struct ChatSessionListItem: Codable, Identifiable, Sendable {
     public let recordingIds: [String]?
     public let createdAt: Date
     public let messageCount: Int
+    public let pinnedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -75,6 +76,7 @@ public struct ChatSessionListItem: Codable, Identifiable, Sendable {
         case recordingIds = "recording_ids"
         case createdAt = "created_at"
         case messageCount = "message_count"
+        case pinnedAt = "pinned_at"
     }
 }
 

@@ -89,6 +89,7 @@ public struct Recording: Codable, Identifiable, Sendable {
     public let language: String?
     public let folderId: String?
     public let deletedAt: Date?
+    public let starredAt: Date?
     public let createdAt: Date
 
     public init(
@@ -104,6 +105,7 @@ public struct Recording: Codable, Identifiable, Sendable {
         language: String? = nil,
         folderId: String? = nil,
         deletedAt: Date? = nil,
+        starredAt: Date? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -118,6 +120,7 @@ public struct Recording: Codable, Identifiable, Sendable {
         self.language = language
         self.folderId = folderId
         self.deletedAt = deletedAt
+        self.starredAt = starredAt
         self.createdAt = createdAt
     }
 
@@ -134,6 +137,7 @@ public struct Recording: Codable, Identifiable, Sendable {
         case language
         case folderId = "folder_id"
         case deletedAt = "deleted_at"
+        case starredAt = "starred_at"
         case createdAt = "created_at"
     }
 
@@ -152,7 +156,33 @@ public struct Recording: Codable, Identifiable, Sendable {
         language = try container.decodeIfPresent(String.self, forKey: .language)
         folderId = try container.decodeIfPresent(String.self, forKey: .folderId)
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        starredAt = try container.decodeIfPresent(Date.self, forKey: .starredAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+    }
+}
+
+/// A key moment / highlight from a recording.
+public struct RecordingHighlight: Codable, Identifiable, Sendable {
+    public let id: String
+    public let recordingId: String
+    public let category: String
+    public let title: String
+    public let description: String?
+    public let speaker: String?
+    public let startMs: Int?
+    public let endMs: Int?
+    public let importance: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case recordingId = "recording_id"
+        case category
+        case title
+        case description
+        case speaker
+        case startMs = "start_ms"
+        case endMs = "end_ms"
+        case importance
     }
 }
 
@@ -170,10 +200,12 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     public let language: String?
     public let folderId: String?
     public let deletedAt: Date?
+    public let starredAt: Date?
     public let createdAt: Date
     public let segments: [Segment]
     public let summary: Summary?
     public let actionItems: [ActionItem]
+    public let highlights: [RecordingHighlight]
 
     public init(
         id: String,
@@ -188,10 +220,12 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         language: String? = nil,
         folderId: String? = nil,
         deletedAt: Date? = nil,
+        starredAt: Date? = nil,
         createdAt: Date = Date(),
         segments: [Segment] = [],
         summary: Summary? = nil,
-        actionItems: [ActionItem] = []
+        actionItems: [ActionItem] = [],
+        highlights: [RecordingHighlight] = []
     ) {
         self.id = id
         self.title = title
@@ -205,10 +239,12 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         self.language = language
         self.folderId = folderId
         self.deletedAt = deletedAt
+        self.starredAt = starredAt
         self.createdAt = createdAt
         self.segments = segments
         self.summary = summary
         self.actionItems = actionItems
+        self.highlights = highlights
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -224,10 +260,12 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         case language
         case folderId = "folder_id"
         case deletedAt = "deleted_at"
+        case starredAt = "starred_at"
         case createdAt = "created_at"
         case segments
         case summary
         case actionItems = "action_items"
+        case highlights
     }
 
     public init(from decoder: Decoder) throws {
@@ -245,10 +283,12 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         language = try container.decodeIfPresent(String.self, forKey: .language)
         folderId = try container.decodeIfPresent(String.self, forKey: .folderId)
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        starredAt = try container.decodeIfPresent(Date.self, forKey: .starredAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         segments = try container.decodeIfPresent([Segment].self, forKey: .segments) ?? []
         summary = try container.decodeIfPresent(Summary.self, forKey: .summary)
         actionItems = try container.decodeIfPresent([ActionItem].self, forKey: .actionItems) ?? []
+        highlights = try container.decodeIfPresent([RecordingHighlight].self, forKey: .highlights) ?? []
     }
 }
 

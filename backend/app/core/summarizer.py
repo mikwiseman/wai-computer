@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from app.config import get_settings
@@ -191,7 +192,8 @@ def resolve_highlight_timestamps(
     def _words(text: str | None) -> set[str]:
         if not text:
             return set()
-        return set(text.lower().split())
+        clean = re.sub(r"[^\w\s]", " ", text.lower())
+        return set(clean.split())
 
     resolved: list[dict] = []
     for highlight in highlights:

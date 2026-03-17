@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.embeddings import generate_embedding
+from app.core.embeddings import format_embedding, generate_embedding
 from app.models.chat import ChatMessage, ChatSession
 
 settings = get_settings()
@@ -66,7 +66,7 @@ async def retrieve_context(
 ) -> list:
     """Retrieve relevant transcript segments using hybrid search (RRF)."""
     query_embedding_list = await generate_embedding(question)
-    query_embedding = "[" + ",".join(str(x) for x in query_embedding_list) + "]"
+    query_embedding = format_embedding(query_embedding_list)
 
     recording_filter = ""
     if recording_ids:
