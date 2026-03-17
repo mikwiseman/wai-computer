@@ -19,6 +19,7 @@ struct ContentView: View {
 
 struct MainTabView: View {
     @AppStorage("selectedTab") private var selectedTab = 0
+    @StateObject private var recordingViewModel = RecordingViewModel()
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -46,6 +47,7 @@ struct MainTabView: View {
                 }
                 .tag(3)
         }
+        .environmentObject(recordingViewModel)
     }
 }
 

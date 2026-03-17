@@ -105,8 +105,13 @@ class TestSanitizeFilename:
     def test_preserves_hyphens_underscores(self):
         assert _sanitize_filename("my-meeting_notes") == "my-meeting_notes"
 
-    def test_only_special_chars_returns_recording(self):
-        assert _sanitize_filename("!!!@@@###") == "recording"
+    def test_only_special_chars_preserves_non_fs_chars(self):
+        # !@# are not filesystem-unsafe, so they're preserved
+        assert _sanitize_filename("!!!@@@###") == "!!!@@@###"
+
+    def test_only_fs_unsafe_chars_returns_recording(self):
+        # All filesystem-unsafe chars stripped → empty → falls back to "recording"
+        assert _sanitize_filename('/:*?"<>|') == "recording"
 
 
 class TestNormalizeFailureMessage:

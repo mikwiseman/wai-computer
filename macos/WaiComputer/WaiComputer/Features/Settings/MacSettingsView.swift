@@ -7,6 +7,7 @@ struct MacSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var hasAccessibilityPermission = TextInserter.hasAccessibilityPermission
+    @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
 
     private let languageOptions: [(label: String, value: String)] = [
@@ -84,6 +85,7 @@ struct MacSettingsView: View {
                     } else {
                         Button("Grant Permission") {
                             TextInserter.requestAccessibilityPermission()
+                            startPermissionPolling()
                         }
                         .font(Typography.bodySmall)
                     }
@@ -128,6 +130,7 @@ struct MacSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: refreshPermissions)
+        .onDisappear(perform: stopPermissionPolling)
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
@@ -152,5 +155,22 @@ struct MacSettingsView: View {
 
     private func refreshPermissions() {
         hasAccessibilityPermission = TextInserter.hasAccessibilityPermission
+        if hasAccessibilityPermission {
+            stopPermissionPolling()
+        }
+    }
+
+    private func startPermissionPolling() {
+        stopPermissionPolling()
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            DispatchQueue.main.async {
+                refreshPermissions()
+            }
+        }
+    }
+
+    private func stopPermissionPolling() {
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
     }
 }

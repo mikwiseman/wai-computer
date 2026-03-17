@@ -216,7 +216,7 @@ public actor WebSocketManager {
 
     // MARK: - Private
 
-    private func buildDeepgramURL(token: String) throws -> URL {
+    func buildDeepgramURL(token: String) throws -> URL {
         var params = [
             "model=nova-3",
             "language=\(language)",
