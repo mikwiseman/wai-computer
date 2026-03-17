@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Deepgram token response from backend
 public struct DeepgramTokenResponse: Codable, Sendable {
@@ -71,6 +72,7 @@ public enum WebSocketEvent: Sendable {
 /// Connects directly to `wss://api.deepgram.com/v1/listen` using a short-lived
 /// JWT obtained from the backend's `/api/deepgram-token` endpoint.
 public actor WebSocketManager {
+    private let wsLog = Logger(subsystem: "com.waicomputer.kit", category: "websocket")
     private let apiClient: APIClient
     private let language: String
     private let channels: Int
@@ -91,7 +93,7 @@ public actor WebSocketManager {
     /// replaces it and logs a warning — the previous stream will end.
     public var events: AsyncStream<WebSocketEvent> {
         if eventContinuation != nil {
-            print("[WS] Warning: replacing active event stream — previous iterator will be terminated")
+            wsLog.warning("Replacing active event stream — previous iterator will be terminated")
         }
         let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
         eventContinuation?.finish()
@@ -108,7 +110,7 @@ public actor WebSocketManager {
     /// Connect to Deepgram directly using a temporary token from the backend.
     public func connect() async throws {
         if webSocket != nil || receiveTask != nil {
-            print("[WS] Disconnecting previous connection before new one")
+            wsLog.debug("Disconnecting previous connection before new one")
             closeConnection(
                 forConnection: connectionId,
                 error: WebSocketConnectionError.superseded,
@@ -136,7 +138,7 @@ public actor WebSocketManager {
         // Build Deepgram WebSocket URL with token as query param
         // (more reliable than header for WebSocket upgrade handshake)
         let url = try buildDeepgramURL(token: dgToken)
-        print("[WS] Connecting to Deepgram: \(url.host ?? "")\(url.path)")
+        wsLog.debug("Connecting to Deepgram: \(url.host ?? "", privacy: .public)\(url.path, privacy: .public)")
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 300
@@ -169,7 +171,7 @@ public actor WebSocketManager {
 
         sendCount += 1
         if sendCount <= 3 || sendCount % 50 == 0 {
-            print("[WS] sendAudio #\(sendCount): \(data.count) bytes")
+            wsLog.debug("sendAudio #\(self.sendCount): \(data.count) bytes")
         }
 
         try await webSocket.send(.data(data))
@@ -181,7 +183,7 @@ public actor WebSocketManager {
 
         let closeMessage = "{\"type\":\"CloseStream\"}"
         try await webSocket.send(.string(closeMessage))
-        print("[WS] Sent CloseStream to Deepgram")
+        wsLog.debug("Sent CloseStream to Deepgram")
     }
 
     /// Ask Deepgram to finalize the stream and wait for the socket to close.
@@ -243,12 +245,12 @@ public actor WebSocketManager {
     private func receiveMessages(forConnection expectedId: UInt64) async {
         guard let webSocket else { return }
 
-        print("[WS] receiveMessages: started listening (connection \(expectedId))")
+        wsLog.debug("receiveMessages: started listening (connection \(expectedId))")
         eventContinuation?.yield(.connected)
         do {
             while true {
                 guard connectionId == expectedId else {
-                    print("[WS] receiveMessages: connection \(expectedId) superseded")
+                    wsLog.debug("receiveMessages: connection \(expectedId) superseded")
                     return
                 }
 
@@ -270,7 +272,7 @@ public actor WebSocketManager {
             }
         } catch {
             if connectionId == expectedId {
-                print("[WS] receiveMessages error: \(error)")
+                wsLog.error("receiveMessages error: \(error.localizedDescription, privacy: .public)")
                 closeConnection(
                     forConnection: expectedId,
                     error: WebSocketConnectionError.disconnected(error),

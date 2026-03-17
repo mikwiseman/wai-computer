@@ -32,6 +32,10 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
+    private var systemAudioReceivedAny = false
+
+    /// Whether system audio has stalled (no samples received for >3 seconds)
+    public private(set) var systemAudioStalled = false
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
@@ -101,15 +105,39 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                 let samples = Array(UnsafeBufferPointer(start: floatData[0], count: frames))
                 self.lock.lock()
                 self.systemBuffer.append(contentsOf: samples)
+                self.systemAudioReceivedAny = true
+                self.systemAudioStalled = false
                 self.lock.unlock()
             }
         }
 
         flushTask = Task { [weak self] in
+            var flushCount = 0
+            var zeroSystemCount = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(0.16))
                 guard !Task.isCancelled else { break }
                 self?.flushDualBuffers()
+                flushCount += 1
+
+                // Stall detection: check every ~3 seconds (18 flushes × 160ms)
+                if flushCount % 18 == 0 {
+                    self?.lock.lock()
+                    let sysEmpty = self?.systemBuffer.isEmpty ?? true
+                    let receivedAny = self?.systemAudioReceivedAny ?? false
+                    self?.lock.unlock()
+
+                    if sysEmpty && !receivedAny {
+                        zeroSystemCount += 1
+                    } else {
+                        zeroSystemCount = 0
+                    }
+
+                    if zeroSystemCount >= 2 {
+                        self?.systemAudioStalled = true
+                        dualLog.error("[Dual] ⚠️ System audio stalled — no samples received after \(zeroSystemCount * 3)s. Other participants will NOT be transcribed.")
+                    }
+                }
             }
         }
     }
@@ -161,15 +189,36 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     }
 
     /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
-    /// Uses mic sample count as the frame count — if system has fewer samples, pads with silence.
+    /// Uses the minimum of both buffers when both have data, to keep channels in sync.
+    /// Falls back to mic-only with silence padding if system audio stalls.
     private func flushDualBuffers() {
         lock.lock()
         let micCount = micBuffer.count
         let sysCount = systemBuffer.count
 
-        // Use mic as the driver — mic always produces continuous samples.
-        // System may lag behind or produce fewer samples; pad with silence.
-        let frames = micCount
+        // Minimum flush size: 80ms at target sample rate (prevents tiny flushes)
+        let minFlushSize = Int(config.sampleRate * 0.08)
+
+        // When both streams have enough data, use the minimum to stay in sync.
+        // If system audio is stalling (has zero samples), use mic with silence padding
+        // to avoid blocking the entire pipeline.
+        let frames: Int
+        if sysCount >= minFlushSize && micCount >= minFlushSize {
+            // Both have enough — use minimum to keep in sync
+            frames = min(micCount, sysCount)
+        } else if micCount >= minFlushSize && sysCount == 0 {
+            // System audio stalled — flush mic with silence padding
+            // but cap at 1 second to avoid huge silent system channel buffers
+            frames = min(micCount, Int(config.sampleRate))
+        } else if micCount >= minFlushSize {
+            // System has some data but less than minimum — use what's available
+            frames = min(micCount, max(sysCount, minFlushSize))
+        } else {
+            // Not enough mic data yet
+            lock.unlock()
+            return
+        }
+
         guard frames > 0 else {
             lock.unlock()
             return
@@ -182,17 +231,20 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         if sysCount >= frames {
             sysSamples = Array(systemBuffer.prefix(frames))
             systemBuffer.removeFirst(frames)
-        } else {
+        } else if sysCount > 0 {
             // System audio has fewer samples — take what's available, pad rest with silence
             sysSamples = Array(systemBuffer) + Array(repeating: 0.0, count: frames - sysCount)
             systemBuffer.removeAll()
+        } else {
+            // No system audio at all — all silence
+            sysSamples = Array(repeating: 0.0, count: frames)
         }
 
         let continuation = bufferContinuation
         lock.unlock()
 
-        if frames % 16000 == 0 || frames < 100 {
-            dualLog.warning("[Dual] flush: \(frames) frames (mic=\(micCount), sys=\(sysCount))")
+        if frames % 16000 == 0 || frames < 100 || (sysCount == 0 && micCount > 0) {
+            dualLog.warning("[Dual] flush: \(frames) frames (mic=\(micCount), sys=\(sysCount)\(sysCount == 0 ? " ⚠️ NO SYSTEM AUDIO" : ""))")
         }
 
         // Non-interleaved 2-channel: floatChannelData[0] = mic, floatChannelData[1] = system

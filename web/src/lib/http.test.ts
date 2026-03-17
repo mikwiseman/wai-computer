@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, getApiBaseUrl } from "./http";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, apiFetch, getApiBaseUrl, syncLocalhostAuthCookie } from "./http";
 
 const originalEnv = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -271,6 +271,207 @@ describe("apiFetch", () => {
       name: "ApiError",
       status: 0,
       message: "Network error — check your connection",
+    });
+  });
+
+  it("syncs localhost auth cookie after successful token refresh", async () => {
+    // Simulate localhost environment
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    // Clear any existing cookie
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 200 with new token
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ access_token: "fresh-token-123", token_type: "bearer" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    // Retry of original call: 200 with data
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await apiFetch<{ data: string }>("/protected");
+    expect(result).toEqual({ data: "ok" });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+    // Verify the cookie was set with the new token
+    expect(document.cookie).toContain("wai_access_token=fresh-token-123");
+
+    // Restore
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("does not set cookie after refresh when not on localhost", async () => {
+    // Ensure not on localhost (default jsdom hostname is "localhost", override it)
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "wai.computer" },
+      writable: true,
+    });
+
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 200 with new token
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ access_token: "fresh-token-456", token_type: "bearer" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    // Retry of original call: 200 with data
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await apiFetch<{ data: string }>("/protected");
+
+    // Cookie should NOT be set since we're not on localhost
+    expect(document.cookie).not.toContain("wai_access_token=fresh-token-456");
+
+    // Restore
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("handles refresh response without access_token gracefully", async () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 200 but empty body (no access_token)
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 200 }),
+    );
+
+    // Retry of original call: 200 with data
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await apiFetch<{ data: string }>("/protected");
+    expect(result).toEqual({ data: "ok" });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+    // Cookie should NOT be set since refresh had no token
+    expect(document.cookie).not.toContain("wai_access_token=");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+});
+
+describe("syncLocalhostAuthCookie", () => {
+  beforeEach(() => {
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+  });
+
+  it("sets cookie on localhost", () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    syncLocalhostAuthCookie("test-token");
+    expect(document.cookie).toContain("wai_access_token=test-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("clears cookie on localhost when token is null", () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    syncLocalhostAuthCookie("test-token");
+    expect(document.cookie).toContain("wai_access_token=test-token");
+
+    syncLocalhostAuthCookie(null);
+    expect(document.cookie).not.toContain("wai_access_token=test-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("does nothing when not on localhost", () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "wai.computer" },
+      writable: true,
+    });
+
+    syncLocalhostAuthCookie("test-token");
+    expect(document.cookie).not.toContain("wai_access_token=test-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
     });
   });
 });

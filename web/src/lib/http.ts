@@ -16,6 +16,27 @@ export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL;
 }
 
+export function isLocalhostBrowser(): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return false;
+  }
+
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+}
+
+export function syncLocalhostAuthCookie(token: string | null): void {
+  if (!isLocalhostBrowser()) {
+    return;
+  }
+
+  if (!token) {
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+    return;
+  }
+
+  document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+}
+
 async function parseResponsePayload(response: Response): Promise<unknown> {
   const text = await response.text();
   if (text.trim().length === 0) {
@@ -87,6 +108,17 @@ export async function apiFetch<T>(
       });
 
       if (refreshResponse.ok) {
+        // Extract new token and sync localhost cookie so the retry uses it
+        const refreshPayload = await parseResponsePayload(refreshResponse);
+        if (
+          refreshPayload &&
+          typeof refreshPayload === "object" &&
+          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
+        ) {
+          syncLocalhostAuthCookie(
+            (refreshPayload as { access_token: string }).access_token,
+          );
+        }
         response = await doFetch(url, fetchInit);
       }
     } catch {

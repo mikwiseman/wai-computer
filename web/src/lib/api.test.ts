@@ -5,6 +5,13 @@ import { apiFetch } from "./http";
 vi.mock("./http", () => ({
   apiFetch: vi.fn(),
   getApiBaseUrl: vi.fn(() => ""),
+  syncLocalhostAuthCookie: vi.fn((token: string | null) => {
+    if (!token) {
+      document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+      return;
+    }
+    document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+  }),
 }));
 
 const mockedApiFetch = vi.mocked(apiFetch);
