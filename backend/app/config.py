@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Auth - JWT_SECRET is REQUIRED, no default for security
     jwt_secret: str  # Must be set via environment variable
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 10080  # 7 days
+    jwt_expire_minutes: int = 1440  # 1 day
     auth_cookie_name: str = "wai_access_token"
     auth_cookie_secure: bool | None = None
     auth_cookie_domain: str | None = None
