@@ -45,16 +45,24 @@ class EntityRelation(Base, UUIDMixin):
     __tablename__ = "entity_relations"
 
     source_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     target_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     relation_type: Mapped[str | None] = mapped_column(
         String(100)
     )  # mentioned_in, works_on, related_to
     recording_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("recordings.id", ondelete="SET NULL")
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="SET NULL"),
+        index=True,
     )
     context: Mapped[str | None] = mapped_column(Text)
 
@@ -99,6 +107,7 @@ class RecordingTag(Base):
         UUID(as_uuid=True),
         ForeignKey("tags.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     )
 
     # Relationships
