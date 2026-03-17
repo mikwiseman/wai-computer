@@ -3,7 +3,7 @@ import WaiComputerKit
 
 struct RecordingView: View {
     @EnvironmentObject var appState: AppState
-    @StateObject private var viewModel = RecordingViewModel()
+    @EnvironmentObject var viewModel: RecordingViewModel
 
     var body: some View {
         NavigationStack {
@@ -176,4 +176,5 @@ struct RecordingView: View {
 #Preview {
     RecordingView()
         .environmentObject(AppState())
+        .environmentObject(RecordingViewModel())
 }
