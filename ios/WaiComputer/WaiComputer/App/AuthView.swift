@@ -86,7 +86,8 @@ struct AuthView: View {
     }
 
     private var isFormValid: Bool {
-        let emailValid = email.contains("@") && email.contains(".")
+        let emailPattern = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/
+        let emailValid = email.wholeMatch(of: emailPattern) != nil
         let passwordValid = password.count >= 6
 
         if isLoginMode {
