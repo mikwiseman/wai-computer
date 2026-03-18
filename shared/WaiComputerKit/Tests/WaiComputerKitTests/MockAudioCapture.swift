@@ -38,6 +38,10 @@ final class MockAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     /// How many buffers have been produced since startRecording()
     private(set) var producedBufferCount = 0
 
+    /// Mirrors SystemAudioCapture.hasReceivedAudio — true once any buffer with
+    /// non-zero samples has been generated or emitted.
+    private(set) var hasReceivedAudio = false
+
     /// Interval between buffer emissions (seconds)
     let emitInterval: TimeInterval
 
@@ -103,8 +107,11 @@ final class MockAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
     /// Generate and immediately return a single sine wave buffer (synchronous, no recording needed).
     /// Useful for unit tests that need a buffer without starting the async producer.
+    /// Sets `hasReceivedAudio = true` if the buffer contains non-zero samples.
     func generateBuffer() -> AVAudioPCMBuffer? {
-        return makeSineBuffer()
+        guard let buffer = makeSineBuffer() else { return nil }
+        markReceivedIfNonZero(buffer)
+        return buffer
     }
 
     /// Generate a buffer with a specific channel count, independent of the config.
@@ -154,7 +161,25 @@ final class MockAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         }
 
         producedBufferCount += 1
+        markReceivedIfNonZero(buffer)
         bufferContinuation?.yield(buffer)
+    }
+
+    /// Check whether `buffer` contains any non-zero sample and, if so,
+    /// flip `hasReceivedAudio` to true (mirrors SystemAudioCapture behaviour).
+    private func markReceivedIfNonZero(_ buffer: AVAudioPCMBuffer) {
+        guard !hasReceivedAudio else { return }
+        guard let floatData = buffer.floatChannelData else { return }
+        let channels = Int(buffer.format.channelCount)
+        let frames = Int(buffer.frameLength)
+        for ch in 0..<channels {
+            for i in 0..<frames {
+                if floatData[ch][i] != 0 {
+                    hasReceivedAudio = true
+                    return
+                }
+            }
+        }
     }
 
     private func makeSineBuffer() -> AVAudioPCMBuffer? {

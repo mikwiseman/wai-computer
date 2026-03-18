@@ -3,6 +3,7 @@ import AVFoundation
 import CoreAudio
 import AudioToolbox
 import os
+import Darwin.os
 
 private let sysLog = Logger(subsystem: "com.waicomputer.kit", category: "system-audio")
 
@@ -27,6 +28,20 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     private var tapID: AudioObjectID = AudioObjectID.max
     private var aggregateDeviceID: AudioObjectID = AudioObjectID.max
     private var ioProcID: AudioDeviceIOProcID?
+
+    // Audio flow verification — uses raw pointer for real-time thread safety (no locks)
+    /// Atomic flag: 0 = no audio received, 1 = non-zero audio received.
+    /// Written from the real-time IO thread, read from any thread.
+    private let _audioReceivedFlag: UnsafeMutablePointer<Int32> = {
+        let p = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+        p.initialize(to: 0)
+        return p
+    }()
+
+    /// `true` once the IOProc has received at least one buffer containing non-zero audio samples.
+    public var hasReceivedAudio: Bool {
+        OSAtomicAdd32(0, _audioReceivedFlag) != 0
+    }
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
@@ -275,6 +290,21 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz -> \(outFrames)@\(targetSR)Hz")
             }
 
+            // Mark audio as flowing once we see any non-zero sample (lock-free, real-time safe)
+            if OSAtomicAdd32(0, self._audioReceivedFlag) == 0 {
+                var foundNonZero = false
+                for i in 0..<outFrames {
+                    if dst[i] != 0 {
+                        foundNonZero = true
+                        break
+                    }
+                }
+                if foundNonZero {
+                    OSAtomicCompareAndSwap32(0, 1, self._audioReceivedFlag)
+                    sysLog.warning("[SysAudio] First non-zero audio received at tap #\(tapCount)")
+                }
+            }
+
             os_unfair_lock_lock(self.continuationLock)
             self.bufferContinuation?.yield(outBuffer)
             os_unfair_lock_unlock(self.continuationLock)
@@ -297,6 +327,21 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
 
         _isCapturing = true
         sysLog.warning("[SysAudio] System audio capture started")
+
+        // Schedule a verification check — warn if no real audio arrives within 3 seconds
+        let flag = _audioReceivedFlag
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self = self, self._isCapturing else { return }
+            if OSAtomicAdd32(0, flag) == 0 {
+                sysLog.error("[SysAudio] WARNING: No non-zero audio received within 3 seconds of starting capture. The tap may have silently failed or permission was denied.")
+            }
+        }
+    }
+
+    /// Returns `true` if at least one buffer with non-zero audio samples has been received
+    /// since capture started. Use this to verify the tap is actually producing audio.
+    public func verifyAudioFlowing() -> Bool {
+        return OSAtomicAdd32(0, _audioReceivedFlag) != 0
     }
 
     /// Stop capturing system audio and release all Core Audio resources.
@@ -315,6 +360,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         destroyTap()
 
         _isCapturing = false
+        OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
         bufferContinuation = nil
@@ -353,6 +399,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
         continuationLock.deinitialize(count: 1)
         continuationLock.deallocate()
+        _audioReceivedFlag.deinitialize(count: 1)
+        _audioReceivedFlag.deallocate()
     }
 
     public func startRecording() async throws {

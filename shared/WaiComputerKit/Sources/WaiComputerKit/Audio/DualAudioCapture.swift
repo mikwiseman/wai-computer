@@ -32,7 +32,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
-    private var systemAudioReceivedAny = false
+    /// Whether system audio has ever received any samples since recording started.
+    public private(set) var systemAudioReceivedAny = false
 
     /// Whether system audio has stalled (no samples received for >3 seconds)
     public private(set) var systemAudioStalled = false
