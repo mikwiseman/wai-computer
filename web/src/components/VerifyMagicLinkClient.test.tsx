@@ -62,4 +62,26 @@ describe("VerifyMagicLinkClient", () => {
       expect(screen.getByTestId("verify-message")).toHaveTextContent("Verification failed.");
     });
   });
+
+  it("shows verifying message while token verification is in progress", () => {
+    mockVerifyMagicLink.mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    render(<VerifyMagicLinkClient token="pending-token" />);
+
+    expect(screen.getByTestId("verify-message")).toHaveTextContent("Verifying token...");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Magic Link Verification");
+  });
+
+  it("shows error message from ApiError and does not redirect", async () => {
+    mockVerifyMagicLink.mockRejectedValue(new ApiError(400, "Invalid or expired link"));
+    render(<VerifyMagicLinkClient token="bad-token" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("verify-message")).toHaveTextContent("Invalid or expired link");
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Back to login" })).toHaveAttribute("href", "/login");
+  });
 });

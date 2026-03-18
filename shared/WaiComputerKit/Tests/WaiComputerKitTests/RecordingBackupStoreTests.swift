@@ -36,6 +36,255 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertEqual(manifest.transcript, "Hello")
     }
 
+    func testSaveRecordingWithEmptyTranscript() throws {
+        let recordingId = "backup-empty-transcript-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        let backup = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Empty transcript note",
+            recordingType: .note,
+            durationSeconds: 5,
+            transcript: nil,
+            segments: []
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.manifestURL.path))
+        // segments file should NOT exist when segments array is empty
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.segmentsFileURL.path))
+
+        let manifestData = try Data(contentsOf: backup.manifestURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let manifest = try decoder.decode(RecordingBackupManifest.self, from: manifestData)
+        XCTAssertEqual(manifest.title, "Empty transcript note")
+        XCTAssertNil(manifest.transcript)
+        XCTAssertEqual(manifest.segmentCount, 0)
+    }
+
+    func testSaveRecordingWithMultipleSegments() throws {
+        let recordingId = "backup-multi-seg-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        let segments = [
+            LiveTranscriptSegment(
+                text: "Good morning everyone.",
+                speaker: "Speaker 1",
+                isFinal: true,
+                startMs: 0,
+                endMs: 1500,
+                confidence: 0.95
+            ),
+            LiveTranscriptSegment(
+                text: "Thanks for joining.",
+                speaker: "Speaker 2",
+                isFinal: true,
+                startMs: 1600,
+                endMs: 3000,
+                confidence: 0.91
+            ),
+            LiveTranscriptSegment(
+                text: "Let's get started.",
+                speaker: "Speaker 1",
+                isFinal: true,
+                startMs: 3100,
+                endMs: 4200,
+                confidence: 0.88
+            ),
+        ]
+
+        let backup = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Team standup",
+            recordingType: .meeting,
+            durationSeconds: 4.2,
+            transcript: "Good morning everyone. Thanks for joining. Let's get started.",
+            segments: segments
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.manifestURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.segmentsFileURL.path))
+
+        // Verify manifest segment count
+        let manifestData = try Data(contentsOf: backup.manifestURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let manifest = try decoder.decode(RecordingBackupManifest.self, from: manifestData)
+        XCTAssertEqual(manifest.segmentCount, 3)
+        XCTAssertEqual(manifest.recordingType, "meeting")
+
+        // Verify segments file contains all segments
+        let segData = try Data(contentsOf: backup.segmentsFileURL)
+        let decoded = try decoder.decode([LiveTranscriptSegment].self, from: segData)
+        XCTAssertEqual(decoded.count, 3)
+        XCTAssertEqual(decoded[0].text, "Good morning everyone.")
+        XCTAssertEqual(decoded[1].text, "Thanks for joining.")
+        XCTAssertEqual(decoded[2].text, "Let's get started.")
+    }
+
+    func testRemoveRecordingDeletesFiles() throws {
+        let recordingId = "backup-remove-\(UUID().uuidString)"
+
+        let backup = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "To be removed",
+            recordingType: .reflection,
+            durationSeconds: 10,
+            transcript: "Some text",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Some text",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 1000,
+                    confidence: 0.99
+                )
+            ]
+        )
+
+        // Confirm files exist before removal
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.manifestURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.segmentsFileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.directoryURL.path))
+
+        try RecordingBackupStore.removeRecording(recordingId: recordingId)
+
+        // Confirm everything is gone
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.manifestURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.segmentsFileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.directoryURL.path))
+    }
+
+    func testRemoveRecordingForNonExistentRecordingDoesNotCrash() throws {
+        let recordingId = "backup-nonexistent-\(UUID().uuidString)"
+
+        // Should not throw — removeRecording guards with existingBackup which returns nil
+        XCTAssertNoThrow(try RecordingBackupStore.removeRecording(recordingId: recordingId))
+    }
+
+    func testRecordSaveFailureForNonExistentRecordingReturnsNil() throws {
+        let recordingId = "backup-no-exist-failure-\(UUID().uuidString)"
+
+        let result = try RecordingBackupStore.recordSaveFailure(
+            recordingId: recordingId,
+            message: "Should return nil"
+        )
+        XCTAssertNil(result)
+    }
+
+    func testSaveRecordingPreservesAllSegmentFields() throws {
+        let recordingId = "backup-fields-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        let segment = LiveTranscriptSegment(
+            text: "Detailed segment",
+            speaker: "Dr. Smith",
+            isFinal: true,
+            startMs: 1234,
+            endMs: 5678,
+            confidence: 0.9372
+        )
+
+        let backup = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Field preservation test",
+            recordingType: .meeting,
+            durationSeconds: 5.678,
+            transcript: "Detailed segment",
+            segments: [segment]
+        )
+
+        let segData = try Data(contentsOf: backup.segmentsFileURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode([LiveTranscriptSegment].self, from: segData)
+
+        XCTAssertEqual(decoded.count, 1)
+        let roundTripped = decoded[0]
+        XCTAssertEqual(roundTripped.text, "Detailed segment")
+        XCTAssertEqual(roundTripped.speaker, "Dr. Smith")
+        XCTAssertEqual(roundTripped.isFinal, true)
+        XCTAssertEqual(roundTripped.startMs, 1234)
+        XCTAssertEqual(roundTripped.endMs, 5678)
+        XCTAssertEqual(roundTripped.confidence, 0.9372, accuracy: 0.0001)
+    }
+
+    func testSaveRecordingPreservesManifestFields() throws {
+        let recordingId = "backup-manifest-fields-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        let beforeSave = Date()
+
+        let backup = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Manifest check",
+            recordingType: .reflection,
+            durationSeconds: 99.5,
+            transcript: "Full transcript text here",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "A", speaker: nil, isFinal: true,
+                    startMs: 0, endMs: 100, confidence: 0.5
+                ),
+                LiveTranscriptSegment(
+                    text: "B", speaker: "Bob", isFinal: false,
+                    startMs: 100, endMs: 200, confidence: 0.7
+                ),
+            ]
+        )
+
+        let manifestData = try Data(contentsOf: backup.manifestURL)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let manifest = try decoder.decode(RecordingBackupManifest.self, from: manifestData)
+
+        XCTAssertEqual(manifest.recordingId, recordingId)
+        XCTAssertEqual(manifest.title, "Manifest check")
+        XCTAssertEqual(manifest.recordingType, "reflection")
+        XCTAssertEqual(manifest.durationSeconds, 99.5, accuracy: 0.001)
+        XCTAssertEqual(manifest.segmentCount, 2)
+        XCTAssertEqual(manifest.transcript, "Full transcript text here")
+        XCTAssertNil(manifest.lastErrorMessage)
+        // ISO 8601 truncates sub-second precision, so allow 1 second tolerance
+        XCTAssertEqual(
+            manifest.createdAt.timeIntervalSince1970,
+            beforeSave.timeIntervalSince1970,
+            accuracy: 2.0,
+            "createdAt should be close to save time"
+        )
+        XCTAssertEqual(
+            manifest.updatedAt.timeIntervalSince1970,
+            beforeSave.timeIntervalSince1970,
+            accuracy: 2.0,
+            "updatedAt should be close to save time"
+        )
+    }
+
+    func testExistingBackupReturnsNilForUnknownRecording() throws {
+        let recordingId = "backup-unknown-\(UUID().uuidString)"
+        let result = try RecordingBackupStore.existingBackup(recordingId: recordingId)
+        XCTAssertNil(result)
+    }
+
+    func testExistingBackupReturnsBackupAfterSave() throws {
+        let recordingId = "backup-exists-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Exists",
+            recordingType: .note,
+            durationSeconds: 1,
+            transcript: nil,
+            segments: []
+        )
+
+        let result = try RecordingBackupStore.existingBackup(recordingId: recordingId)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.recordingId, recordingId)
+    }
+
     func testRecordSaveFailureUpdatesManifest() throws {
         let recordingId = "backup-failure-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }

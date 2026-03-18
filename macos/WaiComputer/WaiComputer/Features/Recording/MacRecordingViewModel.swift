@@ -65,6 +65,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
+    @Published var systemAudioWarning: String?
 
     /// Committed (final) transcript lines — only final Deepgram results, with speaker labels
     private var committedLines: [(speaker: String?, text: String)] = []
@@ -86,6 +87,7 @@ class MacRecordingViewModel: ObservableObject {
     private var audioTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
+    private var systemAudioMonitorTask: Task<Void, Never>?
 
     var formattedDuration: String {
         let minutes = Int(duration) / 60
@@ -289,6 +291,12 @@ class MacRecordingViewModel: ObservableObject {
             }
 
             startTimer()
+
+            // Monitor system audio stall status so the user gets immediate feedback
+            if #available(macOS 14.2, *), let dualCapture = capture as? DualAudioCapture {
+                startSystemAudioMonitor(for: dualCapture)
+            }
+
             setPhase(.recording)
             isLoading = false
 
@@ -307,9 +315,12 @@ class MacRecordingViewModel: ObservableObject {
         guard phase == .recording else { return }
         setPhase(.finalizing)
 
-        // Stop timer
+        // Stop timer and system audio monitor
         timerTask?.cancel()
         timerTask = nil
+        systemAudioMonitorTask?.cancel()
+        systemAudioMonitorTask = nil
+        systemAudioWarning = nil
 
         #if DEBUG
         if testingMode.isRecordingFlow {
@@ -443,6 +454,7 @@ class MacRecordingViewModel: ObservableObject {
         interimSpeaker = nil
         currentRecordingId = nil
         isServerComplete = false
+        systemAudioWarning = nil
         duration = 0
     }
 
@@ -539,9 +551,35 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
+    @available(macOS 14.2, *)
+    private func startSystemAudioMonitor(for dualCapture: DualAudioCapture) {
+        systemAudioMonitorTask?.cancel()
+        systemAudioMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { break }
+
+                let stalled = dualCapture.systemAudioStalled
+                let receivedAny = dualCapture.systemAudioReceivedAny
+
+                await MainActor.run {
+                    guard let self, self.phase == .recording else { return }
+                    if stalled || !receivedAny {
+                        self.systemAudioWarning = "System audio not detected — other participants may not be recorded"
+                    } else {
+                        self.systemAudioWarning = nil
+                    }
+                }
+            }
+        }
+    }
+
     private func resetAfterStartFailure() async {
         timerTask?.cancel()
         timerTask = nil
+        systemAudioMonitorTask?.cancel()
+        systemAudioMonitorTask = nil
+        systemAudioWarning = nil
         audioTask?.cancel()
         audioTask = nil
         transcriptTask?.cancel()
@@ -689,6 +727,9 @@ class MacRecordingViewModel: ObservableObject {
 
         timerTask?.cancel()
         timerTask = nil
+        systemAudioMonitorTask?.cancel()
+        systemAudioMonitorTask = nil
+        systemAudioWarning = nil
         audioTask?.cancel()
         audioTask = nil
         transcriptTask?.cancel()
@@ -771,6 +812,7 @@ class MacRecordingViewModel: ObservableObject {
 
     deinit {
         timerTask?.cancel()
+        systemAudioMonitorTask?.cancel()
         audioTask?.cancel()
         transcriptTask?.cancel()
         cleanupTask?.cancel()

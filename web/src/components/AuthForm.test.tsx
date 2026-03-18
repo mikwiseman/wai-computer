@@ -111,4 +111,73 @@ describe("AuthForm", () => {
       expect(screen.getByTestId("auth-message")).toHaveTextContent("Unexpected error");
     });
   });
+
+  it("renders login mode heading and register mode heading correctly", () => {
+    const { unmount } = render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign In");
+    expect(screen.getByTestId("auth-submit")).toHaveTextContent("Sign In");
+    expect(screen.getByRole("link", { name: "Need an account?" })).toHaveAttribute("href", "/register");
+    unmount();
+
+    render(<AuthForm mode="register" onSuccess={vi.fn()} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create Account");
+    expect(screen.getByTestId("auth-submit")).toHaveTextContent("Create Account");
+    expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
+  });
+
+  it("always renders both email and password fields regardless of mode", () => {
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    const emailInput = screen.getByTestId("auth-email");
+    const passwordInput = screen.getByTestId("auth-password");
+
+    expect(emailInput).toBeInTheDocument();
+    expect(emailInput).toHaveAttribute("type", "email");
+    expect(emailInput).toBeRequired();
+
+    expect(passwordInput).toBeInTheDocument();
+    expect(passwordInput).toHaveAttribute("type", "password");
+    expect(passwordInput).toBeRequired();
+  });
+
+  it("shows loading text on submit button while request is pending", async () => {
+    const user = userEvent.setup();
+    let resolveLogin: (value: unknown) => void;
+    mockLogin.mockImplementation(
+      () => new Promise((resolve) => { resolveLogin = resolve; }),
+    );
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    await user.type(screen.getByTestId("auth-email"), "load@example.com");
+    await user.type(screen.getByTestId("auth-password"), "password123");
+
+    const submitButton = screen.getByTestId("auth-submit");
+    expect(submitButton).toHaveTextContent("Sign In");
+    expect(submitButton).not.toBeDisabled();
+
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(submitButton).toHaveTextContent("Please wait...");
+      expect(submitButton).toBeDisabled();
+    });
+
+    resolveLogin!({ access_token: "t", token_type: "bearer" });
+
+    await waitFor(() => {
+      expect(submitButton).toHaveTextContent("Sign In");
+      expect(submitButton).not.toBeDisabled();
+    });
+  });
+
+  it("disables magic link button when email field is empty", () => {
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    const magicButton = screen.getByTestId("magic-link-button");
+    expect(magicButton).toBeDisabled();
+
+    const emailInput = screen.getByTestId("auth-email");
+    expect(emailInput).toHaveValue("");
+  });
 });

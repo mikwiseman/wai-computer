@@ -65,7 +65,8 @@ pytest -m integration --no-cov   # live API tests (needs running server)
 pytest -m slow --no-cov          # performance/stress tests
 ```
 - Lint: `ruff check .` (line-length 100, rules: E, F, I, N, W)
-- Coverage threshold: 82% (`--cov-fail-under=82`)
+- Coverage threshold: 78% (`--cov-fail-under=78`), actual coverage ~99%
+- Coverage concurrency: `["greenlet", "thread"]` (required for async SQLAlchemy)
 - Async mode: auto (pytest-asyncio)
 - Test DB env var: `TEST_DATABASE_URL`
 

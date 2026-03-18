@@ -9,6 +9,22 @@ struct LiveRecordingView: View {
         VStack(spacing: 0) {
             recordingHeader
 
+            // System audio stall warning
+            if let warning = recordingVM.systemAudioWarning {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text(warning)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.yellow.opacity(0.1))
+                .accessibilityIdentifier("system-audio-warning")
+            }
+
             WaiDivider()
 
             // Live transcript
@@ -104,15 +120,16 @@ struct LiveRecordingView: View {
 
             HStack(spacing: Spacing.sm) {
                 if recordingVM.recordingInputSource == .dual {
+                    let systemOk = recordingVM.hasSystemAudio && recordingVM.systemAudioWarning == nil
                     HStack(spacing: 4) {
-                        Image(systemName: recordingVM.hasSystemAudio ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        Image(systemName: systemOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
-                            .foregroundStyle(recordingVM.hasSystemAudio ? .green : .yellow)
-                        Text(recordingVM.hasSystemAudio ? "Mic + System" : "Mic Only")
+                            .foregroundStyle(systemOk ? .green : .yellow)
+                        Text(systemOk ? "Mic + System" : "Mic Only")
                             .font(Typography.label)
-                            .foregroundStyle(recordingVM.hasSystemAudio ? Palette.textSecondary : .yellow)
+                            .foregroundStyle(systemOk ? Palette.textSecondary : .yellow)
                     }
-                    .help(recordingVM.hasSystemAudio
+                    .help(systemOk
                         ? "Recording mic and system audio (2 channels)"
                         : "System audio unavailable — only mic is recording")
                 } else {

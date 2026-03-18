@@ -1,8 +1,10 @@
 """Tests for auth endpoint rate limiting."""
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 
 from app.core.rate_limit import RateLimiter, get_rate_limiter
@@ -23,8 +25,6 @@ class TestRateLimiterUnit:
         limiter = RateLimiter()
         for _ in range(3):
             limiter.check("test_key", max_requests=3, window_seconds=60)
-
-        from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
             limiter.check("test_key", max_requests=3, window_seconds=60)
@@ -51,8 +51,6 @@ class TestRateLimiterUnit:
         limiter.check("test_key", max_requests=3, window_seconds=60)
 
     def test_expired_entries_are_pruned(self):
-        from unittest.mock import patch
-
         limiter = RateLimiter()
 
         # Add requests at a fake early time
@@ -71,6 +69,213 @@ class TestRateLimiterUnit:
         a = get_rate_limiter()
         b = get_rate_limiter()
         assert a is b
+
+
+class TestRateLimiterEdgeCases:
+    """Edge case tests for the RateLimiter class."""
+
+    def test_stale_keys_are_cleaned_up(self):
+        """Keys with only expired timestamps should be removed during cleanup."""
+        limiter = RateLimiter(cleanup_interval=10)
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            # t=1000: create 50 unique keys
+            mock_time.monotonic.return_value = 1000.0
+            for i in range(50):
+                limiter.check(f"stale_key_{i}", max_requests=10, window_seconds=60)
+            assert limiter.key_count == 50
+
+            # t=1070: all timestamps are expired, but cleanup hasn't run yet
+            # (only 10s cleanup interval but we need a check() call to trigger it)
+            mock_time.monotonic.return_value = 1070.0
+            # Trigger a check that will also run cleanup (70s > 10s interval)
+            limiter.check("fresh_key", max_requests=10, window_seconds=60)
+
+            # All 50 stale keys should be purged, only fresh_key remains
+            assert limiter.key_count == 1
+
+    def test_empty_keys_removed_during_cleanup(self):
+        """Keys whose timestamp lists are empty should be removed."""
+        limiter = RateLimiter(cleanup_interval=5)
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("key_a", max_requests=5, window_seconds=10)
+            assert limiter.key_count == 1
+
+            # Advance past window + cleanup interval
+            mock_time.monotonic.return_value = 1020.0
+            limiter.check("key_b", max_requests=5, window_seconds=10)
+            # key_a should be cleaned up (timestamps expired)
+            assert limiter.key_count == 1  # only key_b
+
+    def test_rapid_requests_at_same_monotonic_time(self):
+        """Multiple requests at the exact same timestamp should all be counted."""
+        limiter = RateLimiter()
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 5000.0
+            # 3 requests at the exact same time
+            for _ in range(3):
+                limiter.check("rapid", max_requests=3, window_seconds=60)
+
+            # 4th request at the same time should be blocked
+            with pytest.raises(HTTPException) as exc_info:
+                limiter.check("rapid", max_requests=3, window_seconds=60)
+            assert exc_info.value.status_code == 429
+
+    def test_exact_boundary_timestamp_excluded(self):
+        """A timestamp exactly at the cutoff boundary should be pruned (t > cutoff, not >=)."""
+        limiter = RateLimiter()
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            # Add a request at t=1000
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("boundary", max_requests=1, window_seconds=60)
+
+            # At t=1060, cutoff = 1000.0, so timestamp 1000.0 is NOT > 1000.0
+            # It should be pruned, allowing a new request
+            mock_time.monotonic.return_value = 1060.0
+            limiter.check("boundary", max_requests=1, window_seconds=60)
+
+    def test_window_partially_expired(self):
+        """Only expired timestamps should be pruned, recent ones kept."""
+        limiter = RateLimiter()
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            # 2 requests at t=1000
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("partial", max_requests=3, window_seconds=60)
+            limiter.check("partial", max_requests=3, window_seconds=60)
+
+            # 1 request at t=1050
+            mock_time.monotonic.return_value = 1050.0
+            limiter.check("partial", max_requests=3, window_seconds=60)
+
+            # At t=1061: first 2 are expired, the one at t=1050 is still valid
+            # So we have 1 existing + this new one = 2, under limit of 3
+            mock_time.monotonic.return_value = 1061.0
+            limiter.check("partial", max_requests=3, window_seconds=60)
+            # One more should work (3rd)
+            limiter.check("partial", max_requests=3, window_seconds=60)
+            # 4th should fail (we now have: t=1050, t=1061, t=1061)
+            with pytest.raises(HTTPException):
+                limiter.check("partial", max_requests=3, window_seconds=60)
+
+    def test_blocked_request_does_not_add_timestamp(self):
+        """A rejected request should not record a timestamp (no penalty for being blocked)."""
+        limiter = RateLimiter()
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            for _ in range(3):
+                limiter.check("blocked", max_requests=3, window_seconds=60)
+
+            # Multiple blocked attempts should not extend the lockout
+            for _ in range(10):
+                with pytest.raises(HTTPException):
+                    limiter.check("blocked", max_requests=3, window_seconds=60)
+
+            # After window expires, exactly 3 old timestamps should be pruned
+            # (not 3 + 10 blocked attempts)
+            mock_time.monotonic.return_value = 1061.0
+            limiter.check("blocked", max_requests=3, window_seconds=60)
+
+    def test_max_requests_of_one(self):
+        """Rate limit of 1 request per window should work correctly."""
+        limiter = RateLimiter()
+        limiter.check("single", max_requests=1, window_seconds=60)
+
+        with pytest.raises(HTTPException):
+            limiter.check("single", max_requests=1, window_seconds=60)
+
+    def test_very_short_window(self):
+        """A 1-second window should correctly expire timestamps."""
+        limiter = RateLimiter()
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("short", max_requests=1, window_seconds=1)
+
+            # 0.5 seconds later: still blocked
+            mock_time.monotonic.return_value = 1000.5
+            with pytest.raises(HTTPException):
+                limiter.check("short", max_requests=1, window_seconds=1)
+
+            # 1.01 seconds later: should work
+            mock_time.monotonic.return_value = 1001.01
+            limiter.check("short", max_requests=1, window_seconds=1)
+
+    def test_reset_also_clears_max_window_and_cleanup_timer(self):
+        """Reset should restore the limiter to a fully clean state."""
+        limiter = RateLimiter(cleanup_interval=10)
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("key", max_requests=5, window_seconds=300)
+
+        assert limiter.key_count == 1
+        assert limiter._max_window == 300
+        assert limiter._last_cleanup is not None
+
+        limiter.reset()
+
+        assert limiter.key_count == 0
+        assert limiter._max_window == 0
+        assert limiter._last_cleanup is None
+
+    def test_key_count_property(self):
+        """key_count should accurately reflect tracked keys."""
+        limiter = RateLimiter()
+        assert limiter.key_count == 0
+
+        limiter.check("a", max_requests=10, window_seconds=60)
+        assert limiter.key_count == 1
+
+        limiter.check("b", max_requests=10, window_seconds=60)
+        assert limiter.key_count == 2
+
+        limiter.check("a", max_requests=10, window_seconds=60)
+        assert limiter.key_count == 2  # same key, no increase
+
+    def test_cleanup_does_not_remove_active_keys(self):
+        """Cleanup should preserve keys with recent timestamps."""
+        limiter = RateLimiter(cleanup_interval=5)
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("active", max_requests=5, window_seconds=60)
+            limiter.check("stale", max_requests=5, window_seconds=60)
+
+            # Advance 30s: both still within window, but cleanup runs
+            mock_time.monotonic.return_value = 1030.0
+            limiter.check("trigger", max_requests=5, window_seconds=60)
+
+            # active and stale are still within their 60s window
+            assert limiter.key_count == 3
+
+    def test_cleanup_interval_respected(self):
+        """Cleanup should not run more often than the configured interval."""
+        limiter = RateLimiter(cleanup_interval=100)
+
+        with patch("app.core.rate_limit.time") as mock_time:
+            mock_time.monotonic.return_value = 1000.0
+            limiter.check("old", max_requests=5, window_seconds=10)
+
+            # 20s later: old key is expired but cleanup hasn't triggered
+            # (cleanup_interval=100, only 20s elapsed)
+            mock_time.monotonic.return_value = 1020.0
+            limiter.check("new", max_requests=5, window_seconds=10)
+
+            # old key still tracked (cleanup hasn't run)
+            assert limiter.key_count == 2
+
+            # 110s later: cleanup triggers
+            mock_time.monotonic.return_value = 1110.0
+            limiter.check("newest", max_requests=5, window_seconds=10)
+
+            # old and new are both expired and cleaned up
+            assert limiter.key_count == 1  # only "newest"
 
 
 # --- Integration tests for rate-limited endpoints ---
