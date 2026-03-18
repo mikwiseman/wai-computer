@@ -116,10 +116,25 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
+    /// Whether dual capture is mixing both sources into a single mono channel
+    /// (for diarization-based speaker identification in group calls).
+    private var isDualMixedToMono: Bool {
+        if #available(macOS 14.2, *),
+           let dualCapture = audioCapture as? DualAudioCapture {
+            return dualCapture.mixToMono && hasSystemAudio
+        }
+        return false
+    }
+
     /// Number of audio channels being sent to Deepgram (1 = mono, 2 = multichannel)
     var audioChannels: Int {
         if recordingInputSource == .dual && hasSystemAudio {
-            return 2
+            if #available(macOS 14.2, *),
+               let dualCapture = audioCapture as? DualAudioCapture,
+               dualCapture.mixToMono {
+                return 1  // Mono mix — Deepgram uses diarization
+            }
+            return 2  // Multichannel mode
         }
         return 1
     }
@@ -241,7 +256,7 @@ class MacRecordingViewModel: ObservableObject {
 
             // Now we know the real channel count — create WebSocket with correct params
             let channels = audioChannels
-            NSLog("[Recording] Audio channels: %d", channels)
+            NSLog("[Recording] Audio channels: %d (%@)", channels, isDualMixedToMono ? "mono-mix with diarization" : channels > 1 ? "multichannel" : "mono")
 
             let ws = WebSocketManager(apiClient: apiClient, language: language, channels: channels)
             self.webSocketManager = ws
@@ -639,9 +654,9 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
-    /// Build transcript text with speaker labels when multichannel is active.
+    /// Build transcript text with speaker labels when multichannel or mono-mix diarization is active.
     private func buildTranscriptText() -> String {
-        let showSpeakers = audioChannels > 1
+        let showSpeakers = audioChannels > 1 || isDualMixedToMono
 
         var parts: [String] = []
         if showSpeakers {

@@ -192,7 +192,11 @@ async def search_chat_sessions(
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .where(ChatSession.id.in_(matching_session_ids))
         .group_by(ChatSession.id)
-        .order_by(ChatSession.created_at.desc())
+        .order_by(
+            case((ChatSession.pinned_at.is_not(None), 0), else_=1),
+            ChatSession.pinned_at.desc().nulls_last(),
+            ChatSession.created_at.desc(),
+        )
     )
 
     result = await db.execute(stmt)

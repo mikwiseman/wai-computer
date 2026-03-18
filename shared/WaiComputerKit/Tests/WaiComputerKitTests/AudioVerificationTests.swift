@@ -325,6 +325,80 @@ final class AudioVerificationTests: XCTestCase {
         }
     }
 
+    // MARK: - Multiple Buffer Generations Maintain hasReceivedAudio
+
+    /// Generating many buffers in sequence must keep hasReceivedAudio = true throughout.
+    /// Verifies the flag never resets to false after being set.
+    func testMultipleBufferGenerationsAllMaintainHasReceivedAudio() {
+        let mock = MockAudioCapture.microphone(frequency: 440)
+        XCTAssertFalse(mock.hasReceivedAudio, "Should start false")
+
+        for i in 1...10 {
+            let buffer = mock.generateBuffer()
+            XCTAssertNotNil(buffer, "Buffer \(i) should not be nil")
+            XCTAssertTrue(mock.hasReceivedAudio,
+                "hasReceivedAudio must remain true after buffer \(i)")
+        }
+    }
+
+    /// Stereo mock: generating many stereo buffers should all maintain hasReceivedAudio = true.
+    func testMultipleStereoBufferGenerationsMaintainHasReceivedAudio() {
+        let mock = MockAudioCapture.systemAudio(frequency: 880)
+        XCTAssertFalse(mock.hasReceivedAudio)
+
+        for i in 1...5 {
+            let buffer = mock.generateBuffer()
+            XCTAssertNotNil(buffer, "Stereo buffer \(i) should not be nil")
+            XCTAssertTrue(mock.hasReceivedAudio,
+                "hasReceivedAudio must remain true after stereo buffer \(i)")
+        }
+    }
+
+    // MARK: - Zero-Amplitude Buffers Must NOT Trigger hasReceivedAudio
+
+    /// Injecting a constant-zero buffer via constantBuffer helper should not flip hasReceivedAudio.
+    func testZeroAmplitudeConstantBufferDoesNotTriggerHasReceivedAudio() {
+        let mock = MockAudioCapture(
+            config: AudioCaptureConfig(sampleRate: 16000, channelCount: 1, bufferSize: 160),
+            frequency: 0.0
+        )
+
+        // Generate multiple zero-amplitude buffers — flag must stay false
+        for _ in 0..<5 {
+            let buffer = mock.generateBuffer()
+            XCTAssertNotNil(buffer)
+        }
+
+        XCTAssertFalse(mock.hasReceivedAudio,
+            "hasReceivedAudio must remain false when all generated samples are zero")
+    }
+
+    /// Zero-amplitude stereo buffers (2-channel, all zeros) should not trigger hasReceivedAudio.
+    func testZeroAmplitudeStereoBufferDoesNotTriggerHasReceivedAudio() {
+        let mock = MockAudioCapture(
+            config: AudioCaptureConfig(sampleRate: 16000, channelCount: 2, bufferSize: 2560),
+            frequency: 0.0
+        )
+
+        let buffer = mock.generateBuffer()
+        XCTAssertNotNil(buffer)
+
+        // Verify every sample across both channels is zero
+        if let floatData = buffer?.floatChannelData {
+            for ch in 0..<2 {
+                for i in 0..<Int(buffer!.frameLength) {
+                    XCTAssertEqual(floatData[ch][i], 0.0, accuracy: 0.0001,
+                        "Channel \(ch) sample \(i) should be zero for 0 Hz frequency")
+                }
+            }
+        }
+
+        XCTAssertFalse(mock.hasReceivedAudio,
+            "hasReceivedAudio must remain false for all-zero stereo buffer")
+    }
+
+    // MARK: - AudioEncoder (OpusEncoder) Edge Cases: Large Buffers (continued)
+
     /// Encoder should handle exactly one second at 48kHz (48000 frames) — a realistic hi-fi buffer.
     func testEncoderHandles48kHzLargeBuffer() {
         let encoder = AudioEncoder(sampleRate: 48000, channels: 1)

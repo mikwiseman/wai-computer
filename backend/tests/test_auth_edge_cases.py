@@ -20,6 +20,16 @@ async def test_register_whitespace_only_password_rejected(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_password_padded_with_whitespace_rejected(client: AsyncClient):
+    """Password with short content padded by spaces should be rejected."""
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": "padded@example.com", "password": "pass    "},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_register_password_exactly_8_chars(client: AsyncClient):
     """Registration with exactly 8-char password should succeed."""
     response = await client.post(
