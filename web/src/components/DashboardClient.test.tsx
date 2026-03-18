@@ -629,6 +629,101 @@ describe("DashboardClient", () => {
     expect(newPwdInput).toHaveValue("newPassword123");
   });
 
+  // --- Entity creation calls API with correct params ---
+
+  it("calls createEntity with type=topic, name from input, and metadata source=web", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    // Type a new entity name
+    await user.type(screen.getByTestId("entity-name"), "Machine Learning");
+    await user.click(screen.getByTestId("create-entity"));
+
+    await waitFor(() => {
+      expect(mockCreateEntity).toHaveBeenCalledWith({
+        type: "topic",
+        name: "Machine Learning",
+        metadata: { source: "web" },
+      });
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entity created.");
+    });
+
+    // Entity name input should be cleared after successful creation
+    expect(screen.getByTestId("entity-name")).toHaveValue("");
+  });
+
+  // --- Recording deletion refreshes the recordings list ---
+
+  it("refreshes recording list after deleting a recording", async () => {
+    arrangeHappyPathMocks();
+    const secondRecording = {
+      ...baseRecording,
+      id: "r2",
+      title: "Design Review",
+    };
+
+    // Initial load returns two recordings
+    mockListRecordings.mockResolvedValueOnce([baseRecording, secondRecording]);
+    // After deletion, list returns only one
+    mockListRecordings.mockResolvedValueOnce([secondRecording]);
+
+    const user = userEvent.setup();
+    render(<DashboardClient />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+      expect(screen.getByTestId("select-recording-r2")).toBeInTheDocument();
+    });
+
+    // Delete the first recording
+    await user.click(screen.getByTestId("delete-recording-r1"));
+
+    await waitFor(() => {
+      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
+      // listRecordings should have been called again (initial load + after delete)
+      expect(mockListRecordings).toHaveBeenCalledTimes(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording deleted.");
+    });
+  });
+
+  // --- Deleting selected recording clears the detail panel ---
+
+  it("clears selectedRecording detail when the selected recording is deleted", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    // Select the recording to show detail
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+
+    // Delete it
+    await user.click(screen.getByTestId("delete-recording-r1"));
+
+    await waitFor(() => {
+      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
+    });
+
+    // Detail panel should be gone since we deleted the selected recording
+    await waitFor(() => {
+      expect(screen.queryByTestId("recording-detail")).not.toBeInTheDocument();
+    });
+  });
+
   // --- Search mode change back and forth clears results each time ---
 
   it("clears search results on every mode change, not just the first", async () => {

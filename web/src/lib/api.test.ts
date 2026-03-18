@@ -357,6 +357,49 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls createRecording with all parameters (title, type, language)", async () => {
+    await api.createRecording({ title: "Sprint Retro", type: "meeting", language: "en" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings", {
+      method: "POST",
+      body: JSON.stringify({ title: "Sprint Retro", type: "meeting", language: "en" }),
+    });
+  });
+
+  it("calls deleteRecording (simple DELETE)", async () => {
+    await api.deleteRecording("rec-to-delete");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec-to-delete", {
+      method: "DELETE",
+    });
+  });
+
+  it("calls updateActionItem with multiple fields in PATCH body", async () => {
+    await api.updateActionItem("item42", {
+      task: "Updated task description",
+      owner: "Alice",
+      due_date: "2026-04-01",
+      priority: "high",
+      status: "in_progress",
+    });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/action-items/item42", {
+      method: "PATCH",
+      body: JSON.stringify({
+        task: "Updated task description",
+        owner: "Alice",
+        due_date: "2026-04-01",
+        priority: "high",
+        status: "in_progress",
+      }),
+    });
+  });
+
+  it("calls updateActionItem with partial fields (only owner)", async () => {
+    await api.updateActionItem("item99", { owner: "Bob" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/action-items/item99", {
+      method: "PATCH",
+      body: JSON.stringify({ owner: "Bob" }),
+    });
+  });
+
   it("calls bulkRecordingOperation for delete", async () => {
     await api.bulkRecordingOperation(["id1", "id2"], "delete");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/bulk", {
