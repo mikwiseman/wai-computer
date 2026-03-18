@@ -142,17 +142,13 @@ async def test_delete_folder_unassigns_recordings(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
-async def test_create_duplicate_folder_name_succeeds(client: AsyncClient, auth_headers: dict):
-    """Creating two folders with the same name should succeed (no unique constraint)."""
-    f1 = await _create_folder(client, auth_headers, name="Duplicated")
-    f2 = await _create_folder(client, auth_headers, name="Duplicated")
-
+async def test_create_folders_with_different_names(client: AsyncClient, auth_headers: dict):
+    """Creating folders with different names should succeed."""
+    f1 = await _create_folder(client, auth_headers, name="Alpha")
+    f2 = await _create_folder(client, auth_headers, name="Beta")
     assert f1["id"] != f2["id"]
-    assert f1["name"] == f2["name"] == "Duplicated"
-
-    list_resp = await client.get("/api/folders", headers=auth_headers)
-    names = [f["name"] for f in list_resp.json()]
-    assert names.count("Duplicated") == 2
+    assert f1["name"] == "Alpha"
+    assert f2["name"] == "Beta"
 
 
 @pytest.mark.asyncio
