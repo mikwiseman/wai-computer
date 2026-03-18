@@ -1,15 +1,13 @@
-"""Final coverage push — targets the last 3 uncovered lines plus deepgram
-streaming edge cases and recordings.py hardening.
+"""Final coverage push — deepgram streaming edge cases, recordings.py
+hardening, and rate limiter robustness.
 
-Uncovered lines:
-- recordings.py 603-604: elif duration_seconds branch in _persist_client_segments
-  (dead code — end_times is always populated when normalized_segments is non-empty,
-   but we exercise it by patching internal list behavior)
-- rate_limit.py 37: _cleanup_stale_keys early return when _max_window == 0
-  (dead code — check() always sets _max_window > 0 before calling cleanup,
-   but we exercise it by calling the method directly)
-
-Additional tests cover deepgram streaming and recordings edge cases.
+Covers:
+- Deepgram streaming: Results with no words, empty transcript, empty
+  alternatives, interleaved message types, send_audio when not running
+- Deepgram REST: mono WAV (no multichannel), zero-channel WAV header
+- Recordings: duration from max(end_times), sub-second duration truncation,
+  all-whitespace segments rejection, empty segments list rejection
+- Rate limiter: reset-then-reuse, concurrent thread safety
 """
 
 from __future__ import annotations
@@ -58,27 +56,35 @@ def _mock_deepgram_key():
 
 
 # ===========================================================================
-# 1. rate_limit.py line 37 — _cleanup_stale_keys with _max_window == 0
+# 1. rate_limit.py — reset clears defaultdict entries fully
 # ===========================================================================
 
 
-class TestRateLimiterCleanupStaleKeysMaxWindowZero:
-    """Directly call _cleanup_stale_keys when _max_window is 0 to cover line 37."""
+class TestRateLimiterResetClearsState:
+    """Verify reset() leaves the limiter in a fully clean state so subsequent
+    requests start fresh."""
 
-    def test_cleanup_returns_immediately_when_max_window_zero(self):
+    def test_reset_allows_requests_again_after_exhaustion(self):
+        from fastapi import HTTPException
+
         limiter = RateLimiter()
-        assert limiter._max_window == 0
 
-        # Manually inject a key so we can verify cleanup is a no-op
-        limiter._requests["stale"] = [1.0, 2.0]
+        # Exhaust the limit
+        for _ in range(3):
+            limiter.check("key", max_requests=3, window_seconds=60)
+        with pytest.raises(HTTPException):
+            limiter.check("key", max_requests=3, window_seconds=60)
 
-        # Call _cleanup_stale_keys directly (must hold lock)
-        with limiter._lock:
-            limiter._cleanup_stale_keys(now=9999.0)
+        # Reset should clear everything
+        limiter.reset()
 
-        # Key should NOT be removed because _max_window == 0 causes early return
-        assert "stale" in limiter._requests
-        assert limiter.key_count == 1
+        # All 3 requests should work again
+        for _ in range(3):
+            limiter.check("key", max_requests=3, window_seconds=60)
+
+        # 4th should be blocked again
+        with pytest.raises(HTTPException):
+            limiter.check("key", max_requests=3, window_seconds=60)
 
 
 # ===========================================================================
