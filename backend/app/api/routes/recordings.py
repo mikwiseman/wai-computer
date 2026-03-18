@@ -1145,14 +1145,23 @@ def _sanitize_filename(title: str | None) -> str:
 def _content_disposition(filename: str) -> str:
     """Build a Content-Disposition header value safe for all browsers.
 
-    Uses ASCII-only ``filename`` (quotes escaped) plus RFC 5987
-    ``filename*`` with UTF-8 percent-encoding for non-ASCII names.
-    """
-    # ASCII-safe fallback: keep only printable ASCII, escape quotes
-    ascii_name = filename.encode("ascii", "replace").decode("ascii")
-    ascii_name = ascii_name.replace('"', '\\"')
+    Uses ASCII-only ``filename`` with unsafe characters stripped (not escaped)
+    plus RFC 5987 ``filename*`` with UTF-8 percent-encoding so browsers that
+    support it can display the full Unicode name.
 
-    # RFC 5987 UTF-8 encoded version
+    The ASCII fallback deliberately removes quotes, backslashes, and other
+    characters that break the ``filename="..."`` token rather than attempting
+    to escape them, because many HTTP clients/browsers handle escaped quotes
+    inside Content-Disposition inconsistently.
+    """
+    # ASCII-safe fallback: replace non-ASCII with '_', strip characters
+    # that are unsafe inside a quoted filename token (" \ and control chars)
+    ascii_name = filename.encode("ascii", "replace").decode("ascii")
+    ascii_name = re.sub(r'["\\\x00-\x1f\x7f]', "_", ascii_name)
+    ascii_name = ascii_name.strip("_") or "download"
+
+    # RFC 5987 UTF-8 percent-encoded version (encodes everything except
+    # unreserved characters per RFC 3986)
     utf8_name = quote(filename, safe="")
 
     return (

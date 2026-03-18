@@ -87,10 +87,12 @@ class TestContentDisposition:
         assert 'filename="Team_Standup.md"' in result
         assert "filename*=UTF-8''Team_Standup.md" in result
 
-    def test_quotes_in_filename_are_escaped(self):
+    def test_quotes_in_filename_replaced_with_underscore(self):
         result = _content_disposition('He_said_"hello".md')
-        # The ASCII fallback must escape the quotes
-        assert 'filename="He_said_\\"hello\\".md"' in result
+        # Quotes replaced with underscore in ASCII fallback
+        assert 'filename="He_said__hello_.md"' in result
+        # UTF-8 version percent-encodes the quotes
+        assert "He_said_%22hello%22.md" in result
 
     def test_non_ascii_filename_uses_utf8_encoding(self):
         result = _content_disposition("café_résumé.md")

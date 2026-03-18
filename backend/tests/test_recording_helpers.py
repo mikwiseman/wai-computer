@@ -3,6 +3,7 @@
 import pytest
 
 from app.api.routes.recordings import (
+    _content_disposition,
     _extension_from_upload,
     _format_duration_mmss,
     _format_timestamp_short,
@@ -160,6 +161,75 @@ class TestExtensionFromUpload:
 
     def test_case_insensitive(self):
         assert _extension_from_upload("audio.MP3", "audio/mpeg") == "mp3"
+
+
+class TestContentDisposition:
+    """Tests for _content_disposition RFC 5987 encoding."""
+
+    def test_simple_ascii_filename(self):
+        result = _content_disposition("report.md")
+        assert 'filename="report.md"' in result
+        assert "filename*=UTF-8''report.md" in result
+        assert result.startswith("attachment; ")
+
+    def test_filename_with_quotes_no_malformed_header(self):
+        """Quotes in filename must not produce filename="Meeting "Important".md"."""
+        result = _content_disposition('Meeting "Important".md')
+        # ASCII fallback must not contain raw quotes inside the quoted value
+        assert 'filename="Meeting _Important_.md"' in result
+        # The UTF-8 encoded version should percent-encode the quotes
+        assert "filename*=UTF-8''Meeting%20%22Important%22.md" in result
+
+    def test_filename_with_non_ascii_russian(self):
+        """Non-ASCII characters should be replaced in ASCII fallback,
+        preserved via percent-encoding in filename*."""
+        result = _content_disposition("Встреча.md")
+        # ASCII fallback: non-ASCII replaced with '_'
+        assert 'filename="' in result
+        # Should not contain raw Cyrillic in the ASCII part
+        ascii_part = result.split('filename="')[1].split('"')[0]
+        assert ascii_part.isascii()
+        # UTF-8 part should contain percent-encoded Cyrillic
+        assert "filename*=UTF-8''" in result
+        assert "%D0%92" in result  # В in UTF-8 percent-encoded
+
+    def test_filename_with_spaces(self):
+        result = _content_disposition("my meeting notes.md")
+        assert 'filename="my meeting notes.md"' in result
+        assert "filename*=UTF-8''my%20meeting%20notes.md" in result
+
+    def test_filename_with_backslash(self):
+        """Backslashes are replaced in the ASCII fallback."""
+        result = _content_disposition("path\\file.md")
+        ascii_part = result.split('filename="')[1].split('"')[0]
+        assert "\\" not in ascii_part
+
+    def test_filename_with_mixed_special_chars(self):
+        """Mixed quotes, non-ASCII, and special chars."""
+        result = _content_disposition('Встреча "Важная" #1.md')
+        ascii_part = result.split('filename="')[1].split('"')[0]
+        # No raw quotes in ASCII part
+        assert '"' not in ascii_part
+        # ASCII part should be valid ASCII
+        assert ascii_part.isascii()
+        # UTF-8 part should have percent-encoded everything
+        utf8_part = result.split("filename*=UTF-8''")[1]
+        assert "%22" in utf8_part  # encoded quote
+        assert "%D0%92" in utf8_part  # encoded В
+
+    def test_all_unsafe_chars_fallback_to_download(self):
+        """If stripping unsafe chars leaves nothing, fall back to 'download'."""
+        result = _content_disposition('""')
+        assert 'filename="download"' in result
+
+    def test_filename_with_emoji(self):
+        """Emoji should be replaced in ASCII, percent-encoded in UTF-8."""
+        result = _content_disposition("notes_\U0001f4dd.md")
+        ascii_part = result.split('filename="')[1].split('"')[0]
+        assert ascii_part.isascii()
+        utf8_part = result.split("filename*=UTF-8''")[1]
+        assert "notes_" in utf8_part  # prefix preserved
+        assert ".md" in utf8_part  # extension preserved
 
 
 class TestUploadLimitMessage:

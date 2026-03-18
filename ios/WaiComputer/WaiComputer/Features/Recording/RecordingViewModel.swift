@@ -126,8 +126,9 @@ class RecordingViewModel: ObservableObject {
             let eventStream = await ws.events
 
             transcriptTask = Task { [weak self] in
-                guard let self else { return }
                 for await event in eventStream {
+                    guard !Task.isCancelled else { break }
+                    guard let self else { break }
                     await self.handleWebSocketEvent(event)
                 }
             }
@@ -140,9 +141,10 @@ class RecordingViewModel: ObservableObject {
             audioCapture = capture
             audioEncoder = encoder
 
-            audioTask = Task { [weak self] in
-                guard let self else { return }
+            audioTask = Task { [weak self, weak ws] in
                 for await buffer in capture.audioBuffers {
+                    guard !Task.isCancelled else { break }
+                    guard let self, let ws else { break }
                     if let data = encoder.encode(buffer) {
                         do {
                             try await ws.sendAudio(data: data)
@@ -189,9 +191,11 @@ class RecordingViewModel: ObservableObject {
             didFinalize: didFinalize
         )
 
-        // Now cancel transcript task and disconnect
-        transcriptTask?.cancel()
+        // Cancel transcript task and await completion, then disconnect
+        let pendingTranscriptTask = transcriptTask
         transcriptTask = nil
+        pendingTranscriptTask?.cancel()
+        _ = await pendingTranscriptTask?.result
 
         await webSocketManager?.disconnect()
         webSocketManager = nil
@@ -356,13 +360,21 @@ class RecordingViewModel: ObservableObject {
     private func resetAfterStartFailure() async {
         timerTask?.cancel()
         timerTask = nil
-        audioTask?.cancel()
+
+        let pendingAudioTask = audioTask
         audioTask = nil
-        transcriptTask?.cancel()
+        let pendingTranscriptTask = transcriptTask
         transcriptTask = nil
+
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+
+        // Cancel and await both tasks after stopping audio (which finishes the stream)
+        pendingAudioTask?.cancel()
+        _ = await pendingAudioTask?.result
+        pendingTranscriptTask?.cancel()
+        _ = await pendingTranscriptTask?.result
 
         let ws = webSocketManager
         webSocketManager = nil
@@ -410,13 +422,20 @@ class RecordingViewModel: ObservableObject {
 
         timerTask?.cancel()
         timerTask = nil
-        audioTask?.cancel()
+
+        let pendingAudioTask = audioTask
         audioTask = nil
-        transcriptTask?.cancel()
+        let pendingTranscriptTask = transcriptTask
         transcriptTask = nil
+
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+
+        pendingAudioTask?.cancel()
+        _ = await pendingAudioTask?.result
+        pendingTranscriptTask?.cancel()
+        _ = await pendingTranscriptTask?.result
 
         let ws = webSocketManager
         webSocketManager = nil

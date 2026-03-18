@@ -1039,6 +1039,119 @@ describe("ChatPanel", () => {
     });
   });
 
+  // --- Error state is cleared when sending a new message ---
+
+  it("clears the error state when the user sends a new message", async () => {
+    mockListChatSessions.mockResolvedValue([]);
+    // First message fails
+    mockSendChatMessage.mockRejectedValueOnce(new ApiError(500, "Temporary failure"));
+    // Second message succeeds
+    mockSendChatMessage.mockResolvedValueOnce(baseChatResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    // Send a message that fails
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "Failing question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Temporary failure");
+    });
+
+    // Send another message — the error should be cleared before the request
+    await user.type(textarea, "Successful question");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    // Error should be cleared immediately when the new send starts
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    // And the successful response should appear
+    await waitFor(() => {
+      expect(screen.getByText("Based on your recordings, the team agreed on Q3 goals.")).toBeInTheDocument();
+    });
+  });
+
+  // --- Very long messages are handled without crash ---
+
+  it("handles very long messages without crashing", async () => {
+    mockListChatSessions.mockResolvedValue([]);
+    const longMessage = "A".repeat(10000);
+    const longResponse = {
+      answer: "B".repeat(5000),
+      session_id: "s-long",
+      message_id: "msg-long",
+      sources: [],
+    };
+    mockSendChatMessage.mockResolvedValue(longResponse);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(mockListChatSessions).toHaveBeenCalled();
+    });
+
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.click(textarea);
+    // Use paste to insert large text quickly instead of typing character by character
+    await user.paste(longMessage);
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(mockSendChatMessage).toHaveBeenCalledWith({
+        question: longMessage,
+        session_id: null,
+        recording_ids: null,
+      });
+    });
+
+    await waitFor(() => {
+      // Both messages should render without crash
+      expect(screen.getByText(longMessage)).toBeInTheDocument();
+      expect(screen.getByText("B".repeat(5000))).toBeInTheDocument();
+    });
+  });
+
+  // --- Error cleared on session selection ---
+
+  it("clears error state when selecting a session", async () => {
+    mockListChatSessions.mockResolvedValue([baseSession]);
+    // First, trigger an error from sendChatMessage
+    mockSendChatMessage.mockRejectedValueOnce(new Error("Send failed"));
+    mockGetChatSession.mockResolvedValue(baseSessionDetail);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+    });
+
+    // Trigger an error by sending a message
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "Error trigger");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Send failed");
+    });
+
+    // Select a session — error should be cleared
+    await user.click(screen.getByText("Planning chat"));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
   it("loading a session with null recording_ids clears all recording checkboxes", async () => {
     // First manually check a recording
     mockListChatSessions.mockResolvedValue([baseSession]);
