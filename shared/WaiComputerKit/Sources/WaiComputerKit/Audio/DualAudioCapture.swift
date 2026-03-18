@@ -6,14 +6,24 @@ private let dualLog = Logger(subsystem: "com.waicomputer.kit", category: "dual-a
 
 /// Captures both microphone and system audio simultaneously.
 ///
-/// When both sources are active, produces 2-channel non-interleaved PCM buffers
-/// (ch0 = mic, ch1 = system audio). When system audio is unavailable,
-/// produces mono buffers from mic only.
+/// When `mixToMono` is `true` (default), both sources are averaged into a single
+/// mono channel. Deepgram then uses diarization to distinguish speakers, which
+/// works well for group calls (identifies Speaker 0, Speaker 1, Speaker 2, etc.).
+///
+/// When `mixToMono` is `false`, produces 2-channel non-interleaved PCM buffers
+/// (ch0 = mic, ch1 = system audio) for Deepgram multichannel mode.
+///
+/// When system audio is unavailable, produces mono buffers from mic only.
 @available(macOS 14.2, *)
 public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let mic: MicrophoneCapture
     private let system: SystemAudioCapture
     private let config: AudioCaptureConfig
+
+    /// When `true`, mic and system audio are mixed into a single mono channel
+    /// so Deepgram can use diarization to identify individual speakers.
+    /// When `false`, produces 2-channel non-interleaved buffers for multichannel mode.
+    public let mixToMono: Bool
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
     public private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
@@ -38,8 +48,9 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     /// Whether system audio has stalled (no samples received for >3 seconds)
     public private(set) var systemAudioStalled = false
 
-    public init(config: AudioCaptureConfig = .default) {
+    public init(config: AudioCaptureConfig = .default, mixToMono: Bool = true) {
         self.config = config
+        self.mixToMono = mixToMono
         self.mic = MicrophoneCapture(config: config)
         self.system = SystemAudioCapture(config: config)
         self.continuationLock = .allocate(capacity: 1)
@@ -69,7 +80,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         do {
             try await system.startRecording()
             hasSystemAudio = true
-            dualLog.warning("[Dual] System audio started — 2-channel mode")
+            dualLog.warning("[Dual] System audio started — \(self.mixToMono ? "mono-mix mode (diarization)" : "2-channel mode (multichannel)")")
         } catch {
             hasSystemAudio = false
             dualLog.warning("[Dual] System audio unavailable: \(error.localizedDescription) — mic-only")
@@ -245,34 +256,62 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         lock.unlock()
 
         if frames % 16000 == 0 || frames < 100 || (sysCount == 0 && micCount > 0) {
-            dualLog.warning("[Dual] flush: \(frames) frames (mic=\(micCount), sys=\(sysCount)\(sysCount == 0 ? " ⚠️ NO SYSTEM AUDIO" : ""))")
+            dualLog.warning("[Dual] flush: \(frames) frames (mic=\(micCount), sys=\(sysCount)\(sysCount == 0 ? " ⚠️ NO SYSTEM AUDIO" : ""), mode=\(self.mixToMono ? "mono-mix" : "multichannel"))")
         }
 
-        // Non-interleaved 2-channel: floatChannelData[0] = mic, floatChannelData[1] = system
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: config.sampleRate,
-            channels: 2,
-            interleaved: false
-        ) else { return }
+        if mixToMono {
+            // Mono mix: average mic + system audio into a single channel.
+            // Deepgram uses diarization to distinguish speakers.
+            guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: config.sampleRate,
+                channels: 1,
+                interleaved: false
+            ) else { return }
 
-        guard let outBuffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(frames)
-        ) else { return }
-        outBuffer.frameLength = AVAudioFrameCount(frames)
+            guard let outBuffer = AVAudioPCMBuffer(
+                pcmFormat: format,
+                frameCapacity: AVAudioFrameCount(frames)
+            ) else { return }
+            outBuffer.frameLength = AVAudioFrameCount(frames)
 
-        guard let outData = outBuffer.floatChannelData else { return }
-        let ch0 = outData[0] // mic
-        let ch1 = outData[1] // system
+            guard let outData = outBuffer.floatChannelData else { return }
+            let mono = outData[0]
 
-        for i in 0..<frames {
-            ch0[i] = micSamples[i]
-            ch1[i] = sysSamples[i]
+            for i in 0..<frames {
+                mono[i] = (micSamples[i] + sysSamples[i]) * 0.5
+            }
+
+            os_unfair_lock_lock(continuationLock)
+            continuation?.yield(outBuffer)
+            os_unfair_lock_unlock(continuationLock)
+        } else {
+            // Non-interleaved 2-channel: floatChannelData[0] = mic, floatChannelData[1] = system
+            guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: config.sampleRate,
+                channels: 2,
+                interleaved: false
+            ) else { return }
+
+            guard let outBuffer = AVAudioPCMBuffer(
+                pcmFormat: format,
+                frameCapacity: AVAudioFrameCount(frames)
+            ) else { return }
+            outBuffer.frameLength = AVAudioFrameCount(frames)
+
+            guard let outData = outBuffer.floatChannelData else { return }
+            let ch0 = outData[0] // mic
+            let ch1 = outData[1] // system
+
+            for i in 0..<frames {
+                ch0[i] = micSamples[i]
+                ch1[i] = sysSamples[i]
+            }
+
+            os_unfair_lock_lock(continuationLock)
+            continuation?.yield(outBuffer)
+            os_unfair_lock_unlock(continuationLock)
         }
-
-        os_unfair_lock_lock(continuationLock)
-        continuation?.yield(outBuffer)
-        os_unfair_lock_unlock(continuationLock)
     }
 }

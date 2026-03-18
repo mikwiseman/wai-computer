@@ -668,6 +668,65 @@ async def test_search_chat_sessions(
 
 
 @pytest.mark.asyncio
+async def test_search_chat_sessions_pinned_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Pinned sessions should appear before unpinned ones in search results."""
+    from datetime import datetime, timezone
+
+    headers, token = await _register(client, "chat.route.search.pin@example.com")
+    user = await _user_from_token(db_session, token)
+
+    # Create two sessions, both with a matching keyword
+    s_unpinned = ChatSession(
+        user_id=user.id, title="Unpinned Chat", recording_ids=None
+    )
+    s_pinned = ChatSession(
+        user_id=user.id,
+        title="Pinned Chat",
+        recording_ids=None,
+        pinned_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([s_unpinned, s_pinned])
+    await db_session.flush()
+
+    # Both sessions have messages containing "deployment"
+    db_session.add_all([
+        ChatMessage(
+            session_id=s_unpinned.id,
+            role="user",
+            content="How do we handle deployment?",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+        ChatMessage(
+            session_id=s_pinned.id,
+            role="user",
+            content="Discuss deployment strategy",
+            source_segment_ids=None,
+            source_recording_ids=None,
+        ),
+    ])
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/chat/sessions/search",
+        headers=headers,
+        params={"q": "deployment"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 2
+    # Pinned session should come first
+    assert payload[0]["id"] == str(s_pinned.id)
+    assert payload[0]["pinned_at"] is not None
+    # Unpinned session should come second
+    assert payload[1]["id"] == str(s_unpinned.id)
+    assert payload[1]["pinned_at"] is None
+
+
+@pytest.mark.asyncio
 async def test_search_chat_sessions_no_results(
     client: AsyncClient,
     db_session: AsyncSession,

@@ -19,6 +19,8 @@ struct RecordingView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .disabled(viewModel.phase != .idle)
+                .accessibilityLabel("Recording type")
+                .accessibilityHint("Select the type of recording")
 
                 // Recording status
                 VStack(spacing: 16) {
@@ -43,6 +45,7 @@ struct RecordingView: View {
                     Text(viewModel.formattedDuration)
                         .font(.system(size: 48, weight: .light, design: .monospaced))
                         .foregroundStyle(viewModel.phase == .idle ? .secondary : .primary)
+                        .accessibilityLabel(durationAccessibilityLabel)
                 }
 
                 // Live transcript preview
@@ -65,6 +68,10 @@ struct RecordingView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(12)
                     .padding(.horizontal)
+                    .accessibilityLabel(viewModel.currentTranscript.isEmpty
+                        ? "Live transcript: \(viewModel.emptyTranscriptText)"
+                        : "Live transcript: \(viewModel.currentTranscript)"
+                    )
                 }
 
                 Spacer()
@@ -101,12 +108,15 @@ struct RecordingView: View {
                     }
                 }
                 .disabled(viewModel.isBusy)
+                .accessibilityLabel(recordButtonAccessibilityLabel)
+                .accessibilityHint(recordButtonAccessibilityHint)
 
                 // Status text
                 Text(viewModel.statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.bottom)
+                    .accessibilityLabel(viewModel.statusText)
             }
             .navigationTitle("Record")
             .alert("Error", isPresented: .constant(viewModel.error != nil)) {
@@ -158,6 +168,40 @@ struct RecordingView: View {
             return .orange
         case .idle:
             return .gray
+        }
+    }
+
+    private var recordButtonAccessibilityLabel: String {
+        switch viewModel.phase {
+        case .recording:
+            return "Stop Recording"
+        case .preparing:
+            return "Preparing"
+        case .finalizing:
+            return "Saving"
+        case .idle:
+            return "Start Recording"
+        }
+    }
+
+    private var recordButtonAccessibilityHint: String {
+        switch viewModel.phase {
+        case .recording:
+            return "Double tap to stop recording"
+        case .preparing, .finalizing:
+            return "Please wait"
+        case .idle:
+            return "Double tap to start recording"
+        }
+    }
+
+    private var durationAccessibilityLabel: String {
+        let minutes = Int(viewModel.duration) / 60
+        let seconds = Int(viewModel.duration) % 60
+        if minutes > 0 {
+            return "Recording duration: \(minutes) \(minutes == 1 ? "minute" : "minutes") \(seconds) \(seconds == 1 ? "second" : "seconds")"
+        } else {
+            return "Recording duration: \(seconds) \(seconds == 1 ? "second" : "seconds")"
         }
     }
 

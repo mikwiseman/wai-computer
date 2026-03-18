@@ -724,6 +724,140 @@ describe("DashboardClient", () => {
     });
   });
 
+  // --- Recording creation flow: fill form, submit, verify API called, list refreshed ---
+
+  it("recording creation flow: fills form, submits, verifies API call, and refreshes list", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    const newRecording = {
+      ...baseRecording,
+      id: "r-new",
+      title: "Standup Notes",
+      type: "meeting",
+    };
+
+    // Initial load returns one recording
+    mockListRecordings.mockResolvedValueOnce([baseRecording]);
+    // After creation, list returns both recordings
+    mockListRecordings.mockResolvedValueOnce([baseRecording, newRecording]);
+    mockCreateRecording.mockResolvedValueOnce(newRecording);
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    // Verify only the initial recording is shown
+    expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    expect(screen.queryByTestId("select-recording-r-new")).not.toBeInTheDocument();
+
+    // Fill in the recording form
+    await user.type(screen.getByTestId("recording-title"), "Standup Notes");
+    await user.selectOptions(screen.getByTestId("recording-type"), "meeting");
+
+    // Submit the form
+    await user.click(screen.getByTestId("create-recording"));
+
+    // Verify the API was called with the correct params
+    await waitFor(() => {
+      expect(mockCreateRecording).toHaveBeenCalledWith({
+        title: "Standup Notes",
+        type: "meeting",
+        language: "multi",
+      });
+    });
+
+    // Verify the recording list was refreshed (listRecordings called again)
+    await waitFor(() => {
+      expect(mockListRecordings).toHaveBeenCalledTimes(2);
+    });
+
+    // Verify the success message
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording created.");
+    });
+
+    // Verify the title input was cleared after successful creation
+    expect(screen.getByTestId("recording-title")).toHaveValue("");
+  });
+
+  // --- Logout clears all state and redirects ---
+
+  it("logout clears user state and redirects to login", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    // Verify state is populated before logout
+    expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    expect(screen.getByTestId("recording-list")).toBeInTheDocument();
+
+    // Click logout
+    await user.click(screen.getByTestId("logout-button"));
+
+    // Verify logout API was called
+    await waitFor(() => {
+      expect(mockLogout).toHaveBeenCalledTimes(1);
+    });
+
+    // Verify redirect to login page
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/login");
+    });
+  });
+
+  // --- Action item update flow: toggle status and verify API + message ---
+
+  it("action item update flow: marks complete, verifies API, then marks pending", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    const completedItem = { ...baseActionItems[0], status: "completed" };
+
+    // After first update (complete), return completed item
+    mockUpdateActionItem.mockResolvedValueOnce(completedItem);
+    mockListActionItems
+      .mockResolvedValueOnce(baseActionItems)           // initial load
+      .mockResolvedValueOnce([completedItem])            // after marking complete
+      .mockResolvedValueOnce(baseActionItems);           // after marking pending again
+
+    // After second update (pending), return pending item
+    mockUpdateActionItem.mockResolvedValueOnce(baseActionItems[0]);
+
+    render(<DashboardClient />);
+    await waitFor(() => {
+      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+    });
+
+    // Step 1: Mark action item as complete
+    await user.click(screen.getByTestId("set-complete-a1"));
+
+    await waitFor(() => {
+      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "completed" });
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Action item updated.");
+    });
+
+    // Verify action items list was refreshed
+    expect(mockListActionItems).toHaveBeenCalledTimes(2);
+
+    // Step 2: Mark it back as pending
+    await user.click(screen.getByTestId("set-pending-a1"));
+
+    await waitFor(() => {
+      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "pending" });
+    });
+
+    // Verify action items list was refreshed again
+    await waitFor(() => {
+      expect(mockListActionItems).toHaveBeenCalledTimes(3);
+    });
+  });
+
   // --- Search mode change back and forth clears results each time ---
 
   it("clears search results on every mode change, not just the first", async () => {

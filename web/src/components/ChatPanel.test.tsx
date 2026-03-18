@@ -1152,6 +1152,102 @@ describe("ChatPanel", () => {
     });
   });
 
+  // --- Session deletion removes session from displayed list ---
+
+  it("deleting a non-active session removes it from the sidebar list", async () => {
+    const session2 = {
+      id: "s2",
+      title: "Design Brainstorm",
+      recording_ids: null,
+      created_at: "2026-03-02T00:00:00Z",
+      message_count: 2,
+    };
+
+    // Initial load: two sessions
+    mockListChatSessions.mockResolvedValueOnce([baseSession, session2]);
+    // After deletion: only one session remains
+    mockListChatSessions.mockResolvedValueOnce([baseSession]);
+    mockDeleteChatSession.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+      expect(screen.getByText("Design Brainstorm")).toBeInTheDocument();
+    });
+
+    // Delete the second session (not the active one, since none is active)
+    const deleteButtons = screen.getAllByTitle("Delete session");
+    // The second delete button corresponds to session2
+    await user.click(deleteButtons[1]);
+
+    await waitFor(() => {
+      expect(mockDeleteChatSession).toHaveBeenCalledWith("s2");
+    });
+
+    // Session list should be refreshed and session2 should be gone
+    await waitFor(() => {
+      expect(screen.getByText("Planning chat")).toBeInTheDocument();
+      expect(screen.queryByText("Design Brainstorm")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Session title updates in list after sending a message (simulates rename/title change) ---
+
+  it("session title in sidebar updates when session list is refreshed after sending a message", async () => {
+    // Start with a session that has a generic title
+    const initialSession = {
+      id: "s-evolving",
+      title: "New conversation",
+      recording_ids: null,
+      created_at: "2026-03-10T00:00:00Z",
+      message_count: 1,
+      pinned_at: null,
+    };
+
+    // After sending a message, the backend auto-renames the session
+    const renamedSession = {
+      ...initialSession,
+      title: "Discussion about Q3 roadmap",
+      message_count: 3,
+    };
+
+    mockListChatSessions
+      .mockResolvedValueOnce([initialSession])    // initial load
+      .mockResolvedValueOnce([renamedSession]);    // after send refreshes sessions
+
+    mockSendChatMessage.mockResolvedValue({
+      answer: "The roadmap covers several areas.",
+      session_id: "s-evolving",
+      message_id: "msg-evolving",
+      sources: [],
+    });
+
+    const user = userEvent.setup();
+    render(<ChatPanel recordings={[]} />);
+
+    // Verify initial title in sidebar
+    await waitFor(() => {
+      expect(screen.getByText("New conversation")).toBeInTheDocument();
+      expect(screen.getByText("(1)")).toBeInTheDocument();
+    });
+
+    // Send a message, which triggers loadSessions() after response
+    const textarea = screen.getByPlaceholderText("Ask about your meetings...");
+    await user.type(textarea, "What is the Q3 roadmap?");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    // After the message is sent and sessions are refreshed, the title should update
+    await waitFor(() => {
+      expect(screen.getByText("Discussion about Q3 roadmap")).toBeInTheDocument();
+      expect(screen.getByText("(3)")).toBeInTheDocument();
+    });
+
+    // The old title should no longer be in the sidebar
+    expect(screen.queryByText("New conversation")).not.toBeInTheDocument();
+  });
+
   it("loading a session with null recording_ids clears all recording checkboxes", async () => {
     // First manually check a recording
     mockListChatSessions.mockResolvedValue([baseSession]);

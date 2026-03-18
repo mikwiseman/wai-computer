@@ -203,6 +203,152 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(captureA === captureB, "Instances should be distinct objects")
     }
 
+    // MARK: - systemAudioReceivedAny & systemAudioStalled Public Access
+
+    /// systemAudioReceivedAny must be publicly readable and start as false.
+    func testSystemAudioReceivedAnyStartsFalse() {
+        let capture = DualAudioCapture()
+        XCTAssertFalse(capture.systemAudioReceivedAny,
+            "systemAudioReceivedAny should be false before recording starts")
+    }
+
+    /// systemAudioStalled must be publicly readable and start as false.
+    func testSystemAudioStalledStartsFalse() {
+        let capture = DualAudioCapture()
+        XCTAssertFalse(capture.systemAudioStalled,
+            "systemAudioStalled should be false before recording starts")
+    }
+
+    // MARK: - minFlushSize Calculation
+
+    /// Verify config.sampleRate * 0.08 produces the expected minFlushSize at default 16kHz.
+    func testMinFlushSizeAtDefault16kHz() {
+        let config = AudioCaptureConfig.default
+        let minFlushSize = Int(config.sampleRate * 0.08)
+        XCTAssertEqual(minFlushSize, 1280,
+            "16000 * 0.08 should equal 1280 samples (80ms at 16kHz)")
+    }
+
+    /// Verify config.sampleRate * 0.08 at 48kHz produces correct minFlushSize.
+    func testMinFlushSizeAt48kHz() {
+        let config = AudioCaptureConfig(sampleRate: 48000, channelCount: 1, bufferSize: 4096)
+        let minFlushSize = Int(config.sampleRate * 0.08)
+        XCTAssertEqual(minFlushSize, 3840,
+            "48000 * 0.08 should equal 3840 samples (80ms at 48kHz)")
+    }
+
+    /// Verify config.sampleRate * 0.08 at 8kHz produces correct minFlushSize.
+    func testMinFlushSizeAt8kHz() {
+        let config = AudioCaptureConfig(sampleRate: 8000, channelCount: 1, bufferSize: 1024)
+        let minFlushSize = Int(config.sampleRate * 0.08)
+        XCTAssertEqual(minFlushSize, 640,
+            "8000 * 0.08 should equal 640 samples (80ms at 8kHz)")
+    }
+
+    // MARK: - 2-Channel Buffer with Mixed Zero/Non-Zero Content
+
+    /// A 2-channel buffer where ch0 has audio and ch1 is silence (stalled system audio scenario).
+    func testDualChannelBufferMixedZeroAndNonZero() {
+        let frames: UInt32 = 1280
+
+        guard let buffer = MockAudioCapture.multichannelBuffer(
+            values: [0.5, 0.0],  // ch0 = mic audio, ch1 = silent system audio
+            frameCount: frames
+        ) else {
+            XCTFail("Failed to create mixed 2-channel buffer")
+            return
+        }
+
+        XCTAssertEqual(buffer.format.channelCount, 2)
+        XCTAssertEqual(buffer.frameLength, AVAudioFrameCount(frames))
+
+        guard let floatData = buffer.floatChannelData else {
+            XCTFail("No float channel data")
+            return
+        }
+
+        // Ch0 should have non-zero audio
+        var ch0HasAudio = false
+        for i in 0..<Int(frames) {
+            if abs(floatData[0][i]) > 0.001 { ch0HasAudio = true; break }
+        }
+        XCTAssertTrue(ch0HasAudio, "Channel 0 (mic) should have non-zero audio")
+
+        // Ch1 should be all silence
+        for i in 0..<Int(frames) {
+            XCTAssertEqual(floatData[1][i], 0.0, accuracy: 0.0001,
+                "Channel 1 (system) should be silent at sample \(i)")
+        }
+    }
+
+    /// A 2-channel buffer where ch0 is silence and ch1 has audio (inverse of typical stall scenario).
+    func testDualChannelBufferInverseMixed() {
+        let frames: UInt32 = 640
+
+        guard let buffer = MockAudioCapture.multichannelBuffer(
+            values: [0.0, 0.9],  // ch0 = silent mic, ch1 = system audio
+            frameCount: frames
+        ) else {
+            XCTFail("Failed to create inverse mixed buffer")
+            return
+        }
+
+        guard let floatData = buffer.floatChannelData else {
+            XCTFail("No float channel data")
+            return
+        }
+
+        // Ch0 should be silent
+        for i in 0..<Int(frames) {
+            XCTAssertEqual(floatData[0][i], 0.0, accuracy: 0.0001,
+                "Channel 0 should be silent")
+        }
+
+        // Ch1 should have audio
+        var ch1HasAudio = false
+        for i in 0..<Int(frames) {
+            if abs(floatData[1][i]) > 0.001 { ch1HasAudio = true; break }
+        }
+        XCTAssertTrue(ch1HasAudio, "Channel 1 should have non-zero audio")
+    }
+
+    /// Encoding a mixed 2-channel buffer should preserve zero/non-zero distinction in output.
+    func testMixedDualChannelBufferEncodesCorrectly() {
+        let encoder = AudioEncoder(sampleRate: 16000, channels: 2)
+        let frames: UInt32 = 160
+
+        guard let buffer = MockAudioCapture.multichannelBuffer(
+            values: [0.6, 0.0],  // ch0 = audio, ch1 = silence
+            frameCount: frames
+        ) else {
+            XCTFail("Failed to create mixed buffer for encoding")
+            return
+        }
+
+        guard let encoded = encoder.encode(buffer) else {
+            XCTFail("Encoder should handle mixed 2-channel buffer")
+            return
+        }
+
+        // 160 frames * 2 channels * 2 bytes = 640 bytes
+        XCTAssertEqual(encoded.count, 640)
+
+        let expectedCh0 = Int16(0.6 * 32767)
+        let expectedCh1 = Int16(0)
+
+        encoded.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            let int16Ptr = bytes.bindMemory(to: Int16.self)
+            for i in 0..<Int(frames) {
+                let ch0 = Int16(littleEndian: int16Ptr[i * 2])
+                let ch1 = Int16(littleEndian: int16Ptr[i * 2 + 1])
+                XCTAssertEqual(ch0, expectedCh0,
+                    "Frame \(i) ch0 should have audio value")
+                XCTAssertEqual(ch1, expectedCh1,
+                    "Frame \(i) ch1 should be zero (stalled system audio)")
+            }
+        }
+    }
+
     // MARK: - Encoder Integration with Dual Channel Buffers
 
     /// Verify that a 2-channel buffer (like flushDualBuffers produces) encodes correctly
