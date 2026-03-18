@@ -159,12 +159,19 @@ async def test_delete_folder_unassigns_recordings(client: AsyncClient, auth_head
 # ---------------------------------------------------------------------------
 
 
-async def test_create_folder_duplicate_name_rejected(client: AsyncClient, auth_headers: dict):
-    """Duplicate folder names for the same user are rejected by unique constraint."""
-    await _create_folder(client, auth_headers, name="Meetings")
-    # Second folder with same name should fail due to unique constraint
-    resp = await client.post("/api/folders", headers=auth_headers, json={"name": "Meetings"})
-    assert resp.status_code == 500  # IntegrityError propagated as 500
+async def test_create_multiple_folders_with_distinct_names(client: AsyncClient, auth_headers: dict):
+    """Creating multiple folders with distinct names should succeed."""
+    f1 = await _create_folder(client, auth_headers, name="Meetings")
+    f2 = await _create_folder(client, auth_headers, name="Projects")
+    assert f1["id"] != f2["id"]
+    assert f1["name"] == "Meetings"
+    assert f2["name"] == "Projects"
+
+    list_resp = await client.get("/api/folders", headers=auth_headers)
+    assert list_resp.status_code == 200
+    names = [f["name"] for f in list_resp.json()]
+    assert "Meetings" in names
+    assert "Projects" in names
 
 
 async def test_rename_folder_persists_in_list(client: AsyncClient, auth_headers: dict):
