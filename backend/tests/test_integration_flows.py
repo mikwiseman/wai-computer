@@ -954,13 +954,15 @@ async def test_auth_cookie_set_on_login_and_cleared_on_logout(
     )
     assert me2.status_code == 200
 
-    # Refresh token
+    # Refresh token using refresh_token from login
+    login_refresh_token = login_resp.json()["refresh_token"]
     refresh_resp = await client.post(
         "/api/auth/refresh",
-        headers={"Authorization": f"Bearer {new_token}"},
+        json={"refresh_token": login_refresh_token},
     )
     assert refresh_resp.status_code == 200
     refreshed_token = refresh_resp.json()["access_token"]
+    new_refresh_token = refresh_resp.json()["refresh_token"]
     assert refreshed_token is not None
 
     # Refreshed token should work
@@ -969,10 +971,10 @@ async def test_auth_cookie_set_on_login_and_cleared_on_logout(
     )
     assert me3.status_code == 200
 
-    # Logout
+    # Logout with refresh token revocation
     logout_resp = await client.post(
         "/api/auth/logout",
-        headers={"Authorization": f"Bearer {refreshed_token}"},
+        json={"refresh_token": new_refresh_token},
     )
     assert logout_resp.status_code == 200
     assert logout_resp.json()["message"] == "Logged out"

@@ -139,9 +139,33 @@ class MacAppState: ObservableObject {
         }
         #endif
 
-        if let token = UserDefaults.standard.string(forKey: "accessToken") {
+        // Migrate from UserDefaults to Keychain (one-time)
+        if KeychainHelper.load(key: KeychainHelper.accessTokenKey) == nil,
+           let legacyToken = UserDefaults.standard.string(forKey: "accessToken") {
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: legacyToken)
+            UserDefaults.standard.removeObject(forKey: "accessToken")
+        }
+
+        // Set up token refresh callbacks
+        Task {
+            await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
+                KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: accessToken)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshToken)
+            }
+            await apiClient.setOnAuthenticationFailed { [weak self] in
+                Task { @MainActor in
+                    self?.handleAuthenticationFailed()
+                }
+            }
+        }
+
+        // Restore tokens from Keychain
+        if let accessToken = KeychainHelper.load(key: KeychainHelper.accessTokenKey) {
             Task {
-                await apiClient.setAccessToken(token)
+                await apiClient.setAccessToken(accessToken)
+                if let refreshToken = KeychainHelper.load(key: KeychainHelper.refreshTokenKey) {
+                    await apiClient.setRefreshToken(refreshToken)
+                }
                 await loadCurrentUser()
                 isCheckingAuth = false
             }
@@ -157,7 +181,11 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.login(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -175,7 +203,11 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.register(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -216,7 +248,11 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.verifyMagicLink(token: token)
             await apiClient.setAccessToken(response.accessToken)
-            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
             magicLinkSent = false
             await loadCurrentUser()
         } catch let apiError as APIError {
@@ -229,16 +265,31 @@ class MacAppState: ObservableObject {
     }
 
     func logout() async {
-        // Best-effort server logout — proceed with local cleanup regardless
+        // Best-effort server logout with refresh token revocation
+        let rt = await apiClient.getRefreshToken()
         do {
-            _ = try await apiClient.logout()
+            _ = try await apiClient.logout(refreshToken: rt)
         } catch {
             NSLog("[Auth] Server logout failed (proceeding with local logout): %@", error.localizedDescription)
         }
 
         dictationManager.disable()
         await apiClient.setAccessToken(nil)
+        await apiClient.setRefreshToken(nil)
+        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
+        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        // Clean up legacy UserDefaults if still present
         UserDefaults.standard.removeObject(forKey: "accessToken")
+        currentUser = nil
+        isAuthenticated = false
+    }
+
+    /// Called when auto-refresh fails — transition to login screen
+    private func handleAuthenticationFailed() {
+        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
+        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        UserDefaults.standard.removeObject(forKey: "accessToken")
+        dictationManager.disable()
         currentUser = nil
         isAuthenticated = false
     }

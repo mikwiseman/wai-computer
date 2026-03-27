@@ -43,6 +43,7 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
     case serverError(String?)
     case superseded
     case invalidURL
+    case reconnectionExhausted(Int)
 
     public var errorDescription: String? {
         switch self {
@@ -56,6 +57,8 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
             return "The WebSocket connection was replaced by a newer connection attempt."
         case .invalidURL:
             return "Failed to construct a valid Deepgram WebSocket URL."
+        case .reconnectionExhausted(let attempts):
+            return "Failed to reconnect after \(attempts) attempts."
         }
     }
 }
@@ -65,12 +68,19 @@ public enum WebSocketEvent: Sendable {
     case connected
     case transcript(LiveTranscriptSegment)
     case disconnected(Error?)
+    case reconnecting(attempt: Int, maxAttempts: Int)
+    case reconnected
+    case reconnectionFailed(Error?)
 }
 
 /// WebSocket manager for direct Deepgram streaming.
 ///
 /// Connects directly to `wss://api.deepgram.com/v1/listen` using a short-lived
 /// JWT obtained from the backend's `/api/deepgram-token` endpoint.
+///
+/// Automatically reconnects with exponential backoff when the connection drops
+/// during an active recording session. Audio is buffered locally during
+/// reconnection and replayed once the connection is restored.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "com.waicomputer.kit", category: "websocket")
     private let apiClient: APIClient
@@ -84,7 +94,23 @@ public actor WebSocketManager {
     private var connectionId: UInt64 = 0
     private var sendCount = 0
 
+    // MARK: - Reconnection state
+
+    private var reconnectEnabled = false
+    private var isReconnecting = false
+    private var reconnectAttempt = 0
+    private var reconnectTask: Task<Void, Never>?
+    private let maxReconnectAttempts = 10
+    private let baseReconnectDelayMs: UInt64 = 500
+    private let maxReconnectDelayMs: UInt64 = 30_000
+
+    // MARK: - Audio buffer for replay after reconnection
+
+    private var audioBuffer: [Data] = []
+    private let maxBufferChunks = 300 // ~30s of audio at ~100ms/chunk
+
     /// All final transcript segments collected during this session.
+    /// Preserved across reconnections so no transcript data is lost.
     public private(set) var collectedSegments: [LiveTranscriptSegment] = []
 
     /// Stream of WebSocket events. Call BEFORE connect() to not miss events.
@@ -129,6 +155,11 @@ public actor WebSocketManager {
         let thisConnection = connectionId
         sendCount = 0
         collectedSegments = []
+        reconnectAttempt = 0
+        audioBuffer = []
+        isReconnecting = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
 
         // Fetch temporary Deepgram JWT from backend
         let tokenResponse: DeepgramTokenResponse = try await apiClient.request(
@@ -162,11 +193,22 @@ public actor WebSocketManager {
                 try? await self?.webSocket?.send(.string("{\"type\":\"KeepAlive\"}"))
             }
         }
+
+        // Enable auto-reconnection after successful initial setup
+        reconnectEnabled = true
     }
 
     /// Send raw PCM audio data directly to Deepgram.
+    ///
+    /// During reconnection, audio is buffered locally (up to ~30s) and replayed
+    /// once the connection is restored. This method does NOT throw during
+    /// reconnection — the recording continues uninterrupted.
     public func sendAudio(data: Data) async throws {
-        guard let webSocket else {
+        if isReconnecting || webSocket == nil {
+            if reconnectEnabled {
+                bufferAudioChunk(data)
+                return
+            }
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
 
@@ -175,11 +217,24 @@ public actor WebSocketManager {
             wsLog.debug("sendAudio #\(self.sendCount): \(data.count) bytes")
         }
 
-        try await webSocket.send(.data(data))
+        do {
+            try await webSocket?.send(.data(data))
+        } catch {
+            if reconnectEnabled {
+                bufferAudioChunk(data)
+                // receiveMessages will detect the disconnect and start reconnection
+                return
+            }
+            throw error
+        }
     }
 
     /// Signal end of audio stream. Deepgram will send final results then close.
+    /// Disables auto-reconnection since this is an intentional close.
     public func sendEnd() async throws {
+        reconnectEnabled = false
+        cancelReconnection()
+
         guard let webSocket else { return }
 
         let closeMessage = "{\"type\":\"CloseStream\"}"
@@ -200,7 +255,8 @@ public actor WebSocketManager {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
 
-        while connectionId == expectedConnection && (webSocket != nil || receiveTask != nil) {
+        while connectionId == expectedConnection
+            && (webSocket != nil || receiveTask != nil || isReconnecting) {
             if clock.now >= deadline {
                 return false
             }
@@ -209,8 +265,10 @@ public actor WebSocketManager {
         return true
     }
 
-    /// Disconnect and clean up.
+    /// Disconnect and clean up. Cancels any in-progress reconnection.
     public func disconnect() {
+        reconnectEnabled = false
+        cancelReconnection()
         closeConnection(forConnection: connectionId, error: nil, emitDisconnected: true)
     }
 
@@ -274,11 +332,15 @@ public actor WebSocketManager {
         } catch {
             if connectionId == expectedId {
                 wsLog.error("receiveMessages error: \(error.localizedDescription, privacy: .public)")
-                closeConnection(
-                    forConnection: expectedId,
-                    error: WebSocketConnectionError.disconnected(error),
-                    emitDisconnected: true
-                )
+                if reconnectEnabled {
+                    startReconnection(afterError: error)
+                } else {
+                    closeConnection(
+                        forConnection: expectedId,
+                        error: WebSocketConnectionError.disconnected(error),
+                        emitDisconnected: true
+                    )
+                }
             }
         }
     }
@@ -291,6 +353,11 @@ public actor WebSocketManager {
         let msgType = json["type"] as? String ?? ""
 
         guard msgType == "Results" else { return }
+
+        // Reset reconnect counter on successful data receipt — connection is healthy
+        if reconnectAttempt > 0 {
+            reconnectAttempt = 0
+        }
 
         let isFinal = json["is_final"] as? Bool ?? false
 
@@ -340,6 +407,164 @@ public actor WebSocketManager {
         }
 
         eventContinuation?.yield(.transcript(segment))
+    }
+
+    // MARK: - Reconnection
+
+    private func startReconnection(afterError: Error) {
+        guard reconnectEnabled, !isReconnecting else { return }
+
+        isReconnecting = true
+        audioBuffer = []
+
+        // Clean up current socket without finishing the event continuation
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        receiveTask?.cancel()
+        receiveTask = nil
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
+
+        wsLog.info("Starting reconnection (error: \(afterError.localizedDescription, privacy: .public))")
+
+        reconnectTask = Task { [weak self] in
+            await self?.reconnectLoop()
+        }
+    }
+
+    private func reconnectLoop() async {
+        defer {
+            reconnectTask = nil
+        }
+
+        while reconnectAttempt < maxReconnectAttempts {
+            guard !Task.isCancelled else {
+                isReconnecting = false
+                return
+            }
+
+            reconnectAttempt += 1
+            eventContinuation?.yield(.reconnecting(
+                attempt: reconnectAttempt,
+                maxAttempts: maxReconnectAttempts
+            ))
+
+            // Exponential backoff with jitter
+            let baseDelay = min(
+                baseReconnectDelayMs * (1 << UInt64(reconnectAttempt - 1)),
+                maxReconnectDelayMs
+            )
+            let jitter = UInt64.random(in: 0...(baseDelay / 2))
+            let delayMs = baseDelay + jitter
+
+            wsLog.info("Reconnect attempt \(self.reconnectAttempt)/\(self.maxReconnectAttempts) in \(delayMs)ms")
+
+            do {
+                try await Task.sleep(for: .milliseconds(delayMs))
+            } catch {
+                isReconnecting = false
+                return
+            }
+
+            guard !Task.isCancelled else {
+                isReconnecting = false
+                return
+            }
+
+            do {
+                // Fetch new token
+                let tokenResponse: DeepgramTokenResponse = try await apiClient.request(
+                    .GET, path: "/api/deepgram-token"
+                )
+                let url = try buildDeepgramURL(token: tokenResponse.accessToken)
+
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 300
+                request.setValue(
+                    "Bearer \(tokenResponse.accessToken)",
+                    forHTTPHeaderField: "Authorization"
+                )
+
+                let session = URLSession(configuration: .default)
+                let socket = session.webSocketTask(with: request)
+                webSocket = socket
+
+                connectionId &+= 1
+                let thisConnection = connectionId
+                sendCount = 0
+                // NOTE: collectedSegments are preserved across reconnections
+
+                socket.resume()
+
+                receiveTask = Task { [weak self] in
+                    await self?.receiveMessages(forConnection: thisConnection)
+                }
+
+                keepAliveTask = Task { [weak self] in
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(5))
+                        guard !Task.isCancelled else { break }
+                        try? await self?.webSocket?.send(.string("{\"type\":\"KeepAlive\"}"))
+                    }
+                }
+
+                // Replay buffered audio
+                let bufferedChunks = audioBuffer
+                audioBuffer = []
+                isReconnecting = false
+
+                wsLog.info(
+                    "Reconnected after \(self.reconnectAttempt) attempt(s), replaying \(bufferedChunks.count) audio chunks"
+                )
+
+                for chunk in bufferedChunks {
+                    do {
+                        try await socket.send(.data(chunk))
+                    } catch {
+                        wsLog.error("Failed to replay buffered audio: \(error.localizedDescription, privacy: .public)")
+                        // New connection is also broken — receiveMessages will trigger another reconnection
+                        break
+                    }
+                }
+
+                eventContinuation?.yield(.reconnected)
+                return // Success
+
+            } catch {
+                wsLog.error(
+                    "Reconnect attempt \(self.reconnectAttempt) failed: \(error.localizedDescription, privacy: .public)"
+                )
+                // Clean up failed connection attempt
+                webSocket?.cancel(with: .goingAway, reason: nil)
+                webSocket = nil
+                receiveTask?.cancel()
+                receiveTask = nil
+                keepAliveTask?.cancel()
+                keepAliveTask = nil
+            }
+        }
+
+        // Max attempts reached
+        isReconnecting = false
+        audioBuffer = []
+        wsLog.error("Reconnection failed after \(self.maxReconnectAttempts) attempts")
+
+        let exhaustedError = WebSocketConnectionError.reconnectionExhausted(maxReconnectAttempts)
+        eventContinuation?.yield(.reconnectionFailed(exhaustedError))
+    }
+
+    private func cancelReconnection() {
+        isReconnecting = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        audioBuffer = []
+    }
+
+    private func bufferAudioChunk(_ data: Data) {
+        audioBuffer.append(data)
+        if audioBuffer.count > maxBufferChunks {
+            audioBuffer.removeFirst()
+        }
     }
 
     private func closeConnection(

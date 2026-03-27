@@ -10,6 +10,11 @@ enum RecordingPhase: Equatable {
     case finalizing
 }
 
+enum RecordingConnectionState: Equatable {
+    case connected
+    case reconnecting(attempt: Int, maxAttempts: Int)
+}
+
 @MainActor
 class RecordingViewModel: ObservableObject {
     @Published var isRecording = false
@@ -21,6 +26,7 @@ class RecordingViewModel: ObservableObject {
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: RecordingPhase = .idle
+    @Published var connectionState: RecordingConnectionState = .connected
 
     private var committedTranscript = ""
     private var interimText = ""
@@ -28,6 +34,7 @@ class RecordingViewModel: ObservableObject {
     private var apiClient: APIClient?
     private var audioCapture: MicrophoneCapture?
     private var audioEncoder: AudioEncoder?
+    private var audioFileWriter: AudioFileWriter?
     private var webSocketManager: WebSocketManager?
     private var timerTask: Task<Void, Never>?
     private var audioTask: Task<Void, Never>?
@@ -141,11 +148,20 @@ class RecordingViewModel: ObservableObject {
             audioCapture = capture
             audioEncoder = encoder
 
+            // Create local audio file writer for persistence (local-first)
+            try RecordingBackupStore.ensureDirectoryForRecording(recordingId: recordingId)
+            let audioFileURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+            let fileWriter = try AudioFileWriter(fileURL: audioFileURL)
+            self.audioFileWriter = fileWriter
+            try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+
             audioTask = Task { [weak self, weak ws] in
                 for await buffer in capture.audioBuffers {
                     guard !Task.isCancelled else { break }
                     guard let self, let ws else { break }
                     if let data = encoder.encode(buffer) {
+                        // Local-first: always write to disk before sending over network
+                        fileWriter.writeEncodedPCM(data)
                         do {
                             try await ws.sendAudio(data: data)
                         } catch {
@@ -182,6 +198,10 @@ class RecordingViewModel: ObservableObject {
         let sendingTask = audioTask
         audioTask = nil
         _ = await sendingTask?.result
+
+        // Finalize the local WAV file so it has correct header sizes
+        try? audioFileWriter?.finalize()
+        audioFileWriter = nil
 
         let didFinalize = await finishStreaming(webSocketManager)
 
@@ -241,7 +261,7 @@ class RecordingViewModel: ObservableObject {
                         message: failureMessage
                     )
                     if backup != nil {
-                        self.error = "Transcript save failed. A local backup was saved on this device.\n\n\(failureMessage)"
+                        self.error = "Transcript save failed. Your audio recording and transcript were saved locally on this device.\n\n\(failureMessage)"
                     } else {
                         self.error = "Transcript save failed: \(failureMessage)"
                     }
@@ -263,6 +283,7 @@ class RecordingViewModel: ObservableObject {
         interimText = ""
         currentRecordingId = nil
         isServerComplete = false
+        connectionState = .connected
         duration = 0
     }
 
@@ -369,6 +390,8 @@ class RecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        try? audioFileWriter?.finalize()
+        audioFileWriter = nil
 
         // Cancel and await both tasks after stopping audio (which finishes the stream)
         pendingAudioTask?.cancel()
@@ -387,6 +410,91 @@ class RecordingViewModel: ObservableObject {
         setPhase(.idle)
     }
 
+    /// Handle permanent reconnection failure — save what we have instead of discarding.
+    private func handleReconnectionFailed(with message: String) async {
+        guard phase == .recording else {
+            error = message
+            return
+        }
+
+        setPhase(.finalizing)
+
+        if let recordingId = currentRecordingId {
+            let segments = finalizedSegments(
+                from: await webSocketManager?.collectedSegments ?? [],
+                didFinalize: false
+            )
+
+            // Try saving collected segments to server
+            if let client = apiClient, !segments.isEmpty {
+                do {
+                    let detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(duration.rounded())
+                    )
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    if detail.status != .failed {
+                        isServerComplete = true
+                        error = "Connection was lost but your transcript (\(segments.count) segments) was saved successfully."
+                        await cleanupAfterFailure()
+                        return
+                    }
+                } catch {
+                    print("Server save after reconnection failure also failed: \(error)")
+                }
+            }
+
+            // Local backup as last resort
+            let backup = try? saveTranscriptBackup(recordingId: recordingId, segments: segments)
+            _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+
+            if backup != nil {
+                error = "Connection lost after retrying. Your audio recording and \(segments.count) transcript segments were saved locally.\n\n\(message)"
+            } else if segments.isEmpty {
+                error = "Connection lost: \(message)"
+            } else {
+                error = "Connection lost after retrying: \(message)"
+            }
+        } else {
+            error = message
+        }
+
+        await cleanupAfterFailure()
+    }
+
+    private func cleanupAfterFailure() async {
+        timerTask?.cancel()
+        timerTask = nil
+
+        let pendingAudioTask = audioTask
+        audioTask = nil
+        let pendingTranscriptTask = transcriptTask
+        transcriptTask = nil
+
+        await audioCapture?.stopRecording()
+        audioCapture = nil
+        audioEncoder = nil
+        try? audioFileWriter?.finalize()
+        audioFileWriter = nil
+
+        pendingAudioTask?.cancel()
+        _ = await pendingAudioTask?.result
+        pendingTranscriptTask?.cancel()
+        _ = await pendingTranscriptTask?.result
+
+        let ws = webSocketManager
+        webSocketManager = nil
+        apiClient = nil
+        await ws?.disconnect()
+
+        recording = nil
+        currentRecordingId = nil
+        isServerComplete = false
+        connectionState = .connected
+        setPhase(.idle)
+    }
+
     private func handleStreamingFailure(_ message: String) async {
         guard phase == .recording else {
             if error == nil {
@@ -402,16 +510,35 @@ class RecordingViewModel: ObservableObject {
                 from: await webSocketManager?.collectedSegments ?? [],
                 didFinalize: false
             )
+
+            // Try saving collected segments to server instead of deleting the recording
+            if let client = apiClient, !segments.isEmpty {
+                do {
+                    let detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(duration.rounded())
+                    )
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    if detail.status != .failed {
+                        isServerComplete = true
+                        error = "Connection failed but your transcript (\(segments.count) segments) was saved."
+                        await cleanupAfterFailure()
+                        return
+                    }
+                } catch {
+                    print("Server save after failure also failed: \(error)")
+                }
+            }
+
+            // Local backup as last resort
             let backup = try? saveTranscriptBackup(
                 recordingId: recordingId,
                 segments: segments
             )
             if let backup {
                 _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
-                if let apiClient {
-                    try? await apiClient.deleteRecording(id: recordingId, permanent: true)
-                }
-                error = "Recording connection failed. A local transcript backup was saved on this device.\n\n\(message)"
+                error = "Recording connection failed. Your audio recording and transcript were saved locally on this device.\n\n\(message)"
                 print("Saved local backup at \(backup.directoryURL.path)")
             } else {
                 error = message
@@ -420,32 +547,7 @@ class RecordingViewModel: ObservableObject {
             error = message
         }
 
-        timerTask?.cancel()
-        timerTask = nil
-
-        let pendingAudioTask = audioTask
-        audioTask = nil
-        let pendingTranscriptTask = transcriptTask
-        transcriptTask = nil
-
-        await audioCapture?.stopRecording()
-        audioCapture = nil
-        audioEncoder = nil
-
-        pendingAudioTask?.cancel()
-        _ = await pendingAudioTask?.result
-        pendingTranscriptTask?.cancel()
-        _ = await pendingTranscriptTask?.result
-
-        let ws = webSocketManager
-        webSocketManager = nil
-        apiClient = nil
-        await ws?.disconnect()
-
-        recording = nil
-        currentRecordingId = nil
-        isServerComplete = false
-        setPhase(.idle)
+        await cleanupAfterFailure()
     }
 
     private func setPhase(_ newPhase: RecordingPhase) {
@@ -480,6 +582,16 @@ class RecordingViewModel: ObservableObject {
             } else if let err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
             }
+        case .reconnecting(let attempt, let maxAttempts):
+            connectionState = .reconnecting(attempt: attempt, maxAttempts: maxAttempts)
+        case .reconnected:
+            connectionState = .connected
+            error = nil
+        case .reconnectionFailed(let err):
+            connectionState = .connected
+            await handleReconnectionFailed(
+                with: err?.localizedDescription ?? "Connection lost after multiple retries"
+            )
         }
     }
 

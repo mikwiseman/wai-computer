@@ -125,6 +125,31 @@ final class WebSocketManagerTests: XCTestCase {
         } else {
             XCTFail("Expected .disconnected with error")
         }
+
+        // .reconnecting
+        let reconnecting = WebSocketEvent.reconnecting(attempt: 2, maxAttempts: 10)
+        if case .reconnecting(let attempt, let max) = reconnecting {
+            XCTAssertEqual(attempt, 2)
+            XCTAssertEqual(max, 10)
+        } else {
+            XCTFail("Expected .reconnecting")
+        }
+
+        // .reconnected
+        let reconnected = WebSocketEvent.reconnected
+        if case .reconnected = reconnected {} else {
+            XCTFail("Expected .reconnected")
+        }
+
+        // .reconnectionFailed
+        let reconnectionFailed = WebSocketEvent.reconnectionFailed(
+            WebSocketConnectionError.reconnectionExhausted(10)
+        )
+        if case .reconnectionFailed(let error) = reconnectionFailed {
+            XCTAssertNotNil(error)
+        } else {
+            XCTFail("Expected .reconnectionFailed")
+        }
     }
 
     // MARK: - WebSocketConnectionError Tests
@@ -141,5 +166,9 @@ final class WebSocketManagerTests: XCTestCase {
 
         let superseded = WebSocketConnectionError.superseded
         XCTAssertNotNil(superseded.errorDescription)
+
+        let exhausted = WebSocketConnectionError.reconnectionExhausted(10)
+        XCTAssertNotNil(exhausted.errorDescription)
+        XCTAssertTrue(exhausted.errorDescription!.contains("10"))
     }
 }

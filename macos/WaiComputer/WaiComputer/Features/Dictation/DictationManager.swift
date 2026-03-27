@@ -418,6 +418,20 @@ final class DictationManager: ObservableObject {
                 }
                 await cancelDictation()
             }
+        case .reconnecting:
+            break // Dictation sessions are short — reconnection handled by WebSocketManager
+        case .reconnected:
+            break
+        case .reconnectionFailed(let err):
+            if state == .listening {
+                log.error("WebSocket reconnection failed during dictation")
+                if let recoveryURL = try? saveRecoveryText(buildTranscript()) {
+                    error = "Connection lost after retrying.\n\nSaved partial dictation to:\n\(recoveryURL.path)"
+                } else {
+                    error = err?.localizedDescription ?? "Connection lost after multiple retries"
+                }
+                await cancelDictation()
+            }
         }
     }
 

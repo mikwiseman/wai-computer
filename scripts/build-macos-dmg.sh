@@ -158,7 +158,7 @@ fi
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 
 mkdir -p "$STAGING_DIR"
-cp -R "$APP_PATH" "$STAGING_DIR/"
+ditto "$APP_PATH" "$STAGING_DIR/${APP_NAME}.app"
 VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
 DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
 rm -f "$DMG_PATH"

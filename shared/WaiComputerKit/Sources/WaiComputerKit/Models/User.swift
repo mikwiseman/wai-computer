@@ -19,7 +19,7 @@ public struct User: Codable, Identifiable, Sendable {
     }
 }
 
-/// Authentication token response
+/// Authentication token response (legacy, access token only)
 public struct TokenResponse: Codable, Sendable {
     public let accessToken: String
     public let tokenType: String
@@ -27,6 +27,45 @@ public struct TokenResponse: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case tokenType = "token_type"
+    }
+}
+
+/// Authentication response with access + refresh tokens
+public struct AuthResponse: Codable, Sendable {
+    public let accessToken: String
+    public let refreshToken: String?
+    public let tokenType: String
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+    }
+}
+
+/// Request to refresh tokens
+public struct RefreshTokenRequest: Codable, Sendable {
+    public let refreshToken: String
+
+    public init(refreshToken: String) {
+        self.refreshToken = refreshToken
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+    }
+}
+
+/// Request to logout with optional refresh token revocation
+public struct LogoutRequest: Codable, Sendable {
+    public let refreshToken: String?
+
+    public init(refreshToken: String?) {
+        self.refreshToken = refreshToken
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
     }
 }
 

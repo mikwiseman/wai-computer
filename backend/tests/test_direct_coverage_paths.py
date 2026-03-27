@@ -318,11 +318,20 @@ async def test_auth_route_direct_paths(
     assert magic_user.magic_link_token is None
     assert magic_user.magic_link_expires is None
 
-    refreshed = await auth.refresh_token(Response(), magic_user)
+    refreshed = await auth.refresh_token(
+        auth.RefreshRequest(refresh_token=verified.refresh_token),
+        Response(),
+        db_session,
+    )
     assert refreshed.access_token
+    assert refreshed.refresh_token
 
     logout_response = Response()
-    logged_out = await auth.logout(logout_response)
+    logged_out = await auth.logout(
+        logout_response,
+        db_session,
+        auth.LogoutRequest(refresh_token=refreshed.refresh_token),
+    )
     assert logged_out.message == "Logged out"
     assert settings_obj.auth_cookie_name in logout_response.headers.get("set-cookie", "")
 

@@ -1,6 +1,7 @@
 """Additional authentication endpoint tests."""
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -33,20 +34,34 @@ def test_auth_cookie_secure_defaults_follow_frontend_url_scheme():
 
 
 @pytest.mark.asyncio
-async def test_refresh_requires_auth(client: AsyncClient):
-    """Refresh endpoint should require a bearer token."""
-    response = await client.post("/api/auth/refresh")
+async def test_refresh_requires_valid_token(client: AsyncClient):
+    """Refresh endpoint should reject an invalid refresh token."""
+    response = await client.post(
+        "/api/auth/refresh", json={"refresh_token": "invalid-token"}
+    )
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_refresh_with_auth_returns_token(client: AsyncClient, auth_headers: dict):
-    """Refresh endpoint should return a token for authenticated users."""
-    response = await client.post("/api/auth/refresh", headers=auth_headers)
+async def test_refresh_with_valid_token_returns_tokens(client: AsyncClient):
+    """Refresh endpoint should return new tokens for a valid refresh token."""
+    # Register to get a refresh token
+    email = f"refresh-test-{uuid4().hex}@example.com"
+    reg_resp = await client.post(
+        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+    )
+    reg_data = reg_resp.json()
+    refresh_token = reg_data["refresh_token"]
+
+    # Use refresh token
+    response = await client.post(
+        "/api/auth/refresh", json={"refresh_token": refresh_token}
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["token_type"] == "bearer"
     assert data["access_token"]
+    assert data["refresh_token"]
     assert settings.auth_cookie_name in response.headers.get("set-cookie", "")
 
 

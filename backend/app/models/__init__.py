@@ -5,6 +5,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
+from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "RecordingTag",
     "ChatSession",
     "ChatMessage",
+    "RefreshToken",
 ]

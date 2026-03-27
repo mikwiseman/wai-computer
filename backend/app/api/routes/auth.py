@@ -1,10 +1,12 @@
 """Authentication routes."""
 
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
@@ -16,9 +18,12 @@ from app.core.rate_limit import (
 from app.core.security import (
     create_access_token,
     generate_magic_link_token,
+    generate_refresh_token,
     hash_password,
+    hash_refresh_token,
     verify_password,
 )
+from app.models.refresh_token import RefreshToken as RefreshTokenModel
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -83,6 +88,26 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class AuthResponse(BaseModel):
+    """Response with access + refresh tokens."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    """Request to refresh tokens."""
+
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    """Request to logout (optional refresh token for server-side cleanup)."""
+
+    refresh_token: str | None = None
+
+
 class UserResponse(BaseModel):
     """Response with user info."""
 
@@ -123,12 +148,34 @@ def _clear_auth_cookie(response: Response) -> None:
     )
 
 
+async def _create_auth_tokens(
+    user_id: UUID, db: AsyncSession, device_name: str | None = None
+) -> tuple[str, str]:
+    """Create access + refresh token pair. Stores refresh token hash in DB."""
+    access_token = create_access_token(
+        user_id, expires_delta=timedelta(minutes=settings.jwt_access_expire_minutes)
+    )
+    refresh_token_value = generate_refresh_token()
+    refresh_token_hash = hash_refresh_token(refresh_token_value)
+
+    db_token = RefreshTokenModel(
+        user_id=user_id,
+        token_hash=refresh_token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days),
+        device_name=device_name,
+    )
+    db.add(db_token)
+    await db.flush()
+
+    return access_token, refresh_token_value
+
+
 @router.post(
     "/register",
-    response_model=TokenResponse,
+    response_model=AuthResponse,
     dependencies=[Depends(check_register_rate_limit)],
 )
-async def register(request: RegisterRequest, response: Response, db: Database) -> TokenResponse:
+async def register(request: RegisterRequest, response: Response, db: Database) -> AuthResponse:
     """Register a new user."""
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == request.email))
@@ -148,15 +195,15 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
     db.add(user)
     await db.flush()
 
-    # Generate token
-    token = create_access_token(user.id)
-    _set_auth_cookie(response, token)
+    # Generate tokens
+    access_token, refresh_token = await _create_auth_tokens(user.id, db)
+    _set_auth_cookie(response, access_token)
 
-    return TokenResponse(access_token=token)
+    return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@router.post("/login", response_model=TokenResponse, dependencies=[Depends(check_login_rate_limit)])
-async def login(request: LoginRequest, response: Response, db: Database) -> TokenResponse:
+@router.post("/login", response_model=AuthResponse, dependencies=[Depends(check_login_rate_limit)])
+async def login(request: LoginRequest, response: Response, db: Database) -> AuthResponse:
     """Login with email and password."""
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
@@ -173,9 +220,9 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Toke
             detail="Invalid email or password",
         )
 
-    token = create_access_token(user.id)
-    _set_auth_cookie(response, token)
-    return TokenResponse(access_token=token)
+    access_token, refresh_token = await _create_auth_tokens(user.id, db)
+    _set_auth_cookie(response, access_token)
+    return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
 
 @router.post(
@@ -208,12 +255,12 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     return MessageResponse(message="Magic link sent to your email")
 
 
-@router.post("/verify-magic", response_model=TokenResponse)
+@router.post("/verify-magic", response_model=AuthResponse)
 async def verify_magic_link(
     request: VerifyMagicLinkRequest,
     response: Response,
     db: Database,
-) -> TokenResponse:
+) -> AuthResponse:
     """Verify a magic link token and return JWT."""
     result = await db.execute(
         select(User).where(User.magic_link_token == request.token)
@@ -236,24 +283,58 @@ async def verify_magic_link(
     user.magic_link_token = None
     user.magic_link_expires = None
 
-    # Generate JWT
-    token = create_access_token(user.id)
-    _set_auth_cookie(response, token)
-    return TokenResponse(access_token=token)
+    # Generate tokens
+    access_token, refresh_token = await _create_auth_tokens(user.id, db)
+    _set_auth_cookie(response, access_token)
+    return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(response: Response, user: CurrentUser) -> TokenResponse:
-    """Refresh the JWT token."""
-    token = create_access_token(user.id)
-    _set_auth_cookie(response, token)
-    return TokenResponse(access_token=token)
+@router.post("/refresh", response_model=AuthResponse)
+async def refresh_token(
+    request: RefreshRequest, response: Response, db: Database
+) -> AuthResponse:
+    """Refresh tokens using a valid refresh token. Does NOT require a valid access token."""
+    token_hash = hash_refresh_token(request.refresh_token)
+    result = await db.execute(
+        select(RefreshTokenModel).where(RefreshTokenModel.token_hash == token_hash)
+    )
+    db_token = result.scalar_one_or_none()
+
+    if db_token is None:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if db_token.expires_at < datetime.now(timezone.utc):
+        await db.delete(db_token)
+        await db.flush()
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+
+    # Token rotation: delete old, create new pair
+    user_id = db_token.user_id
+    await db.delete(db_token)
+    await db.flush()
+
+    access_token, new_refresh_token = await _create_auth_tokens(user_id, db)
+    _set_auth_cookie(response, access_token)
+    return AuthResponse(access_token=access_token, refresh_token=new_refresh_token)
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(response: Response) -> MessageResponse:
-    """Clear auth cookie and log out browser session."""
+async def logout(
+    response: Response,
+    db: Database,
+    request: LogoutRequest | None = None,
+) -> MessageResponse:
+    """Clear auth cookie and revoke refresh token."""
     _clear_auth_cookie(response)
+    if request and request.refresh_token:
+        token_hash = hash_refresh_token(request.refresh_token)
+        result = await db.execute(
+            select(RefreshTokenModel).where(RefreshTokenModel.token_hash == token_hash)
+        )
+        db_token = result.scalar_one_or_none()
+        if db_token:
+            await db.delete(db_token)
+            await db.flush()
     return MessageResponse(message="Logged out")
 
 
