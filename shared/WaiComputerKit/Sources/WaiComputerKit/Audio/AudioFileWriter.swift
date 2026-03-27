@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Sentry
 
 /// Writes a WAV file incrementally during recording.
 /// Accepts pre-encoded int16 PCM data (the same `Data` returned by `AudioEncoder.encode()`).
@@ -64,6 +65,12 @@ public final class AudioFileWriter: @unchecked Sendable {
 
         handle.closeFile()
         fileHandle = nil
+
+        SentryHelper.addBreadcrumb(
+            category: "audio",
+            message: "audio file finalized",
+            data: ["duration": durationSeconds, "bytes": totalBytesWritten]
+        )
     }
 
     // MARK: - Private

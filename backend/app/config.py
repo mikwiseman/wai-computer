@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     email_from: str = "WaiComputer <noreply@mail.waiwai.is>"
 
+    # Sentry
+    sentry_dsn: str = ""
+
     # URLs
     frontend_url: str = "http://localhost:3000"
 

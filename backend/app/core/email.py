@@ -4,6 +4,7 @@ import asyncio
 import functools
 
 import resend
+import sentry_sdk
 from fastapi import HTTPException, status
 
 from app.config import get_settings
@@ -57,11 +58,18 @@ async def send_magic_link_email(
     to_email: str, token: str, client: str | None = None
 ) -> None:
     """Send a magic link email to the user without blocking the event loop."""
+    sentry_sdk.add_breadcrumb(
+        category="email",
+        message="Sending magic link email",
+        data={"client": client},
+        level="info",
+    )
     try:
         loop = asyncio.get_running_loop()
         func = functools.partial(_send_email_sync, to_email, token, client)
         await loop.run_in_executor(None, func)
     except Exception as e:
+        sentry_sdk.capture_exception(e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to send email",

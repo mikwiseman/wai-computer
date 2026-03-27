@@ -25,6 +25,10 @@ class AppState: ObservableObject {
     private let apiClient: APIClient
 
     init() {
+        #if !DEBUG
+        SentryHelper.start(dsn: "<SENTRY_DSN>")
+        #endif
+
         // Configure API client
         #if DEBUG
         let baseURL = URL(string: "http://localhost:8000")!
@@ -125,6 +129,7 @@ class AppState: ObservableObject {
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
         UserDefaults.standard.removeObject(forKey: "accessToken")
+        SentryHelper.clearUser()
         currentUser = nil
         isAuthenticated = false
     }
@@ -143,9 +148,11 @@ class AppState: ObservableObject {
             let user = try await apiClient.getCurrentUser()
             currentUser = user
             isAuthenticated = true
+            SentryHelper.setUser(id: user.id)
         } catch {
             isAuthenticated = false
             currentUser = nil
+            SentryHelper.clearUser()
         }
     }
 

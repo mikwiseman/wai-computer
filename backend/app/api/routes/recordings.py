@@ -9,6 +9,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
+import sentry_sdk
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text
@@ -954,6 +955,12 @@ async def create_recording(
     db: Database,
 ) -> RecordingResponse:
     """Create a new recording."""
+    sentry_sdk.add_breadcrumb(
+        category="recording",
+        message="Creating recording",
+        data={"type": request.type},
+        level="info",
+    )
     language = request.language if request.language is not None else user.default_language
     folder = await _require_folder(request.folder_id, user.id, db)
     recording = Recording(
@@ -1755,6 +1762,12 @@ async def save_transcript(
     db: Database,
 ) -> RecordingDetailResponse:
     """Persist a live transcript without storing live-capture audio on the server."""
+    sentry_sdk.add_breadcrumb(
+        category="recording",
+        message="Saving transcript",
+        data={"recording_id": str(recording_id), "segment_count": len(request.segments)},
+        level="info",
+    )
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db)
     if recording is None:
@@ -1843,6 +1856,12 @@ async def generate_summary(
     db: Database,
 ) -> SummaryResponse:
     """Generate or regenerate AI summary for a recording."""
+    sentry_sdk.add_breadcrumb(
+        category="recording",
+        message="Generating summary",
+        data={"recording_id": str(recording_id)},
+        level="info",
+    )
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
@@ -2002,6 +2021,12 @@ async def upload_audio_file(
     db: Database,
 ) -> RecordingDetailResponse:
     """Upload an imported audio file to an existing recording."""
+    sentry_sdk.add_breadcrumb(
+        category="recording",
+        message="Uploading audio file",
+        data={"recording_id": str(recording_id), "filename": file.filename},
+        level="info",
+    )
     # Validate recording exists and belongs to user
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db)

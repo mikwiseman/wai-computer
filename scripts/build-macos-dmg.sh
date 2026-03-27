@@ -18,7 +18,6 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}-release.XXXXXX")
 ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
-STAGING_DIR="$TMP_DIR/dmg-root"
 DMG_PATH=""
 APP_PATH=""
 NOTARIZATION_MODE="skipped"
@@ -92,7 +91,6 @@ gatekeeper_check() {
 }
 
 require_tool xcodebuild
-require_tool create-dmg
 require_tool codesign
 require_tool hdiutil
 require_tool ditto
@@ -157,34 +155,71 @@ fi
 
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 
-mkdir -p "$STAGING_DIR"
-ditto "$APP_PATH" "$STAGING_DIR/${APP_NAME}.app"
-VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
 DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
-rm -f "$DMG_PATH"
+SPARSE_PATH="$TMP_DIR/${APP_NAME}.sparseimage"
+DMG_MOUNT="$TMP_DIR/dmg-mount"
+rm -f "$DMG_PATH" "$SPARSE_PATH"
 
-CREATE_DMG_ARGS=(
-  --volname "$DMG_VOLUME_NAME"
-  --window-pos 180 120
-  --window-size 960 620
-  --icon-size 128
-  --text-size 16
-  --icon "${APP_NAME}.app" 240 355
-  --hide-extension "${APP_NAME}.app"
-  --app-drop-link 720 355
-  --background "$BACKGROUND_PATH"
-  --format UDZO
-  --filesystem HFS+
-  --hdiutil-quiet
-  --codesign "$SIGNING_IDENTITY"
-)
+echo "Creating sparse image..."
+hdiutil create -size 200m -fs HFS+ -volname "$DMG_VOLUME_NAME" -type SPARSE "$SPARSE_PATH"
 
+echo "Mounting sparse image to custom mount point..."
+mkdir -p "$DMG_MOUNT"
+hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -nobrowse -noverify
+
+echo "Copying app and creating Applications symlink..."
+ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
+ln -s /Applications "$DMG_MOUNT/Applications"
+
+# Copy background image
+mkdir -p "$DMG_MOUNT/.background"
+cp "$BACKGROUND_PATH" "$DMG_MOUNT/.background/background.png"
+
+# Set volume icon if available
+VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
 if [[ -f "$VOLICON" ]]; then
-  CREATE_DMG_ARGS+=(--volicon "$VOLICON")
+  cp "$VOLICON" "$DMG_MOUNT/.VolumeIcon.icns"
+  SetFile -c icnC "$DMG_MOUNT/.VolumeIcon.icns" 2>/dev/null || true
+  SetFile -a C "$DMG_MOUNT" 2>/dev/null || true
 fi
 
-echo "Creating DMG at $DMG_PATH ..."
-create-dmg "${CREATE_DMG_ARGS[@]}" "$DMG_PATH" "$STAGING_DIR"
+# Apply Finder view settings via AppleScript
+echo "Configuring DMG Finder appearance..."
+osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$DMG_VOLUME_NAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {180, 120, 1140, 740}
+    set theViewOptions to the icon view options of container window
+    set arrangement of theViewOptions to not arranged
+    set icon size of theViewOptions to 128
+    set text size of theViewOptions to 16
+    set background picture of theViewOptions to file ".background:background.png"
+    set position of item "${APP_NAME}.app" of container window to {240, 355}
+    set position of item "Applications" of container window to {720, 355}
+    set extension hidden of item "${APP_NAME}.app" of container window to true
+    close
+    open
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
+
+sync
+
+echo "Detaching sparse image..."
+hdiutil detach "$DMG_MOUNT" -quiet
+
+echo "Converting to compressed DMG..."
+hdiutil convert "$SPARSE_PATH" -format UDZO -o "$DMG_PATH" -quiet
+
+echo "Signing DMG..."
+codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
 
 if [[ ! -f "$DMG_PATH" ]]; then
   echo "DMG creation did not produce $DMG_PATH" >&2

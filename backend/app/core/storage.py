@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import BinaryIO
 
 import boto3
+import sentry_sdk
 from botocore.config import Config
 
 from app.config import get_settings
@@ -45,6 +46,12 @@ class StorageClient:
         content_type: str = "audio/pcm",
     ) -> str:
         """Upload an audio file object to S3 without loading it into a new bytes buffer."""
+        sentry_sdk.add_breadcrumb(
+            category="storage",
+            message="Uploading audio to S3",
+            data={"recording_id": str(recording_id), "content_type": content_type},
+            level="info",
+        )
         import asyncio
 
         loop = asyncio.get_running_loop()
@@ -94,6 +101,12 @@ class StorageClient:
         s3_key: str,
     ) -> None:
         """Delete an audio file from storage."""
+        sentry_sdk.add_breadcrumb(
+            category="storage",
+            message="Deleting audio from S3",
+            data={"s3_key": s3_key},
+            level="info",
+        )
         import asyncio
 
         loop = asyncio.get_running_loop()

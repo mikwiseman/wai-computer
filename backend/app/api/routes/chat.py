@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
+import sentry_sdk
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
@@ -88,6 +89,15 @@ async def send_chat_message(
     db: Database,
 ) -> ChatResponse:
     """Send a question and get a RAG-powered answer from meeting transcripts."""
+    sentry_sdk.add_breadcrumb(
+        category="chat",
+        message="Chat message sent",
+        data={
+            "session_id": request.session_id,
+            "has_recording_filter": bool(request.recording_ids),
+        },
+        level="info",
+    )
     try:
         session_id = uuid.UUID(request.session_id) if request.session_id else None
         recording_ids = (
@@ -134,6 +144,7 @@ async def list_chat_sessions(
     db: Database,
 ) -> list[ChatSessionListItem]:
     """List all chat sessions for the current user, pinned first then most recent."""
+    sentry_sdk.add_breadcrumb(category="chat", message="List chat sessions", level="info")
     # Query sessions with message counts; pinned sessions come first
     stmt = (
         select(
@@ -352,6 +363,12 @@ async def delete_chat_session(
     db: Database,
 ) -> None:
     """Delete a chat session and all its messages."""
+    sentry_sdk.add_breadcrumb(
+        category="chat",
+        message="Delete chat session",
+        data={"session_id": str(session_id)},
+        level="info",
+    )
     result = await db.execute(
         select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user.id)
     )

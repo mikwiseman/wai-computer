@@ -13,6 +13,10 @@ struct WaiComputerMacApp: App {
     @StateObject private var dictationManager: DictationManager
 
     init() {
+        #if !DEBUG
+        SentryHelper.start(dsn: "<SENTRY_DSN>")
+        #endif
+
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
         let dictation = DictationManager()
@@ -280,6 +284,7 @@ class MacAppState: ObservableObject {
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
         // Clean up legacy UserDefaults if still present
         UserDefaults.standard.removeObject(forKey: "accessToken")
+        SentryHelper.clearUser()
         currentUser = nil
         isAuthenticated = false
     }
@@ -299,12 +304,14 @@ class MacAppState: ObservableObject {
             let user = try await apiClient.getCurrentUser()
             currentUser = user
             isAuthenticated = true
+            SentryHelper.setUser(id: user.id)
             dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
                 recordingViewModel?.phase == .idle
             }
         } catch {
             isAuthenticated = false
             currentUser = nil
+            SentryHelper.clearUser()
             dictationManager.disable()
         }
     }
