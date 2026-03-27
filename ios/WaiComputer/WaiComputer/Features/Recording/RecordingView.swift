@@ -48,6 +48,29 @@ struct RecordingView: View {
                         .accessibilityLabel(durationAccessibilityLabel)
                 }
 
+                // Reconnection banner
+                if case .reconnecting(let attempt, let maxAttempts) = viewModel.connectionState {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.white)
+                            .controlSize(.small)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Reconnecting… (\(attempt)/\(maxAttempts))")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                            Text("Audio is being buffered")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .accessibilityLabel("Reconnecting, attempt \(attempt) of \(maxAttempts)")
+                }
+
                 // Live transcript preview
                 if viewModel.shouldShowTranscript {
                     ScrollView {
@@ -127,10 +150,15 @@ struct RecordingView: View {
         }
     }
 
+    private var isReconnecting: Bool {
+        if case .reconnecting = viewModel.connectionState { return true }
+        return false
+    }
+
     private var outerIndicatorColor: Color {
         switch viewModel.phase {
         case .recording:
-            return Color.red.opacity(0.2)
+            return isReconnecting ? Color.orange.opacity(0.2) : Color.red.opacity(0.2)
         case .preparing, .finalizing:
             return Color.orange.opacity(0.18)
         case .idle:
@@ -141,7 +169,7 @@ struct RecordingView: View {
     private var innerIndicatorColor: Color {
         switch viewModel.phase {
         case .recording:
-            return Color.red.opacity(0.4)
+            return isReconnecting ? Color.orange.opacity(0.4) : Color.red.opacity(0.4)
         case .preparing, .finalizing:
             return Color.orange.opacity(0.28)
         case .idle:

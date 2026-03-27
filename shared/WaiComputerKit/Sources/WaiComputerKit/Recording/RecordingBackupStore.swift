@@ -5,6 +5,7 @@ public struct RecordingBackup: Sendable, Equatable {
     public let directoryURL: URL
     public let manifestURL: URL
     public let segmentsFileURL: URL
+    public let audioFileURL: URL
 }
 
 public struct RecordingBackupManifest: Codable, Sendable, Equatable {
@@ -17,6 +18,50 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public let transcript: String?
     public var lastErrorMessage: String?
     public var updatedAt: Date
+    public var hasAudioFile: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId, title, recordingType, createdAt, durationSeconds
+        case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        recordingId = try container.decode(String.self, forKey: .recordingId)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        recordingType = try container.decode(String.self, forKey: .recordingType)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        durationSeconds = try container.decode(TimeInterval.self, forKey: .durationSeconds)
+        segmentCount = try container.decode(Int.self, forKey: .segmentCount)
+        transcript = try container.decodeIfPresent(String.self, forKey: .transcript)
+        lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        hasAudioFile = try container.decodeIfPresent(Bool.self, forKey: .hasAudioFile) ?? false
+    }
+
+    public init(
+        recordingId: String,
+        title: String?,
+        recordingType: String,
+        createdAt: Date,
+        durationSeconds: TimeInterval,
+        segmentCount: Int,
+        transcript: String?,
+        lastErrorMessage: String?,
+        updatedAt: Date,
+        hasAudioFile: Bool = false
+    ) {
+        self.recordingId = recordingId
+        self.title = title
+        self.recordingType = recordingType
+        self.createdAt = createdAt
+        self.durationSeconds = durationSeconds
+        self.segmentCount = segmentCount
+        self.transcript = transcript
+        self.lastErrorMessage = lastErrorMessage
+        self.updatedAt = updatedAt
+        self.hasAudioFile = hasAudioFile
+    }
 }
 
 public enum RecordingBackupStore {
@@ -107,6 +152,39 @@ public enum RecordingBackupStore {
         return backup
     }
 
+    /// Returns the expected audio file URL for a recording, without checking existence.
+    public static func audioFileURL(recordingId: String) throws -> URL {
+        let backup = try makeBackup(recordingId: recordingId)
+        return backup.audioFileURL
+    }
+
+    /// Ensures the backup directory exists for a recording. Call before creating AudioFileWriter.
+    public static func ensureDirectoryForRecording(recordingId: String) throws {
+        let backup = try makeBackup(recordingId: recordingId)
+        try ensureDirectory(backup.directoryURL)
+    }
+
+    /// Marks a recording backup as having an audio file.
+    public static func markHasAudioFile(recordingId: String) throws {
+        let backup = try makeBackup(recordingId: recordingId)
+        try ensureDirectory(backup.directoryURL)
+
+        var manifest = try readManifest(from: backup.manifestURL) ?? RecordingBackupManifest(
+            recordingId: recordingId,
+            title: nil,
+            recordingType: RecordingType.note.rawValue,
+            createdAt: Date(),
+            durationSeconds: 0,
+            segmentCount: 0,
+            transcript: nil,
+            lastErrorMessage: nil,
+            updatedAt: Date()
+        )
+        manifest.hasAudioFile = true
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+    }
+
     private static func makeBackup(recordingId: String) throws -> RecordingBackup {
         let base = try baseDirectory()
         let directoryURL = base.appendingPathComponent(recordingId, isDirectory: true)
@@ -114,7 +192,8 @@ public enum RecordingBackupStore {
             recordingId: recordingId,
             directoryURL: directoryURL,
             manifestURL: directoryURL.appendingPathComponent("manifest.json"),
-            segmentsFileURL: directoryURL.appendingPathComponent("segments.json")
+            segmentsFileURL: directoryURL.appendingPathComponent("segments.json"),
+            audioFileURL: directoryURL.appendingPathComponent("recording.wav")
         )
     }
 

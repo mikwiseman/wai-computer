@@ -139,12 +139,18 @@ final class WebSocketManagerExtendedTests: XCTestCase {
             .transcript(segment),
             .disconnected(nil),
             .disconnected(URLError(.timedOut)),
+            .reconnecting(attempt: 1, maxAttempts: 10),
+            .reconnected,
+            .reconnectionFailed(nil),
         ]
 
         // Verify each case matches correctly
         var connectedCount = 0
         var transcriptCount = 0
         var disconnectedCount = 0
+        var reconnectingCount = 0
+        var reconnectedCount = 0
+        var reconnectionFailedCount = 0
 
         for event in events {
             switch event {
@@ -161,12 +167,24 @@ final class WebSocketManagerExtendedTests: XCTestCase {
                 } else {
                     XCTAssertNotNil(error, "Second disconnect should have an error")
                 }
+            case .reconnecting(let attempt, let maxAttempts):
+                reconnectingCount += 1
+                XCTAssertEqual(attempt, 1)
+                XCTAssertEqual(maxAttempts, 10)
+            case .reconnected:
+                reconnectedCount += 1
+            case .reconnectionFailed(let error):
+                reconnectionFailedCount += 1
+                XCTAssertNil(error)
             }
         }
 
         XCTAssertEqual(connectedCount, 1)
         XCTAssertEqual(transcriptCount, 1)
         XCTAssertEqual(disconnectedCount, 2)
+        XCTAssertEqual(reconnectingCount, 1)
+        XCTAssertEqual(reconnectedCount, 1)
+        XCTAssertEqual(reconnectionFailedCount, 1)
     }
 
     // MARK: - LiveTranscriptSegment with all nil optional fields
@@ -249,6 +267,65 @@ final class WebSocketManagerExtendedTests: XCTestCase {
     func testConnectionErrorDisconnectedNilUsesDefault() {
         let error = WebSocketConnectionError.disconnected(nil)
         XCTAssertEqual(error.errorDescription, "The WebSocket disconnected.")
+    }
+
+    // MARK: - WebSocketConnectionError reconnectionExhausted
+
+    func testConnectionErrorReconnectionExhausted() {
+        let error = WebSocketConnectionError.reconnectionExhausted(10)
+        XCTAssertNotNil(error.errorDescription)
+        XCTAssertTrue(error.errorDescription!.contains("10"),
+                       "reconnectionExhausted description should mention attempt count")
+        XCTAssertTrue(error.errorDescription!.contains("reconnect"),
+                       "reconnectionExhausted description should mention reconnect")
+    }
+
+    // MARK: - Reconnection events carry correct data
+
+    func testReconnectingEventData() {
+        let event = WebSocketEvent.reconnecting(attempt: 3, maxAttempts: 10)
+        if case .reconnecting(let attempt, let maxAttempts) = event {
+            XCTAssertEqual(attempt, 3)
+            XCTAssertEqual(maxAttempts, 10)
+        } else {
+            XCTFail("Expected .reconnecting")
+        }
+    }
+
+    func testReconnectedEvent() {
+        let event = WebSocketEvent.reconnected
+        if case .reconnected = event {} else {
+            XCTFail("Expected .reconnected")
+        }
+    }
+
+    func testReconnectionFailedWithError() {
+        let underlying = WebSocketConnectionError.reconnectionExhausted(10)
+        let event = WebSocketEvent.reconnectionFailed(underlying)
+        if case .reconnectionFailed(let error) = event {
+            XCTAssertNotNil(error)
+            XCTAssertTrue(error is WebSocketConnectionError)
+        } else {
+            XCTFail("Expected .reconnectionFailed")
+        }
+    }
+
+    func testReconnectionFailedWithNilError() {
+        let event = WebSocketEvent.reconnectionFailed(nil)
+        if case .reconnectionFailed(let error) = event {
+            XCTAssertNil(error)
+        } else {
+            XCTFail("Expected .reconnectionFailed(nil)")
+        }
+    }
+
+    // MARK: - collectedSegments preserved (not cleared by default)
+
+    func testCollectedSegmentsEmptyAfterInit() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let segments = await manager.collectedSegments
+        XCTAssertTrue(segments.isEmpty)
     }
 
     // MARK: - WebSocketManager default init values

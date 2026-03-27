@@ -1,5 +1,6 @@
 """Security utilities for password hashing and JWT tokens."""
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -54,3 +55,13 @@ def decode_access_token(token: str) -> UUID | None:
 def generate_magic_link_token() -> str:
     """Generate a secure token for magic link authentication."""
     return secrets.token_urlsafe(32)
+
+
+def generate_refresh_token() -> str:
+    """Generate a cryptographically secure refresh token."""
+    return secrets.token_urlsafe(64)
+
+
+def hash_refresh_token(token: str) -> str:
+    """Hash a refresh token using SHA-256 for storage."""
+    return hashlib.sha256(token.encode()).hexdigest()

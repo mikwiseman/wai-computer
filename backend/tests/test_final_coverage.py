@@ -310,10 +310,19 @@ class TestAuthLoginWrongPassword:
 class TestAuthRefreshLogoutMe:
     """Lines 250, 254, 260-263: refresh, logout, /me."""
 
-    async def test_refresh_returns_new_token(self, client: AsyncClient, auth_headers: dict):
-        resp = await client.post("/api/auth/refresh", headers=auth_headers)
+    async def test_refresh_returns_new_token(self, client: AsyncClient):
+        email = f"refresh-cov-{uuid4().hex}@example.com"
+        reg_resp = await client.post(
+            "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        )
+        refresh_token = reg_resp.json()["refresh_token"]
+        resp = await client.post(
+            "/api/auth/refresh", json={"refresh_token": refresh_token}
+        )
         assert resp.status_code == 200
-        assert "access_token" in resp.json()
+        data = resp.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
 
     async def test_logout_clears_cookie(self, client: AsyncClient):
         resp = await client.post("/api/auth/logout")

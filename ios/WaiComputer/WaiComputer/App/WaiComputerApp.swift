@@ -33,10 +33,33 @@ class AppState: ObservableObject {
         #endif
         apiClient = APIClient(baseURL: baseURL)
 
-        // Check for saved token
-        if let token = UserDefaults.standard.string(forKey: "accessToken") {
+        // Migrate from UserDefaults to Keychain (one-time)
+        if KeychainHelper.load(key: KeychainHelper.accessTokenKey) == nil,
+           let legacyToken = UserDefaults.standard.string(forKey: "accessToken") {
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: legacyToken)
+            UserDefaults.standard.removeObject(forKey: "accessToken")
+        }
+
+        // Set up token refresh callbacks
+        Task {
+            await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
+                KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: accessToken)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshToken)
+            }
+            await apiClient.setOnAuthenticationFailed { [weak self] in
+                Task { @MainActor in
+                    self?.handleAuthenticationFailed()
+                }
+            }
+        }
+
+        // Restore tokens from Keychain
+        if let accessToken = KeychainHelper.load(key: KeychainHelper.accessTokenKey) {
             Task {
-                await apiClient.setAccessToken(token)
+                await apiClient.setAccessToken(accessToken)
+                if let refreshToken = KeychainHelper.load(key: KeychainHelper.refreshTokenKey) {
+                    await apiClient.setRefreshToken(refreshToken)
+                }
                 await loadCurrentUser()
                 isCheckingAuth = false
             }
@@ -52,7 +75,11 @@ class AppState: ObservableObject {
         do {
             let response = try await apiClient.login(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -70,7 +97,11 @@ class AppState: ObservableObject {
         do {
             let response = try await apiClient.register(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            UserDefaults.standard.set(response.accessToken, forKey: "accessToken")
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -82,7 +113,26 @@ class AppState: ObservableObject {
     }
 
     func logout() async {
+        let rt = await apiClient.getRefreshToken()
+        do {
+            _ = try await apiClient.logout(refreshToken: rt)
+        } catch {
+            // Best-effort server logout
+        }
+
         await apiClient.setAccessToken(nil)
+        await apiClient.setRefreshToken(nil)
+        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
+        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        UserDefaults.standard.removeObject(forKey: "accessToken")
+        currentUser = nil
+        isAuthenticated = false
+    }
+
+    /// Called when auto-refresh fails — transition to login screen
+    private func handleAuthenticationFailed() {
+        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
+        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
         UserDefaults.standard.removeObject(forKey: "accessToken")
         currentUser = nil
         isAuthenticated = false

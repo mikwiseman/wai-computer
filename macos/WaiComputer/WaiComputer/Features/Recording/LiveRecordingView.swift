@@ -9,6 +9,25 @@ struct LiveRecordingView: View {
         VStack(spacing: 0) {
             recordingHeader
 
+            // Reconnection banner
+            if case .reconnecting(let attempt, let maxAttempts) = recordingVM.connectionState {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Reconnecting… (\(attempt)/\(maxAttempts))")
+                        .font(Typography.label)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("Audio is being buffered")
+                        .font(Typography.label)
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.orange)
+                .accessibilityIdentifier("reconnection-banner")
+            }
+
             // System audio stall warning
             if let warning = recordingVM.systemAudioWarning {
                 HStack(spacing: Spacing.sm) {
@@ -98,7 +117,13 @@ struct LiveRecordingView: View {
 
     private var recordingHeader: some View {
         HStack(spacing: Spacing.md) {
-            if recordingVM.phase == .recording {
+            if recordingVM.phase == .recording,
+               case .reconnecting = recordingVM.connectionState {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 12, height: 12)
+                    .modifier(PulseModifier())
+            } else if recordingVM.phase == .recording {
                 Circle()
                     .fill(Palette.recording)
                     .frame(width: 12, height: 12)

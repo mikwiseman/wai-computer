@@ -52,6 +52,11 @@ enum MacRecordingPhase: Equatable {
     case finalizing
 }
 
+enum RecordingConnectionState: Equatable {
+    case connected
+    case reconnecting(attempt: Int, maxAttempts: Int)
+}
+
 @MainActor
 class MacRecordingViewModel: ObservableObject {
     @Published var isRecording = false
@@ -66,6 +71,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
     @Published var systemAudioWarning: String?
+    @Published var connectionState: RecordingConnectionState = .connected
 
     /// Committed (final) transcript lines — only final Deepgram results, with speaker labels
     private var committedLines: [(speaker: String?, text: String)] = []
@@ -82,6 +88,7 @@ class MacRecordingViewModel: ObservableObject {
     private var apiClient: APIClient?
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioEncoder: AudioEncoder?
+    private var audioFileWriter: AudioFileWriter?
     private var webSocketManager: WebSocketManager?
     private var timerTask: Task<Void, Never>?
     private var audioTask: Task<Void, Never>?
@@ -278,6 +285,14 @@ class MacRecordingViewModel: ObservableObject {
             let encoder = AudioEncoder(channels: channels)
             audioEncoder = encoder
 
+            // Create local audio file writer for persistence (local-first)
+            try RecordingBackupStore.ensureDirectoryForRecording(recordingId: recordingId)
+            let audioFileURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+            let fileWriter = try AudioFileWriter(fileURL: audioFileURL, sampleRate: 16000, channels: channels)
+            self.audioFileWriter = fileWriter
+            try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+            NSLog("[Recording] Local audio file: %@", audioFileURL.path)
+
             // Start the audio-sending loop
             NSLog("[Recording] Starting audio task (detached)...")
             var bufferCount = 0
@@ -293,6 +308,8 @@ class MacRecordingViewModel: ObservableObject {
                         if bufferCount <= 5 || bufferCount % 50 == 0 {
                             NSLog("[Recording] Encoded %d bytes, sending...", data.count)
                         }
+                        // Local-first: always write to disk before sending over network
+                        fileWriter.writeEncodedPCM(data)
                         do {
                             try await ws.sendAudio(data: data)
                         } catch {
@@ -348,6 +365,8 @@ class MacRecordingViewModel: ObservableObject {
                     self?.isServerComplete = true
                     self?.recording = nil
                     self?.audioEncoder = nil
+                    try? self?.audioFileWriter?.finalize()
+                    self?.audioFileWriter = nil
                     self?.setPhase(.idle)
                     self?.isCleaningUp = false
                     self?.cleanupTask = nil
@@ -369,11 +388,13 @@ class MacRecordingViewModel: ObservableObject {
         let recordingDuration = duration
         let capture = audioCapture
         let sendingTask = audioTask
+        let fileWriter = audioFileWriter
         audioTask = nil
         webSocketManager = nil
         transcriptTask = nil
         self.apiClient = nil
         audioCapture = nil
+        audioFileWriter = nil
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -381,6 +402,12 @@ class MacRecordingViewModel: ObservableObject {
             // Stop audio capture first so the encoder can drain the final buffers.
             await capture?.stopRecording()
             _ = await sendingTask?.result
+
+            // Finalize the local WAV file so it has correct header sizes
+            try? fileWriter?.finalize()
+            if let fw = fileWriter {
+                NSLog("[Recording] Local audio file finalized: %.1f seconds, %lld bytes", fw.durationSeconds, fw.totalBytesWritten)
+            }
 
             let didFinalize = await self.finishStreaming(ws)
             let segments = await ws?.collectedSegments ?? []
@@ -438,7 +465,7 @@ class MacRecordingViewModel: ObservableObject {
 
                         await MainActor.run {
                             if let backup {
-                                self.error = "Transcript save failed. A local backup was saved at \(backup.directoryURL.path).\n\n\(failureMessage)"
+                                self.error = "Transcript save failed. Your audio recording and transcript were saved locally at \(backup.directoryURL.path).\n\n\(failureMessage)"
                             } else {
                                 self.error = "Transcript save failed: \(failureMessage)"
                             }
@@ -470,6 +497,7 @@ class MacRecordingViewModel: ObservableObject {
         currentRecordingId = nil
         isServerComplete = false
         systemAudioWarning = nil
+        connectionState = .connected
         duration = 0
     }
 
@@ -602,6 +630,8 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        try? audioFileWriter?.finalize()
+        audioFileWriter = nil
 
         let ws = webSocketManager
         webSocketManager = nil
@@ -651,6 +681,16 @@ class MacRecordingViewModel: ObservableObject {
             } else if let err, phase != .finalizing, phase != .idle {
                 error = err.localizedDescription
             }
+        case .reconnecting(let attempt, let maxAttempts):
+            connectionState = .reconnecting(attempt: attempt, maxAttempts: maxAttempts)
+        case .reconnected:
+            connectionState = .connected
+            error = nil
+        case .reconnectionFailed(let err):
+            connectionState = .connected
+            await handleReconnectionFailed(
+                with: err?.localizedDescription ?? "Connection lost after multiple retries"
+            )
         }
     }
 
@@ -709,7 +749,8 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
-    private func failActiveRecording(with message: String) async {
+    /// Handle permanent reconnection failure — save what we have instead of discarding.
+    private func handleReconnectionFailed(with message: String) async {
         guard phase == .recording else {
             error = message
             return
@@ -722,24 +763,46 @@ class MacRecordingViewModel: ObservableObject {
                 from: await webSocketManager?.collectedSegments ?? [],
                 didFinalize: false
             )
-            let backupMessage = "Recording connection failed. A local transcript backup was saved on this Mac."
-            let backup = try? saveTranscriptBackup(
-                recordingId: recordingId,
-                segments: segments
-            )
-            _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
-            if let client = apiClient {
-                try? await client.deleteRecording(id: recordingId, permanent: true)
+
+            // Try saving collected segments to server
+            if let client = apiClient, !segments.isEmpty {
+                do {
+                    let detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(duration.rounded())
+                    )
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    if detail.status != .failed {
+                        isServerComplete = true
+                        error = "Connection was lost but your transcript (\(segments.count) segments) was saved successfully."
+                        await cleanupAfterFailure()
+                        return
+                    }
+                } catch {
+                    NSLog("[Recording] Server save after reconnection failure also failed: \(error)")
+                }
             }
+
+            // Local backup as last resort
+            let backup = try? saveTranscriptBackup(recordingId: recordingId, segments: segments)
+            _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+
             if let backup {
-                error = "\(backupMessage)\n\n\(backup.directoryURL.path)\n\n\(message)"
+                error = "Connection lost after retrying. Your audio recording and \(segments.count) transcript segments were saved locally.\n\n\(backup.directoryURL.path)\n\n\(message)"
+            } else if segments.isEmpty {
+                error = "Connection lost: \(message)"
             } else {
-                error = message
+                error = "Connection lost after retrying: \(message)"
             }
         } else {
             error = message
         }
 
+        await cleanupAfterFailure()
+    }
+
+    private func cleanupAfterFailure() async {
         timerTask?.cancel()
         timerTask = nil
         systemAudioMonitorTask?.cancel()
@@ -755,6 +818,8 @@ class MacRecordingViewModel: ObservableObject {
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
+        try? audioFileWriter?.finalize()
+        audioFileWriter = nil
 
         let ws = webSocketManager
         webSocketManager = nil
@@ -763,10 +828,62 @@ class MacRecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         apiClient = nil
-        isServerComplete = false
+        connectionState = .connected
         isCleaningUp = false
         recordingInputSource = .dual
         setPhase(.idle)
+    }
+
+    private func failActiveRecording(with message: String) async {
+        guard phase == .recording else {
+            error = message
+            return
+        }
+
+        setPhase(.finalizing)
+
+        if let recordingId = currentRecordingId {
+            let segments = finalizedSegments(
+                from: await webSocketManager?.collectedSegments ?? [],
+                didFinalize: false
+            )
+
+            // Try saving collected segments to server instead of deleting the recording
+            if let client = apiClient, !segments.isEmpty {
+                do {
+                    let detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(duration.rounded())
+                    )
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    if detail.status != .failed {
+                        isServerComplete = true
+                        error = "Connection failed but your transcript (\(segments.count) segments) was saved."
+                        await cleanupAfterFailure()
+                        return
+                    }
+                } catch {
+                    NSLog("[Recording] Server save after failure also failed: \(error)")
+                }
+            }
+
+            // Local backup as last resort
+            let backup = try? saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments
+            )
+            _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+            if let backup {
+                error = "Recording connection failed. A local transcript backup was saved.\n\n\(backup.directoryURL.path)\n\n\(message)"
+            } else {
+                error = message
+            }
+        } else {
+            error = message
+        }
+
+        await cleanupAfterFailure()
     }
 
     private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {

@@ -66,10 +66,23 @@ public actor APIClient {
 
     private let baseURL: URL
     private var accessToken: String?
+    private var refreshToken: String?
     private let session: URLSession
 
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+
+    /// Called when tokens are refreshed. Parameters: (accessToken, refreshToken).
+    /// Use this to persist new tokens to Keychain.
+    public var onTokenRefreshed: (@Sendable (String, String) -> Void)?
+
+    /// Called when authentication fails permanently (refresh token expired/invalid).
+    /// Use this to transition to the login screen.
+    public var onAuthenticationFailed: (@Sendable () -> Void)?
+
+    /// Guards against concurrent refresh attempts — only one refresh at a time.
+    private var isRefreshing = false
+    private var refreshWaiters: [CheckedContinuation<String, Error>] = []
 
     public init(
         baseURL: URL,
@@ -138,9 +151,29 @@ public actor APIClient {
         self.accessToken = token
     }
 
+    /// Set the refresh token for auto-refresh
+    public func setRefreshToken(_ token: String?) {
+        self.refreshToken = token
+    }
+
     /// Get the current access token
     public func getAccessToken() -> String? {
         return accessToken
+    }
+
+    /// Get the current refresh token
+    public func getRefreshToken() -> String? {
+        return refreshToken
+    }
+
+    /// Set the callback for token refresh events
+    public func setOnTokenRefreshed(_ callback: @escaping @Sendable (String, String) -> Void) {
+        self.onTokenRefreshed = callback
+    }
+
+    /// Set the callback for authentication failure (auto-refresh failed)
+    public func setOnAuthenticationFailed(_ callback: @escaping @Sendable () -> Void) {
+        self.onAuthenticationFailed = callback
     }
 
     private func apiError(from data: Data, response: HTTPURLResponse) -> APIError {
@@ -173,6 +206,105 @@ public actor APIClient {
 
         return HTTPURLResponse.localizedString(forStatusCode: statusCode).capitalized
     }
+
+    // MARK: - Auto-refresh
+
+    /// Attempt to refresh tokens. Coalesces concurrent calls — only one refresh in flight.
+    /// Returns the new access token on success.
+    private func autoRefresh() async throws -> String {
+        // If already refreshing, wait for the result
+        if isRefreshing {
+            return try await withCheckedThrowingContinuation { continuation in
+                refreshWaiters.append(continuation)
+            }
+        }
+
+        guard let rt = refreshToken else {
+            throw APIError.unauthorized
+        }
+
+        isRefreshing = true
+
+        do {
+            let body = RefreshTokenRequest(refreshToken: rt)
+            let bodyData = try encoder.encode(AnyEncodable(body))
+
+            var urlComponents = URLComponents(
+                url: baseURL.appendingPathComponent("/api/auth/refresh"),
+                resolvingAgainstBaseURL: true
+            )
+            urlComponents?.queryItems = nil
+
+            guard let url = urlComponents?.url else {
+                throw APIError.invalidURL
+            }
+
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = bodyData
+
+            let (data, response) = try await session.data(for: req)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw APIError.unauthorized
+            }
+
+            let authResponse = try decoder.decode(AuthResponse.self, from: data)
+            accessToken = authResponse.accessToken
+            if let newRefreshToken = authResponse.refreshToken {
+                refreshToken = newRefreshToken
+                onTokenRefreshed?(authResponse.accessToken, newRefreshToken)
+            }
+
+            // Resume all waiters with new token
+            let waiters = refreshWaiters
+            refreshWaiters = []
+            isRefreshing = false
+            for waiter in waiters {
+                waiter.resume(returning: authResponse.accessToken)
+            }
+
+            return authResponse.accessToken
+        } catch {
+            // Resume all waiters with failure
+            let waiters = refreshWaiters
+            refreshWaiters = []
+            isRefreshing = false
+            for waiter in waiters {
+                waiter.resume(throwing: error)
+            }
+            throw error
+        }
+    }
+
+    /// Handle a 401 response: try auto-refresh, or signal auth failure.
+    /// Returns new access token if refresh succeeded, throws if not.
+    private func handleUnauthorized(path: String) async throws -> String {
+        // Don't try to refresh auth endpoints themselves
+        if path.hasSuffix("/auth/refresh") || path.hasSuffix("/auth/login")
+            || path.hasSuffix("/auth/register") || path.hasSuffix("/auth/verify-magic") {
+            throw APIError.unauthorized
+        }
+
+        guard refreshToken != nil else {
+            onAuthenticationFailed?()
+            throw APIError.unauthorized
+        }
+
+        do {
+            return try await autoRefresh()
+        } catch {
+            onAuthenticationFailed?()
+            throw APIError.unauthorized
+        }
+    }
+
+    // MARK: - Request methods
 
     /// Make an API request
     public func request<T: Decodable>(
@@ -211,7 +343,26 @@ public actor APIClient {
         }
 
         if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
+            // Try auto-refresh and retry once
+            let newToken = try await handleUnauthorized(path: path)
+            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: request)
+
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            if retryHttp.statusCode == 401 {
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            guard (200...299).contains(retryHttp.statusCode) else {
+                throw apiError(from: retryData, response: retryHttp)
+            }
+            do {
+                return try decoder.decode(T.self, from: retryData)
+            } catch {
+                throw APIError.decodingError(error)
+            }
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
@@ -262,7 +413,22 @@ public actor APIClient {
         }
 
         if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
+            // Try auto-refresh and retry once
+            let newToken = try await handleUnauthorized(path: path)
+            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await session.data(for: request)
+
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            if retryHttp.statusCode == 401 {
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            guard (200...299).contains(retryHttp.statusCode) else {
+                throw apiError(from: retryData, response: retryHttp)
+            }
+            return
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
@@ -272,12 +438,12 @@ public actor APIClient {
 
     // MARK: - Auth Endpoints
 
-    public func register(email: String, password: String) async throws -> TokenResponse {
+    public func register(email: String, password: String) async throws -> AuthResponse {
         let request = RegisterRequest(email: email, password: password)
         return try await self.request(.POST, path: "/api/auth/register", body: request)
     }
 
-    public func login(email: String, password: String) async throws -> TokenResponse {
+    public func login(email: String, password: String) async throws -> AuthResponse {
         let request = LoginRequest(email: email, password: password)
         return try await self.request(.POST, path: "/api/auth/login", body: request)
     }
@@ -287,13 +453,9 @@ public actor APIClient {
         return try await self.request(.POST, path: "/api/auth/magic-link", body: request)
     }
 
-    public func verifyMagicLink(token: String) async throws -> TokenResponse {
+    public func verifyMagicLink(token: String) async throws -> AuthResponse {
         let request = VerifyMagicLinkRequest(token: token)
         return try await self.request(.POST, path: "/api/auth/verify-magic", body: request)
-    }
-
-    public func refreshToken() async throws -> TokenResponse {
-        return try await request(.POST, path: "/api/auth/refresh")
     }
 
     public func getCurrentUser() async throws -> User {
@@ -305,8 +467,9 @@ public actor APIClient {
         return try await request(.POST, path: "/api/settings/change-password", body: body)
     }
 
-    public func logout() async throws -> MessageResponse {
-        return try await request(.POST, path: "/api/auth/logout")
+    public func logout(refreshToken: String? = nil) async throws -> MessageResponse {
+        let body = LogoutRequest(refreshToken: refreshToken)
+        return try await request(.POST, path: "/api/auth/logout", body: body)
     }
 
     // MARK: - Recording Endpoints
