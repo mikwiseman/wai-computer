@@ -1,5 +1,6 @@
 import Foundation
 import os
+import Sentry
 
 /// Deepgram token response from backend
 public struct DeepgramTokenResponse: Codable, Sendable {
@@ -196,6 +197,7 @@ public actor WebSocketManager {
 
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
+        SentryHelper.addBreadcrumb(category: "websocket", message: "connected to Deepgram")
     }
 
     /// Send raw PCM audio data directly to Deepgram.
@@ -270,6 +272,7 @@ public actor WebSocketManager {
         reconnectEnabled = false
         cancelReconnection()
         closeConnection(forConnection: connectionId, error: nil, emitDisconnected: true)
+        SentryHelper.addBreadcrumb(category: "websocket", message: "disconnected")
     }
 
     // MARK: - Private
@@ -444,6 +447,12 @@ public actor WebSocketManager {
             }
 
             reconnectAttempt += 1
+            SentryHelper.addBreadcrumb(
+                category: "websocket",
+                message: "reconnecting",
+                level: .warning,
+                data: ["attempt": reconnectAttempt, "maxAttempts": maxReconnectAttempts]
+            )
             eventContinuation?.yield(.reconnecting(
                 attempt: reconnectAttempt,
                 maxAttempts: maxReconnectAttempts
@@ -550,6 +559,7 @@ public actor WebSocketManager {
         wsLog.error("Reconnection failed after \(self.maxReconnectAttempts) attempts")
 
         let exhaustedError = WebSocketConnectionError.reconnectionExhausted(maxReconnectAttempts)
+        SentryHelper.captureError(exhaustedError, extras: ["attempts": maxReconnectAttempts])
         eventContinuation?.yield(.reconnectionFailed(exhaustedError))
     }
 

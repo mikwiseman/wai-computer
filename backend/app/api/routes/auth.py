@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
@@ -177,6 +178,7 @@ async def _create_auth_tokens(
 )
 async def register(request: RegisterRequest, response: Response, db: Database) -> AuthResponse:
     """Register a new user."""
+    sentry_sdk.add_breadcrumb(category="auth", message="User registration attempt", level="info")
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == request.email))
     existing_user = result.scalar_one_or_none()
@@ -205,6 +207,7 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
 @router.post("/login", response_model=AuthResponse, dependencies=[Depends(check_login_rate_limit)])
 async def login(request: LoginRequest, response: Response, db: Database) -> AuthResponse:
     """Login with email and password."""
+    sentry_sdk.add_breadcrumb(category="auth", message="User login attempt", level="info")
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
 
@@ -232,6 +235,7 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Auth
 )
 async def request_magic_link(request: MagicLinkRequest, db: Database) -> MessageResponse:
     """Send a magic link to the user's email."""
+    sentry_sdk.add_breadcrumb(category="auth", message="Magic link requested", level="info")
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
 
@@ -262,6 +266,7 @@ async def verify_magic_link(
     db: Database,
 ) -> AuthResponse:
     """Verify a magic link token and return JWT."""
+    sentry_sdk.add_breadcrumb(category="auth", message="Magic link verification", level="info")
     result = await db.execute(
         select(User).where(User.magic_link_token == request.token)
     )
@@ -294,6 +299,7 @@ async def refresh_token(
     request: RefreshRequest, response: Response, db: Database
 ) -> AuthResponse:
     """Refresh tokens using a valid refresh token. Does NOT require a valid access token."""
+    sentry_sdk.add_breadcrumb(category="auth", message="Token refresh attempt", level="info")
     token_hash = hash_refresh_token(request.refresh_token)
     result = await db.execute(
         select(RefreshTokenModel).where(RefreshTokenModel.token_hash == token_hash)
@@ -325,6 +331,7 @@ async def logout(
     request: LogoutRequest | None = None,
 ) -> MessageResponse:
     """Clear auth cookie and revoke refresh token."""
+    sentry_sdk.add_breadcrumb(category="auth", message="User logout", level="info")
     _clear_auth_cookie(response)
     if request and request.refresh_token:
         token_hash = hash_refresh_token(request.refresh_token)

@@ -15,12 +15,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.45.0"),
     ],
     targets: [
         .target(
             name: "WaiComputerKit",
             dependencies: [
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+                .product(name: "Sentry", package: "sentry-cocoa"),
             ],
             path: "Sources/WaiComputerKit"
         ),

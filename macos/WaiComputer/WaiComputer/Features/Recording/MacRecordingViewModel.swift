@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import SwiftUI
 import os
+import Sentry
 import WaiComputerKit
 
 private let audioLog = Logger(subsystem: "com.waicomputer.app", category: "audio")
@@ -332,7 +333,14 @@ class MacRecordingViewModel: ObservableObject {
             setPhase(.recording)
             isLoading = false
 
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording started",
+                data: ["recordingId": recordingId, "type": type.rawValue, "inputSource": inputSource.rawValue]
+            )
+
         } catch {
+            SentryHelper.captureError(error, extras: ["action": "startRecording", "inputSource": inputSource.rawValue])
             self.error = recordingErrorMessage(for: error, inputSource: inputSource)
             await resetAfterStartFailure()
         }
@@ -345,6 +353,13 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         guard phase == .recording else { return }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording stopped",
+            data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+        )
+
         setPhase(.finalizing)
 
         // Stop timer and system audio monitor
@@ -436,9 +451,15 @@ class MacRecordingViewModel: ObservableObject {
                             self.error = detail.failureMessage ?? "Transcript was saved, but processing failed."
                         }
                     } else {
+                        SentryHelper.addBreadcrumb(
+                            category: "recording",
+                            message: "transcript saved",
+                            data: ["recordingId": recordingId, "segments": segments.count]
+                        )
                         NSLog("[Recording] Transcript saved for recording %@", recordingId)
                     }
                 } catch {
+                    SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
                     NSLog("[Recording] Transcript save failed: \(error)")
                     let failureMessage = error.localizedDescription
                     if let recoveredDetail = try? await self.recoverServerTranscript(

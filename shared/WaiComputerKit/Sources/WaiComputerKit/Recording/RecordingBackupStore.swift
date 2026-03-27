@@ -1,4 +1,5 @@
 import Foundation
+import Sentry
 
 public struct RecordingBackup: Sendable, Equatable {
     public let recordingId: String
@@ -110,6 +111,12 @@ public enum RecordingBackupStore {
             let data = try encoder.encode(segments)
             try data.write(to: backup.segmentsFileURL, options: .atomic)
         }
+
+        SentryHelper.addBreadcrumb(
+            category: "backup",
+            message: "recording backup saved",
+            data: ["recordingId": recordingId, "segments": segments.count]
+        )
 
         return backup
     }

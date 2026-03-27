@@ -1,5 +1,6 @@
 """Search routes for hybrid (FTS + semantic) search."""
 
+import sentry_sdk
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -46,6 +47,12 @@ async def hybrid_search(
 
     Uses RRF (Reciprocal Rank Fusion) to combine results from both methods.
     """
+    sentry_sdk.add_breadcrumb(
+        category="search",
+        message="Hybrid search",
+        data={"query_length": len(q), "limit": limit, "offset": offset},
+        level="info",
+    )
     # Generate embedding for semantic search
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
@@ -197,6 +204,12 @@ async def semantic_search(
 
     Returns segments with embeddings similar to the query.
     """
+    sentry_sdk.add_breadcrumb(
+        category="search",
+        message="Semantic search",
+        data={"query_length": len(q), "limit": limit, "threshold": threshold},
+        level="info",
+    )
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
 
@@ -278,6 +291,12 @@ async def fulltext_search(
     """
     Pure full-text search using PostgreSQL FTS.
     """
+    sentry_sdk.add_breadcrumb(
+        category="search",
+        message="Fulltext search",
+        data={"query_length": len(q), "limit": limit, "offset": offset},
+        level="info",
+    )
     query = text("""
         SELECT
             s.id,

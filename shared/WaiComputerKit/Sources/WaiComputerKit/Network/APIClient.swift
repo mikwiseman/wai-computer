@@ -1,4 +1,5 @@
 import Foundation
+import Sentry
 
 private struct AnyEncodable: Encodable {
     private let encodeImpl: (Encoder) throws -> Void
@@ -336,15 +337,36 @@ public actor APIClient {
             request.httpBody = try encoder.encode(AnyEncodable(body))
         }
 
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+            throw APIError.networkError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.networkError(URLError(.badServerResponse))
         }
 
+        SentryHelper.addBreadcrumb(
+            category: "api",
+            message: "\(method.rawValue) \(path)",
+            data: ["statusCode": httpResponse.statusCode]
+        )
+
         if httpResponse.statusCode == 401 {
             // Try auto-refresh and retry once
-            let newToken = try await handleUnauthorized(path: path)
+            SentryHelper.addBreadcrumb(category: "auth", message: "token refresh triggered", data: ["path": path])
+            let newToken: String
+            do {
+                newToken = try await handleUnauthorized(path: path)
+                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
+            } catch {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
+                throw error
+            }
             request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
             let (retryData, retryResponse) = try await session.data(for: request)
 
@@ -352,11 +374,14 @@ public actor APIClient {
                 throw APIError.networkError(URLError(.badServerResponse))
             }
             if retryHttp.statusCode == 401 {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed after refresh", level: .error)
                 onAuthenticationFailed?()
                 throw APIError.unauthorized
             }
             guard (200...299).contains(retryHttp.statusCode) else {
-                throw apiError(from: retryData, response: retryHttp)
+                let error = apiError(from: retryData, response: retryHttp)
+                SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+                throw error
             }
             do {
                 return try decoder.decode(T.self, from: retryData)
@@ -366,7 +391,9 @@ public actor APIClient {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw apiError(from: data, response: httpResponse)
+            let error = apiError(from: data, response: httpResponse)
+            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+            throw error
         }
 
         do {
@@ -406,15 +433,36 @@ public actor APIClient {
             request.httpBody = try encoder.encode(AnyEncodable(body))
         }
 
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+            throw APIError.networkError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.networkError(URLError(.badServerResponse))
         }
 
+        SentryHelper.addBreadcrumb(
+            category: "api",
+            message: "\(method.rawValue) \(path)",
+            data: ["statusCode": httpResponse.statusCode]
+        )
+
         if httpResponse.statusCode == 401 {
             // Try auto-refresh and retry once
-            let newToken = try await handleUnauthorized(path: path)
+            SentryHelper.addBreadcrumb(category: "auth", message: "token refresh triggered", data: ["path": path])
+            let newToken: String
+            do {
+                newToken = try await handleUnauthorized(path: path)
+                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
+            } catch {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
+                throw error
+            }
             request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
             let (retryData, retryResponse) = try await session.data(for: request)
 
@@ -422,17 +470,22 @@ public actor APIClient {
                 throw APIError.networkError(URLError(.badServerResponse))
             }
             if retryHttp.statusCode == 401 {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed after refresh", level: .error)
                 onAuthenticationFailed?()
                 throw APIError.unauthorized
             }
             guard (200...299).contains(retryHttp.statusCode) else {
-                throw apiError(from: retryData, response: retryHttp)
+                let error = apiError(from: retryData, response: retryHttp)
+                SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+                throw error
             }
             return
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw apiError(from: data, response: httpResponse)
+            let error = apiError(from: data, response: httpResponse)
+            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
+            throw error
         }
     }
 

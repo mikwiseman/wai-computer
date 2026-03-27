@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import Sentry
 import WaiComputerKit
 
 enum RecordingPhase: Equatable {
@@ -176,7 +177,14 @@ class RecordingViewModel: ObservableObject {
             startTimer()
             setPhase(.recording)
 
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording started",
+                data: ["recordingId": recordingId, "type": recordingType.rawValue]
+            )
+
         } catch {
+            SentryHelper.captureError(error, extras: ["action": "startRecording"])
             self.error = error.localizedDescription
             await resetAfterStartFailure()
         }
@@ -184,6 +192,12 @@ class RecordingViewModel: ObservableObject {
 
     func stopRecording() async {
         guard phase == .recording else { return }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording stopped",
+            data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+        )
 
         setPhase(.finalizing)
 
@@ -237,8 +251,14 @@ class RecordingViewModel: ObservableObject {
                 } else {
                     error = nil
                     transcriptSaved = true
+                    SentryHelper.addBreadcrumb(
+                        category: "recording",
+                        message: "transcript saved",
+                        data: ["recordingId": recordingId, "segments": segments.count]
+                    )
                 }
             } catch {
+                SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
                 let failureMessage = error.localizedDescription
                 if let recoveredDetail = try? await recoverServerTranscript(
                     recordingId: recordingId,

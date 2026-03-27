@@ -5,6 +5,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+import sentry_sdk
+
 from app.config import get_settings
 from app.core.chat import _get_anthropic_client
 
@@ -86,6 +88,12 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     Returns:
         SummaryResult with extracted information
     """
+    sentry_sdk.add_breadcrumb(
+        category="summarizer",
+        message="Summarizing transcript",
+        data={"transcript_length": len(transcript)},
+        level="info",
+    )
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
@@ -122,8 +130,12 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude response as JSON: {e}")
         logger.debug(f"Response was: {response_text[:500]}")
+        sentry_sdk.capture_exception(e)
         raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
 
+    sentry_sdk.add_breadcrumb(
+        category="summarizer", message="Summarization completed", level="info"
+    )
     return SummaryResult(
         title=data.get("title", "Untitled"),
         summary=data.get("summary", ""),
@@ -140,6 +152,7 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
 
 async def generate_title(transcript: str) -> str:
     """Generate a short descriptive title from transcript text using Claude."""
+    sentry_sdk.add_breadcrumb(category="summarizer", message="Generating title", level="info")
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
@@ -264,6 +277,12 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
     Returns:
         List of extracted entities
     """
+    sentry_sdk.add_breadcrumb(
+        category="summarizer",
+        message="Extracting entities",
+        data={"transcript_length": len(transcript)},
+        level="info",
+    )
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
@@ -299,6 +318,7 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude entity response as JSON: {e}")
         logger.debug(f"Response was: {response_text[:500]}")
+        sentry_sdk.capture_exception(e)
         raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
 
     return [

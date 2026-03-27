@@ -1,8 +1,10 @@
 """FastAPI application entry point."""
 
 import logging
+import subprocess
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,6 +29,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app_settings = get_settings()
+
+
+def _get_release_version() -> str | None:
+    """Derive a release version from the git commit hash."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return f"waicomputer@{result.stdout.strip()}"
+    except Exception:
+        pass
+    return None
+
+
+if app_settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=app_settings.sentry_dsn,
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        environment="production" if not app_settings.debug else "development",
+        release=_get_release_version(),
+        send_default_pii=False,
+    )
 
 
 @asynccontextmanager

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import sentry_sdk
 import websockets
 
 from app.config import get_settings
@@ -65,6 +66,12 @@ class DeepgramStreamingClient:
 
     async def connect(self) -> bool:
         """Connect to Deepgram WebSocket."""
+        sentry_sdk.add_breadcrumb(
+            category="deepgram",
+            message="Connecting to Deepgram streaming",
+            data={"model": self.model, "language": self.language},
+            level="info",
+        )
         if not settings.deepgram_api_key:
             raise ValueError("DEEPGRAM_API_KEY not configured")
 
@@ -138,6 +145,7 @@ class DeepgramStreamingClient:
                             )
         except Exception as e:
             logger.error(f"receive_transcripts error after {msg_count} msgs: {e}")
+            sentry_sdk.capture_exception(e)
             self._running = False
             raise
 
@@ -190,6 +198,13 @@ async def transcribe_audio_file(
     each audio channel is transcribed independently (e.g. mic on ch0,
     system audio on ch1).
     """
+    sentry_sdk.add_breadcrumb(
+        category="deepgram",
+        message="Transcribing audio file via REST",
+        data={"model": model, "language": language, "content_type": content_type,
+              "audio_size_bytes": len(audio_data)},
+        level="info",
+    )
     if not settings.deepgram_api_key:
         raise ValueError("DEEPGRAM_API_KEY not configured")
 
