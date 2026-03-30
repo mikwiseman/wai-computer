@@ -2,11 +2,14 @@
 
 from app.models.base import Base
 from app.models.chat import ChatMessage, ChatSession
+from app.models.commitment import Commitment
+from app.models.digital_agent import DigitalAgent
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.models.user_app import AppItem, UserApp
 
 __all__ = [
     "Base",
@@ -24,4 +27,8 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "RefreshToken",
+    "Commitment",
+    "DigitalAgent",
+    "UserApp",
+    "AppItem",
 ]

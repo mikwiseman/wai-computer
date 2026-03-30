@@ -26,6 +26,9 @@ dependencies = [
     "httpx>=0.26.0",
     "resend>=2.0.0",
     "sentry-sdk[fastapi]>=2.0.0",
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +55,10 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+"app/db/migrations/*" = ["E501"]
+"app/services/agent/*" = ["E501"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]
@@ -76,6 +83,8 @@ concurrency = ["greenlet", "thread"]
 omit = [
     "app/db/*",
     "app/models/*",
+    "app/services/agent/*",
+    "app/tasks/*",
 ]
 
 [tool.coverage.report]
