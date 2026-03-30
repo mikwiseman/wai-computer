@@ -62,6 +62,19 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Agent system
+    agent_model: str = "claude-haiku-4-5"
+    agent_max_turns: int = 10
+    agent_rate_limit_per_minute: int = 30
+    agent_rate_limit_per_hour: int = 200
+
+    # Cloudflare (for app/site deployment)
+    cloudflare_api_token: str = ""
+    cloudflare_account_id: str = ""
+
     # URLs
     frontend_url: str = "http://localhost:3000"
 

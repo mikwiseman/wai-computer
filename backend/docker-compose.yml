@@ -32,6 +32,27 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: waicomputer-redis
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
   api:
     build: .
     container_name: waicomputer-api
@@ -40,6 +61,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
     networks:
@@ -47,6 +69,8 @@ services:
       - web
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     deploy:
       resources:
@@ -122,6 +146,33 @@ services:
       resources:
         limits:
           memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  celery-worker:
+    build: .
+    container_name: waicomputer-celery-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "-B"]
     logging:
       driver: json-file
       options:

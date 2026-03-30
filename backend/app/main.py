@@ -10,10 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     action_items,
+    agent_chat,
+    apps,
     auth,
     chat,
     deepgram,
     dictation,
+    digital_agents,
     entities,
     folders,
     recordings,
@@ -77,6 +80,10 @@ async def lifespan(app: FastAPI):
         or not app_settings.s3_secret_key
     ):
         logger.warning("S3 credentials are not fully configured — audio storage will not work")
+    if not app_settings.redis_url:
+        logger.warning("REDIS_URL is not configured — agent scheduling will not work")
+    if not app_settings.cloudflare_api_token:
+        logger.warning("CLOUDFLARE_API_TOKEN is not configured — app/site deployment will not work")
 
     # Startup: pre-load sentence-transformers model
     logger.info("Pre-loading sentence-transformers embedding model...")
@@ -118,6 +125,9 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(deepgram.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
+app.include_router(agent_chat.router, prefix="/api")
+app.include_router(digital_agents.router, prefix="/api")
+app.include_router(apps.router, prefix="/api")
 
 
 @app.get("/")
