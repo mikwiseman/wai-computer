@@ -36,6 +36,9 @@
 		D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */; };
 		D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA555164F098038E385713E6 /* RecordingListView.swift */; };
 		DED3994205172291160E4F83 /* MacChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A8999379655635D74EC3514 /* MacChatView.swift */; };
+		AA1100110011001100110011 /* MacAgentChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2200220022002200220022 /* MacAgentChatView.swift */; };
+		AA1100110011001100110022 /* MacAgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2200220022002200220033 /* MacAgentsView.swift */; };
+		AA1100110011001100110033 /* MacAppsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2200220022002200220044 /* MacAppsView.swift */; };
 		6A3D8F1E4B72C90A5E8F1D37 /* NewRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7F2E41D83A9C5067E1DA3F0 /* NewRecordingView.swift */; };
 		E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */; };
 		EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */; };
@@ -57,6 +60,9 @@
 		31B51F48FF32F6BC868F2C12 /* WaiComputer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		4A8999379655635D74EC3514 /* MacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatView.swift; sourceTree = "<group>"; };
+		BB2200220022002200220022 /* MacAgentChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentChatView.swift; sourceTree = "<group>"; };
+		BB2200220022002200220033 /* MacAgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAgentsView.swift; sourceTree = "<group>"; };
+		BB2200220022002200220044 /* MacAppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsView.swift; sourceTree = "<group>"; };
 		525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingViewModel.swift; sourceTree = "<group>"; };
 		5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
 		5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -100,6 +106,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CC3300330033003300330033 /* Agent */ = {
+			isa = PBXGroup;
+			children = (
+				BB2200220022002200220022 /* MacAgentChatView.swift */,
+				BB2200220022002200220033 /* MacAgentsView.swift */,
+				BB2200220022002200220044 /* MacAppsView.swift */,
+			);
+			path = Agent;
+			sourceTree = "<group>";
+		};
 		0543B2B27726308F5C10C36E /* Search */ = {
 			isa = PBXGroup;
 			children = (
@@ -174,6 +190,7 @@
 		5D15DE54E4FDA3B1560A15A6 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				CC3300330033003300330033 /* Agent */,
 				4724807600A515F7146E57A3 /* Chat */,
 				D1C2B3A4E5F6000601020304 /* Dictation */,
 				A45B2EFE55B5BF47533D4858 /* Library */,
@@ -356,6 +373,9 @@
 				A1B2C3D4E5F60005A1B2C3D4 /* TextInserter.swift in Sources */,
 				72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
+				AA1100110011001100110011 /* MacAgentChatView.swift in Sources */,
+				AA1100110011001100110022 /* MacAgentsView.swift in Sources */,
+				AA1100110011001100110033 /* MacAppsView.swift in Sources */,
 				DED3994205172291160E4F83 /* MacChatView.swift in Sources */,
 				43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */,
 				E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */,

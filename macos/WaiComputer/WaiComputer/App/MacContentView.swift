@@ -40,6 +40,9 @@ struct MacMainView: View {
         case notes
         case folder(String)
         case trash
+        case agentChat
+        case agents
+        case apps
         case chat
         case search
         case settings
@@ -49,7 +52,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
             return true
-        case .chat, .search, .settings:
+        case .agentChat, .agents, .apps, .chat, .search, .settings:
             return false
         }
     }
@@ -103,6 +106,12 @@ struct MacMainView: View {
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
         case .trash:
             return "Trash"
+        case .agentChat:
+            return "Agent Chat"
+        case .agents:
+            return "Agents"
+        case .apps:
+            return "Apps"
         case .chat:
             return "Chat"
         case .search:
@@ -355,6 +364,15 @@ struct MacMainView: View {
             }
 
             Section {
+                sidebarRow("Chat", icon: "brain", section: .agentChat)
+                sidebarRow("Agents", icon: "gearshape.2", section: .agents)
+                sidebarRow("Apps", icon: "square.grid.2x2", section: .apps)
+            } header: {
+                Text("Wai")
+                    .waiSectionHeader()
+            }
+
+            Section {
                 sidebarRow("Chat", icon: "bubble.left.and.bubble.right", section: .chat)
                 sidebarRow("Search", icon: "magnifyingglass", section: .search)
                 sidebarRow("Settings", icon: "gear", section: .settings)
@@ -541,6 +559,12 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
+        case .agentChat:
+            MacAgentChatView(apiClient: appState.getAPIClient())
+        case .agents:
+            MacAgentsView(apiClient: appState.getAPIClient())
+        case .apps:
+            MacAppsView(apiClient: appState.getAPIClient())
         case .chat:
             MacChatView()
         case .search:
