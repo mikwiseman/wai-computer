@@ -8,6 +8,8 @@ struct MacAppsView: View {
     @State private var isLoading = false
     @State private var error: String?
     @State private var selectedApp: UserApp?
+    @State private var newAppName = ""
+    @State private var isCreating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +56,26 @@ struct MacAppsView: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
 
+            // Create App
+            HStack(spacing: Spacing.sm) {
+                TextField("App name (e.g. habits, expenses)...", text: $newAppName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Typography.body)
+                    .onSubmit { Task { await createApp() } }
+
+                Button {
+                    Task { await createApp() }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.accent)
+                .disabled(newAppName.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.bottom, Spacing.sm)
+
             WaiDivider()
 
             if apps.isEmpty && !isLoading {
@@ -68,7 +90,7 @@ struct MacAppsView: View {
                         .font(Typography.displaySmall)
                         .foregroundStyle(Palette.textSecondary)
 
-                    Text("Ask Wai to create one.")
+                    Text("Type a name above and tap + to create one.")
                         .font(Typography.body)
                         .foregroundStyle(Palette.textTertiary)
 
@@ -103,6 +125,28 @@ struct MacAppsView: View {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func createApp() async {
+        let name = newAppName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        isCreating = true
+        do {
+            let slug = name.lowercased()
+                .replacingOccurrences(of: " ", with: "_")
+                .filter { $0.isLetter || $0.isNumber || $0 == "_" }
+            _ = try await apiClient.createApp(
+                name: slug,
+                displayName: name,
+                icon: nil,
+                template: nil
+            )
+            newAppName = ""
+            await loadApps()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isCreating = false
     }
 }
 
@@ -176,6 +220,16 @@ private struct AppDetailView: View {
                 }
 
                 Button {
+                    addItem()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(Typography.headingSmall)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.accent)
+                .help("Add item")
+
+                Button {
                     deleteApp()
                 } label: {
                     Image(systemName: "trash")
@@ -245,6 +299,21 @@ private struct AppDetailView: View {
             do {
                 try await apiClient.deleteAppItem(app.id, itemId: item.id)
                 items.removeAll { $0.id == item.id }
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    private func addItem() {
+        Task {
+            do {
+                let newData: [String: JSONValue] = [
+                    "note": .string("New item"),
+                    "created": .string(ISO8601DateFormatter().string(from: Date())),
+                ]
+                let item = try await apiClient.createAppItem(app.id, data: newData)
+                items.insert(item, at: 0)
             } catch {
                 self.error = error.localizedDescription
             }
