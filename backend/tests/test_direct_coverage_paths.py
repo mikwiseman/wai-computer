@@ -318,7 +318,6 @@ async def test_auth_route_direct_paths(
     assert magic_user.magic_link_token is None
     assert magic_user.magic_link_expires is None
 
-    from starlette.testclient import TestClient
     from starlette.requests import Request as StarletteRequest
 
     refresh_scope = {"type": "http", "method": "POST", "path": "/api/auth/refresh", "headers": []}
