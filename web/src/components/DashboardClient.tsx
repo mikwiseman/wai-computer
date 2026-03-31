@@ -20,6 +20,7 @@ import {
   semanticSearch,
   updateActionItem,
 } from "@/lib/api";
+import { AgentChat } from "@/components/AgentChat";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ApiError } from "@/lib/http";
 import type {
@@ -33,6 +34,7 @@ import type {
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
+type DashboardView = "wai" | "library" | "agents" | "apps";
 
 function formatError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -67,6 +69,7 @@ export function DashboardClient() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [view, setView] = useState<DashboardView>("wai");
 
   async function loadRecordingsState() {
     const response = await listRecordings({ limit: 50 });
@@ -269,12 +272,49 @@ export function DashboardClient() {
         </div>
       </header>
 
+      {/* Navigation Tabs */}
+      <nav className="row" style={{ gap: "0.25rem" }}>
+        {(
+          [
+            ["wai", "Wai"],
+            ["library", "Library"],
+            ["agents", "Agents"],
+            ["apps", "Apps"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setView(key)}
+            data-testid={`tab-${key}`}
+            style={{
+              background: view === key ? "var(--accent)" : "transparent",
+              color: view === key ? "#fff" : "var(--ink)",
+              border: view === key ? "none" : "1px solid var(--border)",
+              fontWeight: view === key ? 600 : 400,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {message ? (
         <p data-testid="dashboard-message" role="status">
           {message}
         </p>
       ) : null}
 
+      {/* Wai (Agent Chat) — default view */}
+      {view === "wai" && (
+        <div className="card" style={{ height: "600px", padding: 0 }}>
+          <AgentChat />
+        </div>
+      )}
+
+      {/* Library — existing content */}
+      {view === "library" && (
+        <>
       <section className="card stack">
         <h2>Recordings</h2>
         <form className="row" onSubmit={handleCreateRecording}>
@@ -460,6 +500,30 @@ export function DashboardClient() {
           </button>
         </form>
       </section>
+        </>
+      )}
+
+      {/* Agents view */}
+      {view === "agents" && (
+        <section className="card stack">
+          <h2>Digital Agents</h2>
+          <p style={{ color: "var(--muted)" }}>
+            Create autonomous AI agents that run on a schedule.
+            Use Wai chat to create agents: &quot;Create an agent that checks HN for AI news every morning&quot;
+          </p>
+        </section>
+      )}
+
+      {/* Apps view */}
+      {view === "apps" && (
+        <section className="card stack">
+          <h2>My Apps</h2>
+          <p style={{ color: "var(--muted)" }}>
+            Your personal mini-apps live here. Use Wai chat to create apps:
+            &quot;Create a habit tracker&quot; or &quot;Build an expense tracker&quot;
+          </p>
+        </section>
+      )}
     </div>
   );
 }
