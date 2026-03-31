@@ -239,6 +239,7 @@ async def update_item(
 
     item.data = request.data
     await db.flush()
+    await db.refresh(item)
 
     return AppItemResponse(
         id=str(item.id), data=item.data,
