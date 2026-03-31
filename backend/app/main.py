@@ -3,9 +3,11 @@
 import logging
 import subprocess
 from contextlib import asynccontextmanager
+from time import perf_counter
+from uuid import uuid4
 
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
@@ -24,11 +26,17 @@ from app.api.routes import (
 )
 from app.api.routes import settings as settings_routes
 from app.config import get_settings
+from app.core.observability import begin_request_context, configure_logging, end_request_context
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format=(
+        "%(asctime)s [%(levelname)s] %(name)s "
+        "[request_id=%(request_id)s user_id=%(user_id)s recording_id=%(recording_id)s] "
+        "%(message)s"
+    ),
 )
+configure_logging()
 logger = logging.getLogger(__name__)
 
 app_settings = get_settings()
@@ -104,6 +112,35 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Attach request ids and lifecycle logging to every HTTP request."""
+    request_id = request.headers.get("x-request-id") or uuid4().hex
+    context_tokens = begin_request_context(
+        request_id=request_id,
+        request_method=request.method,
+        request_path=request.url.path,
+    )
+    request.state.request_id = request_id
+    started_at = perf_counter()
+
+    logger.info("request started")
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    except Exception:
+        logger.exception("request failed")
+        raise
+    finally:
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        status_code = response.status_code if response is not None else 500
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+        logger.info("request completed status=%s duration_ms=%s", status_code, duration_ms)
+        end_request_context(context_tokens)
 
 # CORS middleware - use configured origins
 app.add_middleware(

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.observability import bind_user_context
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -69,6 +70,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    bind_user_context(str(user.id))
     return user
 
 
@@ -92,7 +94,10 @@ async def get_optional_user(
         return None
 
     result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    if user is not None:
+        bind_user_context(str(user.id))
+    return user
 
 
 # Type aliases for cleaner dependency injection
