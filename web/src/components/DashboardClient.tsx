@@ -21,6 +21,8 @@ import {
   updateActionItem,
 } from "@/lib/api";
 import { AgentChat } from "@/components/AgentChat";
+import { AgentsView } from "@/components/AgentsView";
+import { AppsView } from "@/components/AppsView";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ApiError } from "@/lib/http";
 import type {
@@ -504,26 +506,10 @@ export function DashboardClient() {
       )}
 
       {/* Agents view */}
-      {view === "agents" && (
-        <section className="card stack">
-          <h2>Digital Agents</h2>
-          <p style={{ color: "var(--muted)" }}>
-            Create autonomous AI agents that run on a schedule.
-            Use Wai chat to create agents: &quot;Create an agent that checks HN for AI news every morning&quot;
-          </p>
-        </section>
-      )}
+      {view === "agents" && <AgentsView />}
 
       {/* Apps view */}
-      {view === "apps" && (
-        <section className="card stack">
-          <h2>My Apps</h2>
-          <p style={{ color: "var(--muted)" }}>
-            Your personal mini-apps live here. Use Wai chat to create apps:
-            &quot;Create a habit tracker&quot; or &quot;Build an expense tracker&quot;
-          </p>
-        </section>
-      )}
+      {view === "apps" && <AppsView />}
     </div>
   );
 }

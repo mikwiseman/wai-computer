@@ -1,6 +1,5 @@
 """Tests for agent intent router — pattern matching and classification."""
 
-import pytest
 
 from app.services.agent.router import Intent, classify_intent, get_model_for_intent
 
