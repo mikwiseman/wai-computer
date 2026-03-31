@@ -107,12 +107,6 @@ const baseEntities = [
   },
 ];
 
-/** Switch to the Library tab (needed since Wai chat is the default view). */
-async function goToLibrary(user: ReturnType<typeof userEvent.setup>) {
-  const tab = screen.getByTestId("tab-library");
-  await user.click(tab);
-}
-
 function arrangeHappyPathMocks() {
   mockGetCurrentUser.mockResolvedValue(baseUser);
   mockListRecordings.mockResolvedValue([baseRecording]);

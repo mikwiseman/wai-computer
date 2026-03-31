@@ -33,7 +33,15 @@ export function AppsView() {
   }
 
   useEffect(() => {
-    void loadApps();
+    let cancelled = false;
+    listApps()
+      .then((result) => {
+        if (!cancelled) setApps(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(formatError(err));
+      });
+    return () => { cancelled = true; };
   }, []);
 
   async function handleSelectApp(app: UserApp) {

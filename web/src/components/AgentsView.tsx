@@ -18,10 +18,6 @@ export function AgentsView() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    void loadAgents();
-  }, []);
-
   async function loadAgents() {
     try {
       const result = await listAgents();
@@ -30,6 +26,18 @@ export function AgentsView() {
       setError(formatError(err));
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    listAgents()
+      .then((result) => {
+        if (!cancelled) setAgents(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(formatError(err));
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleCreate() {
     if (!description.trim() || creating) return;
