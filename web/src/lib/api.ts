@@ -1,14 +1,23 @@
-import { apiFetch, getApiBaseUrl, syncLocalhostAuthCookie } from "./http";
+import {
+  apiFetch,
+  getApiBaseUrl,
+  syncLocalhostAuthCookie,
+  syncLocalhostRefreshCookie,
+} from "./http";
 import type {
   ActionItem,
   ActionPriority,
   ActionStatus,
+  AgentChatResponse,
   AnalyticsResponse,
+  AppItem,
+  AppStats,
   BulkAction,
   BulkOperationResponse,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
+  DigitalAgent,
   Entity,
   EntityDetail,
   EntityType,
@@ -29,6 +38,7 @@ import type {
   TranscriptSearchResponse,
   TranscriptStatsResponse,
   User,
+  UserApp,
   WeeklyDigestResponse,
 } from "./types";
 
@@ -48,6 +58,9 @@ async function withLocalhostAuth<T extends TokenResponse>(promise: Promise<T>): 
   const response = await promise;
   if (typeof response.access_token === "string" && response.access_token.length > 0) {
     syncLocalhostAuthCookie(response.access_token);
+  }
+  if (typeof response.refresh_token === "string" && response.refresh_token.length > 0) {
+    syncLocalhostRefreshCookie(response.refresh_token);
   }
   return response;
 }
@@ -93,6 +106,7 @@ export function refreshToken(): Promise<TokenResponse> {
 export async function logout(): Promise<MessageResponse> {
   const response = await apiFetch<MessageResponse>("/api/auth/logout", { method: "POST" });
   syncLocalhostAuthCookie(null);
+  syncLocalhostRefreshCookie(null);
   return response;
 }
 
@@ -383,4 +397,121 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
     throw new Error(`Export failed: ${response.status} ${response.statusText}`);
   }
   return response.blob();
+}
+
+// ── Agent Chat ──────────────────────────────────────────────────────
+
+export function sendAgentMessage(
+  message: string,
+  sessionId?: string,
+  voiceTranscript?: string,
+): Promise<AgentChatResponse> {
+  return apiFetch<AgentChatResponse>("/api/agent/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      session_id: sessionId,
+      voice_transcript: voiceTranscript,
+    }),
+  });
+}
+
+// ── User Apps (Collections) ─────────────────────────────────────────
+
+export function listApps(): Promise<UserApp[]> {
+  return apiFetch<UserApp[]>("/api/apps");
+}
+
+export function createApp(input: {
+  name: string;
+  display_name: string;
+  icon?: string;
+  template?: string;
+  schema_def?: Record<string, unknown>;
+}): Promise<UserApp> {
+  return apiFetch<UserApp>("/api/apps", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getApp(appId: string): Promise<UserApp> {
+  return apiFetch<UserApp>(`/api/apps/${appId}`);
+}
+
+export function deleteApp(appId: string): Promise<void> {
+  return apiFetch<void>(`/api/apps/${appId}`, { method: "DELETE" });
+}
+
+export function listAppItems(
+  appId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<AppItem[]> {
+  return apiFetch<AppItem[]>(`/api/apps/${appId}/items${asQuery(params ?? {})}`);
+}
+
+export function createAppItem(
+  appId: string,
+  data: Record<string, unknown>,
+): Promise<AppItem> {
+  return apiFetch<AppItem>(`/api/apps/${appId}/items`, {
+    method: "POST",
+    body: JSON.stringify({ data }),
+  });
+}
+
+export function updateAppItem(
+  appId: string,
+  itemId: string,
+  data: Record<string, unknown>,
+): Promise<AppItem> {
+  return apiFetch<AppItem>(`/api/apps/${appId}/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ data }),
+  });
+}
+
+export function deleteAppItem(appId: string, itemId: string): Promise<void> {
+  return apiFetch<void>(`/api/apps/${appId}/items/${itemId}`, { method: "DELETE" });
+}
+
+export function getAppStats(appId: string): Promise<AppStats> {
+  return apiFetch<AppStats>(`/api/apps/${appId}/stats`);
+}
+
+// ── Digital Agents ──────────────────────────────────────────────────
+
+export function listAgents(): Promise<DigitalAgent[]> {
+  return apiFetch<DigitalAgent[]>("/api/agents");
+}
+
+export function createAgent(description: string): Promise<DigitalAgent> {
+  return apiFetch<DigitalAgent>("/api/agents", {
+    method: "POST",
+    body: JSON.stringify({ description }),
+  });
+}
+
+export function getAgent(agentId: string): Promise<DigitalAgent> {
+  return apiFetch<DigitalAgent>(`/api/agents/${agentId}`);
+}
+
+export function runAgent(agentId: string): Promise<{ status: string; agent_id: string }> {
+  return apiFetch<{ status: string; agent_id: string }>(`/api/agents/${agentId}/run`, {
+    method: "POST",
+  });
+}
+
+export function updateAgent(
+  agentId: string,
+  input: { status?: string },
+): Promise<DigitalAgent> {
+  return apiFetch<DigitalAgent>(`/api/agents/${agentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteAgent(agentId: string): Promise<void> {
+  return apiFetch<void>(`/api/agents/${agentId}`, { method: "DELETE" });
 }
