@@ -418,7 +418,6 @@ public actor WebSocketManager {
         guard reconnectEnabled, !isReconnecting else { return }
 
         isReconnecting = true
-        audioBuffer = []
 
         // Clean up current socket without finishing the event continuation
         webSocket?.cancel(with: .goingAway, reason: nil)
@@ -429,6 +428,12 @@ public actor WebSocketManager {
         keepAliveTask = nil
 
         wsLog.info("Starting reconnection (error: \(afterError.localizedDescription, privacy: .public))")
+        SentryHelper.addBreadcrumb(
+            category: "websocket",
+            message: "reconnect started",
+            level: .warning,
+            data: ["bufferedChunks": audioBuffer.count, "reason": afterError.localizedDescription]
+        )
 
         reconnectTask = Task { [weak self] in
             await self?.reconnectLoop()
@@ -555,7 +560,6 @@ public actor WebSocketManager {
 
         // Max attempts reached
         isReconnecting = false
-        audioBuffer = []
         wsLog.error("Reconnection failed after \(self.maxReconnectAttempts) attempts")
 
         let exhaustedError = WebSocketConnectionError.reconnectionExhausted(maxReconnectAttempts)
@@ -575,6 +579,18 @@ public actor WebSocketManager {
         if audioBuffer.count > maxBufferChunks {
             audioBuffer.removeFirst()
         }
+    }
+
+    func testingBufferAudioChunk(_ data: Data) {
+        bufferAudioChunk(data)
+    }
+
+    func testingBufferedAudioCount() -> Int {
+        audioBuffer.count
+    }
+
+    func testingMarkReconnecting() {
+        isReconnecting = true
     }
 
     private func closeConnection(

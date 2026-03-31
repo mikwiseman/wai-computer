@@ -411,7 +411,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.uitests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 				TEST_TARGET_NAME = WaiComputer;
@@ -434,7 +434,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
@@ -514,7 +514,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.uitests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 				TEST_TARGET_NAME = WaiComputer;
@@ -592,7 +592,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.waiwai.waicomputer.macos.dev;
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.dev;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
 			};
