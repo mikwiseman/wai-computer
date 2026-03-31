@@ -6,6 +6,7 @@ export type ExportFormat = "markdown" | "txt" | "srt";
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
 }
 
@@ -340,4 +341,71 @@ export interface WeeklyDigestResponse {
   highlights: DigestHighlight[];
   sentiment_breakdown: Record<string, number>;
   daily_breakdown: DailyBreakdown[];
+}
+
+// ── Agent Chat ──────────────────────────────────────────────────────
+
+export interface AgentChatRequest {
+  message: string;
+  session_id?: string;
+  voice_transcript?: string;
+}
+
+export interface AgentChatResponse {
+  response: string;
+  intent: string;
+  model_used: string;
+  session_id: string;
+  tool_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+// ── User Apps (Collections) ─────────────────────────────────────────
+
+export interface UserApp {
+  id: string;
+  name: string;
+  display_name: string;
+  icon: string | null;
+  template: string | null;
+  schema_def: Record<string, unknown> | null;
+  app_url: string | null;
+  settings: Record<string, unknown> | null;
+  sort_order: number;
+  item_count: number;
+  created_at: string;
+}
+
+export interface AppItem {
+  id: string;
+  data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppStats {
+  app_id: string;
+  total_items: number;
+  created_at: string;
+  last_item_at: string | null;
+}
+
+// ── Digital Agents ──────────────────────────────────────────────────
+
+export interface DigitalAgent {
+  id: string;
+  name: string;
+  description: string;
+  schedule_type: string;
+  cron_expression: string | null;
+  status: string;
+  delivery_channel: string;
+  run_count: number;
+  error_count: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_result: string | null;
+  last_error: string | null;
+  created_at: string;
 }
