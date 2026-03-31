@@ -11,6 +11,8 @@ export class ApiError extends Error {
 }
 
 const DEFAULT_BASE_URL = "";
+const LOCALHOST_ACCESS_COOKIE_NAME = "wai_access_token";
+const LOCALHOST_REFRESH_COOKIE_NAME = "wai_refresh_token";
 
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL;
@@ -30,11 +32,24 @@ export function syncLocalhostAuthCookie(token: string | null): void {
   }
 
   if (!token) {
-    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+    document.cookie = `${LOCALHOST_ACCESS_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
     return;
   }
 
-  document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+  document.cookie = `${LOCALHOST_ACCESS_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+}
+
+export function syncLocalhostRefreshCookie(token: string | null): void {
+  if (!isLocalhostBrowser()) {
+    return;
+  }
+
+  if (!token) {
+    document.cookie = `${LOCALHOST_REFRESH_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
+    return;
+  }
+
+  document.cookie = `${LOCALHOST_REFRESH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
 }
 
 async function parseResponsePayload(response: Response): Promise<unknown> {
@@ -117,6 +132,15 @@ export async function apiFetch<T>(
         ) {
           syncLocalhostAuthCookie(
             (refreshPayload as { access_token: string }).access_token,
+          );
+        }
+        if (
+          refreshPayload &&
+          typeof refreshPayload === "object" &&
+          typeof (refreshPayload as { refresh_token?: unknown }).refresh_token === "string"
+        ) {
+          syncLocalhostRefreshCookie(
+            (refreshPayload as { refresh_token: string }).refresh_token,
           );
         }
         response = await doFetch(url, fetchInit);

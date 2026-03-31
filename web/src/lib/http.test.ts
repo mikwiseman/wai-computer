@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, getApiBaseUrl, syncLocalhostAuthCookie } from "./http";
+import {
+  ApiError,
+  apiFetch,
+  getApiBaseUrl,
+  syncLocalhostAuthCookie,
+  syncLocalhostRefreshCookie,
+} from "./http";
 
 const originalEnv = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -298,7 +304,11 @@ describe("apiFetch", () => {
     // Refresh call: 200 with new token
     fetchSpy.mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ access_token: "fresh-token-123", token_type: "bearer" }),
+        JSON.stringify({
+          access_token: "fresh-token-123",
+          refresh_token: "fresh-refresh-123",
+          token_type: "bearer",
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
@@ -317,6 +327,7 @@ describe("apiFetch", () => {
 
     // Verify the cookie was set with the new token
     expect(document.cookie).toContain("wai_access_token=fresh-token-123");
+    expect(document.cookie).toContain("wai_refresh_token=fresh-refresh-123");
 
     // Restore
     Object.defineProperty(window, "location", {
@@ -422,6 +433,7 @@ describe("apiFetch", () => {
 describe("syncLocalhostAuthCookie", () => {
   beforeEach(() => {
     document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+    document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
   });
 
   it("sets cookie on localhost", () => {
@@ -468,6 +480,47 @@ describe("syncLocalhostAuthCookie", () => {
 
     syncLocalhostAuthCookie("test-token");
     expect(document.cookie).not.toContain("wai_access_token=test-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+});
+
+describe("syncLocalhostRefreshCookie", () => {
+  beforeEach(() => {
+    document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
+  });
+
+  it("sets refresh cookie on localhost", () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    syncLocalhostRefreshCookie("refresh-token");
+    expect(document.cookie).toContain("wai_refresh_token=refresh-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("clears refresh cookie on localhost when token is null", () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    syncLocalhostRefreshCookie("refresh-token");
+    expect(document.cookie).toContain("wai_refresh_token=refresh-token");
+
+    syncLocalhostRefreshCookie(null);
+    expect(document.cookie).not.toContain("wai_refresh_token=refresh-token");
 
     Object.defineProperty(window, "location", {
       value: { ...window.location, hostname: originalHostname },
