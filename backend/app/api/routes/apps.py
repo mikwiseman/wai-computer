@@ -1,5 +1,6 @@
 """Collections API — CRUD for user-created mini-apps and their data."""
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -9,6 +10,8 @@ from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, Database
 from app.models.user_app import AppItem, UserApp
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 
@@ -76,6 +79,7 @@ class UpdateItemRequest(BaseModel):
 @router.post("", response_model=AppResponse, status_code=status.HTTP_201_CREATED)
 async def create_app(request: CreateAppRequest, user: CurrentUser, db: Database) -> AppResponse:
     """Create a new user app (collection)."""
+    logger.info("creating app user_id=%s name=%s", user.id, request.name)
     existing = await db.execute(
         select(UserApp).where(UserApp.user_id == user.id, UserApp.name == request.name)
     )
