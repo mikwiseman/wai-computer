@@ -1,6 +1,5 @@
 """Tests for Collections API (user apps) routes."""
 
-import pytest
 from httpx import AsyncClient
 
 

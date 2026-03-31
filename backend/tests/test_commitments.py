@@ -1,7 +1,5 @@
 """Tests for commitment detection and tracking."""
 
-import pytest
-
 from app.services.agent.commitments import (
     CommitmentDirection,
     CommitmentStatus,

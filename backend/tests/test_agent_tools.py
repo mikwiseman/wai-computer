@@ -1,10 +1,9 @@
 """Tests for individual agent tool implementations."""
 
-import pytest
 
+from app.services.agent.conversation import add_message, clear_history, get_history
 from app.services.agent.entities import EntityType, extract_entities_fast
 from app.services.agent.language import detect_language
-from app.services.agent.conversation import add_message, get_history, clear_history
 from app.services.agent.rate_limit import check_rate_limit, clear_rate_limits
 
 
