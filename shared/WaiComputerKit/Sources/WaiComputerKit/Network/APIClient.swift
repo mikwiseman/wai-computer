@@ -764,6 +764,91 @@ public actor APIClient {
         return try await request(.GET, path: "/api/entities/\(id)")
     }
 
+    // MARK: - Agent Chat Endpoints
+
+    public func sendAgentMessage(_ message: String, sessionId: String? = nil, voiceTranscript: String? = nil) async throws -> AgentChatResponse {
+        let body = AgentChatRequest(message: message, sessionId: sessionId, voiceTranscript: voiceTranscript)
+        return try await request(.POST, path: "/api/agent/chat", body: body)
+    }
+
+    // MARK: - Digital Agent Endpoints
+
+    public func listAgents() async throws -> [DigitalAgent] {
+        return try await request(.GET, path: "/api/agents")
+    }
+
+    public func createAgent(description: String) async throws -> DigitalAgent {
+        let body = CreateAgentRequest(description: description)
+        return try await request(.POST, path: "/api/agents", body: body)
+    }
+
+    public func getAgent(_ agentId: String) async throws -> DigitalAgent {
+        return try await request(.GET, path: "/api/agents/\(agentId)")
+    }
+
+    public func runAgent(_ agentId: String) async throws -> AgentRunResponse {
+        return try await request(.POST, path: "/api/agents/\(agentId)/run")
+    }
+
+    public func updateAgent(_ agentId: String, status: String) async throws -> DigitalAgent {
+        let body = UpdateAgentRequest(status: status)
+        return try await request(.PATCH, path: "/api/agents/\(agentId)", body: body)
+    }
+
+    public func deleteAgent(_ agentId: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/agents/\(agentId)")
+    }
+
+    // MARK: - User App Endpoints
+
+    public func listApps() async throws -> [UserApp] {
+        return try await request(.GET, path: "/api/apps")
+    }
+
+    public func createApp(name: String, displayName: String, icon: String? = nil, template: String? = nil) async throws -> UserApp {
+        let body = CreateAppRequest(name: name, displayName: displayName, icon: icon, template: template)
+        return try await request(.POST, path: "/api/apps", body: body)
+    }
+
+    public func getApp(_ appId: String) async throws -> UserApp {
+        return try await request(.GET, path: "/api/apps/\(appId)")
+    }
+
+    public func updateApp(_ appId: String, displayName: String? = nil, icon: String? = nil, schemaDef: [String: JSONValue]? = nil, appUrl: String? = nil, settings: [String: JSONValue]? = nil, sortOrder: Int? = nil) async throws -> UserApp {
+        let body = UpdateAppRequest(displayName: displayName, icon: icon, schemaDef: schemaDef, appUrl: appUrl, settings: settings, sortOrder: sortOrder)
+        return try await request(.PATCH, path: "/api/apps/\(appId)", body: body)
+    }
+
+    public func deleteApp(_ appId: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/apps/\(appId)")
+    }
+
+    public func listAppItems(_ appId: String, limit: Int = 100, offset: Int = 0) async throws -> [AppItem] {
+        let queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        return try await request(.GET, path: "/api/apps/\(appId)/items", queryItems: queryItems)
+    }
+
+    public func createAppItem(_ appId: String, data: [String: JSONValue]) async throws -> AppItem {
+        let body = CreateAppItemRequest(data: data)
+        return try await request(.POST, path: "/api/apps/\(appId)/items", body: body)
+    }
+
+    public func updateAppItem(_ appId: String, itemId: String, data: [String: JSONValue]) async throws -> AppItem {
+        let body = CreateAppItemRequest(data: data)
+        return try await request(.PATCH, path: "/api/apps/\(appId)/items/\(itemId)", body: body)
+    }
+
+    public func deleteAppItem(_ appId: String, itemId: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/apps/\(appId)/items/\(itemId)")
+    }
+
+    public func getAppStats(_ appId: String) async throws -> AppStats {
+        return try await request(.GET, path: "/api/apps/\(appId)/stats")
+    }
+
     // MARK: - File Upload
 
     public func saveLiveTranscript(
