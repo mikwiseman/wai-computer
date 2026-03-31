@@ -20,7 +20,6 @@ ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
-DMG_MOUNT="/Volumes/$DMG_VOLUME_NAME"
 NOTARIZATION_MODE="skipped"
 NOTARY_ARGS=()
 CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
@@ -33,10 +32,6 @@ if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
 fi
 
 cleanup() {
-  if mount | grep -F "on ${DMG_MOUNT} " >/dev/null 2>&1; then
-    hdiutil detach "$DMG_MOUNT" -quiet >/dev/null 2>&1 || \
-      hdiutil detach "$DMG_MOUNT" -force -quiet >/dev/null 2>&1 || true
-  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -95,49 +90,6 @@ gatekeeper_check() {
   echo "Warning: Gatekeeper rejected ${artifact_label}; continuing because MACOS_REQUIRE_GATEKEEPER=0." >&2
 }
 
-configure_dmg_finder_window() {
-  local attempt=1
-  local script_output=""
-  while [[ $attempt -le 10 ]]; do
-    if script_output=$(osascript 2>&1 <<APPLESCRIPT
-tell application "Finder"
-  tell disk "$DMG_VOLUME_NAME"
-    open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set the bounds of container window to {180, 120, 1140, 740}
-    set theViewOptions to the icon view options of container window
-    set arrangement of theViewOptions to not arranged
-    set icon size of theViewOptions to 128
-    set text size of theViewOptions to 16
-    set background picture of theViewOptions to file ".background:background.png"
-    set position of item "${APP_NAME}.app" of container window to {240, 355}
-    set position of item "Applications" of container window to {720, 355}
-    set extension hidden of item "${APP_NAME}.app" of container window to true
-    close
-    open
-    update without registering applications
-    delay 1
-    close
-  end tell
-end tell
-APPLESCRIPT
-    then
-      return 0
-    fi
-    if [[ "$script_output" == *"Not authorized to send Apple events to Finder"* ]] || [[ "$script_output" == *"(-1743)"* ]]; then
-      echo "Warning: Finder customization skipped because this shell is not allowed to control Finder." >&2
-      return 0
-    fi
-    sleep 1
-    attempt=$((attempt + 1))
-  done
-
-  echo "Warning: Finder customization failed; continuing with the default DMG layout." >&2
-  return 0
-}
-
 require_tool xcodebuild
 require_tool codesign
 require_tool hdiutil
@@ -180,8 +132,6 @@ VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_I
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO")
 RELEASE_DIR="$RELEASE_ROOT/${VERSION}-${BUILD}"
 mkdir -p "$RELEASE_DIR"
-STAGING_DIR="$TMP_DIR/dmg-staging"
-RW_DMG_PATH="$TMP_DIR/${APP_NAME}-rw.dmg"
 
 APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
 UNIVERSAL_INFO=$(file "$APP_BINARY")
@@ -206,54 +156,67 @@ fi
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 
 DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
-rm -f "$DMG_PATH" "$RW_DMG_PATH"
-rm -rf "$STAGING_DIR"
+SPARSE_PATH="$TMP_DIR/${APP_NAME}.sparseimage"
+DMG_MOUNT="$TMP_DIR/dmg-mount"
+rm -f "$DMG_PATH" "$SPARSE_PATH"
 
-echo "Preparing DMG staging directory..."
-mkdir -p "$STAGING_DIR/.background"
-ditto "$APP_PATH" "$STAGING_DIR/${APP_NAME}.app"
-ln -s /Applications "$STAGING_DIR/Applications"
-cp "$BACKGROUND_PATH" "$STAGING_DIR/.background/background.png"
+echo "Creating sparse image..."
+hdiutil create -size 200m -fs HFS+ -volname "$DMG_VOLUME_NAME" -type SPARSE "$SPARSE_PATH"
 
-VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
-if [[ -f "$VOLICON" ]]; then
-  cp "$VOLICON" "$STAGING_DIR/.VolumeIcon.icns"
-fi
+echo "Mounting sparse image to custom mount point..."
+mkdir -p "$DMG_MOUNT"
+hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -nobrowse -noverify
 
-echo "Creating read-write disk image from staging directory..."
-hdiutil create \
-  -fs HFS+ \
-  -volname "$DMG_VOLUME_NAME" \
-  -srcfolder "$STAGING_DIR" \
-  -format UDRW \
-  -ov \
-  "$RW_DMG_PATH" \
-  >/dev/null
+echo "Copying app and creating Applications symlink..."
+ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
+ln -s /Applications "$DMG_MOUNT/Applications"
 
-echo "Mounting read-write image..."
-if mount | grep -F "on ${DMG_MOUNT} " >/dev/null 2>&1; then
-  hdiutil detach "$DMG_MOUNT" -quiet >/dev/null 2>&1 || \
-    hdiutil detach "$DMG_MOUNT" -force -quiet >/dev/null 2>&1 || true
-fi
-hdiutil attach "$RW_DMG_PATH" -nobrowse -noverify >/dev/null
+# Copy background image
+mkdir -p "$DMG_MOUNT/.background"
+cp "$BACKGROUND_PATH" "$DMG_MOUNT/.background/background.png"
 
 # Set volume icon if available
+VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
 if [[ -f "$VOLICON" ]]; then
+  cp "$VOLICON" "$DMG_MOUNT/.VolumeIcon.icns"
   SetFile -c icnC "$DMG_MOUNT/.VolumeIcon.icns" 2>/dev/null || true
   SetFile -a C "$DMG_MOUNT" 2>/dev/null || true
 fi
 
 # Apply Finder view settings via AppleScript
 echo "Configuring DMG Finder appearance..."
-configure_dmg_finder_window
+osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$DMG_VOLUME_NAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set the bounds of container window to {180, 120, 1140, 740}
+    set theViewOptions to the icon view options of container window
+    set arrangement of theViewOptions to not arranged
+    set icon size of theViewOptions to 128
+    set text size of theViewOptions to 16
+    set background picture of theViewOptions to file ".background:background.png"
+    set position of item "${APP_NAME}.app" of container window to {240, 355}
+    set position of item "Applications" of container window to {720, 355}
+    set extension hidden of item "${APP_NAME}.app" of container window to true
+    close
+    open
+    update without registering applications
+    delay 1
+    close
+  end tell
+end tell
+APPLESCRIPT
 
 sync
 
-echo "Detaching disk image..."
+echo "Detaching sparse image..."
 hdiutil detach "$DMG_MOUNT" -quiet
 
 echo "Converting to compressed DMG..."
-hdiutil convert "$RW_DMG_PATH" -format UDZO -o "$DMG_PATH" -quiet
+hdiutil convert "$SPARSE_PATH" -format UDZO -o "$DMG_PATH" -quiet
 
 echo "Signing DMG..."
 codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
@@ -281,8 +244,6 @@ gatekeeper_check "disk image" spctl --assess --type open --context context:prima
 
 cp "$BACKGROUND_PATH" "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
-cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
-cp "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}-latest.dmg.sha256"
 cat > "$RELEASE_DIR/release-metadata.txt" <<META
 app=${APP_NAME}
 version=${VERSION}
@@ -300,6 +261,5 @@ META
 echo
 printf 'DMG ready: %s\n' "$DMG_PATH"
 printf 'Checksum: %s\n' "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
-printf 'Latest DMG: %s\n' "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
 printf 'Background: %s\n' "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 printf 'Metadata: %s\n' "$RELEASE_DIR/release-metadata.txt"
