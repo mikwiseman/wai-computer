@@ -12,6 +12,13 @@ vi.mock("./http", () => ({
     }
     document.cookie = `wai_access_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
   }),
+  syncLocalhostRefreshCookie: vi.fn((token: string | null) => {
+    if (!token) {
+      document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
+      return;
+    }
+    document.cookie = `wai_refresh_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+  }),
 }));
 
 const mockedApiFetch = vi.mocked(apiFetch);
@@ -20,6 +27,7 @@ beforeEach(() => {
   mockedApiFetch.mockReset();
   mockedApiFetch.mockResolvedValue({} as never);
   document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+  document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
 });
 
 describe("api client wrappers", () => {
@@ -66,20 +74,24 @@ describe("api client wrappers", () => {
   it("mirrors auth tokens into the localhost cookie", async () => {
     mockedApiFetch.mockResolvedValueOnce({
       access_token: "local-token",
+      refresh_token: "refresh-token",
       token_type: "bearer",
     } as never);
 
     await api.login("a@example.com", "p");
 
     expect(document.cookie).toContain("wai_access_token=local-token");
+    expect(document.cookie).toContain("wai_refresh_token=refresh-token");
   });
 
   it("clears the localhost cookie on logout", async () => {
     document.cookie = "wai_access_token=local-token; Path=/; SameSite=Lax";
+    document.cookie = "wai_refresh_token=refresh-token; Path=/; SameSite=Lax";
 
     await api.logout();
 
     expect(document.cookie).not.toContain("wai_access_token=local-token");
+    expect(document.cookie).not.toContain("wai_refresh_token=refresh-token");
   });
 
   it("builds recording list query params", async () => {
@@ -455,5 +467,119 @@ describe("api client wrappers", () => {
     await expect(api.exportRecording("rec1", "txt")).rejects.toThrow("Export failed: 404 Not Found");
 
     fetchSpy.mockRestore();
+  });
+
+  // ── Agent Chat ────────────────────────────────────────────────────
+
+  it("calls sendAgentMessage", async () => {
+    await api.sendAgentMessage("hello", "sess-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "hello", session_id: "sess-1" }),
+    });
+  });
+
+  it("calls sendAgentMessage without session", async () => {
+    await api.sendAgentMessage("hi");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: "hi" }),
+    });
+  });
+
+  // ── User Apps ─────────────────────────────────────────────────────
+
+  it("calls listApps", async () => {
+    await api.listApps();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps");
+  });
+
+  it("calls createApp", async () => {
+    await api.createApp({ name: "habits", display_name: "Habits", icon: "✅" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps", {
+      method: "POST",
+      body: JSON.stringify({ name: "habits", display_name: "Habits", icon: "✅" }),
+    });
+  });
+
+  it("calls getApp", async () => {
+    await api.getApp("app-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1");
+  });
+
+  it("calls deleteApp", async () => {
+    await api.deleteApp("app-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1", { method: "DELETE" });
+  });
+
+  it("calls listAppItems", async () => {
+    await api.listAppItems("app-1", { limit: 50 });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/items?limit=50");
+  });
+
+  it("calls createAppItem", async () => {
+    await api.createAppItem("app-1", { habit: "meditation" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/items", {
+      method: "POST",
+      body: JSON.stringify({ data: { habit: "meditation" } }),
+    });
+  });
+
+  it("calls updateAppItem", async () => {
+    await api.updateAppItem("app-1", "item-1", { done: true });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/items/item-1", {
+      method: "PATCH",
+      body: JSON.stringify({ data: { done: true } }),
+    });
+  });
+
+  it("calls deleteAppItem", async () => {
+    await api.deleteAppItem("app-1", "item-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/items/item-1", {
+      method: "DELETE",
+    });
+  });
+
+  it("calls getAppStats", async () => {
+    await api.getAppStats("app-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/stats");
+  });
+
+  // ── Digital Agents ────────────────────────────────────────────────
+
+  it("calls listAgents", async () => {
+    await api.listAgents();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents");
+  });
+
+  it("calls createAgent", async () => {
+    await api.createAgent("check HN daily");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents", {
+      method: "POST",
+      body: JSON.stringify({ description: "check HN daily" }),
+    });
+  });
+
+  it("calls getAgent", async () => {
+    await api.getAgent("agent-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents/agent-1");
+  });
+
+  it("calls runAgent", async () => {
+    await api.runAgent("agent-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents/agent-1/run", { method: "POST" });
+  });
+
+  it("calls updateAgent", async () => {
+    await api.updateAgent("agent-1", { status: "paused" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents/agent-1", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "paused" }),
+    });
+  });
+
+  it("calls deleteAgent", async () => {
+    await api.deleteAgent("agent-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/agents/agent-1", { method: "DELETE" });
   });
 });
