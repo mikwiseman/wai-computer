@@ -345,4 +345,16 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(urlString.contains("endpointing=100"),
                        "Default 'multi' language should include endpointing")
     }
+
+    func testBufferedAudioSurvivesReconnectionState() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        await manager.testingBufferAudioChunk(Data("chunk-1".utf8))
+        await manager.testingBufferAudioChunk(Data("chunk-2".utf8))
+        await manager.testingMarkReconnecting()
+
+        let bufferedCount = await manager.testingBufferedAudioCount()
+        XCTAssertEqual(bufferedCount, 2, "Buffered audio should survive the reconnect window")
+    }
 }

@@ -388,6 +388,67 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(detail.segments.count, 1)
     }
 
+    func testUploadAudioRetriesAfterRefreshOnUnauthorized() async throws {
+        let client = makeClient()
+        await client.setAccessToken("expired-access")
+        await client.setRefreshToken("refresh-1")
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("retry-upload-\(UUID().uuidString).wav")
+        try Data("wav-data".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        final class RequestCounter: @unchecked Sendable {
+            var value = 0
+        }
+        let counter = RequestCounter()
+
+        MockURLProtocol.requestHandler = { request in
+            counter.value += 1
+            switch counter.value {
+            case 1:
+                XCTAssertEqual(request.url?.path, "/api/recordings/rec-upload/upload")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer expired-access")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 401,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data())
+            case 2:
+                XCTAssertEqual(request.url?.path, "/api/auth/refresh")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                let payload = """
+                {"access_token":"fresh-access","refresh_token":"fresh-refresh","token_type":"bearer"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            default:
+                XCTAssertEqual(request.url?.path, "/api/recordings/rec-upload/upload")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fresh-access")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                let payload = """
+                {"id":"rec-upload","title":"Recovered","type":"note","status":"ready","segments":[],"action_items":[],"created_at":"2026-03-10T10:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+        }
+
+        let detail = try await client.uploadAudio(recordingId: "rec-upload", fileURL: fileURL)
+        XCTAssertEqual(detail.id, "rec-upload")
+        XCTAssertEqual(counter.value, 3)
+    }
+
     func testCleanupDictationUsesCleanupEndpoint() async throws {
         let client = makeClient()
 

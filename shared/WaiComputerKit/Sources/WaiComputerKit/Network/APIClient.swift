@@ -822,14 +822,60 @@ public actor APIClient {
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        let (data, response) = try await session.upload(for: request, fromFile: multipartFileURL)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.upload(for: request, fromFile: multipartFileURL)
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["path": path, "method": "POST", "recordingId": recordingId]
+            )
+            throw APIError.networkError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.networkError(URLError(.badServerResponse))
         }
 
+        SentryHelper.addBreadcrumb(
+            category: "api",
+            message: "POST \(path)",
+            data: ["statusCode": httpResponse.statusCode, "recordingId": recordingId]
+        )
+
         if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
+            let newToken = try await handleUnauthorized(path: path)
+            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+
+            let retryData: Data
+            let retryResponse: URLResponse
+            do {
+                (retryData, retryResponse) = try await session.upload(for: request, fromFile: multipartFileURL)
+            } catch {
+                SentryHelper.captureError(
+                    error,
+                    extras: ["path": path, "method": "POST", "recordingId": recordingId, "retry": true]
+                )
+                throw APIError.networkError(error)
+            }
+
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            if retryHttp.statusCode == 401 {
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            guard (200...299).contains(retryHttp.statusCode) else {
+                throw apiError(from: retryData, response: retryHttp)
+            }
+
+            do {
+                return try decoder.decode(RecordingDetail.self, from: retryData)
+            } catch {
+                throw APIError.decodingError(error)
+            }
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {

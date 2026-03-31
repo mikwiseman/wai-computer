@@ -443,14 +443,28 @@ class MacRecordingViewModel: ObservableObject {
                         segments: finalizedSegments,
                         durationSeconds: Int(recordingDuration.rounded())
                     )
-                    transcriptSaved = detail.status != .failed
-                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
-
                     if detail.status == .failed {
-                        await MainActor.run {
-                            self.error = detail.failureMessage ?? "Transcript was saved, but processing failed."
+                        if let recoveredDetail = try? await self.recoverByUploadingLocalAudio(
+                            recordingId: recordingId,
+                            client: client
+                        ) {
+                            transcriptSaved = recoveredDetail.status != .failed
+                            if recoveredDetail.status != .failed {
+                                try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                            }
+                            await MainActor.run {
+                                self.error = recoveredDetail.status == .failed
+                                    ? (recoveredDetail.failureMessage ?? "Audio was recovered, but processing failed.")
+                                    : nil
+                            }
+                        } else {
+                            await MainActor.run {
+                                self.error = detail.failureMessage ?? "Transcript was saved, but processing failed."
+                            }
                         }
                     } else {
+                        transcriptSaved = true
+                        try? RecordingBackupStore.removeRecording(recordingId: recordingId)
                         SentryHelper.addBreadcrumb(
                             category: "recording",
                             message: "transcript saved",
@@ -474,6 +488,19 @@ class MacRecordingViewModel: ObservableObject {
                             } else {
                                 self.error = nil
                             }
+                        }
+                    } else if let recoveredDetail = try? await self.recoverByUploadingLocalAudio(
+                        recordingId: recordingId,
+                        client: client
+                    ) {
+                        transcriptSaved = recoveredDetail.status != .failed
+                        if recoveredDetail.status != .failed {
+                            try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                        }
+                        await MainActor.run {
+                            self.error = recoveredDetail.status == .failed
+                                ? (recoveredDetail.failureMessage ?? "Audio was recovered, but processing failed.")
+                                : nil
                         }
                     } else {
                         let backup = try? await MainActor.run {
@@ -574,6 +601,26 @@ class MacRecordingViewModel: ObservableObject {
         return nil
     }
 
+    private func recoverByUploadingLocalAudio(
+        recordingId: String,
+        client: APIClient
+    ) async throws -> RecordingDetail? {
+        guard let backup = try RecordingBackupStore.existingBackup(recordingId: recordingId) else {
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: backup.audioFileURL.path) else {
+            return nil
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recovering via local audio upload",
+            level: .warning,
+            data: ["recordingId": recordingId]
+        )
+        return try await client.uploadAudio(recordingId: recordingId, fileURL: backup.audioFileURL)
+    }
+
     private func finalizedSegments(
         from segments: [LiveTranscriptSegment],
         didFinalize: Bool
@@ -639,6 +686,8 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     private func resetAfterStartFailure() async {
+        let recordingId = currentRecordingId
+        let client = apiClient
         timerTask?.cancel()
         timerTask = nil
         systemAudioMonitorTask?.cancel()
@@ -658,6 +707,18 @@ class MacRecordingViewModel: ObservableObject {
         webSocketManager = nil
         apiClient = nil
         await ws?.disconnect()
+
+        if let recordingId, let client {
+            do {
+                try await client.deleteRecording(id: recordingId, permanent: true)
+            } catch {
+                SentryHelper.captureError(
+                    error,
+                    extras: ["action": "deleteAbortedRecording", "recordingId": recordingId]
+                )
+            }
+            try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+        }
 
         recording = nil
         currentRecordingId = nil
@@ -805,6 +866,20 @@ class MacRecordingViewModel: ObservableObject {
                 }
             }
 
+            if let client = apiClient,
+               let recoveredDetail = try? await recoverByUploadingLocalAudio(
+                   recordingId: recordingId,
+                   client: client
+               ) {
+                if recoveredDetail.status != .failed {
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    isServerComplete = true
+                    error = "Connection was lost, but your local audio was uploaded and recovered successfully."
+                    await cleanupAfterFailure()
+                    return
+                }
+            }
+
             // Local backup as last resort
             let backup = try? saveTranscriptBackup(recordingId: recordingId, segments: segments)
             _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
@@ -886,6 +961,20 @@ class MacRecordingViewModel: ObservableObject {
                     }
                 } catch {
                     NSLog("[Recording] Server save after failure also failed: \(error)")
+                }
+            }
+
+            if let client = apiClient,
+               let recoveredDetail = try? await recoverByUploadingLocalAudio(
+                   recordingId: recordingId,
+                   client: client
+               ) {
+                if recoveredDetail.status != .failed {
+                    try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                    isServerComplete = true
+                    error = "Recording connection failed, but your local audio was uploaded and recovered."
+                    await cleanupAfterFailure()
+                    return
                 }
             }
 
