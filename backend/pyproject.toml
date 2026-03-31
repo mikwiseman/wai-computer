@@ -70,7 +70,7 @@ addopts = """
     -m "not integration and not slow"
     --cov=app
     --cov-report=term-missing
-    --cov-fail-under=78
+    --cov-fail-under=80
 """
 markers = [
     "integration: live API integration tests against the deployed server (run with: pytest -q -m integration --no-cov)",
@@ -83,8 +83,6 @@ concurrency = ["greenlet", "thread"]
 omit = [
     "app/db/*",
     "app/models/*",
-    "app/services/agent/*",
-    "app/tasks/*",
 ]
 
 [tool.coverage.report]

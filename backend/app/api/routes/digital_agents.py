@@ -1,5 +1,6 @@
 """Digital agents routes — CRUD for autonomous AI agents."""
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -7,6 +8,8 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, Database
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["digital-agents"])
 
@@ -43,13 +46,16 @@ async def create_agent(
     """Create a digital agent from a natural language description."""
     from app.services.agent.digital_agents import create_agent_from_description
 
+    logger.info("creating agent user_id=%s description_len=%d", user.id, len(request.description))
     try:
         agent = await create_agent_from_description(
             db=db, user_id=user.id, description=request.description,
         )
     except ValueError as e:
+        logger.info("agent creation rejected user_id=%s reason=%s", user.id, str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    logger.info("agent created user_id=%s agent_id=%s name=%s", user.id, agent.id, agent.name)
     return _agent_to_response(agent)
 
 

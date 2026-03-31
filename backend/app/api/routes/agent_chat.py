@@ -1,5 +1,6 @@
 """Agent chat route — enhanced chat with intent routing and tool calling."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
@@ -7,6 +8,8 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -64,7 +67,17 @@ async def agent_chat(
         db=db,
     )
 
+    logger.info(
+        "agent_chat started user_id=%s lang=%s has_voice=%s message_len=%d",
+        user.id, detected_lang, request.voice_transcript is not None, len(request.message),
+    )
+
     result = await run_agent(context, request.message)
+
+    logger.info(
+        "agent_chat completed user_id=%s intent=%s tool_calls=%d tokens_in=%d tokens_out=%d",
+        user.id, result.intent.value, result.tool_calls, result.input_tokens, result.output_tokens,
+    )
 
     add_message(user.id, "user", request.message)
     add_message(user.id, "assistant", result.response)
