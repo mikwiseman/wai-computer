@@ -63,6 +63,27 @@ async def test_refresh_with_valid_token_returns_tokens(client: AsyncClient):
     assert data["access_token"]
     assert data["refresh_token"]
     assert settings.auth_cookie_name in response.headers.get("set-cookie", "")
+    assert settings.auth_refresh_cookie_name in response.headers.get("set-cookie", "")
+
+
+@pytest.mark.asyncio
+async def test_refresh_accepts_refresh_cookie_when_body_missing(client: AsyncClient):
+    """Browser refresh should work from the refresh cookie without a JSON body."""
+    email = f"refresh-cookie-{uuid4().hex}@example.com"
+    reg_resp = await client.post(
+        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+    )
+    assert reg_resp.status_code == 200
+
+    refresh_cookie = reg_resp.cookies.get(settings.auth_refresh_cookie_name)
+    assert refresh_cookie
+
+    client.cookies.set(settings.auth_refresh_cookie_name, refresh_cookie)
+    response = await client.post("/api/auth/refresh")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["access_token"]
+    assert data["refresh_token"]
 
 
 @pytest.mark.asyncio
@@ -75,6 +96,7 @@ async def test_register_sets_auth_cookie(client: AsyncClient):
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
     assert settings.auth_cookie_name in set_cookie
+    assert settings.auth_refresh_cookie_name in set_cookie
     assert "HttpOnly" in set_cookie
     assert ("Secure" in set_cookie) is settings.auth_cookie_secure_resolved
     if settings.auth_cookie_domain_resolved:
@@ -105,7 +127,30 @@ async def test_logout_clears_auth_cookie(client: AsyncClient):
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
     assert settings.auth_cookie_name in set_cookie
+    assert settings.auth_refresh_cookie_name in set_cookie
     assert "Max-Age=0" in set_cookie or "expires=" in set_cookie.lower()
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_refresh_cookie_without_request_body(client: AsyncClient):
+    """Browser logout should revoke the cookie-backed refresh token."""
+    email = f"logout-cookie-{uuid4().hex}@example.com"
+    reg_resp = await client.post(
+        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+    )
+    refresh_token = reg_resp.cookies.get(settings.auth_refresh_cookie_name)
+    assert refresh_token
+
+    refresh_response = await client.post("/api/auth/refresh")
+    assert refresh_response.status_code == 200
+
+    client.cookies.set(settings.auth_refresh_cookie_name, refresh_token)
+    logout_response = await client.post("/api/auth/logout")
+    assert logout_response.status_code == 200
+
+    client.cookies.set(settings.auth_refresh_cookie_name, refresh_token)
+    refresh_after_logout = await client.post("/api/auth/refresh")
+    assert refresh_after_logout.status_code == 401
 
 
 @pytest.mark.asyncio

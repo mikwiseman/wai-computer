@@ -19,6 +19,7 @@ from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
+from app.core.observability import bind_recording_context
 from app.core.storage import get_storage_client
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
 from app.models.highlight import Highlight
@@ -972,6 +973,8 @@ async def create_recording(
     )
     db.add(recording)
     await db.flush()
+    bind_recording_context(str(recording.id))
+    logger.info("recording created type=%s language=%s", request.type, language)
 
     return _serialize_recording(recording)
 
@@ -1762,12 +1765,14 @@ async def save_transcript(
     db: Database,
 ) -> RecordingDetailResponse:
     """Persist a live transcript without storing live-capture audio on the server."""
+    bind_recording_context(str(recording_id))
     sentry_sdk.add_breadcrumb(
         category="recording",
         message="Saving transcript",
         data={"recording_id": str(recording_id), "segment_count": len(request.segments)},
         level="info",
     )
+    logger.info("live transcript save started segment_count=%s", len(request.segments))
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db)
     if recording is None:
@@ -1820,6 +1825,11 @@ async def save_transcript(
     refreshed = await _load_recording_detail(recording_id, user_id, db)
     if refreshed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+    logger.info(
+        "live transcript save completed status=%s segment_count=%s",
+        refreshed.status,
+        len(request.segments),
+    )
     return _serialize_recording_detail(refreshed)
 
 
@@ -2021,12 +2031,14 @@ async def upload_audio_file(
     db: Database,
 ) -> RecordingDetailResponse:
     """Upload an imported audio file to an existing recording."""
+    bind_recording_context(str(recording_id))
     sentry_sdk.add_breadcrumb(
         category="recording",
         message="Uploading audio file",
         data={"recording_id": str(recording_id), "filename": file.filename},
         level="info",
     )
+    logger.info("audio upload started filename=%s", file.filename or "")
     # Validate recording exists and belongs to user
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db)
@@ -2213,4 +2225,5 @@ async def upload_audio_file(
             detail="Recording disappeared after upload",
         )
 
+    logger.info("audio upload completed status=%s", recording.status)
     return _serialize_recording_detail(recording)
