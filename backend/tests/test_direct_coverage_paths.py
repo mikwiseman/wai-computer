@@ -318,16 +318,25 @@ async def test_auth_route_direct_paths(
     assert magic_user.magic_link_token is None
     assert magic_user.magic_link_expires is None
 
+    from starlette.testclient import TestClient
+    from starlette.requests import Request as StarletteRequest
+
+    refresh_scope = {"type": "http", "method": "POST", "path": "/api/auth/refresh", "headers": []}
+    fake_raw_request = StarletteRequest(scope=refresh_scope)
     refreshed = await auth.refresh_token(
-        auth.RefreshRequest(refresh_token=verified.refresh_token),
+        fake_raw_request,
         Response(),
         db_session,
+        auth.RefreshRequest(refresh_token=verified.refresh_token),
     )
     assert refreshed.access_token
     assert refreshed.refresh_token
 
+    logout_scope = {"type": "http", "method": "POST", "path": "/api/auth/logout", "headers": []}
+    fake_logout_request = StarletteRequest(scope=logout_scope)
     logout_response = Response()
     logged_out = await auth.logout(
+        fake_logout_request,
         logout_response,
         db_session,
         auth.LogoutRequest(refresh_token=refreshed.refresh_token),
