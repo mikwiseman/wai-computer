@@ -1,803 +1,550 @@
-# WaiComputer - Technical Specification
+# Wai Computer — Full Product Specification
 
-## Overview
-
-WaiComputer is an AI-powered "Second Brain" platform for recording, transcribing, summarizing, and organizing audio. It consists of a Python FastAPI backend, native iOS and macOS SwiftUI apps, and a shared Swift package (WaiComputerKit).
-
-**Core integrations:**
-- **Deepgram Nova-2** - Real-time speech-to-text with speaker diarization
-- **Claude API (Sonnet)** - Summarization, entity extraction, sentiment analysis
-- **PostgreSQL 16 + pgvector** - Hybrid full-text + semantic vector search
-- **Hetzner Object Storage (S3)** - Audio file storage
-- **Resend** - Transactional email for magic link authentication
-- **Caddy** - Reverse proxy with automatic Let's Encrypt TLS
+**Version:** 2.0 | **Updated:** 2026-03-31
 
 ---
 
-## Architecture
+## 1. Concept
+
+### One Brain, Many Hands
+
+Wai Computer is a **Personal AI Operating System**. Not an assistant. Not a chatbot. An operating system where AI is the kernel.
+
+The core insight: users don't need separate apps for recording meetings, tracking habits, building sites, managing commitments, and searching memories. They need **one brain** that knows everything and can do everything — and multiple ways to talk to it.
 
 ```
-                                 +-----------+
-                                 |  Deepgram |
-                                 |  Nova-2   |
-                                 +-----^-----+
-                                       |
-+-----------+    WSS / HTTPS    +------+------+    internal     +----------+
-|  iOS App  | ----------------> |   Caddy     | <------------> | Postgres |
-|  macOS App|                   |  (TLS/SSL)  |                | pgvector |
-+-----------+                   +------+------+                +----------+
-                                       |
-                                +------v------+
-                                |  FastAPI    |
-                                |  (Gunicorn) |
-                                +------+------+
-                                       |
-                              +--------+--------+
-                              |                 |
-                        +-----v-----+    +------v------+
-                        |  Claude   |    | Hetzner S3  |
-                        |  (Sonnet) |    | (Object)    |
-                        +-----------+    +-------------+
+                      ГОЛОС / ТЕКСТ
+                           │
+                           ▼
+                    ┌──────────────┐
+                    │   WAI BRAIN   │
+                    │               │
+                    │  Intent Route │── RECORD → запись встречи
+                    │  Agent Loop   │── CREATE → агент/сайт/приложение
+                    │  Tool System  │── SEARCH → поиск по всему
+                    │  Memory       │── MANAGE → действия, обещания
+                    │               │── CHAT → просто разговор
+                    └──────┬───────┘
+                           │
+                     ┌─────┼─────┐
+                     ▼     ▼     ▼
+                   macOS  Web  Telegram
 ```
+
+**Formula:** `Chat (voice/text) + Memory (recordings, collections, telegram) + Agents (cron + tools)`
+
+Three things. Not ten. Not five. Three.
+
+- **Chat** — you speak, Wai does.
+- **Memory** — Wai remembers everything.
+- **Agents** — Wai works while you sleep.
+
+### What Makes This Different
+
+```
+Granola/Otter     = only recordings
+Claude Code       = only code, for developers
+Lovable.dev       = only sites, isolated data
+ChatGPT           = no memory between sessions, no deploy
+Notion AI         = tied to Notion, no voice, no agents
+────────────────────────────────────────────────────
+Wai Computer      = recordings + agents + deploy + memory
+                    + voice + all channels
+                    + for EVERYONE, not just developers
+```
+
+**Unique loop:** Record meeting → extract commitments → auto-create reminder agents → agent checks deadline → notifies in Telegram. From voice to action, fully autonomous.
+
+### Anti-Patterns (What We Don't Do)
+
+1. **No model picker.** User doesn't choose Claude/GPT/Gemini. Wai decides.
+2. **No "prompt engineering" UI.** No system prompt fields. Describe in words — done.
+3. **No dashboard with statistics.** Chat is the home screen. Want stats? Ask Wai.
+4. **No tree-view navigation.** No folders-in-folders-in-folders. Chronological feed + search.
+5. **No onboarding wizard.** First screen is an empty chat with suggestion chips.
+6. **No "processing" details.** User doesn't see "extracting entities..." Just "Thinking..." → result.
 
 ---
 
-## Project Structure
+## 2. Architecture
+
+### System Overview
 
 ```
-wai-computer/
-|-- backend/                     # FastAPI backend
-|   |-- app/
-|   |   |-- api/
-|   |   |   |-- deps.py              # FastAPI dependencies (auth, DB session)
-|   |   |   |-- websocket.py         # WebSocket audio streaming endpoint
-|   |   |   |-- routes/
-|   |   |       |-- auth.py          # Registration, login, magic link
-|   |   |       |-- recordings.py    # CRUD + summarization trigger
-|   |   |       |-- search.py        # Hybrid, semantic, FTS search
-|   |   |       |-- action_items.py  # Task management
-|   |   |       |-- entities.py      # Knowledge graph CRUD
-|   |   |       |-- settings.py      # Password change
-|   |   |-- core/
-|   |   |   |-- deepgram.py          # Deepgram streaming + batch transcription
-|   |   |   |-- embeddings.py        # sentence-transformers (all-MiniLM-L6-v2)
-|   |   |   |-- summarizer.py        # Claude API summarization + entity extraction
-|   |   |   |-- security.py          # JWT, bcrypt, magic link tokens
-|   |   |   |-- storage.py           # S3 audio upload/download (Hetzner Object Storage)
-|   |   |   |-- email.py             # Resend magic link emails
-|   |   |-- db/
-|   |   |   |-- session.py           # SQLAlchemy async engine + session
-|   |   |   |-- migrations/          # Alembic migrations
-|   |   |-- models/
-|   |   |   |-- base.py              # SQLAlchemy base model
-|   |   |   |-- user.py
-|   |   |   |-- recording.py
-|   |   |   |-- entity.py
-|   |   |-- config.py                # Pydantic settings (env vars)
-|   |   |-- main.py                  # FastAPI app, lifespan, health check
-|   |-- tests/
-|   |-- Dockerfile                   # Multi-stage (builder + production)
-|   |-- docker-compose.yml           # 3 services: db, api, caddy
-|   |-- Caddyfile                    # Reverse proxy config
-|   |-- alembic.ini
-|   |-- pyproject.toml
-|   |-- .dockerignore
-|   |-- .env.example
-|
-|-- ios/WaiComputer/                 # iOS app (SwiftUI, iOS 17+)
-|   |-- App/
-|   |   |-- WaiComputerApp.swift     # Entry point, AppState
-|   |   |-- ContentView.swift        # Auth gate -> MainTabView
-|   |-- Features/
-|       |-- Recording/               # RecordingView, RecordingViewModel
-|       |-- Library/                 # LibraryView, RecordingDetailView
-|       |-- Search/                  # SearchView, SearchViewModel
-|       |-- Settings/                # SettingsView
-|
-|-- macos/WaiComputer/              # macOS app (SwiftUI, macOS 14+)
-|   |-- App/
-|   |   |-- WaiComputerMacApp.swift  # Entry point, MacAppState, menu bar
-|   |-- Features/                    # Same as iOS + system audio capture
-|
-|-- shared/WaiComputerKit/          # Shared Swift package
-|   |-- Sources/WaiComputerKit/
-|       |-- Models/                  # All data models (Codable)
-|       |-- Network/
-|       |   |-- APIClient.swift      # REST API client (actor)
-|       |   |-- WebSocketManager.swift # WebSocket client (actor)
-|       |-- Audio/
-|           |-- MicrophoneCapture.swift  # AVAudioEngine capture
-|           |-- OpusEncoder.swift        # Audio encoding
-|           |-- AudioManager.swift       # Permission + session management
-|
-|-- scripts/
-|   |-- backup-db.sh                # Daily pg_dump with 14-day retention
-|
-|-- .github/workflows/
-    |-- deploy.yml                   # CI/CD: test -> deploy to VPS
+┌─────────────────────────────────────────────────────┐
+│                    INTERFACES                        │
+│                                                     │
+│  macOS App    iOS App    Web App    Telegram Bot    │
+│  (SwiftUI)   (SwiftUI)  (Next.js)  (Webhook)      │
+│     │           │          │           │            │
+│     └───────────┴──────────┴───────────┘            │
+│                      │                              │
+├──────────────────────┤──────────────────────────────┤
+│                WAI BRAIN                            │
+│                                                     │
+│  Intent Router → Agent Loop → Tool Execution       │
+│       │              │             │                │
+│  "make a site"  Claude API   search_recordings     │
+│  "record"        tool_use    create_app             │
+│  "habits"                    query_app              │
+│  "find..."                   deploy_site            │
+│                              record_meeting         │
+│                              send_notification      │
+├─────────────────────────────────────────────────────┤
+│                   DATA LAYER                        │
+│                                                     │
+│  PostgreSQL + pgvector                              │
+│  ┌──────────┬───────────┬──────────┬─────────────┐ │
+│  │Recordings│ Telegram  │ User Apps│ Agents &    │ │
+│  │Segments  │ Messages  │ App Items│ Runs        │ │
+│  │Summaries │ Chats     │ (JSONB)  │ Commitments │ │
+│  │Highlights│ Sessions  │          │ Chat History│ │
+│  └──────────┴───────────┴──────────┴─────────────┘ │
+│       ↑           ↑          ↑          ↑          │
+│       └───────────┴──────────┴──────────┘          │
+│              Unified Search (embeddings)            │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│                 BACKGROUND                          │
+│                                                     │
+│  Celery + Redis                                    │
+│  ├── Agent scheduler (cron)                         │
+│  ├── Telegram sync (realtime) [Phase 4]            │
+│  ├── Digest generation                              │
+│  └── Notifications (Telegram + APNs) [Phase 5]    │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│                 DEPLOY                              │
+│                                                     │
+│  Cloudflare Pages (user apps)                      │
+│  Hetzner VPS (backend + DB + Redis)                │
+│  Caddy (reverse proxy + TLS)                       │
+└─────────────────────────────────────────────────────┘
 ```
+
+### Agent System
+
+```
+POST /api/agent/chat  ← user says something (any platform)
+        │
+   Intent Router
+   (pattern match first, Haiku LLM fallback)
+        │
+   ┌────┴────┬────────┬────────┬──────────┐
+   │         │        │        │          │
+ SEARCH    BUILD    EDIT    VOICE     CHAT
+   │         │        │    SUMMARY      │
+   │         │        │        │        │
+   ▼         ▼        ▼        ▼        ▼
+ Agent Loop (Claude + tool_use, max 10 turns)
+        │
+   Tool Dispatch
+   ┌────┼────┬─────────┬──────────┬───────────┐
+   │    │    │         │          │           │
+search track create   deploy   extract     web
+record commit app      site    entities   search
+ings   ment
+```
+
+**Intent types:** search, voice_summary, digest, action, build, edit, coach, chat
+
+**Tools (7):**
+- `search_recordings` — hybrid FTS + semantic search over transcript segments
+- `track_commitment` — store a promise with deadline and direction
+- `list_commitments` — query open promises
+- `extract_entities` — find people, amounts, dates, decisions
+- `search_web` — DuckDuckGo instant answers
+- `build_app` — generate full React app + deploy to Cloudflare
+- `build_site` — generate landing page + deploy
+
+### Collections (User Apps)
+
+Every user-created "app" is a **named collection** of JSONB items with optional schema.
+
+```
+User says: "Create a habit tracker"
+
+Wai creates:
+1. Collection { name: "habits", schema: { habit: str, completed: bool, date: date } }
+2. (Optional) React app deployed to Cloudflare Pages
+3. (Optional) Agent for daily reminders
+
+Data lives in Wai DB → accessible from ALL channels:
+- Chat: "meditation done" → Wai adds item
+- Web: Apps tab → click → CRUD
+- macOS: Apps in sidebar → collection viewer
+- Telegram: "habits" → inline checklist
+- Deployed app: Full UI at habits.wai.computer
+```
+
+**Cross-app intelligence** (the killer feature):
+```
+User: "Am I more productive on days I meditate?"
+
+Wai:
+├→ Habits collection: meditation ✓/✗ per day
+├→ Time tracker collection: hours worked per day
+├→ Correlation analysis
+└→ "In days with meditation you work 29% more (6.2h vs 4.8h)"
+```
+
+No other tool can do this. Lovable sites are isolated. Notion AI doesn't know your recordings.
+
+### Digital Agents
+
+Autonomous AI workers on cron schedules:
+- Created from natural language: "Check HN for AI news every morning"
+- Claude Haiku parses → name, cron, tools, system prompt
+- Celery Beat executes on schedule
+- Max 5 active per user, auto-disabled after 10 errors
+- Results stored in DB, delivered via API or Telegram (Phase 4)
+
+### App Builder (Lovable-Level)
+
+Two modes:
+- `build_app(description, app_id, schema)` — full interactive React app connected to Collections API
+- `build_site(description, theme)` — static landing page
+
+**Tech:** React 19 + Tailwind via CDN, single HTML file, no build step. Claude Sonnet generates. Deploy to Cloudflare Pages instantly.
+
+**Design system in prompt (~3000 lines):** Full UI component library, data patterns (CRUD, pagination, optimistic updates), Chart.js, accessibility, animation, dark mode, 8 themes.
+
+**Multi-turn editing:** User says "change colors" → Wai retrieves HTML from Redis → Claude edits → redeploy.
 
 ---
 
-## Database Schema
+## 3. User Experience
 
-**Engine:** PostgreSQL 16 with pgvector extension
-**ORM:** SQLAlchemy 2.0 (async via asyncpg)
-**Migrations:** Alembic
+### Three Screens
 
-### Tables
+Instead of 10 pages — **three**. Everything lives inside them.
 
-#### `users`
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK, server-generated |
-| `email` | VARCHAR(255) | UNIQUE, NOT NULL, indexed |
-| `password_hash` | VARCHAR(255) | NULLABLE (magic link users have no password) |
-| `magic_link_token` | VARCHAR(255) | NULLABLE |
-| `magic_link_expires` | TIMESTAMPTZ | NULLABLE |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
-| `updated_at` | TIMESTAMPTZ | server_default=now(), onupdate=now() |
+```
+ [💬 Wai]       [📚 Library]     [🤖 Agents]
+  Chat            Everything       Autonomous
+  with Wai        you've made      workers
+  DEFAULT         Browse           Manage
+```
 
-#### `recordings`
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK -> users (CASCADE) |
-| `title` | VARCHAR(500) | NULLABLE |
-| `type` | VARCHAR(50) | NOT NULL (meeting, note, reflection) |
-| `audio_url` | VARCHAR(1000) | NULLABLE |
-| `duration_seconds` | FLOAT | NULLABLE |
-| `language` | VARCHAR(10) | DEFAULT 'en' |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
-| `updated_at` | TIMESTAMPTZ | server_default=now() |
+Plus a collapsible **📱 Apps** section for user collections.
 
-#### `segments` (transcript chunks)
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `recording_id` | UUID | FK -> recordings (CASCADE) |
-| `speaker` | VARCHAR(100) | NULLABLE |
-| `content` | TEXT | NOT NULL |
-| `start_ms` | INTEGER | NOT NULL |
-| `end_ms` | INTEGER | NOT NULL |
-| `confidence` | FLOAT | DEFAULT 0.0 |
-| `embedding` | VECTOR(384) | NULLABLE, IVFFlat index (lists=100) |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
+### Screen: Wai (Chat) — HOME
 
-**Indexes:** GIN index on `to_tsvector('english', content)` for full-text search
+The primary interface. 90% of time spent here.
 
-#### `summaries`
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `recording_id` | UUID | FK -> recordings (CASCADE), UNIQUE |
-| `summary` | TEXT | NOT NULL |
-| `key_points` | JSONB | DEFAULT [] |
-| `decisions` | JSONB | DEFAULT [] |
-| `topics` | JSONB | DEFAULT [] |
-| `people_mentioned` | JSONB | DEFAULT [] |
-| `sentiment` | VARCHAR(50) | NULLABLE (positive, neutral, negative, mixed) |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
+Empty state with suggestion chips:
+- "Record a meeting"
+- "Find what Alex said about pricing"
+- "Create a habit tracker"
+- "What are my commitments?"
 
-#### `action_items`
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `recording_id` | UUID | FK -> recordings (CASCADE) |
-| `task` | TEXT | NOT NULL |
-| `owner` | VARCHAR(255) | NULLABLE |
-| `due_date` | DATE | NULLABLE |
-| `priority` | VARCHAR(20) | DEFAULT 'medium' (high, medium, low) |
-| `status` | VARCHAR(20) | DEFAULT 'pending' (pending, in_progress, completed, cancelled) |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
-| `updated_at` | TIMESTAMPTZ | server_default=now() |
+Chips disappear after first message. Then it's pure chat.
 
-#### `entities` (knowledge graph nodes)
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK -> users (CASCADE) |
-| `type` | VARCHAR(50) | NOT NULL (person, topic, project, organization) |
-| `name` | VARCHAR(255) | NOT NULL |
-| `metadata` | JSONB | DEFAULT {} |
-| `embedding` | VECTOR(384) | NULLABLE, IVFFlat index (lists=100) |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
-| `updated_at` | TIMESTAMPTZ | server_default=now() |
+**One universal card format** for all results:
+```
+┌──────────────────────────────────────────┐
+│  [icon] Title                   [badge]  │
+│                                          │
+│  Content (text, list, or preview)        │
+│                                          │
+│  [Action 1]  [Action 2]                │
+└──────────────────────────────────────────┘
+```
 
-#### `entity_relations` (knowledge graph edges)
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `source_id` | UUID | FK -> entities (CASCADE) |
-| `target_id` | UUID | FK -> entities (CASCADE) |
-| `relation_type` | VARCHAR(100) | NOT NULL (mentioned_in, works_on, related_to) |
-| `recording_id` | UUID | FK -> recordings (SET NULL), NULLABLE |
-| `context` | TEXT | NULLABLE |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
+Recording card, app card, site card, commitment card — same component, different content.
 
-#### `tags`
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK -> users (CASCADE) |
-| `name` | VARCHAR(100) | NOT NULL |
-| `color` | VARCHAR(7) | NULLABLE (hex color) |
-| `created_at` | TIMESTAMPTZ | server_default=now() |
+### Screen: Library — BROWSE
 
-#### `recording_tags` (many-to-many)
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `recording_id` | UUID | FK -> recordings (CASCADE), PK |
-| `tag_id` | UUID | FK -> tags (CASCADE), PK |
+Unified chronological feed of everything:
+- Recordings (📹)
+- Created sites/apps (🌐 / 📱)
+- Agent outputs (🤖)
+- Telegram messages (💬) [Phase 4]
+
+Filter tabs: All, Recordings, Apps, Sites, Agents
+
+### Screen: Agents — AUTOMATE
+
+List of digital agents with status, schedule, run history. Create via chat or "+" button.
+
+### Cross-Platform Consistency
+
+| | macOS | Web | Telegram |
+|---|---|---|---|
+| **Chat** | Sidebar → Chat | Wai tab | Chat with bot |
+| **Record** | ⏺ button + Option key | ⏺ button | Voice message |
+| **Create app** | "create a tracker" | "create a tracker" | "create a tracker" |
+| **Search** | Chat / Cmd+K | Chat / Library | "find..." |
+| **Notifications** | macOS push [Phase 5] | — | Telegram message |
 
 ---
 
-## API Endpoints
+## 4. Platform Specifications
 
-Base URL: `https://api.wai.computer`
+### 4.1 Backend API
 
-All endpoints except health/root require `Authorization: Bearer <JWT>` header.
+**Stack:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16 + pgvector, Redis, Celery
+**Server:** Hetzner VPS (157.180.47.68), 4GB RAM, 75GB disk
+**Domain:** wai.computer
+**Proxy:** Caddy 2 (auto-TLS)
 
-### Health & Root
+**Docker services:** db (pgvector:pg16), redis (7-alpine), api (FastAPI), celery-worker, web (Next.js), caddy
 
-| Method | Path | Description | Response |
-|--------|------|-------------|----------|
-| GET | `/` | Root | `{"message": "WaiComputer API", "version": "0.1.0"}` |
-| GET | `/health` | Health check (verifies DB) | `{"status": "healthy", "database": "connected"}` |
+**All endpoints:** See section 6 (API Reference).
+
+**Key metrics:**
+- 846 backend tests, 97.7% coverage
+- 199 web tests
+- CI: GitHub Actions (lint + test + deploy on push to main)
+
+### 4.2 Web Frontend
+
+**Stack:** Next.js 16, React 19, TypeScript 5, custom CSS with CSS variables
+**Design:** Warm beige background, teal accent, Space Grotesk font
+
+**Dashboard tabs:**
+- Library (default): recordings, search, chat, actions, entities, settings
+- Wai: agent chat with suggestion chips
+- Agents: create/list/run/delete digital agents
+- Apps: grid of user collections, item CRUD
+
+### 4.3 macOS App
+
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package)
+**Min OS:** macOS 14.2+
+**Bundle ID:** is.waiwai.waicomputer
+**Signing:** Developer ID Application: WaiWai, LLC
+
+**Architecture:**
+- Three-column NavigationSplitView (sidebar + list + detail)
+- MenuBarExtra (system tray with status + quick actions)
+- Global hotkey dictation (Option key push-to-talk)
+
+**Sidebar structure (target):**
+```
+Library
+  All Recordings, Meetings, Notes, Trash
+Folders
+  [User-created]
+Wai
+  Chat (agent-powered)     ← NEW
+  Agents (digital workers) ← NEW
+  Apps (collections)       ← NEW
+Tools
+  Search, Settings
+```
+
+**Audio capabilities:**
+- Microphone capture (AVAudioEngine, 16kHz mono)
+- System audio capture (macOS 14.2+, for Zoom/Meet)
+- Dual capture (mic + system, mono-mix for diarization)
+- Real-time Deepgram WebSocket streaming
+- Local WAV backup to Application Support
+
+**New features (Phase 3, in progress):**
+- MacAgentChatView: agent chat with tool calling
+- MacAgentsView: create, list, run, delete agents
+- MacAppsView: browse collections, view/add/delete items
+- API methods in WaiComputerKit for all new endpoints
+
+### 4.4 iOS App (Planned)
+
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package)
+**Min OS:** iOS 17+
+
+**Tab bar:** Wai (chat), Library, Agents, Apps
+
+**P0 features:** Auth, recording, live transcription, agent chat
+**P1 features:** Push notifications, digital agents, user apps
+**P2 features:** Offline recording + sync, WidgetKit
+
+Uses same WaiComputerKit → same API methods, same models. WebView for deployed apps.
+
+### 4.5 Android App (Planned)
+
+**Stack:** Kotlin, Jetpack Compose
+**Status:** Future
+
+P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
+
+### 4.6 Telegram Bot (Planned — Phase 4)
+
+**Status:** Code exists in wai-telegram repo, pending migration
+
+**Architecture:** Webhook handler → intent router → agent loop → response
+
+**Features to migrate:**
+- Bot webhook (26+ commands)
+- Voice message transcription (Deepgram)
+- Agent chat (same loop as web/macOS)
+- Message sync (Telethon client)
+- Inline search (@waicomputer_bot in any chat)
+- Forward processing ("second brain")
+- Site/app building from chat
+- Digital agent delivery to Telegram
+
+---
+
+## 5. Data Model
+
+### Database Tables (18 total)
+
+| Table | Key Fields | Status |
+|-------|------------|--------|
+| `users` | email, password_hash, magic_link_token, default_language | Done |
+| `recordings` | user_id, title, type, audio_url, status, duration_seconds, language, folder_id, deleted_at, starred_at | Done |
+| `segments` | recording_id, speaker, content, start_ms, end_ms, confidence, embedding(384d) | Done |
+| `summaries` | recording_id, summary, key_points(JSONB), decisions(JSONB), topics(JSONB), sentiment | Done |
+| `action_items` | recording_id, task, owner, due_date, priority, status, source | Done |
+| `highlights` | recording_id, category, title, description, speaker, importance | Done |
+| `folders` | user_id, name | Done |
+| `entities` | user_id, type, name, metadata(JSONB), embedding(384d) | Done |
+| `entity_relations` | source_id, target_id, relation_type, recording_id, context | Done |
+| `tags` | user_id, name, color | Done |
+| `recording_tags` | recording_id, tag_id | Done |
+| `chat_sessions` | user_id, title, recording_ids(JSONB), pinned_at | Done |
+| `chat_messages` | session_id, role, content, source_segment_ids(JSONB) | Done |
+| `refresh_tokens` | user_id, token_hash, expires_at, device_name | Done |
+| `commitments` | user_id, who, what, direction, deadline, status, source_context, completed_at | Done |
+| `digital_agents` | user_id, name, description, system_prompt, tools, schedule_type, cron_expression, status, delivery_channel, delivery_target, last_run_at, next_run_at, run_count, last_result | Done |
+| `user_apps` | user_id, name, display_name, icon, template, schema_def(JSONB), app_url, settings(JSONB), sort_order | Done |
+| `app_items` | app_id, data(JSONB), embedding(1536d) | Done |
+
+### Authentication
+
+- Access tokens: JWT HS256, 30-minute expiry
+- Refresh tokens: 180-day, SHA-256 hashed in DB, rotated on use
+- Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (.wai.computer)
+- Magic links: 15-minute expiry, email via Resend
+- Deep links: `waicomputer://auth/verify?token=...` for native apps
+- Keychain storage on macOS/iOS (wai_access_token, wai_refresh_token)
+
+---
+
+## 6. API Reference
 
 ### Auth (`/api/auth`)
-
-| Method | Path | Auth | Request Body | Response |
-|--------|------|------|-------------|----------|
-| POST | `/register` | No | `{email, password}` | `{access_token, token_type}` |
-| POST | `/login` | No | `{email, password}` | `{access_token, token_type}` |
-| POST | `/magic-link` | No | `{email}` | `{message}` (sends email via Resend) |
-| POST | `/verify-magic` | No | `{token}` | `{access_token, token_type}` |
-| POST | `/refresh` | Yes | - | `{access_token, token_type}` |
-| GET | `/me` | Yes | - | `{id, email, created_at}` |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/register` | Register with email + password → tokens |
+| POST | `/login` | Login → tokens |
+| POST | `/magic-link` | Request magic link email |
+| POST | `/verify-magic` | Verify magic link → tokens |
+| POST | `/refresh` | Refresh access token (body or cookie) |
+| POST | `/logout` | Clear cookies + revoke refresh token |
+| GET | `/me` | Get current user info |
 
 ### Recordings (`/api/recordings`)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/` | Create recording (pending upload) |
+| GET | `/` | List recordings (limit, offset, type, trashed) |
+| GET | `/{id}` | Get detail (segments, summary, actions, highlights) |
+| PATCH | `/{id}` | Update title/type/folder |
+| DELETE | `/{id}` | Soft delete |
+| POST | `/{id}/upload` | Stream audio to S3 |
+| POST | `/{id}/finalize` | Trigger transcription |
+| POST | `/{id}/transcript` | Ingest segments from client |
+| POST | `/{id}/summarize` | Generate AI summary |
+| GET | `/{id}/speaker-stats` | Per-speaker analytics |
+| GET | `/{id}/related` | Semantically similar recordings |
+| GET | `/{id}/keywords` | Top keywords |
+| POST/DELETE | `/{id}/star` | Star/unstar |
+| GET | `/analytics` | Weekly counts |
+| GET | `/digest/weekly` | Aggregated weekly digest |
+| POST | `/bulk` | Bulk delete/restore/move |
 
-| Method | Path | Auth | Request / Params | Response |
-|--------|------|------|-----------------|----------|
-| GET | `/` | Yes | `?skip=0&limit=50&type=meeting` | `[{id, title, type, audio_url, duration, ...}]` |
-| POST | `/` | Yes | `{title?, type, language?}` | `{id, title, type, ...}` |
-| GET | `/{id}` | Yes | - | Full recording with segments, summary, action_items |
-| PATCH | `/{id}` | Yes | `{title?, type?}` | Updated recording |
-| DELETE | `/{id}` | Yes | - | 204 No Content |
-| GET | `/{id}/transcript` | Yes | - | `[{id, speaker, content, start_ms, end_ms, confidence}]` |
-| GET | `/{id}/summary` | Yes | - | `{summary, key_points, decisions, ...}` |
-| POST | `/{id}/generate-summary` | Yes | - | Triggers Claude summarization, returns summary |
+### Agent Chat (`/api/agent`)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/chat` | `{message, session_id?, voice_transcript?}` → `{response, intent, model_used, session_id, tool_calls, tokens}` |
 
-### Search (`/api/search`)
+### Digital Agents (`/api/agents`)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/` | Create from natural language description |
+| GET | `/` | List user's agents |
+| GET | `/{id}` | Get agent + last result |
+| POST | `/{id}/run` | Manual trigger → Celery dispatch |
+| PATCH | `/{id}` | Update status (active/paused) |
+| DELETE | `/{id}` | Soft-delete |
 
-| Method | Path | Auth | Params | Description |
-|--------|------|------|--------|-------------|
-| GET | `/` | Yes | `q, limit=20, offset=0` | Hybrid search (FTS + semantic via RRF) |
-| GET | `/semantic` | Yes | `q, threshold=0.3, limit=20` | Pure vector similarity search |
-| GET | `/fts` | Yes | `q, limit=20` | Pure PostgreSQL full-text search |
+### User Apps (`/api/apps`)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/` | Create app (collection) |
+| GET | `/` | List with item counts |
+| GET | `/{id}` | Get app details |
+| PATCH | `/{id}` | Update schema/settings/URL |
+| DELETE | `/{id}` | Delete + cascade items |
+| GET | `/{id}/items` | List items (paginated) |
+| POST | `/{id}/items` | Create item (JSONB data) |
+| PATCH | `/{id}/items/{itemId}` | Update item |
+| DELETE | `/{id}/items/{itemId}` | Delete item |
+| GET | `/{id}/stats` | Aggregated stats |
 
-**Hybrid Search Algorithm (Reciprocal Rank Fusion):**
-```
-score = 1/(60 + fts_rank) + 1/(60 + semantic_rank)
-```
-
-### Action Items (`/api/action-items`)
-
-| Method | Path | Auth | Request / Params | Response |
-|--------|------|------|-----------------|----------|
-| GET | `/` | Yes | `?status=pending&priority=high&limit=50` | `[{id, task, owner, ...}]` |
-| GET | `/{id}` | Yes | - | Single action item |
-| PATCH | `/{id}` | Yes | `{status?, priority?, owner?, due_date?}` | Updated action item |
-| DELETE | `/{id}` | Yes | - | 204 No Content |
-
-### Entities (`/api/entities`)
-
-| Method | Path | Auth | Request / Params | Response |
-|--------|------|------|-----------------|----------|
-| GET | `/` | Yes | `?type=person` | `[{id, type, name, metadata}]` |
-| GET | `/{id}` | Yes | - | Entity with relations |
-| POST | `/` | Yes | `{type, name, metadata?}` | Created entity |
-| DELETE | `/{id}` | Yes | - | 204 No Content |
-
-### Settings (`/api/settings`)
-
-| Method | Path | Auth | Request Body | Response |
-|--------|------|------|-------------|----------|
-| POST | `/change-password` | Yes | `{current_password, new_password}` | `{message}` |
-
----
-
-## WebSocket Protocol
-
-**Endpoint:** `WSS /api/ws/audio?token={jwt}&recording_id={uuid}`
-
-### Connection Flow
-
-1. Client connects with JWT token and recording ID as query params
-2. Server validates token, verifies recording ownership
-3. Server initializes Deepgram streaming session (Nova-2, diarize=true, interim_results=true)
-4. Server sends: `{"type": "status", "status": "ready"}`
-5. Bidirectional streaming begins
-
-### Client -> Server Messages
-
-**Audio data:**
-```json
-{
-  "type": "audio",
-  "data": "<base64-encoded opus/pcm>",
-  "timestamp": 1234567890
-}
-```
-
-**End signal:**
-```json
-{"type": "end"}
-```
-
-### Server -> Client Messages
-
-**Transcript (real-time):**
-```json
-{
-  "type": "transcript",
-  "text": "Hello, welcome to the meeting.",
-  "speaker": "Speaker 1",
-  "is_final": true,
-  "start_ms": 0,
-  "end_ms": 2500
-}
-```
-
-**Status updates:**
-```json
-{
-  "type": "status",
-  "status": "ready|processing|error",
-  "message": "Optional detail"
-}
-```
-
-### Background Processing
-
-During an active WebSocket session, the server runs concurrent tasks:
-1. **Receive loop** - Decode base64 audio, forward to Deepgram
-2. **Transcribe loop** - Parse Deepgram responses, forward transcripts to client
-3. **Batch save** - Every 5 seconds, flush pending final segments to DB
-4. **Embedding generation** - Generate 384-dim embeddings for saved segments
+### Other
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/search` | Hybrid search (FTS + semantic RRF) |
+| POST | `/api/chat` | RAG chat with recording context |
+| GET/POST/PATCH/DELETE | `/api/chat/sessions/*` | Chat session management |
+| GET/PATCH/DELETE | `/api/action-items/*` | Action items |
+| GET/POST/DELETE | `/api/entities/*` | Knowledge graph |
+| GET/POST/PATCH/DELETE | `/api/folders/*` | Folders |
+| POST | `/api/dictation/cleanup` | AI text cleanup |
+| GET | `/api/deepgram-token` | Temporary Deepgram JWT |
+| GET/PATCH | `/api/settings` | User settings |
+| POST | `/api/settings/change-password` | Password change |
+| GET | `/health` | Health check |
 
 ---
 
-## AI Integration
+## 7. Scenarios
 
-### Deepgram (Real-time Transcription)
+### Scenario 1: Record Meeting → Auto-Create Agents
 
-**Model:** Nova-2
-**Features:** speaker diarization, interim results, VAD, smart formatting
-**Audio format:** 16kHz mono, Opus or PCM
-**Latency:** <300ms end-to-end
+1. User clicks Record (macOS) → mic + system audio
+2. Real-time transcript with speaker diarization
+3. Meeting ends → Wai generates: summary, key decisions, action items, commitments
+4. Wai suggests: "Alex promised proposal by Friday. Create reminder?"
+5. One click → agent created (cron: Friday 10:00, tool: search + notify)
+6. Friday → agent runs → checks for proposal → sends reminder to Telegram
 
-**Streaming config:**
-```python
-{
-    "model": "nova-2",
-    "diarize": True,
-    "interim_results": True,
-    "vad_events": True,
-    "utterance_end_ms": 1000,
-    "smart_format": True,
-    "encoding": "opus",
-    "sample_rate": 16000,
-    "channels": 1
-}
-```
+### Scenario 2: Voice → App
 
-### Claude API (Summarization & Extraction)
+macOS (hold Option) or Web (🎙) or Telegram (voice):
+"Create a habit tracker with meditation, exercise, reading"
 
-**Model:** claude-sonnet-4-20250514
+Wai: creates collection → generates React UI → deploys → returns live URL.
 
-**Summarization prompt output:**
-```json
-{
-  "title": "Suggested title",
-  "summary": "2-3 paragraph summary",
-  "key_points": ["point 1", "point 2"],
-  "decisions": [{"decision": "...", "context": "..."}],
-  "action_items": [{"task": "...", "owner": "...", "priority": "high|medium|low"}],
-  "topics": ["topic 1", "topic 2"],
-  "people_mentioned": ["Person A"],
-  "sentiment": "positive|neutral|negative|mixed"
-}
-```
+### Scenario 3: Cross-Channel Data
 
-**Entity extraction output:**
-```json
-[
-  {
-    "name": "Entity Name",
-    "type": "person|topic|project|organization",
-    "relations": [
-      {"target": "Other Entity", "type": "works_on", "context": "mentioned in Q3 planning"}
-    ]
-  }
-]
-```
+- Morning: macOS dictation "spent 500 on lunch"
+- Daytime: web → view expense tracker stats
+- Evening: Telegram → agent sends daily report "spent 1740 today, 58% of budget"
 
-### Sentence Transformers (Embeddings)
+### Scenario 4: Search Everything
 
-**Model:** all-MiniLM-L6-v2
-**Dimensions:** 384
-**Normalization:** L2 normalized
-**Usage:** Segment embeddings for semantic search, entity embeddings for similarity
-**Loading:** Pre-loaded at app startup via lifespan handler
-**Index:** IVFFlat (lists=100) on segments.embedding and entities.embedding
+"What did Alex say about pricing?"
+
+Wai searches:
+- Recording transcripts (speakers, timestamps)
+- Telegram messages [Phase 4]
+- App data (collections)
+- Chat history
+
+Returns unified results with source links.
 
 ---
 
-## Authentication
-
-### Methods
-
-1. **Password auth** - Email + bcrypt-hashed password -> JWT
-2. **Magic link** - Email with 15-minute token via Resend -> JWT
-3. **JWT** - 7-day expiration, HS256 algorithm, Bearer token in Authorization header
-
-### JWT Payload
-
-```json
-{
-  "sub": "user-uuid",
-  "exp": 1772650216,
-  "iat": 1772045416
-}
-```
-
-### Token Storage (Client)
-
-- iOS/macOS: `UserDefaults` key `"accessToken"`
-- Set on login/register, cleared on logout
-- Auto-loaded on app launch to restore session
-
----
-
-## Audio Pipeline
-
-### Capture (Client)
-
-1. `AVAudioEngine` taps input node at 16kHz mono
-2. PCM buffer converted to 16-bit little-endian
-3. Base64-encoded and sent over WebSocket
-
-### Transport
-
-- WebSocket (WSS) from client to server
-- Server decodes base64, forwards raw bytes to Deepgram
-- Deepgram returns JSON transcript events
-
-### Storage
-
-- **Bucket:** Hetzner Object Storage (S3-compatible)
-- **Key format:** `{user_id}/{YYYY/MM/DD}/{recording_id}.opus`
-- **Access:** Presigned URLs (1-hour expiration)
-- **Operations:** upload, get_presigned_url, delete
-
----
-
-## iOS App
-
-**Target:** iOS 17+
-**Framework:** SwiftUI
-**Base URL:** `http://localhost:8000` (DEBUG) / `https://api.wai.computer` (RELEASE)
-
-### Screens
-
-1. **AuthView** - Login/Register with email + password
-2. **MainTabView** - 4 tabs: Record, Library, Search, Settings
-3. **RecordingView** - Type picker, animated waveform, live transcript, duration timer
-4. **LibraryView** - List of recordings with type filter (All/Meetings/Notes/Reflections)
-5. **RecordingDetailView** - Full transcript, summary, action items
-6. **SearchView** - Search bar, mode selector (Hybrid/Semantic/Fulltext), scored results
-7. **SettingsView** - User email display, logout
-
-### Recording Flow
-
-1. User selects recording type (note/meeting/reflection)
-2. Taps record button
-3. App requests microphone permission
-4. Creates recording on server (POST /api/recordings)
-5. Opens WebSocket connection
-6. Starts `MicrophoneCapture` -> `OpusEncoder` -> WebSocket
-7. Receives real-time transcripts, displays in scrolling view
-8. User taps stop
-9. Sends "end" message, disconnects WebSocket
-10. Recording appears in library
-
----
-
-## macOS App
-
-**Target:** macOS 14+
-**Framework:** SwiftUI
-**Window:** 1200x800 default, hidden title bar
-
-### Differences from iOS
-
-- **Menu bar extra** - Brain icon in menu bar, changes to waveform when recording
-- **Window style** - `.hiddenTitleBar`
-- **System audio capture** - BlackHole 2ch virtual audio device support (for capturing Zoom/Meet audio)
-- Audio session: no `.playAndRecord` category (macOS handles differently)
-
----
-
-## Shared Package (WaiComputerKit)
-
-**Platforms:** iOS 17+, macOS 14+
-**Dependencies:** swift-async-algorithms 1.0+
-
-### APIClient (Actor)
-
-Thread-safe REST client with:
-- Configurable base URL
-- Bearer token authentication
-- JSON encoding/decoding (ISO8601 dates with fractional seconds fallback)
-- 30-second request timeout
-- All CRUD operations for every resource
-
-### WebSocketManager (Actor)
-
-- Manages `URLSessionWebSocketTask`
-- `AsyncStream<WebSocketEvent>` for event consumption
-- Events: `.connected`, `.transcript(TranscriptMessage)`, `.status(StatusMessage)`, `.disconnected(Error?)`
-- Auto-converts `https://` base URL to `wss://`
-
-### Models (all Codable)
-
-- `User`, `TokenResponse`, auth request types
-- `Recording`, `RecordingDetail`, `RecordingType` enum
-- `Segment` (with computed `formattedTimestamp`)
-- `Summary`, `Decision`, `ActionItem` (with Priority/Status enums)
-- `SearchResult`, `SearchResponse`
-- `Entity`, `EntityDetail`, `EntityRelation`, `EntityType` enum
-
-### Audio
-
-- `MicrophoneCapture` - AVAudioEngine-based, yields `AsyncStream<AVAudioPCMBuffer>`
-- `OpusEncoder` - Currently PCM passthrough (production needs libopus C wrapper)
-- `AudioManager` - Singleton, permission management, audio session config
-
----
-
-## Infrastructure
-
-### Production VPS
-
-- **Provider:** Hetzner
-- **OS:** Ubuntu (Hetzner Cloud)
-- **IP:** 89.167.125.46
-- **Domain:** api.wai.computer
-- **Swap:** 2 GB (vm.swappiness=10)
-
-### Memory Budget
-
-| Component | RAM |
-|-----------|-----|
-| OS + Docker | ~350 MB |
-| PostgreSQL 16 (shared_buffers=64MB) | ~300 MB |
-| FastAPI (1 gunicorn worker + sentence-transformers) | ~560 MB |
-| Caddy | ~25 MB |
-| **Total** | **~1.24 GB** |
-| **Free + swap** | **~700 MB free + 2 GB swap** |
-
-### Docker Compose Services
-
-| Service | Image | Network | Ports | Memory Limit |
-|---------|-------|---------|-------|-------------|
-| `db` | pgvector/pgvector:pg16 | internal | None (isolated) | 512 MB |
-| `api` | backend-api (built) | internal + web | None (internal) | 1.2 GB |
-| `caddy` | caddy:2-alpine | web | 80, 443 | 64 MB |
-
-**Network isolation:** DB is only on `internal` network. API bridges `internal` + `web`. Caddy is only on `web`. DB is never reachable from outside Docker.
-
-### PostgreSQL Tuning
-
-```
-shared_buffers = 64MB
-work_mem = 4MB
-effective_cache_size = 256MB
-max_connections = 30
-```
-
-### Dockerfile (Multi-stage)
-
-- **Stage 1 (builder):** python:3.12-slim, build-essential + libpq-dev, `pip install` with CPU-only PyTorch
-- **Stage 2 (production):** python:3.12-slim, libpq5 + curl, non-root `appuser`, copy packages from builder
-- **CMD:** gunicorn with 1 UvicornWorker, timeout=120s, keep-alive=65s
-- **Image size:** ~2.1 GB (CPU-only PyTorch, no CUDA)
-
-### Caddy (Caddyfile)
-
-```
-api.wai.computer {
-    reverse_proxy api:8000
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        -Server
-    }
-    request_body { max_size 50MB }
-    log { output file /data/access.log { roll_size 10mb; roll_keep 5 }; format json }
-}
-```
-
-### Firewall (UFW)
-
-Only ports open: 22 (SSH), 80 (HTTP -> redirect), 443 (HTTPS)
-
-### SSL/TLS
-
-- **Provider:** Let's Encrypt (auto-managed by Caddy)
-- **Certificate:** ECDSA via ACME
-- **Auto-renewal:** Handled by Caddy before expiration
-
----
-
-## CI/CD
-
-**File:** `.github/workflows/deploy.yml`
-**Trigger:** Push to `main` branch, paths `backend/**`
-
-### Test Job
-
-1. Spin up pgvector:pg16 service container
-2. Install Python 3.12 + `.[dev]` dependencies
-3. Run `ruff check .` (lint)
-4. Run `pytest -x -q` with test DB + JWT_SECRET
-
-### Deploy Job (after test passes)
-
-1. SSH into VPS via `appleboy/ssh-action`
-2. `git pull origin main`
-3. `docker compose build api`
-4. `docker compose up -d api`
-5. Verify: `curl -f http://localhost:8000/health`
-
-**Required GitHub Secrets:** `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
-
----
-
-## Backups
-
-**Script:** `/opt/waicomputer/scripts/backup-db.sh`
-**Schedule:** Daily at 03:00 UTC via cron
-**Retention:** 14 days (auto-cleanup of older backups)
-**Location:** `/opt/waicomputer/backups/waicomputer_YYYYMMDD_HHMMSS.sql.gz`
-
-**Process:**
-1. Read POSTGRES_USER and POSTGRES_DB from .env
-2. `docker exec waicomputer-db pg_dump` piped through gzip
-3. Verify backup is non-empty
-4. Delete backups older than 14 days
-
----
-
-## Environment Variables
-
-### Required
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string (asyncpg) |
-| `JWT_SECRET` | Secret for HS256 JWT signing (generate: `openssl rand -hex 32`) |
-| `DEEPGRAM_API_KEY` | Deepgram API key for transcription |
-| `ANTHROPIC_API_KEY` | Claude API key for summarization |
-| `POSTGRES_USER` | Database username (used by docker-compose) |
-| `POSTGRES_PASSWORD` | Database password (used by docker-compose) |
-| `POSTGRES_DB` | Database name (used by docker-compose) |
-
-### Storage (S3/Hetzner Object Storage)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `S3_ENDPOINT` | S3-compatible endpoint URL | `""` |
-| `S3_ACCESS_KEY` | Access key ID | `""` |
-| `S3_SECRET_KEY` | Secret access key | `""` |
-| `S3_BUCKET` | Bucket name | `wai-computer` |
-| `S3_REGION` | Region | `eu-central` |
-
-### Email (Resend)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RESEND_API_KEY` | Resend API key | `""` |
-| `EMAIL_FROM` | Sender address | `WaiComputer <noreply@mail.waiwai.is>` |
-
-### Application
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DEBUG` | Enable debug mode | `false` |
-| `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:3000", "http://localhost:8080"]` |
-| `FRONTEND_URL` | Base URL for magic link emails | `http://localhost:3000` |
-
----
-
-## Security
-
-- **Authentication:** JWT (HS256, 7-day expiry) + bcrypt password hashing (bcrypt<5.0.0)
-- **Transport:** TLS 1.3 via Caddy (Let's Encrypt, auto-renewed)
-- **Headers:** HSTS (1 year, includeSubDomains, preload), X-Content-Type-Options: nosniff, X-Frame-Options: DENY
-- **Database:** Not exposed to host or external network (Docker internal network only)
-- **SSH:** Root login disabled, password auth disabled, key-only
-- **Firewall:** UFW allowing only 22, 80, 443
-- **Secrets:** .env file with 600 permissions, never committed to git
-- **Non-root container:** API runs as `appuser` inside Docker
-- **Token storage:** Magic link tokens expire in 15 minutes
-
----
-
-## Scaling Path
-
-When traffic exceeds ~20-30 active users:
-
-1. Resize Hetzner server (upgrade plan)
-2. Increase API memory limit to 3 GB, set `--workers 2` in gunicorn
-3. Increase PostgreSQL `shared_buffers` to 256 MB
-4. `docker compose up -d` - done
-
----
-
-## Dependencies
-
-### Backend (Python)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| fastapi | >=0.109.0 | Web framework |
-| uvicorn[standard] | >=0.27.0 | ASGI server |
-| gunicorn | >=22.0.0 | Process manager |
-| websockets | >=12.0 | WebSocket support |
-| pydantic[email] | >=2.0.0 | Data validation |
-| pydantic-settings | >=2.0.0 | Environment config |
-| sqlalchemy[asyncio] | >=2.0.0 | ORM |
-| asyncpg | >=0.29.0 | PostgreSQL async driver |
-| alembic | >=1.13.0 | Database migrations |
-| pgvector | >=0.2.0 | Vector similarity in PostgreSQL |
-| deepgram-sdk | >=3.11.0 | Speech-to-text |
-| anthropic | >=0.40.0 | Claude API |
-| sentence-transformers | >=2.3.0 | Embedding generation |
-| boto3 | >=1.34.0 | S3 storage (Hetzner) |
-| python-jose[cryptography] | >=3.3.0 | JWT handling |
-| passlib[bcrypt] | >=1.7.0 | Password hashing |
-| bcrypt | <5.0.0 | Pinned for passlib compatibility |
-| python-multipart | >=0.0.6 | Form data parsing |
-| httpx | >=0.26.0 | HTTP client |
-| resend | >=2.0.0 | Email sending |
-
-### Dev Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| pytest | Testing |
-| pytest-asyncio | Async test support |
-| black | Code formatting |
-| ruff | Linting |
-
-### Swift (WaiComputerKit)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| swift-async-algorithms | 1.0+ | Async sequence utilities |
-
----
-
-## Known Limitations & Notes
-
-1. **Opus encoding** - Client currently sends PCM passthrough; production should integrate libopus via C wrapper for bandwidth efficiency
-2. **Embedding model** - Downloads from HuggingFace on first startup; subsequent starts use cache
-3. **Single worker** - 1 gunicorn worker because each loads the ~500 MB embedding model; sufficient for async FastAPI with 5 users
-4. **Magic link frontend** - `FRONTEND_URL/auth/verify?token=xxx` route must exist in a web frontend or be handled by the native app's deep link handler
-5. **Batch segment save** - Segments are flushed to DB every 5 seconds during recording to balance performance vs. durability
-6. **BlackHole (macOS)** - System audio capture requires manual setup of BlackHole 2ch virtual audio device
-7. **No fallback behavior** - Per project convention, operations fail explicitly with clear errors rather than degrading silently
+## 8. Roadmap
+
+| Phase | What | Status |
+|-------|------|--------|
+| **1. Unified Brain** | Agent system, Collections API, app builder, Celery/Redis, 17 endpoints, 4 tables | Done |
+| **2. Smart UI** | Web: agent chat, agents view, apps view. 73 + 23 new tests | Done |
+| **3. macOS Integration** | Agent chat, agents, apps in macOS sidebar + API methods | In Progress |
+| **4. Telegram Channel** | Bot webhook, sync, delivery, voice/photo processing | Planned |
+| **5. iOS App** | Native iOS with shared WaiComputerKit, push notifications | Planned |
+| **6. Advanced** | Cross-app queries, iOS widgets, Android, MCP server, marketplace | Planned |
