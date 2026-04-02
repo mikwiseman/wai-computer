@@ -1,7 +1,6 @@
 """Tests for project bundle normalization in the app builder."""
 
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +9,6 @@ from app.services.agent import app_builder
 from app.services.agent.app_builder import (
     _coerce_bundle,
     _generate_bundle,
-    _generate_bundle_with_agent_sdk,
     _generate_slug,
     _get_bundle,
     _get_session_id,
