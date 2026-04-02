@@ -1,5 +1,6 @@
 """Database session configuration."""
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -9,22 +10,70 @@ from app.config import get_settings
 
 settings = get_settings()
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=1800,
-)
+_engine = None
+_session_maker = None
+_runtime_pid: int | None = None
 
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
+
+def _create_engine():
+    return create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+        pool_pre_ping=True,
+        pool_size=4,
+        max_overflow=2,
+        pool_recycle=1800,
+    )
+
+
+def _ensure_runtime(force: bool = False) -> None:
+    global _engine, _session_maker, _runtime_pid
+
+    current_pid = os.getpid()
+    runtime_ready = (
+        _engine is not None
+        and _session_maker is not None
+        and _runtime_pid == current_pid
+    )
+    if not force and runtime_ready:
+        return
+
+    if _engine is not None:
+        _engine.sync_engine.dispose()
+
+    engine = _create_engine()
+    _engine = engine
+    _session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+    _runtime_pid = current_pid
+
+
+class _AsyncSessionMakerProxy:
+    def __call__(self, *args, **kwargs):
+        _ensure_runtime()
+        return _session_maker(*args, **kwargs)
+
+
+class _EngineProxy:
+    def __getattr__(self, name: str):
+        _ensure_runtime()
+        return getattr(_engine, name)
+
+
+def reset_db_runtime() -> None:
+    """Recreate the async engine/session factory for the current process."""
+    _ensure_runtime(force=True)
+
+
+async_session_maker = _AsyncSessionMakerProxy()
+engine = _EngineProxy()
+
+_ensure_runtime()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

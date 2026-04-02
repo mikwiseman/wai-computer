@@ -17,11 +17,10 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
-from app.core.deepgram import transcribe_audio_file
 from app.core.embeddings import generate_embedding
 from app.core.observability import bind_recording_context
-from app.core.storage import get_storage_client
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
+from app.core.transcription import transcribe_audio_file
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, RecordingStatus, Segment, Summary
 
@@ -459,8 +458,10 @@ async def _load_recording_detail(
     recording_id: UUID,
     user_id: UUID,
     db: Database,
+    *,
+    include_deleted: bool = True,
 ) -> Recording | None:
-    result = await db.execute(
+    query = (
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user_id)
         .options(
@@ -470,6 +471,27 @@ async def _load_recording_detail(
             selectinload(Recording.highlights),
         )
         .execution_options(populate_existing=True)
+    )
+    if not include_deleted:
+        query = query.where(Recording.deleted_at.is_(None))
+
+    result = await db.execute(
+        query
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_active_recording(
+    recording_id: UUID,
+    user_id: UUID,
+    db: Database,
+) -> Recording | None:
+    result = await db.execute(
+        select(Recording).where(
+            Recording.id == recording_id,
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -502,12 +524,6 @@ async def _mark_recording_failed_by_id(
 def _transcript_failure_details(error: HTTPException) -> tuple[str, str]:
     detail = str(error.detail) if error.detail is not None else "Failed to save transcript"
     normalized_detail = _normalize_failure_message(detail, "Failed to save transcript")
-    is_empty_transcript = (
-        error.status_code == status.HTTP_400_BAD_REQUEST
-        and normalized_detail == "Transcript is empty"
-    )
-    if is_empty_transcript:
-        return "transcript_empty", normalized_detail
     return "transcript_validation_failed", normalized_detail
 
 
@@ -568,10 +584,13 @@ async def _persist_client_segments(
 ) -> str:
     normalized_segments = [segment for segment in segments if segment.text.strip()]
     if not normalized_segments:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Transcript is empty",
-        )
+        if duration_seconds is not None:
+            recording.duration_seconds = duration_seconds
+        recording.status = RecordingStatus.READY.value
+        recording.failure_code = None
+        recording.failure_message = None
+        await db.commit()
+        return ""
 
     await _reset_recording_processing_state(recording.id, db)
 
@@ -662,7 +681,7 @@ async def _stage_upload_to_disk(
                 total_size += len(chunk)
                 if total_size > MAX_UPLOAD_SIZE:
                     raise HTTPException(
-                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=_upload_limit_message(),
                     )
 
@@ -1241,11 +1260,6 @@ async def delete_recording(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     if permanent or recording.deleted_at is not None:
-        if recording.audio_url:
-            try:
-                await get_storage_client().delete_audio(recording.audio_url)
-            except Exception as error:
-                logger.warning("Failed to delete audio for recording %s: %s", recording.id, error)
         await db.delete(recording)
         return
 
@@ -1287,10 +1301,7 @@ async def star_recording(
     db: Database,
 ) -> StarRecordingResponse:
     """Star a recording."""
-    result = await db.execute(
-        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
-    )
-    recording = result.scalar_one_or_none()
+    recording = await _load_active_recording(recording_id, user.id, db)
 
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -1308,10 +1319,7 @@ async def unstar_recording(
     db: Database,
 ) -> StarRecordingResponse:
     """Unstar a recording."""
-    result = await db.execute(
-        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
-    )
-    recording = result.scalar_one_or_none()
+    recording = await _load_active_recording(recording_id, user.id, db)
 
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -1330,10 +1338,7 @@ async def update_recording(
     db: Database,
 ) -> RecordingResponse:
     """Update a recording."""
-    result = await db.execute(
-        select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
-    )
-    recording = result.scalar_one_or_none()
+    recording = await _load_active_recording(recording_id, user.id, db)
 
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -1774,7 +1779,7 @@ async def save_transcript(
     )
     logger.info("live transcript save started segment_count=%s", len(request.segments))
     user_id = user.id
-    recording = await _load_recording_detail(recording_id, user_id, db)
+    recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
@@ -1822,7 +1827,7 @@ async def save_transcript(
         ) from error
 
     db.expire_all()
-    refreshed = await _load_recording_detail(recording_id, user_id, db)
+    refreshed = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if refreshed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
     logger.info(
@@ -1872,12 +1877,7 @@ async def generate_summary(
         data={"recording_id": str(recording_id)},
         level="info",
     )
-    result = await db.execute(
-        select(Recording)
-        .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments), selectinload(Recording.summary))
-    )
-    recording = result.scalar_one_or_none()
+    recording = await _load_recording_detail(recording_id, user.id, db, include_deleted=False)
 
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -1895,119 +1895,121 @@ async def generate_summary(
         transcript_lines.append(f"{speaker}: {segment.content}")
     transcript = "\n".join(transcript_lines)
 
-    # Generate summary
-    summary_result = await summarize_transcript(transcript)
+    try:
+        summary_result = await summarize_transcript(transcript)
 
-    # Update or create summary
-    if recording.summary:
-        recording.summary.summary = summary_result.summary
-        recording.summary.key_points = summary_result.key_points
-        recording.summary.decisions = summary_result.decisions
-        recording.summary.topics = summary_result.topics
-        recording.summary.people_mentioned = summary_result.people_mentioned
-        recording.summary.sentiment = summary_result.sentiment
-    else:
-        summary = Summary(
-            recording_id=recording.id,
-            summary=summary_result.summary,
-            key_points=summary_result.key_points,
-            decisions=summary_result.decisions,
-            topics=summary_result.topics,
-            people_mentioned=summary_result.people_mentioned,
-            sentiment=summary_result.sentiment,
+        if recording.summary:
+            recording.summary.summary = summary_result.summary
+            recording.summary.key_points = summary_result.key_points
+            recording.summary.decisions = summary_result.decisions
+            recording.summary.topics = summary_result.topics
+            recording.summary.people_mentioned = summary_result.people_mentioned
+            recording.summary.sentiment = summary_result.sentiment
+        else:
+            summary = Summary(
+                recording_id=recording.id,
+                summary=summary_result.summary,
+                key_points=summary_result.key_points,
+                decisions=summary_result.decisions,
+                topics=summary_result.topics,
+                people_mentioned=summary_result.people_mentioned,
+                sentiment=summary_result.sentiment,
+            )
+            db.add(summary)
+            recording.summary = summary
+
+        if not recording.title:
+            recording.title = summary_result.title
+
+        await db.execute(
+            delete(ActionItem).where(
+                ActionItem.recording_id == recording.id,
+                ActionItem.source == "generated",
+            )
         )
-        db.add(summary)
-        recording.summary = summary
 
-    # Update title if not set
-    if not recording.title:
-        recording.title = summary_result.title
-
-    # Replace previously generated action items on regeneration.
-    await db.execute(
-        delete(ActionItem).where(
-            ActionItem.recording_id == recording.id,
-            ActionItem.source == "generated",
-        )
-    )
-
-    # Create action items
-    for item in summary_result.action_items:
-        task = str(item.get("task", "")).strip()
-        if not task:
-            continue
-
-        due_raw = item.get("due")
-        due_date: date | None = None
-        if isinstance(due_raw, date):
-            due_date = due_raw
-        elif isinstance(due_raw, str) and due_raw:
-            try:
-                due_date = date.fromisoformat(due_raw)
-            except ValueError:
-                due_date = None
-
-        priority = item.get("priority", "medium")
-        if priority not in {"high", "medium", "low"}:
-            priority = "medium"
-
-        action = ActionItem(
-            recording_id=recording.id,
-            task=task,
-            owner=item.get("owner"),
-            due_date=due_date,
-            priority=priority,
-            source="generated",
-        )
-        db.add(action)
-
-    # Replace highlights on regeneration.
-    await db.execute(
-        delete(Highlight).where(Highlight.recording_id == recording.id)
-    )
-
-    # Resolve highlight timestamps from segments and persist.
-    raw_highlights = summary_result.highlights or []
-    if raw_highlights:
-        segment_dicts = [
-            {
-                "content": seg.content,
-                "start_ms": seg.start_ms,
-                "end_ms": seg.end_ms,
-            }
-            for seg in sorted(recording.segments, key=lambda x: x.start_ms or 0)
-        ]
-        resolved = resolve_highlight_timestamps(raw_highlights, segment_dicts)
-        for hl in resolved:
-            category = str(hl.get("category", "insight")).strip()[:30]
-            title = str(hl.get("title", "")).strip()
-            if not title:
+        for item in summary_result.action_items:
+            task = str(item.get("task", "")).strip()
+            if not task:
                 continue
-            importance = hl.get("importance", "medium")
-            if importance not in {"high", "medium", "low"}:
-                importance = "medium"
+
+            due_raw = item.get("due")
+            due_date: date | None = None
+            if isinstance(due_raw, date):
+                due_date = due_raw
+            elif isinstance(due_raw, str) and due_raw:
+                try:
+                    due_date = date.fromisoformat(due_raw)
+                except ValueError:
+                    due_date = None
+
+            priority = item.get("priority", "medium")
+            if priority not in {"high", "medium", "low"}:
+                priority = "medium"
+
             db.add(
-                Highlight(
+                ActionItem(
                     recording_id=recording.id,
-                    category=category,
-                    title=title[:500],
-                    description=hl.get("description"),
-                    speaker=hl.get("speaker"),
-                    start_ms=hl.get("start_ms"),
-                    end_ms=hl.get("end_ms"),
-                    importance=importance,
+                    task=task,
+                    owner=item.get("owner"),
+                    due_date=due_date,
+                    priority=priority,
+                    source="generated",
                 )
             )
 
-    await db.flush()
+        await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
 
-    summary = _serialize_summary(recording.summary)
-    if summary is None:
+        raw_highlights = summary_result.highlights or []
+        if raw_highlights:
+            segment_dicts = [
+                {
+                    "content": seg.content,
+                    "start_ms": seg.start_ms,
+                    "end_ms": seg.end_ms,
+                }
+                for seg in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+            ]
+            resolved = resolve_highlight_timestamps(raw_highlights, segment_dicts)
+            for hl in resolved:
+                category = str(hl.get("category", "insight")).strip()[:30]
+                title = str(hl.get("title", "")).strip()
+                if not title:
+                    continue
+                importance = hl.get("importance", "medium")
+                if importance not in {"high", "medium", "low"}:
+                    importance = "medium"
+                db.add(
+                    Highlight(
+                        recording_id=recording.id,
+                        category=category,
+                        title=title[:500],
+                        description=hl.get("description"),
+                        speaker=hl.get("speaker"),
+                        start_ms=hl.get("start_ms"),
+                        end_ms=hl.get("end_ms"),
+                        importance=importance,
+                    )
+                )
+
+        await db.flush()
+
+        summary = _serialize_summary(recording.summary)
+        if summary is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Summary not saved",
+            )
+        return summary
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Summary generation failed for recording %s", recording_id)
+        await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Summary not saved",
-        )
-    return summary
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="We couldn't generate the summary right now. Please try again in a moment.",
+        ) from exc
 
 
 ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"}
@@ -2041,30 +2043,35 @@ async def upload_audio_file(
     logger.info("audio upload started filename=%s", file.filename or "")
     # Validate recording exists and belongs to user
     user_id = user.id
-    recording = await _load_recording_detail(recording_id, user_id, db)
+    recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
-    # Validate file extension
     filename = file.filename or ""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ALLOWED_AUDIO_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file type '.{ext}'. "
-            f"Allowed: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}",
+    try:
+        ext = _extension_from_upload(filename, file.content_type or "")
+    except HTTPException as exc:
+        await _mark_recording_failed(
+            recording,
+            db,
+            "unsupported_file_type",
+            _normalize_failure_message(str(exc.detail), "Unsupported file type"),
         )
+        raise
 
     upload_size = _measure_upload_size(file)
     if upload_size > MAX_UPLOAD_SIZE:
         detail = _upload_limit_message()
         await _mark_recording_failed(recording, db, "file_too_large", detail)
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=detail)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=detail,
+        )
 
-    content_type = EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
-
-    storage = get_storage_client()
-    old_audio_url = recording.audio_url
+    content_type = EXTENSION_TO_CONTENT_TYPE.get(
+        ext,
+        file.content_type or "application/octet-stream",
+    )
 
     try:
         staged_path, _ = await _stage_upload_to_disk(
@@ -2085,66 +2092,32 @@ async def upload_audio_file(
             "staging_failed",
             _normalize_failure_message(exc, detail),
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail,
-        ) from exc
+        db.expire_all()
+        failed_recording = await _load_recording_detail(
+            recording_id,
+            user_id,
+            db,
+            include_deleted=True,
+        )
+        if failed_recording is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=detail,
+            ) from exc
+        return _serialize_recording_detail(failed_recording)
 
     recording.status = RecordingStatus.UPLOADING.value
     recording.failure_code = None
     recording.failure_message = None
     await db.commit()
 
-    try:
-        with staged_path.open("rb") as staged_file:
-            s3_key = await storage.upload_audio_fileobj(
-                staged_file,
-                user_id,
-                recording_id,
-                content_type,
-            )
-    except Exception as exc:
-        logger.exception("Failed to store audio for recording %s", recording_id)
-        _delete_staged_file(str(staged_path))
-        detail = "Failed to store imported audio"
-        await _mark_recording_failed(
-            recording,
-            db,
-            "storage_upload_failed",
-            _normalize_failure_message(exc, detail),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=detail,
-        ) from exc
-
-    recording.audio_url = s3_key
     recording.status = RecordingStatus.PROCESSING.value
     recording.failure_code = None
     recording.failure_message = None
+    recording.audio_url = None
     recording.uploaded_at = datetime.now(timezone.utc)
     recording.duration_seconds = None
-
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        try:
-            await storage.delete_audio(s3_key)
-        except Exception as cleanup_error:
-            logger.warning(
-                "Failed to clean up orphaned S3 audio %s for recording %s: %s",
-                s3_key,
-                recording_id,
-                cleanup_error,
-            )
-        raise
-
-    if old_audio_url and old_audio_url != s3_key:
-        try:
-            await storage.delete_audio(old_audio_url)
-        except Exception as exc:
-            logger.warning("Failed to delete superseded audio %s: %s", old_audio_url, exc)
+    await db.commit()
 
     transcript_results = []
     transcript_text = ""
@@ -2199,26 +2172,19 @@ async def upload_audio_file(
     except Exception as exc:
         logger.exception("Recording processing failed for %s", recording_id)
         await db.rollback()
-
-        recording = await _load_recording_detail(recording_id, user_id, db)
-        if recording is None:
-            _delete_staged_file(str(staged_path))
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Recording disappeared after upload",
-            ) from exc
-
-        recording.status = RecordingStatus.FAILED.value
-        recording.failure_code = "processing_failed"
-        recording.failure_message = _normalize_failure_message(
-            exc,
-            "Audio saved, but processing failed",
+        await _mark_recording_failed_by_id(
+            recording_id,
+            db,
+            "processing_failed",
+            _normalize_failure_message(
+                exc,
+                "Imported audio processing failed",
+            ),
         )
-        await db.commit()
         _delete_staged_file(str(staged_path))
 
     db.expire_all()
-    recording = await _load_recording_detail(recording_id, user_id, db)
+    recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=True)
     if recording is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
