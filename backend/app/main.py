@@ -16,11 +16,12 @@ from app.api.routes import (
     apps,
     auth,
     chat,
-    deepgram,
     dictation,
     digital_agents,
     entities,
     folders,
+    realtime_transcription,
+    realtime_voice,
     recordings,
     search,
 )
@@ -73,8 +74,24 @@ if app_settings.sentry_dsn:
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Validate service keys at startup
-    if not app_settings.deepgram_api_key:
-        logger.warning("DEEPGRAM_API_KEY is not configured — transcription will not work")
+    if app_settings.realtime_voice_provider == "elevenlabs" and not app_settings.elevenlabs_api_key:
+        logger.warning(
+            "ELEVENLABS_API_KEY is not configured — realtime voice sessions will not work"
+        )
+    if app_settings.speech_to_text_provider == "elevenlabs" and not app_settings.elevenlabs_api_key:
+        logger.warning(
+            "speech_to_text_provider is elevenlabs but ELEVENLABS_API_KEY is not configured"
+        )
+    if app_settings.realtime_voice_provider != "elevenlabs":
+        logger.warning(
+            "realtime_voice_provider=%s is unsupported — only elevenlabs is supported",
+            app_settings.realtime_voice_provider,
+        )
+    if app_settings.speech_to_text_provider != "elevenlabs":
+        logger.warning(
+            "speech_to_text_provider=%s is unsupported — only elevenlabs is supported",
+            app_settings.speech_to_text_provider,
+        )
     if not app_settings.anthropic_api_key:
         logger.warning(
             "ANTHROPIC_API_KEY is not configured — summarization and dictation cleanup "
@@ -82,12 +99,6 @@ async def lifespan(app: FastAPI):
         )
     if not app_settings.resend_api_key:
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
-    if (
-        not app_settings.s3_endpoint
-        or not app_settings.s3_access_key
-        or not app_settings.s3_secret_key
-    ):
-        logger.warning("S3 credentials are not fully configured — audio storage will not work")
     if not app_settings.redis_url:
         logger.warning("REDIS_URL is not configured — agent scheduling will not work")
     if not app_settings.cloudflare_api_token:
@@ -160,8 +171,9 @@ app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
-app.include_router(deepgram.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
+app.include_router(realtime_transcription.router, prefix="/api")
+app.include_router(realtime_voice.router, prefix="/api")
 app.include_router(agent_chat.router, prefix="/api")
 app.include_router(digital_agents.router, prefix="/api")
 app.include_router(apps.router, prefix="/api")
