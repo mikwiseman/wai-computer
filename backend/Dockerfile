@@ -22,7 +22,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g wrangler@4.79.0
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash appuser

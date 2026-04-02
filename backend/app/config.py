@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Auth - JWT_SECRET is REQUIRED, no default for security
     jwt_secret: str  # Must be set via environment variable
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 1440  # legacy default for access tokens without explicit expiry
+    jwt_expire_minutes: int = 1440
     jwt_access_expire_minutes: int = 30  # short-lived access tokens
     jwt_refresh_expire_days: int = 180  # long-lived refresh tokens
     auth_cookie_name: str = "wai_access_token"
@@ -40,19 +40,28 @@ class Settings(BaseSettings):
         "https://api.wai.computer",
     ]
 
-    # Deepgram
-    deepgram_api_key: str = ""
+    # Voice providers
+    speech_to_text_provider: str = "elevenlabs"
+    realtime_voice_provider: str = "elevenlabs"
+
+    # ElevenLabs
+    elevenlabs_api_key: str = ""
+    elevenlabs_conversation_agent_id: str = ""
+    elevenlabs_recording_agent_id: str = ""
+    elevenlabs_speech_to_text_model: str = "scribe_v2"
+    elevenlabs_realtime_speech_to_text_model: str = "scribe_v2_realtime"
+    elevenlabs_environment: str = "production"
 
     # Claude/Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
+    app_builder_generation_provider: str = "auto"
+    app_builder_default_deployment_target: str = "auto"
+    agent_sdk_model: str = "claude-sonnet-4-20250514"
+    agent_sdk_effort: str = "high"
+    agent_sdk_max_budget_usd: float = 1.0
+    agent_sdk_max_turns: int = 10
 
-    # S3 (Hetzner Object Storage)
-    s3_endpoint: str = ""
-    s3_access_key: str = ""
-    s3_secret_key: str = ""
-    s3_bucket: str = "wai-computer"
-    s3_region: str = "eu-central"
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
 

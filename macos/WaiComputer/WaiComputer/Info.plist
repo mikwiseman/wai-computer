@@ -26,12 +26,14 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.waiwai.waicomputer.macos</string>
+			<string>is.waiwai.computer</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>waicomputer</string>
 			</array>
 		</dict>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
