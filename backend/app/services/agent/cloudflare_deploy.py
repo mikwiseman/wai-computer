@@ -200,7 +200,7 @@ async def deploy_bundle_to_cloudflare_pages(
         return {"success": False, "error": "Deploy timed out"}
     except Exception as e:
         logger.error(f"Cloudflare deploy error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _sanitize_output(str(e))}
 
 
 async def publish_bundle_to_cloudflare_pages(
@@ -317,7 +317,7 @@ async def deploy_bundle_to_cloudflare_workers(
         return {"success": False, "error": "Deploy timed out"}
     except Exception as e:
         logger.error("Cloudflare workers deploy error: %s", e, exc_info=True)
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _sanitize_output(str(e))}
 
 
 async def publish_bundle_to_cloudflare_workers(
