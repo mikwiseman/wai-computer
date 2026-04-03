@@ -138,8 +138,8 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(recording.type, .note)
         XCTAssertNil(recording.title)
         XCTAssertNil(recording.audioUrl)
-        // When status key is present but null, defaults to .ready (via decodeIfPresent ?? .ready)
-        XCTAssertEqual(recording.status, .ready)
+        // When status key is present but null, defaults to .pendingUpload
+        XCTAssertEqual(recording.status, .pendingUpload)
         XCTAssertNil(recording.failureCode)
         XCTAssertNil(recording.failureMessage)
         XCTAssertNil(recording.uploadedAt)
@@ -164,8 +164,8 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(recording.type, .meeting)
         XCTAssertNil(recording.title)
         XCTAssertNil(recording.audioUrl)
-        // When status key is missing entirely, defaults to .ready
-        XCTAssertEqual(recording.status, .ready)
+        // When status key is missing entirely, defaults to .pendingUpload
+        XCTAssertEqual(recording.status, .pendingUpload)
         XCTAssertNil(recording.failureCode)
         XCTAssertNil(recording.failureMessage)
         XCTAssertNil(recording.uploadedAt)

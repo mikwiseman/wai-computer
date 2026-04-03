@@ -313,7 +313,7 @@ final class APIClientTests: XCTestCase {
         }
 
         let recording = try await client.getRecording(id: "rec-default")
-        XCTAssertEqual(recording.status, .ready)
+        XCTAssertEqual(recording.status, .pendingUpload)
     }
 
     func testUploadAudioRejectsOversizedFileBeforeRequest() async throws {
