@@ -100,7 +100,7 @@ async def test_full_recording_lifecycle(
     # ------------------------------------------------------------------ #
     # Step 3: Generate AI summary (with mocked Claude)
     # ------------------------------------------------------------------ #
-    async def fake_summarize_transcript(_transcript: str) -> SummaryResult:
+    async def fake_summarize_transcript(_transcript: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Quarterly Planning Session",
             summary="Team discussed Q2 product roadmap and agreed on budget allocations.",

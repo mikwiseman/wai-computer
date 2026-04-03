@@ -24,6 +24,7 @@ import { AgentChat } from "@/components/AgentChat";
 import { AgentsView } from "@/components/AgentsView";
 import { AppsView } from "@/components/AppsView";
 import { ChatPanel } from "@/components/ChatPanel";
+import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
@@ -369,12 +370,10 @@ export function DashboardClient() {
       </section>
 
       {selectedRecording ? (
-        <section className="card stack" data-testid="recording-detail">
-          <h2>{selectedRecording.title ?? "(untitled recording)"}</h2>
-          <p>Segments: {selectedRecording.segments.length}</p>
-          <p>Actions: {selectedRecording.action_items.length}</p>
-          <p>Summary: {selectedRecording.summary?.summary ?? "Not generated"}</p>
-        </section>
+        <RecordingDetailPanel
+          recording={selectedRecording}
+          onRecordingUpdate={(updated) => setSelectedRecording(updated)}
+        />
       ) : null}
 
       <section className="card stack">

@@ -9,6 +9,10 @@ struct MacSettingsView: View {
     @State private var hasAccessibilityPermission = TextInserter.hasAccessibilityPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
+    @State private var summaryLanguage = "auto"
+    @State private var summaryStyle = "medium"
+    @State private var summaryInstructions = ""
+    @State private var settingsLoaded = false
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -19,6 +23,23 @@ struct MacSettingsView: View {
         ("French", "fr"),
         ("Japanese", "ja"),
         ("Chinese", "zh"),
+    ]
+
+    private let summaryLanguageOptions: [(label: String, value: String)] = [
+        ("Auto (match transcript)", "auto"),
+        ("English", "en"),
+        ("Russian", "ru"),
+        ("Spanish", "es"),
+        ("German", "de"),
+        ("French", "fr"),
+        ("Japanese", "ja"),
+        ("Chinese", "zh"),
+    ]
+
+    private let summaryStyleOptions: [(label: String, value: String)] = [
+        ("Brief", "brief"),
+        ("Medium", "medium"),
+        ("Detailed", "detailed"),
     ]
 
     var body: some View {
@@ -47,6 +68,52 @@ struct MacSettingsView: View {
                 Text("Transcription")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-transcription-header")
+            }
+
+            // MARK: - Summary Settings
+
+            Section {
+                Picker("Language", selection: $summaryLanguage) {
+                    ForEach(summaryLanguageOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .font(Typography.body)
+                .onChange(of: summaryLanguage) { _, newValue in
+                    Task { await saveSummarySettings(language: newValue) }
+                }
+
+                Picker("Detail Level", selection: $summaryStyle) {
+                    ForEach(summaryStyleOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .font(Typography.body)
+                .onChange(of: summaryStyle) { _, newValue in
+                    Task { await saveSummarySettings(style: newValue) }
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text("Custom Instructions")
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                    TextEditor(text: $summaryInstructions)
+                        .font(Typography.body)
+                        .frame(height: 60)
+                        .scrollContentBackground(.hidden)
+                        .background(Palette.surfaceSubtle)
+                        .cornerRadius(6)
+                        .onChange(of: summaryInstructions) { _, _ in
+                            Task { await saveSummarySettings(instructions: summaryInstructions) }
+                        }
+                    Text("E.g. \"Focus on action items\" or \"Write formally\"")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+            } header: {
+                Text("AI Summary")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-summary-header")
             }
 
             // MARK: - Dictation Settings
@@ -129,6 +196,9 @@ struct MacSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .task {
+            await loadSummarySettings()
+        }
         .onAppear(perform: refreshPermissions)
         .onDisappear(perform: stopPermissionPolling)
         .onChange(of: scenePhase) { _, newPhase in
@@ -172,5 +242,31 @@ struct MacSettingsView: View {
     private func stopPermissionPolling() {
         permissionPollTimer?.invalidate()
         permissionPollTimer = nil
+    }
+
+    private func loadSummarySettings() async {
+        guard !settingsLoaded else { return }
+        do {
+            let settings = try await appState.getAPIClient().getSettings()
+            summaryLanguage = settings.summaryLanguage
+            summaryStyle = settings.summaryStyle
+            summaryInstructions = settings.summaryInstructions ?? ""
+            settingsLoaded = true
+        } catch {
+            // Settings will use defaults
+        }
+    }
+
+    private func saveSummarySettings(
+        language: String? = nil,
+        style: String? = nil,
+        instructions: String? = nil
+    ) async {
+        let request = UpdateSettingsRequest(
+            summaryLanguage: language,
+            summaryStyle: style,
+            summaryInstructions: instructions
+        )
+        _ = try? await appState.getAPIClient().updateSettings(request)
     }
 }

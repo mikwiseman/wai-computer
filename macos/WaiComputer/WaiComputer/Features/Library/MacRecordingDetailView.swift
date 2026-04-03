@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WaiComputerKit
 
@@ -17,6 +18,7 @@ struct MacRecordingDetailView: View {
     @StateObject private var viewModel: MacRecordingDetailViewModel
     @State private var showDeleteConfirmation = false
     @State private var loadTask: Task<Void, Never>?
+    @State private var copiedSection: String?
 
     init(
         recordingId: String,
@@ -138,6 +140,50 @@ struct MacRecordingDetailView: View {
         return "\(recordingId)-\(status)"
     }
 
+    private func copyToClipboard(_ text: String, section: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copiedSection = section
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if copiedSection == section {
+                copiedSection = nil
+            }
+        }
+    }
+
+    private func copyButton(_ text: String, section: String) -> some View {
+        Button {
+            copyToClipboard(text, section: section)
+        } label: {
+            Image(systemName: copiedSection == section ? "checkmark" : "doc.on.doc")
+                .font(Typography.caption)
+                .foregroundStyle(copiedSection == section ? Palette.accent : Palette.textTertiary)
+        }
+        .buttonStyle(.plain)
+        .help(copiedSection == section ? "Copied!" : "Copy")
+    }
+
+    private func exportRecording(format: String) async {
+        guard let id = viewModel.recordingDetail?.id else { return }
+        do {
+            let content = try await appState.getAPIClient().exportRecording(id: id, format: format)
+            let ext = format == "markdown" ? "md" : format
+            let title = viewModel.recordingDetail?.title ?? "recording"
+            let safeName = title.replacingOccurrences(of: "/", with: "_")
+
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "\(safeName).\(ext)"
+            panel.allowedContentTypes = [.plainText]
+            let result = panel.runModal()
+            if result == .OK, let url = panel.url {
+                try content.write(to: url, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            viewModel.error = error.userFacingMessage(context: .library)
+        }
+    }
+
     private func detailHeader(_ detail: RecordingDetail) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -168,6 +214,26 @@ struct MacRecordingDetailView: View {
             Spacer()
 
             HStack(spacing: Spacing.md) {
+                // Export dropdown
+                if mode == .active {
+                    Menu {
+                        Button("Markdown (.md)") {
+                            Task { await exportRecording(format: "markdown") }
+                        }
+                        Button("Plain Text (.txt)") {
+                            Task { await exportRecording(format: "txt") }
+                        }
+                        Button("Subtitles (.srt)") {
+                            Task { await exportRecording(format: "srt") }
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Export Recording")
+                }
+
                 if mode == .active {
                     Menu {
                         Button("Unfiled") {
@@ -255,16 +321,41 @@ struct MacRecordingDetailView: View {
         .padding(Spacing.lg)
     }
 
+    private func fullSummaryText(_ summary: Summary) -> String {
+        var parts: [String] = []
+        if let text = summary.summary { parts.append(text) }
+        if let points = summary.keyPoints, !points.isEmpty {
+            parts.append("\nKey Points:\n" + points.map { "— \($0)" }.joined(separator: "\n"))
+        }
+        if let topics = summary.topics, !topics.isEmpty {
+            parts.append("\nTopics: " + topics.joined(separator: ", "))
+        }
+        if let people = summary.peopleMentioned, !people.isEmpty {
+            parts.append("\nPeople: " + people.joined(separator: ", "))
+        }
+        return parts.joined(separator: "\n")
+    }
+
     @ViewBuilder
     private func summaryTab(_ detail: RecordingDetail) -> some View {
         if let summary = detail.summary {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
+                    // Copy All button
+                    HStack {
+                        Spacer()
+                        copyButton(fullSummaryText(summary), section: "summary-all")
+                    }
+
                     // Summary text
                     if let text = summary.summary {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Summary")
-                                .waiSectionHeader()
+                            HStack {
+                                Text("Summary")
+                                    .waiSectionHeader()
+                                Spacer()
+                                copyButton(text, section: "summary-text")
+                            }
                             Text(text)
                                 .font(Typography.reading)
                                 .lineSpacing(6)
@@ -275,8 +366,12 @@ struct MacRecordingDetailView: View {
                     // Key points — em dash prefix
                     if let points = summary.keyPoints, !points.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Key Points")
-                                .waiSectionHeader()
+                            HStack {
+                                Text("Key Points")
+                                    .waiSectionHeader()
+                                Spacer()
+                                copyButton(points.map { "— \($0)" }.joined(separator: "\n"), section: "summary-points")
+                            }
                             ForEach(points, id: \.self) { point in
                                 HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                                     Text("\u{2014}")
@@ -285,6 +380,7 @@ struct MacRecordingDetailView: View {
                                     Text(point)
                                         .font(Typography.reading)
                                         .lineSpacing(6)
+                                        .textSelection(.enabled)
                                 }
                             }
                         }
@@ -293,22 +389,32 @@ struct MacRecordingDetailView: View {
                     // Topics — middle-dot separated inline text
                     if let topics = summary.topics, !topics.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Topics")
-                                .waiSectionHeader()
+                            HStack {
+                                Text("Topics")
+                                    .waiSectionHeader()
+                                Spacer()
+                                copyButton(topics.joined(separator: ", "), section: "summary-topics")
+                            }
                             Text(topics.joined(separator: " \u{00B7} "))
                                 .font(Typography.body)
                                 .foregroundStyle(Palette.textSecondary)
+                                .textSelection(.enabled)
                         }
                     }
 
                     // People mentioned — comma-separated
                     if let people = summary.peopleMentioned, !people.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("People")
-                                .waiSectionHeader()
+                            HStack {
+                                Text("People")
+                                    .waiSectionHeader()
+                                Spacer()
+                                copyButton(people.joined(separator: ", "), section: "summary-people")
+                            }
                             Text(people.joined(separator: ", "))
                                 .font(Typography.body)
                                 .foregroundStyle(Palette.textSecondary)
+                                .textSelection(.enabled)
                         }
                     }
                 }
@@ -426,6 +532,7 @@ struct ActionItemCard: View {
                     .lineSpacing(5)
                     .strikethrough(item.status == .completed)
                     .foregroundStyle(item.status == .completed ? Palette.textSecondary : Palette.textPrimary)
+                    .textSelection(.enabled)
 
                 HStack(spacing: Spacing.sm) {
                     if let owner = item.owner, !owner.isEmpty {

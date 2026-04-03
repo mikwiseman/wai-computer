@@ -98,6 +98,9 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert response.status_code == 200
     data = response.json()
     assert "default_language" in data
+    assert data["summary_language"] == "auto"
+    assert data["summary_style"] == "medium"
+    assert data["summary_instructions"] is None
 
 
 @pytest.mark.asyncio
@@ -204,3 +207,99 @@ async def test_get_settings_requires_auth(client: AsyncClient):
     """Unauthenticated GET /api/settings should return 401."""
     response = await client.get("/api/settings")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_update_summary_language(client: AsyncClient):
+    """PATCH /api/settings should update summary_language."""
+    headers = await _register(client, "settings.sumlang@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_language": "ru"},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary_language"] == "ru"
+
+    # Verify persistence
+    get_response = await client.get("/api/settings", headers=headers)
+    assert get_response.json()["summary_language"] == "ru"
+
+
+@pytest.mark.asyncio
+async def test_update_summary_style(client: AsyncClient):
+    """PATCH /api/settings should update summary_style."""
+    headers = await _register(client, "settings.sumstyle@example.com", "password-123")
+
+    for style in ("brief", "medium", "detailed"):
+        response = await client.patch(
+            "/api/settings",
+            headers=headers,
+            json={"summary_style": style},
+        )
+        assert response.status_code == 200
+        assert response.json()["summary_style"] == style
+
+
+@pytest.mark.asyncio
+async def test_update_summary_style_rejects_invalid(client: AsyncClient):
+    """PATCH /api/settings should reject invalid summary_style."""
+    headers = await _register(client, "settings.badstyle@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_style": "ultra"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_summary_instructions(client: AsyncClient):
+    """PATCH /api/settings should update summary_instructions."""
+    headers = await _register(client, "settings.suminst@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_instructions": "Focus on action items and deadlines"},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary_instructions"] == "Focus on action items and deadlines"
+
+
+@pytest.mark.asyncio
+async def test_clear_summary_instructions(client: AsyncClient):
+    """PATCH /api/settings with empty string should clear summary_instructions."""
+    headers = await _register(client, "settings.clearinst@example.com", "password-123")
+
+    # Set instructions
+    await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_instructions": "Some instructions"},
+    )
+
+    # Clear instructions
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_instructions": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary_instructions"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_summary_language_normalizes(client: AsyncClient):
+    """PATCH /api/settings should normalize summary_language to lowercase."""
+    headers = await _register(client, "settings.normsummary@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"summary_language": "  RU  "},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary_language"] == "ru"

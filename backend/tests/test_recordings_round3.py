@@ -191,7 +191,7 @@ async def test_generate_summary_with_highlights(
     ])
     await db_session.flush()
 
-    async def fake_summarize(_: str) -> SummaryResult:
+    async def fake_summarize(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Budget and Market Review",
             summary="Team approved Q3 budget and discussed market trends.",

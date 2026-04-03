@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -20,6 +20,13 @@ class User(Base, UUIDMixin, TimestampMixin):
     default_language: Mapped[str] = mapped_column(
         String(10), default="multi", server_default="multi"
     )
+    summary_language: Mapped[str] = mapped_column(
+        String(10), default="auto", server_default="auto"
+    )
+    summary_style: Mapped[str] = mapped_column(
+        String(20), default="medium", server_default="medium"
+    )
+    summary_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(

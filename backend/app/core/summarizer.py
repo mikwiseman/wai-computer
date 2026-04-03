@@ -19,10 +19,7 @@ class SummarizationError(Exception):
     pass
 
 
-SUMMARY_PROMPT = """
-Analyze this meeting transcript. Output ONLY valid JSON:
-
-{
+SUMMARY_JSON_SCHEMA = """{
   "title": "Brief meeting title (5-10 words)",
   "summary": "2-3 sentence summary of the meeting",
   "key_points": ["Point 1", "Point 2", "Point 3"],
@@ -46,9 +43,9 @@ Analyze this meeting transcript. Output ONLY valid JSON:
       "importance": "high|medium|low"
     }
   ]
-}
+}"""
 
-INSTRUCTIONS:
+SUMMARY_INSTRUCTIONS = """
 - Extract ALL action items with assigned owners if mentioned
 - If information is missing, use null rather than assumptions
 - Keep descriptions specific: include names, dates, numbers
@@ -56,10 +53,54 @@ INSTRUCTIONS:
 - For highlights, extract the most important moments: decisions made, key insights,
   important questions raised, concerns flagged, major topic shifts, and notable quotes
 - Each highlight should be a distinct, meaningful moment from the conversation
-- Limit highlights to the 5-10 most important moments
+- Limit highlights to the 5-10 most important moments"""
 
-Transcript:
-"""
+STYLE_INSTRUCTIONS = {
+    "brief": (
+        "Keep the summary to 1-2 sentences. "
+        "Key points should have at most 3 items. Be concise."
+    ),
+    "medium": (
+        "Write a 2-3 sentence summary. "
+        "Include 3-7 key points. Balance detail with brevity."
+    ),
+    "detailed": (
+        "Write a thorough 4-6 sentence summary. "
+        "Include all key points discussed (up to 15). "
+        "Provide detailed context for decisions and action items."
+    ),
+}
+
+
+def build_summary_prompt(
+    *,
+    language: str = "auto",
+    style: str = "medium",
+    instructions: str | None = None,
+) -> str:
+    """Build the summarization prompt with user preferences."""
+    parts = ["Analyze this meeting transcript. Output ONLY valid JSON:\n"]
+    parts.append(SUMMARY_JSON_SCHEMA)
+    parts.append("\nINSTRUCTIONS:")
+    parts.append(SUMMARY_INSTRUCTIONS)
+
+    # Style
+    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["medium"])
+    parts.append(f"\nSTYLE: {style_text}")
+
+    # Language
+    if language and language != "auto":
+        parts.append(
+            f"\nOUTPUT LANGUAGE: Write ALL text fields "
+            f"(title, summary, key_points, etc.) in {language}."
+        )
+
+    # Custom instructions
+    if instructions and instructions.strip():
+        parts.append(f"\nADDITIONAL INSTRUCTIONS: {instructions.strip()}")
+
+    parts.append("\nTranscript:\n")
+    return "\n".join(parts)
 
 
 @dataclass
@@ -78,12 +119,21 @@ class SummaryResult:
     highlights: list[dict] | None = None
 
 
-async def summarize_transcript(transcript: str) -> SummaryResult:
+async def summarize_transcript(
+    transcript: str,
+    *,
+    language: str = "auto",
+    style: str = "medium",
+    instructions: str | None = None,
+) -> SummaryResult:
     """
     Summarize a transcript using Claude API.
 
     Args:
         transcript: The full transcript text with speaker labels
+        language: Output language code (e.g. "ru", "en") or "auto"
+        style: Summary detail level — "brief", "medium", or "detailed"
+        instructions: Optional custom instructions from user
 
     Returns:
         SummaryResult with extracted information
@@ -91,12 +141,13 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
     sentry_sdk.add_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
-        data={"transcript_length": len(transcript)},
+        data={"transcript_length": len(transcript), "language": language, "style": style},
         level="info",
     )
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
+    prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
     client = _get_anthropic_client()
 
     message = await client.messages.create(
@@ -105,7 +156,7 @@ async def summarize_transcript(transcript: str) -> SummaryResult:
         messages=[
             {
                 "role": "user",
-                "content": SUMMARY_PROMPT + transcript,
+                "content": prompt + transcript,
             }
         ],
     )

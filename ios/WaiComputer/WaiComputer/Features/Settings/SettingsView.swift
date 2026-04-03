@@ -153,8 +153,23 @@ struct TranscriptionSettingsView: View {
 }
 
 struct SummarySettingsView: View {
+    @EnvironmentObject var appState: AppState
     @AppStorage("autoSummarize") private var autoSummarize = true
-    @AppStorage("summaryLength") private var summaryLength = "medium"
+    @State private var summaryLanguage = "auto"
+    @State private var summaryStyle = "medium"
+    @State private var summaryInstructions = ""
+    @State private var settingsLoaded = false
+
+    private let summaryLanguageOptions: [(label: String, value: String)] = [
+        ("Auto (match transcript)", "auto"),
+        ("English", "en"),
+        ("Russian", "ru"),
+        ("Spanish", "es"),
+        ("German", "de"),
+        ("French", "fr"),
+        ("Japanese", "ja"),
+        ("Chinese", "zh"),
+    ]
 
     var body: some View {
         List {
@@ -162,15 +177,66 @@ struct SummarySettingsView: View {
                 Toggle("Auto-summarize recordings", isOn: $autoSummarize)
             }
 
-            Section("Preferences") {
-                Picker("Summary Length", selection: $summaryLength) {
+            Section("Language") {
+                Picker("Summary Language", selection: $summaryLanguage) {
+                    ForEach(summaryLanguageOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .onChange(of: summaryLanguage) { _, newValue in
+                    Task { await saveSettings(language: newValue) }
+                }
+            }
+
+            Section("Detail Level") {
+                Picker("Summary Style", selection: $summaryStyle) {
                     Text("Brief").tag("brief")
                     Text("Medium").tag("medium")
                     Text("Detailed").tag("detailed")
                 }
+                .onChange(of: summaryStyle) { _, newValue in
+                    Task { await saveSettings(style: newValue) }
+                }
+            }
+
+            Section("Custom Instructions") {
+                TextField("E.g. \"Focus on action items\"", text: $summaryInstructions, axis: .vertical)
+                    .lineLimit(2...4)
+                    .onChange(of: summaryInstructions) { _, _ in
+                        Task { await saveSettings(instructions: summaryInstructions) }
+                    }
             }
         }
         .navigationTitle("AI Summary")
+        .task {
+            await loadSettings()
+        }
+    }
+
+    private func loadSettings() async {
+        guard !settingsLoaded else { return }
+        do {
+            let settings = try await appState.getAPIClient().getSettings()
+            summaryLanguage = settings.summaryLanguage
+            summaryStyle = settings.summaryStyle
+            summaryInstructions = settings.summaryInstructions ?? ""
+            settingsLoaded = true
+        } catch {
+            // Use defaults
+        }
+    }
+
+    private func saveSettings(
+        language: String? = nil,
+        style: String? = nil,
+        instructions: String? = nil
+    ) async {
+        let request = UpdateSettingsRequest(
+            summaryLanguage: language,
+            summaryStyle: style,
+            summaryInstructions: instructions
+        )
+        _ = try? await appState.getAPIClient().updateSettings(request)
     }
 }
 

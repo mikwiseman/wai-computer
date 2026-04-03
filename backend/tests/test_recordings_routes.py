@@ -212,7 +212,7 @@ async def test_generate_summary_returns_friendly_503_when_summarizer_fails(
     )
     await db_session.flush()
 
-    async def broken_summarizer(_: str) -> SummaryResult:
+    async def broken_summarizer(_: str, **kwargs) -> SummaryResult:
         raise RuntimeError("anthropic gateway timeout")
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", broken_summarizer)
@@ -250,7 +250,7 @@ async def test_generate_summary_creates_summary_and_action_items(
     )
     await db_session.flush()
 
-    async def fake_summarize_transcript(_: str) -> SummaryResult:
+    async def fake_summarize_transcript(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Roadmap Review",
             summary="Team reviewed roadmap and agreed next steps.",
@@ -317,7 +317,7 @@ async def test_generate_summary_regeneration_replaces_action_items(
     )
     await db_session.flush()
 
-    async def summarize_v1(_: str) -> SummaryResult:
+    async def summarize_v1(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Retrospective V1",
             summary="First summary.",
@@ -330,7 +330,7 @@ async def test_generate_summary_regeneration_replaces_action_items(
             sentiment="neutral",
         )
 
-    async def summarize_v2(_: str) -> SummaryResult:
+    async def summarize_v2(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Retrospective V2",
             summary="Second summary.",
@@ -395,7 +395,7 @@ async def test_generate_summary_preserves_manual_action_items(
     )
     await db_session.flush()
 
-    async def summarize(_: str) -> SummaryResult:
+    async def summarize(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Manual Preservation",
             summary="Summary.",
