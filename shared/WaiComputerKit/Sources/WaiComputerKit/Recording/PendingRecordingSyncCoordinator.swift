@@ -9,6 +9,8 @@ public extension Notification.Name {
 public actor PendingRecordingSyncCoordinator {
     public static let shared = PendingRecordingSyncCoordinator()
 
+    private static let maxSyncAttempts = 20
+
     private var syncTask: Task<Void, Never>?
     private var retrySleepTask: Task<Void, Never>?
     private var retryImmediatelyAfterCurrentPass = false
@@ -46,11 +48,20 @@ public actor PendingRecordingSyncCoordinator {
 
             if retryImmediatelyAfterCurrentPass {
                 retryImmediatelyAfterCurrentPass = false
+                attempt = 0
                 continue
             }
 
             attempt += 1
-            let delay = min(60, 5 * attempt)
+            if attempt >= Self.maxSyncAttempts {
+                NotificationCenter.default.post(
+                    name: .pendingRecordingRecoveryNotice,
+                    object: nil,
+                    userInfo: ["message": "Some recordings could not sync after multiple attempts. Please check your connection."]
+                )
+                return
+            }
+            let delay = min(60, 5 * attempt + Int.random(in: 0..<3))
             await waitForRetryDelay(seconds: delay)
         }
     }
@@ -63,6 +74,11 @@ public actor PendingRecordingSyncCoordinator {
         var remaining = 0
 
         for backup in backups {
+            let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId)
+            if manifest?.isPermanentFailure == true {
+                remaining += 1
+                continue
+            }
             let didSync = await sync(backup: backup, using: apiClient)
             if !didSync {
                 remaining += 1
@@ -121,6 +137,27 @@ public actor PendingRecordingSyncCoordinator {
                 userInfo: ["recordingId": backup.recordingId]
             )
             return true
+        } catch let apiError as APIError {
+            switch apiError {
+            case .unauthorized:
+                _ = try? RecordingBackupStore.recordSaveFailure(
+                    recordingId: backup.recordingId,
+                    message: "Please sign in again to sync this recording."
+                )
+                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+            case .httpError(let statusCode, _) where statusCode == 413:
+                _ = try? RecordingBackupStore.recordSaveFailure(
+                    recordingId: backup.recordingId,
+                    message: "This recording is too large to upload."
+                )
+                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+            default:
+                _ = try? RecordingBackupStore.recordSaveFailure(
+                    recordingId: backup.recordingId,
+                    message: apiError.userFacingMessage(context: .recording)
+                )
+            }
+            return false
         } catch {
             _ = try? RecordingBackupStore.recordSaveFailure(
                 recordingId: backup.recordingId,

@@ -20,10 +20,12 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public var lastErrorMessage: String?
     public var updatedAt: Date
     public var hasAudioFile: Bool
+    public var isPermanentFailure: Bool
 
     private enum CodingKeys: String, CodingKey {
         case recordingId, title, recordingType, createdAt, durationSeconds
         case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
+        case isPermanentFailure
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +40,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         hasAudioFile = try container.decodeIfPresent(Bool.self, forKey: .hasAudioFile) ?? false
+        isPermanentFailure = try container.decodeIfPresent(Bool.self, forKey: .isPermanentFailure) ?? false
     }
 
     public init(
@@ -50,7 +53,8 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         transcript: String?,
         lastErrorMessage: String?,
         updatedAt: Date,
-        hasAudioFile: Bool = false
+        hasAudioFile: Bool = false,
+        isPermanentFailure: Bool = false
     ) {
         self.recordingId = recordingId
         self.title = title
@@ -62,6 +66,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         self.lastErrorMessage = lastErrorMessage
         self.updatedAt = updatedAt
         self.hasAudioFile = hasAudioFile
+        self.isPermanentFailure = isPermanentFailure
     }
 }
 
@@ -148,6 +153,24 @@ public enum RecordingBackupStore {
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         return backup
+    }
+
+    public static func markPermanentFailure(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        var manifest = try readManifest(from: backup.manifestURL) ?? RecordingBackupManifest(
+            recordingId: recordingId,
+            title: nil,
+            recordingType: RecordingType.note.rawValue,
+            createdAt: Date(),
+            durationSeconds: 0,
+            segmentCount: 0,
+            transcript: nil,
+            lastErrorMessage: nil,
+            updatedAt: Date()
+        )
+        manifest.isPermanentFailure = true
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
     }
 
     public static func removeRecording(recordingId: String) throws {

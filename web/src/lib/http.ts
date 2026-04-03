@@ -197,3 +197,67 @@ export async function apiFetch<T>(
 
   return payload as T;
 }
+
+/**
+ * Like apiFetch but returns the raw Response (for non-JSON responses like text/blob exports).
+ * Includes the same 401 auto-refresh-and-retry logic.
+ */
+export async function apiFetchResponse(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const url = `${getApiBaseUrl()}${path}`;
+  const fetchInit: RequestInit = {
+    ...init,
+    credentials: "include",
+    cache: "no-store",
+  };
+
+  let response = await doFetch(url, fetchInit);
+
+  if (response.status === 401) {
+    try {
+      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (refreshResponse.ok) {
+        const refreshPayload = await parseResponsePayload(refreshResponse);
+        if (
+          refreshPayload &&
+          typeof refreshPayload === "object" &&
+          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
+        ) {
+          syncLocalhostAuthCookie(
+            (refreshPayload as { access_token: string }).access_token,
+          );
+        }
+        if (
+          refreshPayload &&
+          typeof refreshPayload === "object" &&
+          typeof (refreshPayload as { refresh_token?: unknown }).refresh_token === "string"
+        ) {
+          syncLocalhostRefreshCookie(
+            (refreshPayload as { refresh_token: string }).refresh_token,
+          );
+        }
+        response = await doFetch(url, fetchInit);
+      }
+    } catch {
+      // Refresh failed — fall through to original response
+    }
+  }
+
+  if (!response.ok) {
+    const payload = await parseResponsePayload(response);
+    throw new ApiError(
+      response.status,
+      buildMessage(payload, "Something went wrong. Please try again in a moment.", response.status),
+      payload,
+    );
+  }
+
+  return response;
+}

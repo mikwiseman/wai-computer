@@ -1,6 +1,6 @@
 import {
   apiFetch,
-  getApiBaseUrl,
+  apiFetchResponse,
   syncLocalhostAuthCookie,
   syncLocalhostRefreshCookie,
 } from "./http";
@@ -361,11 +361,7 @@ export function renameChatSession(
 }
 
 export async function exportChatSession(sessionId: string): Promise<string> {
-  const url = `${getApiBaseUrl()}/api/chat/sessions/${sessionId}/export`;
-  const response = await fetch(url, { credentials: "include", cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Export failed: ${response.status} ${response.statusText}`);
-  }
+  const response = await apiFetchResponse(`/api/chat/sessions/${sessionId}/export`);
   return response.text();
 }
 
@@ -396,11 +392,9 @@ export function getRecordingAnalytics(): Promise<AnalyticsResponse> {
 }
 
 export async function exportRecording(recordingId: string, format: ExportFormat): Promise<Blob> {
-  const url = `${getApiBaseUrl()}/api/recordings/${recordingId}/export?format=${format}`;
-  const response = await fetch(url, { credentials: "include", cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Export failed: ${response.status} ${response.statusText}`);
-  }
+  const response = await apiFetchResponse(
+    `/api/recordings/${recordingId}/export?format=${format}`,
+  );
   return response.blob();
 }
 

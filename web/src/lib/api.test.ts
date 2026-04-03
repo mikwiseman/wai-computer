@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
-import { apiFetch } from "./http";
+import { apiFetch, apiFetchResponse } from "./http";
 
 vi.mock("./http", () => ({
   apiFetch: vi.fn(),
-  getApiBaseUrl: vi.fn(() => ""),
+  apiFetchResponse: vi.fn(),
   syncLocalhostAuthCookie: vi.fn((token: string | null) => {
     if (!token) {
       document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
@@ -22,10 +22,12 @@ vi.mock("./http", () => ({
 }));
 
 const mockedApiFetch = vi.mocked(apiFetch);
+const mockedApiFetchResponse = vi.mocked(apiFetchResponse);
 
 beforeEach(() => {
   mockedApiFetch.mockReset();
   mockedApiFetch.mockResolvedValue({} as never);
+  mockedApiFetchResponse.mockReset();
   document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
   document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
 });
@@ -268,34 +270,20 @@ describe("api client wrappers", () => {
 
   it("calls exportChatSession and returns markdown text", async () => {
     const mockResponse = {
-      ok: true,
-      status: 200,
       text: vi.fn().mockResolvedValue("# Chat\n\n**You:**\nHello"),
     } as unknown as Response;
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+    mockedApiFetchResponse.mockResolvedValueOnce(mockResponse);
 
     const result = await api.exportChatSession("s1");
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/api/chat/sessions/s1/export"),
-      expect.objectContaining({ credentials: "include", cache: "no-store" }),
-    );
+    expect(mockedApiFetchResponse).toHaveBeenCalledWith("/api/chat/sessions/s1/export");
     expect(result).toContain("# Chat");
-
-    fetchSpy.mockRestore();
   });
 
   it("throws on export chat session failure", async () => {
-    const mockResponse = {
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    } as unknown as Response;
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+    mockedApiFetchResponse.mockRejectedValueOnce(new Error("Something went wrong. Please try again in a moment."));
 
-    await expect(api.exportChatSession("s1")).rejects.toThrow("Export failed: 404 Not Found");
-
-    fetchSpy.mockRestore();
+    await expect(api.exportChatSession("s1")).rejects.toThrow();
   });
 
   it("calls getWeeklyDigest", async () => {
@@ -439,34 +427,22 @@ describe("api client wrappers", () => {
   it("calls exportRecording with correct URL and returns blob", async () => {
     const mockBlob = new Blob(["# Test"]);
     const mockResponse = {
-      ok: true,
-      status: 200,
       blob: vi.fn().mockResolvedValue(mockBlob),
     } as unknown as Response;
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+    mockedApiFetchResponse.mockResolvedValueOnce(mockResponse);
 
     const result = await api.exportRecording("rec1", "markdown");
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("/api/recordings/rec1/export?format=markdown"),
-      expect.objectContaining({ credentials: "include", cache: "no-store" }),
+    expect(mockedApiFetchResponse).toHaveBeenCalledWith(
+      "/api/recordings/rec1/export?format=markdown",
     );
     expect(result).toBeInstanceOf(Blob);
-
-    fetchSpy.mockRestore();
   });
 
   it("throws on export failure", async () => {
-    const mockResponse = {
-      ok: false,
-      status: 404,
-      statusText: "Not Found",
-    } as unknown as Response;
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(mockResponse);
+    mockedApiFetchResponse.mockRejectedValueOnce(new Error("Something went wrong. Please try again in a moment."));
 
-    await expect(api.exportRecording("rec1", "txt")).rejects.toThrow("Export failed: 404 Not Found");
-
-    fetchSpy.mockRestore();
+    await expect(api.exportRecording("rec1", "txt")).rejects.toThrow();
   });
 
   // ── Agent Chat ────────────────────────────────────────────────────

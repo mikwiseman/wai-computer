@@ -10,13 +10,13 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-import anthropic
 from croniter import croniter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.digital_agent import DigitalAgent
+from app.services.agent.loop import _get_client
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ async def create_agent_from_description(
     if active_count >= MAX_AGENTS_PER_USER:
         raise ValueError(f"Maximum {MAX_AGENTS_PER_USER} active agents allowed")
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
     response = await client.messages.create(
         model=settings.agent_model,
         max_tokens=500,
