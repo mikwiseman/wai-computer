@@ -305,16 +305,94 @@ public actor APIClient {
         }
     }
 
-    // MARK: - Request methods
+    // MARK: - Auth-retry core
 
-    /// Make an API request
-    public func request<T: Decodable>(
-        _ method: HTTPMethod,
+    /// Perform an HTTP call with automatic 401 refresh-and-retry.
+    /// The `perform` closure executes the actual network call (data or upload).
+    private func performWithAuthRetry(
+        _ request: inout URLRequest,
         path: String,
-        body: (any Encodable)? = nil,
-        queryItems: [URLQueryItem]? = nil,
-        timeoutInterval: TimeInterval? = nil
-    ) async throws -> T {
+        method: String,
+        extras: [String: Any] = [:],
+        perform: (URLRequest) async throws -> (Data, URLResponse)
+    ) async throws -> (Data, HTTPURLResponse) {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await perform(request)
+        } catch {
+            var sentryExtras: [String: Any] = ["path": path, "method": method]
+            sentryExtras.merge(extras) { _, new in new }
+            SentryHelper.captureError(error, extras: sentryExtras)
+            throw APIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(URLError(.badServerResponse))
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "api",
+            message: "\(method) \(path)",
+            data: ["statusCode": httpResponse.statusCode]
+        )
+
+        if httpResponse.statusCode == 401 {
+            SentryHelper.addBreadcrumb(category: "auth", message: "token refresh triggered", data: ["path": path])
+            let newToken: String
+            do {
+                newToken = try await handleUnauthorized(path: path)
+                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
+            } catch {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
+                throw error
+            }
+            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+
+            let retryData: Data
+            let retryResponse: URLResponse
+            do {
+                (retryData, retryResponse) = try await perform(request)
+            } catch {
+                var sentryExtras: [String: Any] = ["path": path, "method": method, "retry": true]
+                sentryExtras.merge(extras) { _, new in new }
+                SentryHelper.captureError(error, extras: sentryExtras)
+                throw APIError.networkError(error)
+            }
+
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            if retryHttp.statusCode == 401 {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed after refresh", level: .error)
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            guard (200...299).contains(retryHttp.statusCode) else {
+                let error = apiError(from: retryData, response: retryHttp)
+                SentryHelper.captureError(error, extras: ["path": path, "method": method])
+                throw error
+            }
+            return (retryData, retryHttp)
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let error = apiError(from: data, response: httpResponse)
+            SentryHelper.captureError(error, extras: ["path": path, "method": method])
+            throw error
+        }
+
+        return (data, httpResponse)
+    }
+
+    /// Build a URLRequest for a JSON API call.
+    private func buildJSONRequest(
+        method: HTTPMethod,
+        path: String,
+        body: (any Encodable)?,
+        queryItems: [URLQueryItem]?,
+        timeoutInterval: TimeInterval?
+    ) throws -> URLRequest {
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
         urlComponents?.queryItems = queryItems
 
@@ -328,72 +406,29 @@ public actor APIClient {
         if let timeoutInterval {
             request.timeoutInterval = timeoutInterval
         }
-
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-
         if let body = body {
             request.httpBody = try encoder.encode(AnyEncodable(body))
         }
+        return request
+    }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-            throw APIError.networkError(error)
-        }
+    // MARK: - Request methods
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
-        }
+    /// Make an API request
+    public func request<T: Decodable>(
+        _ method: HTTPMethod,
+        path: String,
+        body: (any Encodable)? = nil,
+        queryItems: [URLQueryItem]? = nil,
+        timeoutInterval: TimeInterval? = nil
+    ) async throws -> T {
+        var request = try buildJSONRequest(method: method, path: path, body: body, queryItems: queryItems, timeoutInterval: timeoutInterval)
 
-        SentryHelper.addBreadcrumb(
-            category: "api",
-            message: "\(method.rawValue) \(path)",
-            data: ["statusCode": httpResponse.statusCode]
-        )
-
-        if httpResponse.statusCode == 401 {
-            // Try auto-refresh and retry once
-            SentryHelper.addBreadcrumb(category: "auth", message: "token refresh triggered", data: ["path": path])
-            let newToken: String
-            do {
-                newToken = try await handleUnauthorized(path: path)
-                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
-            } catch {
-                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
-                throw error
-            }
-            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: request)
-
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw APIError.networkError(URLError(.badServerResponse))
-            }
-            if retryHttp.statusCode == 401 {
-                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed after refresh", level: .error)
-                onAuthenticationFailed?()
-                throw APIError.unauthorized
-            }
-            guard (200...299).contains(retryHttp.statusCode) else {
-                let error = apiError(from: retryData, response: retryHttp)
-                SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-                throw error
-            }
-            do {
-                return try decoder.decode(T.self, from: retryData)
-            } catch {
-                throw APIError.decodingError(error)
-            }
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let error = apiError(from: data, response: httpResponse)
-            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-            throw error
+        let (data, _) = try await performWithAuthRetry(&request, path: path, method: method.rawValue) { req in
+            try await self.session.data(for: req)
         }
 
         do {
@@ -411,81 +446,10 @@ public actor APIClient {
         queryItems: [URLQueryItem]? = nil,
         timeoutInterval: TimeInterval? = nil
     ) async throws {
-        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: true)
-        urlComponents?.queryItems = queryItems
+        var request = try buildJSONRequest(method: method, path: path, body: body, queryItems: queryItems, timeoutInterval: timeoutInterval)
 
-        guard let url = urlComponents?.url else {
-            throw APIError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method.rawValue
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let timeoutInterval {
-            request.timeoutInterval = timeoutInterval
-        }
-
-        if let token = accessToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        if let body = body {
-            request.httpBody = try encoder.encode(AnyEncodable(body))
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-            throw APIError.networkError(error)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
-        }
-
-        SentryHelper.addBreadcrumb(
-            category: "api",
-            message: "\(method.rawValue) \(path)",
-            data: ["statusCode": httpResponse.statusCode]
-        )
-
-        if httpResponse.statusCode == 401 {
-            // Try auto-refresh and retry once
-            SentryHelper.addBreadcrumb(category: "auth", message: "token refresh triggered", data: ["path": path])
-            let newToken: String
-            do {
-                newToken = try await handleUnauthorized(path: path)
-                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
-            } catch {
-                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
-                throw error
-            }
-            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-            let (retryData, retryResponse) = try await session.data(for: request)
-
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw APIError.networkError(URLError(.badServerResponse))
-            }
-            if retryHttp.statusCode == 401 {
-                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed after refresh", level: .error)
-                onAuthenticationFailed?()
-                throw APIError.unauthorized
-            }
-            guard (200...299).contains(retryHttp.statusCode) else {
-                let error = apiError(from: retryData, response: retryHttp)
-                SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-                throw error
-            }
-            return
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let error = apiError(from: data, response: httpResponse)
-            SentryHelper.captureError(error, extras: ["path": path, "method": method.rawValue])
-            throw error
+        _ = try await performWithAuthRetry(&request, path: path, method: method.rawValue) { req in
+            try await self.session.data(for: req)
         }
     }
 
@@ -734,6 +698,36 @@ public actor APIClient {
         return response.text
     }
 
+    // MARK: - Realtime Voice Endpoints
+
+    public func createRealtimeTranscriptionSession(
+        language: String = "multi",
+        channels: Int = 1
+    ) async throws -> RealtimeTranscriptionSessionConfig {
+        let body = CreateRealtimeTranscriptionSessionRequest(
+            language: language,
+            channels: channels
+        )
+        return try await request(.POST, path: "/api/transcription/session", body: body)
+    }
+
+    public func createRealtimeVoiceSession(
+        mode: RealtimeVoiceMode = .conversation,
+        agentId: String? = nil,
+        includeConversationId: Bool = false,
+        branchId: String? = nil,
+        environment: String? = nil
+    ) async throws -> RealtimeVoiceSession {
+        let body = CreateRealtimeVoiceSessionRequest(
+            mode: mode,
+            agentId: agentId,
+            includeConversationId: includeConversationId,
+            branchId: branchId,
+            environment: environment
+        )
+        return try await request(.POST, path: "/api/voice/session", body: body)
+    }
+
     // MARK: - Entity Endpoints
 
     public func listFolders() async throws -> [Folder] {
@@ -801,12 +795,44 @@ public actor APIClient {
 
     // MARK: - User App Endpoints
 
-    public func listApps() async throws -> [UserApp] {
-        return try await request(.GET, path: "/api/apps")
+    public func listApps(
+        status: AppStatus? = nil,
+        visibility: AppVisibility? = nil
+    ) async throws -> [UserApp] {
+        var queryItems: [URLQueryItem] = []
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status.rawValue))
+        }
+        if let visibility {
+            queryItems.append(URLQueryItem(name: "visibility", value: visibility.rawValue))
+        }
+        return try await request(
+            .GET,
+            path: "/api/apps",
+            queryItems: queryItems.isEmpty ? nil : queryItems
+        )
     }
 
-    public func createApp(name: String, displayName: String, icon: String? = nil, template: String? = nil) async throws -> UserApp {
-        let body = CreateAppRequest(name: name, displayName: displayName, icon: icon, template: template)
+    public func createApp(
+        name: String,
+        displayName: String,
+        description: String? = nil,
+        icon: String? = nil,
+        template: String? = nil,
+        schemaDef: [String: JSONValue]? = nil,
+        settings: [String: JSONValue]? = nil,
+        visibility: AppVisibility = .private
+    ) async throws -> UserApp {
+        let body = CreateAppRequest(
+            name: name,
+            displayName: displayName,
+            description: description,
+            icon: icon,
+            template: template,
+            schemaDef: schemaDef,
+            settings: settings,
+            visibility: visibility
+        )
         return try await request(.POST, path: "/api/apps", body: body)
     }
 
@@ -814,9 +840,39 @@ public actor APIClient {
         return try await request(.GET, path: "/api/apps/\(appId)")
     }
 
-    public func updateApp(_ appId: String, displayName: String? = nil, icon: String? = nil, schemaDef: [String: JSONValue]? = nil, appUrl: String? = nil, settings: [String: JSONValue]? = nil, sortOrder: Int? = nil) async throws -> UserApp {
-        let body = UpdateAppRequest(displayName: displayName, icon: icon, schemaDef: schemaDef, appUrl: appUrl, settings: settings, sortOrder: sortOrder)
+    public func updateApp(
+        _ appId: String,
+        displayName: String? = nil,
+        description: String? = nil,
+        icon: String? = nil,
+        schemaDef: [String: JSONValue]? = nil,
+        appUrl: String? = nil,
+        settings: [String: JSONValue]? = nil,
+        status: AppStatus? = nil,
+        visibility: AppVisibility? = nil,
+        sortOrder: Int? = nil
+    ) async throws -> UserApp {
+        let body = UpdateAppRequest(
+            displayName: displayName,
+            description: description,
+            icon: icon,
+            schemaDef: schemaDef,
+            appUrl: appUrl,
+            settings: settings,
+            status: status,
+            visibility: visibility,
+            sortOrder: sortOrder
+        )
         return try await request(.PATCH, path: "/api/apps/\(appId)", body: body)
+    }
+
+    public func publishApp(
+        _ appId: String,
+        visibility: AppVisibility? = nil,
+        appUrl: String? = nil
+    ) async throws -> UserApp {
+        let body = PublishAppRequest(visibility: visibility, appUrl: appUrl)
+        return try await request(.POST, path: "/api/apps/\(appId)/publish", body: body)
     }
 
     public func deleteApp(_ appId: String) async throws {
@@ -907,64 +963,13 @@ public actor APIClient {
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.upload(for: request, fromFile: multipartFileURL)
-        } catch {
-            SentryHelper.captureError(
-                error,
-                extras: ["path": path, "method": "POST", "recordingId": recordingId]
-            )
-            throw APIError.networkError(error)
-        }
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
-        }
-
-        SentryHelper.addBreadcrumb(
-            category: "api",
-            message: "POST \(path)",
-            data: ["statusCode": httpResponse.statusCode, "recordingId": recordingId]
-        )
-
-        if httpResponse.statusCode == 401 {
-            let newToken = try await handleUnauthorized(path: path)
-            request.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-
-            let retryData: Data
-            let retryResponse: URLResponse
-            do {
-                (retryData, retryResponse) = try await session.upload(for: request, fromFile: multipartFileURL)
-            } catch {
-                SentryHelper.captureError(
-                    error,
-                    extras: ["path": path, "method": "POST", "recordingId": recordingId, "retry": true]
-                )
-                throw APIError.networkError(error)
-            }
-
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw APIError.networkError(URLError(.badServerResponse))
-            }
-            if retryHttp.statusCode == 401 {
-                onAuthenticationFailed?()
-                throw APIError.unauthorized
-            }
-            guard (200...299).contains(retryHttp.statusCode) else {
-                throw apiError(from: retryData, response: retryHttp)
-            }
-
-            do {
-                return try decoder.decode(RecordingDetail.self, from: retryData)
-            } catch {
-                throw APIError.decodingError(error)
-            }
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw apiError(from: data, response: httpResponse)
+        let (data, _) = try await performWithAuthRetry(
+            &request,
+            path: path,
+            method: "POST",
+            extras: ["recordingId": recordingId]
+        ) { req in
+            try await self.session.upload(for: req, fromFile: multipartFileURL)
         }
 
         do {

@@ -76,7 +76,7 @@ services:
       resources:
         limits:
           memory: 1200M
-    command: ["sh", "-c", "alembic upgrade head && gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --bind 0.0.0.0:8000 --timeout 120 --keep-alive 65 --access-logfile - --error-logfile - --capture-output"]
+    command: ["sh", "-c", "alembic upgrade head && gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:8000 --timeout 120 --keep-alive 65 --access-logfile - --error-logfile - --capture-output"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -112,7 +112,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "node -e \"fetch('http://localhost:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+          "node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"",
         ]
       interval: 30s
       timeout: 10s
@@ -146,6 +146,12 @@ services:
       resources:
         limits:
           memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     logging:
       driver: json-file
       options:
@@ -172,7 +178,13 @@ services:
       resources:
         limits:
           memory: 512M
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "-B"]
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=2", "-B"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
     logging:
       driver: json-file
       options:

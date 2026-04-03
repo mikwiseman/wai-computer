@@ -62,13 +62,13 @@ class TestExecuteTool:
 
 
 class TestRunAgent:
-    @patch("app.services.agent.loop.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.loop._get_client")
     @patch("app.services.agent.loop.classify_intent")
-    async def test_run_agent_basic(self, mock_classify, mock_anthropic):
+    async def test_run_agent_basic(self, mock_classify, mock_get_client):
         mock_classify.return_value = Intent.CHAT
 
         mock_client = AsyncMock()
-        mock_anthropic.return_value = mock_client
+        mock_get_client.return_value = mock_client
         mock_client.messages.create.return_value = MagicMock(
             stop_reason="end_turn",
             content=[MagicMock(text="Hello there!", type="text")],
@@ -83,13 +83,13 @@ class TestRunAgent:
         assert result.intent == Intent.CHAT
         assert result.tool_calls == 0
 
-    @patch("app.services.agent.loop.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.loop._get_client")
     @patch("app.services.agent.loop.classify_intent")
-    async def test_run_agent_with_voice(self, mock_classify, mock_anthropic):
+    async def test_run_agent_with_voice(self, mock_classify, mock_get_client):
         mock_classify.return_value = Intent.VOICE_SUMMARY
 
         mock_client = AsyncMock()
-        mock_anthropic.return_value = mock_client
+        mock_get_client.return_value = mock_client
         mock_client.messages.create.return_value = MagicMock(
             stop_reason="end_turn",
             content=[MagicMock(text="Voice summary here", type="text")],
@@ -105,14 +105,14 @@ class TestRunAgent:
 
         assert result.intent == Intent.VOICE_SUMMARY
 
-    @patch("app.services.agent.loop.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.loop._get_client")
     @patch("app.services.agent.loop.classify_intent")
-    async def test_run_agent_respects_history(self, mock_classify, mock_anthropic):
+    async def test_run_agent_respects_history(self, mock_classify, mock_get_client):
         from app.services.agent.loop import AgentMessage
 
         mock_classify.return_value = Intent.CHAT
         mock_client = AsyncMock()
-        mock_anthropic.return_value = mock_client
+        mock_get_client.return_value = mock_client
         mock_client.messages.create.return_value = MagicMock(
             stop_reason="end_turn",
             content=[MagicMock(text="I remember!", type="text")],
