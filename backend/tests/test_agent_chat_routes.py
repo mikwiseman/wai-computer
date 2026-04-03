@@ -7,10 +7,10 @@ from httpx import AsyncClient
 
 class TestAgentChat:
     @patch("app.api.routes.agent_chat.get_settings")
-    @patch("app.services.agent.loop.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.loop._get_client")
     @patch("app.services.agent.router.anthropic.AsyncAnthropic")
     async def test_basic_chat(
-        self, mock_router_anthropic, mock_loop_anthropic, mock_get_settings,
+        self, mock_router_anthropic, mock_get_loop_client, mock_get_settings,
         client: AsyncClient, auth_headers: dict,
     ):
         # Mock settings to have API key
@@ -27,7 +27,7 @@ class TestAgentChat:
 
         # Mock agent loop response
         mock_loop_client = AsyncMock()
-        mock_loop_anthropic.return_value = mock_loop_client
+        mock_get_loop_client.return_value = mock_loop_client
         mock_loop_client.messages.create.return_value = AsyncMock(
             stop_reason="end_turn",
             content=[AsyncMock(text="Hello! How can I help?", type="text")],
