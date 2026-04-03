@@ -489,6 +489,16 @@ public actor APIClient {
         return try await request(.POST, path: "/api/auth/logout", body: body)
     }
 
+    // MARK: - Settings Endpoints
+
+    public func getSettings() async throws -> UserSettings {
+        return try await request(.GET, path: "/api/settings")
+    }
+
+    public func updateSettings(_ settings: UpdateSettingsRequest) async throws -> UserSettings {
+        return try await request(.PATCH, path: "/api/settings", body: settings)
+    }
+
     // MARK: - Recording Endpoints
 
     public func listRecordings(
@@ -555,6 +565,31 @@ public actor APIClient {
 
     public func generateSummary(recordingId: String) async throws -> Summary {
         return try await request(.POST, path: "/api/recordings/\(recordingId)/generate-summary")
+    }
+
+    /// Export recording transcript in the given format (markdown, txt, srt).
+    public func exportRecording(id: String, format: String) async throws -> String {
+        let url = baseURL.appendingPathComponent("/api/recordings/\(id)/export")
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "format", value: format)]
+        var req = URLRequest(url: components.url!)
+        req.httpMethod = "GET"
+        if let token = accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(URLError(.badServerResponse))
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: "Export failed")
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw APIError.decodingError(DecodingError.dataCorrupted(
+                .init(codingPath: [], debugDescription: "Invalid UTF-8 data")
+            ))
+        }
+        return text
     }
 
     public func starRecording(id: String) async throws -> Recording {

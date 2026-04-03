@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 import WaiComputerKit
 
 struct MacTranscriptView: View {
     let segments: [Segment]
+    @State private var copied = false
 
     var body: some View {
         if segments.isEmpty {
@@ -15,6 +17,31 @@ struct MacTranscriptView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                    // Copy all transcript button
+                    HStack {
+                        Spacer()
+                        Button {
+                            let text = segments.map { seg in
+                                let speaker = seg.speaker ?? "Speaker"
+                                let ts = seg.formattedTimestamp
+                                return "[\(speaker), \(ts)] \(seg.content)"
+                            }.joined(separator: "\n")
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(text, forType: .string)
+                            copied = true
+                            Task {
+                                try? await Task.sleep(for: .seconds(1.5))
+                                copied = false
+                            }
+                        } label: {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                                .font(Typography.caption)
+                                .foregroundStyle(copied ? Palette.accent : Palette.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(copied ? "Copied!" : "Copy Transcript")
+                    }
+
                     ForEach(segments) { segment in
                         SegmentRowView(segment: segment)
                     }

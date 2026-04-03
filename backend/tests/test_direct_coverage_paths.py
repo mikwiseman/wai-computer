@@ -640,7 +640,7 @@ async def test_recording_route_direct_paths(
     )
     generated_recording_id = UUID(generated_recording.id)
 
-    async def summarize_create(_: str) -> SummaryResult:
+    async def summarize_create(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Generated Title",
             summary="Generated summary",
@@ -708,7 +708,7 @@ async def test_recording_route_direct_paths(
     )
     await db_session.flush()
 
-    async def summarize_update(_: str) -> SummaryResult:
+    async def summarize_update(_: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Should Not Override Title",
             summary="Updated summary",

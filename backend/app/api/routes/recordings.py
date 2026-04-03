@@ -1896,7 +1896,12 @@ async def generate_summary(
     transcript = "\n".join(transcript_lines)
 
     try:
-        summary_result = await summarize_transcript(transcript)
+        summary_result = await summarize_transcript(
+            transcript,
+            language=user.summary_language,
+            style=user.summary_style,
+            instructions=user.summary_instructions,
+        )
 
         if recording.summary:
             recording.summary.summary = summary_result.summary

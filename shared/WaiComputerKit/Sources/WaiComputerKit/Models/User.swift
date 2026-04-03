@@ -111,3 +111,47 @@ public struct ChangePasswordRequest: Codable, Sendable {
         case newPassword = "new_password"
     }
 }
+
+// MARK: - Settings
+
+/// Response from GET /api/settings
+public struct UserSettings: Codable, Sendable {
+    public let defaultLanguage: String
+    public let summaryLanguage: String
+    public let summaryStyle: String
+    public let summaryInstructions: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case defaultLanguage = "default_language"
+        case summaryLanguage = "summary_language"
+        case summaryStyle = "summary_style"
+        case summaryInstructions = "summary_instructions"
+    }
+}
+
+/// Request to PATCH /api/settings
+public struct UpdateSettingsRequest: Codable, Sendable {
+    public var defaultLanguage: String?
+    public var summaryLanguage: String?
+    public var summaryStyle: String?
+    public var summaryInstructions: String?
+
+    public init(
+        defaultLanguage: String? = nil,
+        summaryLanguage: String? = nil,
+        summaryStyle: String? = nil,
+        summaryInstructions: String? = nil
+    ) {
+        self.defaultLanguage = defaultLanguage
+        self.summaryLanguage = summaryLanguage
+        self.summaryStyle = summaryStyle
+        self.summaryInstructions = summaryInstructions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case defaultLanguage = "default_language"
+        case summaryLanguage = "summary_language"
+        case summaryStyle = "summary_style"
+        case summaryInstructions = "summary_instructions"
+    }
+}

@@ -249,7 +249,7 @@ async def test_highlights_replaced_on_resummarize(
          "speaker": None, "importance": "medium"},
     ]
 
-    async def summarize_v1(_: str) -> SummaryResult:
+    async def summarize_v1(_: str, **kwargs) -> SummaryResult:
         return _summary_result_with_highlights(v1_highlights)
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize_v1)
@@ -269,7 +269,7 @@ async def test_highlights_replaced_on_resummarize(
          "speaker": None, "importance": "low"},
     ]
 
-    async def summarize_v2(_: str) -> SummaryResult:
+    async def summarize_v2(_: str, **kwargs) -> SummaryResult:
         return _summary_result_with_highlights(v2_highlights)
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize_v2)
@@ -311,7 +311,7 @@ async def test_empty_highlights_handled(
     ))
     await db_session.flush()
 
-    async def summarize_empty(_: str) -> SummaryResult:
+    async def summarize_empty(_: str, **kwargs) -> SummaryResult:
         return _summary_result_with_highlights([])
 
     monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", summarize_empty)

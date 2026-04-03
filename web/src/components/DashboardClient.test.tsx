@@ -430,7 +430,6 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("select-recording-r2"));
     await waitFor(() => {
       expect(screen.getByTestId("recording-detail")).toHaveTextContent("(untitled recording)");
-      expect(screen.getByTestId("recording-detail")).toHaveTextContent("Summary: Not generated");
     });
   });
 

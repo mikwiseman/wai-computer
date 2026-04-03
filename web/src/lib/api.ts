@@ -44,6 +44,7 @@ import type {
   TranscriptStatsResponse,
   User,
   UserApp,
+  UserSettings,
   WeeklyDigestResponse,
 } from "./types";
 
@@ -320,6 +321,17 @@ export function changePassword(currentPassword: string, newPassword: string): Pr
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  });
+}
+
+export function getSettings(): Promise<UserSettings> {
+  return apiFetch<UserSettings>("/api/settings");
+}
+
+export function updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
+  return apiFetch<UserSettings>("/api/settings", {
+    method: "PATCH",
+    body: JSON.stringify(settings),
   });
 }
 

@@ -3,6 +3,7 @@ import WaiComputerKit
 
 struct TranscriptView: View {
     let segments: [Segment]
+    @State private var copied = false
 
     var body: some View {
         if segments.isEmpty {
@@ -14,6 +15,28 @@ struct TranscriptView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
+                    // Copy all button
+                    HStack {
+                        Spacer()
+                        Button {
+                            let text = segments.map { seg in
+                                let speaker = seg.speaker ?? "Speaker"
+                                let ts = seg.formattedTimestamp
+                                return "[\(speaker), \(ts)] \(seg.content)"
+                            }.joined(separator: "\n")
+                            UIPasteboard.general.string = text
+                            copied = true
+                            Task {
+                                try? await Task.sleep(for: .seconds(1.5))
+                                copied = false
+                            }
+                        } label: {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                                .font(.caption)
+                                .foregroundStyle(copied ? .orange : .secondary)
+                        }
+                    }
+
                     ForEach(segments) { segment in
                         SegmentView(segment: segment)
                     }
@@ -50,6 +73,7 @@ struct SegmentView: View {
             Text(segment.content)
                 .font(.body)
                 .lineLimit(isExpanded ? nil : 3)
+                .textSelection(.enabled)
                 .onTapGesture {
                     withAnimation {
                         isExpanded.toggle()

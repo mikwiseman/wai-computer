@@ -474,7 +474,7 @@ async def test_recording_lifecycle_summary_highlights_creation(
     assert transcript_resp.json()["title"] == "Sprint Planning"
 
     # Step 3: Generate summary (mocked Claude)
-    async def fake_summarize(transcript: str) -> SummaryResult:
+    async def fake_summarize(transcript: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Sprint Planning Session",
             summary="Team planned the sprint with database migration and dashboard delivery.",
@@ -657,7 +657,7 @@ async def test_summary_regeneration_replaces_highlights_and_action_items(
     await db_session.flush()
 
     # First summary generation
-    async def summarize_v1(transcript: str) -> SummaryResult:
+    async def summarize_v1(transcript: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Design Review V1",
             summary="First design review.",
@@ -693,7 +693,7 @@ async def test_summary_regeneration_replaces_highlights_and_action_items(
     assert len(d1["action_items"]) == 2
 
     # Second summary generation — should replace highlights and generated actions
-    async def summarize_v2(transcript: str) -> SummaryResult:
+    async def summarize_v2(transcript: str, **kwargs) -> SummaryResult:
         return SummaryResult(
             title="Design Review V2",
             summary="Updated design review.",

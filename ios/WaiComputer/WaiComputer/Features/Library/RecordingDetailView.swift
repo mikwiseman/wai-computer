@@ -95,15 +95,29 @@ struct RecordingDetailView: View {
 struct SummaryTabView: View {
     let summary: Summary?
     let onGenerate: () -> Void
+    @State private var copiedSection: String?
 
     var body: some View {
         ScrollView {
             if let summary = summary {
                 VStack(alignment: .leading, spacing: 16) {
+                    // Copy all summary
+                    HStack {
+                        Spacer()
+                        CopyButton(
+                            text: fullSummaryText(summary),
+                            section: "summary-all",
+                            copiedSection: $copiedSection
+                        )
+                    }
+
                     // Summary text
                     if let text = summary.summary {
                         SectionView(title: "Summary") {
                             Text(text)
+                                .textSelection(.enabled)
+                        } trailing: {
+                            CopyButton(text: text, section: "summary-text", copiedSection: $copiedSection)
                         }
                     }
 
@@ -116,8 +130,15 @@ struct SummaryTabView: View {
                                         .font(.system(size: 6))
                                         .padding(.top, 6)
                                     Text(point)
+                                        .textSelection(.enabled)
                                 }
                             }
+                        } trailing: {
+                            CopyButton(
+                                text: keyPoints.map { "- \($0)" }.joined(separator: "\n"),
+                                section: "summary-points",
+                                copiedSection: $copiedSection
+                            )
                         }
                     }
 
@@ -134,6 +155,12 @@ struct SummaryTabView: View {
                                         .cornerRadius(16)
                                 }
                             }
+                        } trailing: {
+                            CopyButton(
+                                text: topics.joined(separator: ", "),
+                                section: "summary-topics",
+                                copiedSection: $copiedSection
+                            )
                         }
                     }
 
@@ -153,6 +180,12 @@ struct SummaryTabView: View {
                                     .cornerRadius(16)
                                 }
                             }
+                        } trailing: {
+                            CopyButton(
+                                text: people.joined(separator: ", "),
+                                section: "summary-people",
+                                copiedSection: $copiedSection
+                            )
                         }
                     }
                 }
@@ -170,6 +203,21 @@ struct SummaryTabView: View {
                 }
             }
         }
+    }
+
+    private func fullSummaryText(_ summary: Summary) -> String {
+        var parts: [String] = []
+        if let text = summary.summary { parts.append(text) }
+        if let points = summary.keyPoints, !points.isEmpty {
+            parts.append("\nKey Points:\n" + points.map { "- \($0)" }.joined(separator: "\n"))
+        }
+        if let topics = summary.topics, !topics.isEmpty {
+            parts.append("\nTopics: " + topics.joined(separator: ", "))
+        }
+        if let people = summary.peopleMentioned, !people.isEmpty {
+            parts.append("\nPeople: " + people.joined(separator: ", "))
+        }
+        return parts.joined(separator: "\n")
     }
 }
 
@@ -241,15 +289,57 @@ struct PriorityBadge: View {
     }
 }
 
-struct SectionView<Content: View>: View {
+struct SectionView<Content: View, Trailing: View>: View {
     let title: String
     @ViewBuilder let content: Content
+    @ViewBuilder let trailing: Trailing
+
+    init(title: String, @ViewBuilder content: () -> Content, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.content = content()
+        self.trailing = trailing()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.headline)
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                trailing
+            }
             content
+        }
+    }
+}
+
+extension SectionView where Trailing == EmptyView {
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+        self.trailing = EmptyView()
+    }
+}
+
+struct CopyButton: View {
+    let text: String
+    let section: String
+    @Binding var copiedSection: String?
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = text
+            copiedSection = section
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                if copiedSection == section {
+                    copiedSection = nil
+                }
+            }
+        } label: {
+            Image(systemName: copiedSection == section ? "checkmark" : "doc.on.doc")
+                .font(.caption)
+                .foregroundStyle(copiedSection == section ? .orange : .secondary)
         }
     }
 }

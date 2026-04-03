@@ -7,6 +7,15 @@ export type AppStatus = "draft" | "live" | "archived";
 export type AppVisibility = "private" | "unlisted" | "public";
 export type RealtimeVoiceMode = "conversation" | "recording";
 
+export type SummaryStyle = "brief" | "medium" | "detailed";
+
+export interface UserSettings {
+  default_language: string;
+  summary_language: string;
+  summary_style: SummaryStyle;
+  summary_instructions: string | null;
+}
+
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string;
