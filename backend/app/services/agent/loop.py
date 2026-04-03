@@ -9,6 +9,7 @@ Flow:
 6. Result returned to caller
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -24,6 +25,36 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 MAX_TURNS = 10
+API_TIMEOUT = 120  # seconds
+API_MAX_RETRIES = 3
+API_RETRY_BASE_DELAY = 1.0  # seconds
+
+_client: anthropic.AsyncAnthropic | None = None
+
+
+def _get_client() -> anthropic.AsyncAnthropic:
+    """Return a cached AsyncAnthropic client."""
+    global _client
+    if _client is None:
+        _client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            timeout=API_TIMEOUT,
+        )
+    return _client
+
+
+async def _api_call_with_retry(client: anthropic.AsyncAnthropic, **kwargs) -> anthropic.types.Message:
+    """Call Claude API with exponential backoff on transient errors."""
+    for attempt in range(API_MAX_RETRIES):
+        try:
+            return await client.messages.create(**kwargs)
+        except (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError) as e:
+            if attempt == API_MAX_RETRIES - 1:
+                raise
+            delay = API_RETRY_BASE_DELAY * (2 ** attempt)
+            logger.warning("Claude API error (attempt %d/%d): %s — retrying in %.1fs", attempt + 1, API_MAX_RETRIES, e, delay)
+            await asyncio.sleep(delay)
+    raise RuntimeError("Unreachable")
 
 
 @dataclass
@@ -200,7 +231,7 @@ async def execute_tool(tool_name: str, tool_input: dict, context: AgentContext) 
     elif tool_name == "build_app":
         return await _tool_build_app(tool_input, context)
     elif tool_name == "build_site":
-        return await _tool_build_site(tool_input)
+        return await _tool_build_site(tool_input, context)
     else:
         return f"Unknown tool: {tool_name}"
 
@@ -283,30 +314,91 @@ async def _tool_build_app(tool_input: dict, context: AgentContext) -> str:
     import uuid as uuid_mod
 
     from app.services.agent.app_builder import build_app
+    from app.services.user_apps import create_generated_user_app
 
     description = tool_input.get("description", "")
     theme = tool_input.get("theme")
     app_id = str(uuid_mod.uuid4())[:8]
 
     result = await build_app(description=description, app_id=app_id, theme=theme)
+    user_app_id = None
+
+    if context.db is not None:
+        user_app = await create_generated_user_app(
+            context.db,
+            context.user_id,
+            description,
+            result,
+            theme=theme,
+        )
+        await context.db.flush()
+        user_app_id = str(user_app.id)
+        logger.info(
+            "agent-built app persisted user_id=%s app_id=%s success=%s",
+            context.user_id,
+            user_app_id,
+            bool(result.get("success")),
+        )
 
     if result.get("success"):
-        return f"App deployed successfully!\nURL: {result['url']}\nApp ID: {result.get('app_id', app_id)}"
-    return f"App build failed: {result.get('error', 'Unknown error')}"
+        response = (
+            f"App preview deployed successfully!\nPreview URL: {result['url']}\n"
+            f"App ID: {result.get('app_id', app_id)}"
+        )
+        if user_app_id:
+            response += f"\nLibrary App ID: {user_app_id}"
+            response += "\nPublish it from Apps when you're ready to go live."
+        return response
+
+    response = f"App build failed: {result.get('error', 'Unknown error')}"
+    if user_app_id:
+        response += f"\nDraft saved in Apps with ID: {user_app_id}"
+    return response
 
 
-async def _tool_build_site(tool_input: dict) -> str:
+async def _tool_build_site(tool_input: dict, context: AgentContext) -> str:
     """Build and deploy a static site."""
+    import uuid as uuid_mod
+
     from app.services.agent.app_builder import build_site
+    from app.services.user_apps import create_generated_user_app
 
     description = tool_input.get("description", "")
     theme = tool_input.get("theme")
+    site_key = str(uuid_mod.uuid4())[:8]
 
-    result = await build_site(description=description, theme=theme)
+    result = await build_site(description=description, theme=theme, site_key=site_key)
+    user_app_id = None
+
+    if context.db is not None:
+        user_app = await create_generated_user_app(
+            context.db,
+            context.user_id,
+            description,
+            result,
+            template="site",
+            theme=theme,
+        )
+        await context.db.flush()
+        user_app_id = str(user_app.id)
+        logger.info(
+            "agent-built site persisted user_id=%s app_id=%s success=%s",
+            context.user_id,
+            user_app_id,
+            bool(result.get("success")),
+        )
 
     if result.get("success"):
-        return f"Site deployed successfully!\nURL: {result['url']}"
-    return f"Site build failed: {result.get('error', 'Unknown error')}"
+        response = f"Site preview deployed successfully!\nPreview URL: {result['url']}"
+        if user_app_id:
+            response += f"\nLibrary App ID: {user_app_id}"
+            response += "\nPublish it from Apps when you're ready to go live."
+        return response
+
+    response = f"Site build failed: {result.get('error', 'Unknown error')}"
+    if user_app_id:
+        response += f"\nDraft saved in Apps with ID: {user_app_id}"
+    return response
 
 
 async def run_agent(context: AgentContext, message: str) -> AgentResult:
@@ -344,71 +436,70 @@ async def run_agent(context: AgentContext, message: str) -> AgentResult:
 
     messages.append({"role": "user", "content": user_content})
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
     total_input_tokens = 0
     total_output_tokens = 0
     tool_call_count = 0
 
-    for turn in range(MAX_TURNS):
-        response = await client.messages.create(
-            model=model,
-            max_tokens=settings.agent_max_turns * 400,
-            system=system_prompt,
-            messages=messages,
-            tools=TOOLS,
-        )
+    try:
+        for turn in range(MAX_TURNS):
+            response = await _api_call_with_retry(
+                client,
+                model=model,
+                max_tokens=settings.agent_max_turns * 400,
+                system=system_prompt,
+                messages=messages,
+                tools=TOOLS,
+            )
 
-        total_input_tokens += response.usage.input_tokens
-        total_output_tokens += response.usage.output_tokens
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
 
-        if response.stop_reason == "tool_use":
-            assistant_content = response.content
-            messages.append({"role": "assistant", "content": assistant_content})
+            if response.stop_reason == "tool_use":
+                assistant_content = response.content
+                messages.append({"role": "assistant", "content": assistant_content})
 
-            tool_results = []
-            for block in assistant_content:
-                if block.type == "tool_use":
-                    tool_call_count += 1
+                tool_blocks = [b for b in assistant_content if b.type == "tool_use"]
+                tool_call_count += len(tool_blocks)
+
+                async def _exec_tool(block):
                     try:
                         result = await execute_tool(block.name, block.input, context)
                     except Exception as e:
-                        logger.error(f"Tool {block.name} failed: {e}")
+                        logger.error("Tool %s failed: %s", block.name, e)
                         result = f"Error executing {block.name}: {e}"
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        }
-                    )
+                    return {"type": "tool_result", "tool_use_id": block.id, "content": result}
 
-            messages.append({"role": "user", "content": tool_results})
-            continue
+                tool_results = await asyncio.gather(*[_exec_tool(b) for b in tool_blocks])
 
-        text_parts = []
-        for block in response.content:
-            if hasattr(block, "text"):
-                text_parts.append(block.text)
+                messages.append({"role": "user", "content": list(tool_results)})
+                continue
 
-        final_response = "\n".join(text_parts) if text_parts else "I processed your request."
+            text_parts = [block.text for block in response.content if hasattr(block, "text")]
+            if not text_parts:
+                logger.warning("Agent response contained no text blocks (stop_reason=%s)", response.stop_reason)
 
-        increment("agent_tokens_input", total_input_tokens)
-        increment("agent_tokens_output", total_output_tokens)
-        increment("agent_tool_calls", tool_call_count)
+            final_response = "\n".join(text_parts) if text_parts else "I processed your request but received no text response."
+
+            return AgentResult(
+                response=final_response,
+                intent=intent,
+                model_used=model,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                tool_calls=tool_call_count,
+            )
+
+        logger.warning("Agent reached MAX_TURNS=%d for user=%s", MAX_TURNS, context.user_id)
         return AgentResult(
-            response=final_response,
+            response="I've been working on this but reached my turn limit. Here's what I found so far.",
             intent=intent,
             model_used=model,
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
             tool_calls=tool_call_count,
         )
-
-    return AgentResult(
-        response="I've been working on this but reached my turn limit. Here's what I found so far.",
-        intent=intent,
-        model_used=model,
-        input_tokens=total_input_tokens,
-        output_tokens=total_output_tokens,
-        tool_calls=tool_call_count,
-    )
+    finally:
+        increment("agent_tokens_input", total_input_tokens)
+        increment("agent_tokens_output", total_output_tokens)
+        increment("agent_tool_calls", tool_call_count)
