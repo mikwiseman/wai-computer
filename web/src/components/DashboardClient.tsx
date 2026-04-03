@@ -71,7 +71,7 @@ export function DashboardClient() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [view, setView] = useState<DashboardView>("library");
+  const [view, setView] = useState<DashboardView>("wai");
 
   async function loadRecordingsState() {
     const response = await listRecordings({ limit: 50 });

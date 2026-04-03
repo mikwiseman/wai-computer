@@ -20,12 +20,14 @@ struct ContentView: View {
 struct MainTabView: View {
     @AppStorage("selectedTab") private var selectedTab = 0
     @StateObject private var recordingViewModel = RecordingViewModel()
+    @State private var recoveryNotice: String?
+    @State private var recoveryNoticeDismissTask: Task<Void, Never>?
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            RecordingView()
+            WaiHomeView()
                 .tabItem {
-                    Label("Record", systemImage: "mic.fill")
+                    Label("Wai", systemImage: "brain")
                 }
                 .tag(0)
 
@@ -35,19 +37,89 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
-            SearchView()
+            MobileAgentsView()
                 .tabItem {
-                    Label("Search", systemImage: "magnifyingglass")
+                    Label("Agents", systemImage: "gearshape.2")
                 }
                 .tag(2)
+
+            MobileAppsView()
+                .tabItem {
+                    Label("Apps", systemImage: "square.grid.2x2")
+                }
+                .tag(3)
 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(3)
+                .tag(4)
         }
         .environmentObject(recordingViewModel)
+        .overlay(alignment: .top) {
+            if let recoveryNotice {
+                RecordingRecoveryBanner(message: recoveryNotice) {
+                    dismissRecoveryNotice()
+                }
+                .padding(.top, 12)
+                .padding(.horizontal, 12)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingRecoveryNotice)) { notification in
+            guard let message = notification.userInfo?["message"] as? String,
+                  !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            recoveryNotice = message
+            scheduleRecoveryNoticeDismiss()
+        }
+    }
+
+    private func dismissRecoveryNotice() {
+        recoveryNoticeDismissTask?.cancel()
+        recoveryNoticeDismissTask = nil
+        recoveryNotice = nil
+    }
+
+    private func scheduleRecoveryNoticeDismiss() {
+        recoveryNoticeDismissTask?.cancel()
+        recoveryNoticeDismissTask = Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                recoveryNotice = nil
+                recoveryNoticeDismissTask = nil
+            }
+        }
+    }
+}
+
+private struct RecordingRecoveryBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.headline)
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .accessibilityIdentifier("recording-recovery-banner")
     }
 }
 

@@ -44,14 +44,51 @@ struct RecordingDetailView: View {
         .task {
             await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
         }
+        .task(id: detailRefreshKey) {
+            await viewModel.refreshPendingDetailIfNeeded(
+                recordingId: recording.id,
+                apiClient: appState.getAPIClient()
+            )
+        }
         .onChange(of: recording.id) {
             selectedTab = 0
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { notification in
+            guard let syncedRecordingId = notification.userInfo?["recordingId"] as? String,
+                  syncedRecordingId == recording.id else {
+                return
+            }
+            Task {
+                await viewModel.loadDetail(
+                    recordingId: recording.id,
+                    apiClient: appState.getAPIClient(),
+                    showLoading: false
+                )
+            }
         }
         .overlay {
             if viewModel.isLoading {
                 ProgressView()
             }
         }
+        .alert(
+            "Recording Error",
+            isPresented: Binding(
+                get: { viewModel.error != nil },
+                set: { if !$0 { viewModel.error = nil } }
+            )
+        ) {
+            Button("OK") {
+                viewModel.error = nil
+            }
+        } message: {
+            Text(viewModel.error ?? "We couldn't load this recording right now.")
+        }
+    }
+
+    private var detailRefreshKey: String {
+        let status = viewModel.detail?.status.rawValue ?? "none"
+        return "\(recording.id)-\(status)"
     }
 }
 
@@ -264,16 +301,21 @@ class RecordingDetailViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
-    func loadDetail(recordingId: String, apiClient: APIClient) async {
-        isLoading = true
+    func loadDetail(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
+        error = nil
 
         do {
             detail = try await apiClient.getRecording(id: recordingId)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
 
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     func generateSummary(recordingId: String, apiClient: APIClient) async {
@@ -284,10 +326,29 @@ class RecordingDetailViewModel: ObservableObject {
             // Reload to get updated detail with summary
             detail = try await apiClient.getRecording(id: recordingId)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
 
         isLoading = false
+    }
+
+    func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {
+        guard shouldAutoRefresh(for: detail?.status) else { return }
+
+        while !Task.isCancelled, shouldAutoRefresh(for: detail?.status) {
+            try? await Task.sleep(for: .seconds(detail?.status == .processing ? 4 : 2))
+            guard !Task.isCancelled else { return }
+            await loadDetail(recordingId: recordingId, apiClient: apiClient, showLoading: false)
+        }
+    }
+
+    private func shouldAutoRefresh(for status: RecordingStatus?) -> Bool {
+        switch status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed, .none:
+            return false
+        }
     }
 }
 

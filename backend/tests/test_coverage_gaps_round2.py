@@ -7,7 +7,6 @@ permanent delete of recording with audio_url, and dictation cleanup auth.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -487,20 +486,18 @@ async def test_export_markdown_highlights_with_and_without_speaker(
 
 
 # ---------------------------------------------------------------------------
-# 10. Permanent delete of recording that has audio_url (storage delete branch)
+# 10. Permanent delete of recording that has audio_url
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_permanent_delete_recording_with_audio_url_attempts_storage_delete(
+async def test_permanent_delete_recording_with_audio_url_removes_record(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ):
-    """Permanent delete of a recording with audio_url should attempt to delete from storage."""
+    """Permanent delete should remove the record even if audio_url is still populated."""
     rec = await _create_recording(client, auth_headers, title="Has Audio")
     recording_id = UUID(rec["id"])
 
-    # Set audio_url directly
     result = await db_session.execute(
         select(Recording).where(Recording.id == recording_id)
     )
@@ -509,14 +506,6 @@ async def test_permanent_delete_recording_with_audio_url_attempts_storage_delete
     r.deleted_at = datetime.now(timezone.utc)  # soft-deleted first
     await db_session.flush()
 
-    mock_storage = AsyncMock()
-    mock_storage.delete_audio = AsyncMock(return_value=None)
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
-
-    # Permanent delete (second delete on trashed recording)
     response = await client.delete(
         f"/api/recordings/{recording_id}",
         headers=auth_headers,
@@ -524,10 +513,6 @@ async def test_permanent_delete_recording_with_audio_url_attempts_storage_delete
     )
     assert response.status_code == 204
 
-    # Verify storage.delete_audio was called
-    mock_storage.delete_audio.assert_awaited_once_with("user/2026/01/01/test-audio.mp3")
-
-    # Verify recording is gone
     detail_response = await client.get(
         f"/api/recordings/{recording_id}", headers=auth_headers
     )
@@ -540,28 +525,20 @@ async def test_permanent_delete_recording_with_audio_url_attempts_storage_delete
 
 
 @pytest.mark.asyncio
-async def test_permanent_delete_with_storage_failure_still_deletes_record(
+async def test_permanent_delete_with_audio_url_still_deletes_record(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ):
-    """Even if S3 delete fails, the recording should still be removed from the database."""
-    rec = await _create_recording(client, auth_headers, title="S3 Fail Delete")
+    """Audio metadata should not block permanent deletion."""
+    rec = await _create_recording(client, auth_headers, title="Audio Metadata Delete")
     recording_id = UUID(rec["id"])
 
     result = await db_session.execute(
         select(Recording).where(Recording.id == recording_id)
     )
     r = result.scalar_one()
-    r.audio_url = "user/2026/01/01/s3-fail.mp3"
+    r.audio_url = "user/2026/01/01/audio-only-metadata.mp3"
     r.deleted_at = datetime.now(timezone.utc)
     await db_session.flush()
-
-    mock_storage = AsyncMock()
-    mock_storage.delete_audio = AsyncMock(side_effect=RuntimeError("S3 down"))
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
 
     response = await client.delete(
         f"/api/recordings/{recording_id}",

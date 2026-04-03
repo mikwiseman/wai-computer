@@ -3,12 +3,19 @@ import WaiComputerKit
 
 @main
 struct WaiComputerApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .active else { return }
+                    Task {
+                        await appState.resumePendingRecordingSyncIfNeeded()
+                    }
+                }
         }
     }
 }
@@ -37,18 +44,14 @@ class AppState: ObservableObject {
         #endif
         apiClient = APIClient(baseURL: baseURL)
 
-        // Migrate from UserDefaults to Keychain (one-time)
-        if KeychainHelper.load(key: KeychainHelper.accessTokenKey) == nil,
-           let legacyToken = UserDefaults.standard.string(forKey: "accessToken") {
-            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: legacyToken)
-            UserDefaults.standard.removeObject(forKey: "accessToken")
-        }
-
         // Set up token refresh callbacks
         Task {
             await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
                 KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: accessToken)
                 KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshToken)
+                Task {
+                    await PendingRecordingSyncCoordinator.shared.scheduleSync(using: self.apiClient)
+                }
             }
             await apiClient.setOnAuthenticationFailed { [weak self] in
                 Task { @MainActor in
@@ -88,7 +91,7 @@ class AppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -110,7 +113,7 @@ class AppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -128,7 +131,6 @@ class AppState: ObservableObject {
         await apiClient.setRefreshToken(nil)
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
-        UserDefaults.standard.removeObject(forKey: "accessToken")
         SentryHelper.clearUser()
         currentUser = nil
         isAuthenticated = false
@@ -138,7 +140,6 @@ class AppState: ObservableObject {
     private func handleAuthenticationFailed() {
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
-        UserDefaults.standard.removeObject(forKey: "accessToken")
         currentUser = nil
         isAuthenticated = false
     }
@@ -149,6 +150,7 @@ class AppState: ObservableObject {
             currentUser = user
             isAuthenticated = true
             SentryHelper.setUser(id: user.id)
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
         } catch {
             isAuthenticated = false
             currentUser = nil
@@ -156,16 +158,19 @@ class AppState: ObservableObject {
         }
     }
 
+    func resumePendingRecordingSyncIfNeeded() async {
+        guard isAuthenticated else { return }
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+    }
+
     private func handleAPIError(_ error: APIError) {
         switch error {
         case .unauthorized:
             self.error = "Invalid credentials"
-        case .httpError(_, let message):
-            self.error = message ?? "An error occurred"
-        case .networkError:
-            self.error = "Network error. Please check your connection."
+        case .httpError, .networkError:
+            self.error = error.userFacingMessage(context: .authentication)
         default:
-            self.error = "An unexpected error occurred"
+            self.error = error.userFacingMessage(context: .authentication)
         }
     }
 

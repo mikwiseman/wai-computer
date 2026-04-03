@@ -2,15 +2,6 @@ import Foundation
 import os
 import Sentry
 
-/// Deepgram token response from backend
-public struct DeepgramTokenResponse: Codable, Sendable {
-    public let accessToken: String
-
-    private enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-    }
-}
-
 /// Transcript segment collected during a live recording session
 public struct LiveTranscriptSegment: Codable, Sendable {
     public let text: String
@@ -57,7 +48,7 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
         case .superseded:
             return "The WebSocket connection was replaced by a newer connection attempt."
         case .invalidURL:
-            return "Failed to construct a valid Deepgram WebSocket URL."
+            return "Failed to construct a valid transcription WebSocket URL."
         case .reconnectionExhausted(let attempts):
             return "Failed to reconnect after \(attempts) attempts."
         }
@@ -74,14 +65,10 @@ public enum WebSocketEvent: Sendable {
     case reconnectionFailed(Error?)
 }
 
-/// WebSocket manager for direct Deepgram streaming.
+/// WebSocket manager for provider-backed realtime speech-to-text streaming.
 ///
-/// Connects directly to `wss://api.deepgram.com/v1/listen` using a short-lived
-/// JWT obtained from the backend's `/api/deepgram-token` endpoint.
-///
-/// Automatically reconnects with exponential backoff when the connection drops
-/// during an active recording session. Audio is buffered locally during
-/// reconnection and replayed once the connection is restored.
+/// The manager asks the backend for a provider-specific realtime transcription
+/// session, then streams PCM audio directly to the selected provider.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "com.waicomputer.kit", category: "websocket")
     private let apiClient: APIClient
@@ -91,9 +78,11 @@ public actor WebSocketManager {
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
     private var receiveTask: Task<Void, Never>?
-    private var keepAliveTask: Task<Void, Never>?
     private var connectionId: UInt64 = 0
     private var sendCount = 0
+    private var transcriptionSession: RealtimeTranscriptionSessionConfig?
+    private let reconnectClock = ContinuousClock()
+    private var lastTranscriptReceivedAt: ContinuousClock.Instant?
 
     // MARK: - Reconnection state
 
@@ -120,13 +109,8 @@ public actor WebSocketManager {
     /// once and reused — no more race conditions from replacing continuations.
     private var _eventStream: AsyncStream<WebSocketEvent>?
     public var events: AsyncStream<WebSocketEvent> {
-        if let existing = _eventStream {
-            return existing
-        }
-        let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
-        eventContinuation = continuation
-        _eventStream = stream
-        return stream
+        ensureEventStream()
+        return _eventStream!
     }
 
     public init(apiClient: APIClient, language: String = "multi", channels: Int = 1) {
@@ -135,47 +119,41 @@ public actor WebSocketManager {
         self.channels = channels
     }
 
-    /// Connect to Deepgram directly using a temporary token from the backend.
+    /// Connect to the configured transcription provider using a backend-issued session token.
     public func connect() async throws {
         if webSocket != nil || receiveTask != nil {
             wsLog.debug("Disconnecting previous connection before new one")
             closeConnection(
                 forConnection: connectionId,
                 error: WebSocketConnectionError.superseded,
-                emitDisconnected: true
+                emitDisconnected: true,
+                finishEventStream: false
             )
         }
 
-        if eventContinuation == nil {
-            let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
-            eventContinuation = continuation
-            _ = stream
-        }
+        ensureEventStream()
 
         connectionId &+= 1
         let thisConnection = connectionId
         sendCount = 0
         collectedSegments = []
+        lastTranscriptReceivedAt = nil
         reconnectAttempt = 0
         audioBuffer = []
         isReconnecting = false
         reconnectTask?.cancel()
         reconnectTask = nil
 
-        // Fetch temporary Deepgram JWT from backend
-        let tokenResponse: DeepgramTokenResponse = try await apiClient.request(
-            .GET, path: "/api/deepgram-token"
+        let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+            language: language,
+            channels: channels
         )
-        let dgToken = tokenResponse.accessToken
+        transcriptionSession = sessionConfig
+        let request = try requestForRealtimeSession(sessionConfig)
 
-        // Build Deepgram WebSocket URL with token as query param
-        // (more reliable than header for WebSocket upgrade handshake)
-        let url = try buildDeepgramURL(token: dgToken)
-        wsLog.debug("Connecting to Deepgram: \(url.host ?? "", privacy: .public)\(url.path, privacy: .public)")
-
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 300
-        request.setValue("Bearer \(dgToken)", forHTTPHeaderField: "Authorization")
+        wsLog.debug(
+            "Connecting to realtime transcription provider=\(sessionConfig.provider, privacy: .public)"
+        )
 
         let session = URLSession(configuration: .default)
         let socket = session.webSocketTask(with: request)
@@ -186,21 +164,16 @@ public actor WebSocketManager {
             await self?.receiveMessages(forConnection: thisConnection)
         }
 
-        // Send KeepAlive every 5s to prevent Deepgram's 10s silence timeout
-        keepAliveTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { break }
-                try? await self?.webSocket?.send(.string("{\"type\":\"KeepAlive\"}"))
-            }
-        }
-
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
-        SentryHelper.addBreadcrumb(category: "websocket", message: "connected to Deepgram")
+        SentryHelper.addBreadcrumb(
+            category: "websocket",
+            message: "connected to transcription provider",
+            data: ["provider": sessionConfig.provider]
+        )
     }
 
-    /// Send raw PCM audio data directly to Deepgram.
+    /// Send raw PCM audio data directly to the configured provider.
     ///
     /// During reconnection, audio is buffered locally (up to ~30s) and replayed
     /// once the connection is restored. This method does NOT throw during
@@ -220,35 +193,56 @@ public actor WebSocketManager {
         }
 
         do {
-            try await webSocket?.send(.data(data))
+            try await sendAudioChunk(data)
         } catch {
             if reconnectEnabled {
                 bufferAudioChunk(data)
-                // receiveMessages will detect the disconnect and start reconnection
                 return
             }
             throw error
         }
     }
 
-    /// Signal end of audio stream. Deepgram will send final results then close.
-    /// Disables auto-reconnection since this is an intentional close.
+    /// Signal end of audio stream and wait briefly for the final transcript.
     public func sendEnd() async throws {
         reconnectEnabled = false
         cancelReconnection()
 
         guard let webSocket else { return }
-
-        let closeMessage = "{\"type\":\"CloseStream\"}"
-        try await webSocket.send(.string(closeMessage))
-        wsLog.debug("Sent CloseStream to Deepgram")
+        try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
+            data: Data(repeating: 0, count: 640),
+            previousText: nil,
+            commit: true
+        )))
+        wsLog.debug("Sent commit chunk to ElevenLabs")
     }
 
-    /// Ask Deepgram to finalize the stream and wait for the socket to close.
+    /// Ask the provider to finalize the stream.
     @discardableResult
     public func finishStreaming(timeout: Duration = .seconds(5)) async throws -> Bool {
         try await sendEnd()
-        return await waitForDisconnect(timeout: timeout)
+        let minimumWaitUntil = reconnectClock.now + .milliseconds(350)
+        let quietWindow: Duration = .milliseconds(750)
+        let deadline = reconnectClock.now + timeout
+
+        while reconnectClock.now < deadline {
+            let now = reconnectClock.now
+            let isSettled: Bool
+            if let lastTranscriptReceivedAt {
+                isSettled = now >= minimumWaitUntil && now - lastTranscriptReceivedAt >= quietWindow
+            } else {
+                isSettled = now >= minimumWaitUntil
+            }
+
+            if isSettled {
+                break
+            }
+
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+
+        disconnect()
+        return true
     }
 
     @discardableResult
@@ -271,37 +265,101 @@ public actor WebSocketManager {
     public func disconnect() {
         reconnectEnabled = false
         cancelReconnection()
-        closeConnection(forConnection: connectionId, error: nil, emitDisconnected: true)
+        closeConnection(
+            forConnection: connectionId,
+            error: nil,
+            emitDisconnected: true,
+            finishEventStream: false
+        )
         SentryHelper.addBreadcrumb(category: "websocket", message: "disconnected")
+    }
+
+    // MARK: - URL builders
+
+    func buildElevenLabsURL(
+        token: String,
+        model: String,
+        commitStrategy: String?
+    ) throws -> URL {
+        var components = URLComponents(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")
+        var queryItems = [
+            URLQueryItem(name: "model_id", value: model),
+            URLQueryItem(name: "token", value: token),
+            URLQueryItem(name: "include_timestamps", value: "true"),
+            URLQueryItem(name: "audio_format", value: "pcm_16000"),
+        ]
+        if language == "multi" {
+            queryItems.append(URLQueryItem(name: "include_language_detection", value: "true"))
+        } else {
+            queryItems.append(URLQueryItem(name: "language_code", value: language))
+        }
+        if let commitStrategy, !commitStrategy.isEmpty {
+            queryItems.append(URLQueryItem(name: "commit_strategy", value: commitStrategy))
+        }
+        components?.queryItems = queryItems
+        guard let url = components?.url else {
+            throw WebSocketConnectionError.invalidURL
+        }
+        return url
     }
 
     // MARK: - Private
 
-    func buildDeepgramURL(token: String) throws -> URL {
-        var params = [
-            "model=nova-3",
-            "language=\(language)",
-            "punctuate=true",
-            "diarize=true",
-            "interim_results=true",
-            "utterance_end_ms=1000",
-            "vad_events=true",
-            "encoding=linear16",
-            "sample_rate=16000",
-            "token=\(token)",
+    private func requestForRealtimeSession(
+        _ sessionConfig: RealtimeTranscriptionSessionConfig
+    ) throws -> URLRequest {
+        guard sessionConfig.provider == "elevenlabs" else {
+            throw WebSocketConnectionError.tokenFetchFailed(
+                "Unsupported transcription provider: \(sessionConfig.provider)"
+            )
+        }
+
+        let url = try buildElevenLabsURL(
+            token: sessionConfig.token,
+            model: sessionConfig.model,
+            commitStrategy: sessionConfig.commitStrategy
+        )
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 300
+        return request
+    }
+
+    private func sendAudioChunk(
+        _ data: Data,
+        previousText: String? = nil,
+        commit: Bool = false
+    ) async throws {
+        guard let webSocket else {
+            throw APIError.networkError(URLError(.notConnectedToInternet))
+        }
+
+        try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
+            data: data,
+            previousText: previousText,
+            commit: commit
+        )))
+    }
+
+    private func makeElevenLabsAudioChunkMessage(
+        data: Data,
+        previousText: String?,
+        commit: Bool
+    ) -> String {
+        var payload: [String: Any] = [
+            "message_type": "input_audio_chunk",
+            "audio_base_64": data.base64EncodedString(),
+            "sample_rate": 16_000,
         ]
-        if channels > 1 {
-            params.append("channels=\(channels)")
-            params.append("multichannel=true")
+        if let previousText, !previousText.isEmpty {
+            payload["previous_text"] = previousText
         }
-        if language == "multi" {
-            params.append("endpointing=100")
+        if commit {
+            payload["commit"] = true
         }
-        let queryString = params.joined(separator: "&")
-        guard let url = URL(string: "wss://api.deepgram.com/v1/listen?\(queryString)") else {
-            throw WebSocketConnectionError.invalidURL
-        }
-        return url
+
+        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
+        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
     }
 
     private func receiveMessages(forConnection expectedId: UInt64) async {
@@ -321,12 +379,12 @@ public actor WebSocketManager {
                 switch message {
                 case .string(let text):
                     if connectionId == expectedId {
-                        handleDeepgramMessage(text)
+                        handleIncomingMessage(text)
                     }
                 case .data(let data):
                     if let text = String(data: data, encoding: .utf8),
                        connectionId == expectedId {
-                        handleDeepgramMessage(text)
+                        handleIncomingMessage(text)
                     }
                 @unknown default:
                     break
@@ -341,75 +399,120 @@ public actor WebSocketManager {
                     closeConnection(
                         forConnection: expectedId,
                         error: WebSocketConnectionError.disconnected(error),
-                        emitDisconnected: true
+                        emitDisconnected: true,
+                        finishEventStream: false
                     )
                 }
             }
         }
     }
 
-    private func handleDeepgramMessage(_ text: String) {
+    private func handleIncomingMessage(_ text: String) {
+        handleElevenLabsMessage(text)
+    }
+
+    private func handleElevenLabsMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
-        let msgType = json["type"] as? String ?? ""
+        let messageType = (json["message_type"] as? String) ?? (json["type"] as? String) ?? ""
 
-        guard msgType == "Results" else { return }
-
-        // Reset reconnect counter on successful data receipt — connection is healthy
-        if reconnectAttempt > 0 {
-            reconnectAttempt = 0
-        }
-
-        let isFinal = json["is_final"] as? Bool ?? false
-
-        // Multichannel: Deepgram returns channel_index for each result
-        let channelIndex = (json["channel_index"] as? [Int])?.first ?? 0
-
-        guard let channel = json["channel"] as? [String: Any],
-              let alternatives = channel["alternatives"] as? [[String: Any]],
-              let alt = alternatives.first,
-              let transcript = alt["transcript"] as? String,
-              !transcript.isEmpty
-        else { return }
-
-        let words = alt["words"] as? [[String: Any]] ?? []
-        var speaker: String? = nil
-        var startMs = 0
-        var endMs = 0
-
-        if let firstWord = words.first {
-            if channels > 1 {
-                // In multichannel mode, use channel index for speaker label
-                // ch0 = mic (user), ch1 = system audio (others)
-                speaker = channelIndex == 0 ? "You" : "Speaker \(channelIndex)"
-            } else {
-                let speakerIdx = firstWord["speaker"] as? Int ?? 0
-                speaker = "Speaker \(speakerIdx)"
+        switch messageType {
+        case "session_started":
+            if reconnectAttempt > 0 {
+                reconnectAttempt = 0
             }
-            startMs = Int((firstWord["start"] as? Double ?? 0) * 1000)
-        }
-        if let lastWord = words.last {
-            endMs = Int((lastWord["end"] as? Double ?? 0) * 1000)
-        }
 
-        let confidence = alt["confidence"] as? Double ?? 0.0
+        case "partial_transcript":
+            guard let transcript = json["text"] as? String,
+                  !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return
+            }
+            lastTranscriptReceivedAt = reconnectClock.now
+            let lastEndMs = collectedSegments.last?.endMs ?? 0
+            eventContinuation?.yield(.transcript(LiveTranscriptSegment(
+                text: transcript,
+                speaker: nil,
+                isFinal: false,
+                startMs: lastEndMs,
+                endMs: lastEndMs,
+                confidence: 0.0
+            )))
 
-        let segment = LiveTranscriptSegment(
+        case "committed_transcript_with_timestamps":
+            guard let segment = committedElevenLabsSegment(from: json, textOverride: nil) else { return }
+            lastTranscriptReceivedAt = reconnectClock.now
+            collectedSegments.append(segment)
+            eventContinuation?.yield(.transcript(segment))
+
+        case "committed_transcript":
+            guard let segment = committedElevenLabsSegment(
+                from: json,
+                textOverride: json["text"] as? String
+            ) else { return }
+            lastTranscriptReceivedAt = reconnectClock.now
+            collectedSegments.append(segment)
+            eventContinuation?.yield(.transcript(segment))
+
+        default:
+            if messageType.hasSuffix("error") || messageType.contains("_error") {
+                let message = (json["message"] as? String)
+                    ?? (json["error"] as? String)
+                    ?? messageType
+                let error = WebSocketConnectionError.serverError(message)
+                if reconnectEnabled {
+                    startReconnection(afterError: error)
+                } else {
+                    closeConnection(
+                        forConnection: connectionId,
+                        error: error,
+                        emitDisconnected: true,
+                        finishEventStream: false
+                    )
+                }
+            }
+        }
+    }
+
+    private func committedElevenLabsSegment(
+        from json: [String: Any],
+        textOverride: String?
+    ) -> LiveTranscriptSegment? {
+        let transcript = (textOverride ?? (json["text"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return nil }
+
+        let words = (json["words"] as? [[String: Any]] ?? []).filter { word in
+            (word["type"] as? String) != "spacing"
+        }
+        let startMs = Int(((words.first?["start"] as? Double) ?? 0) * 1000)
+        let endMs = Int(((words.last?["end"] as? Double) ?? 0) * 1000)
+        let confidence = confidenceFromElevenLabsWords(words)
+
+        return LiveTranscriptSegment(
             text: transcript,
-            speaker: speaker,
-            isFinal: isFinal,
+            speaker: nil,
+            isFinal: true,
             startMs: startMs,
             endMs: endMs,
             confidence: confidence
         )
+    }
 
-        if isFinal {
-            collectedSegments.append(segment)
+    private func confidenceFromElevenLabsWords(_ words: [[String: Any]]) -> Double {
+        let logprobs: [Double] = words.compactMap { word in
+            if let value = word["logprob"] as? Double {
+                return value
+            }
+            if let value = word["logprob"] as? NSNumber {
+                return value.doubleValue
+            }
+            return nil
         }
-
-        eventContinuation?.yield(.transcript(segment))
+        guard !logprobs.isEmpty else { return 0.0 }
+        let average = logprobs.reduce(0, +) / Double(logprobs.count)
+        return max(0.0, min(1.0, 1.0 + (average / 10.0)))
     }
 
     // MARK: - Reconnection
@@ -424,15 +527,17 @@ public actor WebSocketManager {
         webSocket = nil
         receiveTask?.cancel()
         receiveTask = nil
-        keepAliveTask?.cancel()
-        keepAliveTask = nil
 
         wsLog.info("Starting reconnection (error: \(afterError.localizedDescription, privacy: .public))")
         SentryHelper.addBreadcrumb(
             category: "websocket",
             message: "reconnect started",
             level: .warning,
-            data: ["bufferedChunks": audioBuffer.count, "reason": afterError.localizedDescription]
+            data: [
+                "bufferedChunks": audioBuffer.count,
+                "reason": afterError.localizedDescription,
+                "provider": transcriptionSession?.provider ?? "unknown",
+            ]
         )
 
         reconnectTask = Task { [weak self] in
@@ -486,18 +591,12 @@ public actor WebSocketManager {
             }
 
             do {
-                // Fetch new token
-                let tokenResponse: DeepgramTokenResponse = try await apiClient.request(
-                    .GET, path: "/api/deepgram-token"
+                let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+                    language: language,
+                    channels: channels
                 )
-                let url = try buildDeepgramURL(token: tokenResponse.accessToken)
-
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 300
-                request.setValue(
-                    "Bearer \(tokenResponse.accessToken)",
-                    forHTTPHeaderField: "Authorization"
-                )
+                transcriptionSession = sessionConfig
+                let request = try requestForRealtimeSession(sessionConfig)
 
                 let session = URLSession(configuration: .default)
                 let socket = session.webSocketTask(with: request)
@@ -514,14 +613,6 @@ public actor WebSocketManager {
                     await self?.receiveMessages(forConnection: thisConnection)
                 }
 
-                keepAliveTask = Task { [weak self] in
-                    while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(5))
-                        guard !Task.isCancelled else { break }
-                        try? await self?.webSocket?.send(.string("{\"type\":\"KeepAlive\"}"))
-                    }
-                }
-
                 // Replay buffered audio
                 let bufferedChunks = audioBuffer
                 audioBuffer = []
@@ -531,9 +622,15 @@ public actor WebSocketManager {
                     "Reconnected after \(self.reconnectAttempt) attempt(s), replaying \(bufferedChunks.count) audio chunks"
                 )
 
+                let reconnectContext = reconnectPreviousText()
+                var didSendReplayChunk = false
                 for chunk in bufferedChunks {
                     do {
-                        try await socket.send(.data(chunk))
+                        try await sendAudioChunk(
+                            chunk,
+                            previousText: didSendReplayChunk ? nil : reconnectContext
+                        )
+                        didSendReplayChunk = true
                     } catch {
                         wsLog.error("Failed to replay buffered audio: \(error.localizedDescription, privacy: .public)")
                         // New connection is also broken — receiveMessages will trigger another reconnection
@@ -553,8 +650,6 @@ public actor WebSocketManager {
                 webSocket = nil
                 receiveTask?.cancel()
                 receiveTask = nil
-                keepAliveTask?.cancel()
-                keepAliveTask = nil
             }
         }
 
@@ -567,11 +662,31 @@ public actor WebSocketManager {
         eventContinuation?.yield(.reconnectionFailed(exhaustedError))
     }
 
+    private func reconnectPreviousText() -> String? {
+        let fullText = collectedSegments
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fullText.isEmpty else { return nil }
+
+        // ElevenLabs recommends keeping this short. The tail is the most relevant context.
+        return String(fullText.suffix(48))
+    }
+
     private func cancelReconnection() {
         isReconnecting = false
         reconnectTask?.cancel()
         reconnectTask = nil
         audioBuffer = []
+    }
+
+    private func ensureEventStream() {
+        if _eventStream != nil, eventContinuation != nil {
+            return
+        }
+        let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
+        _eventStream = stream
+        eventContinuation = continuation
     }
 
     private func bufferAudioChunk(_ data: Data) {
@@ -596,7 +711,8 @@ public actor WebSocketManager {
     private func closeConnection(
         forConnection expectedId: UInt64,
         error: Error?,
-        emitDisconnected: Bool
+        emitDisconnected: Bool,
+        finishEventStream: Bool
     ) {
         guard connectionId == expectedId else { return }
 
@@ -605,15 +721,22 @@ public actor WebSocketManager {
 
         receiveTask?.cancel()
         receiveTask = nil
-        keepAliveTask?.cancel()
-        keepAliveTask = nil
+        transcriptionSession = nil
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))
         }
-        eventContinuation?.finish()
-        eventContinuation = nil
+        if finishEventStream {
+            eventContinuation?.finish()
+            eventContinuation = nil
+            _eventStream = nil
+        }
 
         sendCount = 0
+    }
+
+    func testingYieldEvent(_ event: WebSocketEvent) {
+        ensureEventStream()
+        eventContinuation?.yield(event)
     }
 }

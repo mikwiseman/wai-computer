@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import AVFoundation
 import CoreAudio
@@ -421,3 +422,4 @@ public enum SystemAudioCaptureError: Error, Sendable {
     case failedToCreateIOProc(OSStatus)
     case failedToStartDevice(OSStatus)
 }
+#endif

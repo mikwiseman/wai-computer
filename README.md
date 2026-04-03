@@ -1,6 +1,6 @@
 # WaiComputer - AI Second Brain
 
-An ecosystem for recording, transcribing, summarizing, and organizing information with AI. Native iOS + macOS apps with a Python cloud backend.
+An ecosystem for task-centric dialogue, realtime voice, transcription, app generation, and deployment with AI. Native iOS + macOS apps with a Python cloud backend.
 
 ## Architecture
 
@@ -23,18 +23,18 @@ An ecosystem for recording, transcribing, summarizing, and organizing informatio
 │  │              (Self-hosted VPS)            │                  │
 │  ├───────────────────────────────────────────┤                  │
 │  │  ┌─────────────┐  ┌─────────────────────┐ │                  │
-│  │  │  Deepgram   │  │   Claude API        │ │                  │
-│  │  │  Nova-3     │  │   Summarization     │ │                  │
-│  │  │  Real-time  │  │   Action Items      │ │                  │
-│  │  │  Diarization│  │   Entity Extract    │ │                  │
+│  │  │ ElevenLabs  │  │   Claude API        │ │                  │
+│  │  │ Realtime    │  │   Summarization     │ │                  │
+│  │  │ Voice + STT │  │   App Generation    │ │                  │
+│  │  │             │  │   Tool Execution    │ │                  │
 │  │  └─────────────┘  └─────────────────────┘ │                  │
 │  └───────────────────────────────────────────┘                  │
 │                        │                                        │
 │  ┌─────────────────────▼─────────────────────┐                  │
 │  │              Data Layer                    │                  │
 │  ├───────────────────────────────────────────┤                  │
-│  │  PostgreSQL    │  pgvector     │  S3      │                  │
-│  │  + FTS         │  Embeddings   │  Audio   │                  │
+│  │  PostgreSQL    │  pgvector     │  Redis   │                  │
+│  │  + FTS         │  Embeddings   │  Agents  │                  │
 │  └───────────────────────────────────────────┘                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -56,10 +56,10 @@ An ecosystem for recording, transcribing, summarizing, and organizing informatio
 
 ### Backend
 - Real-time audio streaming via WebSocket
-- Deepgram Nova-3 transcription (<300ms latency)
+- ElevenLabs realtime voice + speech-to-text
 - Claude API for summarization and entity extraction
 - PostgreSQL with pgvector for hybrid search
-- S3 for audio storage (Hetzner Object Storage)
+- Redis for agent scheduling and deploy/runtime coordination
 
 ## Quick Start
 
@@ -147,19 +147,13 @@ Web app default routes:
 # Required
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer
 JWT_SECRET=your-secure-secret
-DEEPGRAM_API_KEY=your-deepgram-key
+ELEVENLABS_API_KEY=your-elevenlabs-key
 ANTHROPIC_API_KEY=your-anthropic-key
 
-# Optional - S3 Storage (Hetzner Object Storage)
-S3_ENDPOINT=https://hel1.your-objectstorage.com
-S3_ACCESS_KEY=your-access-key
-S3_SECRET_KEY=your-secret-key
-S3_BUCKET=wai-computer
-
-# Optional - Email
-SMTP_HOST=smtp.example.com
-SMTP_USER=noreply@waicomputer.com
-SMTP_PASSWORD=your-password
+# Optional - Email (magic links)
+RESEND_API_KEY=your-resend-api-key
+EMAIL_FROM=noreply@wai.computer
+FRONTEND_URL=https://wai.computer
 ```
 
 ## API Endpoints
@@ -204,7 +198,7 @@ wai-computer/
 ├── backend/              # Python FastAPI
 │   ├── app/
 │   │   ├── api/          # Routes
-│   │   ├── core/         # Deepgram, Claude, auth
+│   │   ├── core/         # ElevenLabs, Claude, auth
 │   │   ├── models/       # SQLAlchemy models
 │   │   └── db/           # Database config
 │   └── tests/
@@ -231,10 +225,10 @@ To capture audio from Zoom/Meet/etc:
 - **Frontend**: SwiftUI (iOS 17+, macOS 14+)
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
-- **Transcription**: Deepgram Nova-3 (or faster-whisper fallback)
+- **Transcription**: ElevenLabs realtime + upload speech-to-text
 - **AI**: Claude API (Anthropic)
 - **Audio Codec**: Opus (16kHz, mono)
-- **Storage**: S3/Hetzner Object Storage
+- **Deploy**: Cloudflare Pages + Workers
 
 ## License
 

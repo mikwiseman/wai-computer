@@ -307,12 +307,12 @@ final class APIClientTests: XCTestCase {
                 headerFields: nil
             )!
             let payload = """
-            {"id":"rec-legacy","title":"Legacy","type":"note","created_at":"2026-01-15T10:00:00Z"}
+            {"id":"rec-default","title":"Notes","type":"note","created_at":"2026-01-15T10:00:00Z"}
             """.data(using: .utf8)!
             return (response, payload)
         }
 
-        let recording = try await client.getRecording(id: "rec-legacy")
+        let recording = try await client.getRecording(id: "rec-default")
         XCTAssertEqual(recording.status, .ready)
     }
 

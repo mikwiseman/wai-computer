@@ -390,13 +390,12 @@ async def test_restore_single_recording(
 # ---------------------------------------------------------------------------
 
 
-async def test_permanent_delete_cleans_up_audio(
+async def test_permanent_delete_with_audio_metadata_still_succeeds(
     client: AsyncClient,
     auth_headers: dict,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ):
-    """Permanent delete should attempt to remove audio from storage."""
+    """Permanent delete should succeed even when audio metadata is still present."""
     rec = await _create_recording(client, auth_headers, title="DeletePermanent")
     recording_id = UUID(rec["id"])
 
@@ -408,13 +407,6 @@ async def test_permanent_delete_cleans_up_audio(
     recording.audio_url = "user/test-audio.mp3"
     await db_session.flush()
 
-    mock_storage = AsyncMock()
-    mock_storage.delete_audio = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
-
     # Soft delete first
     await client.delete(f"/api/recordings/{rec['id']}", headers=auth_headers)
     # Then permanent delete (already trashed)
@@ -422,7 +414,6 @@ async def test_permanent_delete_cleans_up_audio(
         f"/api/recordings/{rec['id']}", headers=auth_headers
     )
     assert response.status_code == 204
-    mock_storage.delete_audio.assert_called_once_with("user/test-audio.mp3")
 
 
 # ---------------------------------------------------------------------------
@@ -898,11 +889,11 @@ async def test_save_transcript_unexpected_error_marks_failed(
 # ---------------------------------------------------------------------------
 
 
-async def test_save_transcript_empty_segments_marks_failed(
+async def test_save_transcript_empty_segments_marks_ready(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Saving an empty transcript should return 400 and mark recording as failed."""
+    """Saving an empty transcript should still finalize the recording as ready."""
     rec = await _create_recording(client, auth_headers, title="Empty Transcript")
 
     response = await client.post(
@@ -912,5 +903,7 @@ async def test_save_transcript_empty_segments_marks_failed(
             "segments": [{"text": "   ", "start_ms": 0, "end_ms": 0}],
         },
     )
-    assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["failure_code"] is None

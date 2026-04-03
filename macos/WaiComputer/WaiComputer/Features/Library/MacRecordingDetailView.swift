@@ -111,6 +111,31 @@ struct MacRecordingDetailView: View {
                 )
             }
         }
+        .task(id: detailRefreshKey) {
+            await viewModel.refreshPendingDetailIfNeeded(
+                recordingId: recordingId,
+                apiClient: appState.getAPIClient()
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { notification in
+            guard let syncedRecordingId = notification.userInfo?["recordingId"] as? String,
+                  syncedRecordingId == recordingId else {
+                return
+            }
+            loadTask?.cancel()
+            loadTask = Task {
+                await viewModel.load(
+                    recordingId: recordingId,
+                    apiClient: appState.getAPIClient(),
+                    showLoading: false
+                )
+            }
+        }
+    }
+
+    private var detailRefreshKey: String {
+        let status = viewModel.recordingDetail?.status.rawValue ?? "none"
+        return "\(recordingId)-\(status)"
     }
 
     private func detailHeader(_ detail: RecordingDetail) -> some View {
@@ -482,26 +507,48 @@ class MacRecordingDetailViewModel: ObservableObject {
     @Published var selectedTab: Tab = .transcript
     @Published var isGeneratingSummary = false
 
+    private var loadGeneration = 0
+
     init(initialDetail: RecordingDetail? = nil) {
         recordingDetail = initialDetail
     }
 
     func load(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         if showLoading {
             isLoading = true
         }
         error = nil
 
-        do {
-            recordingDetail = try await apiClient.getRecording(id: recordingId)
-        } catch {
-            if recordingDetail?.id != recordingId {
-                self.error = error.localizedDescription
+        defer {
+            if showLoading, generation == loadGeneration {
+                isLoading = false
             }
         }
 
-        if showLoading {
-            isLoading = false
+        do {
+            let detail = try await apiClient.getRecording(id: recordingId)
+            guard generation == loadGeneration else { return }
+            recordingDetail = detail
+        } catch {
+            guard generation == loadGeneration else { return }
+            if recordingDetail?.id != recordingId {
+                self.error = error.userFacingMessage(context: .library)
+            }
+        }
+    }
+
+    func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {
+        guard recordingDetail?.id == recordingId else { return }
+        guard shouldAutoRefresh(for: recordingDetail?.status) else { return }
+
+        while !Task.isCancelled,
+              recordingDetail?.id == recordingId,
+              shouldAutoRefresh(for: recordingDetail?.status) {
+            try? await Task.sleep(for: .seconds(recordingDetail?.status == .processing ? 4 : 2))
+            guard !Task.isCancelled else { return }
+            await load(recordingId: recordingId, apiClient: apiClient, showLoading: false)
         }
     }
 
@@ -515,7 +562,7 @@ class MacRecordingDetailViewModel: ObservableObject {
             recordingDetail = detail
             selectedTab = detail.actionItems.isEmpty ? .summary : .actions
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
 
         isGeneratingSummary = false
@@ -527,7 +574,7 @@ class MacRecordingDetailViewModel: ObservableObject {
             try await apiClient.deleteRecording(id: id, permanent: permanent)
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
             return false
         }
     }
@@ -538,7 +585,7 @@ class MacRecordingDetailViewModel: ObservableObject {
             _ = try await apiClient.restoreRecording(id: id)
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
             return false
         }
     }
@@ -550,7 +597,7 @@ class MacRecordingDetailViewModel: ObservableObject {
             recordingDetail = try await apiClient.getRecording(id: id)
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
             return false
         }
     }
@@ -562,7 +609,16 @@ class MacRecordingDetailViewModel: ObservableObject {
                 recordingDetail = try await apiClient.getRecording(id: recordingId)
             }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    private func shouldAutoRefresh(for status: RecordingStatus?) -> Bool {
+        switch status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed, .none:
+            return false
         }
     }
 }

@@ -99,6 +99,41 @@ async def test_star_other_user_recording_returns_404(client: AsyncClient, auth_h
 
 
 @pytest.mark.asyncio
+async def test_star_trashed_recording_returns_404(client: AsyncClient, auth_headers: dict):
+    """Starring a trashed recording should be rejected."""
+    recording = await _create_recording(client, auth_headers, title="Trash Star")
+    delete_response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert delete_response.status_code == 204
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/star",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unstar_trashed_recording_returns_404(client: AsyncClient, auth_headers: dict):
+    """Unstarring a trashed recording should be rejected."""
+    recording = await _create_recording(client, auth_headers, title="Trash Unstar")
+    await client.post(f"/api/recordings/{recording['id']}/star", headers=auth_headers)
+    delete_response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert delete_response.status_code == 204
+
+    response = await client.delete(
+        f"/api/recordings/{recording['id']}/star",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_star_already_starred_updates_timestamp(client: AsyncClient, auth_headers: dict):
     """Starring an already-starred recording should update the timestamp."""
     recording = await _create_recording(client, auth_headers, title="Double Star")

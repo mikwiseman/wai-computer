@@ -18,36 +18,22 @@ public enum RecordingStatus: String, Codable, Sendable, CaseIterable {
     public var label: String {
         switch self {
         case .pendingUpload:
-            return "Pending Save"
+            return "Saved Locally"
         case .uploading:
-            return "Syncing"
+            return "Syncing in Background"
         case .processing:
             return "Processing"
         case .ready:
             return "Ready"
         case .failed:
-            return "Save Failed"
+            return "Needs Attention"
         }
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawStatus = try container.decode(String.self)
-
-        switch rawStatus {
-        case "pending", "pending_upload":
-            self = .pendingUpload
-        case "uploading":
-            self = .uploading
-        case "uploaded", "processing":
-            self = .processing
-        case "ready":
-            self = .ready
-        case "failed", "upload_failed":
-            self = .failed
-        default:
-            self = .pendingUpload
-        }
+        self = RecordingStatus(rawValue: rawStatus) ?? .pendingUpload
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -325,20 +311,17 @@ public extension Recording {
     }
 
     var failurePreviewText: String? {
-        guard let failureMessage, !failureMessage.isEmpty else { return nil }
-        let normalized = failureMessage.replacingOccurrences(of: "\n", with: " ")
-        guard normalized.count > 90 else { return normalized }
-        return String(normalized.prefix(87)) + "..."
+        UserFacingErrorFormatter.previewMessage(failureMessage, context: .recording)
     }
 
     var statusDisplayText: String? {
         switch status {
         case .failed:
-            return "Save failed"
+            return "Needs attention"
         case .pendingUpload:
-            return "Pending save"
+            return "Saved locally"
         case .uploading:
-            return "Syncing"
+            return "Syncing in background"
         case .processing:
             return "Processing"
         case .ready:

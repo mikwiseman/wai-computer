@@ -1,6 +1,6 @@
 # Wai Computer — Full Product Specification
 
-**Version:** 2.0 | **Updated:** 2026-03-31
+**Version:** 2.1 | **Updated:** 2026-04-01
 
 ---
 
@@ -64,6 +64,39 @@ Wai Computer      = recordings + agents + deploy + memory
 5. **No onboarding wizard.** First screen is an empty chat with suggestion chips.
 6. **No "processing" details.** User doesn't see "extracting entities..." Just "Thinking..." → result.
 
+### 1.1 Architecture Refresh (Authoritative Override, April 2026)
+
+This specification now treats **session** as the primary runtime object.
+
+- A **session** is the user's active task thread, whether started by text, voice, or recording.
+- A **run** is an execution within a session: plan, tool calls, deploy, retries, approvals.
+- An **artifact** is any output produced by Wai: transcript, summary, app, site, deploy, checklist, document.
+- A **digital agent** is a persistent worker created from a session or artifact.
+- A **user app** is a collection-backed product surface with schema, views, connectors, and optional deployment.
+
+This supersedes the older mental model where recordings were the product center. Recordings remain important, but they are now one artifact type inside the broader Wai runtime.
+
+### 1.2 Realtime Voice Layer
+
+Wai now has two distinct voice modes:
+
+1. **Recording mode** — capture meetings, notes, reflections, then generate artifacts such as transcripts, summaries, commitments, and entities.
+2. **Conversation mode** — real-time back-and-forth with a live Wai agent that can execute tools, create apps, deploy sites, and manage approvals entirely by voice.
+
+**Provider strategy:**
+
+- `ElevenLabs` is the primary provider for real-time conversation, turn-taking, TTS, realtime STT, and uploaded-audio transcription.
+- ElevenLabs is the single active voice and speech-to-text provider.
+- Wai business logic, memory, deployments, agents, and connectors stay in Wai backend. ElevenLabs is the real-time interaction layer, not the source of truth.
+
+### 1.3 Reference Patterns We Intentionally Adopt
+
+Wai should borrow the strongest execution patterns from coding-agent products, but adapt them for non-technical users:
+
+- From `OpenCode`: parallel sessions, desktop-native supervision, shareable session links, and the idea that one user may coordinate multiple long-running agents at once.
+- From `Claude Code`: skills/slash-command composition, isolated subagent execution for bounded tasks, dynamic context injection, and persistent memory files.
+- Wai adaptation: keep the same power under the hood, but present it as `dialog → progress → preview → approve → publish`, with voice as a first-class control surface and apps/deploy/memory as native outcomes, not advanced features.
+
 ---
 
 ## 2. Architecture
@@ -71,55 +104,45 @@ Wai Computer      = recordings + agents + deploy + memory
 ### System Overview
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    INTERFACES                        │
-│                                                     │
-│  macOS App    iOS App    Web App    Telegram Bot    │
-│  (SwiftUI)   (SwiftUI)  (Next.js)  (Webhook)      │
-│     │           │          │           │            │
-│     └───────────┴──────────┴───────────┘            │
-│                      │                              │
-├──────────────────────┤──────────────────────────────┤
-│                WAI BRAIN                            │
-│                                                     │
-│  Intent Router → Agent Loop → Tool Execution       │
-│       │              │             │                │
-│  "make a site"  Claude API   search_recordings     │
-│  "record"        tool_use    create_app             │
-│  "habits"                    query_app              │
-│  "find..."                   deploy_site            │
-│                              record_meeting         │
-│                              send_notification      │
-├─────────────────────────────────────────────────────┤
-│                   DATA LAYER                        │
-│                                                     │
-│  PostgreSQL + pgvector                              │
-│  ┌──────────┬───────────┬──────────┬─────────────┐ │
-│  │Recordings│ Telegram  │ User Apps│ Agents &    │ │
-│  │Segments  │ Messages  │ App Items│ Runs        │ │
-│  │Summaries │ Chats     │ (JSONB)  │ Commitments │ │
-│  │Highlights│ Sessions  │          │ Chat History│ │
-│  └──────────┴───────────┴──────────┴─────────────┘ │
-│       ↑           ↑          ↑          ↑          │
-│       └───────────┴──────────┴──────────┘          │
-│              Unified Search (embeddings)            │
-│                                                     │
-├─────────────────────────────────────────────────────┤
-│                 BACKGROUND                          │
-│                                                     │
-│  Celery + Redis                                    │
-│  ├── Agent scheduler (cron)                         │
-│  ├── Telegram sync (realtime) [Phase 4]            │
-│  ├── Digest generation                              │
-│  └── Notifications (Telegram + APNs) [Phase 5]    │
-│                                                     │
-├─────────────────────────────────────────────────────┤
-│                 DEPLOY                              │
-│                                                     │
-│  Cloudflare Pages (user apps)                      │
-│  Hetzner VPS (backend + DB + Redis)                │
-│  Caddy (reverse proxy + TLS)                       │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                              INTERFACES                              │
+│                                                                      │
+│  macOS App     iOS App     Android App     Web App     Telegram      │
+│  SwiftUI       SwiftUI     Compose         Next.js     Bot/Webhook   │
+│      │            │            │              │            │          │
+│      └────────────┴────────────┴──────────────┴────────────┘          │
+│                               │                                      │
+├───────────────────────────────┼──────────────────────────────────────┤
+│                        REALTIME VOICE LAYER                          │
+│                                                                      │
+│  ElevenLabs Agents / Chat Mode / Realtime STT + TTS                 │
+│  - live conversation                                                 │
+│  - interruptions + turn-taking                                       │
+│  - voice approvals                                                   │
+│  - signed URL client auth                                            │
+│                                                                      │
+├───────────────────────────────┼──────────────────────────────────────┤
+│                              WAI CORE                                │
+│                                                                      │
+│  Session Router → Run Engine → Tool Bridge → Artifact Pipeline       │
+│      │               │               │                │              │
+│  text/voice      execution       connectors        transcript        │
+│  entrypoint      trace/logs      & deploy          app/site/doc      │
+│                                                                      │
+├───────────────────────────────┼──────────────────────────────────────┤
+│                              DATA                                    │
+│                                                                      │
+│  PostgreSQL + pgvector                                               │
+│  Sessions • Runs • Artifacts • Recordings • Apps • Agents           │
+│  Commitments • Entities • Chat History • Deployments • Connectors   │
+│                                                                      │
+├───────────────────────────────┼──────────────────────────────────────┤
+│                        BACKGROUND + DELIVERY                          │
+│                                                                      │
+│  Celery + Redis                                                      │
+│  schedulers • digests • deploy jobs • reminders • notifications     │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Agent System
@@ -146,7 +169,7 @@ record commit app      site    entities   search
 ings   ment
 ```
 
-**Intent types:** search, voice_summary, digest, action, build, edit, coach, chat
+**Intent types:** search, voice_summary, digest, action, build, edit, coach, chat, live_control, deploy
 
 **Tools (7):**
 - `search_recordings` — hybrid FTS + semantic search over transcript segments
@@ -154,8 +177,45 @@ ings   ment
 - `list_commitments` — query open promises
 - `extract_entities` — find people, amounts, dates, decisions
 - `search_web` — DuckDuckGo instant answers
-- `build_app` — generate full React app + deploy to Cloudflare
+- `build_app` — generate full app + deploy
 - `build_site` — generate landing page + deploy
+- `show_run_status` — inspect in-flight execution state
+- `approve_action` — voice/text approval for deploys and destructive actions
+
+### Session Runtime
+
+Every user interaction maps to a session:
+
+```
+User input (voice/text)
+      ↓
+Session created or resumed
+      ↓
+Run started
+      ↓
+Tool calls / deploys / approvals / artifact creation
+      ↓
+Result saved back to session + library + agent memory
+```
+
+**Session types:**
+
+- `conversation` — live interactive task execution
+- `recording` — capture and process spoken content
+- `agent_run` — scheduled or background execution
+
+**Artifact types:**
+
+- transcript
+- summary
+- action_items
+- commitment
+- user_app
+- deployed_site
+- deployed_app
+- document
+- search_result
+- run_log
 
 ### Collections (User Apps)
 
@@ -166,7 +226,7 @@ User says: "Create a habit tracker"
 
 Wai creates:
 1. Collection { name: "habits", schema: { habit: str, completed: bool, date: date } }
-2. (Optional) React app deployed to Cloudflare Pages
+2. (Optional) Deployable web bundle with preview URL
 3. (Optional) Agent for daily reminders
 
 Data lives in Wai DB → accessible from ALL channels:
@@ -205,11 +265,22 @@ Two modes:
 - `build_app(description, app_id, schema)` — full interactive React app connected to Collections API
 - `build_site(description, theme)` — static landing page
 
-**Tech:** React 19 + Tailwind via CDN, single HTML file, no build step. Claude Sonnet generates. Deploy to Cloudflare Pages instantly.
+**Artifact model:** every generated site/app is a deployable bundle, not just a text blob. Preferred format is a small Vite + React + TypeScript project with multiple source files, CSS, and a real build step. Single-file HTML remains only as a fallback for very simple outputs or model degradation.
 
-**Design system in prompt (~3000 lines):** Full UI component library, data patterns (CRUD, pagination, optimistic updates), Chart.js, accessibility, animation, dark mode, 8 themes.
+**Deploy model:** `draft bundle → preview deploy → approval → publish/share`. Wai now supports two Cloudflare edge targets behind one UX:
+- `Cloudflare Pages` for simple static sites and compatibility
+- `Cloudflare Workers Static Assets` as the preferred target for richer apps/sites and future full-stack expansion
 
-**Multi-turn editing:** User says "change colors" → Wai retrieves HTML from Redis → Claude edits → redeploy.
+Every generated app/site gets its own Cloudflare resource. Pages uses a dedicated Pages project with preview branch alias + live root URL; Workers uses a dedicated worker name for preview and a stable live worker name for publish. The user still sees the same flow: preview, approve, publish, share, rollback.
+
+**Builder requirements:**
+- multi-file source bundle with explicit file map
+- real build output (`dist/`) for complex sites
+- preview alias for every generated version
+- stored bundle metadata so edits, publish, and rollback can target the right artifact
+- deployment history persisted per app/site, with rollback to any prior succeeded build
+
+**Multi-turn editing:** User says "change colors" → Wai retrieves the stored bundle from Redis → Claude edits the bundle JSON → preview redeploy.
 
 ---
 
@@ -267,6 +338,59 @@ Filter tabs: All, Recordings, Apps, Sites, Agents
 
 List of digital agents with status, schedule, run history. Create via chat or "+" button.
 
+### Screen: Apps — YOUR APP SHELF
+
+This is not a third-party marketplace first. It is the user's own store of things Wai built for them.
+
+- Drafts — started, not yet published
+- Live — currently usable apps
+- Shared — apps with shareable URL (`unlisted` or `public`)
+- Recent — apps the user actually uses
+
+Every app has a simple lifecycle:
+
+`idea in chat → draft app → preview → publish/share → ongoing use → agent automation`
+
+The UX must stay non-technical:
+
+- `Create app`
+- `Preview`
+- `Publish`
+- `Share link`
+- `Make private again`
+
+Not:
+
+- `collection schema`
+- `deployment target`
+- `environment`
+- `JSONB item editor`
+
+Under the hood every app still tracks:
+- bundle kind
+- Cloudflare project name
+- preview branch + preview URL
+- live URL
+- deployment target
+- build output metadata
+
+### Interaction Modes
+
+The system should feel simple on the surface but have explicit modes underneath.
+
+- `Talk` — default. User asks, Wai responds and executes.
+- `Record` — capture first, process after.
+- `Build` — create/edit/publish an app, site, or document.
+- `Observe` — watch an agent run, trace, or deployment.
+
+Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
+
+- **Plan before act** for risky work
+- **Approvals** before publish, external send, or destructive change
+- **Subagents/workers** for parallel tasks, hidden behind simple progress UI
+- **Project/session instructions** so apps and agents stay consistent over time
+- **Power drawer** for logs, tool calls, files, deploy trace, and connector state
+
 ### Cross-Platform Consistency
 
 | | macOS | Web | Telegram |
@@ -303,14 +427,15 @@ List of digital agents with status, schedule, run history. Create via chat or "+
 **Design:** Warm beige background, teal accent, Space Grotesk font
 
 **Dashboard tabs:**
-- Library (default): recordings, search, chat, actions, entities, settings
-- Wai: agent chat with suggestion chips
+- Wai (default): chat, realtime voice, approvals, previews, run status
+- Library: recordings, searches, docs, sites, app outputs
 - Agents: create/list/run/delete digital agents
-- Apps: grid of user collections, item CRUD
+- Apps: drafts, live apps, shared apps, item CRUD, publish/share controls
+- Settings: account, connectors, voice preferences
 
 ### 4.3 macOS App
 
-**Stack:** SwiftUI, WaiComputerKit (shared SPM package)
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** macOS 14.2+
 **Bundle ID:** is.waiwai.waicomputer
 **Signing:** Developer ID Application: WaiWai, LLC
@@ -338,7 +463,9 @@ Tools
 - Microphone capture (AVAudioEngine, 16kHz mono)
 - System audio capture (macOS 14.2+, for Zoom/Meet)
 - Dual capture (mic + system, mono-mix for diarization)
-- Real-time Deepgram WebSocket streaming
+- Realtime voice conversation via ElevenLabs
+- Realtime transcription bootstrap via `/api/transcription/session`
+- Uploaded recording transcription via ElevenLabs speech-to-text
 - Local WAV backup to Application Support
 
 **New features (Phase 3, in progress):**
@@ -347,25 +474,29 @@ Tools
 - MacAppsView: browse collections, view/add/delete items
 - API methods in WaiComputerKit for all new endpoints
 
-### 4.4 iOS App (Planned)
+### 4.4 iOS App
 
-**Stack:** SwiftUI, WaiComputerKit (shared SPM package)
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** iOS 17+
 
 **Tab bar:** Wai (chat), Library, Agents, Apps
 
-**P0 features:** Auth, recording, live transcription, agent chat
+**Status:** Code exists, project packaging still needs to be finalized in-repo
+
+**P0 features:** Auth, recording, live transcription, agent chat, realtime voice session
 **P1 features:** Push notifications, digital agents, user apps
 **P2 features:** Offline recording + sync, WidgetKit
 
 Uses same WaiComputerKit → same API methods, same models. WebView for deployed apps.
 
-### 4.5 Android App (Planned)
+### 4.5 Android App
 
-**Stack:** Kotlin, Jetpack Compose
-**Status:** Future
+**Stack:** Kotlin, Jetpack Compose, ElevenLabs Kotlin SDK
+**Status:** New platform line to be created in this repo
 
-P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
+P0: Auth, Wai chat, realtime voice session, recording list.
+P1: Recording, agents, apps.
+P2: Push, offline sync.
 
 ### 4.6 Telegram Bot (Planned — Phase 4)
 
@@ -375,7 +506,7 @@ P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
 
 **Features to migrate:**
 - Bot webhook (26+ commands)
-- Voice message transcription (Deepgram)
+- Voice message transcription (provider abstraction, target ElevenLabs)
 - Agent chat (same loop as web/macOS)
 - Message sync (Telethon client)
 - Inline search (@waicomputer_bot in any chat)
@@ -407,7 +538,7 @@ P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
 | `refresh_tokens` | user_id, token_hash, expires_at, device_name | Done |
 | `commitments` | user_id, who, what, direction, deadline, status, source_context, completed_at | Done |
 | `digital_agents` | user_id, name, description, system_prompt, tools, schedule_type, cron_expression, status, delivery_channel, delivery_target, last_run_at, next_run_at, run_count, last_result | Done |
-| `user_apps` | user_id, name, display_name, icon, template, schema_def(JSONB), app_url, settings(JSONB), sort_order | Done |
+| `user_apps` | user_id, name, display_name, description, icon, template, schema_def(JSONB), app_url, settings(JSONB), status, visibility, published_at, last_used_at, sort_order | In Progress |
 | `app_items` | app_id, data(JSONB), embedding(1536d) | Done |
 
 ### Authentication
@@ -472,10 +603,11 @@ P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
 ### User Apps (`/api/apps`)
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/` | Create app (collection) |
-| GET | `/` | List with item counts |
+| POST | `/` | Create app draft (collection-backed) |
+| GET | `/` | List apps with item counts, status/visibility filters |
 | GET | `/{id}` | Get app details |
 | PATCH | `/{id}` | Update schema/settings/URL |
+| POST | `/{id}/publish` | Promote preview bundle to live URL and mark app shareable |
 | DELETE | `/{id}` | Delete + cascade items |
 | GET | `/{id}/items` | List items (paginated) |
 | POST | `/{id}/items` | Create item (JSONB data) |
@@ -493,7 +625,8 @@ P0: Auth, agent chat, recording list. P1: Recording, agents, apps. P2: Push.
 | GET/POST/DELETE | `/api/entities/*` | Knowledge graph |
 | GET/POST/PATCH/DELETE | `/api/folders/*` | Folders |
 | POST | `/api/dictation/cleanup` | AI text cleanup |
-| GET | `/api/deepgram-token` | Temporary Deepgram JWT |
+| POST | `/api/transcription/session` | Provider-backed realtime transcription bootstrap |
+| POST | `/api/voice/session` | Provider-backed realtime voice session bootstrap |
 | GET/PATCH | `/api/settings` | User settings |
 | POST | `/api/settings/change-password` | Password change |
 | GET | `/health` | Health check |
@@ -536,6 +669,22 @@ Wai searches:
 
 Returns unified results with source links.
 
+### Scenario 5: Build → Publish → Share
+
+User:
+"Create a simple client portal and give me a link I can send"
+
+Wai:
+1. creates a draft app
+2. generates UI bundle + data model
+3. creates a dedicated Cloudflare deploy target for that app/site
+4. builds and deploys a preview URL
+5. shows preview
+6. asks for approval to publish
+7. promotes the same bundle to the live URL for that resource
+8. marks app `live`
+9. returns shareable URL with `private / unlisted / public` visibility
+
 ---
 
 ## 8. Roadmap
@@ -544,7 +693,7 @@ Returns unified results with source links.
 |-------|------|--------|
 | **1. Unified Brain** | Agent system, Collections API, app builder, Celery/Redis, 17 endpoints, 4 tables | Done |
 | **2. Smart UI** | Web: agent chat, agents view, apps view. 73 + 23 new tests | Done |
-| **3. macOS Integration** | Agent chat, agents, apps in macOS sidebar + API methods | In Progress |
-| **4. Telegram Channel** | Bot webhook, sync, delivery, voice/photo processing | Planned |
-| **5. iOS App** | Native iOS with shared WaiComputerKit, push notifications | Planned |
-| **6. Advanced** | Cross-app queries, iOS widgets, Android, MCP server, marketplace | Planned |
+| **3. Session Runtime** | Sessions, runs, artifacts, approvals, deploy trace | In Progress |
+| **4. Realtime Voice** | ElevenLabs voice sessions, signed URLs, voice approvals, provider abstraction | In Progress |
+| **5. Apple Clients** | macOS realtime integration, iOS project finalization, shared voice SDK layer | In Progress |
+| **6. Android + Channels** | Android app, Telegram migration, app shelf/share flows, MCP/connectors | Planned |

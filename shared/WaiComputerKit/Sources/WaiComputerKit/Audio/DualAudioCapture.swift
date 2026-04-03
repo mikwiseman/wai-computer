@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import AVFoundation
 import os
@@ -7,11 +8,11 @@ private let dualLog = Logger(subsystem: "com.waicomputer.kit", category: "dual-a
 /// Captures both microphone and system audio simultaneously.
 ///
 /// When `mixToMono` is `true` (default), both sources are averaged into a single
-/// mono channel. Deepgram then uses diarization to distinguish speakers, which
-/// works well for group calls (identifies Speaker 0, Speaker 1, Speaker 2, etc.).
+/// mono channel. The active transcription provider can then use diarization or
+/// speaker segmentation to distinguish speakers in group calls.
 ///
 /// When `mixToMono` is `false`, produces 2-channel non-interleaved PCM buffers
-/// (ch0 = mic, ch1 = system audio) for Deepgram multichannel mode.
+/// (ch0 = mic, ch1 = system audio) for provider-side multichannel transcription.
 ///
 /// When system audio is unavailable, produces mono buffers from mic only.
 @available(macOS 14.2, *)
@@ -21,7 +22,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let config: AudioCaptureConfig
 
     /// When `true`, mic and system audio are mixed into a single mono channel
-    /// so Deepgram can use diarization to identify individual speakers.
+    /// so the speech provider can apply diarization or speaker segmentation.
     /// When `false`, produces 2-channel non-interleaved buffers for multichannel mode.
     public let mixToMono: Bool
 
@@ -261,7 +262,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
         if mixToMono {
             // Mono mix: average mic + system audio into a single channel.
-            // Deepgram uses diarization to distinguish speakers.
+            // The speech provider handles diarization or speaker segmentation.
             guard let format = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: config.sampleRate,
@@ -315,3 +316,4 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         }
     }
 }
+#endif

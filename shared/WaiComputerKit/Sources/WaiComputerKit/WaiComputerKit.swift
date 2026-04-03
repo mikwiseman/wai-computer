@@ -21,6 +21,9 @@ public typealias WKChatSource = ChatSource
 public typealias WKChatSessionListItem = ChatSessionListItem
 public typealias WKChatSessionDetail = ChatSessionDetail
 public typealias WKChatMessageResponse = ChatMessageResponse
+public typealias WKRealtimeVoiceMode = RealtimeVoiceMode
+public typealias WKRealtimeTranscriptionSessionConfig = RealtimeTranscriptionSessionConfig
+public typealias WKRealtimeVoiceSession = RealtimeVoiceSession
 
 // Agent models
 public typealias WKAgentChatResponse = AgentChatResponse
@@ -29,6 +32,8 @@ public typealias WKAgentRunResponse = AgentRunResponse
 
 // App models
 public typealias WKJSONValue = JSONValue
+public typealias WKAppStatus = AppStatus
+public typealias WKAppVisibility = AppVisibility
 public typealias WKUserApp = UserApp
 public typealias WKAppItem = AppItem
 public typealias WKAppStats = AppStats

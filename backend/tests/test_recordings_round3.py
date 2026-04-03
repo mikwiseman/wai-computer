@@ -19,8 +19,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deepgram import TranscriptResult
 from app.core.summarizer import SummaryResult
+from app.core.transcript_utils import TranscriptResult
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Recording, Segment, Summary
 
@@ -277,16 +277,9 @@ async def test_upload_audio_with_m4a_extension(
         ),
     ]
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/rec.m4a")
-
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",
         AsyncMock(return_value=fake_transcripts),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
@@ -305,7 +298,7 @@ async def test_upload_audio_with_m4a_extension(
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ready"
-    assert data["audio_url"] == "user/2026/rec.m4a"
+    assert data["audio_url"] is None
     assert data["title"] == "M4A Test Recording"
     assert len(data["segments"]) == 1
     assert data["duration_seconds"] == 3

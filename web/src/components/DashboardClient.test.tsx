@@ -56,7 +56,7 @@ const baseRecording = {
   title: "Planning",
   type: "note",
   audio_url: null,
-  status: "processed",
+  status: "ready",
   failure_code: null,
   failure_message: null,
   uploaded_at: null,
@@ -136,6 +136,16 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function waitForDashboardReady() {
+  await waitFor(() => {
+    expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
+  });
+}
+
+async function openLibraryView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-library"));
+}
+
 describe("DashboardClient", () => {
   beforeEach(() => {
     [
@@ -189,9 +199,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
 
     await user.click(screen.getByTestId("reload-dashboard"));
 
@@ -214,9 +222,8 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     expect(screen.getByTestId("dashboard-loading")).toHaveTextContent("Loading dashboard...");
 
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     await user.click(screen.getByTestId("create-recording"));
     await waitFor(() => {
@@ -408,6 +415,9 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     expect(screen.getByTestId("dashboard-loading")).toBeInTheDocument();
 
+    await waitForDashboardReady();
+    await openLibraryView(user);
+
     await waitFor(() => {
       expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("(untitled) [note]");
     });
@@ -457,9 +467,8 @@ describe("DashboardClient", () => {
     });
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
@@ -482,9 +491,8 @@ describe("DashboardClient", () => {
     mockSearch.mockResolvedValue({ results: [], total: 0 });
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     await user.type(screen.getByTestId("search-query"), "nonexistent");
     await user.click(screen.getByTestId("search-submit"));
@@ -519,9 +527,8 @@ describe("DashboardClient", () => {
     });
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Perform a search to populate results
     await user.type(screen.getByTestId("search-query"), "roadmap");
@@ -548,9 +555,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Leave query empty and click search
     await user.click(screen.getByTestId("search-submit"));
@@ -573,9 +579,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     const currentPwdInput = screen.getByTestId("current-password");
     const newPwdInput = screen.getByTestId("new-password");
@@ -608,9 +613,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     const currentPwdInput = screen.getByTestId("current-password");
     const newPwdInput = screen.getByTestId("new-password");
@@ -636,9 +640,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Type a new entity name
     await user.type(screen.getByTestId("entity-name"), "Machine Learning");
@@ -674,6 +677,8 @@ describe("DashboardClient", () => {
 
     const user = userEvent.setup();
     render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     await waitFor(() => {
       expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
@@ -701,9 +706,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Select the recording to show detail
     await user.click(screen.getByTestId("select-recording-r1"));
@@ -744,9 +748,8 @@ describe("DashboardClient", () => {
     mockCreateRecording.mockResolvedValueOnce(newRecording);
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Verify only the initial recording is shown
     expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
@@ -789,9 +792,8 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Verify state is populated before logout
     expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
@@ -830,9 +832,8 @@ describe("DashboardClient", () => {
     mockUpdateActionItem.mockResolvedValueOnce(baseActionItems[0]);
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Step 1: Mark action item as complete
     await user.click(screen.getByTestId("set-complete-a1"));
@@ -898,9 +899,8 @@ describe("DashboardClient", () => {
     });
 
     render(<DashboardClient />);
-    await waitFor(() => {
-      expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    });
+    await waitForDashboardReady();
+    await openLibraryView(user);
 
     // Search in hybrid mode
     await user.type(screen.getByTestId("search-query"), "test");

@@ -8,6 +8,7 @@ extension Notification.Name {
 
 @main
 struct WaiComputerMacApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var recordingViewModel: MacRecordingViewModel
     @StateObject private var appState: MacAppState
     @StateObject private var dictationManager: DictationManager
@@ -38,6 +39,12 @@ struct WaiComputerMacApp: App {
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .active else { return }
+                    Task {
+                        await appState.resumePendingRecordingSyncIfNeeded()
+                    }
+                }
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
@@ -143,18 +150,14 @@ class MacAppState: ObservableObject {
         }
         #endif
 
-        // Migrate from UserDefaults to Keychain (one-time)
-        if KeychainHelper.load(key: KeychainHelper.accessTokenKey) == nil,
-           let legacyToken = UserDefaults.standard.string(forKey: "accessToken") {
-            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: legacyToken)
-            UserDefaults.standard.removeObject(forKey: "accessToken")
-        }
-
         // Set up token refresh callbacks
         Task {
             await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
                 KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: accessToken)
                 KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshToken)
+                Task {
+                    await PendingRecordingSyncCoordinator.shared.scheduleSync(using: self.apiClient)
+                }
             }
             await apiClient.setOnAuthenticationFailed { [weak self] in
                 Task { @MainActor in
@@ -194,7 +197,7 @@ class MacAppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -216,7 +219,7 @@ class MacAppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -232,7 +235,7 @@ class MacAppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -262,7 +265,7 @@ class MacAppState: ObservableObject {
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .authentication)
         }
 
         isLoading = false
@@ -282,8 +285,6 @@ class MacAppState: ObservableObject {
         await apiClient.setRefreshToken(nil)
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
-        // Clean up legacy UserDefaults if still present
-        UserDefaults.standard.removeObject(forKey: "accessToken")
         SentryHelper.clearUser()
         currentUser = nil
         isAuthenticated = false
@@ -293,7 +294,6 @@ class MacAppState: ObservableObject {
     private func handleAuthenticationFailed() {
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
-        UserDefaults.standard.removeObject(forKey: "accessToken")
         dictationManager.disable()
         currentUser = nil
         isAuthenticated = false
@@ -305,6 +305,7 @@ class MacAppState: ObservableObject {
             currentUser = user
             isAuthenticated = true
             SentryHelper.setUser(id: user.id)
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
             dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
                 recordingViewModel?.phase == .idle
             }
@@ -316,16 +317,19 @@ class MacAppState: ObservableObject {
         }
     }
 
+    func resumePendingRecordingSyncIfNeeded() async {
+        guard isAuthenticated else { return }
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+    }
+
     private func handleAPIError(_ error: APIError) {
         switch error {
         case .unauthorized:
             self.error = "Invalid credentials"
-        case .httpError(_, let message):
-            self.error = message ?? "An error occurred"
-        case .networkError:
-            self.error = "Network error. Please check your connection."
+        case .httpError, .networkError:
+            self.error = error.userFacingMessage(context: .authentication)
         default:
-            self.error = "An unexpected error occurred"
+            self.error = error.userFacingMessage(context: .authentication)
         }
     }
 

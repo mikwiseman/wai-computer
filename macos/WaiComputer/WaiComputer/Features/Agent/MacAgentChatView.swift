@@ -173,7 +173,7 @@ struct MacAgentChatView: View {
                 )
                 messages.append(assistantMessage)
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .generic)
             }
             isLoading = false
         }

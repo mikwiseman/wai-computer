@@ -57,8 +57,8 @@ ssh \
      echo 'Skipping git pull (no origin remote configured).';
    fi;
    cd backend;
-   docker compose build api web;
-   docker compose up -d api web caddy;
+   docker compose build api web celery-worker;
+   docker compose up -d api web celery-worker caddy;
    wait_for_service \
      'API health check' \
      'docker compose exec -T api curl -fsS http://localhost:8000/health' \
@@ -71,6 +71,12 @@ ssh \
      24 \
      5 \
      'docker logs --tail 200 waicomputer-web';
+   wait_for_service \
+     'Celery worker health check' \
+     '[[ \"\$(docker inspect --format '\''{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}'\'' waicomputer-celery-worker 2>/dev/null)\" == healthy ]]' \
+     24 \
+     5 \
+     'docker logs --tail 200 waicomputer-celery-worker';
    echo 'Remote deploy + health checks successful.'"
 
 echo "Deployment completed."

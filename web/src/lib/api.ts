@@ -7,13 +7,16 @@ import {
 import type {
   ActionItem,
   ActionPriority,
+  AppStatus,
   ActionStatus,
   AgentChatResponse,
   AnalyticsResponse,
+  AppVisibility,
   AppItem,
   AppStats,
   BulkAction,
   BulkOperationResponse,
+  AppDeployment,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -29,6 +32,8 @@ import type {
   Recording,
   RecordingDetail,
   RecordingType,
+  RealtimeVoiceMode,
+  RealtimeVoiceSession,
   RelatedRecordingsResponse,
   RenameSessionResponse,
   SearchResponse,
@@ -416,22 +421,67 @@ export function sendAgentMessage(
   });
 }
 
+export function createRealtimeVoiceSession(input: {
+  mode: RealtimeVoiceMode;
+  agent_id?: string;
+  include_conversation_id?: boolean;
+  branch_id?: string;
+  environment?: string;
+}): Promise<RealtimeVoiceSession> {
+  return apiFetch<RealtimeVoiceSession>("/api/voice/session", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 // ── User Apps (Collections) ─────────────────────────────────────────
 
-export function listApps(): Promise<UserApp[]> {
-  return apiFetch<UserApp[]>("/api/apps");
+export function listApps(params?: {
+  status?: AppStatus;
+  visibility?: AppVisibility;
+}): Promise<UserApp[]> {
+  return apiFetch<UserApp[]>(`/api/apps${asQuery(params ?? {})}`);
 }
 
 export function createApp(input: {
   name: string;
   display_name: string;
+  description?: string;
   icon?: string;
   template?: string;
   schema_def?: Record<string, unknown>;
+  visibility?: AppVisibility;
 }): Promise<UserApp> {
   return apiFetch<UserApp>("/api/apps", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function publishApp(
+  appId: string,
+  input: { visibility?: AppVisibility; app_url?: string },
+): Promise<UserApp> {
+  return apiFetch<UserApp>(`/api/apps/${appId}/publish`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listAppDeployments(appId: string): Promise<AppDeployment[]> {
+  return apiFetch<AppDeployment[]>(`/api/apps/${appId}/deployments`);
+}
+
+export function rollbackApp(
+  appId: string,
+  input: { deployment_id: string; visibility?: AppVisibility },
+): Promise<UserApp> {
+  return apiFetch<UserApp>(`/api/apps/${appId}/rollback`, {
+    method: "POST",
+    body: JSON.stringify({
+      deployment_id: input.deployment_id,
+      visibility: input.visibility,
+    }),
   });
 }
 

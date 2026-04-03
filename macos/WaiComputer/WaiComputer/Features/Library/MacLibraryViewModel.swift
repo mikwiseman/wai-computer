@@ -10,6 +10,13 @@ class MacLibraryViewModel: ObservableObject {
     @Published var isRefreshing = false
     @Published var error: String?
 
+    private var loadGeneration = 0
+    private var processingRefreshTask: Task<Void, Never>?
+
+    deinit {
+        processingRefreshTask?.cancel()
+    }
+
     func filteredRecordings(type: RecordingType? = nil, folderId: String? = nil, trashed: Bool = false) -> [Recording] {
         let source = trashed ? trashedRecordings : recordings
 
@@ -22,6 +29,8 @@ class MacLibraryViewModel: ObservableObject {
 
     func loadLibrary(apiClient: APIClient) async {
         let hasExistingContent = !recordings.isEmpty || !trashedRecordings.isEmpty || !folders.isEmpty
+        loadGeneration += 1
+        let generation = loadGeneration
         if hasExistingContent {
             isRefreshing = true
         } else {
@@ -30,8 +39,10 @@ class MacLibraryViewModel: ObservableObject {
         error = nil
 
         defer {
-            isLoading = false
-            isRefreshing = false
+            if generation == loadGeneration {
+                isLoading = false
+                isRefreshing = false
+            }
         }
 
         do {
@@ -39,11 +50,46 @@ class MacLibraryViewModel: ObservableObject {
             async let trashed = apiClient.listRecordings(limit: 100, trashed: true)
             async let folderList = apiClient.listFolders()
 
-            recordings = try await active
-            trashedRecordings = try await trashed
-            folders = try await folderList
+            let activeRecordings = try await active
+            let trashedItems = try await trashed
+            let folderItems = try await folderList
+            guard generation == loadGeneration else { return }
+
+            recordings = activeRecordings
+            trashedRecordings = trashedItems
+            folders = folderItems
+
+            processingRefreshTask?.cancel()
+            let hasPendingSync = activeRecordings.contains {
+                $0.status == .pendingUpload || $0.status == .uploading
+            }
+            if hasPendingSync {
+                await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+            }
+            if activeRecordings.contains(where: shouldBackgroundRefresh) {
+                processingRefreshTask = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled else { return }
+                    await self?.loadLibrary(apiClient: apiClient)
+                }
+            }
         } catch {
-            self.error = error.localizedDescription
+            guard generation == loadGeneration else { return }
+            if hasExistingContent {
+                NSLog("[Library] Background refresh failed: %@", error.localizedDescription)
+                let stillRefreshing = recordings.contains(where: shouldBackgroundRefresh)
+                if stillRefreshing {
+                    self.error = error.userFacingMessage(context: .library)
+                    processingRefreshTask?.cancel()
+                    processingRefreshTask = Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(6))
+                        guard !Task.isCancelled else { return }
+                        await self?.loadLibrary(apiClient: apiClient)
+                    }
+                }
+            } else {
+                self.error = error.userFacingMessage(context: .library)
+            }
         }
     }
 
@@ -72,7 +118,7 @@ class MacLibraryViewModel: ObservableObject {
             }
             return folder
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
             return nil
         }
     }
@@ -87,7 +133,7 @@ class MacLibraryViewModel: ObservableObject {
             }
             await loadLibrary(apiClient: apiClient)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
     }
 
@@ -101,7 +147,7 @@ class MacLibraryViewModel: ObservableObject {
             }
             await loadLibrary(apiClient: apiClient)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
     }
 
@@ -115,7 +161,7 @@ class MacLibraryViewModel: ObservableObject {
             }
             await loadLibrary(apiClient: apiClient)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
         }
     }
 
@@ -129,7 +175,16 @@ class MacLibraryViewModel: ObservableObject {
             }
             await loadLibrary(apiClient: apiClient)
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    private func shouldBackgroundRefresh(for recording: Recording) -> Bool {
+        switch recording.status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed:
+            return false
         }
     }
 }

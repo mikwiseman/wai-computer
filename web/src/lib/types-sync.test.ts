@@ -6,7 +6,6 @@
  */
 import { describe, expect, it } from "vitest";
 import type {
-  ActionItem,
   AnalyticsResponse,
   BulkOperationResponse,
   ChatMessageData,
@@ -32,12 +31,10 @@ import type {
   RenameSessionResponse,
   SearchResponse,
   SearchResult,
-  Segment,
   SpeakerStat,
   SpeakerStatsResponse,
   SpeakerTimelineEntry,
   StarRecordingResponse,
-  Summary,
   TranscriptSearchMatch,
   TranscriptSearchResponse,
   TranscriptStatsResponse,

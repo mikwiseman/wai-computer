@@ -166,7 +166,7 @@ class MacSearchViewModel: ObservableObject {
             results = response.results
             totalResults = response.total
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
 
         isLoading = false

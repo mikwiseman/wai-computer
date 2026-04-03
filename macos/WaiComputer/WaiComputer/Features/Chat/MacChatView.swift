@@ -282,7 +282,7 @@ class MacChatViewModel: ObservableObject {
         do {
             sessions = try await apiClient.listChatSessions()
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
     }
 
@@ -291,7 +291,7 @@ class MacChatViewModel: ObservableObject {
             let detail = try await apiClient.getChatSession(id: id)
             messages = detail.messages
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
     }
 
@@ -331,7 +331,7 @@ class MacChatViewModel: ObservableObject {
             sessions = try await apiClient.listChatSessions()
 
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
 
         isLoading = false
@@ -345,7 +345,7 @@ class MacChatViewModel: ObservableObject {
                 startNewChat()
             }
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
     }
 }

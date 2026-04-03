@@ -6,10 +6,13 @@ import {
   deleteApp,
   deleteAppItem,
   listAppItems,
+  listAppDeployments,
   listApps,
+  publishApp,
+  rollbackApp,
 } from "@/lib/api";
 import { ApiError } from "@/lib/http";
-import type { AppItem, UserApp } from "@/lib/types";
+import type { AppDeployment, AppItem, UserApp } from "@/lib/types";
 
 function formatError(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -21,7 +24,19 @@ export function AppsView() {
   const [apps, setApps] = useState<UserApp[]>([]);
   const [selectedApp, setSelectedApp] = useState<UserApp | null>(null);
   const [items, setItems] = useState<AppItem[]>([]);
+  const [deployments, setDeployments] = useState<AppDeployment[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  function replaceApp(updatedApp: UserApp) {
+    setApps((current) =>
+      current.some((app) => app.id === updatedApp.id)
+        ? current.map((app) => (app.id === updatedApp.id ? updatedApp : app))
+        : [updatedApp, ...current],
+    );
+    if (selectedApp?.id === updatedApp.id) {
+      setSelectedApp(updatedApp);
+    }
+  }
 
   async function loadApps() {
     try {
@@ -44,12 +59,20 @@ export function AppsView() {
     return () => { cancelled = true; };
   }, []);
 
+  async function loadSelectedAppData(appId: string) {
+    const [appItems, appDeployments] = await Promise.all([
+      listAppItems(appId),
+      listAppDeployments(appId),
+    ]);
+    setItems(appItems);
+    setDeployments(appDeployments);
+  }
+
   async function handleSelectApp(app: UserApp) {
     setSelectedApp(app);
     setError(null);
     try {
-      const result = await listAppItems(app.id);
-      setItems(result);
+      await loadSelectedAppData(app.id);
     } catch (err) {
       setError(formatError(err));
     }
@@ -62,8 +85,26 @@ export function AppsView() {
       if (selectedApp?.id === appId) {
         setSelectedApp(null);
         setItems([]);
+        setDeployments([]);
       }
       await loadApps();
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
+  async function handlePublishApp(app: UserApp) {
+    setError(null);
+    try {
+      const updated = await publishApp(app.id, {
+        visibility: app.visibility,
+        app_url: app.app_url ?? undefined,
+      });
+      replaceApp(updated);
+      if (selectedApp?.id === updated.id) {
+        setSelectedApp(updated);
+        await loadSelectedAppData(updated.id);
+      }
     } catch (err) {
       setError(formatError(err));
     }
@@ -77,6 +118,22 @@ export function AppsView() {
       const result = await listAppItems(selectedApp.id);
       setItems(result);
       await loadApps();
+    } catch (err) {
+      setError(formatError(err));
+    }
+  }
+
+  async function handleRollbackDeployment(deploymentId: string) {
+    if (!selectedApp) return;
+    setError(null);
+    try {
+      const updated = await rollbackApp(selectedApp.id, {
+        deployment_id: deploymentId,
+        visibility: selectedApp.visibility,
+      });
+      replaceApp(updated);
+      setSelectedApp(updated);
+      await loadSelectedAppData(updated.id);
     } catch (err) {
       setError(formatError(err));
     }
@@ -134,6 +191,14 @@ export function AppsView() {
                 {app.icon || "📦"}
               </div>
               <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{app.display_name}</div>
+              <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
+                {app.status} · {app.visibility}
+              </div>
+              {app.description && (
+                <div style={{ color: "var(--muted)", fontSize: "0.8rem", marginTop: "0.25rem" }}>
+                  {app.description}
+                </div>
+              )}
               <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
                 {app.item_count} items
               </div>
@@ -155,6 +220,9 @@ export function AppsView() {
             <div className="row" style={{ gap: "0.25rem" }}>
               <button type="button" onClick={() => void handleAddItem()}>
                 + Add Item
+              </button>
+              <button type="button" onClick={() => void handlePublishApp(selectedApp)}>
+                {selectedApp.status === "live" ? "Republish" : "Publish"}
               </button>
               {selectedApp.app_url && (
                 <a
@@ -225,6 +293,91 @@ export function AppsView() {
               ))}
             </div>
           )}
+
+          <section className="card" style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            <div>
+              Status: <strong>{selectedApp.status}</strong>
+            </div>
+            <div>
+              Visibility: <strong>{selectedApp.visibility}</strong>
+            </div>
+            {selectedApp.published_at && (
+              <div>Published: {new Date(selectedApp.published_at).toLocaleString()}</div>
+            )}
+            {selectedApp.last_used_at && (
+              <div>Last used: {new Date(selectedApp.last_used_at).toLocaleString()}</div>
+            )}
+          </section>
+
+          <section className="card" style={{ fontSize: "0.85rem" }}>
+            <div style={{ marginBottom: "0.75rem", fontWeight: 600 }}>Deployments</div>
+            {deployments.length === 0 ? (
+              <div style={{ color: "var(--muted)" }}>No deployment history yet.</div>
+            ) : (
+              <div className="stack" style={{ gap: "0.75rem" }}>
+                {deployments.map((deployment, index) => (
+                  <article
+                    key={deployment.id}
+                    className="card"
+                    style={{
+                      padding: "0.85rem",
+                      background: "var(--bg)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <div className="row" style={{ justifyContent: "space-between", gap: "0.5rem" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, marginBottom: "0.15rem" }}>
+                          {deployment.deployment_mode === "production" ? "Live deployment" : "Preview deployment"}
+                        </div>
+                        <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+                          {new Date(deployment.created_at).toLocaleString()} · {deployment.status} ·{" "}
+                          {deployment.deployment_target}
+                        </div>
+                      </div>
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void handleRollbackDeployment(deployment.id)}
+                        >
+                          Roll back
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="stack" style={{ gap: "0.35rem", marginTop: "0.75rem" }}>
+                      <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+                        Project: <strong>{deployment.cloudflare_project_name ?? "—"}</strong>
+                      </div>
+                      <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+                        Bundle: <strong>{deployment.bundle_kind ?? "—"}</strong>
+                      </div>
+                      <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+                        Framework: <strong>{deployment.framework ?? "—"}</strong>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                        {deployment.alias_url && (
+                          <a href={deployment.alias_url} target="_blank" rel="noopener noreferrer">
+                            Preview ↗
+                          </a>
+                        )}
+                        {deployment.live_url && (
+                          <a href={deployment.live_url} target="_blank" rel="noopener noreferrer">
+                            Live ↗
+                          </a>
+                        )}
+                        {deployment.deployment_url && (
+                          <a href={deployment.deployment_url} target="_blank" rel="noopener noreferrer">
+                            Deployment ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

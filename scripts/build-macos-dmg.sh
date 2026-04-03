@@ -20,6 +20,9 @@ ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
+DMG_ATTACHED=0
+DMG_DEVICE=""
+DMG_MOUNT_ACTUAL=""
 NOTARIZATION_MODE="skipped"
 NOTARY_ARGS=()
 CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
@@ -32,7 +35,8 @@ if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
 fi
 
 cleanup() {
-  rm -rf "$TMP_DIR"
+  detach_sparse_image || true
+  rm -rf "$TMP_DIR" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -88,6 +92,58 @@ gatekeeper_check() {
   fi
 
   echo "Warning: Gatekeeper rejected ${artifact_label}; continuing because MACOS_REQUIRE_GATEKEEPER=0." >&2
+}
+
+is_dmg_mounted() {
+  mount | grep -Fq " on ${DMG_MOUNT_ACTUAL:-$DMG_MOUNT} "
+}
+
+detach_sparse_image() {
+  if [[ "$DMG_ATTACHED" != "1" ]]; then
+    return 0
+  fi
+
+  if ! is_dmg_mounted; then
+    DMG_ATTACHED=0
+    DMG_DEVICE=""
+    DMG_MOUNT_ACTUAL=""
+    return 0
+  fi
+
+  local target="${DMG_DEVICE:-${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}}"
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if hdiutil detach "$target" -quiet; then
+      break
+    fi
+    sleep 1
+  done
+
+  if is_dmg_mounted; then
+    for attempt in 1 2 3 4 5; do
+      if hdiutil detach "${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}" -quiet; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  if is_dmg_mounted; then
+    hdiutil detach "$target" -force -quiet || hdiutil detach "${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}" -force -quiet || true
+  fi
+
+  for attempt in 1 2 3 4 5; do
+    if ! is_dmg_mounted; then
+      DMG_ATTACHED=0
+      DMG_DEVICE=""
+      DMG_MOUNT_ACTUAL=""
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Failed to detach DMG mount at $DMG_MOUNT" >&2
+  return 1
 }
 
 require_tool xcodebuild
@@ -165,55 +221,23 @@ hdiutil create -size 200m -fs HFS+ -volname "$DMG_VOLUME_NAME" -type SPARSE "$SP
 
 echo "Mounting sparse image to custom mount point..."
 mkdir -p "$DMG_MOUNT"
-hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -nobrowse -noverify
-
-echo "Copying app and creating Applications symlink..."
-ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
-ln -s /Applications "$DMG_MOUNT/Applications"
-
-# Copy background image
-mkdir -p "$DMG_MOUNT/.background"
-cp "$BACKGROUND_PATH" "$DMG_MOUNT/.background/background.png"
-
-# Set volume icon if available
-VOLICON="$APP_PATH/Contents/Resources/AppIcon.icns"
-if [[ -f "$VOLICON" ]]; then
-  cp "$VOLICON" "$DMG_MOUNT/.VolumeIcon.icns"
-  SetFile -c icnC "$DMG_MOUNT/.VolumeIcon.icns" 2>/dev/null || true
-  SetFile -a C "$DMG_MOUNT" 2>/dev/null || true
+ATTACH_OUTPUT=$(hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -nobrowse -noverify)
+printf '%s\n' "$ATTACH_OUTPUT"
+DMG_ATTACHED=1
+DMG_DEVICE=$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'END {print $1}')
+DMG_MOUNT_ACTUAL=$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'END {print $NF}')
+if [[ -z "$DMG_DEVICE" ]]; then
+  echo "Warning: unable to determine mounted DMG device for $DMG_MOUNT; falling back to mountpoint detach." >&2
 fi
 
-# Apply Finder view settings via AppleScript
-echo "Configuring DMG Finder appearance..."
-osascript <<APPLESCRIPT
-tell application "Finder"
-  tell disk "$DMG_VOLUME_NAME"
-    open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set the bounds of container window to {180, 120, 1140, 740}
-    set theViewOptions to the icon view options of container window
-    set arrangement of theViewOptions to not arranged
-    set icon size of theViewOptions to 128
-    set text size of theViewOptions to 16
-    set background picture of theViewOptions to file ".background:background.png"
-    set position of item "${APP_NAME}.app" of container window to {240, 355}
-    set position of item "Applications" of container window to {720, 355}
-    set extension hidden of item "${APP_NAME}.app" of container window to true
-    close
-    open
-    update without registering applications
-    delay 1
-    close
-  end tell
-end tell
-APPLESCRIPT
+echo "Copying app payload..."
+ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
+ln -s /Applications "$DMG_MOUNT/Applications"
 
 sync
 
 echo "Detaching sparse image..."
-hdiutil detach "$DMG_MOUNT" -quiet
+detach_sparse_image
 
 echo "Converting to compressed DMG..."
 hdiutil convert "$SPARSE_PATH" -format UDZO -o "$DMG_PATH" -quiet
@@ -244,6 +268,8 @@ gatekeeper_check "disk image" spctl --assess --type open --context context:prima
 
 cp "$BACKGROUND_PATH" "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
+cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
+cp "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}-latest.dmg.sha256"
 cat > "$RELEASE_DIR/release-metadata.txt" <<META
 app=${APP_NAME}
 version=${VERSION}

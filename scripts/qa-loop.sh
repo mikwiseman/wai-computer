@@ -73,7 +73,7 @@ phase_for_elapsed_seconds() {
 }
 
 native_project_present() {
-  find "$ROOT_DIR/ios" "$ROOT_DIR/macos" -name "*.xcodeproj" -print -quit | grep -q .
+  find "$ROOT_DIR/ios" "$ROOT_DIR/macos" -name "*.xcodeproj" -print -quit | grep -q . || [[ -x "$ROOT_DIR/android/gradlew" ]]
 }
 
 run_step() {
@@ -124,14 +124,44 @@ run_remote_smoke() {
 run_native_tests() {
   local logfile="$1"
 
-  if [[ -z "$NATIVE_CMD" ]]; then
+  if [[ -n "$NATIVE_CMD" ]]; then
+    run_step "native_tests" "$logfile" bash -lc "
+      set -euo pipefail
+      cd '$ROOT_DIR'
+      $NATIVE_CMD
+    "
+    return $?
+  fi
+
+  if ! command -v xcodebuild >/dev/null 2>&1 && [[ ! -x "$ROOT_DIR/android/gradlew" ]]; then
     return 99
   fi
 
   run_step "native_tests" "$logfile" bash -lc "
     set -euo pipefail
     cd '$ROOT_DIR'
-    $NATIVE_CMD
+    if command -v xcodebuild >/dev/null 2>&1; then
+      if [[ -d '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' ]]; then
+        xcodebuild \
+          -project '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' \
+          -scheme WaiComputer \
+          -destination 'platform=macOS' \
+          CODE_SIGNING_ALLOWED=NO \
+          build
+      fi
+      if [[ -d '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' ]]; then
+        xcodebuild \
+          -project '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' \
+          -scheme WaiComputer \
+          -destination 'generic/platform=iOS Simulator' \
+          CODE_SIGNING_ALLOWED=NO \
+          build
+      fi
+    fi
+    if [[ -x '$ROOT_DIR/android/gradlew' ]]; then
+      cd '$ROOT_DIR/android'
+      ./gradlew --no-daemon testDebugUnitTest assembleDebug
+    fi
   "
 }
 
