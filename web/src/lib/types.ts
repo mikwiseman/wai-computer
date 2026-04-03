@@ -3,6 +3,9 @@ export type ActionStatus = "pending" | "in_progress" | "completed" | "cancelled"
 export type ActionPriority = "high" | "medium" | "low";
 export type EntityType = "person" | "organization" | "project" | "topic";
 export type ExportFormat = "markdown" | "txt" | "srt";
+export type AppStatus = "draft" | "live" | "archived";
+export type AppVisibility = "private" | "unlisted" | "public";
+export type RealtimeVoiceMode = "conversation" | "recording";
 
 export interface TokenResponse {
   access_token: string;
@@ -367,13 +370,38 @@ export interface UserApp {
   id: string;
   name: string;
   display_name: string;
+  description: string | null;
   icon: string | null;
   template: string | null;
   schema_def: Record<string, unknown> | null;
   app_url: string | null;
   settings: Record<string, unknown> | null;
+  status: AppStatus;
+  visibility: AppVisibility;
+  published_at: string | null;
+  last_used_at: string | null;
   sort_order: number;
   item_count: number;
+  created_at: string;
+}
+
+export interface AppDeployment {
+  id: string;
+  source_deployment_id: string | null;
+  deployment_mode: "preview" | "production";
+  deployment_target: string;
+  status: string;
+  generated_slug: string;
+  bundle_cache_key: string;
+  cloudflare_project_name: string | null;
+  deployment_url: string | null;
+  alias_url: string | null;
+  live_url: string | null;
+  bundle_kind: string | null;
+  framework: string | null;
+  generation_provider: string | null;
+  build_output_dir: string | null;
+  build_command: string | null;
   created_at: string;
 }
 
@@ -408,4 +436,14 @@ export interface DigitalAgent {
   last_result: string | null;
   last_error: string | null;
   created_at: string;
+}
+
+export interface RealtimeVoiceSession {
+  provider: string;
+  mode: RealtimeVoiceMode;
+  agent_id: string;
+  signed_url: string;
+  expires_in_seconds: number;
+  environment: string;
+  branch_id: string | null;
 }

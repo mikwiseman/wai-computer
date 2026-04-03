@@ -74,14 +74,49 @@ async function parseResponsePayload(response: Response): Promise<unknown> {
   }
 }
 
-function buildMessage(payload: unknown, fallback: string): string {
+function defaultMessageForStatus(status: number, fallback: string): string {
+  if (status === 0) return "Network error — check your connection";
+  if (status === 401) return "Your session ended. Please sign in again.";
+  return fallback;
+}
+
+function shouldHideTechnicalMessage(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return true;
+
+  const technicalFragments = [
+    "internal server error",
+    "failed to reconnect after",
+    "connection lost after retrying",
+    "failed to get transcription token",
+    "elevenlabs_api_key",
+    "no elevenlabs agent configured",
+    "multiple elevenlabs agents found",
+    "nsurlerrordomain",
+    "cfnetwork",
+    "application support/",
+    "/users/",
+    "pendingtranscripts",
+    "socket",
+    "timed out",
+  ];
+
+  return technicalFragments.some((fragment) => normalized.includes(fragment)) || normalized.length > 180;
+}
+
+function buildMessage(payload: unknown, fallback: string, status: number): string {
+  if (status >= 500) {
+    return defaultMessageForStatus(status, fallback);
+  }
   if (payload && typeof payload === "object") {
     const detail = (payload as { detail?: unknown }).detail;
     if (typeof detail === "string" && detail.length > 0) {
-      return detail;
+      return shouldHideTechnicalMessage(detail)
+        ? defaultMessageForStatus(status, fallback)
+        : detail;
     }
   }
-  return fallback;
+  return defaultMessageForStatus(status, fallback);
 }
 
 async function doFetch(url: string, init?: RequestInit): Promise<Response> {
@@ -153,7 +188,11 @@ export async function apiFetch<T>(
   const payload = await parseResponsePayload(response);
 
   if (!response.ok) {
-    throw new ApiError(response.status, buildMessage(payload, "API request failed"), payload);
+    throw new ApiError(
+      response.status,
+      buildMessage(payload, "Something went wrong. Please try again in a moment.", response.status),
+      payload,
+    );
   }
 
   return payload as T;

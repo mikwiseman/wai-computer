@@ -487,6 +487,22 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls createRealtimeVoiceSession", async () => {
+    await api.createRealtimeVoiceSession({
+      mode: "conversation",
+      include_conversation_id: true,
+      environment: "production",
+    });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/voice/session", {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "conversation",
+        include_conversation_id: true,
+        environment: "production",
+      }),
+    });
+  });
+
   // ── User Apps ─────────────────────────────────────────────────────
 
   it("calls listApps", async () => {
@@ -494,11 +510,61 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps");
   });
 
+  it("calls listApps with filters", async () => {
+    await api.listApps({ status: "live", visibility: "public" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps?status=live&visibility=public");
+  });
+
   it("calls createApp", async () => {
-    await api.createApp({ name: "habits", display_name: "Habits", icon: "✅" });
+    await api.createApp({
+      name: "habits",
+      display_name: "Habits",
+      description: "Track daily habits",
+      icon: "✅",
+      visibility: "private",
+    });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps", {
       method: "POST",
-      body: JSON.stringify({ name: "habits", display_name: "Habits", icon: "✅" }),
+      body: JSON.stringify({
+        name: "habits",
+        display_name: "Habits",
+        description: "Track daily habits",
+        icon: "✅",
+        visibility: "private",
+      }),
+    });
+  });
+
+  it("calls publishApp", async () => {
+    await api.publishApp("app-1", {
+      visibility: "public",
+      app_url: "https://habits.wai.computer",
+    });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/publish", {
+      method: "POST",
+      body: JSON.stringify({
+        visibility: "public",
+        app_url: "https://habits.wai.computer",
+      }),
+    });
+  });
+
+  it("calls listAppDeployments", async () => {
+    await api.listAppDeployments("app-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/deployments");
+  });
+
+  it("calls rollbackApp", async () => {
+    await api.rollbackApp("app-1", {
+      deployment_id: "dep-1",
+      visibility: "unlisted",
+    });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/apps/app-1/rollback", {
+      method: "POST",
+      body: JSON.stringify({
+        deployment_id: "dep-1",
+        visibility: "unlisted",
+      }),
     });
   });
 

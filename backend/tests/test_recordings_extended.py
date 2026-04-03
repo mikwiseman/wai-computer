@@ -50,13 +50,6 @@ async def test_upload_file_exceeding_streaming_size_limit_returns_413(
     # Set a very small limit so the file exceeds it during _stage_upload_to_disk streaming
     monkeypatch.setattr("app.api.routes.recordings.MAX_UPLOAD_SIZE", 2)
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/rec.mp3")
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
-
     response = await client.post(
         f"/api/recordings/{recording['id']}/upload",
         headers=auth_headers,
@@ -340,12 +333,12 @@ def test_extension_from_upload_unsupported_raises_415():
 
 
 def test_transcript_failure_details_empty_transcript():
-    """Should return transcript_empty code for 400 + 'Transcript is empty'."""
+    """Empty transcript validation no longer has a custom failure code."""
     from fastapi import HTTPException
 
     error = HTTPException(status_code=400, detail="Transcript is empty")
     code, message = recordings._transcript_failure_details(error)
-    assert code == "transcript_empty"
+    assert code == "transcript_validation_failed"
     assert message == "Transcript is empty"
 
 

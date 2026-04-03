@@ -2,8 +2,8 @@
 set -euo pipefail
 
 APP_IDS=(
-  "com.waiwai.waicomputer.macos"
-  "com.waiwai.waicomputer.macos.dev"
+  "is.waiwai.computer"
+  "is.waiwai.computer.dev"
 )
 
 APP_NAMES=(

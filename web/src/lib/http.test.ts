@@ -138,9 +138,30 @@ describe("apiFetch", () => {
       expect(error).toBeInstanceOf(ApiError);
       const apiError = error as ApiError;
       expect(apiError.status).toBe(500);
-      expect(apiError.message).toBe("API request failed");
+      expect(apiError.message).toBe("Something went wrong. Please try again in a moment.");
       expect(apiError.payload).toEqual({ error: "x" });
     }
+  });
+
+  it("hides raw 500 detail messages from the backend", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          detail:
+            "Connection lost after retrying. /Users/test/Library/Application Support/WaiComputer/PendingTranscripts/example Failed to reconnect after 10 attempts.",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(apiFetch("/server-error")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 500,
+      message: "Something went wrong. Please try again in a moment.",
+    });
   });
 
   it("throws ApiError with fallback message when payload is null", async () => {
@@ -153,7 +174,7 @@ describe("apiFetch", () => {
     await expect(apiFetch("/null-error")).rejects.toMatchObject({
       name: "ApiError",
       status: 500,
-      message: "API request failed",
+      message: "Something went wrong. Please try again in a moment.",
       payload: null,
     });
   });
@@ -241,9 +262,24 @@ describe("apiFetch", () => {
     await expect(apiFetch("/protected")).rejects.toMatchObject({
       name: "ApiError",
       status: 500,
-      message: "Internal Server Error",
+      message: "Something went wrong. Please try again in a moment.",
     });
     expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("hides raw provider configuration messages from users", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "ELEVENLABS_API_KEY not configured" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiFetch("/voice")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 500,
+      message: "Something went wrong. Please try again in a moment.",
+    });
   });
 
   it("falls through to original 401 when token refresh throws network error", async () => {

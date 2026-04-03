@@ -15,6 +15,27 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return APIClient(baseURL: baseURL, session: session)
     }
 
+    private func jsonBody(from request: URLRequest) throws -> [String: Any] {
+        let data: Data
+        if let httpBody = request.httpBody {
+            data = httpBody
+        } else if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+            defer { buffer.deallocate() }
+
+            let read = stream.read(buffer, maxLength: 4096)
+            XCTAssertGreaterThan(read, 0)
+            data = Data(bytes: buffer, count: read)
+        } else {
+            XCTFail("Expected request body")
+            throw APIError.noData
+        }
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
     // MARK: - Star Recording
 
     func testStarRecordingSendsPostToCorrectPath() async throws {
@@ -570,5 +591,221 @@ final class APIClientNewEndpointsTests: XCTestCase {
         } catch {
             XCTFail("Expected APIError, got \(error)")
         }
+    }
+
+    // MARK: - User App lifecycle
+
+    func testListAppsIncludesStatusAndVisibilityFilters() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/apps")
+
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let queryItems = components?.queryItems ?? []
+            XCTAssertEqual(queryItems.first(where: { $0.name == "status" })?.value, "live")
+            XCTAssertEqual(queryItems.first(where: { $0.name == "visibility" })?.value, "public")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("[]".utf8))
+        }
+
+        let apps = try await client.listApps(status: .live, visibility: .public)
+        XCTAssertTrue(apps.isEmpty)
+    }
+
+    func testCreateAppSendsLifecycleFields() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/apps")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["name"] as? String, "habit-tracker")
+            XCTAssertEqual(body["display_name"] as? String, "Habit Tracker")
+            XCTAssertEqual(body["description"] as? String, "Tracks daily habits")
+            XCTAssertEqual(body["visibility"] as? String, "unlisted")
+            XCTAssertEqual((body["settings"] as? [String: Any])?["theme"] as? String, "calm")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 201,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "id":"app-1",
+                "name":"habit-tracker",
+                "display_name":"Habit Tracker",
+                "description":"Tracks daily habits",
+                "icon":"✅",
+                "template":"tracker",
+                "schema_def":{"habit":"string"},
+                "app_url":null,
+                "settings":{"theme":"calm"},
+                "status":"draft",
+                "visibility":"unlisted",
+                "published_at":null,
+                "last_used_at":"2026-04-01T12:00:00Z",
+                "sort_order":0,
+                "item_count":0,
+                "created_at":"2026-04-01T10:00:00Z"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let app = try await client.createApp(
+            name: "habit-tracker",
+            displayName: "Habit Tracker",
+            description: "Tracks daily habits",
+            icon: "✅",
+            template: "tracker",
+            schemaDef: ["habit": .string("string")],
+            settings: ["theme": .string("calm")],
+            visibility: .unlisted
+        )
+        XCTAssertEqual(app.status, .draft)
+        XCTAssertEqual(app.visibility, .unlisted)
+        XCTAssertEqual(app.description, "Tracks daily habits")
+        XCTAssertNotNil(app.lastUsedAt)
+    }
+
+    func testPublishAppSendsVisibilityAndUrl() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/apps/app-9/publish")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["visibility"] as? String, "public")
+            XCTAssertEqual(body["app_url"] as? String, "https://habits.wai.computer")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "id":"app-9",
+                "name":"habits",
+                "display_name":"Habits",
+                "description":"Daily habits",
+                "icon":"✅",
+                "template":"tracker",
+                "schema_def":null,
+                "app_url":"https://habits.wai.computer",
+                "settings":null,
+                "status":"live",
+                "visibility":"public",
+                "published_at":"2026-04-01T14:00:00Z",
+                "last_used_at":"2026-04-01T14:05:00Z",
+                "sort_order":0,
+                "item_count":4,
+                "created_at":"2026-04-01T10:00:00Z"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let app = try await client.publishApp(
+            "app-9",
+            visibility: .public,
+            appUrl: "https://habits.wai.computer"
+        )
+        XCTAssertEqual(app.status, .live)
+        XCTAssertEqual(app.visibility, .public)
+        XCTAssertEqual(app.appUrl, "https://habits.wai.computer")
+        XCTAssertNotNil(app.publishedAt)
+    }
+
+    // MARK: - Realtime Transcription
+
+    func testCreateRealtimeTranscriptionSessionSendsLanguageAndChannels() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/transcription/session")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["language"] as? String, "multi")
+            XCTAssertEqual(body["channels"] as? Int, 1)
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "provider":"elevenlabs",
+                "token":"sutkn_123",
+                "expires_in_seconds":900,
+                "sample_rate":16000,
+                "audio_format":"pcm_16000",
+                "language":"multi",
+                "channels":1,
+                "model":"scribe_v2_realtime",
+                "commit_strategy":"vad"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let config = try await client.createRealtimeTranscriptionSession(language: "multi", channels: 1)
+        XCTAssertEqual(config.provider, "elevenlabs")
+        XCTAssertEqual(config.token, "sutkn_123")
+        XCTAssertEqual(config.model, "scribe_v2_realtime")
+        XCTAssertEqual(config.commitStrategy, "vad")
+    }
+
+    func testCreateRealtimeVoiceSessionSendsMode() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/voice/session")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["mode"] as? String, "conversation")
+            XCTAssertNil(body["agent_id"])
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "provider":"elevenlabs",
+                "mode":"conversation",
+                "agent_id":"agent-123",
+                "signed_url":"wss://api.elevenlabs.io/v1/convai/conversation?token=signed",
+                "expires_in_seconds":900,
+                "environment":"production",
+                "branch_id":null
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let session = try await client.createRealtimeVoiceSession(mode: .conversation)
+        XCTAssertEqual(session.provider, "elevenlabs")
+        XCTAssertEqual(session.agentId, "agent-123")
+        XCTAssertTrue(session.signedURL.contains("api.elevenlabs.io"))
     }
 }

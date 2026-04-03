@@ -47,7 +47,7 @@ class MacImportViewModel: ObservableObject {
             if let recordingId {
                 try? await apiClient.deleteRecording(id: recordingId, permanent: true)
             }
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .recording)
             showError = true
             importState = .error
         }

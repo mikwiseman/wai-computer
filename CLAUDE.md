@@ -92,18 +92,18 @@ backend/
         recordings.py   # /api/recordings/* (CRUD, upload)
         search.py       # /api/search/* (hybrid, semantic, fulltext)
         chat.py         # /api/chat/* (RAG chat with transcripts)
-        deepgram.py     # /api/deepgram-token (temp JWT for direct Deepgram)
+        realtime_transcription.py  # /api/transcription/session
         action_items.py # /api/action-items/*
         entities.py     # /api/entities/*
         settings.py     # /api/settings/*
       deps.py           # Dependency injection (get_db, get_current_user)
     core/
       security.py       # JWT, password hashing
-      deepgram.py       # Speech-to-text (streaming + REST)
+      elevenlabs.py     # Voice + speech-to-text
+      transcription.py  # Speech-to-text dispatch
       embeddings.py     # sentence-transformers (all-MiniLM-L6-v2, 384d)
       summarizer.py     # Claude-powered summarization
       chat.py           # RAG chat engine
-      storage.py        # S3 (Hetzner Object Storage)
       email.py          # Resend (magic links)
     db/
       session.py        # Async SQLAlchemy session
@@ -164,10 +164,10 @@ scripts/
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript 5, pnpm 9 |
 | **Database** | PostgreSQL 16 + pgvector (vector similarity search) |
 | **Embeddings** | sentence-transformers (all-MiniLM-L6-v2, 384 dimensions) |
-| **Speech-to-text** | Deepgram (Nova-2, streaming + REST) |
+| **Speech-to-text** | ElevenLabs (Scribe v2, realtime + upload) |
 | **AI** | Claude (Anthropic) for summarization + RAG chat |
-| **Storage** | Hetzner Object Storage (S3-compatible) |
 | **Email** | Resend (magic link auth) |
+| **Deploy** | Cloudflare Pages + Workers |
 | **Reverse Proxy** | Caddy 2 (auto-TLS via Let's Encrypt) |
 | **Containers** | Docker Compose |
 | **CI/CD** | GitHub Actions |
@@ -199,7 +199,7 @@ All API routes are prefixed with `/api` in FastAPI. Caddy proxies `/api/*` → `
 | `DELETE /api/entities/:id` | Delete entity |
 | `GET /api/settings` | Get user settings |
 | `GET /health` | Health check (not under /api) |
-| `GET /api/deepgram-token` | Get temporary Deepgram JWT for direct client connection |
+| `POST /api/transcription/session` | Get realtime STT session bootstrap |
 
 ## Environment Variables (backend/.env)
 
@@ -208,13 +208,8 @@ All API routes are prefixed with `/api` in FastAPI. Caddy proxies `/api/*` → `
 | `DATABASE_URL` | Yes | PostgreSQL async connection string |
 | `JWT_SECRET` | Yes | Secret for JWT signing (`openssl rand -hex 32`) |
 | `CORS_ORIGINS` | Yes | JSON array of allowed origins |
-| `DEEPGRAM_API_KEY` | No | Deepgram speech-to-text |
+| `ELEVENLABS_API_KEY` | No | ElevenLabs voice + speech-to-text |
 | `ANTHROPIC_API_KEY` | No | Claude API for summarization + chat |
-| `S3_ENDPOINT` | No | Hetzner Object Storage endpoint |
-| `S3_ACCESS_KEY` | No | S3 access key |
-| `S3_SECRET_KEY` | No | S3 secret key |
-| `S3_BUCKET` | No | S3 bucket name (default: `wai-computer`) |
-| `S3_REGION` | No | S3 region (default: `eu-central`) |
 | `RESEND_API_KEY` | No | Resend email API |
 | `EMAIL_FROM` | No | From address for emails |
 | `FRONTEND_URL` | Yes | Frontend URL for magic link redirects |

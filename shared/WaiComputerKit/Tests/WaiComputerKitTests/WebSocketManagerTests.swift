@@ -68,20 +68,6 @@ final class WebSocketManagerTests: XCTestCase {
         XCTAssertEqual(segment.startMs, 3200)
     }
 
-    // MARK: - DeepgramTokenResponse Tests
-
-    func testDeepgramTokenResponseDecoding() throws {
-        let json = """
-        {
-            "access_token": "dg-temp-jwt-123",
-            "expires_in": 300
-        }
-        """.data(using: .utf8)!
-
-        let response = try decoder.decode(DeepgramTokenResponse.self, from: json)
-        XCTAssertEqual(response.accessToken, "dg-temp-jwt-123")
-    }
-
     // MARK: - WebSocketEvent Tests
 
     func testWebSocketEventEnum() throws {

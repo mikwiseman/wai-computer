@@ -33,6 +33,9 @@ struct MacMainView: View {
     @State private var isShowingCreateFolderSheet = false
     @State private var newFolderName = ""
     @State private var shouldAssignNewFolderToSelection = true
+    @State private var libraryErrorAutoDismissTask: Task<Void, Never>?
+    @State private var recoveryNotice: String?
+    @State private var recoveryNoticeAutoDismissTask: Task<Void, Never>?
 
     enum SidebarSection: Hashable {
         case allRecordings
@@ -235,23 +238,28 @@ struct MacMainView: View {
                 .padding(.bottom, Spacing.xl)
             }
         }
+        .overlay(alignment: .top) {
+            VStack(spacing: Spacing.sm) {
+                if let libraryError = libraryViewModel.error {
+                    InlineLibraryErrorBanner(
+                        message: libraryError,
+                        onDismiss: { libraryViewModel.error = nil }
+                    )
+                }
+
+                if let recoveryNotice {
+                    RecordingRecoveryNoticeBanner(
+                        message: recoveryNotice,
+                        onDismiss: { dismissRecoveryNotice() }
+                    )
+                }
+            }
+            .padding(.top, Spacing.lg)
+        }
         .alert("Import Error", isPresented: $importViewModel.showError) {
             Button("OK") {}
         } message: {
             Text(importViewModel.errorMessage)
-        }
-        .alert(
-            "Library Error",
-            isPresented: Binding(
-                get: { libraryViewModel.error != nil },
-                set: { if !$0 { libraryViewModel.error = nil } }
-            )
-        ) {
-            Button("OK") {
-                libraryViewModel.error = nil
-            }
-        } message: {
-            Text(libraryViewModel.error ?? "The library could not be updated.")
         }
         .alert(
             "Recording Error",
@@ -326,8 +334,52 @@ struct MacMainView: View {
                 selectedSection = .allRecordings
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
+            Task {
+                await reloadLibrary()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingRecoveryNotice)) { notification in
+            guard let message = notification.userInfo?["message"] as? String,
+                  !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            recoveryNotice = message
+            scheduleRecoveryNoticeDismiss()
+        }
+        .onChange(of: libraryViewModel.error) { _, newValue in
+            libraryErrorAutoDismissTask?.cancel()
+            guard newValue != nil else { return }
+
+            libraryErrorAutoDismissTask = Task {
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    libraryViewModel.error = nil
+                }
+            }
+        }
         .onDisappear {
             completionTask?.cancel()
+            libraryErrorAutoDismissTask?.cancel()
+            recoveryNoticeAutoDismissTask?.cancel()
+        }
+    }
+
+    private func dismissRecoveryNotice() {
+        recoveryNoticeAutoDismissTask?.cancel()
+        recoveryNoticeAutoDismissTask = nil
+        recoveryNotice = nil
+    }
+
+    private func scheduleRecoveryNoticeDismiss() {
+        recoveryNoticeAutoDismissTask?.cancel()
+        recoveryNoticeAutoDismissTask = Task {
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                recoveryNotice = nil
+                recoveryNoticeAutoDismissTask = nil
+            }
         }
     }
 
@@ -774,6 +826,39 @@ struct MacMainView: View {
     }
 }
 
+private struct InlineLibraryErrorBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "wifi.exclamationmark")
+                .foregroundStyle(Color.white)
+
+            Text(message)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Color.white)
+                .lineLimit(2)
+
+            Spacer(minLength: Spacing.md)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(Color.white.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss library message")
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.orange)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .padding(.horizontal, Spacing.lg)
+        .accessibilityIdentifier("library-inline-error-banner")
+    }
+}
+
 private struct CreateFolderSheet: View {
     @Binding var folderName: String
     @Binding var moveSelectionIntoFolder: Bool
@@ -1084,6 +1169,35 @@ struct MacAuthView: View {
                 await appState.requestMagicLink(email: email)
             }
         }
+    }
+}
+
+private struct RecordingRecoveryNoticeBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+
+            Text(message)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .accessibilityIdentifier("recording-recovery-banner")
     }
 }
 

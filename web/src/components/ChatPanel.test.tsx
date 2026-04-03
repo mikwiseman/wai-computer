@@ -53,8 +53,8 @@ const baseChatResponse = {
 };
 
 const baseRecordings = [
-  { id: "r1", title: "Sprint Planning", type: "meeting" as const, audio_url: null, status: "processed", failure_code: null, failure_message: null, uploaded_at: "2026-02-28T00:00:00Z", duration_seconds: 600, language: "en", folder_id: null, deleted_at: null, starred_at: null, created_at: "2026-02-28T00:00:00Z" },
-  { id: "r2", title: "Design Review", type: "meeting" as const, audio_url: null, status: "processed", failure_code: null, failure_message: null, uploaded_at: "2026-02-28T01:00:00Z", duration_seconds: 300, language: "en", folder_id: null, deleted_at: null, starred_at: null, created_at: "2026-02-28T01:00:00Z" },
+  { id: "r1", title: "Sprint Planning", type: "meeting" as const, audio_url: null, status: "ready", failure_code: null, failure_message: null, uploaded_at: "2026-02-28T00:00:00Z", duration_seconds: 600, language: "en", folder_id: null, deleted_at: null, starred_at: null, created_at: "2026-02-28T00:00:00Z" },
+  { id: "r2", title: "Design Review", type: "meeting" as const, audio_url: null, status: "ready", failure_code: null, failure_message: null, uploaded_at: "2026-02-28T01:00:00Z", duration_seconds: 300, language: "en", folder_id: null, deleted_at: null, starred_at: null, created_at: "2026-02-28T01:00:00Z" },
 ];
 
 function createDeferred<T>() {

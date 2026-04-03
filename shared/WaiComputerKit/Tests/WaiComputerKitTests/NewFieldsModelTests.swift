@@ -404,4 +404,38 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertEqual(assistantMsg.sourceSegmentIds, ["seg-10", "seg-15"])
         XCTAssertEqual(assistantMsg.sourceRecordingIds, ["rec-1"])
     }
+
+    // MARK: - UserApp lifecycle
+
+    func testUserAppDecodesLifecycleFields() throws {
+        let json = """
+        {
+            "id": "app-42",
+            "name": "habits",
+            "display_name": "Habit Tracker",
+            "description": "Tracks daily habits",
+            "icon": "✅",
+            "template": "tracker",
+            "schema_def": { "habit": "string" },
+            "app_url": "https://habits.wai.computer",
+            "settings": { "theme": "calm" },
+            "status": "live",
+            "visibility": "public",
+            "published_at": "2026-04-01T12:00:00Z",
+            "last_used_at": "2026-04-01T13:00:00Z",
+            "sort_order": 2,
+            "item_count": 12,
+            "created_at": "2026-03-20T09:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let app = try makeDecoder().decode(UserApp.self, from: json)
+        XCTAssertEqual(app.id, "app-42")
+        XCTAssertEqual(app.description, "Tracks daily habits")
+        XCTAssertEqual(app.status, .live)
+        XCTAssertEqual(app.visibility, .public)
+        XCTAssertEqual(app.itemCount, 12)
+        XCTAssertNotNil(app.publishedAt)
+        XCTAssertNotNil(app.lastUsedAt)
+    }
 }

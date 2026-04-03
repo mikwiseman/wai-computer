@@ -250,7 +250,7 @@ final class ModelTests: XCTestCase {
         let json = """
         {
             "summary": "Team discussed Q1 roadmap priorities.",
-            "key_points": ["Launch feature A", "Deprecate legacy API"],
+            "key_points": ["Launch feature A", "Retire unused API"],
             "decisions": [
                 {"decision": "Prioritize mobile app", "context": "Revenue impact"},
                 {"decision": "Hire two engineers"}

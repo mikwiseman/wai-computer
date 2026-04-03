@@ -16,18 +16,18 @@ AI Second Brain - audio recording, transcription, and knowledge organization.
 
 **Automatic:** Push to `main` -> GitHub Actions runs lint + tests -> deploys via SSH.
 
-Only triggers on changes to: `backend/**`, `web/**`, `scripts/**`, `.github/workflows/deploy.yml`, `.dockerignore`.
+Only triggers on changes to: `backend/**`, `web/**`, `shared/**`, `ios/**`, `macos/**`, `android/**`, `scripts/**`, `.github/workflows/deploy.yml`, `.dockerignore`.
 
 **Manual:** `VPS_USER=root ./scripts/deploy-api.sh`
 
 **What happens on deploy:**
 1. `git pull --ff-only origin main` on server
-2. `docker compose build api web` (in `backend/`)
-3. `docker compose up -d api web`
-4. `docker compose restart caddy`
-4. Health check: API `:8000/health` and web `:3000/login`
+2. CI gates `backend`, `web`, `shared/WaiComputerKit`, `ios`, `macos`, and `android`
+3. `docker compose build api web celery-worker` (in `backend/`)
+4. `docker compose up -d api web celery-worker caddy`
+5. Health checks: API `:8000/health`, web `:3000/login`, celery container health
 
-**GitHub Secrets:** `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_REGION`, `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL`, `CORS_ORIGINS`
+**GitHub Secrets:** `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_CONVERSATION_AGENT_ID`, `ELEVENLABS_RECORDING_AGENT_ID`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL`, `CORS_ORIGINS`, `REDIS_URL`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_DSN`, `AUTH_COOKIE_DOMAIN`
 
 ## Local Development
 
@@ -94,6 +94,18 @@ cd shared/WaiComputerKit
 swift test -q
 ```
 
+**Apple apps:**
+```bash
+xcodebuild -project macos/WaiComputer/WaiComputer.xcodeproj -scheme WaiComputer -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project ios/WaiComputer/WaiComputeriOS.xcodeproj -scheme WaiComputer -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
+
+**Android:**
+```bash
+cd android
+./gradlew --no-daemon testDebugUnitTest assembleDebug
+```
+
 ## Project Structure
 
 ```text
@@ -103,10 +115,10 @@ backend/
       routes/
       websocket.py      # /api/ws/audio (real-time audio streaming)
     core/
-      deepgram.py       # Deepgram streaming + REST transcription
+      elevenlabs.py     # ElevenLabs realtime voice + speech-to-text
+      transcription.py  # Speech-to-text dispatch
       summarizer.py     # Claude-powered summarization
       chat.py           # RAG chat engine
-      storage.py        # S3 storage
     db/
     models/
     main.py             # FastAPI app + /health
@@ -142,7 +154,7 @@ scripts/
 
 - **Live recording/transcription currently runs through the native iOS/macOS clients**, not the Next.js web dashboard.
 - The shared Swift package (`shared/WaiComputerKit`) owns audio capture, websocket transport, and API access for the native apps.
-- The backend websocket endpoint is `WS /api/ws/audio`.
+- The backend issues provider-backed realtime transcription sessions via `POST /api/transcription/session` and voice sessions via `POST /api/voice/session`.
 - The backend health endpoint is `GET /health`.
 - There is **no runtime MCP integration** in the app codebase; MCP appears only in local dev-tool configuration.
 
@@ -153,9 +165,10 @@ scripts/
 | **Backend** | Python 3.12, FastAPI, SQLAlchemy (async), Alembic, Gunicorn + Uvicorn |
 | **Frontend** | Next.js 16, React 19, TypeScript 5, pnpm 9 |
 | **Database** | PostgreSQL 16 + pgvector |
-| **Speech-to-text** | Deepgram (`/api/ws/audio`, live) |
+| **Speech-to-text** | ElevenLabs (`/api/transcription/session`, live + upload) |
 | **AI** | Claude (Anthropic) for summaries + chat |
-| **Storage** | Hetzner Object Storage (S3-compatible) |
+| **Runtime coordination** | Redis 7 |
+| **Deploy** | Cloudflare Pages + Workers |
 | **Reverse Proxy** | Caddy 2 |
 | **Containers** | Docker Compose |
 | **CI/CD** | GitHub Actions |
@@ -195,9 +208,10 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 | `GET /api/settings` | Get user settings |
 | `PATCH /api/settings` | Update user settings |
 | `POST /api/settings/change-password` | Change password |
+| `POST /api/transcription/session` | Create realtime STT session |
+| `POST /api/voice/session` | Create realtime voice conversation session |
 | `GET /` | Root status |
 | `GET /health` | Health check |
-| `WS /api/ws/audio` | Real-time audio streaming |
 
 ## Environment Variables (backend/.env)
 
@@ -206,17 +220,17 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 | `DATABASE_URL` | Yes | PostgreSQL async connection string |
 | `JWT_SECRET` | Yes | Secret for JWT signing |
 | `CORS_ORIGINS` | No | Allowed origins |
-| `DEEPGRAM_API_KEY` | No | Deepgram speech-to-text |
+| `REDIS_URL` | No | Redis runtime coordination |
+| `ELEVENLABS_API_KEY` | No | ElevenLabs voice + speech-to-text |
+| `ELEVENLABS_CONVERSATION_AGENT_ID` | No | ElevenLabs conversation agent |
+| `ELEVENLABS_RECORDING_AGENT_ID` | No | ElevenLabs recording agent |
 | `ANTHROPIC_API_KEY` | No | Claude summaries + chat |
-| `S3_ENDPOINT` | No | Object storage endpoint |
-| `S3_ACCESS_KEY` | No | S3 access key |
-| `S3_SECRET_KEY` | No | S3 secret key |
-| `S3_BUCKET` | No | S3 bucket name |
-| `S3_REGION` | No | Object storage region |
 | `RESEND_API_KEY` | No | Resend email API |
 | `EMAIL_FROM` | No | From address |
 | `FRONTEND_URL` | No | Frontend URL for auth redirects |
 | `AUTH_COOKIE_DOMAIN` | No | Override shared auth-cookie domain; auto-derived from `FRONTEND_URL` for production domains |
+| `CLOUDFLARE_API_TOKEN` | No | Cloudflare deploy automation |
+| `CLOUDFLARE_ACCOUNT_ID` | No | Cloudflare account for Pages/Workers deploys |
 
 ## macOS App
 
@@ -230,7 +244,7 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 
 ## Notes For Agents
 
-- Check `CLAUDE.md` if deeper deployment history or legacy notes are needed.
+- Check `CLAUDE.md` if deeper deployment history is needed.
 - Prefer fixing the shared Swift + backend websocket path for recording bugs before touching the web dashboard.
 - If validating production, use SSH and inspect `docker logs waicomputer-api` plus `/opt/waicomputer/backend/docker compose ps`.
 - Browser auth in production relies on the backend cookie being valid for both `wai.computer` and `api.wai.computer`; if login bounces back to `/login`, check the auth-cookie domain first.

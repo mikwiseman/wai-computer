@@ -6,6 +6,7 @@ import { AgentChat } from "./AgentChat";
 
 vi.mock("@/lib/api", () => ({
   sendAgentMessage: vi.fn(),
+  createRealtimeVoiceSession: vi.fn(),
 }));
 
 vi.mock("@/lib/http", () => ({
@@ -22,6 +23,9 @@ vi.mock("@/lib/http", () => ({
 
 const mockSendAgentMessage = vi.mocked(
   (await import("@/lib/api")).sendAgentMessage,
+);
+const mockCreateRealtimeVoiceSession = vi.mocked(
+  (await import("@/lib/api")).createRealtimeVoiceSession,
 );
 
 describe("AgentChat", () => {
@@ -133,5 +137,27 @@ describe("AgentChat", () => {
     await waitFor(() => {
       expect(input.disabled).toBe(false);
     });
+  });
+
+  it("prepares a realtime voice session", async () => {
+    mockCreateRealtimeVoiceSession.mockResolvedValue({
+      provider: "elevenlabs",
+      mode: "conversation",
+      agent_id: "agent-1",
+      signed_url: "wss://example.test",
+      expires_in_seconds: 900,
+      environment: "production",
+      branch_id: null,
+    });
+
+    const user = userEvent.setup();
+    render(<AgentChat />);
+
+    await user.click(screen.getByText("Prepare voice session"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Realtime voice session ready")).toBeTruthy();
+    });
+    expect(mockCreateRealtimeVoiceSession).toHaveBeenCalledWith({ mode: "conversation" });
   });
 });

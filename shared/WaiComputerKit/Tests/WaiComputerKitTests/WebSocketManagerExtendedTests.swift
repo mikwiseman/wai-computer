@@ -15,111 +15,58 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(segments.isEmpty, "collectedSegments should be empty immediately after init")
     }
 
-    // MARK: - buildDeepgramURL with single channel
+    // MARK: - buildElevenLabsURL
 
-    func testBuildDeepgramURLSingleChannel() async throws {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient, language: "en", channels: 1)
-
-        let url = try await manager.buildDeepgramURL(token: "test-token-123")
-        let urlString = url.absoluteString
-
-        // Should contain base Deepgram URL
-        XCTAssertTrue(urlString.hasPrefix("wss://api.deepgram.com/v1/listen?"))
-
-        // Should contain standard params
-        XCTAssertTrue(urlString.contains("model=nova-3"))
-        XCTAssertTrue(urlString.contains("language=en"))
-        XCTAssertTrue(urlString.contains("punctuate=true"))
-        XCTAssertTrue(urlString.contains("diarize=true"))
-        XCTAssertTrue(urlString.contains("interim_results=true"))
-        XCTAssertTrue(urlString.contains("utterance_end_ms=1000"))
-        XCTAssertTrue(urlString.contains("vad_events=true"))
-        XCTAssertTrue(urlString.contains("encoding=linear16"))
-        XCTAssertTrue(urlString.contains("sample_rate=16000"))
-        XCTAssertTrue(urlString.contains("token=test-token-123"))
-
-        // Single channel should NOT have multichannel or channels params
-        XCTAssertFalse(urlString.contains("multichannel=true"),
-                       "Single channel should not include multichannel param")
-        XCTAssertFalse(urlString.contains("channels="),
-                       "Single channel should not include channels param")
-    }
-
-    // MARK: - buildDeepgramURL with 2 channels (multichannel)
-
-    func testBuildDeepgramURLMultichannel() async throws {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient, language: "en", channels: 2)
-
-        let url = try await manager.buildDeepgramURL(token: "mc-token")
-        let urlString = url.absoluteString
-
-        XCTAssertTrue(urlString.contains("channels=2"),
-                       "Should include channels=2 for multichannel")
-        XCTAssertTrue(urlString.contains("multichannel=true"),
-                       "Should include multichannel=true when channels > 1")
-        XCTAssertTrue(urlString.contains("token=mc-token"))
-    }
-
-    // MARK: - buildDeepgramURL with multi language includes endpointing
-
-    func testBuildDeepgramURLMultiLanguageEndpointing() async throws {
+    func testBuildElevenLabsURLIncludesRealtimeParams() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient, language: "multi", channels: 1)
 
-        let url = try await manager.buildDeepgramURL(token: "t")
+        let url = try await manager.buildElevenLabsURL(
+            token: "sutkn_123",
+            model: "scribe_v2_realtime",
+            commitStrategy: "vad"
+        )
         let urlString = url.absoluteString
 
-        XCTAssertTrue(urlString.contains("language=multi"))
-        XCTAssertTrue(urlString.contains("endpointing=100"),
-                       "Multi language should include endpointing=100")
+        XCTAssertTrue(urlString.hasPrefix("wss://api.elevenlabs.io/v1/speech-to-text/realtime?"))
+        XCTAssertTrue(urlString.contains("model_id=scribe_v2_realtime"))
+        XCTAssertTrue(urlString.contains("token=sutkn_123"))
+        XCTAssertTrue(urlString.contains("include_timestamps=true"))
+        XCTAssertTrue(urlString.contains("audio_format=pcm_16000"))
+        XCTAssertTrue(urlString.contains("include_language_detection=true"))
+        XCTAssertTrue(urlString.contains("commit_strategy=vad"))
     }
 
-    // MARK: - buildDeepgramURL non-multi language excludes endpointing
+    // MARK: - events stream survives disconnects
 
-    func testBuildDeepgramURLNonMultiLanguageNoEndpointing() async throws {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient, language: "en", channels: 1)
-
-        let url = try await manager.buildDeepgramURL(token: "t")
-        let urlString = url.absoluteString
-
-        XCTAssertFalse(urlString.contains("endpointing="),
-                        "Non-multi language should not include endpointing param")
-    }
-
-    // MARK: - events property returns same stream on repeated access
-
-    func testEventsReturnsSameStreamOnRepeatedAccess() async {
+    func testEventStreamRemainsUsableAfterDisconnect() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
+        let stream = await manager.events
 
-        // Access events twice -- withUnsafeContinuation trick to compare identity
-        // Since AsyncStream is a struct, we verify the continuation is only created once
-        // by checking that both calls return without error (the internal _eventStream is reused).
-        // We use a proxy: yield an event and confirm it arrives on the first stream reference.
-        let stream1 = await manager.events
-        let stream2 = await manager.events
+        let task = Task<[WebSocketEvent], Never> {
+            var iterator = stream.makeAsyncIterator()
+            var events: [WebSocketEvent] = []
+            if let first = await iterator.next() {
+                events.append(first)
+            }
+            if let second = await iterator.next() {
+                events.append(second)
+            }
+            return events
+        }
 
-        // Disconnect to finish the stream so iteration completes
         await manager.disconnect()
+        await manager.testingYieldEvent(.reconnected)
 
-        // Both should be iterable (the same underlying stream)
-        var events1: [WebSocketEvent] = []
-        for await event in stream1 {
-            events1.append(event)
+        let events = await task.value
+        XCTAssertEqual(events.count, 2)
+        if case .disconnected = events[0] {} else {
+            XCTFail("Expected disconnect event first")
         }
-
-        // stream2 should be exhausted too since it's the same stream
-        var events2: [WebSocketEvent] = []
-        for await event in stream2 {
-            events2.append(event)
+        if case .reconnected = events[1] {} else {
+            XCTFail("Expected a later event after disconnect")
         }
-
-        // stream1 consumed the disconnect event, stream2 gets nothing (same stream, already consumed)
-        XCTAssertEqual(events1.count, 1, "First accessor should get the disconnected event")
-        XCTAssertEqual(events2.count, 0, "Second accessor should get nothing (same stream, already consumed)")
     }
 
     // MARK: - WebSocketEvent pattern matching
@@ -228,23 +175,6 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(segment.isFinal)
     }
 
-    // MARK: - DeepgramTokenResponse forward compatibility (extra fields)
-
-    func testDeepgramTokenResponseExtraFields() throws {
-        let json = """
-        {
-            "access_token": "dg-jwt-abc",
-            "expires_in": 600,
-            "token_type": "Bearer",
-            "scope": "listen"
-        }
-        """.data(using: .utf8)!
-
-        // Should decode without error even though extra fields are present
-        let response = try decoder.decode(DeepgramTokenResponse.self, from: json)
-        XCTAssertEqual(response.accessToken, "dg-jwt-abc")
-    }
-
     // MARK: - WebSocketConnectionError invalidURL
 
     func testConnectionErrorInvalidURLDescription() {
@@ -332,18 +262,18 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
     func testWebSocketManagerDefaultLanguageAndChannels() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        // Default: language="multi", channels=1
         let manager = WebSocketManager(apiClient: apiClient)
 
-        let url = try await manager.buildDeepgramURL(token: "tok")
+        let url = try await manager.buildElevenLabsURL(
+            token: "tok",
+            model: "scribe_v2_realtime",
+            commitStrategy: "vad"
+        )
         let urlString = url.absoluteString
 
-        XCTAssertTrue(urlString.contains("language=multi"),
-                       "Default language should be 'multi'")
-        XCTAssertFalse(urlString.contains("channels="),
-                        "Default single channel should not include channels param")
-        XCTAssertTrue(urlString.contains("endpointing=100"),
-                       "Default 'multi' language should include endpointing")
+        XCTAssertTrue(urlString.contains("include_language_detection=true"),
+                      "Default language should enable automatic language detection")
+        XCTAssertTrue(urlString.contains("commit_strategy=vad"))
     }
 
     func testBufferedAudioSurvivesReconnectionState() async {

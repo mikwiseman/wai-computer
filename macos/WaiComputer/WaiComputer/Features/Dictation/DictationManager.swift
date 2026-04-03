@@ -7,7 +7,7 @@ import WaiComputerKit
 private let log = Logger(subsystem: "com.waicomputer.app", category: "dictation")
 
 /// Orchestrates the complete dictation flow:
-/// Global hotkey → mic capture → Deepgram streaming → text insertion
+/// Global hotkey → mic capture → provider-backed streaming → text insertion
 @MainActor
 final class DictationManager: ObservableObject {
 
@@ -73,7 +73,7 @@ final class DictationManager: ObservableObject {
         setupHotkeyCallbacks()
     }
 
-    /// Called when user authenticates — provides the API client for Deepgram tokens
+    /// Called when user authenticates and provides the API client used to mint realtime STT sessions.
     func configure(apiClient: APIClient, canStart: @escaping () -> Bool) {
         self.apiClient = apiClient
         self.canStartDictation = canStart
@@ -200,7 +200,7 @@ final class DictationManager: ObservableObject {
             audioCapture = capture
             try await capture.startRecording()
 
-            // Set up WebSocket to Deepgram
+            // Set up provider-backed realtime transcription.
             let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
             let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
             webSocket = ws
@@ -221,7 +221,7 @@ final class DictationManager: ObservableObject {
             let encoder = AudioEncoder(channels: 1)
             audioEncoder = encoder
 
-            // Stream audio to Deepgram
+            // Stream audio to the configured transcription provider.
             audioTask = Task.detached(priority: .userInitiated) {
                 for await buffer in capture.audioBuffers {
                     if let data = encoder.encode(buffer) {
@@ -245,7 +245,7 @@ final class DictationManager: ObservableObject {
 
         } catch {
             log.error("Failed to start dictation: \(error)")
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .dictation)
             await resetAfterStartFailure()
         }
     }
@@ -307,7 +307,7 @@ final class DictationManager: ObservableObject {
             } catch {
                 log.warning("AI cleanup failed, using raw transcript: \(error)")
                 if let apiError = error as? APIError, case .unauthorized = apiError {
-                    self.error = apiError.localizedDescription
+                    self.error = apiError.userFacingMessage(context: .dictation)
                 }
                 // Continue with raw text
             }
@@ -320,10 +320,10 @@ final class DictationManager: ObservableObject {
             NSSound(named: NSSound.Name("Pop"))?.play()
         } catch {
             let recoveryURL = try? saveRecoveryText(textToInsert)
-            if let recoveryURL {
-                self.error = "\(error.localizedDescription)\n\nSaved dictated text to:\n\(recoveryURL.path)"
+            if recoveryURL != nil {
+                self.error = "We couldn't insert the dictated text into the current app. A recovery copy was kept on this Mac."
             } else {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .dictation)
             }
         }
 
@@ -411,10 +411,10 @@ final class DictationManager: ObservableObject {
         case .disconnected(let err):
             if let err, state == .listening {
                 log.error("WebSocket disconnected during dictation: \(err)")
-                if let recoveryURL = try? saveRecoveryText(buildTranscript()) {
-                    error = "Connection lost: \(err.localizedDescription)\n\nSaved partial dictation to:\n\(recoveryURL.path)"
+                if (try? saveRecoveryText(buildTranscript())) != nil {
+                    error = "Connection was interrupted. A recovery copy of your dictated text was kept on this Mac."
                 } else {
-                    error = "Connection lost: \(err.localizedDescription)"
+                    error = err.userFacingMessage(context: .dictation)
                 }
                 await cancelDictation()
             }
@@ -425,10 +425,11 @@ final class DictationManager: ObservableObject {
         case .reconnectionFailed(let err):
             if state == .listening {
                 log.error("WebSocket reconnection failed during dictation")
-                if let recoveryURL = try? saveRecoveryText(buildTranscript()) {
-                    error = "Connection lost after retrying.\n\nSaved partial dictation to:\n\(recoveryURL.path)"
+                if (try? saveRecoveryText(buildTranscript())) != nil {
+                    error = "Connection was interrupted. A recovery copy of your dictated text was kept on this Mac."
                 } else {
-                    error = err?.localizedDescription ?? "Connection lost after multiple retries"
+                    error = err?.userFacingMessage(context: .dictation)
+                        ?? "We couldn't keep dictation connected. Check your internet connection and try again."
                 }
                 await cancelDictation()
             }

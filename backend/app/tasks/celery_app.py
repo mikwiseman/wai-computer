@@ -5,6 +5,7 @@ in the worker process (-B flag) for single-node deployment.
 """
 
 from celery import Celery
+from celery.signals import worker_process_init
 
 from app.config import get_settings
 
@@ -35,3 +36,11 @@ celery_app.conf.beat_schedule = {
         "schedule": 60,
     },
 }
+
+
+@worker_process_init.connect
+def reset_async_db_runtime(**_kwargs) -> None:
+    """Ensure forked workers do not inherit async DB connections from the parent process."""
+    from app.db.session import reset_db_runtime
+
+    reset_db_runtime()

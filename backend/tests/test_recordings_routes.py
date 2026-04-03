@@ -1,5 +1,6 @@
 """Tests for recording endpoints and summary generation flows."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -8,8 +9,8 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deepgram import TranscriptResult
 from app.core.summarizer import SummaryResult
+from app.core.transcript_utils import TranscriptResult
 from app.models.recording import ActionItem, Recording, Segment, Summary
 
 
@@ -186,6 +187,44 @@ async def test_generate_summary_requires_segments(client: AsyncClient, auth_head
     )
     assert response.status_code == 400
     assert "no transcript segments" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_returns_friendly_503_when_summarizer_fails(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Generate summary should return a friendly error when summarization fails."""
+    recording = await _create_recording(client, auth_headers)
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Summarize this transcript please.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.99,
+        )
+    )
+    await db_session.flush()
+
+    async def broken_summarizer(_: str) -> SummaryResult:
+        raise RuntimeError("anthropic gateway timeout")
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", broken_summarizer)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "We couldn't generate the summary right now. Please try again in a moment."
+    )
 
 
 @pytest.mark.asyncio
@@ -414,6 +453,62 @@ async def test_upload_unsupported_file_type_returns_415(client: AsyncClient, aut
 
 
 @pytest.mark.asyncio
+async def test_upload_accepts_audio_content_type_without_extension(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Upload should accept a valid audio MIME type even when the filename has no extension."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    fake_transcripts = [
+        TranscriptResult(
+            text="Recovered from MIME type",
+            speaker="Speaker 0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.95,
+        )
+    ]
+
+    async def fake_transcribe_audio_file(
+        audio_data: bytes,
+        language: str,
+        content_type: str = "audio/mpeg",
+        **kwargs,
+    ) -> list[TranscriptResult]:
+        assert audio_data == b"fake-audio"
+        assert content_type == "audio/mpeg"
+        return fake_transcripts
+
+    async def fake_generate_title(text: str) -> str:
+        return "Recovered from MIME"
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        fake_transcribe_audio_file,
+    )
+    monkeypatch.setattr("app.api.routes.recordings.generate_title", fake_generate_title)
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("upload", b"fake-audio", "audio/mpeg")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["title"] == "Recovered from MIME"
+    assert payload["segments"][0]["content"] == "Recovered from MIME type"
+
+
+@pytest.mark.asyncio
 async def test_upload_success_with_mocked_services(
     client: AsyncClient,
     auth_headers: dict,
@@ -433,16 +528,9 @@ async def test_upload_success_with_mocked_services(
         ),
     ]
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
-
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",
         AsyncMock(return_value=fake_transcripts),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
@@ -461,7 +549,8 @@ async def test_upload_success_with_mocked_services(
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Hello World Meeting"
-    assert data["audio_url"] == "user/2026/01/01/rec.mp3"
+    assert data["audio_url"] is None
+    assert data["uploaded_at"] is not None
     assert data["status"] == "ready"
     assert data["duration_seconds"] == 1
     assert len(data["segments"]) == 1
@@ -542,12 +631,12 @@ async def test_save_transcript_persists_segments_before_audio_upload(
 
 
 @pytest.mark.asyncio
-async def test_save_transcript_rejects_empty_payload_without_erasing_existing_segments(
+async def test_save_transcript_accepts_empty_payload_without_erasing_existing_segments(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Empty transcript saves should fail before replacing existing content."""
+    """Empty transcript saves should complete cleanly without erasing existing content."""
     recording = await _create_recording(client, auth_headers, title=None)
 
     monkeypatch.setattr(
@@ -589,8 +678,11 @@ async def test_save_transcript_rejects_empty_payload_without_erasing_existing_se
             ],
         },
     )
-    assert empty_response.status_code == 400
-    assert empty_response.json()["detail"] == "Transcript is empty"
+    assert empty_response.status_code == 200
+    assert empty_response.json()["status"] == "ready"
+    assert [segment["content"] for segment in empty_response.json()["segments"]] == [
+        "Keep this transcript"
+    ]
 
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
@@ -598,9 +690,9 @@ async def test_save_transcript_rejects_empty_payload_without_erasing_existing_se
     assert [segment["content"] for segment in detail["segments"]] == [
         "Keep this transcript"
     ]
-    assert detail["status"] == "failed"
-    assert detail["failure_code"] == "transcript_empty"
-    assert detail["failure_message"] == "Transcript is empty"
+    assert detail["status"] == "ready"
+    assert detail["failure_code"] is None
+    assert detail["failure_message"] is None
 
 
 @pytest.mark.asyncio
@@ -653,16 +745,8 @@ async def test_upload_processing_failure_returns_failed_recording_with_audio_pre
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Audio should remain linked when post-upload processing fails."""
+    """Transient upload should still return the failed recording when processing fails."""
     recording = await _create_recording(client, auth_headers, title=None)
-
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/2026/01/01/rec.mp3")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",
         AsyncMock(side_effect=RuntimeError("Deepgram unavailable")),
@@ -677,25 +761,22 @@ async def test_upload_processing_failure_returns_failed_recording_with_audio_pre
     data = response.json()
     assert data["status"] == "failed"
     assert data["failure_code"] == "processing_failed"
-    assert data["audio_url"] == "user/2026/01/01/rec.mp3"
+    assert data["audio_url"] is None
     assert data["segments"] == []
 
 
 @pytest.mark.asyncio
-async def test_upload_storage_failure_marks_recording_failed_and_keeps_record_visible(
+async def test_upload_staging_failure_marks_recording_failed_and_keeps_record_visible(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """If durable storage fails, the recording should remain visible with a failed state."""
+    """If local staging fails, the recording should remain visible with a failed state."""
     recording = await _create_recording(client, auth_headers, title=None)
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(side_effect=RuntimeError("S3 unavailable"))
-
     monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
+        "app.api.routes.recordings._stage_upload_to_disk",
+        AsyncMock(side_effect=RuntimeError("disk full")),
     )
 
     response = await client.post(
@@ -703,15 +784,78 @@ async def test_upload_storage_failure_marks_recording_failed_and_keeps_record_vi
         headers=auth_headers,
         files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
-    assert response.status_code == 503
-    assert "failed to store imported audio" in response.json()["detail"].lower()
-
-    detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
-    assert detail_response.status_code == 200
-    detail = detail_response.json()
+    assert response.status_code == 200
+    detail = response.json()
     assert detail["status"] == "failed"
-    assert detail["failure_code"] == "storage_upload_failed"
+    assert detail["failure_code"] == "staging_failed"
     assert detail["audio_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_upload_processing_failure_for_trashed_recording_does_not_leave_processing(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Concurrent soft-delete during upload failure should still finalize the recording state."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+
+    async def soft_delete_then_fail(*args, **kwargs):
+        result = await db_session.execute(select(Recording).where(Recording.id == recording_id))
+        trashed_recording = result.scalar_one()
+        trashed_recording.deleted_at = datetime.now(timezone.utc)
+        await db_session.commit()
+        raise RuntimeError("transcription worker crashed")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        soft_delete_then_fail,
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted_at"] is not None
+    assert data["status"] == "failed"
+    assert data["failure_code"] == "processing_failed"
+
+    result = await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    final_recording = result.scalar_one()
+    assert final_recording.deleted_at is not None
+    assert final_recording.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_trashed_recording_cannot_be_updated_or_summarized(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Mutation endpoints should reject soft-deleted recordings."""
+    recording = await _create_recording(client, auth_headers, title="Trash Mutations")
+    delete_response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert delete_response.status_code == 204
+
+    update_response = await client.patch(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+        json={"title": "Should Not Apply"},
+    )
+    assert update_response.status_code == 404
+
+    summary_response = await client.post(
+        f"/api/recordings/{recording['id']}/generate-summary",
+        headers=auth_headers,
+    )
+    assert summary_response.status_code == 404
 
 
 @pytest.mark.asyncio

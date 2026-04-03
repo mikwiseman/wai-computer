@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.core.deepgram import TranscriptResult
+from app.core.transcript_utils import TranscriptResult
 
 
 async def _create_recording(
@@ -67,14 +67,6 @@ async def test_upload_wav_file_with_correct_mime(
     """Uploading a .wav file with audio/wav content type should succeed."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
-
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/rec.wav")
-    mock_storage.delete_audio = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
 
     fake_results = [
         TranscriptResult(
@@ -338,14 +330,6 @@ async def test_upload_transcribes_single_channel(
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = recording["id"]
 
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/rec.mp3")
-    mock_storage.delete_audio = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
-
     fake_results = [
         TranscriptResult(
             text="Meeting started at nine.",
@@ -406,14 +390,6 @@ async def test_upload_transcribes_multichannel(
     """Upload should process multichannel results and interleave them chronologically."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = recording["id"]
-
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/rec.wav")
-    mock_storage.delete_audio = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
 
     # Simulate multichannel results (ch0=You, ch1=Speaker 1) interleaved
     fake_results = [
@@ -479,11 +455,11 @@ async def test_upload_transcribes_multichannel(
 
 
 @pytest.mark.asyncio
-async def test_save_transcript_empty_segments_returns_400(
+async def test_save_transcript_empty_segments_returns_ready_recording(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Saving a transcript with no segments should fail with 400."""
+    """Saving a transcript with no segments should still finalize the recording cleanly."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
@@ -492,8 +468,12 @@ async def test_save_transcript_empty_segments_returns_400(
         headers=auth_headers,
         json={"segments": []},
     )
-    assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
+    assert data["failure_code"] is None
+    assert data["failure_message"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -569,11 +549,11 @@ async def test_generate_summary_no_segments_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_save_transcript_whitespace_only_segments_returns_400(
+async def test_save_transcript_whitespace_only_segments_return_ready_recording(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Segments that contain only whitespace should be treated as empty."""
+    """Whitespace-only segments should be treated as an empty but successful transcript."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
@@ -586,8 +566,10 @@ async def test_save_transcript_whitespace_only_segments_returns_400(
         headers=auth_headers,
         json={"segments": segments},
     )
-    assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -688,14 +670,6 @@ async def test_upload_processing_failure_marks_recording_failed(
     """If transcription fails during upload, recording should be marked as failed."""
     recording = await _create_recording(client, auth_headers, title="Fail Test")
     recording_id = recording["id"]
-
-    mock_storage = AsyncMock()
-    mock_storage.upload_audio_fileobj = AsyncMock(return_value="user/rec.mp3")
-    mock_storage.delete_audio = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.get_storage_client",
-        lambda: mock_storage,
-    )
 
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",

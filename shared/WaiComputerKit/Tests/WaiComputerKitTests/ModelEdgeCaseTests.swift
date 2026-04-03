@@ -37,14 +37,14 @@ final class ModelEdgeCaseTests: XCTestCase {
         return encoder
     }
 
-    // MARK: - RecordingStatus Legacy Value Decoding
+    // MARK: - RecordingStatus Decoding
 
-    func testRecordingStatusDecodesPendingAsPendingUpload() throws {
+    func testRecordingStatusDecodesPendingUpload() throws {
         let json = """
         {
-            "id": "rec-legacy-1",
+            "id": "rec-status-1",
             "type": "note",
-            "status": "pending",
+            "status": "pending_upload",
             "created_at": "2026-01-01T00:00:00Z"
         }
         """.data(using: .utf8)!
@@ -53,12 +53,12 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(recording.status, .pendingUpload)
     }
 
-    func testRecordingStatusDecodesUploadedAsProcessing() throws {
+    func testRecordingStatusDecodesProcessing() throws {
         let json = """
         {
-            "id": "rec-legacy-2",
+            "id": "rec-status-2",
             "type": "meeting",
-            "status": "uploaded",
+            "status": "processing",
             "created_at": "2026-01-01T00:00:00Z"
         }
         """.data(using: .utf8)!
@@ -67,12 +67,12 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(recording.status, .processing)
     }
 
-    func testRecordingStatusDecodesUploadFailedAsFailed() throws {
+    func testRecordingStatusDecodesFailed() throws {
         let json = """
         {
-            "id": "rec-legacy-3",
+            "id": "rec-status-3",
             "type": "reflection",
-            "status": "upload_failed",
+            "status": "failed",
             "created_at": "2026-01-01T00:00:00Z"
         }
         """.data(using: .utf8)!
@@ -302,9 +302,9 @@ final class ModelEdgeCaseTests: XCTestCase {
 
     func testStatusDisplayTextForEachStatus() {
         let cases: [(RecordingStatus, String?)] = [
-            (.failed, "Save failed"),
-            (.pendingUpload, "Pending save"),
-            (.uploading, "Syncing"),
+            (.failed, "Needs attention"),
+            (.pendingUpload, "Saved locally"),
+            (.uploading, "Syncing in background"),
             (.processing, "Processing"),
             (.ready, nil),
         ]
@@ -379,6 +379,19 @@ final class ModelEdgeCaseTests: XCTestCase {
         let preview = recording.failurePreviewText!
         XCTAssertFalse(preview.contains("\n"))
         XCTAssertEqual(preview, "Line one Line two Line three")
+    }
+
+    func testFailurePreviewTextHidesTechnicalMessages() {
+        let recording = Recording(
+            id: "rec-technical-fail",
+            type: .note,
+            failureMessage: "Internal Server Error"
+        )
+
+        XCTAssertEqual(
+            recording.failurePreviewText,
+            "We couldn't finish saving your recording right now. Please try again in a moment."
+        )
     }
 
     func testFailurePreviewTextTruncatesAfterNewlineNormalization() {

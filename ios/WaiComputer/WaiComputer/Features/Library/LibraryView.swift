@@ -4,6 +4,7 @@ import WaiComputerKit
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var viewModel = LibraryViewModel()
+    @State private var errorAutoDismissTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,15 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
+            .overlay(alignment: .top) {
+                if let error = viewModel.error {
+                    InlineLibraryBanner(
+                        message: error,
+                        onDismiss: { viewModel.error = nil }
+                    )
+                    .padding(.top, 8)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -40,6 +50,26 @@ struct LibraryView: View {
             .task {
                 await viewModel.loadRecordings(apiClient: appState.getAPIClient())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
+                Task {
+                    await viewModel.loadRecordings(apiClient: appState.getAPIClient())
+                }
+            }
+            .onChange(of: viewModel.error) { _, newValue in
+                errorAutoDismissTask?.cancel()
+                guard newValue != nil else { return }
+
+                errorAutoDismissTask = Task {
+                    try? await Task.sleep(for: .seconds(6))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        viewModel.error = nil
+                    }
+                }
+            }
+            .onDisappear {
+                errorAutoDismissTask?.cancel()
+            }
         }
     }
 
@@ -56,6 +86,38 @@ struct LibraryView: View {
                 }
             }
         }
+    }
+}
+
+private struct InlineLibraryBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "wifi.exclamationmark")
+                .foregroundStyle(.white)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.orange)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .padding(.horizontal)
+        .accessibilityIdentifier("library-inline-error-banner")
     }
 }
 
@@ -154,6 +216,13 @@ class LibraryViewModel: ObservableObject {
     @Published var error: String?
     @Published var filterOption: FilterOption = .all
 
+    private var loadGeneration = 0
+    private var processingRefreshTask: Task<Void, Never>?
+
+    deinit {
+        processingRefreshTask?.cancel()
+    }
+
     enum FilterOption: String, CaseIterable {
         case all = "All"
         case meetings = "Meetings"
@@ -175,15 +244,52 @@ class LibraryViewModel: ObservableObject {
     }
 
     func loadRecordings(apiClient: APIClient) async {
+        let hasExistingContent = !recordings.isEmpty
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
+        error = nil
 
-        do {
-            recordings = try await apiClient.listRecordings()
-        } catch {
-            self.error = error.localizedDescription
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
         }
 
-        isLoading = false
+        do {
+            let fetchedRecordings = try await apiClient.listRecordings()
+            guard generation == loadGeneration else { return }
+
+            recordings = fetchedRecordings
+            processingRefreshTask?.cancel()
+
+            if fetchedRecordings.contains(where: { $0.status == .pendingUpload || $0.status == .uploading }) {
+                await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+            }
+            if fetchedRecordings.contains(where: shouldBackgroundRefresh) {
+                processingRefreshTask = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled else { return }
+                    await self?.loadRecordings(apiClient: apiClient)
+                }
+            }
+        } catch {
+            guard generation == loadGeneration else { return }
+            if hasExistingContent {
+                print("Library refresh failed: \(error.localizedDescription)")
+                if recordings.contains(where: shouldBackgroundRefresh) {
+                    self.error = error.userFacingMessage(context: .library)
+                    processingRefreshTask?.cancel()
+                    processingRefreshTask = Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(6))
+                        guard !Task.isCancelled else { return }
+                        await self?.loadRecordings(apiClient: apiClient)
+                    }
+                }
+            } else {
+                self.error = error.userFacingMessage(context: .library)
+            }
+        }
     }
 
     func deleteRecordings(at indexSet: IndexSet, apiClient: APIClient) async {
@@ -198,8 +304,17 @@ class LibraryViewModel: ObservableObject {
                 try await apiClient.deleteRecording(id: id)
                 recordings.removeAll { $0.id == id }
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .library)
             }
+        }
+    }
+
+    private func shouldBackgroundRefresh(for recording: Recording) -> Bool {
+        switch recording.status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed:
+            return false
         }
     }
 }

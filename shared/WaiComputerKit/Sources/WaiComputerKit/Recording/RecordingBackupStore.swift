@@ -66,6 +66,8 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
 }
 
 public enum RecordingBackupStore {
+    static var overrideBaseDirectory: URL?
+
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -92,16 +94,18 @@ public enum RecordingBackupStore {
         let backup = try makeBackup(recordingId: recordingId)
         try ensureDirectory(backup.directoryURL)
 
+        let existingManifest = try readManifest(from: backup.manifestURL)
         let manifest = RecordingBackupManifest(
             recordingId: recordingId,
             title: title,
             recordingType: recordingType.rawValue,
-            createdAt: Date(),
+            createdAt: existingManifest?.createdAt ?? Date(),
             durationSeconds: durationSeconds,
             segmentCount: segments.count,
             transcript: transcript,
             lastErrorMessage: nil,
-            updatedAt: Date()
+            updatedAt: Date(),
+            hasAudioFile: existingManifest?.hasAudioFile ?? false
         )
         try writeManifest(manifest, to: backup.manifestURL)
 
@@ -159,6 +163,31 @@ public enum RecordingBackupStore {
         return backup
     }
 
+    public static func listBackups() throws -> [RecordingBackup] {
+        let base = try baseDirectory()
+        guard FileManager.default.fileExists(atPath: base.path) else {
+            return []
+        }
+
+        return try FileManager.default.contentsOfDirectory(
+            at: base,
+            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        .compactMap { url in
+            let recordingId = url.lastPathComponent
+            return try? existingBackup(recordingId: recordingId)
+        }
+        .sorted { lhs, rhs in
+            let lhsDate = (try? readManifest(from: lhs.manifestURL)?.updatedAt) ?? .distantPast
+            let rhsDate = (try? readManifest(from: rhs.manifestURL)?.updatedAt) ?? .distantPast
+            return lhsDate > rhsDate
+        }
+    }
+
     /// Returns the expected audio file URL for a recording, without checking existence.
     public static func audioFileURL(recordingId: String) throws -> URL {
         let backup = try makeBackup(recordingId: recordingId)
@@ -192,6 +221,20 @@ public enum RecordingBackupStore {
         try writeManifest(manifest, to: backup.manifestURL)
     }
 
+    public static func manifest(recordingId: String) throws -> RecordingBackupManifest? {
+        let backup = try makeBackup(recordingId: recordingId)
+        return try readManifest(from: backup.manifestURL)
+    }
+
+    public static func segments(recordingId: String) throws -> [LiveTranscriptSegment] {
+        let backup = try makeBackup(recordingId: recordingId)
+        guard FileManager.default.fileExists(atPath: backup.segmentsFileURL.path) else {
+            return []
+        }
+        let data = try Data(contentsOf: backup.segmentsFileURL)
+        return try decoder.decode([LiveTranscriptSegment].self, from: data)
+    }
+
     private static func makeBackup(recordingId: String) throws -> RecordingBackup {
         let base = try baseDirectory()
         let directoryURL = base.appendingPathComponent(recordingId, isDirectory: true)
@@ -205,6 +248,9 @@ public enum RecordingBackupStore {
     }
 
     private static func baseDirectory() throws -> URL {
+        if let overrideBaseDirectory {
+            return overrideBaseDirectory
+        }
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

@@ -1,0 +1,275 @@
+"""Tests for ElevenLabs helpers."""
+
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+
+from app.core.elevenlabs import (
+    ElevenLabsAgentSummary,
+    ElevenLabsSignedUrl,
+    _confidence_from_words,
+    _result_from_transcript,
+    get_signed_url,
+    list_agents,
+    transcribe_audio_file,
+)
+from app.core.transcript_utils import TranscriptResult
+
+
+def test_confidence_from_words_uses_average_logprob():
+    confidence = _confidence_from_words(
+        [
+            {"logprob": -1.0},
+            {"logprob": -2.0},
+            {"logprob": -3.0},
+        ]
+    )
+    assert 0.0 < confidence < 1.0
+
+
+def test_confidence_from_words_returns_zero_without_logprobs():
+    assert _confidence_from_words([{"word": "hello"}]) == 0.0
+
+
+def test_result_from_transcript_builds_segment():
+    result = _result_from_transcript(
+        {
+            "text": "hello world",
+            "words": [
+                {"start": 0.1, "end": 0.3, "speaker_id": "Speaker A", "logprob": -0.5},
+                {"start": 0.31, "end": 0.6, "speaker_id": "Speaker A", "logprob": -0.3},
+            ],
+        }
+    )
+
+    assert isinstance(result, TranscriptResult)
+    assert result.text == "hello world"
+    assert result.speaker == "Speaker A"
+    assert result.start_ms == 100
+    assert result.end_ms == 600
+
+
+def test_result_from_transcript_returns_none_for_empty_text():
+    assert _result_from_transcript({"text": "   "}) is None
+
+
+@pytest.mark.asyncio
+async def test_get_signed_url_returns_expected_payload():
+    response = httpx.Response(
+        200,
+        json={"signed_url": "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent-1"},
+        request=httpx.Request(
+            "GET",
+            "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url",
+        ),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        signed_url = await get_signed_url(agent_id="agent-1", environment="production")
+
+    assert signed_url == ElevenLabsSignedUrl(
+        signed_url="wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent-1",
+        agent_id="agent-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_signed_url_rejects_missing_payload_value():
+    response = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request(
+            "GET",
+            "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url",
+        ),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        with pytest.raises(RuntimeError, match="invalid signed_url"):
+            await get_signed_url(agent_id="agent-1", branch_id="branch-1")
+
+
+@pytest.mark.asyncio
+async def test_list_agents_returns_owned_agents():
+    response = httpx.Response(
+        200,
+        json={
+            "agents": [
+                {"agent_id": "agent-1", "name": "Wai Primary"},
+                {"agent_id": "agent-2", "name": "Wai Backup"},
+            ]
+        },
+        request=httpx.Request("GET", "https://api.elevenlabs.io/v1/convai/agents"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        agents = await list_agents(page_size=2)
+
+    assert agents == [
+        ElevenLabsAgentSummary(agent_id="agent-1", name="Wai Primary"),
+        ElevenLabsAgentSummary(agent_id="agent-2", name="Wai Backup"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_agents_skips_invalid_entries():
+    response = httpx.Response(
+        200,
+        json={
+            "agents": [
+                "bad-entry",
+                {"name": "Missing id"},
+                {"agent_id": "agent-3", "name": "Wai Valid"},
+            ]
+        },
+        request=httpx.Request("GET", "https://api.elevenlabs.io/v1/convai/agents"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        agents = await list_agents()
+
+    assert agents == [ElevenLabsAgentSummary(agent_id="agent-3", name="Wai Valid")]
+
+
+@pytest.mark.asyncio
+async def test_list_agents_rejects_invalid_payload():
+    response = httpx.Response(
+        200,
+        json={},
+        request=httpx.Request("GET", "https://api.elevenlabs.io/v1/convai/agents"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.get", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        with pytest.raises(RuntimeError, match="invalid agents payload"):
+            await list_agents()
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_handles_multi_transcript_payload():
+    response = httpx.Response(
+        200,
+        json={
+            "transcripts": [
+                {
+                    "text": "hello",
+                    "words": [
+                        {"start": 0.0, "end": 0.5, "speaker_id": "Speaker 1", "logprob": -0.1}
+                    ],
+                },
+                {
+                    "text": "world",
+                    "words": [
+                        {"start": 0.5, "end": 1.0, "speaker_id": "Speaker 2", "logprob": -0.2}
+                    ],
+                },
+            ]
+        },
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        results = await transcribe_audio_file(b"wav-data", content_type="audio/wav")
+
+    assert [result.text for result in results] == ["hello", "world"]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_handles_single_payload_and_raw_audio():
+    response = httpx.Response(
+        200,
+        json={"text": "hello raw"},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        results = await transcribe_audio_file(
+            b"raw-data",
+            content_type="audio/raw",
+            channels=1,
+            language="multi",
+        )
+
+    assert len(results) == 1
+    assert results[0].text == "hello raw"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_ignores_invalid_transcript_entries():
+    response = httpx.Response(
+        200,
+        json={"transcripts": ["bad", {"text": ""}]},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=2),
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        results = await transcribe_audio_file(b"stereo-data", content_type="audio/wav")
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_handles_unexpected_payload_type():
+    response = httpx.Response(
+        200,
+        json=[],
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        results = await transcribe_audio_file(b"wav-data", content_type="audio/wav")
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_requires_api_key():
+    with patch("app.core.elevenlabs.get_settings") as mock_settings:
+        mock_settings.return_value.elevenlabs_api_key = ""
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+
+        with pytest.raises(ValueError, match="ELEVENLABS_API_KEY not configured"):
+            await transcribe_audio_file(b"wav-data")

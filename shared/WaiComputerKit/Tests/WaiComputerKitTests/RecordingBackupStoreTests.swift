@@ -3,6 +3,25 @@ import XCTest
 @testable import WaiComputerKit
 
 final class RecordingBackupStoreTests: XCTestCase {
+    private var backupRoot: URL!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        backupRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaiComputerKitTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+        RecordingBackupStore.overrideBaseDirectory = backupRoot
+    }
+
+    override func tearDownWithError() throws {
+        RecordingBackupStore.overrideBaseDirectory = nil
+        if let backupRoot {
+            try? FileManager.default.removeItem(at: backupRoot)
+        }
+        try super.tearDownWithError()
+    }
+
     func testSaveRecordingCreatesDurableFiles() throws {
         let recordingId = "backup-test-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
@@ -309,5 +328,34 @@ final class RecordingBackupStoreTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let manifest = try decoder.decode(RecordingBackupManifest.self, from: manifestData)
         XCTAssertEqual(manifest.lastErrorMessage, "Save failed")
+    }
+
+    func testSaveRecordingPreservesExistingAudioFlag() throws {
+        let recordingId = "backup-preserve-audio-flag-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Initial backup",
+            recordingType: .note,
+            durationSeconds: 3,
+            transcript: "Initial",
+            segments: []
+        )
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Resaved backup",
+            recordingType: .note,
+            durationSeconds: 4,
+            transcript: nil,
+            segments: []
+        )
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.hasAudioFile)
+        XCTAssertEqual(manifest.title, "Resaved backup")
+        XCTAssertEqual(manifest.durationSeconds, 4)
     }
 }

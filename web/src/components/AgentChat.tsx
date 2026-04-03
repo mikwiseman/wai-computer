@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { sendAgentMessage } from "@/lib/api";
+import { createRealtimeVoiceSession, sendAgentMessage } from "@/lib/api";
 import { ApiError } from "@/lib/http";
+import type { RealtimeVoiceSession } from "@/lib/types";
 
 interface AgentMessage {
   id: string;
@@ -24,6 +25,8 @@ export function AgentChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [voiceSession, setVoiceSession] = useState<RealtimeVoiceSession | null>(null);
+  const [voicePreparing, setVoicePreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +83,20 @@ export function AgentChat() {
     }
   }
 
+  async function handlePrepareVoice(mode: "conversation" | "recording") {
+    if (voicePreparing) return;
+    setVoicePreparing(true);
+    setError(null);
+    try {
+      const result = await createRealtimeVoiceSession({ mode });
+      setVoiceSession(result);
+    } catch (err) {
+      setError(formatError(err));
+    } finally {
+      setVoicePreparing(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Messages */}
@@ -108,6 +125,21 @@ export function AgentChat() {
             <div style={{ fontSize: "2.5rem" }}>🧠</div>
             <div style={{ fontSize: "1.1rem", fontWeight: 500 }}>
               What can I help with?
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              <button type="button" onClick={() => void handlePrepareVoice("conversation")}>
+                {voicePreparing ? "Preparing…" : "Prepare voice session"}
+              </button>
+              <button type="button" onClick={() => void handlePrepareVoice("recording")}>
+                Recording mode
+              </button>
             </div>
             <div
               style={{
@@ -200,6 +232,26 @@ export function AgentChat() {
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {voiceSession && (
+        <div
+          style={{
+            margin: "0 1.5rem 1rem",
+            padding: "0.75rem 1rem",
+            borderRadius: "12px",
+            background: "rgba(43, 104, 255, 0.08)",
+            border: "1px solid rgba(43, 104, 255, 0.16)",
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: "0.2rem" }}>
+            Realtime voice session ready
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            {voiceSession.provider} · {voiceSession.mode} · agent {voiceSession.agent_id} · expires in{" "}
+            {Math.max(1, Math.round(voiceSession.expires_in_seconds / 60))}m
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {error && (

@@ -1,0 +1,92 @@
+import Foundation
+
+public enum RealtimeVoiceMode: String, Codable, Sendable {
+    case conversation
+    case recording
+}
+
+public struct CreateRealtimeTranscriptionSessionRequest: Codable, Sendable {
+    public let language: String
+    public let channels: Int
+
+    public init(language: String = "multi", channels: Int = 1) {
+        self.language = language
+        self.channels = channels
+    }
+}
+
+public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
+    public let provider: String
+    public let token: String
+    public let expiresInSeconds: Int
+    public let sampleRate: Int
+    public let audioFormat: String
+    public let language: String
+    public let channels: Int
+    public let model: String
+    public let keepAliveIntervalSeconds: Int?
+    public let commitStrategy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case provider
+        case token
+        case expiresInSeconds = "expires_in_seconds"
+        case sampleRate = "sample_rate"
+        case audioFormat = "audio_format"
+        case language
+        case channels
+        case model
+        case keepAliveIntervalSeconds = "keep_alive_interval_seconds"
+        case commitStrategy = "commit_strategy"
+    }
+}
+
+public struct CreateRealtimeVoiceSessionRequest: Codable, Sendable {
+    public let mode: RealtimeVoiceMode
+    public let agentId: String?
+    public let includeConversationId: Bool
+    public let branchId: String?
+    public let environment: String?
+
+    public init(
+        mode: RealtimeVoiceMode = .conversation,
+        agentId: String? = nil,
+        includeConversationId: Bool = false,
+        branchId: String? = nil,
+        environment: String? = nil
+    ) {
+        self.mode = mode
+        self.agentId = agentId
+        self.includeConversationId = includeConversationId
+        self.branchId = branchId
+        self.environment = environment
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case agentId = "agent_id"
+        case includeConversationId = "include_conversation_id"
+        case branchId = "branch_id"
+        case environment
+    }
+}
+
+public struct RealtimeVoiceSession: Codable, Sendable {
+    public let provider: String
+    public let mode: String
+    public let agentId: String
+    public let signedURL: String
+    public let expiresInSeconds: Int
+    public let environment: String?
+    public let branchId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case provider
+        case mode
+        case agentId = "agent_id"
+        case signedURL = "signed_url"
+        case expiresInSeconds = "expires_in_seconds"
+        case environment
+        case branchId = "branch_id"
+    }
+}

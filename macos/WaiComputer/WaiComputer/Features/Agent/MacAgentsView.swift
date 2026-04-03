@@ -126,7 +126,7 @@ struct MacAgentsView: View {
         do {
             agents = try await apiClient.listAgents()
         } catch {
-            self.error = error.localizedDescription
+            self.error = error.userFacingMessage(context: .generic)
         }
         isLoading = false
     }
@@ -142,7 +142,7 @@ struct MacAgentsView: View {
                 agents.insert(agent, at: 0)
                 newAgentDescription = ""
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .generic)
             }
             isCreating = false
         }
@@ -155,7 +155,7 @@ struct MacAgentsView: View {
                 // Reload to get updated status
                 await loadAgents()
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .generic)
             }
         }
     }
@@ -166,7 +166,7 @@ struct MacAgentsView: View {
                 try await apiClient.deleteAgent(agent.id)
                 agents.removeAll { $0.id == agent.id }
             } catch {
-                self.error = error.localizedDescription
+                self.error = error.userFacingMessage(context: .generic)
             }
         }
     }
