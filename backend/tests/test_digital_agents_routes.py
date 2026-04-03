@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 
 class TestCreateAgent:
-    @patch("app.services.agent.digital_agents.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.digital_agents._get_client")
     async def test_create_agent(self, mock_anthropic, client: AsyncClient, auth_headers: dict):
         mock_client = AsyncMock()
         mock_anthropic.return_value = mock_client
@@ -56,7 +56,7 @@ class TestListAgents:
         assert response.status_code == 200
         assert response.json() == []
 
-    @patch("app.services.agent.digital_agents.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.digital_agents._get_client")
     async def test_list_with_agents(self, mock_anthropic, client: AsyncClient, auth_headers: dict):
         mock_client = AsyncMock()
         mock_anthropic.return_value = mock_client
@@ -79,7 +79,7 @@ class TestListAgents:
 
 
 class TestDeleteAgent:
-    @patch("app.services.agent.digital_agents.anthropic.AsyncAnthropic")
+    @patch("app.services.agent.digital_agents._get_client")
     async def test_delete_agent(self, mock_anthropic, client: AsyncClient, auth_headers: dict):
         mock_client = AsyncMock()
         mock_anthropic.return_value = mock_client

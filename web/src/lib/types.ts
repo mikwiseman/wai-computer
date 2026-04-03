@@ -444,6 +444,6 @@ export interface RealtimeVoiceSession {
   agent_id: string;
   signed_url: string;
   expires_in_seconds: number;
-  environment: string;
+  environment: string | null;
   branch_id: string | null;
 }

@@ -100,7 +100,13 @@ async def _run_due_agents() -> dict:
     return {"checked_at": now.isoformat(), "dispatched": dispatched}
 
 
-@shared_task(bind=True, max_retries=2)
+@shared_task(
+    bind=True,
+    max_retries=2,
+    retry_backoff=5,
+    retry_backoff_max=60,
+    retry_jitter=True,
+)
 def execute_agent(self, agent_id: str):
     """Execute a single digital agent run."""
     return _run_async(_execute_agent(UUID(agent_id)))
@@ -112,6 +118,7 @@ async def _execute_agent(agent_id: UUID) -> dict:
 
     from app.db.session import get_db_context
     from app.models.digital_agent import DigitalAgent
+    from app.services.agent.loop import _get_client
 
     async with get_db_context() as db:
         result = await db.execute(
@@ -124,7 +131,7 @@ async def _execute_agent(agent_id: UUID) -> dict:
         try:
             tools = _build_tools_for_agent(agent.tools or "")
 
-            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            client = _get_client()
             messages = [
                 {
                     "role": "user",
@@ -194,16 +201,35 @@ async def _execute_agent(agent_id: UUID) -> dict:
             )
             return {"agent_id": str(agent_id), "status": "completed"}
 
+        except (
+            anthropic.RateLimitError,
+            anthropic.InternalServerError,
+            anthropic.APIConnectionError,
+        ) as e:
+            agent.error_count += 1
+            agent.last_error = str(e)[:500]
+            await db.commit()
+            logger.warning("Agent transient error (will retry): %s - %s", agent.name, e)
+            raise  # Celery retry_backoff handles retry scheduling
+
+        except anthropic.APIStatusError as e:
+            agent.error_count += 1
+            agent.last_error = str(e)[:500]
+            if e.status_code in (401, 403):
+                agent.status = "failed"
+                logger.error("Agent auth failure, disabled: %s (id=%s)", agent.name, agent.id)
+            await db.commit()
+            logger.error("Agent permanent API error: %s - %s", agent.name, e)
+            return {"agent_id": str(agent_id), "status": "error", "error": str(e)[:500]}
+
         except Exception as e:
             agent.error_count += 1
             agent.last_error = str(e)[:500]
-
             if agent.error_count >= 10:
                 agent.status = "failed"
                 logger.error(
-                    f"Agent auto-disabled after 10 errors: {agent.name} (id={agent.id})"
+                    "Agent auto-disabled after 10 errors: %s (id=%s)", agent.name, agent.id
                 )
-
             await db.commit()
-            logger.error(f"Agent execution failed: {agent.name} - {e}")
-            return {"agent_id": str(agent_id), "status": "error", "error": str(e)}
+            logger.error("Agent execution failed: %s - %s", agent.name, e)
+            return {"agent_id": str(agent_id), "status": "error", "error": str(e)[:500]}

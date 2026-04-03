@@ -134,7 +134,7 @@ public struct Recording: Codable, Identifiable, Sendable {
         type = try container.decode(RecordingType.self, forKey: .type)
         audioUrl = try container.decodeIfPresent(String.self, forKey: .audioUrl)
         let decodedStatus = try container.decodeIfPresent(RecordingStatus.self, forKey: .status)
-        status = decodedStatus ?? .ready
+        status = decodedStatus ?? .pendingUpload
         failureCode = try container.decodeIfPresent(String.self, forKey: .failureCode)
         failureMessage = try container.decodeIfPresent(String.self, forKey: .failureMessage)
         uploadedAt = try container.decodeIfPresent(Date.self, forKey: .uploadedAt)
@@ -261,7 +261,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         type = try container.decode(RecordingType.self, forKey: .type)
         audioUrl = try container.decodeIfPresent(String.self, forKey: .audioUrl)
         let decodedStatus = try container.decodeIfPresent(RecordingStatus.self, forKey: .status)
-        status = decodedStatus ?? .ready
+        status = decodedStatus ?? .pendingUpload
         failureCode = try container.decodeIfPresent(String.self, forKey: .failureCode)
         failureMessage = try container.decodeIfPresent(String.self, forKey: .failureMessage)
         uploadedAt = try container.decodeIfPresent(Date.self, forKey: .uploadedAt)
