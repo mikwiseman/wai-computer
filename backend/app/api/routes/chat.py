@@ -1,5 +1,6 @@
 """Chat routes for conversational RAG Q&A against recordings."""
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -11,6 +12,8 @@ from sqlalchemy import case, func, select
 from app.api.deps import CurrentUser, Database
 from app.core.chat import ChatResult, chat_with_recordings
 from app.models.chat import ChatMessage, ChatSession
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -89,6 +92,10 @@ async def send_chat_message(
     db: Database,
 ) -> ChatResponse:
     """Send a question and get a RAG-powered answer from meeting transcripts."""
+    logger.info(
+        "send_chat_message user_id=%s session_id=%s question_len=%d",
+        user.id, request.session_id, len(request.question),
+    )
     sentry_sdk.add_breadcrumb(
         category="chat",
         message="Chat message sent",
