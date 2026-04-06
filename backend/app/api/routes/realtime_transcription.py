@@ -61,6 +61,16 @@ async def create_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=UNAVAILABLE_DETAIL,
         ) from exc
+    except Exception as exc:
+        logger.error(
+            "realtime transcription session failed user_id=%s error=%s",
+            user.id,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=UNAVAILABLE_DETAIL,
+        ) from exc
 
     logger.info(
         "realtime transcription session created user_id=%s provider=%s model=%s",

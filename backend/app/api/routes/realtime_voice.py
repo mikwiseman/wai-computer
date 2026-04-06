@@ -66,6 +66,17 @@ async def create_session(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=UNAVAILABLE_DETAIL,
         ) from exc
+    except Exception as exc:
+        logger.error(
+            "realtime voice session failed user_id=%s mode=%s error=%s",
+            user.id,
+            request.mode,
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=UNAVAILABLE_DETAIL,
+        ) from exc
 
     logger.info(
         "realtime voice session created user_id=%s provider=%s mode=%s agent_id=%s",
