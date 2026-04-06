@@ -1,5 +1,6 @@
 """RAG chat pipeline for conversational Q&A against recordings."""
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 
@@ -12,6 +13,7 @@ from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
 from app.models.chat import ChatMessage, ChatSession
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _anthropic_client: anthropic.AsyncAnthropic | None = None
@@ -147,7 +149,12 @@ async def retrieve_context(
         params["recording_ids"] = [str(rid) for rid in recording_ids]
 
     result = await db.execute(hybrid_query, params)
-    return result.fetchall()
+    rows = result.fetchall()
+    logger.info(
+        "retrieve_context user_id=%s query=%r results=%d",
+        user_id, question[:80], len(rows),
+    )
+    return rows
 
 
 def build_context_text(rows: list) -> str:
@@ -209,6 +216,10 @@ async def chat_with_recordings(
         await db.flush()
 
     # Retrieve context
+    logger.info(
+        "chat_with_recordings user_id=%s session_id=%s question_len=%d",
+        user_id, session.id, len(question),
+    )
     context_rows = await retrieve_context(db, user_id, question, recording_ids=recording_ids)
     context_text = build_context_text(context_rows)
 
@@ -248,16 +259,19 @@ async def chat_with_recordings(
             )
         answer = response.content[0].text
     except anthropic.APIConnectionError:
+        logger.error("chat Claude API connection error session_id=%s", session.id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
         ) from None
     except anthropic.RateLimitError:
+        logger.warning("chat Claude API rate limited session_id=%s", session.id)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
         ) from None
     except anthropic.APIStatusError as exc:
+        logger.error("chat Claude API error session_id=%s: %s", session.id, exc.message)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI service error: {exc.message}",
@@ -304,6 +318,10 @@ async def chat_with_recordings(
         session.title = question[:500]
         await db.flush()
 
+    logger.info(
+        "chat_with_recordings completed session_id=%s sources=%d answer_len=%d",
+        session.id, len(source_segments), len(answer),
+    )
     return ChatResult(
         answer=answer,
         session_id=str(session.id),

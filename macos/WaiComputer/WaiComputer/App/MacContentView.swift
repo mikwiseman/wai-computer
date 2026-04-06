@@ -39,32 +39,19 @@ struct MacMainView: View {
 
     enum SidebarSection: Hashable {
         case allRecordings
-        case meetings
-        case notes
         case folder(String)
         case trash
-        case agentChat
-        case agents
-        case apps
         case chat
-        case search
+        case agents
         case settings
     }
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
+        case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .agentChat, .agents, .apps, .chat, .search, .settings:
+        case .chat, .agents, .settings:
             return false
-        }
-    }
-
-    private var currentTypeFilter: RecordingType? {
-        switch selectedSection {
-        case .meetings: return .meeting
-        case .notes: return .note
-        default: return nil
         }
     }
 
@@ -86,7 +73,7 @@ struct MacMainView: View {
 
     private var displayedRecordings: [Recording] {
         libraryViewModel.filteredRecordings(
-            type: currentTypeFilter,
+            type: nil,
             folderId: currentFolderId,
             trashed: isTrashSection
         )
@@ -101,24 +88,14 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings:
             return "All Recordings"
-        case .meetings:
-            return "Meetings"
-        case .notes:
-            return "Notes"
         case .folder(let folderId):
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
         case .trash:
             return "Trash"
-        case .agentChat:
-            return "Agent Chat"
-        case .agents:
-            return "Agents"
-        case .apps:
-            return "Apps"
         case .chat:
             return "Chat"
-        case .search:
-            return "Search"
+        case .agents:
+            return "Agents"
         case .settings:
             return "Settings"
         case .none:
@@ -389,8 +366,6 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
-                sidebarRow("Meetings", icon: "video", section: .meetings)
-                sidebarRow("Notes", icon: "note.text", section: .notes)
                 sidebarRow("Trash", icon: "trash", section: .trash)
             } header: {
                 Text("Library")
@@ -416,20 +391,11 @@ struct MacMainView: View {
             }
 
             Section {
-                sidebarRow("Chat", icon: "brain", section: .agentChat)
+                sidebarRow("Chat", icon: "brain", section: .chat)
                 sidebarRow("Agents", icon: "gearshape.2", section: .agents)
-                sidebarRow("Apps", icon: "square.grid.2x2", section: .apps)
-            } header: {
-                Text("Wai")
-                    .waiSectionHeader()
-            }
-
-            Section {
-                sidebarRow("Chat", icon: "bubble.left.and.bubble.right", section: .chat)
-                sidebarRow("Search", icon: "magnifyingglass", section: .search)
                 sidebarRow("Settings", icon: "gear", section: .settings)
             } header: {
-                Text("Tools")
+                Text("Wai")
                     .waiSectionHeader()
             }
         }
@@ -557,7 +523,7 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .folder(_), .trash, .none:
+        case .allRecordings, .folder(_), .trash, .none:
             if selectedRecordingIds.count > 1 {
                 BulkSelectionDetailView(
                     selectionCount: selectedRecordingIds.count,
@@ -612,16 +578,10 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
-        case .agentChat:
+        case .chat:
             MacAgentChatView(apiClient: appState.getAPIClient())
         case .agents:
             MacAgentsView(apiClient: appState.getAPIClient())
-        case .apps:
-            MacAppsView(apiClient: appState.getAPIClient())
-        case .chat:
-            MacChatView()
-        case .search:
-            MacSearchView()
         case .settings:
             MacSettingsView()
         }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   apiFetch,
+  apiFetchResponse,
   getApiBaseUrl,
   syncLocalhostAuthCookie,
   syncLocalhostRefreshCookie,
@@ -561,6 +562,171 @@ describe("syncLocalhostRefreshCookie", () => {
     Object.defineProperty(window, "location", {
       value: { ...window.location, hostname: originalHostname },
       writable: true,
+    });
+  });
+});
+
+describe("apiFetchResponse", () => {
+  it("returns raw Response for successful request", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("file content", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    const response = await apiFetchResponse("/api/export");
+    expect(response).toBeInstanceOf(Response);
+    const text = await response.text();
+    expect(text).toBe("file content");
+  });
+
+  it("throws ApiError for non-ok response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiFetchResponse("/api/missing")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      message: "Not found",
+    });
+  });
+
+  it("throws ApiError with fallback for 500 errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Internal Server Error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(apiFetchResponse("/api/fail")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 500,
+      message: "Something went wrong. Please try again in a moment.",
+    });
+  });
+
+  it("retries after 401 token refresh", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 401 }),
+    );
+
+    // Refresh call: 200
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 200 }),
+    );
+
+    // Retry: 200 with content
+    fetchSpy.mockResolvedValueOnce(
+      new Response("exported data", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    const response = await apiFetchResponse("/api/export");
+    const text = await response.text();
+    expect(text).toBe("exported data");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws original 401 when refresh fails", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    // First call: 401
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh call: 403
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 403 }),
+    );
+
+    await expect(apiFetchResponse("/api/export")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+    });
+  });
+
+  it("syncs localhost cookie after refresh with tokens", async () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response("", { status: 401 }),
+    );
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: "new-access",
+          refresh_token: "new-refresh",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response("ok", { status: 200 }),
+    );
+
+    await apiFetchResponse("/api/export");
+    expect(document.cookie).toContain("wai_access_token=new-access");
+    expect(document.cookie).toContain("wai_refresh_token=new-refresh");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
+    });
+  });
+
+  it("throws ApiError on network error", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
+      new TypeError("Network unavailable"),
+    );
+
+    await expect(apiFetchResponse("/api/export")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 0,
+      message: "Network error — check your connection",
+    });
+  });
+
+  it("falls through on refresh network error", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Token expired" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Refresh throws network error
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await expect(apiFetchResponse("/api/export")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
     });
   });
 });
