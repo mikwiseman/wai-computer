@@ -3,10 +3,36 @@ import WaiComputerKit
 
 struct RecordingDetailView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     let recording: Recording
+    let isTrash: Bool
+    let folders: [Folder]
+    var onMoveToFolder: ((String?) -> Void)?
+    var onTrash: (() -> Void)?
+    var onRestore: (() -> Void)?
+    var onPermanentDelete: (() -> Void)?
 
     @StateObject private var viewModel = RecordingDetailViewModel()
     @State private var selectedTab = 0
+    @State private var showDeleteConfirmation = false
+
+    init(
+        recording: Recording,
+        isTrash: Bool = false,
+        folders: [Folder] = [],
+        onMoveToFolder: ((String?) -> Void)? = nil,
+        onTrash: (() -> Void)? = nil,
+        onRestore: (() -> Void)? = nil,
+        onPermanentDelete: (() -> Void)? = nil
+    ) {
+        self.recording = recording
+        self.isTrash = isTrash
+        self.folders = folders
+        self.onMoveToFolder = onMoveToFolder
+        self.onTrash = onTrash
+        self.onRestore = onRestore
+        self.onPermanentDelete = onPermanentDelete
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,6 +67,73 @@ struct RecordingDetailView: View {
         }
         .navigationTitle(recording.title ?? "Recording")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if isTrash {
+                        Button {
+                            onRestore?()
+                            dismiss()
+                        } label: {
+                            Label("Restore", systemImage: "arrow.uturn.backward")
+                        }
+
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Permanently", systemImage: "trash.slash")
+                        }
+                    } else {
+                        if !folders.isEmpty {
+                            Menu("Move to Folder") {
+                                if recording.folderId != nil {
+                                    Button("Unfiled") {
+                                        onMoveToFolder?(nil)
+                                    }
+                                }
+
+                                ForEach(folders) { folder in
+                                    if recording.folderId != folder.id {
+                                        Button(folder.name) {
+                                            onMoveToFolder?(folder.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Move to Trash", systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .confirmationDialog(
+            isTrash ? "Delete this recording permanently?" : "Move this recording to trash?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(isTrash ? "Delete Permanently" : "Move to Trash", role: .destructive) {
+                if isTrash {
+                    onPermanentDelete?()
+                } else {
+                    onTrash?()
+                }
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                isTrash
+                    ? "This action cannot be undone."
+                    : "You can restore it later from Trash."
+            )
+        }
         .task {
             await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
         }
