@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import (
     action_items,
     agent_chat,
-    apps,
     auth,
     chat,
     dictation,
@@ -101,9 +100,6 @@ async def lifespan(app: FastAPI):
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
     if not app_settings.redis_url:
         logger.warning("REDIS_URL is not configured — agent scheduling will not work")
-    if not app_settings.cloudflare_api_token:
-        logger.warning("CLOUDFLARE_API_TOKEN is not configured — app/site deployment will not work")
-
     # Startup: pre-load sentence-transformers model
     logger.info("Pre-loading sentence-transformers embedding model...")
     from app.core.embeddings import get_embedding_generator
@@ -176,7 +172,6 @@ app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
 app.include_router(agent_chat.router, prefix="/api")
 app.include_router(digital_agents.router, prefix="/api")
-app.include_router(apps.router, prefix="/api")
 
 
 @app.get("/")
