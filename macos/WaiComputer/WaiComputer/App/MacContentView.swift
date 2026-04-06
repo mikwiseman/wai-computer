@@ -497,6 +497,7 @@ struct MacMainView: View {
                     RecordingListView(
                         recordings: displayedRecordings,
                         folders: libraryViewModel.folders,
+                        localRecoveryRecordingIDs: libraryViewModel.localRecoveryRecordingIDs,
                         isTrash: isTrashSection,
                         selectedRecordingIds: $selectedRecordingIds,
                         onTrash: { ids in

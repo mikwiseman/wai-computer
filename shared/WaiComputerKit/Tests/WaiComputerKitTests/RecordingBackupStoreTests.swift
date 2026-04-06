@@ -358,4 +358,75 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertEqual(manifest.title, "Resaved backup")
         XCTAssertEqual(manifest.durationSeconds, 4)
     }
+
+    func testListBackupsReturnsAllSavedBackups() throws {
+        let id1 = "backup-list-1-\(UUID().uuidString)"
+        let id2 = "backup-list-2-\(UUID().uuidString)"
+        let id3 = "backup-list-3-\(UUID().uuidString)"
+        defer {
+            try? RecordingBackupStore.removeRecording(recordingId: id1)
+            try? RecordingBackupStore.removeRecording(recordingId: id2)
+            try? RecordingBackupStore.removeRecording(recordingId: id3)
+        }
+
+        for id in [id1, id2, id3] {
+            _ = try RecordingBackupStore.saveRecording(
+                recordingId: id, title: "Backup \(id)", recordingType: .note,
+                durationSeconds: 1, transcript: nil, segments: []
+            )
+        }
+
+        let backups = try RecordingBackupStore.listBackups()
+        let ourIds = Set([id1, id2, id3])
+        let foundIds = Set(backups.map(\.recordingId).filter { ourIds.contains($0) })
+        XCTAssertEqual(foundIds, ourIds, "All three backups should be listed")
+    }
+
+    func testListBackupsReturnsEmptyWhenNoBackupsExist() throws {
+        let backups = try RecordingBackupStore.listBackups()
+        XCTAssertTrue(backups.isEmpty)
+    }
+
+    func testSegmentsReturnsEmptyWhenFileNotFound() throws {
+        let recordingId = "backup-no-segments-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        // Save with empty segments (no segments file created)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId, title: "No segments", recordingType: .note,
+            durationSeconds: 1, transcript: nil, segments: []
+        )
+
+        let segments = try RecordingBackupStore.segments(recordingId: recordingId)
+        XCTAssertTrue(segments.isEmpty)
+    }
+
+    func testMarkPermanentFailureOnNonExistentBackupDoesNotCrash() throws {
+        let recordingId = "backup-no-exist-perm-\(UUID().uuidString)"
+        XCTAssertNoThrow(try RecordingBackupStore.markPermanentFailure(recordingId: recordingId))
+    }
+
+    func testManifestsByRecordingIdReturnsAllManifests() throws {
+        let id1 = "backup-manifests-1-\(UUID().uuidString)"
+        let id2 = "backup-manifests-2-\(UUID().uuidString)"
+        defer {
+            try? RecordingBackupStore.removeRecording(recordingId: id1)
+            try? RecordingBackupStore.removeRecording(recordingId: id2)
+        }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: id1, title: "First", recordingType: .note,
+            durationSeconds: 1, transcript: nil, segments: []
+        )
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: id2, title: "Second", recordingType: .meeting,
+            durationSeconds: 2, transcript: "Hello", segments: []
+        )
+
+        let manifests = try RecordingBackupStore.manifestsByRecordingId()
+        XCTAssertNotNil(manifests[id1])
+        XCTAssertNotNil(manifests[id2])
+        XCTAssertEqual(manifests[id1]?.title, "First")
+        XCTAssertEqual(manifests[id2]?.title, "Second")
+    }
 }

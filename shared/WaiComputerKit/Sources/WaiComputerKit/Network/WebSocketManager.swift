@@ -70,6 +70,22 @@ public enum WebSocketEvent: Sendable {
 /// The manager asks the backend for a provider-specific realtime transcription
 /// session, then streams PCM audio directly to the selected provider.
 public actor WebSocketManager {
+    private static let documentedRealtimeErrorTypes: Set<String> = [
+        "error",
+        "auth_error",
+        "quota_exceeded",
+        "commit_throttled",
+        "unaccepted_terms",
+        "rate_limited",
+        "queue_overflow",
+        "resource_exhausted",
+        "session_time_limit_exceeded",
+        "input_error",
+        "chunk_size_exceeded",
+        "insufficient_audio_activity",
+        "transcriber_error",
+    ]
+
     private let wsLog = Logger(subsystem: "com.waicomputer.kit", category: "websocket")
     private let apiClient: APIClient
     private let language: String
@@ -350,16 +366,26 @@ public actor WebSocketManager {
             "message_type": "input_audio_chunk",
             "audio_base_64": data.base64EncodedString(),
             "sample_rate": 16_000,
+            "commit": commit,
         ]
         if let previousText, !previousText.isEmpty {
             payload["previous_text"] = previousText
         }
-        if commit {
-            payload["commit"] = true
-        }
 
         let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
         return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+    }
+
+    func testingMakeElevenLabsAudioChunkMessage(
+        data: Data,
+        previousText: String? = nil,
+        commit: Bool = false
+    ) -> String {
+        makeElevenLabsAudioChunkMessage(
+            data: data,
+            previousText: previousText,
+            commit: commit
+        )
     }
 
     private func receiveMessages(forConnection expectedId: UInt64) async {
@@ -456,10 +482,12 @@ public actor WebSocketManager {
             eventContinuation?.yield(.transcript(segment))
 
         default:
-            if messageType.hasSuffix("error") || messageType.contains("_error") {
+            if Self.documentedRealtimeErrorTypes.contains(messageType)
+                || messageType.hasSuffix("error")
+                || messageType.contains("_error") {
                 let message = (json["message"] as? String)
                     ?? (json["error"] as? String)
-                    ?? messageType
+                    ?? messageType.replacingOccurrences(of: "_", with: " ").capitalized
                 let error = WebSocketConnectionError.serverError(message)
                 if reconnectEnabled {
                     startReconnection(afterError: error)

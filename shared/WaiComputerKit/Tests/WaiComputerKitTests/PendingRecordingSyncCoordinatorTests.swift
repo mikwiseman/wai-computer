@@ -379,4 +379,361 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
 
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
+
+    func testSyncRetriesWithExponentialBackoffAndEventuallySucceeds() async throws {
+        let recordingId = "pending-sync-backoff-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Backoff test",
+            recordingType: .note,
+            durationSeconds: 3,
+            transcript: "Exponential backoff",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Exponential backoff",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 3000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let requestCounter = RequestCounter()
+        let synced = expectation(description: "sync succeeds after retries")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        // Fail 3 times, then succeed
+        MockURLProtocol.requestHandler = { request in
+            let attempt = requestCounter.increment()
+            if attempt <= 3 {
+                throw URLError(.notConnectedToInternet)
+            }
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+
+        // Wake the backoff delay after each failure to speed up the test
+        for _ in 0..<3 {
+            try? await Task.sleep(for: .milliseconds(100))
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        }
+
+        await fulfillment(of: [synced], timeout: 3)
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
+    func testPermanentFailureSkippedDuringSyncLoop() async throws {
+        let permanentId = "pending-permanent-\(UUID().uuidString)"
+        let normalId = "pending-normal-\(UUID().uuidString)"
+        defer {
+            try? RecordingBackupStore.removeRecording(recordingId: permanentId)
+            try? RecordingBackupStore.removeRecording(recordingId: normalId)
+        }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: permanentId,
+            title: "Permanent failure",
+            recordingType: .note,
+            durationSeconds: 2,
+            transcript: nil,
+            segments: []
+        )
+        try RecordingBackupStore.markPermanentFailure(recordingId: permanentId)
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: normalId,
+            title: "Normal sync",
+            recordingType: .note,
+            durationSeconds: 2,
+            transcript: "Should sync",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Should sync",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 2000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "normal recording synced")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == normalId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: normalId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 2)
+
+        // Normal recording removed, permanent failure still exists
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: normalId))
+        XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: permanentId))
+    }
+
+    func testSyncMarks401AsPermanentFailure() async throws {
+        let recordingId = "pending-sync-401-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Auth failed",
+            recordingType: .note,
+            durationSeconds: 3,
+            transcript: "Unauthorized test",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Unauthorized test",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 3000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("expired-token")
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        // Allow sync loop to process
+        try await Task.sleep(for: .milliseconds(500))
+
+        // Backup should still exist but be marked as permanent failure
+        let backup = try XCTUnwrap(RecordingBackupStore.existingBackup(recordingId: recordingId))
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.isPermanentFailure)
+        XCTAssertNotNil(manifest.lastErrorMessage)
+    }
+
+    func testSyncMarks413AsPermanentFailure() async throws {
+        let recordingId = "pending-sync-413-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Too large",
+            recordingType: .note,
+            durationSeconds: 5,
+            transcript: "Large recording",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Large recording",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 5000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 413,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, "File too large".data(using: .utf8)!)
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(500))
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.isPermanentFailure)
+        XCTAssertTrue(manifest.lastErrorMessage?.contains("too large") == true)
+    }
+
+    func testSyncRecordsFailureWhenServerReturnsFailedStatus() async throws {
+        let recordingId = "pending-sync-server-fail-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Server processing failed",
+            recordingType: .note,
+            durationSeconds: 4,
+            transcript: "Processing test",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Processing test",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 4000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId, status: "failed"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(500))
+
+        // Backup should still exist (not removed) with error recorded
+        XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertFalse(manifest.isPermanentFailure, "Server failure is retryable, not permanent")
+        XCTAssertNotNil(manifest.lastErrorMessage)
+    }
+
+    func testSyncHandlesMultipleBackupsInOnePass() async throws {
+        let id1 = "pending-sync-multi-1-\(UUID().uuidString)"
+        let id2 = "pending-sync-multi-2-\(UUID().uuidString)"
+        let id3 = "pending-sync-multi-3-\(UUID().uuidString)"
+        defer {
+            try? RecordingBackupStore.removeRecording(recordingId: id1)
+            try? RecordingBackupStore.removeRecording(recordingId: id2)
+            try? RecordingBackupStore.removeRecording(recordingId: id3)
+        }
+
+        for id in [id1, id2, id3] {
+            _ = try RecordingBackupStore.saveRecording(
+                recordingId: id,
+                title: "Multi \(id)",
+                recordingType: .note,
+                durationSeconds: 2,
+                transcript: "Content for \(id)",
+                segments: [
+                    LiveTranscriptSegment(
+                        text: "Content for \(id)",
+                        speaker: nil,
+                        isFinal: true,
+                        startMs: 0,
+                        endMs: 2000,
+                        confidence: 1
+                    )
+                ]
+            )
+        }
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let syncedIds = SendableSet()
+        let allSynced = expectation(description: "all three recordings synced")
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if let rid = notification.userInfo?["recordingId"] as? String,
+               [id1, id2, id3].contains(rid) {
+                syncedIds.insert(rid)
+                if syncedIds.count == 3 {
+                    allSynced.fulfill()
+                }
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            // Extract recording ID from path like /api/recordings/{id}/transcript
+            let components = path.split(separator: "/")
+            let recordingId = components.count >= 4 ? String(components[3]) : "unknown"
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [allSynced], timeout: 3)
+
+        // All three backups should be removed
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: id1))
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: id2))
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: id3))
+    }
+}
+
+private final class SendableSet: @unchecked Sendable {
+    private var set: Set<String> = []
+    private let lock = NSLock()
+
+    func insert(_ value: String) {
+        lock.withLock { set.insert(value) }
+    }
+
+    var count: Int {
+        lock.withLock { set.count }
+    }
 }

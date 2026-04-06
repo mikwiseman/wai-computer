@@ -4,6 +4,7 @@ import WaiComputerKit
 struct RecordingListView: View {
     let recordings: [Recording]
     let folders: [Folder]
+    let localRecoveryRecordingIDs: Set<String>
     let isTrash: Bool
     @Binding var selectedRecordingIds: Set<String>
     let onTrash: ([String]) -> Void
@@ -13,7 +14,10 @@ struct RecordingListView: View {
 
     var body: some View {
         List(recordings, selection: $selectedRecordingIds) { recording in
-            RecordingRowView(recording: recording)
+            RecordingRowView(
+                recording: recording,
+                hasLocalRecoveryBackup: localRecoveryRecordingIDs.contains(recording.id)
+            )
                 .tag(recording.id)
                 .contextMenu {
                     let contextSelection = selection(for: recording.id)
@@ -67,6 +71,7 @@ struct RecordingListView: View {
 
 struct RecordingRowView: View {
     let recording: Recording
+    let hasLocalRecoveryBackup: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -77,7 +82,9 @@ struct RecordingRowView: View {
 
                 Spacer(minLength: Spacing.sm)
 
-                if let statusText = recording.statusDisplayText {
+                if let statusText = recording.statusDisplayText(
+                    hasLocalRecoveryBackup: hasLocalRecoveryBackup
+                ) {
                     Text(statusText)
                         .font(Typography.label)
                         .foregroundStyle(statusColor)

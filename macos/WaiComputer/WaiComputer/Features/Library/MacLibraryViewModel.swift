@@ -6,6 +6,7 @@ class MacLibraryViewModel: ObservableObject {
     @Published var recordings: [Recording] = []
     @Published var trashedRecordings: [Recording] = []
     @Published var folders: [Folder] = []
+    @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var error: String?
@@ -53,17 +54,28 @@ class MacLibraryViewModel: ObservableObject {
             let activeRecordings = try await active
             let trashedItems = try await trashed
             let folderItems = try await folderList
+            let backupManifests = (try? RecordingBackupStore.manifestsByRecordingId()) ?? [:]
             guard generation == loadGeneration else { return }
 
             recordings = activeRecordings
             trashedRecordings = trashedItems
             folders = folderItems
+            localRecoveryRecordingIDs = Set(
+                backupManifests.compactMap { element in
+                    let recordingId = element.key
+                    let manifest = element.value
+                    guard let message = manifest.lastErrorMessage?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                          !message.isEmpty
+                    else {
+                        return nil
+                    }
+                    return recordingId
+                }
+            )
 
             processingRefreshTask?.cancel()
-            let hasPendingSync = activeRecordings.contains {
-                $0.status == .pendingUpload || $0.status == .uploading
-            }
-            if hasPendingSync {
+            if !backupManifests.isEmpty {
                 await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
             }
             if activeRecordings.contains(where: shouldBackgroundRefresh) {
@@ -96,6 +108,7 @@ class MacLibraryViewModel: ObservableObject {
     func setRecordings(_ recordings: [Recording]) {
         self.recordings = recordings
         trashedRecordings = []
+        localRecoveryRecordingIDs = []
         isLoading = false
         isRefreshing = false
         error = nil

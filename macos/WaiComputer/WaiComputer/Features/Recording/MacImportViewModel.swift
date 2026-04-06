@@ -41,8 +41,19 @@ class MacImportViewModel: ObservableObject {
             let filename = fileURL.deletingPathExtension().lastPathComponent
             let recording = try await apiClient.createRecording(title: filename, type: .note)
             recordingId = recording.id
-            _ = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: fileURL)
-            importState = .done
+            let detail = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: fileURL)
+
+            if detail.status == .failed || detail.failureMessage?.isEmpty == false {
+                errorMessage = UserFacingErrorFormatter.displayMessage(
+                    detail.failureMessage,
+                    fallback: "We couldn't transcribe that audio file right now. Please try again in a moment.",
+                    context: .recording
+                )
+                showError = true
+                importState = .error
+            } else {
+                importState = .done
+            }
         } catch {
             if let recordingId {
                 try? await apiClient.deleteRecording(id: recordingId, permanent: true)
