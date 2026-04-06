@@ -164,7 +164,7 @@ describe("RecordingDetailPanel", () => {
     });
   });
 
-  it("renders full summary with all sections", () => {
+  it("renders full summary with all sections", async () => {
     const recording = makeRecording({
       summary: {
         summary: "Discussed Q2 plans.",
@@ -177,18 +177,15 @@ describe("RecordingDetailPanel", () => {
         sentiment: "positive",
       },
     });
+    const user = userEvent.setup();
     render(<RecordingDetailPanel recording={recording} />);
 
-    const user = userEvent.setup();
-    // Click Summary tab to show the summary
-    void user.click(screen.getByText("Summary")).then(() => {
-      expect(screen.getByText("Discussed Q2 plans.")).toBeTruthy();
-      expect(screen.getByText("Increase budget")).toBeTruthy();
-      expect(screen.getByText("Hire 2 engineers")).toBeTruthy();
-      expect(screen.getByText(/Approve budget/)).toBeTruthy();
-      expect(screen.getByText(/budget/)).toBeTruthy();
-      expect(screen.getByText("positive")).toBeTruthy();
-    });
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(screen.getByText("Discussed Q2 plans.")).toBeTruthy();
+    expect(screen.getByText("Increase budget")).toBeTruthy();
+    expect(screen.getByText("Hire 2 engineers")).toBeTruthy();
+    expect(screen.getByText(/Approve budget/)).toBeTruthy();
+    expect(screen.getByText("positive")).toBeTruthy();
   });
 
   // Actions tab
@@ -196,7 +193,8 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
-    await user.click(screen.getByText("Action Items"));
+    const actionsTab = screen.getByRole("button", { name: /Action Items/ });
+    await user.click(actionsTab);
     expect(screen.getByText("No action items.")).toBeTruthy();
   });
 
@@ -231,7 +229,8 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={recording} />);
 
-    await user.click(screen.getByText(/Action Items/));
+    const actionsTab = screen.getByRole("button", { name: /Action Items/ });
+    await user.click(actionsTab);
     expect(screen.getByText("Send budget proposal")).toBeTruthy();
     expect(screen.getByText("Alice")).toBeTruthy();
     expect(screen.getByText("2026-04-15")).toBeTruthy();
