@@ -147,7 +147,11 @@ services:
         limits:
           memory: 64M
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:2019/config/"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- --header='Host: wai.computer' http://127.0.0.1/health >/dev/null",
+        ]
       interval: 30s
       timeout: 5s
       start_period: 10s

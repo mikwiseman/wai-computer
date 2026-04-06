@@ -166,6 +166,14 @@ class MacAppState: ObservableObject {
             }
         }
 
+        // Start network monitoring — triggers sync on connectivity recovery
+        NetworkMonitor.shared.start { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.resumePendingRecordingSyncIfNeeded()
+            }
+        }
+
         // Restore tokens from Keychain
         if let accessToken = KeychainHelper.load(key: KeychainHelper.accessTokenKey) {
             Task {

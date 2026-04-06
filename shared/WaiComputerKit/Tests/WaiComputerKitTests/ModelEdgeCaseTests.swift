@@ -81,9 +81,9 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(recording.status, .failed)
     }
 
-    // MARK: - RecordingStatus Unknown Value Fallback
+    // MARK: - RecordingStatus Unknown Value Throws
 
-    func testRecordingStatusDecodesUnknownValueAsPendingUpload() throws {
+    func testRecordingStatusThrowsOnUnknownValue() {
         let json = """
         {
             "id": "rec-unknown-status",
@@ -93,11 +93,10 @@ final class ModelEdgeCaseTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let recording = try makeDecoder().decode(Recording.self, from: json)
-        XCTAssertEqual(recording.status, .pendingUpload)
+        XCTAssertThrowsError(try makeDecoder().decode(Recording.self, from: json))
     }
 
-    func testRecordingStatusDecodesEmptyStringAsPendingUpload() throws {
+    func testRecordingStatusThrowsOnEmptyString() {
         let json = """
         {
             "id": "rec-empty-status",
@@ -107,8 +106,7 @@ final class ModelEdgeCaseTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let recording = try makeDecoder().decode(Recording.self, from: json)
-        XCTAssertEqual(recording.status, .pendingUpload)
+        XCTAssertThrowsError(try makeDecoder().decode(Recording.self, from: json))
     }
 
     // MARK: - Recording With All Null Optional Fields
@@ -269,14 +267,14 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertTrue(recording.isFailedUpload)
     }
 
-    func testIsFailedUploadTrueWhenFailureMessagePresent() {
+    func testIsFailedUploadFalseWhenReadyEvenWithFailureMessage() {
         let recording = Recording(
             id: "rec-fail-2",
             type: .note,
             status: .ready,
             failureMessage: "Network timeout"
         )
-        XCTAssertTrue(recording.isFailedUpload)
+        XCTAssertFalse(recording.isFailedUpload)
     }
 
     func testIsFailedUploadFalseWhenReadyAndNoFailureMessage() {
@@ -298,12 +296,29 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertFalse(recording.isFailedUpload)
     }
 
+    func testIsFailedUploadOnlyTrueForFailedStatus() {
+        let allStatuses: [RecordingStatus] = [.pendingUpload, .uploading, .processing, .ready, .failed]
+        for status in allStatuses {
+            let recording = Recording(
+                id: "rec-status-check-\(status.rawValue)",
+                type: .note,
+                status: status,
+                failureMessage: "Some stale error"
+            )
+            if status == .failed {
+                XCTAssertTrue(recording.isFailedUpload, "\(status.rawValue) should be failed")
+            } else {
+                XCTAssertFalse(recording.isFailedUpload, "\(status.rawValue) should NOT be failed even with failureMessage")
+            }
+        }
+    }
+
     // MARK: - Recording.statusDisplayText
 
     func testStatusDisplayTextForEachStatus() {
         let cases: [(RecordingStatus, String?)] = [
             (.failed, "Needs attention"),
-            (.pendingUpload, "Saved locally"),
+            (.pendingUpload, "Waiting to sync"),
             (.uploading, "Syncing in background"),
             (.processing, "Processing"),
             (.ready, nil),
@@ -321,6 +336,19 @@ final class ModelEdgeCaseTests: XCTestCase {
                 "statusDisplayText mismatch for status \(status.rawValue)"
             )
         }
+    }
+
+    func testStatusDisplayTextUsesSavedLocallyOnlyForRecoveryBackup() {
+        let recording = Recording(
+            id: "rec-local-recovery",
+            type: .note,
+            status: .pendingUpload
+        )
+
+        XCTAssertEqual(
+            recording.statusDisplayText(hasLocalRecoveryBackup: true),
+            "Saved locally"
+        )
     }
 
     // MARK: - Recording.failurePreviewText

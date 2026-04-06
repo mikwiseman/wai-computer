@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Sentry
 
 public struct RecordingBackup: Sendable, Equatable {
@@ -72,6 +73,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
 
 public enum RecordingBackupStore {
     static var overrideBaseDirectory: URL?
+    private static let log = Logger(subsystem: "is.waiwai.waicomputer", category: "backup")
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -121,6 +123,7 @@ public enum RecordingBackupStore {
             try data.write(to: backup.segmentsFileURL, options: .atomic)
         }
 
+        log.info("Backup saved: \(recordingId) (\(segments.count) segments)")
         SentryHelper.addBreadcrumb(
             category: "backup",
             message: "recording backup saved",
@@ -152,6 +155,7 @@ public enum RecordingBackupStore {
         manifest.lastErrorMessage = message
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
+        log.warning("Recorded save failure for \(recordingId): \(message)")
         return backup
     }
 
@@ -171,11 +175,13 @@ public enum RecordingBackupStore {
         manifest.isPermanentFailure = true
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
+        log.error("Marked permanent failure for \(recordingId)")
     }
 
     public static func removeRecording(recordingId: String) throws {
         guard let backup = try existingBackup(recordingId: recordingId) else { return }
         try FileManager.default.removeItem(at: backup.directoryURL)
+        log.info("Removed backup for \(recordingId)")
     }
 
     public static func existingBackup(recordingId: String) throws -> RecordingBackup? {
@@ -247,6 +253,18 @@ public enum RecordingBackupStore {
     public static func manifest(recordingId: String) throws -> RecordingBackupManifest? {
         let backup = try makeBackup(recordingId: recordingId)
         return try readManifest(from: backup.manifestURL)
+    }
+
+    public static func manifestsByRecordingId() throws -> [String: RecordingBackupManifest] {
+        var manifests: [String: RecordingBackupManifest] = [:]
+
+        for backup in try listBackups() {
+            if let manifest = try readManifest(from: backup.manifestURL) {
+                manifests[backup.recordingId] = manifest
+            }
+        }
+
+        return manifests
     }
 
     public static func segments(recordingId: String) throws -> [LiveTranscriptSegment] {

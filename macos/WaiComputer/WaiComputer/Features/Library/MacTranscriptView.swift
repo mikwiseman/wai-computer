@@ -17,29 +17,11 @@ struct MacTranscriptView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                    // Copy all transcript button
                     HStack {
+                        Text("Transcript")
+                            .waiSectionHeader()
                         Spacer()
-                        Button {
-                            let text = segments.map { seg in
-                                let speaker = seg.speaker ?? "Speaker"
-                                let ts = seg.formattedTimestamp
-                                return "[\(speaker), \(ts)] \(seg.content)"
-                            }.joined(separator: "\n")
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(text, forType: .string)
-                            copied = true
-                            Task {
-                                try? await Task.sleep(for: .seconds(1.5))
-                                copied = false
-                            }
-                        } label: {
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                                .font(Typography.caption)
-                                .foregroundStyle(copied ? Palette.accent : Palette.textTertiary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(copied ? "Copied!" : "Copy Transcript")
+                        copyTranscriptButton
                     }
 
                     ForEach(segments) { segment in
@@ -50,6 +32,31 @@ struct MacTranscriptView: View {
             }
             .accessibilityIdentifier("transcript-content")
         }
+    }
+
+    private var transcriptText: String {
+        segments.map { seg in
+            let speaker = seg.speaker ?? "Speaker"
+            let timestamp = seg.formattedTimestamp
+            return "[\(speaker), \(timestamp)] \(seg.content)"
+        }
+        .joined(separator: "\n")
+    }
+
+    private var copyTranscriptButton: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(transcriptText, forType: .string)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
+        } label: {
+            Label(copied ? "Copied" : "Copy Transcript", systemImage: copied ? "checkmark" : "doc.on.doc")
+        }
+        .buttonStyle(WaiGhostButtonStyle())
+        .help(copied ? "Copied!" : "Copy transcript")
     }
 }
 

@@ -18,7 +18,7 @@ public enum RecordingStatus: String, Codable, Sendable, CaseIterable {
     public var label: String {
         switch self {
         case .pendingUpload:
-            return "Saved Locally"
+            return "Waiting to Sync"
         case .uploading:
             return "Syncing in Background"
         case .processing:
@@ -33,7 +33,13 @@ public enum RecordingStatus: String, Codable, Sendable, CaseIterable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawStatus = try container.decode(String.self)
-        self = RecordingStatus(rawValue: rawStatus) ?? .pendingUpload
+        guard let status = RecordingStatus(rawValue: rawStatus) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown RecordingStatus value: '\(rawStatus)'"
+            )
+        }
+        self = status
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -307,19 +313,23 @@ public struct CreateRecordingRequest: Codable, Sendable {
 
 public extension Recording {
     var isFailedUpload: Bool {
-        status == .failed || (failureMessage?.isEmpty == false)
+        status == .failed
     }
 
     var failurePreviewText: String? {
         UserFacingErrorFormatter.previewMessage(failureMessage, context: .recording)
     }
 
-    var statusDisplayText: String? {
+    func statusDisplayText(hasLocalRecoveryBackup: Bool = false) -> String? {
+        if hasLocalRecoveryBackup && !isFailedUpload {
+            return "Saved locally"
+        }
+
         switch status {
         case .failed:
             return "Needs attention"
         case .pendingUpload:
-            return "Saved locally"
+            return "Waiting to sync"
         case .uploading:
             return "Syncing in background"
         case .processing:
@@ -327,5 +337,9 @@ public extension Recording {
         case .ready:
             return nil
         }
+    }
+
+    var statusDisplayText: String? {
+        statusDisplayText()
     }
 }

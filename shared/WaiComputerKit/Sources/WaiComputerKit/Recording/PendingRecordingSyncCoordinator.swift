@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Sentry
 
 public extension Notification.Name {
@@ -9,7 +10,7 @@ public extension Notification.Name {
 public actor PendingRecordingSyncCoordinator {
     public static let shared = PendingRecordingSyncCoordinator()
 
-    private static let maxSyncAttempts = 20
+    private let log = Logger(subsystem: "is.waiwai.waicomputer", category: "sync")
 
     private var syncTask: Task<Void, Never>?
     private var retrySleepTask: Task<Void, Never>?
@@ -18,6 +19,7 @@ public actor PendingRecordingSyncCoordinator {
     public func scheduleSync(using apiClient: APIClient) {
         guard syncTask == nil else {
             if retrySleepTask != nil {
+                log.info("Waking sync backoff delay (external trigger)")
                 wakePendingRetryDelay()
             } else {
                 retryImmediatelyAfterCurrentPass = true
@@ -25,6 +27,7 @@ public actor PendingRecordingSyncCoordinator {
             return
         }
 
+        log.info("Starting sync loop")
         syncTask = Task { [weak self] in
             await self?.runSyncLoop(using: apiClient)
         }
@@ -35,33 +38,42 @@ public actor PendingRecordingSyncCoordinator {
             syncTask = nil
             retryImmediatelyAfterCurrentPass = false
             wakePendingRetryDelay()
+            log.info("Sync loop ended")
         }
 
         var attempt = 0
 
         while !Task.isCancelled {
             let pendingCount = (try? RecordingBackupStore.listBackups().count) ?? 0
-            guard pendingCount > 0 else { return }
+            guard pendingCount > 0 else {
+                log.info("No pending backups, exiting sync loop")
+                return
+            }
 
+            log.info("Sync pass attempt \(attempt), \(pendingCount) pending backups")
             let remainingCount = await syncAllBackups(using: apiClient)
-            guard remainingCount > 0 else { return }
+            guard remainingCount > 0 else {
+                log.info("All backups synced successfully")
+                return
+            }
 
             if retryImmediatelyAfterCurrentPass {
                 retryImmediatelyAfterCurrentPass = false
                 attempt = 0
+                log.info("Resetting attempt counter (immediate retry requested)")
                 continue
             }
 
             attempt += 1
-            if attempt >= Self.maxSyncAttempts {
-                NotificationCenter.default.post(
-                    name: .pendingRecordingRecoveryNotice,
-                    object: nil,
-                    userInfo: ["message": "Some recordings could not sync after multiple attempts. Please check your connection."]
-                )
-                return
-            }
-            let delay = min(60, 5 * attempt + Int.random(in: 0..<3))
+
+            // Exponential backoff: 5s, 10s, 20s, 40s, 80s, capped at 300s (5 min).
+            let delay = min(300, 5 * Int(pow(2.0, Double(min(attempt - 1, 6)))))
+            log.info("Sync pass done, \(remainingCount) remaining. Retrying in \(delay)s (attempt \(attempt))")
+            SentryHelper.addBreadcrumb(
+                category: "sync",
+                message: "sync retry backoff",
+                data: ["attempt": attempt, "remaining": remainingCount, "delaySeconds": delay]
+            )
             await waitForRetryDelay(seconds: delay)
         }
     }
@@ -97,8 +109,10 @@ public actor PendingRecordingSyncCoordinator {
 
             let detail: RecordingDetail?
             if hasAudioFile {
+                log.info("Uploading audio for recording \(backup.recordingId)")
                 detail = try await apiClient.uploadAudio(recordingId: backup.recordingId, fileURL: backup.audioFileURL)
             } else if manifest != nil {
+                log.info("Syncing transcript for recording \(backup.recordingId)")
                 let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())
                 detail = try await apiClient.saveLiveTranscript(
                     recordingId: backup.recordingId,
@@ -106,6 +120,7 @@ public actor PendingRecordingSyncCoordinator {
                     durationSeconds: durationSeconds
                 )
             } else {
+                log.warning("No manifest for recording \(backup.recordingId), skipping")
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
                     message: "Saved locally and waiting to sync."
@@ -114,6 +129,7 @@ public actor PendingRecordingSyncCoordinator {
             }
 
             if let detail, detail.status == .failed {
+                log.warning("Server returned failed for recording \(backup.recordingId): \(detail.failureMessage ?? "unknown")")
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
                     message: UserFacingErrorFormatter.displayMessage(
@@ -126,6 +142,7 @@ public actor PendingRecordingSyncCoordinator {
             }
 
             try RecordingBackupStore.removeRecording(recordingId: backup.recordingId)
+            log.info("Recording \(backup.recordingId) synced successfully")
             SentryHelper.addBreadcrumb(
                 category: "backup",
                 message: "pending recording synced",
@@ -138,6 +155,7 @@ public actor PendingRecordingSyncCoordinator {
             )
             return true
         } catch let apiError as APIError {
+            log.error("Sync failed for \(backup.recordingId): \(apiError.localizedDescription)")
             switch apiError {
             case .unauthorized:
                 _ = try? RecordingBackupStore.recordSaveFailure(
@@ -145,12 +163,14 @@ public actor PendingRecordingSyncCoordinator {
                     message: "Please sign in again to sync this recording."
                 )
                 try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+                log.error("Marked \(backup.recordingId) as permanent failure (unauthorized)")
             case .httpError(let statusCode, _) where statusCode == 413:
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
                     message: "This recording is too large to upload."
                 )
                 try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+                log.error("Marked \(backup.recordingId) as permanent failure (too large)")
             default:
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
@@ -159,6 +179,7 @@ public actor PendingRecordingSyncCoordinator {
             }
             return false
         } catch {
+            log.error("Sync failed for \(backup.recordingId): \(error.localizedDescription)")
             _ = try? RecordingBackupStore.recordSaveFailure(
                 recordingId: backup.recordingId,
                 message: error.userFacingMessage(context: .recording)

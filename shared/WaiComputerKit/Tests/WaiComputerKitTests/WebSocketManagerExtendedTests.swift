@@ -37,6 +37,26 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(urlString.contains("commit_strategy=vad"))
     }
 
+    func testAudioChunkMessageIncludesExplicitCommitFlag() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        let message = await manager.testingMakeElevenLabsAudioChunkMessage(
+            data: Data([0x01, 0x02, 0x03]),
+            previousText: nil,
+            commit: false
+        )
+
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+
+        XCTAssertEqual(payload["message_type"] as? String, "input_audio_chunk")
+        XCTAssertEqual(payload["commit"] as? Bool, false)
+        XCTAssertEqual(payload["sample_rate"] as? Int, 16_000)
+        XCTAssertNotNil(payload["audio_base_64"] as? String)
+    }
+
     // MARK: - events stream survives disconnects
 
     func testEventStreamRemainsUsableAfterDisconnect() async {

@@ -248,3 +248,8 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 - Prefer fixing the shared Swift + backend websocket path for recording bugs before touching the web dashboard.
 - If validating production, use SSH and inspect `docker logs waicomputer-api` plus `/opt/waicomputer/backend/docker compose ps`.
 - Browser auth in production relies on the backend cookie being valid for both `wai.computer` and `api.wai.computer`; if login bounces back to `/login`, check the auth-cookie domain first.
+- Secrets access should be narrow and explicit: avoid broad Keychain enumeration, prefer exact item lookups only when necessary, and use 1Password as the first choice when credentials are available there.
+- Apple release versioning is strict: `MARKETING_VERSION` must stay human-readable `major.minor.patch` (for example `1.0.0`, `1.0.1`, `1.1.0`), while `CURRENT_PROJECT_VERSION` must be a plain integer build number (`1`, `2`, `3`, ...), never a timestamp.
+- For normal releases, bump the patch version; for larger releases, bump the minor version; major bumps are rare and should be reserved for unusually large changes.
+- `CURRENT_PROJECT_VERSION` is globally monotonic for Apple releases and does not reset when `MARKETING_VERSION` changes; for example `1.0.0 (41)` is followed by `1.0.1 (42)`.
+- If a bad upload used a timestamp or other wrong numbering scheme, do not adopt it as the new baseline; continue from the last intended sequential integer build number.
