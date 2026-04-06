@@ -31,29 +31,35 @@ struct MainTabView: View {
                 }
                 .tag(0)
 
+            ChatView()
+                .tabItem {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+                .tag(1)
+
             LibraryView()
                 .tabItem {
                     Label("Library", systemImage: "folder.fill")
                 }
-                .tag(1)
+                .tag(2)
 
             MobileAgentsView()
                 .tabItem {
                     Label("Agents", systemImage: "gearshape.2")
                 }
-                .tag(2)
+                .tag(3)
 
             MobileAppsView()
                 .tabItem {
                     Label("Apps", systemImage: "square.grid.2x2")
                 }
-                .tag(3)
+                .tag(4)
 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(4)
+                .tag(5)
         }
         .environmentObject(recordingViewModel)
         .overlay(alignment: .top) {
