@@ -797,7 +797,7 @@ public actor APIClient {
 
     public func sendAgentMessage(_ message: String, sessionId: String? = nil, voiceTranscript: String? = nil) async throws -> AgentChatResponse {
         let body = AgentChatRequest(message: message, sessionId: sessionId, voiceTranscript: voiceTranscript)
-        return try await request(.POST, path: "/api/agent/chat", body: body)
+        return try await request(.POST, path: "/api/agent/chat", body: body, timeoutInterval: 180)
     }
 
     // MARK: - Digital Agent Endpoints
