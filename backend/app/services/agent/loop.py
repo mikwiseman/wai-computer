@@ -167,48 +167,6 @@ TOOLS = [
             "required": ["query"],
         },
     },
-    {
-        "name": "build_app",
-        "description": (
-            "Create and deploy a full interactive app (tracker, dashboard, CRM, etc.). "
-            "The app will be a live web application connected to the user's data."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "description": "What the app should do and look like",
-                },
-                "theme": {
-                    "type": "string",
-                    "description": "Visual theme: dark-corporate, warm-organic, neon-startup, clean-minimal, luxury-gold, fresh-modern, retro-vintage",
-                },
-            },
-            "required": ["description"],
-        },
-    },
-    {
-        "name": "build_site",
-        "description": (
-            "Create and deploy a static website or landing page. "
-            "Beautiful, responsive, deployed instantly."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "description": "What the site should be about and look like",
-                },
-                "theme": {
-                    "type": "string",
-                    "description": "Visual theme preference",
-                },
-            },
-            "required": ["description"],
-        },
-    },
 ]
 
 
@@ -228,10 +186,6 @@ async def execute_tool(tool_name: str, tool_input: dict, context: AgentContext) 
         from app.services.agent.web_search import search_web
 
         return await search_web(tool_input.get("query", ""))
-    elif tool_name == "build_app":
-        return await _tool_build_app(tool_input, context)
-    elif tool_name == "build_site":
-        return await _tool_build_site(tool_input, context)
     else:
         return f"Unknown tool: {tool_name}"
 
@@ -307,98 +261,6 @@ async def _tool_list_commitments(tool_input: dict, context: AgentContext) -> str
 
     commitments = await get_user_commitments(context.user_id, direction=direction)
     return format_commitments_for_display(commitments)
-
-
-async def _tool_build_app(tool_input: dict, context: AgentContext) -> str:
-    """Build and deploy an interactive app."""
-    import uuid as uuid_mod
-
-    from app.services.agent.app_builder import build_app
-    from app.services.user_apps import create_generated_user_app
-
-    description = tool_input.get("description", "")
-    theme = tool_input.get("theme")
-    app_id = str(uuid_mod.uuid4())[:8]
-
-    result = await build_app(description=description, app_id=app_id, theme=theme)
-    user_app_id = None
-
-    if context.db is not None:
-        user_app = await create_generated_user_app(
-            context.db,
-            context.user_id,
-            description,
-            result,
-            theme=theme,
-        )
-        await context.db.flush()
-        user_app_id = str(user_app.id)
-        logger.info(
-            "agent-built app persisted user_id=%s app_id=%s success=%s",
-            context.user_id,
-            user_app_id,
-            bool(result.get("success")),
-        )
-
-    if result.get("success"):
-        response = (
-            f"App preview deployed successfully!\nPreview URL: {result['url']}\n"
-            f"App ID: {result.get('app_id', app_id)}"
-        )
-        if user_app_id:
-            response += f"\nLibrary App ID: {user_app_id}"
-            response += "\nPublish it from Apps when you're ready to go live."
-        return response
-
-    response = f"App build failed: {result.get('error', 'Unknown error')}"
-    if user_app_id:
-        response += f"\nDraft saved in Apps with ID: {user_app_id}"
-    return response
-
-
-async def _tool_build_site(tool_input: dict, context: AgentContext) -> str:
-    """Build and deploy a static site."""
-    import uuid as uuid_mod
-
-    from app.services.agent.app_builder import build_site
-    from app.services.user_apps import create_generated_user_app
-
-    description = tool_input.get("description", "")
-    theme = tool_input.get("theme")
-    site_key = str(uuid_mod.uuid4())[:8]
-
-    result = await build_site(description=description, theme=theme, site_key=site_key)
-    user_app_id = None
-
-    if context.db is not None:
-        user_app = await create_generated_user_app(
-            context.db,
-            context.user_id,
-            description,
-            result,
-            template="site",
-            theme=theme,
-        )
-        await context.db.flush()
-        user_app_id = str(user_app.id)
-        logger.info(
-            "agent-built site persisted user_id=%s app_id=%s success=%s",
-            context.user_id,
-            user_app_id,
-            bool(result.get("success")),
-        )
-
-    if result.get("success"):
-        response = f"Site preview deployed successfully!\nPreview URL: {result['url']}"
-        if user_app_id:
-            response += f"\nLibrary App ID: {user_app_id}"
-            response += "\nPublish it from Apps when you're ready to go live."
-        return response
-
-    response = f"Site build failed: {result.get('error', 'Unknown error')}"
-    if user_app_id:
-        response += f"\nDraft saved in Apps with ID: {user_app_id}"
-    return response
 
 
 async def run_agent(context: AgentContext, message: str) -> AgentResult:

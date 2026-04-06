@@ -55,8 +55,6 @@ class Settings(BaseSettings):
     # Claude/Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
-    app_builder_generation_provider: str = "auto"
-    app_builder_default_deployment_target: str = "auto"
     agent_sdk_model: str = "claude-sonnet-4-20250514"
     agent_sdk_effort: str = "high"
     agent_sdk_max_budget_usd: float = 1.0
@@ -80,10 +78,6 @@ class Settings(BaseSettings):
     agent_max_turns: int = 10
     agent_rate_limit_per_minute: int = 30
     agent_rate_limit_per_hour: int = 200
-
-    # Cloudflare (for app/site deployment)
-    cloudflare_api_token: str = ""
-    cloudflare_account_id: str = ""
 
     # URLs
     frontend_url: str = "http://localhost:3000"

@@ -22,7 +22,6 @@ import {
 } from "@/lib/api";
 import { AgentChat } from "@/components/AgentChat";
 import { AgentsView } from "@/components/AgentsView";
-import { AppsView } from "@/components/AppsView";
 import { ChatPanel } from "@/components/ChatPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { ApiError } from "@/lib/http";
@@ -37,7 +36,7 @@ import type {
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
-type DashboardView = "wai" | "library" | "agents" | "apps";
+type DashboardView = "wai" | "library" | "agents";
 
 function formatError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -282,7 +281,6 @@ export function DashboardClient() {
             ["wai", "Wai"],
             ["library", "Library"],
             ["agents", "Agents"],
-            ["apps", "Apps"],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -507,8 +505,6 @@ export function DashboardClient() {
       {/* Agents view */}
       {view === "agents" && <AgentsView />}
 
-      {/* Apps view */}
-      {view === "apps" && <AppsView />}
     </div>
   );
 }

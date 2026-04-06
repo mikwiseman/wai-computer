@@ -9,7 +9,6 @@ from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.models.user_app import AppItem, UserApp, UserAppDeployment
 
 __all__ = [
     "Base",
@@ -29,7 +28,4 @@ __all__ = [
     "RefreshToken",
     "Commitment",
     "DigitalAgent",
-    "UserApp",
-    "AppItem",
-    "UserAppDeployment",
 ]

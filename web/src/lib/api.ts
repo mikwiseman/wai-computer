@@ -7,16 +7,11 @@ import {
 import type {
   ActionItem,
   ActionPriority,
-  AppStatus,
   ActionStatus,
   AgentChatResponse,
   AnalyticsResponse,
-  AppVisibility,
-  AppItem,
-  AppStats,
   BulkAction,
   BulkOperationResponse,
-  AppDeployment,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -43,7 +38,6 @@ import type {
   TranscriptSearchResponse,
   TranscriptStatsResponse,
   User,
-  UserApp,
   UserSettings,
   WeeklyDigestResponse,
 } from "./types";
@@ -438,101 +432,6 @@ export function createRealtimeVoiceSession(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
-}
-
-// ── User Apps (Collections) ─────────────────────────────────────────
-
-export function listApps(params?: {
-  status?: AppStatus;
-  visibility?: AppVisibility;
-}): Promise<UserApp[]> {
-  return apiFetch<UserApp[]>(`/api/apps${asQuery(params ?? {})}`);
-}
-
-export function createApp(input: {
-  name: string;
-  display_name: string;
-  description?: string;
-  icon?: string;
-  template?: string;
-  schema_def?: Record<string, unknown>;
-  visibility?: AppVisibility;
-}): Promise<UserApp> {
-  return apiFetch<UserApp>("/api/apps", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function publishApp(
-  appId: string,
-  input: { visibility?: AppVisibility; app_url?: string },
-): Promise<UserApp> {
-  return apiFetch<UserApp>(`/api/apps/${appId}/publish`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function listAppDeployments(appId: string): Promise<AppDeployment[]> {
-  return apiFetch<AppDeployment[]>(`/api/apps/${appId}/deployments`);
-}
-
-export function rollbackApp(
-  appId: string,
-  input: { deployment_id: string; visibility?: AppVisibility },
-): Promise<UserApp> {
-  return apiFetch<UserApp>(`/api/apps/${appId}/rollback`, {
-    method: "POST",
-    body: JSON.stringify({
-      deployment_id: input.deployment_id,
-      visibility: input.visibility,
-    }),
-  });
-}
-
-export function getApp(appId: string): Promise<UserApp> {
-  return apiFetch<UserApp>(`/api/apps/${appId}`);
-}
-
-export function deleteApp(appId: string): Promise<void> {
-  return apiFetch<void>(`/api/apps/${appId}`, { method: "DELETE" });
-}
-
-export function listAppItems(
-  appId: string,
-  params?: { limit?: number; offset?: number },
-): Promise<AppItem[]> {
-  return apiFetch<AppItem[]>(`/api/apps/${appId}/items${asQuery(params ?? {})}`);
-}
-
-export function createAppItem(
-  appId: string,
-  data: Record<string, unknown>,
-): Promise<AppItem> {
-  return apiFetch<AppItem>(`/api/apps/${appId}/items`, {
-    method: "POST",
-    body: JSON.stringify({ data }),
-  });
-}
-
-export function updateAppItem(
-  appId: string,
-  itemId: string,
-  data: Record<string, unknown>,
-): Promise<AppItem> {
-  return apiFetch<AppItem>(`/api/apps/${appId}/items/${itemId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ data }),
-  });
-}
-
-export function deleteAppItem(appId: string, itemId: string): Promise<void> {
-  return apiFetch<void>(`/api/apps/${appId}/items/${itemId}`, { method: "DELETE" });
-}
-
-export function getAppStats(appId: string): Promise<AppStats> {
-  return apiFetch<AppStats>(`/api/apps/${appId}/stats`);
 }
 
 // ── Digital Agents ──────────────────────────────────────────────────

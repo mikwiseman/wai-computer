@@ -84,8 +84,6 @@ You can use these tools:
 - track_commitment(who, what, deadline, direction) — track a promise
 - list_commitments(direction?) — show open commitments
 - extract_entities(text) — find people, topics, decisions, amounts
-- search_web(query) — search the internet for current information
-- build_app(description) — create and deploy a full interactive app (tracker, dashboard, etc.)
-- build_site(description) — create and deploy a static website or landing page""")
+- search_web(query) — search the internet for current information""")
 
     return "\n\n".join(sections)
