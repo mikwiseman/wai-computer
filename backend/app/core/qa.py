@@ -1,4 +1,4 @@
-"""RAG chat pipeline for conversational Q&A against recordings."""
+"""Stateless RAG QA pipeline against recordings."""
 
 import logging
 import uuid
@@ -6,12 +6,11 @@ from dataclasses import dataclass, field
 
 import anthropic
 from fastapi import HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
-from app.models.chat import ChatMessage, ChatSession
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -38,7 +37,7 @@ SYSTEM_PROMPT = (
 
 @dataclass
 class SourceSegment:
-    """A source segment returned with the chat response."""
+    """A source segment returned with the QA response."""
 
     segment_id: str
     recording_id: str
@@ -50,12 +49,10 @@ class SourceSegment:
 
 
 @dataclass
-class ChatResult:
-    """Result from the chat RAG pipeline."""
+class QAResult:
+    """Result from the stateless QA pipeline."""
 
     answer: str
-    session_id: str
-    message_id: str
     source_segments: list[SourceSegment] = field(default_factory=list)
 
 
@@ -93,7 +90,7 @@ async def retrieve_context(
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
               AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
-              {recording_filter}
+              {{recording_filter}}
         ),
         semantic_results AS (
             SELECT
@@ -110,7 +107,7 @@ async def retrieve_context(
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
               AND s.embedding IS NOT NULL
-              {recording_filter}
+              {{recording_filter}}
         ),
         combined AS (
             SELECT
@@ -137,7 +134,7 @@ async def retrieve_context(
         JOIN recordings r ON c.recording_id = r.id AND r.deleted_at IS NULL
         ORDER BY c.rrf_score DESC
         LIMIT :limit
-    """)
+    """.replace("{recording_filter}", recording_filter))
 
     params: dict = {
         "query": question,
@@ -171,86 +168,42 @@ def build_context_text(rows: list) -> str:
     return "\n\n".join(parts)
 
 
-async def chat_with_recordings(
+async def ask_database(
     db: AsyncSession,
     user_id: uuid.UUID,
     question: str,
-    session_id: uuid.UUID | None = None,
     recording_ids: list[uuid.UUID] | None = None,
-) -> ChatResult:
+) -> QAResult:
     """
-    Main RAG chat function.
-
-    1. Gets or creates a ChatSession
-    2. Retrieves context via hybrid search
-    3. Loads conversation history (last 10 turns)
-    4. Sends question + context + history to Claude
-    5. Stores messages in the DB
-    6. Returns the response with source info
+    Stateless QA pipeline.
+    1. Retrieves context via hybrid search
+    2. Sends question + context to Claude
+    3. Returns the response with source info
     """
     if not settings.anthropic_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Chat service not configured",
+            detail="QA service not configured",
         )
-
-    # Get or create session
-    if session_id:
-        result = await db.execute(
-            select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
-        )
-        session = result.scalar_one_or_none()
-        if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Chat session not found",
-            )
-    else:
-        rec_ids = (
-            [str(rid) for rid in recording_ids]
-            if recording_ids
-            else None
-        )
-        session = ChatSession(user_id=user_id, recording_ids=rec_ids)
-        db.add(session)
-        await db.flush()
 
     # Retrieve context
     logger.info(
-        "chat_with_recordings user_id=%s session_id=%s question_len=%d",
-        user_id, session.id, len(question),
+        "ask_database user_id=%s question_len=%d",
+        user_id, len(question),
     )
     context_rows = await retrieve_context(db, user_id, question, recording_ids=recording_ids)
     context_text = build_context_text(context_rows)
 
-    # Load last 10 turns (20 messages) of conversation history
-    history_result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session.id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(20)
-    )
-    history_messages = list(reversed(history_result.scalars().all()))
-
-    # Build Claude messages
-    messages: list[dict] = []
-
-    # Add conversation history
-    for msg in history_messages:
-        messages.append({"role": msg.role, "content": msg.content})
-
-    # Add new user question with context
+    # Build Claude message
     user_content = f"Context from meeting transcripts:\n\n{context_text}\n\nQuestion: {question}"
-    messages.append({"role": "user", "content": user_content})
 
-    # Call Claude
     client = _get_anthropic_client()
     try:
         response = await client.messages.create(
             model=settings.anthropic_model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
-            messages=messages,
+            messages=[{"role": "user", "content": user_content}],
         )
         if not response.content:
             raise HTTPException(
@@ -259,19 +212,19 @@ async def chat_with_recordings(
             )
         answer = response.content[0].text
     except anthropic.APIConnectionError:
-        logger.error("chat Claude API connection error session_id=%s", session.id)
+        logger.error("qa Claude API connection error")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
         ) from None
     except anthropic.RateLimitError:
-        logger.warning("chat Claude API rate limited session_id=%s", session.id)
+        logger.warning("qa Claude API rate limited")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
         ) from None
     except anthropic.APIStatusError as exc:
-        logger.error("chat Claude API error session_id=%s: %s", session.id, exc.message)
+        logger.error("qa Claude API error: %s", exc.message)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI service error: {exc.message}",
@@ -291,40 +244,11 @@ async def chat_with_recordings(
         for row in context_rows
     ]
 
-    source_segment_ids = [s.segment_id for s in source_segments]
-    source_recording_ids = list({s.recording_id for s in source_segments})
-
-    # Store user message
-    user_message = ChatMessage(
-        session_id=session.id,
-        role="user",
-        content=question,
-    )
-    db.add(user_message)
-
-    # Store assistant message
-    assistant_message = ChatMessage(
-        session_id=session.id,
-        role="assistant",
-        content=answer,
-        source_segment_ids=source_segment_ids,
-        source_recording_ids=source_recording_ids,
-    )
-    db.add(assistant_message)
-    await db.flush()
-
-    # Auto-generate title from first question if session is new
-    if not session.title:
-        session.title = question[:500]
-        await db.flush()
-
     logger.info(
-        "chat_with_recordings completed session_id=%s sources=%d answer_len=%d",
-        session.id, len(source_segments), len(answer),
+        "ask_database completed sources=%d answer_len=%d",
+        len(source_segments), len(answer),
     )
-    return ChatResult(
+    return QAResult(
         answer=answer,
-        session_id=str(session.id),
-        message_id=str(assistant_message.id),
         source_segments=source_segments,
     )

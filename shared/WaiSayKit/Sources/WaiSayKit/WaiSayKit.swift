@@ -16,19 +16,11 @@ public typealias WKAPIClient = APIClient
 public typealias WKWebSocketManager = WebSocketManager
 public typealias WKMicrophoneCapture = MicrophoneCapture
 public typealias WKAudioEncoder = AudioEncoder
-public typealias WKChatResponse = ChatResponse
-public typealias WKChatSource = ChatSource
-public typealias WKChatSessionListItem = ChatSessionListItem
-public typealias WKChatSessionDetail = ChatSessionDetail
-public typealias WKChatMessageResponse = ChatMessageResponse
+public typealias WKQAResponse = QAResponse
+public typealias WKQASource = QASource
 public typealias WKRealtimeVoiceMode = RealtimeVoiceMode
 public typealias WKRealtimeTranscriptionSessionConfig = RealtimeTranscriptionSessionConfig
 public typealias WKRealtimeVoiceSession = RealtimeVoiceSession
-
-// Agent models
-public typealias WKAgentChatResponse = AgentChatResponse
-public typealias WKDigitalAgent = DigitalAgent
-public typealias WKAgentRunResponse = AgentRunResponse
 
 // App models
 public typealias WKJSONValue = JSONValue

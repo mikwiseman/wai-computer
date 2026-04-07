@@ -3,449 +3,201 @@ import WaiSayKit
 
 struct ChatView: View {
     @EnvironmentObject var appState: AppState
-    @StateObject private var viewModel = ChatViewModel()
+    @StateObject private var viewModel = QAViewModel()
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
         NavigationStack {
-            Group {
-                if viewModel.selectedSession != nil {
-                    conversationView
-                } else {
-                    sessionListView
-                }
-            }
-            .navigationTitle(viewModel.selectedSession != nil
-                ? (viewModel.selectedSession?.title ?? "Chat")
-                : "Chat")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if viewModel.selectedSession != nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            viewModel.backToSessions()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left")
-                                Text("Sessions")
-                            }
-                        }
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        viewModel.startNewChat()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                }
-            }
-            .task {
-                await viewModel.loadSessions(apiClient: appState.getAPIClient())
-            }
-        }
-    }
-
-    // MARK: - Session List
-
-    private var sessionListView: some View {
-        Group {
-            if viewModel.isLoadingSessions && viewModel.sessions.isEmpty {
-                ProgressView("Loading chats...")
-            } else if viewModel.sessions.isEmpty {
-                ContentUnavailableView(
-                    "No Chats",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Start a conversation to ask questions about your recordings.")
-                )
-            } else {
-                List {
-                    if !viewModel.pinnedSessions.isEmpty {
-                        Section("Pinned") {
-                            ForEach(viewModel.pinnedSessions) { session in
-                                sessionRow(session)
-                            }
-                        }
-                    }
-
-                    Section(viewModel.pinnedSessions.isEmpty ? "" : "Recent") {
-                        ForEach(viewModel.unpinnedSessions) { session in
-                            sessionRow(session)
-                        }
-                    }
-                }
-                .refreshable {
-                    await viewModel.loadSessions(apiClient: appState.getAPIClient())
-                }
-            }
-        }
-    }
-
-    private func sessionRow(_ session: ChatSessionListItem) -> some View {
-        Button {
-            Task {
-                await viewModel.openSession(session, apiClient: appState.getAPIClient())
-            }
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        if session.pinnedAt != nil {
-                            Image(systemName: "pin.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
-                        }
-                        Text(session.title ?? "New Chat")
-                            .font(.headline)
-                            .lineLimit(1)
-                    }
-
-                    Text("\(session.messageCount) message\(session.messageCount == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                Task {
-                    await viewModel.deleteSession(id: session.id, apiClient: appState.getAPIClient())
-                }
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-        }
-        .swipeActions(edge: .leading) {
-            Button {
-                Task {
-                    await viewModel.togglePin(session: session, apiClient: appState.getAPIClient())
-                }
-            } label: {
-                Label(
-                    session.pinnedAt != nil ? "Unpin" : "Pin",
-                    systemImage: session.pinnedAt != nil ? "pin.slash" : "pin"
-                )
-            }
-            .tint(.orange)
-        }
-    }
-
-    // MARK: - Conversation
-
-    private var conversationView: some View {
-        VStack(spacing: 0) {
-            if viewModel.messages.isEmpty && !viewModel.isLoading {
-                Spacer()
-                VStack(spacing: 12) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.tertiary)
-                    Text("Ask anything about your recordings")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            } else {
+            VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 16) {
-                            ForEach(viewModel.messages) { message in
-                                ChatMessageRow(
-                                    message: message,
-                                    sources: viewModel.sourcesForMessage(message)
-                                )
-                                .id(message.id)
+                        LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                            if viewModel.answer == nil && !viewModel.isLoading && viewModel.error == nil {
+                                VStack(spacing: Spacing.md) {
+                                    Image(systemName: "bubble.left.and.bubble.right")
+                                        .font(.system(size: 48))
+                                        .foregroundStyle(Palette.textTertiary)
+                                    Text("Ask anything about your recordings")
+                                        .font(Typography.body)
+                                        .foregroundStyle(Palette.textSecondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 100)
+                            }
+
+                            if let answer = viewModel.answer {
+                                QAResponseRow(answer: answer, sources: viewModel.sources)
+                                    .id("answer")
                             }
 
                             if viewModel.isLoading {
-                                HStack(spacing: 8) {
+                                HStack(spacing: Spacing.sm) {
                                     ProgressView()
-                                        .controlSize(.small)
                                     Text("Thinking...")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .font(Typography.bodySmall)
+                                        .foregroundStyle(Palette.textTertiary)
                                 }
-                                .padding(.horizontal)
+                                .padding(.top, Spacing.md)
                                 .id("loading")
+                            }
+                            
+                            if let error = viewModel.error {
+                                Text(error)
+                                    .font(Typography.bodySmall)
+                                    .foregroundStyle(.red)
+                                    .padding(.top, Spacing.md)
                             }
                         }
                         .padding()
                     }
-                    .onChange(of: viewModel.messages.count) { _, _ in
-                        if let lastId = viewModel.messages.last?.id {
-                            withAnimation {
-                                proxy.scrollTo(lastId, anchor: .bottom)
-                            }
+                    .onChange(of: viewModel.isLoading) { _, loading in
+                        if loading {
+                            withAnimation { proxy.scrollTo("loading", anchor: .bottom) }
                         }
                     }
+                    .onChange(of: viewModel.answer) { _, _ in
+                        withAnimation { proxy.scrollTo("answer", anchor: .bottom) }
+                    }
                 }
+                
+                Divider()
+                
+                chatInput
             }
-
-            if let error = viewModel.error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-            }
-
-            Divider()
-            chatInput
+            .navigationTitle("Second Brain")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     private var chatInput: some View {
-        HStack(alignment: .bottom, spacing: 12) {
+        HStack(alignment: .bottom, spacing: Spacing.md) {
             TextField("Ask about your recordings...", text: $viewModel.inputText, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...4)
+                .focused($isInputFocused)
+                .lineLimit(1...5)
+                .padding(10)
+                .background(Palette.surfaceSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .accessibilityIdentifier("qa-input-field")
 
-            Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(
-                        viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isLoading
-                            ? Color.secondary
-                            : Color.blue
+            Button {
+                sendMessage()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? Palette.textTertiary
+                            : Palette.accent
                     )
+                    .clipShape(Circle())
             }
             .disabled(viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isLoading)
         }
         .padding()
+        .background(Palette.surface)
     }
 
     private func sendMessage() {
         let text = viewModel.inputText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
+        isInputFocused = false
         Task {
-            await viewModel.sendMessage(text, apiClient: appState.getAPIClient())
+            await viewModel.sendMessage(text, apiClient: appState.apiClient)
         }
     }
 }
 
-// MARK: - Chat Message Row
-
-private struct ChatMessageRow: View {
-    let message: ChatMessageResponse
-    let sources: [ChatSource]
+struct QAResponseRow: View {
+    let answer: String
+    let sources: [QASource]
     @State private var showSources = false
 
-    private var isUser: Bool { message.role == "user" }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Role label
-            Text(isUser ? "YOU" : "WAI")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .tracking(1.2)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .center, spacing: Spacing.xs) {
+                Image(systemName: "brain")
+                    .foregroundStyle(Palette.accent)
+                Text("WAI")
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+                    .tracking(1.2)
+            }
 
-            // Message content
-            Text(message.content)
-                .font(.body)
-                .textSelection(.enabled)
+            Text(answer)
+                .font(Typography.reading)
+                .lineSpacing(4)
 
-            // Sources
-            if !isUser && !sources.isEmpty {
+            if !sources.isEmpty {
                 Button {
                     withAnimation { showSources.toggle() }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Spacing.xs) {
                         Text("\(sources.count) source\(sources.count == 1 ? "" : "s")")
-                            .font(.caption)
+                            .font(Typography.label)
                         Image(systemName: showSources ? "chevron.up" : "chevron.down")
-                            .font(.caption2)
+                            .font(Typography.caption)
                     }
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Palette.accent)
                 }
-                .buttonStyle(.plain)
+                .padding(.top, Spacing.xs)
 
                 if showSources {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
                         ForEach(sources) { source in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                HStack(spacing: Spacing.xs) {
                                     if let title = source.recordingTitle {
                                         Text(title)
-                                            .font(.caption.weight(.medium))
+                                            .font(Typography.label)
                                     }
                                     if let speaker = source.speaker {
                                         Text("(\(speaker))")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                            .font(Typography.caption)
+                                            .foregroundStyle(Palette.textTertiary)
                                     }
                                 }
                                 Text(source.content)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
+                                    .font(Typography.bodySmall)
+                                    .foregroundStyle(Palette.textSecondary)
+                                    .lineLimit(3)
                             }
+                            .padding(Spacing.sm)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Palette.surfaceSubtle)
+                            .cornerRadius(8)
                         }
                     }
-                    .padding(10)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.top, Spacing.xs)
                 }
-            }
-        }
-        .padding(.leading, isUser ? 0 : 8)
-        .overlay(alignment: .leading) {
-            if !isUser {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color.blue)
-                    .frame(width: 2)
             }
         }
     }
 }
-
-// MARK: - ViewModel
 
 @MainActor
-class ChatViewModel: ObservableObject {
-    @Published var sessions: [ChatSessionListItem] = []
-    @Published var selectedSession: ChatSessionListItem?
-    @Published var messages: [ChatMessageResponse] = []
+class QAViewModel: ObservableObject {
+    @Published var answer: String?
+    @Published var sources: [QASource] = []
     @Published var inputText = ""
     @Published var isLoading = false
-    @Published var isLoadingSessions = false
     @Published var error: String?
 
-    private var currentSessionId: String?
-    private var messageSourcesMap: [String: [ChatSource]] = [:]
-
-    var pinnedSessions: [ChatSessionListItem] {
-        sessions.filter { $0.pinnedAt != nil }
-    }
-
-    var unpinnedSessions: [ChatSessionListItem] {
-        sessions.filter { $0.pinnedAt == nil }
-    }
-
-    func sourcesForMessage(_ message: ChatMessageResponse) -> [ChatSource] {
-        messageSourcesMap[message.id] ?? []
-    }
-
-    func loadSessions(apiClient: APIClient) async {
-        isLoadingSessions = true
-        do {
-            sessions = try await apiClient.listChatSessions()
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-        isLoadingSessions = false
-    }
-
-    func openSession(_ session: ChatSessionListItem, apiClient: APIClient) async {
-        selectedSession = session
-        currentSessionId = session.id
-        messages = []
-        messageSourcesMap = [:]
-        isLoading = true
-
-        do {
-            let detail = try await apiClient.getChatSession(id: session.id)
-            messages = detail.messages
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-
-        isLoading = false
-    }
-
-    func startNewChat() {
-        selectedSession = nil
-        currentSessionId = nil
-        messages = []
-        messageSourcesMap = [:]
-        inputText = ""
-        error = nil
-    }
-
-    func backToSessions() {
-        selectedSession = nil
-        currentSessionId = nil
-        messages = []
-        messageSourcesMap = [:]
-        inputText = ""
-        error = nil
-    }
-
     func sendMessage(_ text: String, apiClient: APIClient) async {
-        let tempUserMessage = ChatMessageResponse(
-            id: UUID().uuidString,
-            role: "user",
-            content: text,
-            sourceSegmentIds: nil,
-            sourceRecordingIds: nil,
-            createdAt: Date()
-        )
-        messages.append(tempUserMessage)
         inputText = ""
         isLoading = true
         error = nil
 
         do {
-            let response = try await apiClient.sendChatMessage(
-                question: text,
-                sessionId: currentSessionId
-            )
-
-            currentSessionId = response.sessionId
-
-            let detail = try await apiClient.getChatSession(id: response.sessionId)
-            messages = detail.messages
-
-            messageSourcesMap[response.messageId] = response.sources
-
-            // Refresh sessions list and update selectedSession
-            sessions = try await apiClient.listChatSessions()
-            selectedSession = sessions.first { $0.id == response.sessionId }
+            let response = try await apiClient.askDatabase(question: text)
+            answer = response.answer
+            sources = response.sources
         } catch {
             self.error = error.userFacingMessage(context: .generic)
         }
 
         isLoading = false
     }
-
-    func deleteSession(id: String, apiClient: APIClient) async {
-        do {
-            try await apiClient.deleteChatSession(id: id)
-            sessions.removeAll { $0.id == id }
-            if currentSessionId == id {
-                startNewChat()
-            }
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-    }
-
-    func togglePin(session: ChatSessionListItem, apiClient: APIClient) async {
-        do {
-            if session.pinnedAt != nil {
-                let updated = try await apiClient.unpinChatSession(id: session.id)
-                if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-                    sessions[index] = updated
-                }
-            } else {
-                let updated = try await apiClient.pinChatSession(id: session.id)
-                if let index = sessions.firstIndex(where: { $0.id == session.id }) {
-                    sessions[index] = updated
-                }
-            }
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-    }
-}
-
-#Preview {
-    ChatView()
-        .environmentObject(AppState())
 }

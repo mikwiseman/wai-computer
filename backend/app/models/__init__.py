@@ -1,9 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.base import Base
-from app.models.chat import ChatMessage, ChatSession
 from app.models.commitment import Commitment
-from app.models.digital_agent import DigitalAgent
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
@@ -23,9 +21,6 @@ __all__ = [
     "EntityRelation",
     "Tag",
     "RecordingTag",
-    "ChatSession",
-    "ChatMessage",
     "RefreshToken",
     "Commitment",
-    "DigitalAgent",
 ]

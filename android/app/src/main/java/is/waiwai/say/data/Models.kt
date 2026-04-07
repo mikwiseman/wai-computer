@@ -3,18 +3,28 @@ package is.waiwai.say.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+
 @Serializable
-data class AgentChatRequest(
-    val message: String,
-    @SerialName("session_id") val sessionId: String? = null,
+data class QARequest(
+    val question: String,
+    @SerialName("recording_ids") val recordingIds: List<String>? = null,
 )
 
 @Serializable
-data class AgentChatResponse(
-    val response: String,
-    val intent: String,
-    @SerialName("session_id") val sessionId: String,
-    @SerialName("tool_calls") val toolCalls: Int = 0,
+data class QASource(
+    @SerialName("segment_id") val segmentId: String,
+    @SerialName("recording_id") val recordingId: String,
+    @SerialName("recording_title") val recordingTitle: String? = null,
+    val speaker: String? = null,
+    val content: String,
+    @SerialName("start_ms") val startMs: Int? = null,
+    @SerialName("end_ms") val endMs: Int? = null,
+)
+
+@Serializable
+data class QAResponse(
+    val answer: String,
+    val sources: List<QASource> = emptyList(),
 )
 
 @Serializable
@@ -31,51 +41,6 @@ data class RealtimeVoiceSession(
     @SerialName("expires_in_seconds") val expiresInSeconds: Int,
     val environment: String? = null,
     @SerialName("branch_id") val branchId: String? = null,
-)
-
-@Serializable
-data class DigitalAgent(
-    val id: String,
-    val name: String,
-    val description: String,
-    @SerialName("schedule_type") val scheduleType: String,
-    @SerialName("cron_expression") val cronExpression: String? = null,
-    val status: String,
-    @SerialName("run_count") val runCount: Int = 0,
-    @SerialName("last_result") val lastResult: String? = null,
-    @SerialName("last_error") val lastError: String? = null,
-)
-
-@Serializable
-data class CreateAgentRequest(
-    val description: String,
-)
-
-@Serializable
-data class UserApp(
-    val id: String,
-    val name: String,
-    @SerialName("display_name") val displayName: String,
-    val description: String? = null,
-    val icon: String? = null,
-    val template: String? = null,
-    @SerialName("app_url") val appUrl: String? = null,
-    val status: String = "draft",
-    val visibility: String = "private",
-    @SerialName("item_count") val itemCount: Int = 0,
-)
-
-@Serializable
-data class CreateAppRequest(
-    val name: String,
-    @SerialName("display_name") val displayName: String,
-    val description: String? = null,
-)
-
-@Serializable
-data class PublishAppRequest(
-    val visibility: String? = null,
-    @SerialName("app_url") val appUrl: String? = null,
 )
 
 @Serializable

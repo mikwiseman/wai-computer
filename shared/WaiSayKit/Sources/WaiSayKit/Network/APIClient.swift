@@ -658,61 +658,11 @@ public actor APIClient {
 
     // MARK: - Chat Endpoints
 
-    public func sendChatMessage(question: String, sessionId: String? = nil, recordingIds: [String]? = nil) async throws -> ChatResponse {
-        let body = ChatRequest(question: question, sessionId: sessionId, recordingIds: recordingIds)
-        return try await request(.POST, path: "/api/chat", body: body)
-    }
+    // MARK: - QA Endpoints
 
-    public func listChatSessions() async throws -> [ChatSessionListItem] {
-        return try await request(.GET, path: "/api/chat/sessions")
-    }
-
-    public func getChatSession(id: String) async throws -> ChatSessionDetail {
-        return try await request(.GET, path: "/api/chat/sessions/\(id)")
-    }
-
-    public func searchChatSessions(query: String) async throws -> [ChatSessionListItem] {
-        let queryItems = [URLQueryItem(name: "q", value: query)]
-        return try await request(.GET, path: "/api/chat/sessions/search", queryItems: queryItems)
-    }
-
-    public func renameChatSession(id: String, title: String?) async throws -> RenameSessionResponse {
-        let body = RenameSessionRequest(title: title)
-        return try await request(.PATCH, path: "/api/chat/sessions/\(id)", body: body)
-    }
-
-    public func exportChatSession(id: String) async throws -> String {
-        let url = baseURL.appendingPathComponent("/api/chat/sessions/\(id)/export")
-        var req = URLRequest(url: url)
-        req.httpMethod = "GET"
-        if let token = accessToken {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        let (data, response) = try await session.data(for: req)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
-        }
-        guard httpResponse.statusCode == 200 else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: "Export failed")
-        }
-        guard let markdown = String(data: data, encoding: .utf8) else {
-            throw APIError.decodingError(DecodingError.dataCorrupted(
-                .init(codingPath: [], debugDescription: "Invalid UTF-8 data")
-            ))
-        }
-        return markdown
-    }
-
-    public func pinChatSession(id: String) async throws -> ChatSessionListItem {
-        return try await request(.POST, path: "/api/chat/sessions/\(id)/pin")
-    }
-
-    public func unpinChatSession(id: String) async throws -> ChatSessionListItem {
-        return try await request(.DELETE, path: "/api/chat/sessions/\(id)/pin")
-    }
-
-    public func deleteChatSession(id: String) async throws {
-        try await requestNoContent(.DELETE, path: "/api/chat/sessions/\(id)")
+    public func askDatabase(question: String, recordingIds: [String]? = nil) async throws -> QAResponse {
+        let body = QARequest(question: question, recordingIds: recordingIds)
+        return try await request(.POST, path: "/api/qa", body: body)
     }
 
     // MARK: - Dictation Endpoints
@@ -748,14 +698,14 @@ public actor APIClient {
 
     public func createRealtimeVoiceSession(
         mode: RealtimeVoiceMode = .conversation,
-        agentId: String? = nil,
+        modelId: String? = nil,
         includeConversationId: Bool = false,
         branchId: String? = nil,
         environment: String? = nil
     ) async throws -> RealtimeVoiceSession {
         let body = CreateRealtimeVoiceSessionRequest(
             mode: mode,
-            agentId: agentId,
+            modelId: modelId,
             includeConversationId: includeConversationId,
             branchId: branchId,
             environment: environment
@@ -793,40 +743,7 @@ public actor APIClient {
         return try await request(.GET, path: "/api/entities/\(id)")
     }
 
-    // MARK: - Agent Chat Endpoints
 
-    public func sendAgentMessage(_ message: String, sessionId: String? = nil, voiceTranscript: String? = nil) async throws -> AgentChatResponse {
-        let body = AgentChatRequest(message: message, sessionId: sessionId, voiceTranscript: voiceTranscript)
-        return try await request(.POST, path: "/api/agent/chat", body: body, timeoutInterval: 180)
-    }
-
-    // MARK: - Digital Agent Endpoints
-
-    public func listAgents() async throws -> [DigitalAgent] {
-        return try await request(.GET, path: "/api/agents")
-    }
-
-    public func createAgent(description: String) async throws -> DigitalAgent {
-        let body = CreateAgentRequest(description: description)
-        return try await request(.POST, path: "/api/agents", body: body)
-    }
-
-    public func getAgent(_ agentId: String) async throws -> DigitalAgent {
-        return try await request(.GET, path: "/api/agents/\(agentId)")
-    }
-
-    public func runAgent(_ agentId: String) async throws -> AgentRunResponse {
-        return try await request(.POST, path: "/api/agents/\(agentId)/run")
-    }
-
-    public func updateAgent(_ agentId: String, status: String) async throws -> DigitalAgent {
-        let body = UpdateAgentRequest(status: status)
-        return try await request(.PATCH, path: "/api/agents/\(agentId)", body: body)
-    }
-
-    public func deleteAgent(_ agentId: String) async throws {
-        try await requestNoContent(.DELETE, path: "/api/agents/\(agentId)")
-    }
 
     // MARK: - User App Endpoints
 

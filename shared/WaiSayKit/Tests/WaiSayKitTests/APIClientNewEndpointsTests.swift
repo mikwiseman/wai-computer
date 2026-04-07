@@ -222,33 +222,6 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertTrue(recordings.isEmpty)
     }
 
-    // MARK: - Pin Chat Session
-
-    func testPinChatSessionSendsPostToCorrectPath() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/api/chat/sessions/sess-10/pin")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            let payload = """
-            {
-                "id":"sess-10",
-                "title":"Pinned Chat",
-                "message_count":5,
-                "pinned_at":"2026-03-17T10:00:00Z",
-                "created_at":"2026-03-15T08:00:00Z"
-            }
-            """.data(using: .utf8)!
-            return (response, payload)
-        }
-
         let session = try await client.pinChatSession(id: "sess-10")
         XCTAssertEqual(session.id, "sess-10")
         XCTAssertEqual(session.title, "Pinned Chat")
@@ -256,128 +229,19 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertNotNil(session.pinnedAt)
     }
 
-    func testPinChatSessionReturnsPinnedAtTimestamp() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "POST")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            let payload = """
-            {
-                "id":"sess-abc",
-                "title":"Important Thread",
-                "message_count":12,
-                "pinned_at":"2026-03-17T14:30:00Z",
-                "created_at":"2026-03-10T10:00:00Z"
-            }
-            """.data(using: .utf8)!
-            return (response, payload)
-        }
-
         let session = try await client.pinChatSession(id: "sess-abc")
         XCTAssertEqual(session.pinnedAt, "2026-03-17T14:30:00Z")
     }
-
-    // MARK: - Unpin Chat Session
-
-    func testUnpinChatSessionSendsDeleteToCorrectPath() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "DELETE")
-            XCTAssertEqual(request.url?.path, "/api/chat/sessions/sess-10/pin")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            let payload = """
-            {
-                "id":"sess-10",
-                "title":"Unpinned Chat",
-                "message_count":5,
-                "pinned_at":null,
-                "created_at":"2026-03-15T08:00:00Z"
-            }
-            """.data(using: .utf8)!
-            return (response, payload)
-        }
 
         let session = try await client.unpinChatSession(id: "sess-10")
         XCTAssertEqual(session.id, "sess-10")
         XCTAssertNil(session.pinnedAt)
     }
 
-    func testUnpinChatSessionClearsPinnedAt() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "DELETE")
-            XCTAssertTrue(request.url?.path.hasSuffix("/pin") == true)
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            let payload = """
-            {
-                "id":"sess-xyz",
-                "title":"No Longer Pinned",
-                "message_count":3,
-                "created_at":"2026-03-12T09:00:00Z"
-            }
-            """.data(using: .utf8)!
-            return (response, payload)
-        }
-
         let session = try await client.unpinChatSession(id: "sess-xyz")
         XCTAssertNil(session.pinnedAt)
         XCTAssertEqual(session.messageCount, 3)
     }
-
-    // MARK: - Search Chat Sessions
-
-    func testSearchChatSessionsSendsGetWithQueryItem() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/api/chat/sessions/search")
-
-            // Verify the query parameter is set via URLQueryItem (not manually encoded)
-            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-            let qItem = components?.queryItems?.first(where: { $0.name == "q" })
-            XCTAssertNotNil(qItem, "Expected 'q' query item")
-            XCTAssertEqual(qItem?.value, "project roadmap")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            let payload = """
-            [
-                {
-                    "id":"sess-1",
-                    "title":"Roadmap Discussion",
-                    "message_count":8,
-                    "created_at":"2026-03-14T10:00:00Z"
-                }
-            ]
-            """.data(using: .utf8)!
-            return (response, payload)
-        }
 
         let sessions = try await client.searchChatSessions(query: "project roadmap")
         XCTAssertEqual(sessions.count, 1)
@@ -385,111 +249,21 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(sessions[0].title, "Roadmap Discussion")
     }
 
-    func testSearchChatSessionsHandlesSpecialCharactersInQuery() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            // URLQueryItem handles encoding — verify the decoded value is correct
-            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
-            let qItem = components?.queryItems?.first(where: { $0.name == "q" })
-            XCTAssertEqual(qItem?.value, "test & demo / Q&A")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("[]".utf8))
-        }
-
         let sessions = try await client.searchChatSessions(query: "test & demo / Q&A")
         XCTAssertTrue(sessions.isEmpty)
     }
-
-    func testSearchChatSessionsReturnsEmptyForNoMatches() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.url?.path, "/api/chat/sessions/search")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("[]".utf8))
-        }
 
         let sessions = try await client.searchChatSessions(query: "nonexistent topic")
         XCTAssertTrue(sessions.isEmpty)
     }
 
-    // MARK: - Export Chat Session
-
-    func testExportChatSessionSendsGetAndReturnsMarkdown() async throws {
-        let client = makeClient()
-        let expectedMarkdown = """
-        # Chat Session: Project Planning
-
-        **User:** What are the key milestones?
-
-        **Assistant:** Here are the key milestones...
-        """
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertTrue(request.url?.path.contains("/api/chat/sessions/sess-export/export") == true)
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data(expectedMarkdown.utf8))
-        }
-
         let markdown = try await client.exportChatSession(id: "sess-export")
         XCTAssertEqual(markdown, expectedMarkdown)
     }
 
-    func testExportChatSessionIncludesAuthorizationHeader() async throws {
-        let client = makeClient()
-        await client.setAccessToken("export-token-123")
-
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(
-                request.value(forHTTPHeaderField: "Authorization"),
-                "Bearer export-token-123"
-            )
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("# Exported".utf8))
-        }
-
         let markdown = try await client.exportChatSession(id: "sess-auth")
         XCTAssertEqual(markdown, "# Exported")
     }
-
-    func testExportChatSessionThrowsOnNon200Status() async {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { request in
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 404,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data())
-        }
 
         do {
             _ = try await client.exportChatSession(id: "sess-missing")
@@ -781,7 +555,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
             let body = try self.jsonBody(from: request)
             XCTAssertEqual(body["mode"] as? String, "conversation")
-            XCTAssertNil(body["agent_id"])
+            XCTAssertNil(body["model_id"])
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -793,7 +567,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             {
                 "provider":"elevenlabs",
                 "mode":"conversation",
-                "agent_id":"agent-123",
+                "model_id":"agent-123",
                 "signed_url":"wss://api.elevenlabs.io/v1/convai/conversation?token=signed",
                 "expires_in_seconds":900,
                 "environment":"production",
@@ -805,7 +579,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
         let session = try await client.createRealtimeVoiceSession(mode: .conversation)
         XCTAssertEqual(session.provider, "elevenlabs")
-        XCTAssertEqual(session.agentId, "agent-123")
+        XCTAssertEqual(session.modelId, "agent-123")
         XCTAssertTrue(session.signedURL.contains("api.elevenlabs.io"))
     }
 }

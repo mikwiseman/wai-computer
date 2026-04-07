@@ -42,7 +42,6 @@ struct MacMainView: View {
         case folder(String)
         case trash
         case chat
-        case agents
         case settings
     }
 
@@ -50,7 +49,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .chat, .agents, .settings:
+        case .chat, .settings:
             return false
         }
     }
@@ -94,8 +93,6 @@ struct MacMainView: View {
             return "Trash"
         case .chat:
             return "Chat"
-        case .agents:
-            return "Agents"
         case .settings:
             return "Settings"
         case .none:
@@ -392,7 +389,6 @@ struct MacMainView: View {
 
             Section {
                 sidebarRow("Chat", icon: "brain", section: .chat)
-                sidebarRow("Agents", icon: "gearshape.2", section: .agents)
                 sidebarRow("Settings", icon: "gear", section: .settings)
             } header: {
                 Text("Wai")
@@ -579,9 +575,7 @@ struct MacMainView: View {
                 )
             }
         case .chat:
-            MacAgentChatView(apiClient: appState.getAPIClient())
-        case .agents:
-            MacAgentsView(apiClient: appState.getAPIClient())
+            MacChatView()
         case .settings:
             MacSettingsView()
         }

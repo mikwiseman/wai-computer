@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser
 from app.config import get_settings
-from app.core.chat import _get_anthropic_client
+from app.core.qa import _get_anthropic_client
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)

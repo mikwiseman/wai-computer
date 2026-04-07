@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import sentry_sdk
 
 from app.config import get_settings
-from app.core.chat import _get_anthropic_client
+from app.core.qa import _get_anthropic_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

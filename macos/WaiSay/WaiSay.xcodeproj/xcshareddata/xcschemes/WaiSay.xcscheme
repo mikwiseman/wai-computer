@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "0950F2D4CFDE46D8C8A41CC6"
+               BlueprintIdentifier = "EA526461FF2878ADBFF48815"
                BuildableName = "WaiSay.app"
                BlueprintName = "WaiSay"
                ReferencedContainer = "container:WaiSay.xcodeproj">
@@ -32,7 +32,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "0950F2D4CFDE46D8C8A41CC6"
+            BlueprintIdentifier = "EA526461FF2878ADBFF48815"
             BuildableName = "WaiSay.app"
             BlueprintName = "WaiSay"
             ReferencedContainer = "container:WaiSay.xcodeproj">
@@ -44,7 +44,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "002E17216F14CA6B6083D143"
+               BlueprintIdentifier = "0D11BAB1AE671C4E9AB7254A"
                BuildableName = "WaiSayUITests.xctest"
                BlueprintName = "WaiSayUITests"
                ReferencedContainer = "container:WaiSay.xcodeproj">
@@ -68,7 +68,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "0950F2D4CFDE46D8C8A41CC6"
+            BlueprintIdentifier = "EA526461FF2878ADBFF48815"
             BuildableName = "WaiSay.app"
             BlueprintName = "WaiSay"
             ReferencedContainer = "container:WaiSay.xcodeproj">
@@ -87,7 +87,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "0950F2D4CFDE46D8C8A41CC6"
+            BlueprintIdentifier = "EA526461FF2878ADBFF48815"
             BuildableName = "WaiSay.app"
             BlueprintName = "WaiSay"
             ReferencedContainer = "container:WaiSay.xcodeproj">

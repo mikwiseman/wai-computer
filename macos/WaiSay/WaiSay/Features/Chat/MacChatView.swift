@@ -3,94 +3,22 @@ import WaiSayKit
 
 struct MacChatView: View {
     @EnvironmentObject var appState: MacAppState
-    @StateObject private var viewModel = MacChatViewModel()
-    @State private var loadTask: Task<Void, Never>?
+    @StateObject private var viewModel = MacQAViewModel()
 
     var body: some View {
-        HStack(spacing: 0) {
-            sessionList
-                .frame(width: 220)
-
-            Palette.border
-                .frame(width: 1)
-
+        VStack(spacing: 0) {
             conversationView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .onAppear {
-            loadTask?.cancel()
-            loadTask = Task {
-                await viewModel.loadSessions(apiClient: appState.getAPIClient())
-            }
-        }
-        .onDisappear {
-            loadTask?.cancel()
-        }
-    }
-
-    // MARK: - Session List
-
-    private var sessionList: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Sessions")
-                    .waiSectionHeader()
-                Spacer()
-                Button {
-                    viewModel.startNewChat()
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(Palette.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("chat-new-session-button")
-            }
-            .padding(Spacing.lg)
-
+            
             WaiDivider()
-
-            if viewModel.sessions.isEmpty {
-                ContentUnavailableView(
-                    "No Chats",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Start a conversation to ask questions about your recordings.")
-                )
-            } else {
-                List(viewModel.sessions, selection: $viewModel.selectedSessionId) { session in
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text(session.title ?? "New Chat")
-                            .font(Typography.body)
-                            .lineLimit(1)
-                        Text("\(session.messageCount) messages")
-                            .font(Typography.caption)
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                    .tag(session.id)
-                    .contextMenu {
-                        Button("Delete", role: .destructive) {
-                            Task {
-                                await viewModel.deleteSession(id: session.id, apiClient: appState.getAPIClient())
-                            }
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-            }
-        }
-        .onChange(of: viewModel.selectedSessionId) { _, newId in
-            guard let id = newId else { return }
-            loadTask?.cancel()
-            loadTask = Task {
-                await viewModel.loadSession(id: id, apiClient: appState.getAPIClient())
-            }
+            
+            chatInput
         }
     }
-
-    // MARK: - Conversation
 
     private var conversationView: some View {
         VStack(spacing: 0) {
-            if viewModel.messages.isEmpty && viewModel.selectedSessionId == nil {
+            if viewModel.answer == nil && !viewModel.isLoading && viewModel.error == nil {
                 Spacer()
                 VStack(spacing: Spacing.md) {
                     Image(systemName: "bubble.left.and.bubble.right")
@@ -102,60 +30,52 @@ struct MacChatView: View {
                 }
                 Spacer()
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                            ForEach(viewModel.messages) { message in
-                                ChatMessageRow(
-                                    message: message,
-                                    sources: viewModel.sourcesForMessage(message)
-                                )
-                                .id(message.id)
-                            }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                        if let answer = viewModel.answer {
+                            QAResponseRow(
+                                answer: answer,
+                                sources: viewModel.sources
+                            )
+                        }
 
-                            if viewModel.isLoading {
-                                HStack(spacing: Spacing.sm) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text("Thinking...")
-                                        .font(Typography.bodySmall)
-                                        .foregroundStyle(Palette.textTertiary)
-                                }
+                        if viewModel.isLoading {
+                            HStack(spacing: Spacing.sm) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Thinking...")
+                                    .font(Typography.bodySmall)
+                                    .foregroundStyle(Palette.textTertiary)
+                            }
+                            .padding(.horizontal, Spacing.lg)
+                            .id("loading")
+                        }
+                        
+                        if let error = viewModel.error {
+                            Text(error)
+                                .font(Typography.bodySmall)
+                                .foregroundStyle(.red)
                                 .padding(.horizontal, Spacing.lg)
-                                .id("loading")
-                            }
-                        }
-                        .padding(Spacing.lg)
-                    }
-                    .onChange(of: viewModel.messages.count) { _, _ in
-                        if let lastId = viewModel.messages.last?.id {
-                            withAnimation {
-                                proxy.scrollTo(lastId, anchor: .bottom)
-                            }
                         }
                     }
+                    .padding(Spacing.lg)
                 }
             }
-
-            WaiDivider()
-
-            chatInput
         }
     }
 
     private var chatInput: some View {
         HStack(alignment: .bottom, spacing: Spacing.md) {
-            TextField("Ask about your recordings...", text: $viewModel.inputText, axis: .vertical)
+            TextField("Ask about your recordings...", text: $viewModel.inputText)
                 .textFieldStyle(.plain)
                 .font(Typography.bodyLarge)
-                .lineLimit(1...5)
                 .onSubmit {
                     sendMessage()
                 }
                 .padding(Spacing.md)
                 .background(Palette.surfaceSubtle)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .accessibilityIdentifier("chat-input-field")
+                .accessibilityIdentifier("qa-input-field")
 
             Button {
                 sendMessage()
@@ -186,37 +106,29 @@ struct MacChatView: View {
     }
 }
 
-// MARK: - Chat Message Row (flat thread, no bubbles)
-
-struct ChatMessageRow: View {
-    let message: ChatMessageResponse
-    let sources: [ChatSource]
+struct QAResponseRow: View {
+    let answer: String
+    let sources: [QASource]
     @State private var showSources = false
-
-    var isUser: Bool { message.role == "user" }
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
-            // Accent left bar for assistant, invisible spacer for user (consistent alignment)
             RoundedRectangle(cornerRadius: 1)
-                .fill(isUser ? Color.clear : Palette.accent)
+                .fill(Palette.accent)
                 .frame(width: 2)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                // Role label
-                Text(isUser ? "YOU" : "WAI")
+                Text("WAI")
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textTertiary)
                     .tracking(1.2)
 
-                // Message content
-                Text(message.content)
+                Text(answer)
                     .font(Typography.reading)
                     .lineSpacing(6)
                     .textSelection(.enabled)
 
-                // Sources
-                if !isUser && !sources.isEmpty {
+                if !sources.isEmpty {
                     Button {
                         withAnimation { showSources.toggle() }
                     } label: {
@@ -251,6 +163,9 @@ struct ChatMessageRow: View {
                                         .foregroundStyle(Palette.textSecondary)
                                         .lineLimit(2)
                                 }
+                                .padding(Spacing.xs)
+                                .background(Palette.surfaceSubtle)
+                                .cornerRadius(4)
                             }
                         }
                         .padding(.top, Spacing.xs)
@@ -261,91 +176,27 @@ struct ChatMessageRow: View {
     }
 }
 
-// MARK: - ViewModel
-
 @MainActor
-class MacChatViewModel: ObservableObject {
-    @Published var sessions: [ChatSessionListItem] = []
-    @Published var selectedSessionId: String?
-    @Published var messages: [ChatMessageResponse] = []
+class MacQAViewModel: ObservableObject {
+    @Published var answer: String?
+    @Published var sources: [QASource] = []
     @Published var inputText = ""
     @Published var isLoading = false
     @Published var error: String?
 
-    private var messageSourcesMap: [String: [ChatSource]] = [:]
-
-    func sourcesForMessage(_ message: ChatMessageResponse) -> [ChatSource] {
-        messageSourcesMap[message.id] ?? []
-    }
-
-    func loadSessions(apiClient: APIClient) async {
-        do {
-            sessions = try await apiClient.listChatSessions()
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-    }
-
-    func loadSession(id: String, apiClient: APIClient) async {
-        do {
-            let detail = try await apiClient.getChatSession(id: id)
-            messages = detail.messages
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
-    }
-
-    func startNewChat() {
-        selectedSessionId = nil
-        messages = []
-        messageSourcesMap = [:]
-        inputText = ""
-    }
-
     func sendMessage(_ text: String, apiClient: APIClient) async {
-        let tempUserMessage = ChatMessageResponse(
-            id: UUID().uuidString,
-            role: "user",
-            content: text,
-            sourceSegmentIds: nil,
-            sourceRecordingIds: nil,
-            createdAt: Date()
-        )
-        messages.append(tempUserMessage)
         inputText = ""
         isLoading = true
+        error = nil
 
         do {
-            let response = try await apiClient.sendChatMessage(
-                question: text,
-                sessionId: selectedSessionId
-            )
-
-            selectedSessionId = response.sessionId
-
-            let detail = try await apiClient.getChatSession(id: response.sessionId)
-            messages = detail.messages
-
-            messageSourcesMap[response.messageId] = response.sources
-
-            sessions = try await apiClient.listChatSessions()
-
+            let response = try await apiClient.askDatabase(question: text)
+            answer = response.answer
+            sources = response.sources
         } catch {
             self.error = error.userFacingMessage(context: .generic)
         }
 
         isLoading = false
-    }
-
-    func deleteSession(id: String, apiClient: APIClient) async {
-        do {
-            try await apiClient.deleteChatSession(id: id)
-            sessions.removeAll { $0.id == id }
-            if selectedSessionId == id {
-                startNewChat()
-            }
-        } catch {
-            self.error = error.userFacingMessage(context: .generic)
-        }
     }
 }

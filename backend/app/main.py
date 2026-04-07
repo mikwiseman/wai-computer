@@ -12,13 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     action_items,
-    agent_chat,
     auth,
-    chat,
     dictation,
-    digital_agents,
     entities,
     folders,
+    qa,
     realtime_transcription,
     realtime_voice,
     recordings,
@@ -166,12 +164,10 @@ app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
-app.include_router(chat.router, prefix="/api")
+app.include_router(qa.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
-app.include_router(agent_chat.router, prefix="/api")
-app.include_router(digital_agents.router, prefix="/api")
 
 
 @app.get("/")

@@ -218,56 +218,6 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertEqual(hl.importance, "high")
     }
 
-    // MARK: - ChatSessionListItem.pinnedAt
-
-    func testChatSessionListItemDecodesPinnedAtWhenPresent() throws {
-        let json = """
-        {
-            "id": "session-pin-1",
-            "title": "Pinned Chat",
-            "created_at": "2026-03-10T08:00:00Z",
-            "message_count": 5,
-            "pinned_at": "2026-03-12T16:45:00Z"
-        }
-        """.data(using: .utf8)!
-
-        let session = try makeDecoder().decode(ChatSessionListItem.self, from: json)
-        XCTAssertEqual(session.id, "session-pin-1")
-        XCTAssertEqual(session.title, "Pinned Chat")
-        XCTAssertEqual(session.messageCount, 5)
-        XCTAssertNotNil(session.pinnedAt)
-        XCTAssertEqual(session.pinnedAt, "2026-03-12T16:45:00Z")
-    }
-
-    func testChatSessionListItemDecodesPinnedAtAsNilWhenAbsent() throws {
-        let json = """
-        {
-            "id": "session-no-pin",
-            "title": "Regular Chat",
-            "created_at": "2026-03-10T08:00:00Z",
-            "message_count": 3
-        }
-        """.data(using: .utf8)!
-
-        let session = try makeDecoder().decode(ChatSessionListItem.self, from: json)
-        XCTAssertEqual(session.id, "session-no-pin")
-        XCTAssertNil(session.pinnedAt)
-    }
-
-    func testChatSessionListItemDecodesPinnedAtAsNilWhenExplicitNull() throws {
-        let json = """
-        {
-            "id": "session-null-pin",
-            "created_at": "2026-03-10T08:00:00Z",
-            "message_count": 0,
-            "pinned_at": null
-        }
-        """.data(using: .utf8)!
-
-        let session = try makeDecoder().decode(ChatSessionListItem.self, from: json)
-        XCTAssertNil(session.pinnedAt)
-    }
-
     // MARK: - Round-trip encode/decode
 
     func testRecordingRoundTripPreservesStarredAt() throws {
@@ -358,53 +308,6 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertNotNil(decoded.starredAt)
     }
 
-    // MARK: - ChatSessionDetail with messages
-
-    func testChatSessionDetailDecodesWithMessages() throws {
-        let json = """
-        {
-            "id": "session-detail-1",
-            "title": "Deep Dive Chat",
-            "recording_ids": ["rec-1", "rec-2"],
-            "created_at": "2026-03-10T08:00:00Z",
-            "messages": [
-                {
-                    "id": "msg-1",
-                    "role": "user",
-                    "content": "What were the key decisions?",
-                    "created_at": "2026-03-10T08:01:00Z"
-                },
-                {
-                    "id": "msg-2",
-                    "role": "assistant",
-                    "content": "Based on the recordings, the team decided to migrate to microservices.",
-                    "source_segment_ids": ["seg-10", "seg-15"],
-                    "source_recording_ids": ["rec-1"],
-                    "created_at": "2026-03-10T08:01:05Z"
-                }
-            ]
-        }
-        """.data(using: .utf8)!
-
-        let detail = try makeDecoder().decode(ChatSessionDetail.self, from: json)
-        XCTAssertEqual(detail.id, "session-detail-1")
-        XCTAssertEqual(detail.title, "Deep Dive Chat")
-        XCTAssertEqual(detail.recordingIds, ["rec-1", "rec-2"])
-        XCTAssertEqual(detail.messages.count, 2)
-
-        let userMsg = detail.messages[0]
-        XCTAssertEqual(userMsg.id, "msg-1")
-        XCTAssertEqual(userMsg.role, "user")
-        XCTAssertEqual(userMsg.content, "What were the key decisions?")
-        XCTAssertNil(userMsg.sourceSegmentIds)
-
-        let assistantMsg = detail.messages[1]
-        XCTAssertEqual(assistantMsg.id, "msg-2")
-        XCTAssertEqual(assistantMsg.role, "assistant")
-        XCTAssertEqual(assistantMsg.sourceSegmentIds, ["seg-10", "seg-15"])
-        XCTAssertEqual(assistantMsg.sourceRecordingIds, ["rec-1"])
-    }
-
     // MARK: - UserApp lifecycle
 
     func testUserAppDecodesLifecycleFields() throws {
@@ -433,6 +336,13 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertEqual(app.id, "app-42")
         XCTAssertEqual(app.description, "Tracks daily habits")
         XCTAssertEqual(app.status, .live)
+        XCTAssertEqual(app.visibility, .public)
+        XCTAssertEqual(app.itemCount, 12)
+        XCTAssertNotNil(app.publishedAt)
+        XCTAssertNotNil(app.lastUsedAt)
+    }
+}
+sertEqual(app.status, .live)
         XCTAssertEqual(app.visibility, .public)
         XCTAssertEqual(app.itemCount, 12)
         XCTAssertNotNil(app.publishedAt)

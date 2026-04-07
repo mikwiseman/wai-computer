@@ -20,9 +20,7 @@ import {
   semanticSearch,
   updateActionItem,
 } from "@/lib/api";
-import { AgentChat } from "@/components/AgentChat";
-import { AgentsView } from "@/components/AgentsView";
-import { ChatPanel } from "@/components/ChatPanel";
+import { GlobalQAPanel } from "@/components/GlobalQAPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { ApiError } from "@/lib/http";
 import type {
@@ -36,7 +34,7 @@ import type {
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
-type DashboardView = "wai" | "library" | "agents";
+type DashboardView = "wai" | "library";
 
 function formatError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -280,13 +278,12 @@ export function DashboardClient() {
           [
             ["wai", "Wai"],
             ["library", "Library"],
-            ["agents", "Agents"],
           ] as const
         ).map(([key, label]) => (
           <button
             key={key}
             type="button"
-            onClick={() => setView(key)}
+            onClick={() => setView(key as DashboardView)}
             data-testid={`tab-${key}`}
             style={{
               background: view === key ? "var(--accent)" : "transparent",
@@ -306,10 +303,10 @@ export function DashboardClient() {
         </p>
       ) : null}
 
-      {/* Wai (Agent Chat) — default view */}
+      {/* Wai (Global QA) — default view */}
       {view === "wai" && (
         <div className="card" style={{ height: "600px", padding: 0 }}>
-          <AgentChat />
+          <GlobalQAPanel recordings={recordings} />
         </div>
       )}
 
@@ -417,7 +414,7 @@ export function DashboardClient() {
         ) : null}
       </section>
 
-      <ChatPanel recordings={recordings} />
+      <GlobalQAPanel recordings={recordings} />
 
       <section className="card stack">
         <h2>Action Items</h2>
@@ -501,9 +498,6 @@ export function DashboardClient() {
       </section>
         </>
       )}
-
-      {/* Agents view */}
-      {view === "agents" && <AgentsView />}
 
     </div>
   );
