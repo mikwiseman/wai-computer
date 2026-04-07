@@ -43,12 +43,6 @@ struct MainTabView: View {
                 }
                 .tag(2)
 
-            MobileAgentsView()
-                .tabItem {
-                    Label("Agents", systemImage: "gearshape.2")
-                }
-                .tag(3)
-
             MobileAppsView()
                 .tabItem {
                     Label("Apps", systemImage: "square.grid.2x2")

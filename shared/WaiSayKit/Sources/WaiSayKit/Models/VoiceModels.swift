@@ -43,20 +43,20 @@ public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
 
 public struct CreateRealtimeVoiceSessionRequest: Codable, Sendable {
     public let mode: RealtimeVoiceMode
-    public let agentId: String?
+    public let modelId: String?
     public let includeConversationId: Bool
     public let branchId: String?
     public let environment: String?
 
     public init(
         mode: RealtimeVoiceMode = .conversation,
-        agentId: String? = nil,
+        modelId: String? = nil,
         includeConversationId: Bool = false,
         branchId: String? = nil,
         environment: String? = nil
     ) {
         self.mode = mode
-        self.agentId = agentId
+        self.modelId = modelId
         self.includeConversationId = includeConversationId
         self.branchId = branchId
         self.environment = environment
@@ -64,7 +64,7 @@ public struct CreateRealtimeVoiceSessionRequest: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case mode
-        case agentId = "agent_id"
+        case modelId = "agent_id"
         case includeConversationId = "include_conversation_id"
         case branchId = "branch_id"
         case environment

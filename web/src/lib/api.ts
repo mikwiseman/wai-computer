@@ -8,29 +8,23 @@ import type {
   ActionItem,
   ActionPriority,
   ActionStatus,
-  AgentChatResponse,
   AnalyticsResponse,
   BulkAction,
   BulkOperationResponse,
-  ChatResponse,
-  ChatSession,
-  ChatSessionDetail,
-  DigitalAgent,
   Entity,
   EntityDetail,
   EntityType,
   ExportFormat,
   KeywordsResponse,
   MessageResponse,
-  PinSessionResponse,
   StarRecordingResponse,
+  QAResponse,
   Recording,
   RecordingDetail,
   RecordingType,
   RealtimeVoiceMode,
   RealtimeVoiceSession,
   RelatedRecordingsResponse,
-  RenameSessionResponse,
   SearchResponse,
   SpeakerStatsResponse,
   Summary,
@@ -329,65 +323,16 @@ export function updateSettings(settings: Partial<UserSettings>): Promise<UserSet
   });
 }
 
-export function sendChatMessage(payload: {
+export function askDatabase(payload: {
   question: string;
-  session_id?: string | null;
   recording_ids?: string[] | null;
-}): Promise<ChatResponse> {
-  return apiFetch<ChatResponse>("/api/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      question: payload.question,
-      session_id: payload.session_id ?? null,
-      recording_ids: payload.recording_ids ?? null,
-    }),
+}): Promise<QAResponse> {
+  return apiFetch<QAResponse>('/api/qa', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }
 
-export function listChatSessions(): Promise<ChatSession[]> {
-  return apiFetch<ChatSession[]>("/api/chat/sessions");
-}
-
-export function searchChatSessions(q: string): Promise<ChatSession[]> {
-  return apiFetch<ChatSession[]>(`/api/chat/sessions/search${asQuery({ q })}`);
-}
-
-export function getChatSession(sessionId: string): Promise<ChatSessionDetail> {
-  return apiFetch<ChatSessionDetail>(`/api/chat/sessions/${sessionId}`);
-}
-
-export function renameChatSession(
-  sessionId: string,
-  title: string | null,
-): Promise<RenameSessionResponse> {
-  return apiFetch<RenameSessionResponse>(`/api/chat/sessions/${sessionId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ title }),
-  });
-}
-
-export async function exportChatSession(sessionId: string): Promise<string> {
-  const response = await apiFetchResponse(`/api/chat/sessions/${sessionId}/export`);
-  return response.text();
-}
-
-export function deleteChatSession(sessionId: string): Promise<void> {
-  return apiFetch<void>(`/api/chat/sessions/${sessionId}`, {
-    method: "DELETE",
-  });
-}
-
-export function pinChatSession(sessionId: string): Promise<PinSessionResponse> {
-  return apiFetch<PinSessionResponse>(`/api/chat/sessions/${sessionId}/pin`, {
-    method: "POST",
-  });
-}
-
-export function unpinChatSession(sessionId: string): Promise<PinSessionResponse> {
-  return apiFetch<PinSessionResponse>(`/api/chat/sessions/${sessionId}/pin`, {
-    method: "DELETE",
-  });
-}
 
 export function getWeeklyDigest(): Promise<WeeklyDigestResponse> {
   return apiFetch<WeeklyDigestResponse>("/api/recordings/digest/weekly");
@@ -404,69 +349,4 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
   return response.blob();
 }
 
-// ── Agent Chat ──────────────────────────────────────────────────────
 
-export function sendAgentMessage(
-  message: string,
-  sessionId?: string,
-  voiceTranscript?: string,
-): Promise<AgentChatResponse> {
-  return apiFetch<AgentChatResponse>("/api/agent/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      message,
-      session_id: sessionId,
-      voice_transcript: voiceTranscript,
-    }),
-  });
-}
-
-export function createRealtimeVoiceSession(input: {
-  mode: RealtimeVoiceMode;
-  agent_id?: string;
-  include_conversation_id?: boolean;
-  branch_id?: string;
-  environment?: string;
-}): Promise<RealtimeVoiceSession> {
-  return apiFetch<RealtimeVoiceSession>("/api/voice/session", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-// ── Digital Agents ──────────────────────────────────────────────────
-
-export function listAgents(): Promise<DigitalAgent[]> {
-  return apiFetch<DigitalAgent[]>("/api/agents");
-}
-
-export function createAgent(description: string): Promise<DigitalAgent> {
-  return apiFetch<DigitalAgent>("/api/agents", {
-    method: "POST",
-    body: JSON.stringify({ description }),
-  });
-}
-
-export function getAgent(agentId: string): Promise<DigitalAgent> {
-  return apiFetch<DigitalAgent>(`/api/agents/${agentId}`);
-}
-
-export function runAgent(agentId: string): Promise<{ status: string; agent_id: string }> {
-  return apiFetch<{ status: string; agent_id: string }>(`/api/agents/${agentId}/run`, {
-    method: "POST",
-  });
-}
-
-export function updateAgent(
-  agentId: string,
-  input: { status?: string },
-): Promise<DigitalAgent> {
-  return apiFetch<DigitalAgent>(`/api/agents/${agentId}`, {
-    method: "PATCH",
-    body: JSON.stringify(input),
-  });
-}
-
-export function deleteAgent(agentId: string): Promise<void> {
-  return apiFetch<void>(`/api/agents/${agentId}`, { method: "DELETE" });
-}

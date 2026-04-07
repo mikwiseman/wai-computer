@@ -4,10 +4,6 @@ import WaiSayKit
 struct WaiHomeView: View {
     @EnvironmentObject private var appState: AppState
 
-    @State private var messages: [WaiAgentMessage] = []
-    @State private var input = ""
-    @State private var sessionId: String?
-    @State private var isLoading = false
     @State private var error: String?
     @State private var showRecorder = false
     @State private var voiceSession: RealtimeVoiceSession?
@@ -16,11 +12,7 @@ struct WaiHomeView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if messages.isEmpty && !isLoading {
-                    emptyState
-                } else {
-                    messageList
-                }
+                emptyState
 
                 if let voiceSession {
                     voiceSessionBanner(voiceSession)
@@ -35,8 +27,7 @@ struct WaiHomeView: View {
                         .padding(.top, 8)
                 }
 
-                Divider()
-                inputBar
+                Spacer()
             }
             .navigationTitle("Wai")
             .toolbar {
@@ -77,7 +68,7 @@ struct WaiHomeView: View {
                     Text("Talk to Wai")
                         .font(.title2.weight(.semibold))
 
-                    Text("Start with text, prepare a realtime voice session, or open recording mode for notes and meetings.")
+                    Text("Prepare a realtime voice session, or open recording mode for notes and meetings.")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
@@ -85,20 +76,6 @@ struct WaiHomeView: View {
                 .padding(.top, 40)
 
                 VStack(spacing: 12) {
-                    quickAction(
-                        title: "Create a landing page",
-                        subtitle: "Draft, preview, and publish from one dialogue."
-                    ) {
-                        input = "Create a landing page for my product and prepare it for publish."
-                    }
-
-                    quickAction(
-                        title: "Create an app",
-                        subtitle: "Generate a collection-backed app and keep it in my shelf."
-                    ) {
-                        input = "Create a simple CRM app for my clients."
-                    }
-
                     quickAction(
                         title: "Run voice session",
                         subtitle: "Prepare a realtime conversation session with Wai."
@@ -117,53 +94,6 @@ struct WaiHomeView: View {
             }
             .frame(maxWidth: .infinity)
         }
-    }
-
-    private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(messages) { message in
-                        WaiMessageRow(message: message)
-                            .id(message.id)
-                    }
-
-                    if isLoading {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Wai is working…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal)
-                    }
-                }
-                .padding()
-            }
-            .onChange(of: messages.count) { _, _ in
-                guard let lastId = messages.last?.id else { return }
-                withAnimation {
-                    proxy.scrollTo(lastId, anchor: .bottom)
-                }
-            }
-        }
-    }
-
-    private var inputBar: some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            TextField("Say or type what you need…", text: $input, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...4)
-
-            Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(input.trimmed().isEmpty || isLoading ? Color.secondary : Color.blue)
-            }
-            .disabled(input.trimmed().isEmpty || isLoading)
-        }
-        .padding()
     }
 
     private func quickAction(title: String, subtitle: String, action: @escaping () -> Void) -> some View {
@@ -198,7 +128,7 @@ struct WaiHomeView: View {
                     .clipShape(Capsule())
             }
 
-            Text("Provider: \(voiceSession.provider). Agent: \(voiceSession.agentId). Expires in \(voiceSession.expiresInSeconds / 60)m.")
+            Text("Provider: \(voiceSession.provider). Model: \(voiceSession.modelId). Expires in \(voiceSession.expiresInSeconds / 60)m.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -207,34 +137,6 @@ struct WaiHomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal)
         .padding(.bottom, 8)
-    }
-
-    private func sendMessage() {
-        let text = input.trimmed()
-        guard !text.isEmpty, !isLoading else { return }
-
-        error = nil
-        messages.append(WaiAgentMessage(id: UUID().uuidString, role: .user, content: text, intent: nil))
-        input = ""
-        isLoading = true
-
-        Task {
-            do {
-                let result = try await appState.getAPIClient().sendAgentMessage(text, sessionId: sessionId)
-                sessionId = result.sessionId
-                messages.append(
-                    WaiAgentMessage(
-                        id: UUID().uuidString,
-                        role: .assistant,
-                        content: result.response,
-                        intent: result.intent
-                    )
-                )
-            } catch {
-                self.error = error.userFacingMessage(context: .generic)
-            }
-            isLoading = false
-        }
     }
 
     private func prepareVoiceSession(mode: RealtimeVoiceMode) async {
@@ -248,54 +150,5 @@ struct WaiHomeView: View {
         } catch {
             self.error = error.userFacingMessage(context: .generic)
         }
-    }
-}
-
-private struct WaiAgentMessage: Identifiable {
-    enum Role {
-        case user
-        case assistant
-    }
-
-    let id: String
-    let role: Role
-    let content: String
-    let intent: String?
-}
-
-private struct WaiMessageRow: View {
-    let message: WaiAgentMessage
-
-    var body: some View {
-        HStack {
-            if message.role == .assistant {
-                bubble
-                Spacer(minLength: 40)
-            } else {
-                Spacer(minLength: 40)
-                bubble
-            }
-        }
-    }
-
-    private var bubble: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(message.content)
-                .foregroundStyle(message.role == .user ? .white : .primary)
-            if let intent = message.intent, message.role == .assistant {
-                Text(intent.uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .background(message.role == .user ? Color.blue : Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-private extension String {
-    func trimmed() -> String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

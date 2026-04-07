@@ -27,11 +27,11 @@ class WaiApi(
         }
     }
 
-    suspend fun sendAgentMessage(message: String, sessionId: String?): AgentChatResponse {
-        return client.post(url("/api/agent/chat")) {
+suspend fun askDatabase(question: String, recordingIds: List<String>? = null): QAResponse {
+        return client.post(url("/api/qa")) {
             authorized()
             contentType(ContentType.Application.Json)
-            setBody(AgentChatRequest(message = message, sessionId = sessionId))
+            setBody(QARequest(question = question, recordingIds = recordingIds))
         }.body()
     }
 
@@ -40,54 +40,6 @@ class WaiApi(
             authorized()
             contentType(ContentType.Application.Json)
             setBody(RealtimeVoiceSessionRequest(mode = mode))
-        }.body()
-    }
-
-    suspend fun listAgents(): List<DigitalAgent> {
-        return client.get(url("/api/agents")) {
-            authorized()
-        }.body()
-    }
-
-    suspend fun createAgent(description: String): DigitalAgent {
-        return client.post(url("/api/agents")) {
-            authorized()
-            contentType(ContentType.Application.Json)
-            setBody(CreateAgentRequest(description = description))
-        }.body()
-    }
-
-    suspend fun runAgent(agentId: String) {
-        client.post(url("/api/agents/$agentId/run")) {
-            authorized()
-        }
-    }
-
-    suspend fun deleteAgent(agentId: String) {
-        client.delete(url("/api/agents/$agentId")) {
-            authorized()
-        }
-    }
-
-    suspend fun listApps(): List<UserApp> {
-        return client.get(url("/api/apps")) {
-            authorized()
-        }.body()
-    }
-
-    suspend fun createApp(name: String, description: String?): UserApp {
-        return client.post(url("/api/apps")) {
-            authorized()
-            contentType(ContentType.Application.Json)
-            setBody(CreateAppRequest(name = name, displayName = name, description = description))
-        }.body()
-    }
-
-    suspend fun publishApp(appId: String, visibility: String, appUrl: String?): UserApp {
-        return client.post(url("/api/apps/$appId/publish")) {
-            authorized()
-            contentType(ContentType.Application.Json)
-            setBody(PublishAppRequest(visibility = visibility, appUrl = appUrl))
         }.body()
     }
 

@@ -41,12 +41,8 @@ class User(Base, UUIDMixin, TimestampMixin):
     tags: Mapped[list["Tag"]] = relationship(
         "Tag", back_populates="user", cascade="all, delete-orphan"
     )
-    chat_sessions: Mapped[list["ChatSession"]] = relationship(
-        "ChatSession", back_populates="user", cascade="all, delete-orphan"
-    )
 
 
 # Import at bottom to avoid circular imports
-from app.models.chat import ChatSession  # noqa: E402
 from app.models.entity import Entity, Tag  # noqa: E402
 from app.models.recording import Folder, Recording  # noqa: E402

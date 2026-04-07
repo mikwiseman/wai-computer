@@ -181,7 +181,11 @@ export interface EntityDetail extends Entity {
   }>;
 }
 
-export interface ChatSource {
+
+
+
+
+export interface QASource {
   segment_id: string;
   recording_id: string;
   recording_title: string | null;
@@ -191,52 +195,14 @@ export interface ChatSource {
   end_ms: number | null;
 }
 
-export interface ChatResponse {
+export interface QAResponse {
   answer: string;
-  session_id: string;
-  message_id: string;
-  sources: ChatSource[];
-}
-
-export interface ChatMessageData {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  source_segment_ids: string[] | null;
-  source_recording_ids: string[] | null;
-  created_at: string;
-}
-
-export interface ChatSession {
-  id: string;
-  title: string | null;
-  recording_ids: string[] | null;
-  created_at: string;
-  message_count: number;
-  pinned_at: string | null;
-}
-
-export interface PinSessionResponse {
-  id: string;
-  pinned_at: string | null;
+  sources: QASource[];
 }
 
 export interface StarRecordingResponse {
   id: string;
   starred_at: string | null;
-}
-
-export interface ChatSessionDetail {
-  id: string;
-  title: string | null;
-  recording_ids: string[] | null;
-  created_at: string;
-  messages: ChatMessageData[];
-}
-
-export interface RenameSessionResponse {
-  id: string;
-  title: string | null;
 }
 
 export interface TopicCount {
@@ -353,42 +319,7 @@ export interface WeeklyDigestResponse {
   daily_breakdown: DailyBreakdown[];
 }
 
-// ── Agent Chat ──────────────────────────────────────────────────────
 
-export interface AgentChatRequest {
-  message: string;
-  session_id?: string;
-  voice_transcript?: string;
-}
-
-export interface AgentChatResponse {
-  response: string;
-  intent: string;
-  model_used: string;
-  session_id: string;
-  tool_calls: number;
-  input_tokens: number;
-  output_tokens: number;
-}
-
-// ── Digital Agents ──────────────────────────────────────────────────
-
-export interface DigitalAgent {
-  id: string;
-  name: string;
-  description: string;
-  schedule_type: string;
-  cron_expression: string | null;
-  status: string;
-  delivery_channel: string;
-  run_count: number;
-  error_count: number;
-  last_run_at: string | null;
-  next_run_at: string | null;
-  last_result: string | null;
-  last_error: string | null;
-  created_at: string;
-}
 
 export interface RealtimeVoiceSession {
   provider: string;
