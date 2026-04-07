@@ -149,7 +149,7 @@ describe("apiFetch", () => {
       new Response(
         JSON.stringify({
           detail:
-            "Connection lost after retrying. /Users/test/Library/Application Support/WaiComputer/PendingTranscripts/example Failed to reconnect after 10 attempts.",
+            "Connection lost after retrying. /Users/test/Library/Application Support/WaiSay/PendingTranscripts/example Failed to reconnect after 10 attempts.",
         }),
         {
           status: 500,

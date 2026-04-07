@@ -5,7 +5,7 @@ Detects commitments in conversations:
 - "He said he'd..." -> someone promised user
 - "Напишу до пятницы" -> Russian commitment detection
 
-Stores in DB via wai-computer's async session.
+Stores in DB via wai-say's async session.
 """
 
 import logging

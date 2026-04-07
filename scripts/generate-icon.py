@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate WaiComputer macOS app icon.
+"""Generate WaiSay macOS app icon.
 
 Black rounded triangle pointing up with a white retro computer icon inside.
 """
@@ -190,7 +190,7 @@ def generate_icon(size):
 
 
 def main():
-    output_dir = "/Users/mikwiseman/Documents/Code/wai-computer/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset"
+    output_dir = "/Users/mikwiseman/Documents/Code/wai-say/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset"
 
     # macOS icon sizes: (points, scale, pixel_size)
     sizes = [

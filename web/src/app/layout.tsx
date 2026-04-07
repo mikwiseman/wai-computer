@@ -8,8 +8,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "WaiComputer Web",
-  description: "WaiComputer browser client",
+  title: "WaiSay Web",
+  description: "WaiSay browser client",
 };
 
 export default function RootLayout({

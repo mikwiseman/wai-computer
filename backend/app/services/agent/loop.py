@@ -191,7 +191,7 @@ async def execute_tool(tool_name: str, tool_input: dict, context: AgentContext) 
 
 
 async def _tool_search_recordings(tool_input: dict, context: AgentContext) -> str:
-    """Search recordings using wai-computer's hybrid RRF search."""
+    """Search recordings using wai-say's hybrid RRF search."""
     from app.core.chat import build_context_text, retrieve_context
 
     query = tool_input.get("query", "")

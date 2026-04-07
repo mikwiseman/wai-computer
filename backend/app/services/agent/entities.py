@@ -1,6 +1,6 @@
 """Entity Extraction — auto-extract people, topics, decisions from messages.
 
-Inspired by wai-computer's entity system but lightweight for Telegram.
+Inspired by wai-say's entity system but lightweight for Telegram.
 Two modes:
 1. Fast pattern-based extraction (no LLM, instant)
 2. LLM-powered deep extraction (Claude Haiku, ~1s)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Quick DMG build for WaiComputer (works from Claude Code and Terminal)
+# Quick DMG build for WaiSay (works from Claude Code and Terminal)
 # Usage: ./scripts/make-dmg.sh
 #
 # Uses ditto --noextattr + /tmp mountpoint to avoid macOS provenance
@@ -8,33 +8,33 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-XCODE_PROJECT="$PROJECT_DIR/macos/WaiComputer/WaiComputer.xcodeproj"
-DMG_PATH="/tmp/WaiComputer.dmg"
+XCODE_PROJECT="$PROJECT_DIR/macos/WaiSay/WaiSay.xcodeproj"
+DMG_PATH="/tmp/WaiSay.dmg"
 MOUNT_POINT="/tmp/wai_dmg_mount"
 STAGING="/tmp/wai_dmg_staging"
-SPARSE="/tmp/WaiComputer_rw.sparseimage"
+SPARSE="/tmp/WaiSay_rw.sparseimage"
 
 echo "==> Building Release..."
 xcodebuild -project "$XCODE_PROJECT" \
-    -scheme WaiComputer \
+    -scheme WaiSay \
     -configuration Release \
     build -quiet 2>&1 | grep -v "warning:\|note:" || true
 
-APP_SRC="$(xcodebuild -project "$XCODE_PROJECT" -scheme WaiComputer -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR =' | awk '{print $3}')/WaiComputer.app"
+APP_SRC="$(xcodebuild -project "$XCODE_PROJECT" -scheme WaiSay -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR =' | awk '{print $3}')/WaiSay.app"
 
 echo "==> Staging app..."
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
-ditto "$APP_SRC" "$STAGING/WaiComputer.app"
+ditto "$APP_SRC" "$STAGING/WaiSay.app"
 
 echo "==> Creating DMG..."
 rm -f "$SPARSE" "$DMG_PATH"
-hdiutil create -size 300m -fs HFS+ -volname "WaiComputer" -type SPARSE "${SPARSE%.sparseimage}"
+hdiutil create -size 300m -fs HFS+ -volname "WaiSay" -type SPARSE "${SPARSE%.sparseimage}"
 
 rm -rf "$MOUNT_POINT" && mkdir -p "$MOUNT_POINT"
 hdiutil attach "$SPARSE" -mountpoint "$MOUNT_POINT"
 
-ditto --noextattr --noqtn "$STAGING/WaiComputer.app" "$MOUNT_POINT/WaiComputer.app"
+ditto --noextattr --noqtn "$STAGING/WaiSay.app" "$MOUNT_POINT/WaiSay.app"
 ln -s /Applications "$MOUNT_POINT/Applications"
 
 hdiutil detach "$MOUNT_POINT"

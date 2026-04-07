@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# eval.sh — WaiComputer single-metric evaluation
+# eval.sh — WaiSay single-metric evaluation
 #
 # Runs ALL test suites (backend pytest, frontend vitest, Swift tests)
 # and outputs a single integer: total failures across all suites.
@@ -63,9 +63,9 @@ frontend_failures() {
   fi
 }
 
-# ─── Swift (WaiComputerKit) ─────────────────────────────────────
+# ─── Swift (WaiSayKit) ─────────────────────────────────────
 swift_failures() {
-  cd "$PROJECT_ROOT/shared/WaiComputerKit"
+  cd "$PROJECT_ROOT/shared/WaiSayKit"
 
   local output
   output=$(swift test 2>&1)

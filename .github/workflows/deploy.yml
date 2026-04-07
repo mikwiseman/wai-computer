@@ -24,7 +24,7 @@ jobs:
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
-          POSTGRES_DB: waicomputer_test
+          POSTGRES_DB: waisay_test
         ports:
           - 5432:5432
         options: >-
@@ -62,8 +62,8 @@ jobs:
 
       - name: Test
         env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
-          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waisay_test
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waisay_test
           JWT_SECRET: test-secret-for-ci
           REDIS_URL: redis://localhost:6379/0
         run: pytest -x -q
@@ -104,14 +104,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shared Swift package tests
-        working-directory: shared/WaiComputerKit
+        working-directory: shared/WaiSayKit
         run: swift test -q
 
       - name: Build macOS app
         run: >
           xcodebuild
-          -project macos/WaiComputer/WaiComputer.xcodeproj
-          -scheme WaiComputer
+          -project macos/WaiSay/WaiSay.xcodeproj
+          -scheme WaiSay
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
           build
@@ -119,8 +119,8 @@ jobs:
       - name: Build iOS app
         run: >
           xcodebuild
-          -project ios/WaiComputer/WaiComputeriOS.xcodeproj
-          -scheme WaiComputer
+          -project ios/WaiSay/WaiSayiOS.xcodeproj
+          -scheme WaiSay
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
           build
@@ -140,7 +140,7 @@ jobs:
           envs: POSTGRES_PASSWORD,JWT_SECRET,ELEVENLABS_API_KEY,ELEVENLABS_CONVERSATION_AGENT_ID,ELEVENLABS_RECORDING_AGENT_ID,ANTHROPIC_API_KEY,RESEND_API_KEY,EMAIL_FROM,FRONTEND_URL,CORS_ORIGINS,SENTRY_DSN,AUTH_COOKIE_DOMAIN,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,REDIS_URL
           script: |
             set -euo pipefail
-            cd /opt/waicomputer
+            cd /opt/waisay
             if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git remote get-url origin >/dev/null 2>&1; then
               git pull --ff-only origin main
             else
@@ -151,8 +151,8 @@ jobs:
             cat > backend/.env << ENVEOF
             POSTGRES_USER=postgres
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            POSTGRES_DB=waicomputer
-            DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waicomputer
+            POSTGRES_DB=waisay
+            DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waisay
             JWT_SECRET=${JWT_SECRET}
             CORS_ORIGINS=${CORS_ORIGINS}
             SPEECH_TO_TEXT_PROVIDER=elevenlabs
@@ -200,19 +200,19 @@ jobs:
               "docker compose exec -T api curl -fsS http://localhost:8000/health" \
               24 \
               5 \
-              "docker logs --tail 200 waicomputer-api"
+              "docker logs --tail 200 waisay-api"
             wait_for_service \
               "Web health check" \
               "docker compose exec -T web node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"" \
               24 \
               5 \
-              "docker logs --tail 200 waicomputer-web"
+              "docker logs --tail 200 waisay-web"
             wait_for_service \
               "Celery worker health check" \
-              "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waicomputer-celery-worker 2>/dev/null)\" == healthy ]]" \
+              "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waisay-celery-worker 2>/dev/null)\" == healthy ]]" \
               24 \
               5 \
-              "docker logs --tail 200 waicomputer-celery-worker"
+              "docker logs --tail 200 waisay-celery-worker"
             echo "Deploy successful (api + web + celery-worker)"
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}

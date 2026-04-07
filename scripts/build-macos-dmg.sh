@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
-PROJECT_PATH="$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj"
-SCHEME="WaiComputer"
-APP_NAME="WaiComputer"
+PROJECT_PATH="$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj"
+SCHEME="WaiSay"
+APP_NAME="WaiSay"
 DMG_VOLUME_NAME=${MACOS_DMG_VOLUME_NAME:-"${APP_NAME} Installer"}
-APP_ICON_PATH="$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
+APP_ICON_PATH="$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
 TEAM_ID=${MACOS_TEAM_ID:-R4A779QVVY}
 SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:-"Developer ID Application: WaiWai, LLC (R4A779QVVY)"}
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}

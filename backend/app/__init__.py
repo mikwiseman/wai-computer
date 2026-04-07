@@ -1,1 +1,1 @@
-"""WaiComputer Backend - AI Second Brain API."""
+"""WaiSay Backend - AI Second Brain API."""

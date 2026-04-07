@@ -28,10 +28,10 @@ backend/*.sqlite3
 *~
 
 # Xcode
-ios/WaiComputer/WaiComputer.xcodeproj/xcuserdata/
-ios/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcuserdata/
-macos/WaiComputer/WaiComputer.xcodeproj/xcuserdata/
-macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcuserdata/
+ios/WaiSay/WaiSay.xcodeproj/xcuserdata/
+ios/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcuserdata/
+macos/WaiSay/WaiSay.xcodeproj/xcuserdata/
+macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcuserstate
 DerivedData/
 *.moved-aside
