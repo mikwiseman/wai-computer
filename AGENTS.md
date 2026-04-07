@@ -1,4 +1,4 @@
-# WaiComputer
+# WaiSay
 
 AI Second Brain - audio recording, transcription, and knowledge organization.
 
@@ -8,7 +8,7 @@ AI Second Brain - audio recording, transcription, and knowledge organization.
 |---|---|
 | **IP** | <release-host> |
 | **SSH** | `ssh <release-user>@<release-host>` |
-| **Deploy path** | `<remote-root>` |
+| **Deploy path** | `/opt/waisay` |
 | **OS** | Ubuntu 24.04 (Hetzner VPS, 4GB RAM, 75GB disk) |
 | **Domain** | `wai.computer`, `api.wai.computer` (Caddy auto-TLS) |
 
@@ -22,7 +22,7 @@ Only triggers on changes to: `backend/**`, `web/**`, `shared/**`, `ios/**`, `mac
 
 **What happens on deploy:**
 1. `git pull --ff-only origin main` on server
-2. CI gates `backend`, `web`, `shared/WaiComputerKit`, `ios`, `macos`, and `android`
+2. CI gates `backend`, `web`, `shared/WaiSayKit`, `ios`, `macos`, and `android`
 3. `docker compose build api web celery-worker` (in `backend/`)
 4. `docker compose up -d api web celery-worker caddy`
 5. Health checks: API `:8000/health`, web `:3000/login`, celery container health
@@ -72,8 +72,8 @@ pytest -m slow --no-cov
 ```bash
 cd backend
 source .venv/bin/activate
-env TEST_DATABASE_URL='postgresql+asyncpg://mikwiseman@localhost:5432/waicomputer_test' \
-    DATABASE_URL='postgresql+asyncpg://mikwiseman@localhost:5432/waicomputer_test' \
+env TEST_DATABASE_URL='postgresql+asyncpg://mikwiseman@localhost:5432/waisay_test' \
+    DATABASE_URL='postgresql+asyncpg://mikwiseman@localhost:5432/waisay_test' \
     pytest -q --no-cov tests/test_websocket.py tests/test_recordings_routes.py -k 'upload or websocket or transcript'
 ```
 
@@ -90,14 +90,14 @@ pnpm test:e2e:ui
 
 **Shared Swift package:**
 ```bash
-cd shared/WaiComputerKit
+cd shared/WaiSayKit
 swift test -q
 ```
 
 **Apple apps:**
 ```bash
-xcodebuild -project macos/WaiComputer/WaiComputer.xcodeproj -scheme WaiComputer -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project ios/WaiComputer/WaiComputeriOS.xcodeproj -scheme WaiComputer -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project macos/WaiSay/WaiSay.xcodeproj -scheme WaiSay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project ios/WaiSay/WaiSayiOS.xcodeproj -scheme WaiSay -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
 **Android:**
@@ -142,7 +142,7 @@ web/
 ios/
 macos/
 shared/
-  WaiComputerKit/       # Shared Swift package (API client, audio, websocket)
+  WaiSayKit/       # Shared Swift package (API client, audio, websocket)
 
 scripts/
   deploy-api.sh
@@ -153,7 +153,7 @@ scripts/
 ## Runtime Architecture Notes
 
 - **Live recording/transcription currently runs through the native iOS/macOS clients**, not the Next.js web dashboard.
-- The shared Swift package (`shared/WaiComputerKit`) owns audio capture, websocket transport, and API access for the native apps.
+- The shared Swift package (`shared/WaiSayKit`) owns audio capture, websocket transport, and API access for the native apps.
 - The backend issues provider-backed realtime transcription sessions via `POST /api/transcription/session` and voice sessions via `POST /api/voice/session`.
 - The backend health endpoint is `GET /health`.
 - There is **no runtime MCP integration** in the app codebase; MCP appears only in local dev-tool configuration.
@@ -237,8 +237,8 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 | | |
 |---|---|
 | **API base URL** | `https://wai.computer` |
-| **Xcode project** | `macos/WaiComputer/WaiComputer.xcodeproj` |
-| **Shared package** | `shared/WaiComputerKit/` |
+| **Xcode project** | `macos/WaiSay/WaiSay.xcodeproj` |
+| **Shared package** | `shared/WaiSayKit/` |
 | **Bundle ID** | Check Xcode project |
 | **Signing** | "Sign to Run Locally" for debug |
 
@@ -246,7 +246,7 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 
 - Check `CLAUDE.md` if deeper deployment history is needed.
 - Prefer fixing the shared Swift + backend websocket path for recording bugs before touching the web dashboard.
-- If validating production, use SSH and inspect `docker logs waicomputer-api` plus `<remote-root>/backend/docker compose ps`.
+- If validating production, use SSH and inspect `docker logs waisay-api` plus `/opt/waisay/backend/docker compose ps`.
 - Browser auth in production relies on the backend cookie being valid for both `wai.computer` and `api.wai.computer`; if login bounces back to `/login`, check the auth-cookie domain first.
 - Secrets access should be narrow and explicit: avoid broad Keychain enumeration, prefer exact item lookups only when necessary, and use 1Password as the first choice when credentials are available there.
 - Apple release versioning is strict: `MARKETING_VERSION` must stay human-readable `major.minor.patch` (for example `1.0.0`, `1.0.1`, `1.1.0`), while `CURRENT_PROJECT_VERSION` must be a plain integer build number (`1`, `2`, `3`, ...), never a timestamp.

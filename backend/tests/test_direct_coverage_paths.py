@@ -840,7 +840,7 @@ async def test_settings_route_direct_paths(db_session: AsyncSession):
 async def test_main_root_health_and_lifespan_paths(monkeypatch: pytest.MonkeyPatch):
     from app import main
 
-    assert await main.root() == {"message": "WaiComputer API", "version": "0.1.0"}
+    assert await main.root() == {"message": "WaiSay API", "version": "0.1.0"}
 
     class DummySession:
         def __init__(self) -> None:

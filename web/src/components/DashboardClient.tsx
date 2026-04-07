@@ -255,7 +255,7 @@ export function DashboardClient() {
     <div className="stack">
       <header className="card row">
         <div>
-          <h1>WaiComputer Web</h1>
+          <h1>WaiSay Web</h1>
           <p data-testid="user-email">{user?.email ?? "No user"}</p>
           {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
         </div>

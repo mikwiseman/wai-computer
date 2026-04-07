@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 OUTPUT_PATH=${1:?"usage: render-macos-dmg-background.sh <output-path> [icon-path] [base-background]"}
-ICON_PATH=${2:-"$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"}
+ICON_PATH=${2:-"$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"}
 BASE_BACKGROUND_PATH=${3:-}
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"

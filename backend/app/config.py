@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # App
-    app_name: str = "WaiComputer"
+    app_name: str = "WaiSay"
     debug: bool = False
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waisay"
 
     # Auth - JWT_SECRET is REQUIRED, no default for security
     jwt_secret: str  # Must be set via environment variable
@@ -61,11 +61,11 @@ class Settings(BaseSettings):
     agent_sdk_max_turns: int = 10
 
     upload_max_bytes: int = 200 * 1024 * 1024
-    upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
+    upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"
 
     # Email (Resend)
     resend_api_key: str = ""
-    email_from: str = "WaiComputer <noreply@mail.waiwai.is>"
+    email_from: str = "WaiSay <noreply@mail.waiwai.is>"
 
     # Sentry
     sentry_dsn: str = ""

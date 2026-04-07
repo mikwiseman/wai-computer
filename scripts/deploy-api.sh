@@ -5,14 +5,14 @@
 # Optional:
 #   VPS_HOST=<release-host>
 #   SSH_KEY_PATH=~/.ssh/id_ed25519
-#   REMOTE_ROOT=<remote-root>
+#   REMOTE_ROOT=/opt/waisay
 
 set -euo pipefail
 
 VPS_HOST="${VPS_HOST:-<release-host>}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
-REMOTE_ROOT="${REMOTE_ROOT:-<remote-root>}"
+REMOTE_ROOT="${REMOTE_ROOT:-/opt/waisay}"
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
@@ -64,19 +64,19 @@ ssh \
      'docker compose exec -T api curl -fsS http://localhost:8000/health' \
      24 \
      5 \
-     'docker logs --tail 200 waicomputer-api';
+     'docker logs --tail 200 waisay-api';
    wait_for_service \
      'Web health check' \
      'docker compose exec -T web node -e \"fetch(\\\"http://localhost:3000/login\\\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"' \
      24 \
      5 \
-     'docker logs --tail 200 waicomputer-web';
+     'docker logs --tail 200 waisay-web';
    wait_for_service \
      'Celery worker health check' \
-     '[[ \"\$(docker inspect --format '\''{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}'\'' waicomputer-celery-worker 2>/dev/null)\" == healthy ]]' \
+     '[[ \"\$(docker inspect --format '\''{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}'\'' waisay-celery-worker 2>/dev/null)\" == healthy ]]' \
      24 \
      5 \
-     'docker logs --tail 200 waicomputer-celery-worker';
+     'docker logs --tail 200 waisay-celery-worker';
    echo 'Remote deploy + health checks successful.'"
 
 echo "Deployment completed."

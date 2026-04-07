@@ -88,8 +88,8 @@ describe("app pages", () => {
 
 describe("layout", () => {
   it("exports metadata and renders html/body structure", () => {
-    expect(metadata.title).toBe("WaiComputer Web");
-    expect(metadata.description).toBe("WaiComputer browser client");
+    expect(metadata.title).toBe("WaiSay Web");
+    expect(metadata.description).toBe("WaiSay browser client");
 
     const element = RootLayout({ children: <div data-testid="layout-child">Child</div> });
     expect(element.type).toBe("html");

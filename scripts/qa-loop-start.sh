@@ -31,7 +31,7 @@ LOOP_ENV=(
   "NATIVE_REQUIRED=${NATIVE_REQUIRED:-0}"
   "NATIVE_CMD=${NATIVE_CMD:-}"
   "JWT_SECRET=${JWT_SECRET:-test-secret}"
-  "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waicomputer_test}"
+  "TEST_DATABASE_URL=${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waisay_test}"
   "DATABASE_URL=${DATABASE_URL:-}"
 )
 

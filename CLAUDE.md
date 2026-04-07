@@ -1,4 +1,4 @@
-# WaiComputer
+# WaiSay
 
 AI Second Brain — audio recording, transcription, and knowledge organization.
 
@@ -8,7 +8,7 @@ AI Second Brain — audio recording, transcription, and knowledge organization.
 |---|---|
 | **IP** | <release-host> |
 | **SSH** | `ssh <release-user>@<release-host>` |
-| **Deploy path** | `<remote-root>` |
+| **Deploy path** | `/opt/waisay` |
 | **OS** | Ubuntu 24.04 (Hetzner VPS, 4GB RAM, 75GB disk) |
 | **Domain** | `wai.computer` (Caddy auto-TLS) |
 
@@ -147,7 +147,7 @@ web/
 ios/                    # iOS app (Swift)
 macos/                  # macOS app (Swift)
 shared/
-  WaiComputerKit/       # Shared Swift package (API client, models, audio)
+  WaiSayKit/       # Shared Swift package (API client, models, audio)
 
 scripts/
   deploy-api.sh         # Manual deploy to VPS
@@ -220,29 +220,29 @@ Local dev uses `localhost` URLs. Production `.env` on server uses Docker interna
 
 | Service | Container | Internal Port | External Port | Network |
 |---------|-----------|--------------|---------------|---------|
-| db | waicomputer-db | 5432 | — | internal |
-| api | waicomputer-api | 8000 | — | internal, web |
-| web | waicomputer-web | 3000 | — | web |
-| caddy | waicomputer-caddy | 80, 443 | 80, 443 | web |
+| db | waisay-db | 5432 | — | internal |
+| api | waisay-api | 8000 | — | internal, web |
+| web | waisay-web | 3000 | — | web |
+| caddy | waisay-caddy | 80, 443 | 80, 443 | web |
 
 ## macOS App
 
 | | |
 |---|---|
 | **API base URL** | `https://wai.computer` (all builds, no localhost) |
-| **Xcode project** | `macos/WaiComputer/WaiComputer.xcodeproj` |
-| **Shared package** | `shared/WaiComputerKit/` (SPM, linked by Xcode) |
-| **Design system** | `macos/WaiComputer/WaiComputer/Core/DesignSystem.swift` |
+| **Xcode project** | `macos/WaiSay/WaiSay.xcodeproj` |
+| **Shared package** | `shared/WaiSayKit/` (SPM, linked by Xcode) |
+| **Design system** | `macos/WaiSay/WaiSay/Core/DesignSystem.swift` |
 | **Bundle ID** | Check Xcode project for current value |
 | **Signing** | "Sign to Run Locally" for debug; needs Apple Developer for release |
 
 **Build:**
 ```bash
 # Debug
-xcodebuild -scheme WaiComputer -configuration Debug build
+xcodebuild -scheme WaiSay -configuration Debug build
 
 # Release archive
-xcodebuild -scheme WaiComputer -configuration Release archive -archivePath /tmp/WaiComputer.xcarchive
+xcodebuild -scheme WaiSay -configuration Release archive -archivePath /tmp/WaiSay.xcarchive
 ```
 
 **Signed DMG (after every build):**
@@ -250,7 +250,7 @@ xcodebuild -scheme WaiComputer -configuration Release archive -archivePath /tmp/
 # Build signed DMG — must run after each macOS build
 ./scripts/build-macos-dmg.sh
 ```
-- Output: `artifacts/releases/macos/<version>-<build>/WaiComputer-<version>-<build>.dmg`
+- Output: `artifacts/releases/macos/<version>-<build>/WaiSay-<version>-<build>.dmg`
 - Signs with Developer ID Application: WaiWai, LLC (<apple-team-id>)
 - Universal binary (arm64 + x86_64), hardened runtime enabled
 - Set `NOTARY_KEYCHAIN_PROFILE` or `NOTARY_KEY` + `NOTARY_KEY_ID` for notarization

@@ -142,7 +142,7 @@ async def test_health_endpoints():
         resp = await client.get("/")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["message"] == "WaiComputer API"
+        assert data["message"] == "WaiSay API"
         assert "version" in data
 
         # Health

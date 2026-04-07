@@ -52,7 +52,7 @@ def _get_release_version() -> str | None:
             timeout=5,
         )
         if result.returncode == 0:
-            return f"waicomputer@{result.stdout.strip()}"
+            return f"waisay@{result.stdout.strip()}"
     except Exception:
         pass
     return None
@@ -177,7 +177,7 @@ app.include_router(digital_agents.router, prefix="/api")
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "WaiComputer API", "version": "0.1.0"}
+    return {"message": "WaiSay API", "version": "0.1.0"}
 
 
 @app.get("/health")

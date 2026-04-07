@@ -435,9 +435,9 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 
 ### 4.3 macOS App
 
-**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
+**Stack:** SwiftUI, WaiSayKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** macOS 14.2+
-**Bundle ID:** is.waiwai.waicomputer
+**Bundle ID:** is.waiwai.waisay
 **Signing:** Developer ID Application: WaiWai, LLC
 
 **Architecture:**
@@ -472,11 +472,11 @@ Tools
 - MacAgentChatView: agent chat with tool calling
 - MacAgentsView: create, list, run, delete agents
 - MacAppsView: browse collections, view/add/delete items
-- API methods in WaiComputerKit for all new endpoints
+- API methods in WaiSayKit for all new endpoints
 
 ### 4.4 iOS App
 
-**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
+**Stack:** SwiftUI, WaiSayKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** iOS 17+
 
 **Tab bar:** Wai (chat), Library, Agents, Apps
@@ -487,7 +487,7 @@ Tools
 **P1 features:** Push notifications, digital agents, user apps
 **P2 features:** Offline recording + sync, WidgetKit
 
-Uses same WaiComputerKit → same API methods, same models. WebView for deployed apps.
+Uses same WaiSayKit → same API methods, same models. WebView for deployed apps.
 
 ### 4.5 Android App
 
@@ -509,7 +509,7 @@ P2: Push, offline sync.
 - Voice message transcription (provider abstraction, target ElevenLabs)
 - Agent chat (same loop as web/macOS)
 - Message sync (Telethon client)
-- Inline search (@waicomputer_bot in any chat)
+- Inline search (@waisay_bot in any chat)
 - Forward processing ("second brain")
 - Site/app building from chat
 - Digital agent delivery to Telegram
@@ -547,7 +547,7 @@ P2: Push, offline sync.
 - Refresh tokens: 180-day, SHA-256 hashed in DB, rotated on use
 - Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (.wai.computer)
 - Magic links: 15-minute expiry, email via Resend
-- Deep links: `waicomputer://auth/verify?token=...` for native apps
+- Deep links: `waisay://auth/verify?token=...` for native apps
 - Keychain storage on macOS/iOS (wai_access_token, wai_refresh_token)
 
 ---

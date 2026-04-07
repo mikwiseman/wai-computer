@@ -371,7 +371,7 @@ async def test_root_endpoint(client: AsyncClient):
     response = await client.get("/")
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "WaiComputer API"
+    assert data["message"] == "WaiSay API"
     assert "version" in data
 
 

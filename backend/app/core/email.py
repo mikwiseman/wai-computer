@@ -12,8 +12,8 @@ from app.config import get_settings
 # Maps client identifiers to app URL schemes.
 # Using an enum-like mapping avoids open redirect vulnerabilities.
 APP_CLIENT_URLS = {
-    "macos": "waicomputer://auth/verify",
-    "ios": "waicomputer://auth/verify",
+    "macos": "waisay://auth/verify",
+    "ios": "waisay://auth/verify",
 }
 
 
@@ -27,9 +27,9 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
     if client and client in APP_CLIENT_URLS:
         app_url = f"{APP_CLIENT_URLS[client]}?token={token}"
         html = f"""
-            <h2>Sign in to WaiComputer</h2>
+            <h2>Sign in to WaiSay</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{app_url}">Open in WaiComputer App</a></p>
+            <p><a href="{app_url}">Open in WaiSay App</a></p>
             <p style="color: #666; font-size: 14px;">
                 Link not working?
                 <a href="{web_url}">Sign in via browser instead</a>
@@ -38,9 +38,9 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         """
     else:
         html = f"""
-            <h2>Sign in to WaiComputer</h2>
+            <h2>Sign in to WaiSay</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{web_url}">Sign in to WaiComputer</a></p>
+            <p><a href="{web_url}">Sign in to WaiSay</a></p>
             <p>If you didn't request this, you can safely ignore this email.</p>
         """
 
@@ -48,7 +48,7 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         {
             "from": settings.email_from,
             "to": [to_email],
-            "subject": "Sign in to WaiComputer",
+            "subject": "Sign in to WaiSay",
             "html": html,
         }
     )

@@ -10,7 +10,7 @@ def _mock_settings():
     mock = MagicMock()
     mock.resend_api_key = "re_test_key_123"
     mock.frontend_url = "https://app.wai.computer"
-    mock.email_from = "WaiComputer <noreply@mail.waiwai.is>"
+    mock.email_from = "WaiSay <noreply@mail.waiwai.is>"
     return mock
 
 
@@ -29,9 +29,9 @@ class TestSendMagicLinkEmail:
             mock_resend.Emails.send.assert_called_once()
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert call_args["from"] == "WaiComputer <noreply@mail.waiwai.is>"
+            assert call_args["from"] == "WaiSay <noreply@mail.waiwai.is>"
             assert call_args["to"] == ["user@example.com"]
-            assert call_args["subject"] == "Sign in to WaiComputer"
+            assert call_args["subject"] == "Sign in to WaiSay"
             assert "https://app.wai.computer/auth/verify?token=abc123token" in call_args["html"]
 
     async def test_resend_failure_raises_http_502(self):
@@ -81,7 +81,7 @@ class TestSendMagicLinkEmail:
 
             call_args = mock_resend.Emails.send.call_args[0][0]
             assert "https://app.wai.computer/auth/verify?token=token123" in call_args["html"]
-            assert "waicomputer://" not in call_args["html"]
+            assert "waisay://" not in call_args["html"]
 
     async def test_client_macos_sends_app_link_with_web_fallback(self):
         """When client='macos', email has app URL and web fallback."""
@@ -94,7 +94,7 @@ class TestSendMagicLinkEmail:
             await send_magic_link_email("user@example.com", "token456", client="macos")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "waicomputer://auth/verify?token=token456" in call_args["html"]
+            assert "waisay://auth/verify?token=token456" in call_args["html"]
             assert "https://app.wai.computer/auth/verify?token=token456" in call_args["html"]
 
     async def test_unknown_client_sends_web_link_only(self):
@@ -109,4 +109,4 @@ class TestSendMagicLinkEmail:
 
             call_args = mock_resend.Emails.send.call_args[0][0]
             assert "https://app.wai.computer/auth/verify?token=token789" in call_args["html"]
-            assert "waicomputer://" not in call_args["html"]
+            assert "waisay://" not in call_args["html"]

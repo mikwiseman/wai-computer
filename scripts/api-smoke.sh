@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Basic API smoke test for WaiComputer.
+# Basic API smoke test for WaiSay.
 # Usage: BASE_URL=https://api.wai.computer ./scripts/api-smoke.sh
 
 set -euo pipefail

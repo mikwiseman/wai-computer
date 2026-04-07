@@ -18,7 +18,7 @@
 #   NATIVE_CMD="xcodebuild ... && xcodebuild ..."
 #   ARTIFACT_ROOT=artifacts/qa-loop
 #   JWT_SECRET=test-secret
-#   TEST_DATABASE_URL=postgresql+asyncpg://$USER@localhost:5432/waicomputer_test
+#   TEST_DATABASE_URL=postgresql+asyncpg://$USER@localhost:5432/waisay_test
 
 set -uo pipefail
 
@@ -40,7 +40,7 @@ REQUIRE_DEPLOY_CMD="${REQUIRE_DEPLOY_CMD:-0}"
 NATIVE_REQUIRED="${NATIVE_REQUIRED:-0}"
 NATIVE_CMD="${NATIVE_CMD:-}"
 
-TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waicomputer_test}"
+TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waisay_test}"
 DATABASE_URL="${DATABASE_URL:-$TEST_DATABASE_URL}"
 JWT_SECRET="${JWT_SECRET:-test-secret}"
 
@@ -107,7 +107,7 @@ run_shared_tests() {
   local logfile="$1"
   run_step "shared_tests" "$logfile" bash -lc "
     set -euo pipefail
-    cd '$ROOT_DIR/shared/WaiComputerKit'
+    cd '$ROOT_DIR/shared/WaiSayKit'
     swift test -q
   "
 }
@@ -141,18 +141,18 @@ run_native_tests() {
     set -euo pipefail
     cd '$ROOT_DIR'
     if command -v xcodebuild >/dev/null 2>&1; then
-      if [[ -d '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' ]]; then
+      if [[ -d '$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj' ]]; then
         xcodebuild \
-          -project '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' \
-          -scheme WaiComputer \
+          -project '$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj' \
+          -scheme WaiSay \
           -destination 'platform=macOS' \
           CODE_SIGNING_ALLOWED=NO \
           build
       fi
-      if [[ -d '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' ]]; then
+      if [[ -d '$ROOT_DIR/ios/WaiSay/WaiSayiOS.xcodeproj' ]]; then
         xcodebuild \
-          -project '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' \
-          -scheme WaiComputer \
+          -project '$ROOT_DIR/ios/WaiSay/WaiSayiOS.xcodeproj' \
+          -scheme WaiSay \
           -destination 'generic/platform=iOS Simulator' \
           CODE_SIGNING_ALLOWED=NO \
           build

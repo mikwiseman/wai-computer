@@ -12,7 +12,7 @@ from app.config import get_settings
 settings = get_settings()
 
 celery_app = Celery(
-    "wai_computer",
+    "wai_say",
     broker=settings.redis_url,
     backend=settings.redis_url,
     include=["app.tasks.agent_tasks"],

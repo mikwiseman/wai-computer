@@ -118,9 +118,9 @@ In strict mode, Gatekeeper and notarization failures stop the build instead of b
 ## User Install Flow
 
 1. Open the DMG.
-2. Drag `WaiComputer.app` into `Applications`.
+2. Drag `WaiSay.app` into `Applications`.
 3. Eject the DMG.
-4. Launch `WaiComputer` from `/Applications`.
+4. Launch `WaiSay` from `/Applications`.
 
 ## Apple references
 
