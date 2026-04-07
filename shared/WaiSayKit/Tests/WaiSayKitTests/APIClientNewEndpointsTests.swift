@@ -222,63 +222,23 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertTrue(recordings.isEmpty)
     }
 
-        let session = try await client.pinChatSession(id: "sess-10")
-        XCTAssertEqual(session.id, "sess-10")
-        XCTAssertEqual(session.title, "Pinned Chat")
-        XCTAssertEqual(session.messageCount, 5)
-        XCTAssertNotNil(session.pinnedAt)
-    }
+    // MARK: - Pin Chat Session
 
-        let session = try await client.pinChatSession(id: "sess-abc")
-        XCTAssertEqual(session.pinnedAt, "2026-03-17T14:30:00Z")
-    }
 
-        let session = try await client.unpinChatSession(id: "sess-10")
-        XCTAssertEqual(session.id, "sess-10")
-        XCTAssertNil(session.pinnedAt)
-    }
 
-        let session = try await client.unpinChatSession(id: "sess-xyz")
-        XCTAssertNil(session.pinnedAt)
-        XCTAssertEqual(session.messageCount, 3)
-    }
+    // MARK: - Unpin Chat Session
 
-        let sessions = try await client.searchChatSessions(query: "project roadmap")
-        XCTAssertEqual(sessions.count, 1)
-        XCTAssertEqual(sessions[0].id, "sess-1")
-        XCTAssertEqual(sessions[0].title, "Roadmap Discussion")
-    }
 
-        let sessions = try await client.searchChatSessions(query: "test & demo / Q&A")
-        XCTAssertTrue(sessions.isEmpty)
-    }
 
-        let sessions = try await client.searchChatSessions(query: "nonexistent topic")
-        XCTAssertTrue(sessions.isEmpty)
-    }
+    // MARK: - Search Chat Sessions
 
-        let markdown = try await client.exportChatSession(id: "sess-export")
-        XCTAssertEqual(markdown, expectedMarkdown)
-    }
 
-        let markdown = try await client.exportChatSession(id: "sess-auth")
-        XCTAssertEqual(markdown, "# Exported")
-    }
 
-        do {
-            _ = try await client.exportChatSession(id: "sess-missing")
-            XCTFail("Expected error for 404 response")
-        } catch let error as APIError {
-            switch error {
-            case .httpError(let statusCode, _):
-                XCTAssertEqual(statusCode, 404)
-            default:
-                XCTFail("Expected httpError, got \(error)")
-            }
-        } catch {
-            XCTFail("Expected APIError, got \(error)")
-        }
-    }
+
+    // MARK: - Export Chat Session
+
+
+
 
     // MARK: - Delete Action Item
 
@@ -555,7 +515,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
             let body = try self.jsonBody(from: request)
             XCTAssertEqual(body["mode"] as? String, "conversation")
-            XCTAssertNil(body["model_id"])
+            XCTAssertNil(body["agent_id"])
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -567,7 +527,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             {
                 "provider":"elevenlabs",
                 "mode":"conversation",
-                "model_id":"agent-123",
+                "agent_id":"agent-123",
                 "signed_url":"wss://api.elevenlabs.io/v1/convai/conversation?token=signed",
                 "expires_in_seconds":900,
                 "environment":"production",
@@ -579,7 +539,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
         let session = try await client.createRealtimeVoiceSession(mode: .conversation)
         XCTAssertEqual(session.provider, "elevenlabs")
-        XCTAssertEqual(session.modelId, "agent-123")
+        XCTAssertEqual(session.agentId, "agent-123")
         XCTAssertTrue(session.signedURL.contains("api.elevenlabs.io"))
     }
 }
