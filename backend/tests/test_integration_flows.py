@@ -6,17 +6,12 @@ in sequence and verifying that state mutations propagate correctly.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.rate_limit import get_rate_limiter
 from app.core.security import decode_access_token
-from app.core.summarizer import SummaryResult
-from app.models.recording import ActionItem
 from app.models.user import User
 
 # --- helpers ---

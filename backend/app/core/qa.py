@@ -71,7 +71,7 @@ async def retrieve_context(
     if recording_ids:
         recording_filter = "AND s.recording_id = ANY(:recording_ids)"
 
-    hybrid_query = text(f"""
+    hybrid_query = text("""
         WITH fts_results AS (
             SELECT
                 s.id,
@@ -90,7 +90,7 @@ async def retrieve_context(
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
               AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
-              {{recording_filter}}
+              {recording_filter}
         ),
         semantic_results AS (
             SELECT
@@ -107,7 +107,7 @@ async def retrieve_context(
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
               AND s.embedding IS NOT NULL
-              {{recording_filter}}
+              {recording_filter}
         ),
         combined AS (
             SELECT

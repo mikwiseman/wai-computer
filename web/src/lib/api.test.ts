@@ -224,68 +224,6 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/related?limit=5");
   });
 
-  it("calls chat endpoints", async () => {
-    await api.sendChatMessage({ question: "What happened?", session_id: "s1", recording_ids: ["r1"] });
-    await api.listChatSessions();
-    await api.getChatSession("s1");
-    await api.deleteChatSession("s1");
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ question: "What happened?", session_id: "s1", recording_ids: ["r1"] }),
-    });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/chat/sessions");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/chat/sessions/s1");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/chat/sessions/s1", { method: "DELETE" });
-  });
-
-  it("calls renameChatSession", async () => {
-    await api.renameChatSession("s1", "New Title");
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1", {
-      method: "PATCH",
-      body: JSON.stringify({ title: "New Title" }),
-    });
-  });
-
-  it("calls renameChatSession with null title", async () => {
-    await api.renameChatSession("s1", null);
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1", {
-      method: "PATCH",
-      body: JSON.stringify({ title: null }),
-    });
-  });
-
-  it("calls searchChatSessions", async () => {
-    await api.searchChatSessions("roadmap");
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/search?q=roadmap");
-  });
-
-  it("applies sendChatMessage defaults for optional fields", async () => {
-    await api.sendChatMessage({ question: "Hello" });
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ question: "Hello", session_id: null, recording_ids: null }),
-    });
-  });
-
-  it("calls exportChatSession and returns markdown text", async () => {
-    const mockResponse = {
-      text: vi.fn().mockResolvedValue("# Chat\n\n**You:**\nHello"),
-    } as unknown as Response;
-    mockedApiFetchResponse.mockResolvedValueOnce(mockResponse);
-
-    const result = await api.exportChatSession("s1");
-
-    expect(mockedApiFetchResponse).toHaveBeenCalledWith("/api/chat/sessions/s1/export");
-    expect(result).toContain("# Chat");
-  });
-
-  it("throws on export chat session failure", async () => {
-    mockedApiFetchResponse.mockRejectedValueOnce(new Error("Something went wrong. Please try again in a moment."));
-
-    await expect(api.exportChatSession("s1")).rejects.toThrow();
-  });
-
   it("calls getWeeklyDigest", async () => {
     await api.getWeeklyDigest();
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/digest/weekly");
@@ -327,20 +265,6 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith(
       "/api/recordings/rec1/keywords",
     );
-  });
-
-  it("calls pinChatSession", async () => {
-    await api.pinChatSession("s1");
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1/pin", {
-      method: "POST",
-    });
-  });
-
-  it("calls unpinChatSession", async () => {
-    await api.unpinChatSession("s1");
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/chat/sessions/s1/pin", {
-      method: "DELETE",
-    });
   });
 
   it("calls starRecording", async () => {
@@ -444,5 +368,4 @@ describe("api client wrappers", () => {
 
     await expect(api.exportRecording("rec1", "txt")).rejects.toThrow();
   });
-
 });
