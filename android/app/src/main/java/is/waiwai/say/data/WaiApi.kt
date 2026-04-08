@@ -1,4 +1,4 @@
-package is.waiwai.say.data
+package `is`.waiwai.say.data
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body

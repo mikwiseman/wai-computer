@@ -93,5 +93,10 @@ web/playwright-report/
 *.key
 credentials.json
 
+# Android
+android/keystore.properties
+*.jks
+*.keystore
+
 # pnpm
 .pnpm-home/

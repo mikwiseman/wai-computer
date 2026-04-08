@@ -1,4 +1,4 @@
-package is.waiwai.say.ui
+package `is`.waiwai.say.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,10 +41,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import is.waiwai.say.data.RealtimeVoiceSession
-import is.waiwai.say.data.RecordingSummary
-import is.waiwai.say.data.SettingsStore
-import is.waiwai.say.data.WaiApi
+import `is`.waiwai.say.data.RealtimeVoiceSession
+import `is`.waiwai.say.data.RecordingSummary
+import `is`.waiwai.say.data.SettingsStore
+import `is`.waiwai.say.data.WaiApi
 import kotlinx.coroutines.launch
 
 private enum class AndroidTab(val label: String) {
@@ -265,8 +265,8 @@ private fun LibraryScreen(api: WaiApi) {
 
 @Composable
 private fun SettingsScreen(settingsStore: SettingsStore) {
-    var baseUrl by rememberSaveable { mutableStateOf(settingsStore.baseUrl) }
-    var accessToken by rememberSaveable { mutableStateOf(settingsStore.accessToken) }
+    var baseUrl by remember { mutableStateOf(settingsStore.baseUrl) }
+    var accessToken by remember { mutableStateOf(settingsStore.accessToken) }
     var saved by remember { mutableStateOf(false) }
 
     Column(

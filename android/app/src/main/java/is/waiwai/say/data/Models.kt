@@ -1,4 +1,4 @@
-package is.waiwai.say.data
+package `is`.waiwai.say.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
