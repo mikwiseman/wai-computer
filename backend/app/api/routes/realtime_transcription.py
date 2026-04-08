@@ -62,6 +62,8 @@ async def create_session(
             detail=UNAVAILABLE_DETAIL,
         ) from exc
     except Exception as exc:
+        import sentry_sdk
+        sentry_sdk.capture_exception(exc)
         logger.error(
             "realtime transcription session failed user_id=%s error=%s",
             user.id,
@@ -69,7 +71,7 @@ async def create_session(
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=UNAVAILABLE_DETAIL,
+            detail=f"{UNAVAILABLE_DETAIL} ({str(exc)})",
         ) from exc
 
     logger.info(

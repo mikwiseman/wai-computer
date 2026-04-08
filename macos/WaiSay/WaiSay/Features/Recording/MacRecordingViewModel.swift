@@ -288,7 +288,13 @@ class MacRecordingViewModel: ObservableObject {
             }
 
             // Connect to the configured realtime transcription provider.
-            try await ws.connect()
+            var isLiveTranscriptionActive = true
+            do {
+                try await ws.connect()
+            } catch {
+                NSLog("[Recording] Failed to connect to live transcription: %@", "\(error)")
+                isLiveTranscriptionActive = false
+            }
 
             let encoder = AudioEncoder(channels: channels)
             audioEncoder = encoder
@@ -318,12 +324,15 @@ class MacRecordingViewModel: ObservableObject {
                         }
                         // Local-first: always write to disk before sending over network
                         fileWriter.writeEncodedPCM(data)
-                        do {
-                            try await ws.sendAudio(data: data)
-                        } catch {
-                            NSLog("[Recording] Failed to send audio: %@", "\(error)")
-                            await self.failActiveRecording(with: error.userFacingMessage(context: .recording))
-                            return
+                        
+                        if isLiveTranscriptionActive {
+                            do {
+                                try await ws.sendAudio(data: data)
+                            } catch {
+                                NSLog("[Recording] Failed to send audio: %@", "\(error)")
+                                // Transcription dropped — fallback to local-only for the rest of this recording
+                                isLiveTranscriptionActive = false
+                            }
                         }
                     }
                 }

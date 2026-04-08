@@ -142,7 +142,13 @@ class RecordingViewModel: ObservableObject {
             }
 
             // Connect to the configured transcription provider.
-            try await ws.connect()
+            var isLiveTranscriptionActive = true
+            do {
+                try await ws.connect()
+            } catch {
+                NSLog("[Recording] Failed to connect to transcription service: %@", "\(error)")
+                isLiveTranscriptionActive = false
+            }
 
             let capture = MicrophoneCapture()
             let encoder = AudioEncoder()
@@ -163,11 +169,15 @@ class RecordingViewModel: ObservableObject {
                     if let data = encoder.encode(buffer) {
                         // Local-first: always write to disk before sending over network
                         fileWriter.writeEncodedPCM(data)
-                        do {
-                            try await ws.sendAudio(data: data)
-                        } catch {
-                            await self.handleStreamingFailure(error.userFacingMessage(context: .recording))
-                            return
+                        
+                        if isLiveTranscriptionActive {
+                            do {
+                                try await ws.sendAudio(data: data)
+                            } catch {
+                                NSLog("[Recording] Failed to send audio: %@", "\(error)")
+                                // Transcription dropped — fallback to local-only for the rest of this recording
+                                isLiveTranscriptionActive = false
+                            }
                         }
                     }
                 }
