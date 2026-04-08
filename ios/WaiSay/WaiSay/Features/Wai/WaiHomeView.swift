@@ -128,7 +128,7 @@ struct WaiHomeView: View {
                     .clipShape(Capsule())
             }
 
-            Text("Provider: \(voiceSession.provider). Model: \(voiceSession.modelId). Expires in \(voiceSession.expiresInSeconds / 60)m.")
+            Text("Provider: \(voiceSession.provider). Model: \(voiceSession.agentId). Expires in \(voiceSession.expiresInSeconds / 60)m.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
