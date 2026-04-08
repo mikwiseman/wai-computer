@@ -1,11 +1,11 @@
-package is.waiwai.say
+package `is`.waiwai.say
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import is.waiwai.say.data.SettingsStore
-import is.waiwai.say.data.WaiApi
-import is.waiwai.say.ui.WaiAndroidApp
+import `is`.waiwai.say.data.SettingsStore
+import `is`.waiwai.say.data.WaiApi
+import `is`.waiwai.say.ui.WaiAndroidApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
