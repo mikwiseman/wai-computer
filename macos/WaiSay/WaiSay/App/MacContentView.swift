@@ -41,7 +41,6 @@ struct MacMainView: View {
         case allRecordings
         case folder(String)
         case trash
-        case chat
         case settings
     }
 
@@ -91,8 +90,6 @@ struct MacMainView: View {
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
         case .trash:
             return "Trash"
-        case .chat:
-            return "Chat"
         case .settings:
             return "Settings"
         case .none:
@@ -388,7 +385,6 @@ struct MacMainView: View {
             }
 
             Section {
-                sidebarRow("Chat", icon: "brain", section: .chat)
                 sidebarRow("Settings", icon: "gear", section: .settings)
             } header: {
                 Text("Wai")
@@ -574,8 +570,6 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
-        case .chat:
-            MacChatView()
         case .settings:
             MacSettingsView()
         }
