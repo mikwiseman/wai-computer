@@ -146,12 +146,6 @@
 			path = Search;
 			sourceTree = "<group>";
 		};
-			isa = PBXGroup;
-			children = (
-			);
-			path = Agents;
-			sourceTree = "<group>";
-		};
 		C161F2A459C9F282135D39F3 /* Core */ = {
 			isa = PBXGroup;
 			children = (
@@ -168,12 +162,6 @@
 				6B9CD7F0D9E4994D2A233BF0 /* WaiHomeView.swift */,
 			);
 			path = Wai;
-			sourceTree = "<group>";
-		};
-			isa = PBXGroup;
-			children = (
-			);
-			path = Chat;
 			sourceTree = "<group>";
 		};
 		CE8D19547D82630B3E23871B = {
