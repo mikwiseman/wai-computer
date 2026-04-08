@@ -31,12 +31,6 @@ struct MainTabView: View {
                 }
                 .tag(0)
 
-            ChatView()
-                .tabItem {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                }
-                .tag(1)
-
             LibraryView()
                 .tabItem {
                     Label("Library", systemImage: "folder.fill")
