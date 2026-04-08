@@ -54,11 +54,10 @@ public enum UserFacingErrorFormatter {
             if statusCode == 401 {
                 return "Your session ended. Please sign in again."
             }
-            if statusCode >= 500 || shouldHideTechnicalMessage(message ?? "") {
-                return genericMessage(for: context)
-            }
-            if let message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return message
+            if let msg = message, !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !shouldHideTechnicalMessage(msg) {
+                    return msg
+                }
             }
             return genericMessage(for: context)
         case .invalidURL, .noData, .decodingError:

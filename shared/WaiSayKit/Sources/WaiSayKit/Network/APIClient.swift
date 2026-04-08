@@ -318,18 +318,23 @@ public actor APIClient {
     ) async throws -> (Data, HTTPURLResponse) {
         let data: Data
         let response: URLResponse
+        Log.api.info("→ \(method) \(path)")
         do {
             (data, response) = try await perform(request)
         } catch {
             var sentryExtras: [String: Any] = ["path": path, "method": method]
             sentryExtras.merge(extras) { _, new in new }
             SentryHelper.captureError(error, extras: sentryExtras)
+            Log.api.error("✗ \(method) \(path) failed: \(error.localizedDescription)")
             throw APIError.networkError(error)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            Log.api.error("✗ \(method) \(path) invalid response")
             throw APIError.networkError(URLError(.badServerResponse))
         }
+
+        Log.api.info("← \(method) \(path) (\(httpResponse.statusCode))")
 
         SentryHelper.addBreadcrumb(
             category: "api",

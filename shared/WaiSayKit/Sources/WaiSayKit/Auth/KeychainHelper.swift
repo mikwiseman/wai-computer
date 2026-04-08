@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import LocalAuthentication
 
 /// Simple Keychain wrapper for storing authentication tokens securely.
 public enum KeychainHelper {
@@ -29,12 +30,16 @@ public enum KeychainHelper {
 
     /// Load a string value from the Keychain.
     public static func load(key: String) -> String? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationContext as String: context,
         ]
 
         var result: AnyObject?
