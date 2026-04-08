@@ -11,15 +11,15 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                        LazyVStack(alignment: .leading, spacing: 24) {
                             if viewModel.answer == nil && !viewModel.isLoading && viewModel.error == nil {
-                                VStack(spacing: Spacing.md) {
+                                VStack(spacing: 16) {
                                     Image(systemName: "bubble.left.and.bubble.right")
                                         .font(.system(size: 48))
-                                        .foregroundStyle(Palette.textTertiary)
+                                        .foregroundStyle(Color.gray)
                                     Text("Ask anything about your recordings")
-                                        .font(Typography.body)
-                                        .foregroundStyle(Palette.textSecondary)
+                                        .font(.body)
+                                        .foregroundStyle(Color.secondary)
                                         .multilineTextAlignment(.center)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -32,21 +32,21 @@ struct ChatView: View {
                             }
 
                             if viewModel.isLoading {
-                                HStack(spacing: Spacing.sm) {
+                                HStack(spacing: 12) {
                                     ProgressView()
                                     Text("Thinking...")
-                                        .font(Typography.bodySmall)
-                                        .foregroundStyle(Palette.textTertiary)
+                                        .font(.footnote)
+                                        .foregroundStyle(Color.gray)
                                 }
-                                .padding(.top, Spacing.md)
+                                .padding(.top, 16)
                                 .id("loading")
                             }
                             
                             if let error = viewModel.error {
                                 Text(error)
-                                    .font(Typography.bodySmall)
+                                    .font(.footnote)
                                     .foregroundStyle(.red)
-                                    .padding(.top, Spacing.md)
+                                    .padding(.top, 16)
                             }
                         }
                         .padding()
@@ -71,12 +71,12 @@ struct ChatView: View {
     }
 
     private var chatInput: some View {
-        HStack(alignment: .bottom, spacing: Spacing.md) {
+        HStack(alignment: .bottom, spacing: 16) {
             TextField("Ask about your recordings...", text: $viewModel.inputText, axis: .vertical)
                 .focused($isInputFocused)
                 .lineLimit(1...5)
                 .padding(10)
-                .background(Palette.surfaceSubtle)
+                .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .accessibilityIdentifier("qa-input-field")
 
@@ -89,15 +89,15 @@ struct ChatView: View {
                     .frame(width: 32, height: 32)
                     .background(
                         viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Palette.textTertiary
-                            : Palette.accent
+                            ? Color.gray
+                            : Color.blue
                     )
                     .clipShape(Circle())
             }
             .disabled(viewModel.inputText.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isLoading)
         }
         .padding()
-        .background(Palette.surface)
+        .background(Color(.systemBackground))
     }
 
     private func sendMessage() {
@@ -116,61 +116,61 @@ struct QAResponseRow: View {
     @State private var showSources = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .center, spacing: Spacing.xs) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "brain")
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Color.blue)
                 Text("WAI")
-                    .font(Typography.labelSmall)
-                    .foregroundStyle(Palette.textTertiary)
+                    .font(.caption2)
+                    .foregroundStyle(Color.gray)
                     .tracking(1.2)
             }
 
             Text(answer)
-                .font(Typography.reading)
+                .font(.body)
                 .lineSpacing(4)
 
             if !sources.isEmpty {
                 Button {
                     withAnimation { showSources.toggle() }
                 } label: {
-                    HStack(spacing: Spacing.xs) {
+                    HStack(spacing: 8) {
                         Text("\(sources.count) source\(sources.count == 1 ? "" : "s")")
-                            .font(Typography.label)
+                            .font(.subheadline)
                         Image(systemName: showSources ? "chevron.up" : "chevron.down")
-                            .font(Typography.caption)
+                            .font(.caption)
                     }
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(Color.blue)
                 }
-                .padding(.top, Spacing.xs)
+                .padding(.top, 8)
 
                 if showSources {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(sources) { source in
-                            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                                HStack(spacing: Spacing.xs) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 8) {
                                     if let title = source.recordingTitle {
                                         Text(title)
-                                            .font(Typography.label)
+                                            .font(.subheadline)
                                     }
                                     if let speaker = source.speaker {
                                         Text("(\(speaker))")
-                                            .font(Typography.caption)
-                                            .foregroundStyle(Palette.textTertiary)
+                                            .font(.caption)
+                                            .foregroundStyle(Color.gray)
                                     }
                                 }
                                 Text(source.content)
-                                    .font(Typography.bodySmall)
-                                    .foregroundStyle(Palette.textSecondary)
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.secondary)
                                     .lineLimit(3)
                             }
-                            .padding(Spacing.sm)
+                            .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Palette.surfaceSubtle)
+                            .background(Color(.secondarySystemBackground))
                             .cornerRadius(8)
                         }
                     }
-                    .padding(.top, Spacing.xs)
+                    .padding(.top, 8)
                 }
             }
         }

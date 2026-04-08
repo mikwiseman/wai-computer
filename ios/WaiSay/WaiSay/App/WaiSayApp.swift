@@ -29,7 +29,7 @@ class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
-    private let apiClient: APIClient
+    let apiClient: APIClient
 
     init() {
         #if !DEBUG
