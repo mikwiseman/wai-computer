@@ -48,7 +48,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .chat, .settings:
+        case .settings:
             return false
         }
     }
