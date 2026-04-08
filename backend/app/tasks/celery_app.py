@@ -32,17 +32,16 @@ celery_app.conf.update(
     worker_max_tasks_per_child=100,
 )
 
-celery_app.conf.beat_schedule = {
-    "run-due-agents": {
-        "task": "app.tasks.agent_tasks.run_due_agents",
-        "schedule": 60,
-    },
-}
+celery_app.conf.beat_schedule = {}
 
 
 @worker_process_init.connect
 def reset_async_db_runtime(**_kwargs) -> None:
     """Ensure forked workers do not inherit async DB connections from the parent process."""
+    from app.db.session import reset_db_runtime
+
+    reset_db_runtime()
+
     from app.db.session import reset_db_runtime
 
     reset_db_runtime()

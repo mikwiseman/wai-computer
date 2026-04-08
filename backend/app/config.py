@@ -55,10 +55,6 @@ class Settings(BaseSettings):
     # Claude/Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
-    agent_sdk_model: str = "claude-sonnet-4-20250514"
-    agent_sdk_effort: str = "high"
-    agent_sdk_max_budget_usd: float = 1.0
-    agent_sdk_max_turns: int = 10
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"
@@ -72,12 +68,6 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
-
-    # Agent system
-    agent_model: str = "claude-haiku-4-5"
-    agent_max_turns: int = 10
-    agent_rate_limit_per_minute: int = 30
-    agent_rate_limit_per_hour: int = 200
 
     # URLs
     frontend_url: str = "http://localhost:3000"

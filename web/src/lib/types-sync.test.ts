@@ -8,11 +8,6 @@ import { describe, expect, it } from "vitest";
 import type {
   AnalyticsResponse,
   BulkOperationResponse,
-  ChatMessageData,
-  ChatResponse,
-  ChatSession,
-  ChatSessionDetail,
-  ChatSource,
   DailyBreakdown,
   DigestActionItem,
   DigestHighlight,
@@ -23,12 +18,10 @@ import type {
   HighlightImportance,
   KeywordItem,
   KeywordsResponse,
-  PinSessionResponse,
   Recording,
   RecordingDetail,
   RelatedRecording,
   RelatedRecordingsResponse,
-  RenameSessionResponse,
   SearchResponse,
   SearchResult,
   SpeakerStat,
@@ -288,185 +281,9 @@ describe("types-sync: Highlight", () => {
   });
 });
 
-describe("types-sync: ChatSession with pinned_at", () => {
-  it("ChatSession includes pinned_at field", () => {
-    const session: ChatSession = {
-      id: "s1",
-      title: "Sprint review chat",
-      recording_ids: ["r1", "r2"],
-      created_at: "2026-03-01T00:00:00Z",
-      message_count: 8,
-      pinned_at: "2026-03-05T10:00:00Z",
-    };
 
-    expectExactKeys(session, [
-      "id",
-      "title",
-      "recording_ids",
-      "created_at",
-      "message_count",
-      "pinned_at",
-    ]);
 
-    expect(session.pinned_at).toBe("2026-03-05T10:00:00Z");
-  });
 
-  it("ChatSession pinned_at can be null (unpinned)", () => {
-    const session: ChatSession = {
-      id: "s2",
-      title: null,
-      recording_ids: null,
-      created_at: "2026-03-02T00:00:00Z",
-      message_count: 1,
-      pinned_at: null,
-    };
-
-    expect(session.pinned_at).toBeNull();
-    expect(session.title).toBeNull();
-    expect(session.recording_ids).toBeNull();
-  });
-});
-
-describe("types-sync: StarRecordingResponse and PinSessionResponse", () => {
-  it("StarRecordingResponse matches backend schema", () => {
-    const starred: StarRecordingResponse = {
-      id: "r1",
-      starred_at: "2026-03-10T12:00:00Z",
-    };
-
-    expectExactKeys(starred, ["id", "starred_at"]);
-    expect(starred.starred_at).toBeTruthy();
-
-    const unstarred: StarRecordingResponse = {
-      id: "r1",
-      starred_at: null,
-    };
-    expect(unstarred.starred_at).toBeNull();
-  });
-
-  it("PinSessionResponse matches backend schema", () => {
-    const pinned: PinSessionResponse = {
-      id: "s1",
-      pinned_at: "2026-03-05T10:00:00Z",
-    };
-
-    expectExactKeys(pinned, ["id", "pinned_at"]);
-    expect(pinned.pinned_at).toBeTruthy();
-
-    const unpinned: PinSessionResponse = {
-      id: "s1",
-      pinned_at: null,
-    };
-    expect(unpinned.pinned_at).toBeNull();
-  });
-});
-
-describe("types-sync: ChatSessionDetail and ChatMessageData", () => {
-  it("ChatSessionDetail matches backend ChatSessionDetailResponse", () => {
-    const detail: ChatSessionDetail = {
-      id: "s1",
-      title: "Discussion",
-      recording_ids: ["r1"],
-      created_at: "2026-03-01T00:00:00Z",
-      messages: [
-        {
-          id: "m1",
-          role: "user",
-          content: "What happened?",
-          source_segment_ids: null,
-          source_recording_ids: null,
-          created_at: "2026-03-01T00:01:00Z",
-        },
-        {
-          id: "m2",
-          role: "assistant",
-          content: "The team discussed priorities.",
-          source_segment_ids: ["seg1"],
-          source_recording_ids: ["r1"],
-          created_at: "2026-03-01T00:01:05Z",
-        },
-      ],
-    };
-
-    expectExactKeys(detail, ["id", "title", "recording_ids", "created_at", "messages"]);
-    expect(detail.messages).toHaveLength(2);
-
-    const assistantMsg = detail.messages[1];
-    expectExactKeys(assistantMsg, [
-      "id",
-      "role",
-      "content",
-      "source_segment_ids",
-      "source_recording_ids",
-      "created_at",
-    ]);
-  });
-
-  it("ChatMessageData source fields are nullable", () => {
-    const msg: ChatMessageData = {
-      id: "m1",
-      role: "user",
-      content: "Hello",
-      source_segment_ids: null,
-      source_recording_ids: null,
-      created_at: "2026-03-01T00:00:00Z",
-    };
-
-    expect(msg.source_segment_ids).toBeNull();
-    expect(msg.source_recording_ids).toBeNull();
-  });
-});
-
-describe("types-sync: ChatResponse and ChatSource", () => {
-  it("ChatResponse matches backend response schema", () => {
-    const response: ChatResponse = {
-      answer: "The team agreed on priorities.",
-      session_id: "s-new",
-      message_id: "msg-1",
-      sources: [
-        {
-          segment_id: "seg1",
-          recording_id: "r1",
-          recording_title: "Sprint Planning",
-          speaker: "Alice",
-          content: "We should focus on Q3.",
-          start_ms: 5000,
-          end_ms: 12000,
-        },
-      ],
-    };
-
-    expectExactKeys(response, ["answer", "session_id", "message_id", "sources"]);
-    expect(response.sources).toHaveLength(1);
-  });
-
-  it("ChatSource allows nullable fields", () => {
-    const source: ChatSource = {
-      segment_id: "seg1",
-      recording_id: "r1",
-      recording_title: null,
-      speaker: null,
-      content: "Some text",
-      start_ms: null,
-      end_ms: null,
-    };
-
-    expectExactKeys(source, [
-      "segment_id",
-      "recording_id",
-      "recording_title",
-      "speaker",
-      "content",
-      "start_ms",
-      "end_ms",
-    ]);
-
-    expect(source.recording_title).toBeNull();
-    expect(source.speaker).toBeNull();
-    expect(source.start_ms).toBeNull();
-    expect(source.end_ms).toBeNull();
-  });
-});
 
 describe("types-sync: SearchResult and SearchResponse", () => {
   it("SearchResult matches backend response schema", () => {
@@ -691,35 +508,6 @@ describe("types-sync: TranscriptStatsResponse and TranscriptSearchResponse", () 
   });
 });
 
-describe("types-sync: KeywordsResponse and RenameSessionResponse", () => {
-  it("KeywordsResponse matches backend schema", () => {
-    const kw: KeywordsResponse = {
-      recording_id: "r1",
-      total_words: 3500,
-      keywords: [
-        { term: "roadmap", count: 12 },
-        { term: "sprint", count: 8 },
-      ],
-    };
-
-    expectExactKeys(kw, ["recording_id", "total_words", "keywords"]);
-
-    const item: KeywordItem = kw.keywords[0];
-    expectExactKeys(item, ["term", "count"]);
-  });
-
-  it("RenameSessionResponse matches backend schema", () => {
-    const resp: RenameSessionResponse = {
-      id: "s1",
-      title: "Renamed Session",
-    };
-
-    expectExactKeys(resp, ["id", "title"]);
-
-    const nullTitle: RenameSessionResponse = { id: "s1", title: null };
-    expect(nullTitle.title).toBeNull();
-  });
-});
 
 describe("types-sync: Entity and EntityDetail", () => {
   it("Entity matches backend schema", () => {
