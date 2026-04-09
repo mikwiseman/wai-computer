@@ -71,11 +71,14 @@ STYLE_INSTRUCTIONS = {
     ),
 }
 
+DEFAULT_SUMMARY_LANGUAGE = "auto"
+DEFAULT_SUMMARY_STYLE = "medium"
+
 
 def build_summary_prompt(
     *,
-    language: str = "auto",
-    style: str = "medium",
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+    style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> str:
     """Build the summarization prompt with user preferences."""
@@ -85,14 +88,21 @@ def build_summary_prompt(
     parts.append(SUMMARY_INSTRUCTIONS)
 
     # Style
-    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS["medium"])
+    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
     parts.append(f"\nSTYLE: {style_text}")
 
     # Language
-    if language and language != "auto":
+    if language and language != DEFAULT_SUMMARY_LANGUAGE:
         parts.append(
             f"\nOUTPUT LANGUAGE: Write ALL text fields "
             f"(title, summary, key_points, etc.) in {language}."
+        )
+    else:
+        parts.append(
+            "\nOUTPUT LANGUAGE: Write ALL text fields "
+            "(title, summary, key_points, etc.) in the dominant language of the transcript. "
+            "If the transcript is primarily in Russian, output Russian. "
+            "If the transcript is primarily in English, output English."
         )
 
     # Custom instructions
@@ -122,8 +132,8 @@ class SummaryResult:
 async def summarize_transcript(
     transcript: str,
     *,
-    language: str = "auto",
-    style: str = "medium",
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+    style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> SummaryResult:
     """
