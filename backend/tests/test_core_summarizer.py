@@ -181,8 +181,8 @@ class TestSummarizeTranscript:
         assert "Focus on deadlines" in content
         assert "ADDITIONAL INSTRUCTIONS" in content
 
-    async def test_auto_language_omits_language_directive(self):
-        """summarize_transcript() with language='auto' does not add OUTPUT LANGUAGE."""
+    async def test_auto_language_follows_transcript_language(self):
+        """summarize_transcript() with language='auto' follows the transcript language."""
         mock_response = _make_claude_response(VALID_SUMMARY_JSON)
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
@@ -191,7 +191,8 @@ class TestSummarizeTranscript:
             await summarize_transcript("Notes", language="auto")
 
         content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
-        assert "OUTPUT LANGUAGE" not in content
+        assert "OUTPUT LANGUAGE" in content
+        assert "dominant language of the transcript" in content
 
 
 class TestBuildSummaryPrompt:
@@ -199,7 +200,8 @@ class TestBuildSummaryPrompt:
         """build_summary_prompt() includes medium style by default."""
         prompt = build_summary_prompt()
         assert "2-3 sentence" in prompt
-        assert "OUTPUT LANGUAGE" not in prompt
+        assert "OUTPUT LANGUAGE" in prompt
+        assert "dominant language of the transcript" in prompt
         assert "ADDITIONAL INSTRUCTIONS" not in prompt
 
     def test_brief_style(self):

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.summarizer import SummaryResult
 from app.core.transcript_utils import TranscriptResult
 from app.models.recording import ActionItem, Recording, Segment, Summary
+from app.models.user import User
 
 
 async def _create_recording(
@@ -19,11 +20,12 @@ async def _create_recording(
     headers: dict,
     title: str | None = "Test Recording",
     type_: str = "note",
+    language: str = "en",
 ) -> dict:
     response = await client.post(
         "/api/recordings",
         headers=headers,
-        json={"title": title, "type": type_, "language": "en"},
+        json={"title": title, "type": type_, "language": language},
     )
     assert response.status_code == 201
     return response.json()
@@ -292,6 +294,113 @@ async def test_generate_summary_creates_summary_and_action_items(
     assert detail["title"] == "Roadmap Review"
     assert len(detail["action_items"]) == 2
     assert {item["priority"] for item in detail["action_items"]} == {"high", "medium"}
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_defaults_to_recording_language(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When summary_language is auto, use the explicit recording language."""
+    recording = await _create_recording(client, auth_headers, title="Russian Note", language="ru")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Обсудили план запуска и следующие шаги.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_summarize_transcript(_: str, **kwargs) -> SummaryResult:
+        captured["language"] = kwargs.get("language")
+        captured["style"] = kwargs.get("style")
+        return SummaryResult(
+            title="План запуска",
+            summary="Краткое саммари.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+        )
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", fake_summarize_transcript)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert captured["language"] == "ru"
+    assert captured["style"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_preserves_custom_style_for_auto_language(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Auto language should still respect a user-selected summary style."""
+    user = (await db_session.execute(select(User))).scalar_one()
+    user.summary_style = "brief"
+    user.summary_language = "auto"
+    await db_session.flush()
+
+    recording = await _create_recording(client, auth_headers, title="Mixed Note", language="multi")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Сегодня обсуждали релиз и blockers.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_summarize_transcript(_: str, **kwargs) -> SummaryResult:
+        captured["language"] = kwargs.get("language")
+        captured["style"] = kwargs.get("style")
+        return SummaryResult(
+            title="Release blockers",
+            summary="Short summary.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+        )
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", fake_summarize_transcript)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert captured["language"] == "auto"
+    assert captured["style"] == "brief"
 
 
 @pytest.mark.asyncio

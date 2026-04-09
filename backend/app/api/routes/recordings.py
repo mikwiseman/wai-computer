@@ -370,6 +370,30 @@ def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
     )
 
 
+def _resolve_summary_language_preference(
+    preferred_language: str | None,
+    recording_language: str | None,
+) -> str:
+    """Choose the summary language, defaulting to the transcript language."""
+    normalized_preference = (preferred_language or "").strip().lower()
+    if normalized_preference and normalized_preference != "auto":
+        return normalized_preference
+
+    normalized_recording_language = (recording_language or "").strip().lower()
+    if normalized_recording_language and normalized_recording_language != "multi":
+        return normalized_recording_language
+
+    return "auto"
+
+
+def _resolve_summary_style_preference(preferred_style: str | None) -> str:
+    """Use the saved style when present; otherwise fall back to the default style."""
+    normalized_style = (preferred_style or "").strip().lower()
+    if normalized_style in {"brief", "medium", "detailed"}:
+        return normalized_style
+    return "medium"
+
+
 def _serialize_action_item(action_item: ActionItem) -> ActionItemResponse:
     return ActionItemResponse(
         id=str(action_item.id),
@@ -1908,12 +1932,17 @@ async def generate_summary(
         speaker = segment.speaker or "Speaker"
         transcript_lines.append(f"{speaker}: {segment.content}")
     transcript = "\n".join(transcript_lines)
+    summary_language = _resolve_summary_language_preference(
+        user.summary_language,
+        recording.language,
+    )
+    summary_style = _resolve_summary_style_preference(user.summary_style)
 
     try:
         summary_result = await summarize_transcript(
             transcript,
-            language=user.summary_language,
-            style=user.summary_style,
+            language=summary_language,
+            style=summary_style,
             instructions=user.summary_instructions,
         )
 
