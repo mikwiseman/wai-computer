@@ -57,7 +57,7 @@ services:
     build: .
     container_name: waisay-api
     env_file:
-      - .env
+      - ${WAISAY_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waisay/uploads
@@ -167,7 +167,7 @@ services:
     build: .
     container_name: waisay-celery-worker
     env_file:
-      - .env
+      - ${WAISAY_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0

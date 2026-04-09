@@ -8,14 +8,19 @@ from celery import Celery
 from celery.signals import worker_process_init
 
 from app.config import get_settings
+from app.core.observability import initialize_sentry
 
 settings = get_settings()
+initialize_sentry(
+    dsn=settings.sentry_dsn,
+    debug=settings.debug,
+    include_celery=True,
+)
 
 celery_app = Celery(
     "wai_say",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.agent_tasks"],
 )
 
 celery_app.conf.update(
@@ -38,10 +43,6 @@ celery_app.conf.beat_schedule = {}
 @worker_process_init.connect
 def reset_async_db_runtime(**_kwargs) -> None:
     """Ensure forked workers do not inherit async DB connections from the parent process."""
-    from app.db.session import reset_db_runtime
-
-    reset_db_runtime()
-
     from app.db.session import reset_db_runtime
 
     reset_db_runtime()

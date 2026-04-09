@@ -147,6 +147,15 @@ class RecordingViewModel: ObservableObject {
                 try await ws.connect()
             } catch {
                 NSLog("[Recording] Failed to connect to transcription service: %@", "\(error)")
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "live transcription unavailable at recording start",
+                    level: .warning,
+                    data: [
+                        "recordingId": recordingId,
+                        "reason": error.localizedDescription,
+                    ]
+                )
                 isLiveTranscriptionActive = false
             }
 
@@ -250,11 +259,26 @@ class RecordingViewModel: ObservableObject {
         var transcriptSaved = false
         if let recordingId = currentRecordingId, let client {
             do {
-                let detail = try await client.saveLiveTranscript(
-                    recordingId: recordingId,
-                    segments: segments,
-                    durationSeconds: Int(duration.rounded())
-                )
+                let audioFileURL = try? RecordingBackupStore.audioFileURL(recordingId: recordingId)
+                let shouldUploadAudio = segments.isEmpty
+                    && audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+
+                let detail: RecordingDetail
+                if shouldUploadAudio, let audioFileURL {
+                    SentryHelper.addBreadcrumb(
+                        category: "recording",
+                        message: "falling back to audio upload after empty live transcript",
+                        level: .warning,
+                        data: ["recordingId": recordingId]
+                    )
+                    detail = try await client.uploadAudio(recordingId: recordingId, fileURL: audioFileURL)
+                } else {
+                    detail = try await client.saveLiveTranscript(
+                        recordingId: recordingId,
+                        segments: segments,
+                        durationSeconds: Int(duration.rounded())
+                    )
+                }
                 if detail.status == .failed {
                     let failureMessage = UserFacingErrorFormatter.displayMessage(
                         detail.failureMessage,

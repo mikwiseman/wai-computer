@@ -1,7 +1,11 @@
-"""Request-scoped logging helpers."""
+"""Request-scoped logging and Sentry helpers."""
 
 import logging
+import subprocess
 from contextvars import ContextVar, Token
+
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _request_method: ContextVar[str] = ContextVar("request_method", default="-")
@@ -9,6 +13,7 @@ _request_path: ContextVar[str] = ContextVar("request_path", default="-")
 _user_id: ContextVar[str] = ContextVar("user_id", default="-")
 _recording_id: ContextVar[str] = ContextVar("recording_id", default="-")
 _session_id: ContextVar[str] = ContextVar("session_id", default="-")
+_sentry_initialized = False
 
 
 class RequestContextFilter(logging.Filter):
@@ -31,6 +36,64 @@ def configure_logging() -> None:
         if any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
             continue
         handler.addFilter(RequestContextFilter())
+
+
+def get_release_version() -> str | None:
+    """Derive a release version from the git commit hash when available."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return f"waisay@{result.stdout.strip()}"
+    except Exception:
+        pass
+    return None
+
+
+def initialize_sentry(
+    *,
+    dsn: str,
+    debug: bool,
+    include_fastapi: bool = False,
+    include_celery: bool = False,
+) -> None:
+    """Initialize Sentry once per process with log capture enabled."""
+    global _sentry_initialized
+
+    if not dsn or _sentry_initialized:
+        return
+
+    integrations = [
+        LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.ERROR,
+        )
+    ]
+
+    if include_fastapi:
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+        integrations.append(FastApiIntegration())
+
+    if include_celery:
+        from sentry_sdk.integrations.celery import CeleryIntegration
+
+        integrations.append(CeleryIntegration(monitor_beat_tasks=True))
+
+    sentry_sdk.init(
+        dsn=dsn,
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        environment="production" if not debug else "development",
+        release=get_release_version(),
+        send_default_pii=False,
+        integrations=integrations,
+    )
+    _sentry_initialized = True
 
 
 def begin_request_context(

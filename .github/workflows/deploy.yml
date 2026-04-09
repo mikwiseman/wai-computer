@@ -131,89 +131,24 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          envs: POSTGRES_PASSWORD,JWT_SECRET,ELEVENLABS_API_KEY,ELEVENLABS_CONVERSATION_AGENT_ID,ELEVENLABS_RECORDING_AGENT_ID,ANTHROPIC_API_KEY,RESEND_API_KEY,EMAIL_FROM,FRONTEND_URL,CORS_ORIGINS,SENTRY_DSN,AUTH_COOKIE_DOMAIN,CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,REDIS_URL
-          script: |
-            set -euo pipefail
-            cd /opt/waisay
-            if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git remote get-url origin >/dev/null 2>&1; then
-              git pull --ff-only origin main
-            else
-              echo "Skipping git pull (no origin remote configured)"
-            fi
+      - uses: actions/checkout@v4
 
-            # Write .env from GitHub secrets (authoritative source of truth)
-            cat > backend/.env << ENVEOF
-            POSTGRES_USER=postgres
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            POSTGRES_DB=waisay
-            DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waisay
-            JWT_SECRET=${JWT_SECRET}
-            CORS_ORIGINS=${CORS_ORIGINS}
-            SPEECH_TO_TEXT_PROVIDER=elevenlabs
-            REALTIME_VOICE_PROVIDER=elevenlabs
-            ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-            ELEVENLABS_CONVERSATION_AGENT_ID=${ELEVENLABS_CONVERSATION_AGENT_ID}
-            ELEVENLABS_RECORDING_AGENT_ID=${ELEVENLABS_RECORDING_AGENT_ID}
-            ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-            RESEND_API_KEY=${RESEND_API_KEY}
-            EMAIL_FROM=${EMAIL_FROM}
-            FRONTEND_URL=${FRONTEND_URL}
-            REDIS_URL=${REDIS_URL}
-            CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-            CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
-            SENTRY_DSN=${SENTRY_DSN}
-            AUTH_COOKIE_DOMAIN=${AUTH_COOKIE_DOMAIN}
-            ENVEOF
-            # Remove leading whitespace from heredoc
-            sed -i 's/^[[:space:]]*//' backend/.env
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-            wait_for_service() {
-              local name="$1"
-              local command="$2"
-              local attempts="$3"
-              local delay="$4"
-              local failure_log_command="$5"
-              local attempt
-              for attempt in $(seq 1 "$attempts"); do
-                if eval "$command" >/dev/null 2>&1; then
-                  return 0
-                fi
-                sleep "$delay"
-              done
-              echo "$name did not become healthy after $((attempts * delay)) seconds." >&2
-              docker compose ps >&2 || true
-              eval "$failure_log_command" >&2 || true
-              exit 1
-            }
+      - name: Ensure remote application directory exists
+        run: |
+          set -euo pipefail
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "install -d -m 755 /opt/waisay"
 
-            cd backend
-            docker compose build api web celery-worker
-            docker compose up -d api web celery-worker caddy
-            wait_for_service \
-              "API health check" \
-              "docker compose exec -T api curl -fsS http://localhost:8000/health" \
-              24 \
-              5 \
-              "docker logs --tail 200 waisay-api"
-            wait_for_service \
-              "Web health check" \
-              "docker compose exec -T web node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"" \
-              24 \
-              5 \
-              "docker logs --tail 200 waisay-web"
-            wait_for_service \
-              "Celery worker health check" \
-              "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waisay-celery-worker 2>/dev/null)\" == healthy ]]" \
-              24 \
-              5 \
-              "docker logs --tail 200 waisay-celery-worker"
-            echo "Deploy successful (api + web + celery-worker)"
+      - name: Prepare bootstrap env file
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -230,3 +165,156 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           AUTH_COOKIE_DOMAIN: ${{ secrets.AUTH_COOKIE_DOMAIN }}
+        run: |
+          set -euo pipefail
+          for key in POSTGRES_PASSWORD JWT_SECRET FRONTEND_URL CORS_ORIGINS ELEVENLABS_API_KEY; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "ERROR: required GitHub secret ${key} is missing or empty" >&2
+              exit 1
+            fi
+          done
+          umask 077
+          cat > /tmp/waisay-backend.env <<EOF
+          POSTGRES_USER=postgres
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          POSTGRES_DB=waisay
+          DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waisay
+          JWT_SECRET=${JWT_SECRET}
+          CORS_ORIGINS=${CORS_ORIGINS}
+          SPEECH_TO_TEXT_PROVIDER=elevenlabs
+          REALTIME_VOICE_PROVIDER=elevenlabs
+          ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+          ELEVENLABS_CONVERSATION_AGENT_ID=${ELEVENLABS_CONVERSATION_AGENT_ID}
+          ELEVENLABS_RECORDING_AGENT_ID=${ELEVENLABS_RECORDING_AGENT_ID}
+          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          RESEND_API_KEY=${RESEND_API_KEY}
+          EMAIL_FROM=${EMAIL_FROM}
+          FRONTEND_URL=${FRONTEND_URL}
+          REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+          CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+          CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+          SENTRY_DSN=${SENTRY_DSN}
+          AUTH_COOKIE_DOMAIN=${AUTH_COOKIE_DOMAIN}
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/waisay-backend.env
+          chmod 600 /tmp/waisay-backend.env
+
+      - name: Sync repository to VPS
+        run: |
+          set -euo pipefail
+          rsync \
+            -az \
+            --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'backend/.env' \
+            --exclude 'backend/.venv/' \
+            --exclude 'backend/htmlcov/' \
+            --exclude 'backend/coverage.xml' \
+            --exclude 'web/node_modules/' \
+            --exclude 'web/.next/' \
+            --exclude 'android/.gradle/' \
+            --exclude 'backups/' \
+            ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/waisay/"
+
+      - name: Copy bootstrap env file to VPS
+        run: |
+          set -euo pipefail
+          scp /tmp/waisay-backend.env "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waisay-backend.env"
+
+      - name: Prepare remote deploy script
+        run: |
+          set -euo pipefail
+          cat > /tmp/waisay-remote-deploy.sh <<'EOF'
+          set -euo pipefail
+          PROD_ROOT=/opt/waisay
+          PROD_ENV_DIR=/etc/waisay
+          PROD_ENV_FILE=/etc/waisay/backend.env
+
+          wait_for_service() {
+            local name="$1"
+            local command="$2"
+            local attempts="$3"
+            local delay="$4"
+            local failure_log_command="$5"
+            local attempt
+            for attempt in $(seq 1 "$attempts"); do
+              if eval "$command" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep "$delay"
+            done
+            echo "$name did not become healthy after $((attempts * delay)) seconds." >&2
+            docker_compose ps >&2 || true
+            eval "$failure_log_command" >&2 || true
+            exit 1
+          }
+
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$PROD_ENV_FILE"; then
+              echo "ERROR: $PROD_ENV_FILE is missing required key $key" >&2
+              exit 1
+            fi
+          }
+
+          docker_compose() {
+            docker compose --env-file "$PROD_ENV_FILE" "$@"
+          }
+
+          install -d -m 755 "$PROD_ROOT"
+          install -d -m 700 "$PROD_ENV_DIR"
+
+          if [[ ! -f "$PROD_ENV_FILE" ]]; then
+            install -m 600 -o root -g root /tmp/waisay-backend.env "$PROD_ENV_FILE"
+          fi
+          rm -f /tmp/waisay-backend.env
+
+          chmod 600 "$PROD_ENV_FILE"
+          chown root:root "$PROD_ENV_FILE"
+          ln -sfn "$PROD_ENV_FILE" "$PROD_ROOT/backend/.env"
+          require_env_key POSTGRES_USER
+          require_env_key POSTGRES_PASSWORD
+          require_env_key POSTGRES_DB
+          require_env_key JWT_SECRET
+          require_env_key FRONTEND_URL
+          require_env_key CORS_ORIGINS
+          require_env_key ELEVENLABS_API_KEY
+
+          cd "$PROD_ROOT/backend"
+          export WAISAY_ENV_FILE="$PROD_ENV_FILE"
+          docker_compose config >/dev/null
+          docker_compose build api web celery-worker
+          docker_compose up -d api web celery-worker caddy
+          wait_for_service \
+            "API health check" \
+            "docker_compose exec -T api curl -fsS http://localhost:8000/health" \
+            24 \
+            5 \
+            "docker logs --tail 200 waisay-api"
+          wait_for_service \
+            "Web health check" \
+            "docker_compose exec -T web node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"" \
+            24 \
+            5 \
+            "docker logs --tail 200 waisay-web"
+          wait_for_service \
+            "Celery worker health check" \
+            "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waisay-celery-worker 2>/dev/null)\" == healthy ]]" \
+            24 \
+            5 \
+            "docker logs --tail 200 waisay-celery-worker"
+          echo "Deploy successful (api + web + celery-worker)"
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/waisay-remote-deploy.sh
+          chmod 700 /tmp/waisay-remote-deploy.sh
+
+      - name: Copy remote deploy script to VPS
+        run: |
+          set -euo pipefail
+          scp /tmp/waisay-remote-deploy.sh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waisay-remote-deploy.sh"
+
+      - name: Deploy on VPS
+        run: |
+          set -euo pipefail
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "bash /tmp/waisay-remote-deploy.sh && rm -f /tmp/waisay-remote-deploy.sh"
