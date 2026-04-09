@@ -1,6 +1,8 @@
 import asyncio
 import os
+
 import httpx
+
 
 async def test():
     # Use dummy value locally or get real key
@@ -15,5 +17,6 @@ async def test():
         )
         print(response.status_code)
         print(response.text)
+
 
 asyncio.run(test())
