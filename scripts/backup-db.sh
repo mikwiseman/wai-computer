@@ -5,6 +5,7 @@
 
 set -euo pipefail
 
+PROD_ENV_FILE="${PROD_ENV_FILE:-/etc/waisay/backend.env}"
 BACKUP_DIR="/opt/waisay/backups"
 RETENTION_DAYS=14
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -13,9 +14,14 @@ BACKUP_FILE="${BACKUP_DIR}/waisay_${TIMESTAMP}.sql.gz"
 # Ensure backup directory exists
 mkdir -p "${BACKUP_DIR}"
 
-# Load only DB credentials from .env (avoid sourcing values with special chars)
-POSTGRES_USER=$(grep '^POSTGRES_USER=' /opt/waisay/backend/.env | cut -d= -f2)
-POSTGRES_DB=$(grep '^POSTGRES_DB=' /opt/waisay/backend/.env | cut -d= -f2)
+# Load only DB credentials from the root-owned runtime env file.
+if [[ ! -f "${PROD_ENV_FILE}" ]]; then
+    echo "ERROR: Missing production env file at ${PROD_ENV_FILE}" >&2
+    exit 1
+fi
+
+POSTGRES_USER=$(grep '^POSTGRES_USER=' "${PROD_ENV_FILE}" | cut -d= -f2)
+POSTGRES_DB=$(grep '^POSTGRES_DB=' "${PROD_ENV_FILE}" | cut -d= -f2)
 
 # Run pg_dump inside the Docker container
 docker exec waisay-db pg_dump \

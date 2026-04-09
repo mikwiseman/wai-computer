@@ -1,12 +1,10 @@
 """FastAPI application entry point."""
 
 import logging
-import subprocess
 from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
-import sentry_sdk
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,7 +22,12 @@ from app.api.routes import (
 )
 from app.api.routes import settings as settings_routes
 from app.config import get_settings
-from app.core.observability import begin_request_context, configure_logging, end_request_context
+from app.core.observability import (
+    begin_request_context,
+    configure_logging,
+    end_request_context,
+    initialize_sentry,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,33 +41,11 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 app_settings = get_settings()
-
-
-def _get_release_version() -> str | None:
-    """Derive a release version from the git commit hash."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return f"waisay@{result.stdout.strip()}"
-    except Exception:
-        pass
-    return None
-
-
-if app_settings.sentry_dsn:
-    sentry_sdk.init(
-        dsn=app_settings.sentry_dsn,
-        traces_sample_rate=0.1,
-        profiles_sample_rate=0.1,
-        environment="production" if not app_settings.debug else "development",
-        release=_get_release_version(),
-        send_default_pii=False,
-    )
+initialize_sentry(
+    dsn=app_settings.sentry_dsn,
+    debug=app_settings.debug,
+    include_fastapi=True,
+)
 
 
 @asynccontextmanager

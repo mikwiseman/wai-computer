@@ -293,6 +293,15 @@ class MacRecordingViewModel: ObservableObject {
                 try await ws.connect()
             } catch {
                 NSLog("[Recording] Failed to connect to live transcription: %@", "\(error)")
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "live transcription unavailable at recording start",
+                    level: .warning,
+                    data: [
+                        "recordingId": recordingId,
+                        "reason": error.localizedDescription,
+                    ]
+                )
                 isLiveTranscriptionActive = false
             }
 
@@ -456,6 +465,7 @@ class MacRecordingViewModel: ObservableObject {
                     client: client,
                     segments: finalizedSegments,
                     durationSeconds: Int(recordingDuration.rounded()),
+                    audioFileURL: fileWriter?.fileURL,
                     directSaveNotice: nil,
                     recoveredTranscriptNotice: self.transcriptRecoveredMessage()
                 )
@@ -527,6 +537,7 @@ class MacRecordingViewModel: ObservableObject {
         client: APIClient?,
         segments: [LiveTranscriptSegment],
         durationSeconds: Int,
+        audioFileURL: URL?,
         directSaveNotice: String?,
         recoveredTranscriptNotice: String?
     ) async -> RecordingPersistenceResult {
@@ -541,6 +552,54 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         NSLog("[Recording] Persisting %d transcript segments for recording %@", segments.count, recordingId)
+
+        let shouldUploadAudio = segments.isEmpty
+            && audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+
+        if shouldUploadAudio, let audioFileURL {
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "falling back to audio upload after empty live transcript",
+                level: .warning,
+                data: ["recordingId": recordingId]
+            )
+
+            do {
+                let detail = try await client.uploadAudio(recordingId: recordingId, fileURL: audioFileURL)
+                guard detail.status != .failed else {
+                    let technicalReason = UserFacingErrorFormatter.displayMessage(
+                        detail.failureMessage,
+                        fallback: "Recorded audio was uploaded, but processing failed.",
+                        context: .recording
+                    )
+                    return await saveLocalBackupForRetry(
+                        recordingId: recordingId,
+                        segments: segments,
+                        client: client,
+                        technicalReason: technicalReason
+                    ) ? .localBackup : .failed(technicalReason)
+                }
+
+                return .remoteSaved(
+                    notice: directSaveNotice,
+                    breadcrumbMessage: "audio uploaded for transcription"
+                )
+            } catch {
+                SentryHelper.captureError(
+                    error,
+                    extras: ["action": "uploadRecordedAudioFallback", "recordingId": recordingId]
+                )
+                NSLog("[Recording] Audio upload fallback failed: %@", "\(error)")
+
+                let technicalReason = error.userFacingMessage(context: .recording)
+                return await saveLocalBackupForRetry(
+                    recordingId: recordingId,
+                    segments: segments,
+                    client: client,
+                    technicalReason: technicalReason
+                ) ? .localBackup : .failed(technicalReason)
+            }
+        }
 
         do {
             let detail = try await client.saveLiveTranscript(
@@ -883,6 +942,7 @@ class MacRecordingViewModel: ObservableObject {
                 client: apiClient,
                 segments: segments,
                 durationSeconds: Int(duration.rounded()),
+                audioFileURL: try? RecordingBackupStore.audioFileURL(recordingId: recordingId),
                 directSaveNotice: transcriptRecoveredMessage(),
                 recoveredTranscriptNotice: transcriptRecoveredMessage()
             )
@@ -950,6 +1010,7 @@ class MacRecordingViewModel: ObservableObject {
                 client: apiClient,
                 segments: segments,
                 durationSeconds: Int(duration.rounded()),
+                audioFileURL: try? RecordingBackupStore.audioFileURL(recordingId: recordingId),
                 directSaveNotice: transcriptRecoveredMessage(),
                 recoveredTranscriptNotice: transcriptRecoveredMessage()
             )

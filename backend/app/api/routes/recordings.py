@@ -1778,6 +1778,20 @@ async def save_transcript(
         level="info",
     )
     logger.info("live transcript save started segment_count=%s", len(request.segments))
+    if not any(segment.text.strip() for segment in request.segments):
+        sentry_sdk.add_breadcrumb(
+            category="recording",
+            message="Saving empty live transcript",
+            data={
+                "recording_id": str(recording_id),
+                "duration_seconds": request.duration_seconds,
+            },
+            level="warning",
+        )
+        logger.warning(
+            "live transcript save received no non-empty segments duration_seconds=%s",
+            request.duration_seconds,
+        )
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if recording is None:

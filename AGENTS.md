@@ -21,13 +21,17 @@ Only triggers on changes to: `backend/**`, `web/**`, `shared/**`, `ios/**`, `mac
 **Manual:** `VPS_USER=<release-user> ./scripts/deploy-api.sh`
 
 **What happens on deploy:**
-1. `git pull --ff-only origin main` on server
+1. CI syncs the current `wai-say` repository contents to `/opt/waisay/` over SSH
 2. CI gates `backend`, `web`, `shared/WaiSayKit`, `ios`, `macos`, and `android`
-3. `docker compose build api web celery-worker` (in `backend/`)
-4. `docker compose up -d api web celery-worker caddy`
-5. Health checks: API `:8000/health`, web `:3000/login`, celery container health
+3. Runtime secrets are read from the root-owned `/etc/waisay/backend.env`
+4. `docker compose --env-file /etc/waisay/backend.env build api web celery-worker` (in `backend/`)
+5. `docker compose --env-file /etc/waisay/backend.env up -d api web celery-worker caddy`
+6. Health checks: API `:8000/health`, web `:3000/login`, celery container health
 
 **GitHub Secrets:** `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `ELEVENLABS_API_KEY`, `ELEVENLABS_CONVERSATION_AGENT_ID`, `ELEVENLABS_RECORDING_AGENT_ID`, `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL`, `CORS_ORIGINS`, `REDIS_URL`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SENTRY_DSN`, `AUTH_COOKIE_DOMAIN`
+
+**Production secret source of truth:** `/etc/waisay/backend.env` on the VPS, with mode `600` and owner `root:root`. CI bootstraps this file only if it is missing; subsequent deploys must preserve it.
+`/opt/waisay/backend/.env` should exist only as a symlink to `/etc/waisay/backend.env` so plain `docker compose` commands still read the correct secrets without duplicating them into the deploy checkout.
 
 ## Local Development
 
@@ -213,7 +217,9 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 | `GET /` | Root status |
 | `GET /health` | Health check |
 
-## Environment Variables (backend/.env)
+## Environment Variables
+
+Local dev uses `backend/.env`. Production runtime uses `/etc/waisay/backend.env` and passes it into Docker Compose via `--env-file`.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -253,3 +259,13 @@ All API routes are prefixed with `/api` except `/` and `/health`.
 - For normal releases, bump the patch version; for larger releases, bump the minor version; major bumps are rare and should be reserved for unusually large changes.
 - `CURRENT_PROJECT_VERSION` is globally monotonic for Apple releases and does not reset when `MARKETING_VERSION` changes; for example `1.0.0 (41)` is followed by `1.0.1 (42)`.
 - If a bad upload used a timestamp or other wrong numbering scheme, do not adopt it as the new baseline; continue from the last intended sequential integer build number.
+## Workflow
+
+### Commits
+- Commit after each completed functional block — not every line, but every logical unit of work
+- Balance frequency with CI: push meaningful chunks, not trivial fixes
+
+### Test-Driven Development
+- Write failing tests first, then implement the minimum code to pass, then refactor
+- Test coverage target: ≥95% — unless the user explicitly requests otherwise
+- All test types: unit, integration, e2e, security. Every critical path must be tested

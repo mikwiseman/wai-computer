@@ -87,3 +87,7 @@ def test_celery_worker_init_resets_db_runtime(monkeypatch):
     celery_app_module.reset_async_db_runtime()
 
     assert called["value"] == 1
+
+
+def test_celery_app_has_no_stale_task_includes():
+    assert celery_app_module.celery_app.conf.include in (None, ())

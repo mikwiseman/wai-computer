@@ -13,6 +13,7 @@ VPS_HOST="${VPS_HOST:-<release-host>}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 REMOTE_ROOT="${REMOTE_ROOT:-/opt/waisay}"
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-/etc/waisay/backend.env}"
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
@@ -31,7 +32,33 @@ ssh \
   -o BatchMode=yes \
   -o StrictHostKeyChecking=accept-new \
   "${VPS_USER}@${VPS_HOST}" \
+  "install -d -m 755 '${REMOTE_ROOT}'"
+
+rsync \
+  -az \
+  --delete \
+  --exclude '.git/' \
+  --exclude '.github/' \
+  --exclude 'backend/.env' \
+  --exclude 'backend/.venv/' \
+  --exclude 'backend/htmlcov/' \
+  --exclude 'backend/coverage.xml' \
+  --exclude 'web/node_modules/' \
+  --exclude 'web/.next/' \
+  --exclude 'android/.gradle/' \
+  --exclude 'backups/' \
+  -e "ssh -i ${SSH_KEY_PATH} -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+  ./ \
+  "${VPS_USER}@${VPS_HOST}:${REMOTE_ROOT}/"
+
+ssh \
+  -i "$SSH_KEY_PATH" \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=accept-new \
+  "${VPS_USER}@${VPS_HOST}" \
   "set -euo pipefail;
+   PROD_ROOT='${REMOTE_ROOT}';
+   PROD_ENV_FILE='${REMOTE_ENV_FILE}';
    wait_for_service() {
      local name=\"\$1\";
      local command=\"\$2\";
@@ -46,28 +73,50 @@ ssh \
        sleep \"\$delay\";
      done;
      echo \"\$name did not become healthy after \$((attempts * delay)) seconds.\" >&2;
-     docker compose ps >&2 || true;
+     docker_compose ps >&2 || true;
      eval \"\$failure_log_command\" >&2 || true;
      exit 1;
    };
-   cd '${REMOTE_ROOT}';
-   if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git remote get-url origin >/dev/null 2>&1; then
-     git pull --ff-only origin main;
-   else
-     echo 'Skipping git pull (no origin remote configured).';
+   require_env_key() {
+     local key=\"\$1\";
+     if ! grep -Eq \"^\\\${key}=.+\" \"\$PROD_ENV_FILE\"; then
+       echo \"ERROR: \$PROD_ENV_FILE is missing required key \$key\" >&2;
+       exit 1;
+     fi;
+   };
+   docker_compose() {
+     docker compose --env-file \"\$PROD_ENV_FILE\" \"\$@\";
+   };
+   install -d -m 755 \"\$PROD_ROOT\";
+   if [[ ! -f \"\$PROD_ENV_FILE\" ]]; then
+     echo \"ERROR: Missing production env file at \$PROD_ENV_FILE\" >&2;
+     echo \"Provision it first or run CI bootstrap deploy.\" >&2;
+     exit 1;
    fi;
-   cd backend;
-   docker compose build api web celery-worker;
-   docker compose up -d api web celery-worker caddy;
+   chmod 600 \"\$PROD_ENV_FILE\";
+   chown root:root \"\$PROD_ENV_FILE\";
+   ln -sfn \"\$PROD_ENV_FILE\" \"\$PROD_ROOT/backend/.env\";
+   require_env_key POSTGRES_USER;
+   require_env_key POSTGRES_PASSWORD;
+   require_env_key POSTGRES_DB;
+   require_env_key JWT_SECRET;
+   require_env_key FRONTEND_URL;
+   require_env_key CORS_ORIGINS;
+   require_env_key ELEVENLABS_API_KEY;
+   cd \"\$PROD_ROOT/backend\";
+   export WAISAY_ENV_FILE=\"\$PROD_ENV_FILE\";
+   docker_compose config >/dev/null;
+   docker_compose build api web celery-worker;
+   docker_compose up -d api web celery-worker caddy;
    wait_for_service \
      'API health check' \
-     'docker compose exec -T api curl -fsS http://localhost:8000/health' \
+     'docker_compose exec -T api curl -fsS http://localhost:8000/health' \
      24 \
      5 \
      'docker logs --tail 200 waisay-api';
    wait_for_service \
      'Web health check' \
-     'docker compose exec -T web node -e \"fetch(\\\"http://localhost:3000/login\\\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"' \
+     'docker_compose exec -T web node -e \"fetch(\\\"http://localhost:3000/login\\\").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"' \
      24 \
      5 \
      'docker logs --tail 200 waisay-web';
