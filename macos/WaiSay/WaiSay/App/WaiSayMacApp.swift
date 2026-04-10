@@ -12,6 +12,8 @@ struct WaiSayMacApp: App {
     @StateObject private var recordingViewModel: MacRecordingViewModel
     @StateObject private var appState: MacAppState
     @StateObject private var dictationManager: DictationManager
+    @StateObject private var historyStore: DictationHistoryStore
+    @StateObject private var dictionaryStore: DictationDictionaryStore
 
     init() {
         #if !DEBUG
@@ -21,9 +23,15 @@ struct WaiSayMacApp: App {
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
         let dictation = DictationManager()
+        let history = DictationHistoryStore()
+        let dictionary = DictationDictionaryStore()
+        dictation.historyStore = history
+        dictation.dictionaryStore = dictionary
 
         _recordingViewModel = StateObject(wrappedValue: recordingViewModel)
         _dictationManager = StateObject(wrappedValue: dictation)
+        _historyStore = StateObject(wrappedValue: history)
+        _dictionaryStore = StateObject(wrappedValue: dictionary)
         _appState = StateObject(
             wrappedValue: MacAppState(
                 recordingViewModel: recordingViewModel,
@@ -39,6 +47,8 @@ struct WaiSayMacApp: App {
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
+                .environmentObject(historyStore)
+                .environmentObject(dictionaryStore)
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     Task {
@@ -134,7 +144,7 @@ class MacAppState: ObservableObject {
         self.dictationManager = dictationManager
         self.testingMode = testingMode
 
-        let baseURL = URL(string: "https://wai.computer")!
+        let baseURL = URL(string: "https://say.waiwai.is")!
         apiClient = APIClient(baseURL: baseURL)
 
         #if DEBUG

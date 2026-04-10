@@ -41,6 +41,8 @@ struct MacMainView: View {
         case allRecordings
         case folder(String)
         case trash
+        case history
+        case dictionary
         case settings
     }
 
@@ -48,7 +50,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .settings:
+        case .history, .dictionary, .settings:
             return false
         }
     }
@@ -90,6 +92,10 @@ struct MacMainView: View {
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
         case .trash:
             return "Trash"
+        case .history:
+            return "History"
+        case .dictionary:
+            return "Dictionary"
         case .settings:
             return "Settings"
         case .none:
@@ -385,6 +391,14 @@ struct MacMainView: View {
             }
 
             Section {
+                sidebarRow("History", icon: "clock", section: .history)
+                sidebarRow("Dictionary", icon: "book", section: .dictionary)
+            } header: {
+                Text("Dictation")
+                    .waiSectionHeader()
+            }
+
+            Section {
                 sidebarRow("Settings", icon: "gear", section: .settings)
             } header: {
                 Text("Wai")
@@ -570,6 +584,10 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
+        case .history:
+            DictationHistoryView()
+        case .dictionary:
+            DictationDictionaryView()
         case .settings:
             MacSettingsView()
         }

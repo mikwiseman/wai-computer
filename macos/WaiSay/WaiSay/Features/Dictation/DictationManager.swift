@@ -46,6 +46,8 @@ final class DictationManager: ObservableObject {
 
     private var apiClient: APIClient?
     private var canStartDictation: (() -> Bool)?
+    var historyStore: DictationHistoryStore?
+    var dictionaryStore: DictationDictionaryStore?
     let hotkeyManager = GlobalHotkeyManager()
 
     // MARK: - Overlay
@@ -295,8 +297,11 @@ final class DictationManager: ObservableObject {
 
         log.info("Transcribed \(trimmedText.count) characters")
 
+        // Apply dictionary replacements
+        var textToInsert = dictionaryStore?.applyReplacements(to: trimmedText) ?? trimmedText
+
         // AI cleanup (optional)
-        var textToInsert = trimmedText
+        let rawText = textToInsert
         if aiCleanupEnabled, let apiClient {
             do {
                 let cleaned = try await apiClient.cleanupDictation(text: trimmedText)
@@ -328,6 +333,13 @@ final class DictationManager: ObservableObject {
                 self.error = error.userFacingMessage(context: .dictation)
             }
         }
+
+        // Save to history
+        historyStore?.add(
+            rawText: rawText,
+            cleanedText: textToInsert != rawText ? textToInsert : nil,
+            durationSeconds: dictationDuration
+        )
 
         await cleanup()
     }
