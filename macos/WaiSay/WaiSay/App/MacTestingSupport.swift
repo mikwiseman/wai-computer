@@ -74,7 +74,7 @@ enum MacUITestFixtures {
 
     static let user = User(
         id: "ui-test-user",
-        email: "ui-test@wai.computer",
+        email: "ui-test@say.waiwai.is",
         createdAt: createdAt
     )
 
