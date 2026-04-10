@@ -60,16 +60,8 @@ struct LibraryView: View {
                         Button(action: { showNewFolderAlert = true }) {
                             Label("New Folder", systemImage: "folder.badge.plus")
                         }
-
-                        Divider()
-
-                        ForEach(LibraryViewModel.FilterOption.allCases, id: \.self) { option in
-                            Button(action: { viewModel.filterOption = option }) {
-                                Label(option.rawValue, systemImage: viewModel.filterOption == option ? "checkmark" : "")
-                            }
-                        }
                     } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
@@ -589,14 +581,8 @@ struct RecordingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(recording.title ?? "Untitled")
-                    .font(.headline)
-
-                Spacer()
-
-                TypeBadge(type: recording.type)
-            }
+            Text(recording.title ?? "Untitled")
+                .font(.headline)
 
             if let statusText = recording.statusDisplayText {
                 Text(statusText)
@@ -641,39 +627,6 @@ struct RecordingRow: View {
     }
 }
 
-// MARK: - Type Badge
-
-struct TypeBadge: View {
-    let type: RecordingType
-
-    var body: some View {
-        Text(type.rawValue.capitalized)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(backgroundColor)
-            .foregroundStyle(foregroundColor)
-            .cornerRadius(4)
-    }
-
-    private var backgroundColor: Color {
-        switch type {
-        case .meeting: return .blue.opacity(0.2)
-        case .note: return .green.opacity(0.2)
-        case .reflection: return .purple.opacity(0.2)
-        }
-    }
-
-    private var foregroundColor: Color {
-        switch type {
-        case .meeting: return .blue
-        case .note: return .green
-        case .reflection: return .purple
-        }
-    }
-}
-
 // MARK: - ViewModel
 
 @MainActor
@@ -683,8 +636,6 @@ class LibraryViewModel: ObservableObject {
     @Published var folders: [Folder] = []
     @Published var isLoading = false
     @Published var error: String?
-    @Published var filterOption: FilterOption = .all
-
     private var loadGeneration = 0
     private var processingRefreshTask: Task<Void, Never>?
 
@@ -692,41 +643,16 @@ class LibraryViewModel: ObservableObject {
         processingRefreshTask?.cancel()
     }
 
-    enum FilterOption: String, CaseIterable {
-        case all = "All"
-        case meetings = "Meetings"
-        case notes = "Notes"
-        case reflections = "Reflections"
-    }
-
-    // Active recordings not in any folder, with type filter applied
     var filteredUnfiledRecordings: [Recording] {
-        let unfiled = recordings.filter { $0.folderId == nil }
-        return applyTypeFilter(to: unfiled)
+        recordings.filter { $0.folderId == nil }
     }
 
-    // Recordings in a specific folder, with type filter applied
     func filteredRecordingsInFolder(_ folderId: String) -> [Recording] {
-        let inFolder = recordings.filter { $0.folderId == folderId }
-        return applyTypeFilter(to: inFolder)
-    }
-
-    // All recordings in a folder (unfiltered, for count)
-    func recordingsInFolder(_ folderId: String) -> [Recording] {
         recordings.filter { $0.folderId == folderId }
     }
 
-    private func applyTypeFilter(to recs: [Recording]) -> [Recording] {
-        switch filterOption {
-        case .all:
-            return recs
-        case .meetings:
-            return recs.filter { $0.type == .meeting }
-        case .notes:
-            return recs.filter { $0.type == .note }
-        case .reflections:
-            return recs.filter { $0.type == .reflection }
-        }
+    func recordingsInFolder(_ folderId: String) -> [Recording] {
+        recordings.filter { $0.folderId == folderId }
     }
 
     func loadLibrary(apiClient: APIClient) async {

@@ -252,7 +252,7 @@ private fun LibraryScreen(api: WaiApi) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(recording.title ?: "Untitled", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "${recording.type} • ${recording.status}",
+                            recording.status,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

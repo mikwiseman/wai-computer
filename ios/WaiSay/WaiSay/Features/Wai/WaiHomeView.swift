@@ -32,7 +32,7 @@ struct WaiHomeView: View {
                     }
                     .accessibilityLabel("Start recording")
 
-                    Text("Record a meeting")
+                    Text("Record")
                         .font(.title2.weight(.semibold))
 
                     Text("Tap to capture transcript, summary, and action items.")
