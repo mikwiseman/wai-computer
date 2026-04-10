@@ -35,10 +35,18 @@ enum TextInserter {
         AXIsProcessTrusted()
     }
 
-    /// Request accessibility permission with the system prompt
+    /// Request accessibility permission by opening System Settings.
+    /// `AXIsProcessTrustedWithOptions` with the prompt flag no longer shows
+    /// a meaningful dialog on modern macOS — open Settings directly instead.
     static func requestAccessibilityPermission() {
+        // Trigger the system prompt first (adds the app to the list if not there yet)
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
+
+        // Then open System Settings > Privacy > Accessibility so the user can toggle it on
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// Insert text into the currently active application.
