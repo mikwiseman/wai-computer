@@ -177,7 +177,9 @@ struct MacSettingsView: View {
 
             Section {
                 LabeledContent("Version") {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
+                    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+                    let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+                    Text("\(version) (\(build))")
                         .font(Typography.mono)
                 }
             } header: {
