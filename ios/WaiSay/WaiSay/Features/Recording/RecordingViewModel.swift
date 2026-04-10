@@ -21,7 +21,7 @@ class RecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isLoading = false
     @Published var error: String?
-    @Published var recordingType: RecordingType = .note
+    @Published var recordingType: RecordingType = .meeting
     @Published var duration: TimeInterval = 0
     @Published var currentTranscript = ""
     @Published var currentRecordingId: String?

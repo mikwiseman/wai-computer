@@ -27,7 +27,7 @@ struct MainTabView: View {
         TabView(selection: $selectedTab) {
             WaiHomeView()
                 .tabItem {
-                    Label("Wai", systemImage: "brain")
+                    Label("Record", systemImage: "mic.circle.fill")
                 }
                 .tag(0)
 
@@ -35,19 +35,13 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Library", systemImage: "folder.fill")
                 }
-                .tag(2)
-
-            MobileAppsView()
-                .tabItem {
-                    Label("Apps", systemImage: "square.grid.2x2")
-                }
-                .tag(4)
+                .tag(1)
 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(5)
+                .tag(2)
         }
         .environmentObject(recordingViewModel)
         .overlay(alignment: .top) {
@@ -58,6 +52,10 @@ struct MainTabView: View {
                 .padding(.top, 12)
                 .padding(.horizontal, 12)
             }
+        }
+        .onAppear {
+            // Migrate stored tab index after removing Apps tab (was tag 4/5)
+            if selectedTab > 2 { selectedTab = 0 }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingRecoveryNotice)) { notification in
             guard let message = notification.userInfo?["message"] as? String,

@@ -40,7 +40,7 @@ class AppState: ObservableObject {
         #if DEBUG
         let baseURL = URL(string: "http://localhost:8000")!
         #else
-        let baseURL = URL(string: "https://api.wai.computer")!
+        let baseURL = URL(string: "https://say.waiwai.is")!
         #endif
         apiClient = APIClient(baseURL: baseURL)
 
