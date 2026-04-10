@@ -2,6 +2,7 @@ import SwiftUI
 import WaiSayKit
 
 struct RecordingView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var viewModel: RecordingViewModel
 
@@ -9,18 +10,6 @@ struct RecordingView: View {
         NavigationStack {
             VStack(spacing: 32) {
                 Spacer()
-
-                // Recording type selector
-                Picker("Type", selection: $viewModel.recordingType) {
-                    Text("Note").tag(RecordingType.note)
-                    Text("Meeting").tag(RecordingType.meeting)
-                    Text("Reflection").tag(RecordingType.reflection)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .disabled(viewModel.phase != .idle)
-                .accessibilityLabel("Recording type")
-                .accessibilityHint("Select the type of recording")
 
                 // Recording status
                 VStack(spacing: 16) {
@@ -146,6 +135,12 @@ struct RecordingView: View {
                 Button("OK") { viewModel.error = nil }
             } message: {
                 Text(viewModel.error ?? "")
+            }
+            .onChange(of: viewModel.isServerComplete) { _, completed in
+                if completed {
+                    viewModel.resetState()
+                    dismiss()
+                }
             }
         }
     }
