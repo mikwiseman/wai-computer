@@ -148,6 +148,14 @@ final class DictationManager: ObservableObject {
             }
         }
 
+        hotkeyManager.onSingleTap = { [weak self] in
+            guard let self else { return }
+            // Single tap stops hands-free recording (like Wispr Flow)
+            if self.state == .listening && self.isHandsFree {
+                Task { await self.stopAndInsert() }
+            }
+        }
+
         hotkeyManager.onCancelled = { [weak self] in
             guard let self, self.state != .idle else { return }
             Task { await self.cancelDictation() }

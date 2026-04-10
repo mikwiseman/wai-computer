@@ -69,6 +69,7 @@ final class GlobalHotkeyManager: ObservableObject {
     var onPushToTalkStart: (() -> Void)?
     var onPushToTalkStop: (() -> Void)?
     var onHandsFreeToggle: (() -> Void)?
+    var onSingleTap: (() -> Void)?
     var onCancelled: (() -> Void)?
 
     /// Configuration
@@ -263,6 +264,8 @@ final class GlobalHotkeyManager: ObservableObject {
                 onHandsFreeToggle?()
             } else {
                 lastTapTime = Date()
+                log.info("Single tap")
+                onSingleTap?()
             }
         } else if otherKeyPressed {
             onCancelled?()
