@@ -17,21 +17,21 @@ enum DictationHotkey: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .rightOption: return "Right Option (⌥)"
-        case .leftOption: return "Left Option (⌥)"
-        case .rightCommand: return "Right Command (⌘)"
+        case .rightOption: return "Right Option (\u{2325})"
+        case .leftOption: return "Left Option (\u{2325})"
+        case .rightCommand: return "Right Command (\u{2318})"
         case .fn: return "Fn (Globe)"
-        case .controlOption: return "Control + Option (⌃⌥)"
+        case .controlOption: return "Control + Option (\u{2303}\u{2325})"
         }
     }
 
     var shortLabel: String {
         switch self {
-        case .rightOption: return "⌥ (Right)"
-        case .leftOption: return "⌥ (Left)"
-        case .rightCommand: return "⌘ (Right)"
+        case .rightOption: return "\u{2325} (Right)"
+        case .leftOption: return "\u{2325} (Left)"
+        case .rightCommand: return "\u{2318} (Right)"
         case .fn: return "Fn"
-        case .controlOption: return "⌃⌥"
+        case .controlOption: return "\u{2303}\u{2325}"
         }
     }
 
@@ -57,7 +57,8 @@ enum DictationHotkey: String, CaseIterable, Identifiable {
 
 // MARK: - GlobalHotkeyManager
 
-/// Monitors global keyboard events to detect dictation hotkey presses.
+/// Monitors global keyboard events using CGEventTap (Input Monitoring permission).
+/// This works in sandboxed apps — unlike NSEvent global monitors which need Accessibility.
 /// Supports push-to-talk (hold) and hands-free (double-tap toggle).
 @MainActor
 final class GlobalHotkeyManager: ObservableObject {
@@ -88,35 +89,60 @@ final class GlobalHotkeyManager: ObservableObject {
     private var lastTapTime: Date?
     private let doubleTapInterval: TimeInterval = 0.4
 
-    // Event monitors
-    private var globalFlagsMonitor: Any?
+    // CGEventTap resources
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
+    // Local monitors (for when our app IS focused — CGEventTap doesn't capture local events)
     private var localFlagsMonitor: Any?
-    private var globalKeyMonitor: Any?
     private var localKeyMonitor: Any?
 
     private var isRunning = false
+
+    // MARK: - Input Monitoring Permission
+
+    /// Check if Input Monitoring permission is granted
+    static var hasInputMonitoringPermission: Bool {
+        CGPreflightListenEventAccess()
+    }
+
+    /// Request Input Monitoring permission — shows the system prompt
+    static func requestInputMonitoringPermission() {
+        CGRequestListenEventAccess()
+    }
 
     func start() {
         guard !isRunning else { return }
         isRunning = true
 
-        // Monitor modifier key changes (global — when our app is NOT focused)
-        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            DispatchQueue.main.async { self?.handleFlagsChanged(event) }
+        // Create CGEventTap for global monitoring (requires Input Monitoring, not Accessibility)
+        let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
+
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let tap = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: globalEventCallback,
+            userInfo: refcon
+        )
+
+        if let tap {
+            eventTap = tap
+            let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+            runLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+            log.info("CGEventTap started (\(self.hotkey.label))")
+        } else {
+            log.warning("Failed to create CGEventTap — Input Monitoring permission may be missing")
         }
 
-        // Monitor modifier key changes (local — when our app IS focused)
+        // Local monitors for when our app is focused
         localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            DispatchQueue.main.async { self?.handleFlagsChanged(event) }
+            DispatchQueue.main.async { self?.handleFlagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) }
             return event
-        }
-
-        // Monitor key presses to detect when hotkey is used as a modifier for other shortcuts
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self, self.isHotkeyHeld else { return }
-                self.otherKeyPressed = true
-            }
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             DispatchQueue.main.async {
@@ -135,13 +161,18 @@ final class GlobalHotkeyManager: ObservableObject {
         holdTimer?.cancel()
         holdTimer = nil
 
-        if let m = globalFlagsMonitor { NSEvent.removeMonitor(m) }
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            if let source = runLoopSource {
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            }
+        }
+        eventTap = nil
+        runLoopSource = nil
+
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
-        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
-        globalFlagsMonitor = nil
         localFlagsMonitor = nil
-        globalKeyMonitor = nil
         localKeyMonitor = nil
 
         log.info("Global hotkey monitoring stopped")
@@ -149,32 +180,43 @@ final class GlobalHotkeyManager: ObservableObject {
 
     // MARK: - Event Handling
 
-    private func handleFlagsChanged(_ event: NSEvent) {
-        let isTargetKey = isHotkeyEvent(event)
+    /// Called from CGEventTap callback (on main thread)
+    func handleCGEvent(type: CGEventType, event: CGEvent) {
+        if type == .flagsChanged {
+            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+            let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+            handleFlagsChanged(keyCode: keyCode, flags: nsFlags)
+        } else if type == .keyDown {
+            if isHotkeyHeld {
+                otherKeyPressed = true
+            }
+        }
+    }
+
+    private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        let isTargetKey = isHotkeyEvent(keyCode: keyCode, flags: flags)
 
         if isTargetKey && !isHotkeyHeld {
-            // Key pressed
             hotkeyDown()
         } else if !isTargetKey && isHotkeyHeld {
-            // Key released
             hotkeyUp()
         }
     }
 
-    private func isHotkeyEvent(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    private func isHotkeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        let clean = flags.intersection(.deviceIndependentFlagsMask)
 
         switch hotkey {
         case .rightOption:
-            return event.keyCode == UInt16(kVK_RightOption) && flags.contains(.option)
+            return keyCode == UInt16(kVK_RightOption) && clean.contains(.option)
         case .leftOption:
-            return event.keyCode == UInt16(kVK_Option) && flags.contains(.option)
+            return keyCode == UInt16(kVK_Option) && clean.contains(.option)
         case .rightCommand:
-            return event.keyCode == UInt16(kVK_RightCommand) && flags.contains(.command)
+            return keyCode == UInt16(kVK_RightCommand) && clean.contains(.command)
         case .fn:
-            return flags.contains(.function)
+            return clean.contains(.function)
         case .controlOption:
-            return flags.contains(.control) && flags.contains(.option)
+            return clean.contains(.control) && clean.contains(.option)
         }
     }
 
@@ -183,7 +225,6 @@ final class GlobalHotkeyManager: ObservableObject {
         hotkeyDownTime = Date()
         otherKeyPressed = false
 
-        // Start a hold timer — if still held after threshold, it's push-to-talk
         holdTimer?.cancel()
         let timer = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -206,7 +247,6 @@ final class GlobalHotkeyManager: ObservableObject {
         let holdDuration = hotkeyDownTime.map { Date().timeIntervalSince($0) } ?? 0
 
         if isInPushToTalk {
-            // Was in push-to-talk — stop or cancel depending on whether it turned into a modifier.
             isInPushToTalk = false
             if otherKeyPressed {
                 log.info("Push-to-talk cancelled after modifier use")
@@ -216,7 +256,6 @@ final class GlobalHotkeyManager: ObservableObject {
                 onPushToTalkStop?()
             }
         } else if !otherKeyPressed && holdDuration < holdThreshold {
-            // Quick tap — check for double-tap (hands-free toggle)
             if let lastTap = lastTapTime,
                Date().timeIntervalSince(lastTap) < doubleTapInterval {
                 lastTapTime = nil
@@ -226,7 +265,6 @@ final class GlobalHotkeyManager: ObservableObject {
                 lastTapTime = Date()
             }
         } else if otherKeyPressed {
-            // Used as modifier for another shortcut — ignore
             onCancelled?()
         }
 
@@ -235,9 +273,36 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     deinit {
-        if let m = globalFlagsMonitor { NSEvent.removeMonitor(m) }
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
-        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
     }
+}
+
+// MARK: - CGEventTap Callback (C function)
+
+private func globalEventCallback(
+    proxy: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let refcon else { return nil }
+
+    // Handle tap disabled by system (re-enable)
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let tap = Unmanaged<AnyObject>.fromOpaque(refcon).takeUnretainedValue() as? NSObject {
+            // Re-enable will be handled by the manager
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
+    DispatchQueue.main.async {
+        manager.handleCGEvent(type: type, event: event)
+    }
+
+    return nil // listenOnly — return nil
 }

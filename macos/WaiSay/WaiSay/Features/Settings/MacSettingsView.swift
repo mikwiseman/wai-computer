@@ -6,7 +6,7 @@ struct MacSettingsView: View {
     @EnvironmentObject var dictationManager: DictationManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
-    @State private var hasAccessibilityPermission = TextInserter.hasAccessibilityPermission
+    @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @State private var summaryLanguage = "auto"
@@ -140,43 +140,21 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                // Accessibility permission status
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    HStack {
-                        Text("Accessibility")
-                            .font(Typography.body)
-                        Spacer()
-                        if hasAccessibilityPermission {
-                            Label("Granted", systemImage: "checkmark.circle.fill")
-                                .font(Typography.bodySmall)
-                                .foregroundStyle(.green)
-                        } else {
-                            Button("Grant Permission") {
-                                TextInserter.requestAccessibilityPermission()
-                                startPermissionPolling()
-                            }
+                // Input Monitoring permission status
+                HStack {
+                    Text("Input Monitoring")
+                        .font(Typography.body)
+                    Spacer()
+                    if hasInputMonitoringPermission {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
                             .font(Typography.bodySmall)
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant Permission") {
+                            GlobalHotkeyManager.requestInputMonitoringPermission()
+                            startPermissionPolling()
                         }
-                    }
-
-                    if !hasAccessibilityPermission {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Required for dictation to work:")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textSecondary)
-                            Text("1. Click Grant Permission — System Settings and Finder will open")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                            Text("2. In Accessibility, click \"+\" at the bottom of the list")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                            Text("3. Select WaiSay.app from the Finder window (or /Applications)")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                            Text("4. You may need to restart WaiSay after granting")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
+                        .font(Typography.bodySmall)
                     }
                 }
 
@@ -248,8 +226,8 @@ struct MacSettingsView: View {
     }
 
     private func refreshPermissions() {
-        hasAccessibilityPermission = TextInserter.hasAccessibilityPermission
-        if hasAccessibilityPermission {
+        hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
+        if hasInputMonitoringPermission {
             stopPermissionPolling()
         }
     }
