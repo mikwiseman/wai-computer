@@ -58,8 +58,10 @@ enum TextInserter {
         }
 
         guard hasAccessibilityPermission else {
-            log.error("Accessibility permission not granted — cannot insert text")
-            requestAccessibilityPermission()
+            log.warning("Accessibility not granted — falling back to clipboard copy")
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
             throw TextInsertionError.accessibilityRequired
         }
 
