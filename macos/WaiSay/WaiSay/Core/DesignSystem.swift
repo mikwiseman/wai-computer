@@ -79,24 +79,14 @@ enum Palette {
     /// Recording indicator
     static let recording = Color.red
 
-    /// Type-specific muted colors
-    static let typeMeeting = Color(red: 0.35, green: 0.52, blue: 0.72)
-    static let typeNote = Color(red: 0.42, green: 0.62, blue: 0.45)
-    static let typeReflection = Color(red: 0.58, green: 0.42, blue: 0.68)
-
     /// Priority colors
     static let priorityHigh = Color(red: 0.85, green: 0.35, blue: 0.30)
     static let priorityMedium = Color(red: 0.80, green: 0.58, blue: 0.30)
     static let priorityLow = Color(nsColor: .tertiaryLabelColor)
 
-    /// Returns the muted color for a recording type
-    static func typeColor(_ type: WaiSayKit.RecordingType) -> Color {
-        switch type {
-        case .meeting: return typeMeeting
-        case .note: return typeNote
-        case .reflection: return typeReflection
-        }
-    }
+    /// Accent color for recordings (type-neutral)
+    static let typeReflection = accent
+    static func typeColor(_ type: WaiSayKit.RecordingType) -> Color { accent }
 }
 
 // MARK: - View Modifiers
@@ -233,7 +223,7 @@ struct WaiTabBar<T: Hashable>: View {
 
 // MARK: - Triangle Icon Shape
 
-/// The wai.computer triangle icon (black triangle with computer cutout)
+/// The say.waiwai.is triangle icon (black triangle with computer cutout)
 struct WaiTriangleIcon: View {
     let size: CGFloat
 
