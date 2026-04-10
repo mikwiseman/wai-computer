@@ -141,20 +141,39 @@ struct MacSettingsView: View {
                     .disabled(!dictationManager.isFeatureEnabled)
 
                 // Accessibility permission status
-                HStack {
-                    Text("Accessibility")
-                        .font(Typography.body)
-                    Spacer()
-                    if hasAccessibilityPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    HStack {
+                        Text("Accessibility")
+                            .font(Typography.body)
+                        Spacer()
+                        if hasAccessibilityPermission {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .font(Typography.bodySmall)
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("Grant Permission") {
+                                TextInserter.requestAccessibilityPermission()
+                                startPermissionPolling()
+                            }
                             .font(Typography.bodySmall)
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant Permission") {
-                            TextInserter.requestAccessibilityPermission()
-                            startPermissionPolling()
                         }
-                        .font(Typography.bodySmall)
+                    }
+
+                    if !hasAccessibilityPermission {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Required for dictation to work:")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textSecondary)
+                            Text("1. Click Grant Permission to open System Settings")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                            Text("2. Find WaiSay in the list and toggle it on")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                            Text("3. You may need to restart WaiSay after granting")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
                     }
                 }
 
