@@ -98,10 +98,13 @@ jobs:
         run: pnpm test:unit
 
   apple-native-test:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
       - name: Shared Swift package tests
         working-directory: shared/WaiSayKit
@@ -167,7 +170,7 @@ jobs:
           AUTH_COOKIE_DOMAIN: ${{ secrets.AUTH_COOKIE_DOMAIN }}
         run: |
           set -euo pipefail
-          for key in POSTGRES_PASSWORD JWT_SECRET FRONTEND_URL CORS_ORIGINS ELEVENLABS_API_KEY; do
+          for key in POSTGRES_PASSWORD JWT_SECRET FRONTEND_URL CORS_ORIGINS ELEVENLABS_API_KEY AUTH_COOKIE_DOMAIN; do
             if [[ -z "${!key:-}" ]]; then
               echo "ERROR: required GitHub secret ${key} is missing or empty" >&2
               exit 1
@@ -280,6 +283,7 @@ jobs:
           require_env_key FRONTEND_URL
           require_env_key CORS_ORIGINS
           require_env_key ELEVENLABS_API_KEY
+          require_env_key AUTH_COOKIE_DOMAIN
 
           cd "$PROD_ROOT/backend"
           export WAISAY_ENV_FILE="$PROD_ENV_FILE"
