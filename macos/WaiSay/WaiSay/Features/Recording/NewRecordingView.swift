@@ -11,7 +11,9 @@ struct NewRecordingView: View {
             Spacer()
 
             VStack(spacing: Spacing.md) {
-                WaiTriangleIcon(size: 36)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 48, height: 48)
 
                 Text("New Recording")
                     .font(Typography.displaySmall)
