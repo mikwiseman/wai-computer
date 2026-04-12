@@ -176,10 +176,9 @@ final class DictationManager: ObservableObject {
         }
         guard canBeginExternalDictation() else { return }
 
-        // Warn about accessibility (but don't block — clipboard fallback will be used)
-        if !TextInserter.hasAccessibilityPermission {
-            log.warning("Accessibility not granted — dictation will use clipboard fallback")
-        }
+        // Permissions are handled automatically:
+        // - Input Monitoring for hotkey (CGEventTap)
+        // - Automation for paste (AppleScript → System Events, prompted on first use)
 
         // Check microphone permission
         let micGranted = await AVAudioApplication.requestRecordPermission()
@@ -329,10 +328,6 @@ final class DictationManager: ObservableObject {
         do {
             try await TextInserter.insert(textToInsert)
             NSSound(named: NSSound.Name("Pop"))?.play()
-        } catch TextInsertionError.accessibilityRequired {
-            // Fallback: text was copied to clipboard by TextInserter
-            NSSound(named: NSSound.Name("Pop"))?.play()
-            self.error = "Text copied to clipboard — press ⌘V to paste. Grant Accessibility permission in Settings for automatic insertion."
         } catch {
             let recoveryURL = try? saveRecoveryText(textToInsert)
             if recoveryURL != nil {

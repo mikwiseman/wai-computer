@@ -1,12 +1,10 @@
 import Cocoa
-import Carbon
 import os
 
 private let log = Logger(subsystem: "com.waisay.app", category: "textinserter")
 
 enum TextInsertionError: LocalizedError {
     case emptyText
-    case accessibilityRequired
     case clipboardWriteFailed
     case pasteSimulationFailed
 
@@ -14,8 +12,6 @@ enum TextInsertionError: LocalizedError {
         switch self {
         case .emptyText:
             return "No text to insert."
-        case .accessibilityRequired:
-            return "Accessibility permission is required to insert dictated text."
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
         case .pasteSimulationFailed:
@@ -25,47 +21,19 @@ enum TextInsertionError: LocalizedError {
 }
 
 /// Inserts text into the currently focused application by copying to clipboard
-/// and simulating Cmd+V. Preserves the user's original clipboard contents.
+/// and simulating Cmd+V via AppleScript (System Events).
+///
+/// Uses Automation permission (com.apple.security.automation.apple-events) which
+/// works in sandboxed apps and triggers a one-time system prompt automatically.
+/// No manual Accessibility setup required.
 enum TextInserter {
 
-    // MARK: - Public
-
-    /// Check if accessibility access is granted (required for CGEvent posting)
-    static var hasAccessibilityPermission: Bool {
-        AXIsProcessTrusted()
-    }
-
-    /// Request accessibility permission by opening System Settings and revealing the app in Finder.
-    static func requestAccessibilityPermission() {
-        // Try to trigger the system prompt (may add the app to the list on some macOS versions)
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
-
-        // Open System Settings > Privacy > Accessibility
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-
-        // Also reveal the app in Finder so user can drag it to the "+" button
-        if let appURL = Bundle.main.bundleURL as URL? {
-            NSWorkspace.shared.activateFileViewerSelecting([appURL])
-        }
-    }
-
     /// Insert text into the currently active application.
-    /// Saves clipboard, copies text, simulates Cmd+V, then restores clipboard.
+    /// Saves clipboard, copies text, simulates Cmd+V via AppleScript, then restores clipboard.
     static func insert(_ text: String) async throws {
         guard !text.isEmpty else {
             log.warning("Attempted to insert empty text")
             throw TextInsertionError.emptyText
-        }
-
-        guard hasAccessibilityPermission else {
-            log.warning("Accessibility not granted — falling back to clipboard copy")
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-            throw TextInsertionError.accessibilityRequired
         }
 
         log.info("Inserting \(text.count) characters into active app")
@@ -84,11 +52,11 @@ enum TextInserter {
         // Small delay to ensure clipboard is ready
         try? await Task.sleep(for: .milliseconds(50))
 
-        // Simulate Cmd+V
+        // Simulate Cmd+V via AppleScript (Automation permission — auto-prompted in sandbox)
         try simulatePaste()
 
         // Wait for paste to complete, then restore clipboard
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(300))
         restoreClipboard(
             pasteboard,
             snapshot: snapshot,
@@ -101,23 +69,20 @@ enum TextInserter {
     // MARK: - Private
 
     private static func simulatePaste() throws {
-        let source = CGEventSource(stateID: .hidSystemState)
+        let script = NSAppleScript(source: """
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+            """)
 
-        // Key code for 'V' is 9
-        let vKeyCode: CGKeyCode = 9
+        var errorInfo: NSDictionary?
+        script?.executeAndReturnError(&errorInfo)
 
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
-        else {
-            log.error("Failed to create CGEvent for paste simulation")
+        if let errorInfo {
+            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            log.error("AppleScript paste failed: \(message)")
             throw TextInsertionError.pasteSimulationFailed
         }
-
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
     }
 
     // MARK: - Clipboard Save/Restore

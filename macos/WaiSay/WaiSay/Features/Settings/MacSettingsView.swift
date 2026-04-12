@@ -140,53 +140,21 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                // Input Monitoring permission (for hotkey)
+                // Permissions
                 HStack {
-                    Text("Input Monitoring")
+                    Text("Permissions")
                         .font(Typography.body)
                     Spacer()
                     if hasInputMonitoringPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
+                        Label("Ready", systemImage: "checkmark.circle.fill")
                             .font(Typography.bodySmall)
                             .foregroundStyle(.green)
                     } else {
-                        Button("Grant") {
+                        Button("Grant Permission") {
                             GlobalHotkeyManager.requestInputMonitoringPermission()
                             startPermissionPolling()
                         }
                         .font(Typography.bodySmall)
-                    }
-                }
-
-                // Accessibility permission (for auto-paste)
-                HStack {
-                    Text("Accessibility")
-                        .font(Typography.body)
-                    Spacer()
-                    if TextInserter.hasAccessibilityPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .font(Typography.bodySmall)
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Add Manually") {
-                            TextInserter.requestAccessibilityPermission()
-                        }
-                        .font(Typography.bodySmall)
-                    }
-                }
-
-                if !hasInputMonitoringPermission || !TextInserter.hasAccessibilityPermission {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if !hasInputMonitoringPermission {
-                            Text("Input Monitoring: click Grant — system will prompt you.")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        if !TextInserter.hasAccessibilityPermission {
-                            Text("Accessibility: click Add Manually, then click \"+\", select WaiSay from /Applications.")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
                     }
                 }
 
