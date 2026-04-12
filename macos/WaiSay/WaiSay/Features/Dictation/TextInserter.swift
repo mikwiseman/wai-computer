@@ -21,15 +21,15 @@ enum TextInsertionError: LocalizedError {
 }
 
 /// Inserts text into the currently focused application by copying to clipboard
-/// and simulating Cmd+V via AppleScript (System Events).
+/// and simulating Cmd+V via CGEvent.post().
 ///
-/// Uses Automation permission (com.apple.security.automation.apple-events) which
-/// works in sandboxed apps and triggers a one-time system prompt automatically.
-/// No manual Accessibility setup required.
+/// CGEvent.post() works in sandboxed apps with a limited "PostEvent" TCC privilege
+/// (shown as Accessibility in System Settings). The system auto-prompts when needed.
+/// This is the same approach used by Wispr Flow, Raycast, and TextExpander.
 enum TextInserter {
 
     /// Insert text into the currently active application.
-    /// Saves clipboard, copies text, simulates Cmd+V via AppleScript, then restores clipboard.
+    /// Saves clipboard, copies text, simulates Cmd+V, then restores clipboard.
     static func insert(_ text: String) async throws {
         guard !text.isEmpty else {
             log.warning("Attempted to insert empty text")
@@ -52,7 +52,7 @@ enum TextInserter {
         // Small delay to ensure clipboard is ready
         try? await Task.sleep(for: .milliseconds(50))
 
-        // Simulate Cmd+V via AppleScript (Automation permission — auto-prompted in sandbox)
+        // Simulate Cmd+V via CGEvent.post (works in sandbox with PostEvent privilege)
         try simulatePaste()
 
         // Wait for paste to complete, then restore clipboard
@@ -69,20 +69,25 @@ enum TextInserter {
     // MARK: - Private
 
     private static func simulatePaste() throws {
-        let script = NSAppleScript(source: """
-            tell application "System Events"
-                keystroke "v" using command down
-            end tell
-            """)
+        let source = CGEventSource(stateID: .hidSystemState)
 
-        var errorInfo: NSDictionary?
-        script?.executeAndReturnError(&errorInfo)
+        // Key code for 'V' is 9
+        let vKeyCode: CGKeyCode = 9
 
-        if let errorInfo {
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-            log.error("AppleScript paste failed: \(message)")
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        else {
+            log.error("Failed to create CGEvent for paste simulation")
             throw TextInsertionError.pasteSimulationFailed
         }
+
+        // Clear all modifier flags first, then set only Command
+        // This prevents conflicts with the dictation hotkey modifier keys
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
     }
 
     // MARK: - Clipboard Save/Restore
