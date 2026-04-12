@@ -103,12 +103,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-
       - name: Shared Swift package tests
         working-directory: shared/WaiSayKit
-        run: swift test -q
+        run: |
+          # Use Xcode 16.2 for SPM — avoids sentry-cocoa Swift 6.1 manifest bug
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          swift test -q
+
+      - name: Select default Xcode for builds
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Build macOS app
         run: >
@@ -124,7 +127,7 @@ jobs:
           xcodebuild
           -project ios/WaiSay/WaiSayiOS.xcodeproj
           -scheme WaiSay
-          -destination 'generic/platform=iOS'
+          -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
           build
 
