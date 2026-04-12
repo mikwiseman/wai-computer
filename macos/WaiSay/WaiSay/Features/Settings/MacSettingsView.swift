@@ -7,7 +7,6 @@ struct MacSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-    @State private var hasPostEventPermission = TextInserter.hasPostEventPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @State private var summaryLanguage = "auto"
@@ -159,23 +158,8 @@ struct MacSettingsView: View {
                     }
                 }
 
-                // Accessibility / PostEvent (for auto-paste)
-                HStack {
-                    Text("Accessibility")
-                        .font(Typography.body)
-                    Spacer()
-                    if hasPostEventPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .font(Typography.bodySmall)
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant") {
-                            TextInserter.requestPostEventPermission()
-                            startPermissionPolling()
-                        }
-                        .font(Typography.bodySmall)
-                    }
-                }
+                // Note: text insertion uses AppleScript (System Events).
+                // macOS prompts "WaiSay wants to control System Events" on first dictation.
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -246,8 +230,7 @@ struct MacSettingsView: View {
 
     private func refreshPermissions() {
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-        hasPostEventPermission = TextInserter.hasPostEventPermission
-        if hasInputMonitoringPermission && hasPostEventPermission {
+        if hasInputMonitoringPermission {
             stopPermissionPolling()
         }
     }
