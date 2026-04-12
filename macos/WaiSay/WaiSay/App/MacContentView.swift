@@ -990,14 +990,12 @@ struct MacAuthView: View {
 
             // Icon + wordmark
             VStack(spacing: Spacing.lg) {
-                WaiTriangleIcon(size: 48)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 64, height: 64)
 
-                HStack(spacing: 0) {
-                    Text("wai")
-                        .font(Typography.displayLarge)
-                    Text("computer")
-                        .font(.system(size: 32, weight: .light, design: .serif))
-                }
+                Text("WaiSay")
+                    .font(Typography.displayLarge)
 
                 Text("YOUR SECOND BRAIN")
                     .waiSectionHeader()
