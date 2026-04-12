@@ -183,10 +183,7 @@ final class DictationManager: ObservableObject {
         // Remember the target app so we can re-focus it before pasting
         targetApp = NSWorkspace.shared.frontmostApplication
 
-        // Request PostEvent permission if not granted (for CGEvent.post Cmd+V)
-        if !TextInserter.hasPostEventPermission {
-            TextInserter.requestPostEventPermission()
-        }
+        // Text insertion uses AppleScript (System Events) — no manual permission needed
 
         // Check microphone permission
         let micGranted = await AVAudioApplication.requestRecordPermission()
