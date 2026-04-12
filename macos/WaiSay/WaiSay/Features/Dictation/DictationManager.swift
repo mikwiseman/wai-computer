@@ -176,9 +176,10 @@ final class DictationManager: ObservableObject {
         }
         guard canBeginExternalDictation() else { return }
 
-        // Permissions are handled automatically:
-        // - Input Monitoring for hotkey (CGEventTap)
-        // - Automation for paste (AppleScript → System Events, prompted on first use)
+        // Request PostEvent permission if not granted (for CGEvent.post Cmd+V)
+        if !TextInserter.hasPostEventPermission {
+            TextInserter.requestPostEventPermission()
+        }
 
         // Check microphone permission
         let micGranted = await AVAudioApplication.requestRecordPermission()
