@@ -124,7 +124,7 @@ jobs:
           xcodebuild
           -project ios/WaiSay/WaiSayiOS.xcodeproj
           -scheme WaiSay
-          -destination 'generic/platform=iOS Simulator'
+          -destination 'generic/platform=iOS'
           CODE_SIGNING_ALLOWED=NO
           build
 
