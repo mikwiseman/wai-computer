@@ -7,6 +7,7 @@ struct MacSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
+    @State private var hasPostEventPermission = TextInserter.hasPostEventPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @State private var summaryLanguage = "auto"
@@ -140,18 +141,23 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                // Permissions
+                // Permissions — Input Monitoring (hotkey) + PostEvent (text paste)
                 HStack {
                     Text("Permissions")
                         .font(Typography.body)
                     Spacer()
-                    if hasInputMonitoringPermission {
+                    if hasInputMonitoringPermission && hasPostEventPermission {
                         Label("Ready", systemImage: "checkmark.circle.fill")
                             .font(Typography.bodySmall)
                             .foregroundStyle(.green)
                     } else {
-                        Button("Grant Permission") {
-                            GlobalHotkeyManager.requestInputMonitoringPermission()
+                        Button("Grant Permissions") {
+                            if !hasInputMonitoringPermission {
+                                GlobalHotkeyManager.requestInputMonitoringPermission()
+                            }
+                            if !hasPostEventPermission {
+                                TextInserter.requestPostEventPermission()
+                            }
                             startPermissionPolling()
                         }
                         .font(Typography.bodySmall)
@@ -227,7 +233,8 @@ struct MacSettingsView: View {
 
     private func refreshPermissions() {
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-        if hasInputMonitoringPermission {
+        hasPostEventPermission = TextInserter.hasPostEventPermission
+        if hasInputMonitoringPermission && hasPostEventPermission {
             stopPermissionPolling()
         }
     }

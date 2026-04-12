@@ -28,6 +28,16 @@ enum TextInsertionError: LocalizedError {
 /// This is the same approach used by Wispr Flow, Raycast, and TextExpander.
 enum TextInserter {
 
+    /// Check if PostEvent permission is granted (required for CGEvent.post)
+    static var hasPostEventPermission: Bool {
+        CGPreflightPostEventAccess()
+    }
+
+    /// Request PostEvent permission — shows the system TCC prompt
+    static func requestPostEventPermission() {
+        CGRequestPostEventAccess()
+    }
+
     /// Insert text into the currently active application.
     /// Saves clipboard, copies text, simulates Cmd+V, then restores clipboard.
     static func insert(_ text: String) async throws {
