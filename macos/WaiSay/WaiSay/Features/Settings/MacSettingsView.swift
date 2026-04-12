@@ -141,23 +141,36 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                // Permissions — Input Monitoring (hotkey) + PostEvent (text paste)
+                // Input Monitoring (for global hotkey)
                 HStack {
-                    Text("Permissions")
+                    Text("Input Monitoring")
                         .font(Typography.body)
                     Spacer()
-                    if hasInputMonitoringPermission && hasPostEventPermission {
-                        Label("Ready", systemImage: "checkmark.circle.fill")
+                    if hasInputMonitoringPermission {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
                             .font(Typography.bodySmall)
                             .foregroundStyle(.green)
                     } else {
-                        Button("Grant Permissions") {
-                            if !hasInputMonitoringPermission {
-                                GlobalHotkeyManager.requestInputMonitoringPermission()
-                            }
-                            if !hasPostEventPermission {
-                                TextInserter.requestPostEventPermission()
-                            }
+                        Button("Grant") {
+                            GlobalHotkeyManager.requestInputMonitoringPermission()
+                            startPermissionPolling()
+                        }
+                        .font(Typography.bodySmall)
+                    }
+                }
+
+                // Accessibility / PostEvent (for auto-paste)
+                HStack {
+                    Text("Accessibility")
+                        .font(Typography.body)
+                    Spacer()
+                    if hasPostEventPermission {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant") {
+                            TextInserter.requestPostEventPermission()
                             startPermissionPolling()
                         }
                         .font(Typography.bodySmall)

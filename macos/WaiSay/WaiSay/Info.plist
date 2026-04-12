@@ -20,6 +20,8 @@
 	<string>WaiSay needs microphone access to record meetings, notes, and live dictation.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>WaiSay needs audio capture access to record system audio from meetings and calls.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>WaiSay needs to simulate keyboard shortcuts to insert dictated text into the active app.</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundleURLTypes</key>

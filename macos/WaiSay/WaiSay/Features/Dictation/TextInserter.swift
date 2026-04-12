@@ -15,38 +15,36 @@ enum TextInsertionError: LocalizedError {
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
         case .pasteSimulationFailed:
-            return "Failed to insert dictated text into the active app."
+            return "Could not paste text. It's been copied to your clipboard — press ⌘V to paste manually."
         }
     }
 }
 
 /// Inserts text into the currently focused application by copying to clipboard
-/// and simulating Cmd+V via CGEvent.post().
-///
-/// CGEvent.post() works in sandboxed apps with a limited "PostEvent" TCC privilege
-/// (shown as Accessibility in System Settings). The system auto-prompts when needed.
-/// This is the same approach used by Wispr Flow, Raycast, and TextExpander.
+/// and simulating Cmd+V. Uses CGEvent.post (hidSystemState) with AppleScript fallback.
 enum TextInserter {
 
-    /// Check if PostEvent permission is granted (required for CGEvent.post)
+    // MARK: - Permission Checks
+
+    /// Check if PostEvent permission is granted (for CGEvent.post)
     static var hasPostEventPermission: Bool {
         CGPreflightPostEventAccess()
     }
 
-    /// Request PostEvent permission — shows the system TCC prompt
+    /// Request PostEvent permission — triggers system TCC prompt
     static func requestPostEventPermission() {
         CGRequestPostEventAccess()
     }
 
+    // MARK: - Insert
+
     /// Insert text into the currently active application.
-    /// Saves clipboard, copies text, simulates Cmd+V, then restores clipboard.
     static func insert(_ text: String) async throws {
         guard !text.isEmpty else {
-            log.warning("Attempted to insert empty text")
             throw TextInsertionError.emptyText
         }
 
-        log.info("Inserting \(text.count) characters into active app")
+        NSLog("[TextInserter] Inserting %d chars. PostEvent=%d", text.count, hasPostEventPermission ? 1 : 0)
 
         // Save current clipboard
         let pasteboard = NSPasteboard.general
@@ -59,45 +57,98 @@ enum TextInserter {
         }
         let insertedChangeCount = pasteboard.changeCount
 
-        // Small delay to ensure clipboard is ready
-        try? await Task.sleep(for: .milliseconds(50))
+        // Wait for hotkey modifiers to fully release
+        await waitForModifierRelease()
 
-        // Simulate Cmd+V via CGEvent.post (works in sandbox with PostEvent privilege)
-        try simulatePaste()
+        // Try paste methods
+        var pasted = false
 
-        // Wait for paste to complete, then restore clipboard
+        // Method 1: CGEvent.post — only if PostEvent TCC is granted
+        if hasPostEventPermission {
+            NSLog("[TextInserter] Trying CGEvent.post (hidSystemState)...")
+            pasted = simulatePasteCGEvent()
+            NSLog("[TextInserter] CGEvent.post done")
+        }
+
+        // Method 2: AppleScript System Events — fallback
+        if !pasted {
+            NSLog("[TextInserter] Trying AppleScript fallback...")
+            pasted = simulatePasteAppleScript()
+            NSLog("[TextInserter] AppleScript result: %d", pasted ? 1 : 0)
+        }
+
+        if !pasted {
+            NSLog("[TextInserter] ALL paste methods failed — text on clipboard")
+            // Don't restore clipboard — user can manually ⌘V
+            throw TextInsertionError.pasteSimulationFailed
+        }
+
+        // Wait for target app to process the paste
         try? await Task.sleep(for: .milliseconds(300))
-        restoreClipboard(
-            pasteboard,
-            snapshot: snapshot,
-            insertedChangeCount: insertedChangeCount
-        )
 
-        log.info("Text inserted successfully")
+        // Restore original clipboard
+        restoreClipboard(pasteboard, snapshot: snapshot, insertedChangeCount: insertedChangeCount)
+
+        NSLog("[TextInserter] Success")
     }
 
-    // MARK: - Private
+    // MARK: - Modifier Release
 
-    private static func simulatePaste() throws {
+    /// Poll until all modifier keys are released (max 500ms).
+    /// Prevents hotkey modifier (e.g. Right Command) from contaminating Cmd+V.
+    private static func waitForModifierRelease() async {
+        let modifierMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+
+        for _ in 0..<50 { // 50 × 10ms = 500ms max
+            let currentFlags = CGEventSource.flagsState(.hidSystemState)
+            if currentFlags.intersection(modifierMask).isEmpty {
+                NSLog("[TextInserter] Modifiers released")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        NSLog("[TextInserter] Modifier release timeout — proceeding anyway")
+    }
+
+    // MARK: - Paste Methods
+
+    /// CGEvent.post with hidSystemState — used by Wispr Flow, Raycast, TextExpander
+    private static func simulatePasteCGEvent() -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
-
-        // Key code for 'V' is 9
-        let vKeyCode: CGKeyCode = 9
+        let vKeyCode: CGKeyCode = 9 // 'V' key
 
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
         else {
-            log.error("Failed to create CGEvent for paste simulation")
-            throw TextInsertionError.pasteSimulationFailed
+            NSLog("[TextInserter] Failed to create CGEvent")
+            return false
         }
 
-        // Clear all modifier flags first, then set only Command
-        // This prevents conflicts with the dictation hotkey modifier keys
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// AppleScript System Events keystroke — fallback when CGEvent.post is not available
+    private static func simulatePasteAppleScript() -> Bool {
+        let script = NSAppleScript(source: """
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+            """)
+
+        var errorInfo: NSDictionary?
+        script?.executeAndReturnError(&errorInfo)
+
+        if let errorInfo {
+            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown"
+            NSLog("[TextInserter] AppleScript error: %@", message)
+            return false
+        }
+        return true
     }
 
     // MARK: - Clipboard Save/Restore
@@ -117,13 +168,11 @@ enum TextInserter {
         guard let types = pasteboard.types else {
             return ClipboardSnapshot(items: [], wasEmpty: true)
         }
-
         for type in types {
             if let data = pasteboard.data(forType: type) {
                 items.append(ClipboardItem(type: type, data: data))
             }
         }
-
         return ClipboardSnapshot(items: items, wasEmpty: items.isEmpty)
     }
 
@@ -132,14 +181,9 @@ enum TextInserter {
         snapshot: ClipboardSnapshot,
         insertedChangeCount: Int
     ) {
-        guard pasteboard.changeCount == insertedChangeCount else {
-            log.info("Skipping clipboard restore because clipboard changed after dictation paste")
-            return
-        }
-
+        guard pasteboard.changeCount == insertedChangeCount else { return }
         pasteboard.clearContents()
         guard !snapshot.wasEmpty else { return }
-
         for item in snapshot.items {
             pasteboard.setData(item.data, forType: item.type)
         }

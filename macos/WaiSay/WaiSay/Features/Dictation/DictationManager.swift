@@ -54,6 +54,10 @@ final class DictationManager: ObservableObject {
 
     private var overlayPanel: DictationOverlayPanel?
 
+    // MARK: - Target App (for restoring focus before paste)
+
+    private var targetApp: NSRunningApplication?
+
     // MARK: - Audio & Transcription
 
     private var audioCapture: MicrophoneCapture?
@@ -175,6 +179,9 @@ final class DictationManager: ObservableObject {
             return
         }
         guard canBeginExternalDictation() else { return }
+
+        // Remember the target app so we can re-focus it before pasting
+        targetApp = NSWorkspace.shared.frontmostApplication
 
         // Request PostEvent permission if not granted (for CGEvent.post Cmd+V)
         if !TextInserter.hasPostEventPermission {
@@ -324,8 +331,14 @@ final class DictationManager: ObservableObject {
             }
         }
 
-        // Insert text
+        // Re-focus the target app before pasting
         setState(.inserting)
+        if let target = targetApp, target.bundleIdentifier != Bundle.main.bundleIdentifier {
+            NSLog("[Dictation] Re-activating target app: %@ (%@)", target.localizedName ?? "?", target.bundleIdentifier ?? "?")
+            target.activate()
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+
         do {
             try await TextInserter.insert(textToInsert)
             NSSound(named: NSSound.Name("Pop"))?.play()
@@ -378,6 +391,7 @@ final class DictationManager: ObservableObject {
         audioEncoder = nil
         pendingPushToTalkStop = false
 
+        targetApp = nil
         setState(.idle)
         isHandsFree = false
         hideOverlay()
