@@ -95,6 +95,17 @@ struct WaiSayMacApp: App {
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
             }
 
+            // Settings (Cmd+,)
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NotificationCenter.default.post(
+                        name: .init("navigateToSettings"),
+                        object: nil
+                    )
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
             // Remove the default "New Window" from the Window menu
             CommandGroup(replacing: .windowList) {}
         }

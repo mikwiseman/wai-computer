@@ -304,6 +304,9 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
             importAudioFile()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("navigateToSettings"))) { _ in
+            selectedSection = .settings
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showNewRecording)) { _ in
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil
