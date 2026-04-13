@@ -39,6 +39,7 @@ platform :mac do
       api_key: api_key,
       platform: "osx",
       app_identifier: "is.waiwai.say",
+      screenshots_path: "fastlane/screenshots_macos",
       skip_binary_upload: true,
       skip_app_version_update: true,
       force: true,
