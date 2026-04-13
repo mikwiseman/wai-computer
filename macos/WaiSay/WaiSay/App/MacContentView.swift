@@ -307,6 +307,16 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("navigateToSettings"))) { _ in
             selectedSection = .settings
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("navigateTo"))) { notification in
+            guard let target = notification.object as? String else { return }
+            switch target {
+            case "allRecordings": selectedSection = .allRecordings
+            case "history": selectedSection = .history
+            case "dictionary": selectedSection = .dictionary
+            case "trash": selectedSection = .trash
+            default: break
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showNewRecording)) { _ in
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil

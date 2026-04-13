@@ -98,12 +98,39 @@ struct WaiSayMacApp: App {
             // Settings (Cmd+,)
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
-                    NotificationCenter.default.post(
-                        name: .init("navigateToSettings"),
-                        object: nil
-                    )
+                    NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+            }
+
+            // View menu — sidebar navigation
+            CommandMenu("View") {
+                Button("All Recordings") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "allRecordings")
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
+                Button("History") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Button("Dictionary") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
+                }
+                .keyboardShortcut("3", modifiers: .command)
+
+                Button("Settings") {
+                    NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
+                }
+                .keyboardShortcut("4", modifiers: .command)
+
+                Divider()
+
+                Button("Trash") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
+                }
+                .keyboardShortcut("5", modifiers: .command)
             }
 
             // Remove the default "New Window" from the Window menu
