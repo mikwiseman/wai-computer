@@ -203,8 +203,8 @@ final class DictationManager: ObservableObject {
         // Show overlay
         showOverlay()
 
-        // Play start sound
-        NSSound(named: NSSound.Name("Tink"))?.play()
+        // Play start sound (subtle, non-alarming)
+        NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
             // Set up microphone capture
@@ -289,13 +289,9 @@ final class DictationManager: ObservableObject {
         timerTask?.cancel()
         timerTask = nil
 
-        // Build final text from committed segments
+        // Build final text — prefer segments, fall back to local accumulation
         var finalText = segments.map(\.text).joined(separator: " ")
-        if !didFinalize {
-            finalText = buildTranscript()
-        }
         if finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // Fall back to locally accumulated text
             finalText = buildTranscript()
         }
 
