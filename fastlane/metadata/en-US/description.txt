@@ -1,0 +1,34 @@
+WaiSay turns your voice into organized knowledge. Record meetings, conversations, and thoughts — get instant transcripts, AI summaries, and searchable notes.
+
+YOUR AI SECOND BRAIN
+Everything you say is captured, transcribed, and made searchable. Ask questions across all your recordings and get answers with sources.
+
+RECORD ANYTHING
+Tap to start recording. WaiSay captures audio and transcribes in real time with support for 100+ languages. Works for meetings, lectures, interviews, and personal notes.
+
+AI-POWERED SUMMARIES
+After recording, get automatic summaries with key points, decisions, and action items. Customize the detail level and language.
+
+SEARCH YOUR MEMORY
+Full-text and semantic search across all your recordings. Find exactly what was said, when, and by whom.
+
+ASK QUESTIONS
+Talk to your second brain. Ask "What did we decide about the budget?" and get answers with direct references to your recordings.
+
+DICTATION (macOS)
+Use a global hotkey to dictate text into any app. Hold to speak, release to paste. AI cleanup removes filler words and fixes grammar.
+
+PRIVACY FIRST
+Your recordings are encrypted and processed securely. No third-party data sharing.
+
+KEY FEATURES
+- One-tap recording with live transcription
+- AI summaries with action items
+- Semantic search across all recordings
+- Global Q&A across your entire knowledge base
+- Export to Markdown, TXT, or SRT
+- Folders for organization
+- Multi-language support (100+ languages)
+- Dictation with AI cleanup (macOS)
+- Custom dictionary for technical terms
+- Dictation history with copy-to-clipboard

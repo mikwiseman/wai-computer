@@ -1,0 +1,6 @@
+- Simplified recording flow with one-tap start
+- Dictation now inserts text directly into any app (macOS)
+- New dictation history and custom dictionary
+- Keyboard shortcuts for quick navigation
+- Audio upload and browser recording on web
+- Bug fixes and performance improvements
