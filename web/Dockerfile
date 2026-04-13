@@ -7,6 +7,10 @@ RUN pnpm install --frozen-lockfile
 FROM node:22-alpine AS builder
 WORKDIR /app
 RUN corepack enable
+ARG API_BASE_URL
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV API_BASE_URL=${API_BASE_URL}
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ ./
 RUN pnpm build

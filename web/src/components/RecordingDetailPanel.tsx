@@ -137,9 +137,9 @@ export function RecordingDetailPanel({
       <div
         style={{
           display: "flex",
-          gap: "1rem",
+          gap: "2rem",
           borderBottom: "1px solid var(--border, #333)",
-          paddingBottom: "0.5rem",
+          paddingBottom: "1rem",
         }}
       >
         {(["transcript", "summary", "actions"] as Tab[]).map((t) => (
@@ -151,7 +151,7 @@ export function RecordingDetailPanel({
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: "0.25rem 0",
+              padding: "0.5rem 0",
               fontSize: "0.9rem",
               fontWeight: tab === t ? 600 : 400,
               color: tab === t ? "var(--accent, #d18a30)" : "var(--text-secondary, #888)",
@@ -346,13 +346,13 @@ function ActionsTab({ items }: { items: ActionItem[] }) {
         <div
           key={item.id}
           style={{
-            padding: "0.75rem",
-            marginBottom: "0.5rem",
+            padding: "1.25rem",
+            marginBottom: "1rem",
             borderRadius: "6px",
             background: "var(--surface-subtle, #222)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem" }}>
             <span style={{ fontSize: "1.1rem" }}>
               {item.status === "completed" ? "\u2705" : "\u25CB"}
             </span>
@@ -403,3 +403,4 @@ function ActionsTab({ items }: { items: ActionItem[] }) {
     </div>
   );
 }
+

@@ -377,7 +377,7 @@ describe("apiFetch", () => {
     // Ensure not on localhost (default jsdom hostname is "localhost", override it)
     const originalHostname = window.location.hostname;
     Object.defineProperty(window, "location", {
-      value: { ...window.location, hostname: "wai.computer" },
+      value: { ...window.location, hostname: "say.waiwai.is" },
       writable: true,
     });
 
@@ -511,7 +511,7 @@ describe("syncLocalhostAuthCookie", () => {
   it("does nothing when not on localhost", () => {
     const originalHostname = window.location.hostname;
     Object.defineProperty(window, "location", {
-      value: { ...window.location, hostname: "wai.computer" },
+      value: { ...window.location, hostname: "say.waiwai.is" },
       writable: true,
     });
 

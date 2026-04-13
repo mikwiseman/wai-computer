@@ -2,7 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const host = "localhost";
 const port = 3000;
-const liveApiUrl = process.env.E2E_API_URL || "https://api.wai.computer";
+const liveApiUrl = process.env.E2E_API_URL || "https://say.waiwai.is";
+const liveWebUrl = process.env.E2E_WEB_URL || liveApiUrl;
 const isLiveApiRun = process.env.E2E_LIVE_API === "1";
 
 function buildWebServerEnv(): Record<string, string> {
@@ -24,16 +25,18 @@ export default defineConfig({
   retries: 1,
   workers: process.env.CI ? 1 : undefined,
   use: {
-    baseURL: `http://${host}:${port}`,
+    baseURL: isLiveApiRun ? liveWebUrl : `http://${host}:${port}`,
     trace: "on-first-retry",
   },
-  webServer: {
-    command: "pnpm build && pnpm start --port 3000",
-    env: buildWebServerEnv(),
-    url: `http://${host}:${port}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
-  },
+  webServer: isLiveApiRun
+    ? undefined
+    : {
+        command: "pnpm build && pnpm start --port 3000",
+        env: buildWebServerEnv(),
+        url: `http://${host}:${port}`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 240_000,
+      },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const DEFAULT_DEV_API_BASE_URL = "http://127.0.0.1:8000";
-const DEFAULT_PROD_API_BASE_URL = "https://api.wai.computer";
+const DEFAULT_PROD_API_BASE_URL = "https://say.waiwai.is";
 
 function resolveApiProxyTarget(): string {
   const configured =
@@ -14,6 +14,8 @@ function resolveApiProxyTarget(): string {
     ? DEFAULT_DEV_API_BASE_URL
     : DEFAULT_PROD_API_BASE_URL;
 }
+
+export { resolveApiProxyTarget };
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],

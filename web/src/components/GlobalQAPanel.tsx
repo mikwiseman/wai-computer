@@ -247,7 +247,7 @@ export function GlobalQAPanel({ recordings }: GlobalQAPanelProps) {
           style={{
             display: "flex",
             gap: "8px",
-            paddingTop: "12px",
+            paddingTop: "24px",
             borderTop: "1px solid #e0e0e0",
           }}
         >

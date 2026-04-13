@@ -1,6 +1,7 @@
 import {
   apiFetch,
   apiFetchResponse,
+  apiUpload,
   syncLocalhostAuthCookie,
   syncLocalhostRefreshCookie,
 } from "./http";
@@ -153,6 +154,12 @@ export function updateRecording(
 
 export function deleteRecording(recordingId: string): Promise<void> {
   return apiFetch<void>(`/api/recordings/${recordingId}`, { method: "DELETE" });
+}
+
+export function uploadAudio(recordingId: string, file: File): Promise<RecordingDetail> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiUpload<RecordingDetail>(`/api/recordings/${recordingId}/upload`, formData);
 }
 
 export function bulkRecordingOperation(
