@@ -261,3 +261,57 @@ export async function apiFetchResponse(
 
   return response;
 }
+
+/**
+ * Upload a file via multipart/form-data. Browser sets Content-Type + boundary automatically.
+ * Includes 401 auto-refresh-and-retry.
+ */
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const url = `${getApiBaseUrl()}${path}`;
+  const fetchInit: RequestInit = {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+    cache: "no-store",
+  };
+
+  let response = await doFetch(url, fetchInit);
+
+  if (response.status === 401) {
+    try {
+      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (refreshResponse.ok) {
+        const refreshPayload = await parseResponsePayload(refreshResponse);
+        if (
+          refreshPayload &&
+          typeof refreshPayload === "object" &&
+          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
+        ) {
+          syncLocalhostAuthCookie(
+            (refreshPayload as { access_token: string }).access_token,
+          );
+        }
+        response = await doFetch(url, fetchInit);
+      }
+    } catch {
+      // Refresh failed
+    }
+  }
+
+  const payload = await parseResponsePayload(response);
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      buildMessage(payload, "Upload failed. Please try again.", response.status),
+      payload,
+    );
+  }
+  return payload as T;
+}

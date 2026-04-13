@@ -22,6 +22,8 @@ import {
 } from "@/lib/api";
 import { GlobalQAPanel } from "@/components/GlobalQAPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
+import { AudioUpload } from "@/components/AudioUpload";
+import { RecorderPanel } from "@/components/RecorderPanel";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
@@ -315,6 +317,18 @@ export function DashboardClient() {
         <>
       <section className="card stack">
         <h2>Recordings</h2>
+
+        <div className="row" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
+          <AudioUpload
+            onUploadComplete={() => loadRecordingsState()}
+            onError={(msg) => setMessage(msg)}
+          />
+          <RecorderPanel
+            onRecordingComplete={() => loadRecordingsState()}
+            onError={(msg) => setMessage(msg)}
+          />
+        </div>
+
         <form className="row" onSubmit={handleCreateRecording}>
           <input
             data-testid="recording-title"
