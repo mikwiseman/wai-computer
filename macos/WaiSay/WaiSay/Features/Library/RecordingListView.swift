@@ -117,7 +117,7 @@ struct RecordingRowView: View {
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
     }
 
     private func formatDuration(_ seconds: Int) -> String {

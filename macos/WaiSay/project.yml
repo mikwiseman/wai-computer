@@ -9,6 +9,9 @@ options:
 packages:
   WaiSayKit:
     path: ../../shared/WaiSayKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
 
 targets:
   WaiSay:
@@ -36,8 +39,15 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say.dev
         Release:
           ENABLE_HARDENED_RUNTIME: YES
+        Release-Sparkle:
+          ENABLE_HARDENED_RUNTIME: YES
+          ENABLE_APP_SANDBOX: NO
+          CODE_SIGN_ENTITLEMENTS: WaiSay/WaiSay.Sparkle.entitlements
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: SPARKLE
     dependencies:
       - package: WaiSayKit
+      - package: Sparkle
+        product: Sparkle
     scheme:
       testTargets:
         - WaiSayUITests

@@ -28,7 +28,8 @@ struct MacTranscriptView: View {
                         SegmentRowView(segment: segment)
                     }
                 }
-                .padding(Spacing.lg)
+                .padding(.horizontal, Spacing.xxl)
+                .padding(.vertical, Spacing.xl)
             }
             .accessibilityIdentifier("transcript-content")
         }
