@@ -328,16 +328,10 @@ final class DictationManager: ObservableObject {
             }
         }
 
-        // Re-focus the target app before pasting
+        // Insert text into target app
         setState(.inserting)
-        if let target = targetApp, target.bundleIdentifier != Bundle.main.bundleIdentifier {
-            NSLog("[Dictation] Re-activating target app: %@ (%@)", target.localizedName ?? "?", target.bundleIdentifier ?? "?")
-            target.activate()
-            try? await Task.sleep(for: .milliseconds(200))
-        }
-
         do {
-            try await TextInserter.insert(textToInsert)
+            try await TextInserter.insert(textToInsert, targetApp: targetApp)
             NSSound(named: NSSound.Name("Pop"))?.play()
         } catch {
             let recoveryURL = try? saveRecoveryText(textToInsert)

@@ -20,20 +20,37 @@ enum TextInsertionError: LocalizedError {
     }
 }
 
-/// Inserts text into the currently focused application using AppleScript System Events.
-///
-/// In a sandboxed app (required for TestFlight), CGEvent.post() silently fails
-/// because PostEvent TCC cannot be granted. AppleScript with automation.apple-events
-/// entitlement is the only reliable method for sandbox.
+/// Inserts text into the currently focused application.
+/// Uses two approaches in cascade:
+/// 1. CGEvent.post (Maccy approach — proven in sandboxed App Store apps)
+/// 2. AppleScript System Events (fallback)
 enum TextInserter {
 
-    /// Insert text into the currently active application.
-    static func insert(_ text: String) async throws {
+    // MARK: - Pre-authorize
+
+    /// Call once (e.g. from Settings) to trigger the System Events consent prompt
+    /// before the user starts dictating. This avoids a surprise prompt mid-dictation.
+    static func preAuthorizeSystemEvents() {
+        let script = NSAppleScript(source: """
+            tell application "System Events"
+                return name of first process whose frontmost is true
+            end tell
+            """)
+        var errorInfo: NSDictionary?
+        script?.executeAndReturnError(&errorInfo)
+        // We don't care about the result — just need to trigger the TCC prompt
+    }
+
+    // MARK: - Insert
+
+    /// Insert text into the target application.
+    /// `targetApp` should be the app that was frontmost when dictation started.
+    static func insert(_ text: String, targetApp: NSRunningApplication?) async throws {
         guard !text.isEmpty else {
             throw TextInsertionError.emptyText
         }
 
-        NSLog("[TextInserter] Inserting %d chars", text.count)
+        NSLog("[TextInserter] Inserting %d chars into %@", text.count, targetApp?.localizedName ?? "unknown")
 
         // Save current clipboard
         let pasteboard = NSPasteboard.general
@@ -46,17 +63,30 @@ enum TextInserter {
         }
         let insertedChangeCount = pasteboard.changeCount
 
+        // Activate target app and wait for focus to settle
+        if let target = targetApp {
+            NSLog("[TextInserter] Activating %@", target.localizedName ?? "?")
+            target.activate()
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+
         // Wait for hotkey modifiers to fully release
         await waitForModifierRelease()
 
-        // Paste via AppleScript System Events — the only method that works in sandbox
-        NSLog("[TextInserter] Pasting via AppleScript...")
-        let success = simulatePasteAppleScript()
-        NSLog("[TextInserter] AppleScript result: %d", success ? 1 : 0)
+        // Method 1: CGEvent.post — Maccy approach (combinedSessionState + cgSessionEventTap)
+        NSLog("[TextInserter] Trying CGEvent.post (Maccy approach)...")
+        var pasted = simulatePasteCGEvent()
 
-        if !success {
-            NSLog("[TextInserter] Paste failed — text left on clipboard")
-            // Don't restore clipboard so user can ⌘V manually
+        // Method 2: AppleScript fallback
+        if !pasted {
+            NSLog("[TextInserter] CGEvent failed, trying AppleScript...")
+            pasted = simulatePasteAppleScript()
+        }
+
+        NSLog("[TextInserter] Paste result: %d", pasted ? 1 : 0)
+
+        if !pasted {
+            // Leave text on clipboard for manual ⌘V
             throw TextInsertionError.pasteSimulationFailed
         }
 
@@ -65,8 +95,6 @@ enum TextInserter {
 
         // Restore original clipboard
         restoreClipboard(pasteboard, snapshot: snapshot, insertedChangeCount: insertedChangeCount)
-
-        NSLog("[TextInserter] Success")
     }
 
     // MARK: - Modifier Release
@@ -74,24 +102,50 @@ enum TextInserter {
     /// Poll until all modifier keys are released (max 500ms).
     private static func waitForModifierRelease() async {
         let modifierMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
-
         for _ in 0..<50 {
-            let currentFlags = CGEventSource.flagsState(.hidSystemState)
-            if currentFlags.intersection(modifierMask).isEmpty {
-                NSLog("[TextInserter] Modifiers released")
+            let flags = CGEventSource.flagsState(.combinedSessionState)
+            if flags.intersection(modifierMask).isEmpty {
+                NSLog("[TextInserter] Modifiers clear")
                 return
             }
             try? await Task.sleep(for: .milliseconds(10))
         }
-        NSLog("[TextInserter] Modifier release timeout — proceeding anyway")
+        NSLog("[TextInserter] Modifier timeout — proceeding")
     }
 
-    // MARK: - Paste via AppleScript
+    // MARK: - Paste Methods
 
-    /// Uses System Events to simulate Cmd+V. Requires:
-    /// - Entitlement: com.apple.security.automation.apple-events
-    /// - Info.plist: NSAppleEventsUsageDescription
-    /// macOS auto-prompts "WaiSay wants to control System Events" on first use.
+    /// Maccy approach — proven in sandboxed Mac App Store apps.
+    /// Uses .combinedSessionState + .cgSessionEventTap (NOT .hidSystemState + .cghidEventTap)
+    private static func simulatePasteCGEvent() -> Bool {
+        let source = CGEventSource(stateID: .combinedSessionState)
+
+        // Suppress local events during paste to avoid interference
+        source?.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateSuppressionInterval
+        )
+
+        let vKeyCode: CGKeyCode = 9 // 'V' key
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        else {
+            NSLog("[TextInserter] CGEvent creation failed")
+            return false
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cgSessionEventTap)
+
+        NSLog("[TextInserter] CGEvent.post done (session tap)")
+        return true
+    }
+
+    /// AppleScript fallback — uses System Events keystroke
     private static func simulatePasteAppleScript() -> Bool {
         let script = NSAppleScript(source: """
             tell application "System Events"
@@ -103,10 +157,11 @@ enum TextInserter {
         script?.executeAndReturnError(&errorInfo)
 
         if let errorInfo {
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown"
-            NSLog("[TextInserter] AppleScript error: %@", message)
+            let msg = errorInfo[NSAppleScript.errorMessage] as? String ?? "Unknown"
+            NSLog("[TextInserter] AppleScript error: %@", msg)
             return false
         }
+        NSLog("[TextInserter] AppleScript paste done")
         return true
     }
 
