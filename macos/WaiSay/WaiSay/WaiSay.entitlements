@@ -10,5 +10,12 @@
 	<true/>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<key>com.apple.security.scripting-targets</key>
+	<dict>
+		<key>com.apple.systemevents</key>
+		<array>
+			<string>com.apple.systemevents.processes</string>
+		</array>
+	</dict>
 </dict>
 </plist>
