@@ -1,5 +1,8 @@
 import SwiftUI
 import WaiSayKit
+#if SPARKLE
+import Sparkle
+#endif
 
 extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
@@ -14,6 +17,9 @@ struct WaiSayMacApp: App {
     @StateObject private var dictationManager: DictationManager
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
+    #if SPARKLE
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    #endif
 
     init() {
         #if !DEBUG
@@ -101,6 +107,13 @@ struct WaiSayMacApp: App {
                     NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+
+                #if SPARKLE
+                Divider()
+                Button("Check for Updates…") {
+                    updaterController.checkForUpdates(nil)
+                }
+                #endif
             }
 
             // View menu — sidebar navigation

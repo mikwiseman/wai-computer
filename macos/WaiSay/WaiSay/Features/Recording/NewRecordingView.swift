@@ -13,7 +13,7 @@ struct NewRecordingView: View {
             VStack(spacing: Spacing.md) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
-                    .frame(width: 48, height: 48)
+                    .frame(width: 64, height: 64)
 
                 Text("New Recording")
                     .font(Typography.displaySmall)

@@ -442,7 +442,8 @@ struct MacRecordingDetailView: View {
                         }
                     }
                 }
-                .padding(Spacing.lg)
+                .padding(.horizontal, Spacing.xxl)
+                .padding(.vertical, Spacing.xl)
             }
             .accessibilityIdentifier("summary-content")
         } else {

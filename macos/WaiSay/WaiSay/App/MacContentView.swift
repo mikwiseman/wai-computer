@@ -114,9 +114,9 @@ struct MacMainView: View {
         } content: {
             listColumn
                 .navigationSplitViewColumnWidth(
-                    min: hasListColumn ? 220 : 0,
-                    ideal: hasListColumn ? 280 : 0,
-                    max: hasListColumn ? 360 : 0
+                    min: hasListColumn ? 260 : 0,
+                    ideal: hasListColumn ? 320 : 0,
+                    max: hasListColumn ? 450 : 0
                 )
         } detail: {
             detailColumn

@@ -93,7 +93,8 @@ struct MacAppsView: View {
                                 }
                         }
                     }
-                    .padding(Spacing.lg)
+                    .padding(.horizontal, Spacing.xxl)
+                    .padding(.vertical, Spacing.xl)
                 }
             }
         }
@@ -134,8 +135,8 @@ struct MacAppsView: View {
                 .pickerStyle(.segmented)
             }
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.vertical, Spacing.xl)
     }
 
     private var createForm: some View {
@@ -374,7 +375,8 @@ private struct AppDetailView: View {
                             AppItemRow(item: item, onDelete: { deleteItem(item) })
                         }
                     }
-                    .padding(Spacing.lg)
+                    .padding(.horizontal, Spacing.xxl)
+                    .padding(.vertical, Spacing.xl)
                 }
             }
         }
@@ -496,8 +498,8 @@ private struct AppDetailView: View {
                 }
             }
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.vertical, Spacing.xl)
     }
 
     private func refresh() async {

@@ -55,13 +55,15 @@ struct LiveRecordingView: View {
                                 .font(Typography.reading)
                                 .foregroundStyle(Palette.textSecondary)
                                 .italic()
-                                .padding(Spacing.lg)
+                                .padding(.horizontal, Spacing.xxl)
+                                .padding(.vertical, Spacing.xl)
                         } else {
                             Text(recordingVM.currentTranscript)
                                 .font(Typography.reading)
                                 .lineSpacing(6)
                                 .textSelection(.enabled)
-                                .padding(Spacing.lg)
+                                .padding(.horizontal, Spacing.xxl)
+                                .padding(.vertical, Spacing.xl)
                                 .id("transcript-bottom")
                         }
                     }
@@ -109,7 +111,8 @@ struct LiveRecordingView: View {
 
                 Spacer()
             }
-            .padding(Spacing.lg)
+            .padding(.horizontal, Spacing.xxl)
+            .padding(.vertical, Spacing.xl)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-recording-view")
@@ -168,7 +171,8 @@ struct LiveRecordingView: View {
                     .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
             }
         }
-        .padding(Spacing.lg)
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.vertical, Spacing.xl)
     }
 }
 
