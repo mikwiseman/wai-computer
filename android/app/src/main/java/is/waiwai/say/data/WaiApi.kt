@@ -161,19 +161,8 @@ interface AuthStoreContract {
 
 class ApiTransport(
     private val settingsStore: SettingsStore,
+    private val client: HttpClient = defaultHttpClient(),
 ) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-        isLenient = true
-    }
-
-    private val client = HttpClient(Android) {
-        install(ContentNegotiation) {
-            json(json)
-        }
-    }
-
     internal suspend inline fun <reified T> request(
         method: HttpMethod,
         path: String,
@@ -376,6 +365,22 @@ class ApiTransport(
             System.arraycopy(header, 0, bytes, 0, header.size)
             System.arraycopy(content, 0, bytes, header.size, content.size)
             System.arraycopy(footer, 0, bytes, header.size + content.size, footer.size)
+        }
+    }
+
+    private companion object {
+        fun defaultHttpClient(): HttpClient {
+            return HttpClient(Android) {
+                install(ContentNegotiation) {
+                    json(
+                        Json {
+                            ignoreUnknownKeys = true
+                            explicitNulls = false
+                            isLenient = true
+                        },
+                    )
+                }
+            }
         }
     }
 }

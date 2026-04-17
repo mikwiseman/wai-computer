@@ -1,6 +1,5 @@
-- Simplified recording flow with one-tap start
-- Dictation now inserts text directly into any app (macOS)
-- New dictation history and custom dictionary
-- Keyboard shortcuts for quick navigation
-- Audio upload and browser recording on web
-- Bug fixes and performance improvements
+- New Android onboarding with email sign-in, account creation, magic-link entry, and guest mode
+- One-tap recording on Android with local-first audio capture and live transcription status banners
+- Android library now supports local-only guest recordings, richer recording detail, retry upload, share, and move to folder
+- Guest recordings now migrate after sign-in and sync safely in the background
+- Refreshed Settings, localisation, and observability for the Android parity release

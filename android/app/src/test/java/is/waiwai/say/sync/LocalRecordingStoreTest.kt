@@ -4,7 +4,7 @@ import android.content.Context
 import `is`.waiwai.say.data.LiveTranscriptSegment
 import io.mockk.every
 import io.mockk.mockk
-import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -14,7 +14,7 @@ import org.junit.Test
 class LocalRecordingStoreTest {
     @Test
     fun `save list and remove roundtrip`() = runTest {
-        val tempRoot = createTempDir(prefix = "waisay-local-store")
+        val tempRoot = createTempDirectory("waisay-local-store").toFile()
         val context = mockk<Context>()
         every { context.filesDir } returns tempRoot
 
@@ -35,7 +35,7 @@ class LocalRecordingStoreTest {
         val manifests = store.listPending()
         assertEquals(1, manifests.size)
         assertEquals("rec-1", manifests.first().recordingId)
-        assertTrue(store.audioFile("rec-1").parentFile.exists())
+        assertTrue(store.audioFile("rec-1").parentFile?.exists() == true)
         assertEquals(1, store.loadSegments("rec-1").size)
 
         store.remove("rec-1")

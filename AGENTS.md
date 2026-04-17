@@ -50,7 +50,8 @@ Native builds:
 ```bash
 xcodebuild -project macos/WaiSay/WaiSay.xcodeproj -scheme WaiSay -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
 xcodebuild -project ios/WaiSay/WaiSayiOS.xcodeproj -scheme WaiSay -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
-cd android && ./gradlew --no-daemon testDebugUnitTest assembleDebug
+cd android && ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleRelease lint
+cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 ```
 
 ## Key Context
@@ -65,6 +66,14 @@ cd android && ./gradlew --no-daemon testDebugUnitTest assembleDebug
 - Never log raw emails, tokens, transcript text, search queries, or filenames.
 - Backend sanitization: `backend/app/core/observability.py`
 - Apple sanitization: `shared/WaiSayKit/Sources/WaiSayKit/Monitoring/SentryHelper.swift`
+- Android sanitization: `android/app/src/main/java/is/waiwai/say/monitoring/SentryHelper.kt`
+
+## Android
+
+- Production Android DSN lives in `android/gradle.properties` as `wai.sentryDsn`; keep it aligned with the `waisay-android` Sentry project.
+- Canonical Android magic-link deep link: `waisay://magic?token=...`
+- Guest recordings are local-first under `filesDir/recordings/`; successful auth must enqueue guest migration sync.
+- Before shipping Android work, run unit, lint, release assembly, and connected instrumentation tests.
 
 ## Debugging Production
 

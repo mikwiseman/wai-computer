@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +41,7 @@ import `is`.waiwai.say.R
 import `is`.waiwai.say.auth.AuthState
 import `is`.waiwai.say.auth.AuthViewModel
 import `is`.waiwai.say.data.AppContainer
+import `is`.waiwai.say.ui.TestTags
 import kotlinx.coroutines.launch
 
 private data class StorageSummary(
@@ -127,7 +129,12 @@ fun SettingsScreen(
                 is AuthState.SessionExpired,
                 -> {
                     Text(stringResource(R.string.settings_sign_in_sync))
-                    Button(onClick = onContinueSignIn, modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onContinueSignIn,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(TestTags.SettingsSignInButton),
+                    ) {
                         Text(stringResource(R.string.guest_banner_sign_in_to_sync))
                     }
                 }

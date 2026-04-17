@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -67,7 +68,9 @@ fun AuthFormScreen(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthEmailField),
             label = { Text(stringResource(R.string.auth_email_label)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             supportingText = {
@@ -79,7 +82,9 @@ fun AuthFormScreen(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthPasswordField),
             label = { Text(stringResource(R.string.auth_password_label)) },
             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
             supportingText = {
@@ -117,7 +122,9 @@ fun AuthFormScreen(
                     authViewModel.register(email, password)
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthSubmitButton),
         ) {
             Text(
                 if (mode == AuthFormMode.Login) {
@@ -160,7 +167,9 @@ fun MagicLinkScreen(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthEmailField),
             label = { Text(stringResource(R.string.auth_email_label)) },
             supportingText = {
                 if (emailError != null) {
@@ -171,7 +180,9 @@ fun MagicLinkScreen(
         Button(
             enabled = email.isNotBlank() && emailError == null,
             onClick = { authViewModel.requestMagicLink(email) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthSubmitButton),
         ) {
             Text(stringResource(R.string.auth_magic_link_title))
         }

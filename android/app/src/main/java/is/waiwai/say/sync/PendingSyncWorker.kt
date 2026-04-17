@@ -8,6 +8,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import `is`.waiwai.say.auth.AuthStore
 import `is`.waiwai.say.data.RecordingDetail
 import `is`.waiwai.say.data.WaiApi
 import kotlinx.coroutines.Dispatchers
@@ -18,10 +19,14 @@ class PendingSyncWorker(
     params: WorkerParameters,
     private val waiApi: WaiApi,
     private val localRecordingStore: LocalRecordingStore,
+    private val authStore: AuthStore,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val pending = localRecordingStore.listPending()
         pending.forEach { manifest ->
+            if (manifest.requiresAuthentication && authStore.currentAccessToken().isNullOrBlank()) {
+                return@withContext Result.success()
+            }
             runCatching {
                 syncOne(manifest)
             }.onFailure {
@@ -76,6 +81,7 @@ class PendingSyncWorkerFactory(
                 params = workerParameters,
                 waiApi = container.waiApi,
                 localRecordingStore = container.localRecordingStore,
+                authStore = container.authStore,
             )
             else -> null
         }
@@ -85,9 +91,10 @@ class PendingSyncWorkerFactory(
 class PendingSyncWorkerScheduler(
     context: Context,
 ) {
-    private val workManager = WorkManager.getInstance(context)
+    private val appContext = context.applicationContext
 
     fun enqueue() {
+        val workManager = WorkManager.getInstance(appContext)
         val request = OneTimeWorkRequestBuilder<PendingSyncWorker>()
             .setConstraints(
                 androidx.work.Constraints.Builder()

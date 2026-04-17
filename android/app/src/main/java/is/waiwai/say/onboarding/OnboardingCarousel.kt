@@ -26,10 +26,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import `is`.waiwai.say.R
+import `is`.waiwai.say.ui.TestTags
 import kotlinx.coroutines.launch
 
 @Composable
@@ -116,7 +118,9 @@ fun OnboardingCarousel(
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.OnboardingPrimaryButton),
         ) {
             Text(
                 if (pagerState.currentPage == pages.lastIndex) {

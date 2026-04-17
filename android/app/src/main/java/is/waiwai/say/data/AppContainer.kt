@@ -20,6 +20,16 @@ import kotlinx.coroutines.launch
 
 class AppContainer(
     application: Application,
+    settingsStoreOverride: SettingsStore? = null,
+    secureTokenStoreOverride: SecureTokenStore? = null,
+    transportOverride: ApiTransport? = null,
+    authStoreOverride: AuthStore? = null,
+    waiApiOverride: WaiApi? = null,
+    localRecordingStoreOverride: LocalRecordingStore? = null,
+    networkMonitorOverride: NetworkMonitor? = null,
+    syncSchedulerOverride: PendingSyncWorkerScheduler? = null,
+    syncCoordinatorOverride: SyncCoordinator? = null,
+    private val sentryDsnOverride: String? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dataStore = PreferenceDataStoreFactory.create(
@@ -29,27 +39,28 @@ class AppContainer(
         },
     )
 
-    val settingsStore = SettingsStore(dataStore)
-    private val secureTokenStore = SecureTokenStore(application)
-    private val transport = ApiTransport(settingsStore)
-    val authStore = AuthStore(
+    val settingsStore = settingsStoreOverride ?: SettingsStore(dataStore)
+    private val secureTokenStore = secureTokenStoreOverride ?: SecureTokenStore(application)
+    private val transport = transportOverride ?: ApiTransport(settingsStore)
+    val authStore = authStoreOverride ?: AuthStore(
         settingsStore = settingsStore,
         secureTokenStore = secureTokenStore,
         transport = transport,
     )
-    val waiApi = WaiApi(transport = transport, authStore = authStore)
-    val localRecordingStore = LocalRecordingStore(application)
-    val networkMonitor = NetworkMonitor(application)
-    private val syncScheduler = PendingSyncWorkerScheduler(application)
-    val syncCoordinator = SyncCoordinator(
+    val waiApi = waiApiOverride ?: WaiApi(transport = transport, authStore = authStore)
+    val localRecordingStore = localRecordingStoreOverride ?: LocalRecordingStore(application)
+    val networkMonitor = networkMonitorOverride ?: NetworkMonitor(application)
+    private val syncScheduler = syncSchedulerOverride ?: PendingSyncWorkerScheduler(application)
+    val syncCoordinator = syncCoordinatorOverride ?: SyncCoordinator(
         authStore = authStore,
         networkMonitor = networkMonitor,
         scheduler = syncScheduler,
     )
 
     fun bootstrap() {
-        if (BuildConfig.SENTRY_DSN.isNotBlank()) {
-            SentryHelper.start(BuildConfig.SENTRY_DSN)
+        val sentryDsn = sentryDsnOverride ?: BuildConfig.SENTRY_DSN
+        if (sentryDsn.isNotBlank()) {
+            SentryHelper.start(sentryDsn)
         }
 
         scope.launch {
@@ -67,5 +78,9 @@ class AppContainer(
                 }
             },
         )
+    }
+
+    fun enqueuePendingSync() {
+        syncScheduler.enqueue()
     }
 }

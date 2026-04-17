@@ -25,10 +25,12 @@
     <string name="auth_magic_link_title">Отправить magic link</string>
     <string name="auth_magic_link_body">Мы отправим безопасную ссылку для входа на твою почту.</string>
     <string name="auth_magic_link_sent">Мы отправили ссылку для входа на твою почту.</string>
+    <string name="auth_magic_link_sent_to">Мы отправили ссылку для входа на %1$s.</string>
     <string name="auth_invalid_email">Введи корректный email.</string>
     <string name="auth_password_too_short">Пароль должен быть не короче 8 символов.</string>
     <string name="auth_password_mismatch">Пароли не совпадают.</string>
     <string name="auth_too_many_attempts">Слишком много попыток, попробуй через минуту.</string>
+    <string name="auth_migrating_guest_recordings">Переношу твои записи…</string>
     <string name="guest_info_title">Использовать гостевой режим</string>
     <string name="guest_info_body">Гостевые записи хранятся только на этом устройстве. Войди позже, чтобы синхронизировать и расшифровать их.</string>
     <string name="guest_info_confirm">Продолжить как гость</string>
@@ -49,6 +51,7 @@
     <string name="record_folder">Папка</string>
     <string name="record_guest_badge">Гостевой режим</string>
     <string name="record_folder_none">Без папки</string>
+    <string name="record_folder_picker_label">Папка: %1$s</string>
     <string name="record_duration_content_description">Длительность записи</string>
     <string name="record_status_ring">Статус записи</string>
     <string name="record_transcript">Живая расшифровка</string>
@@ -99,6 +102,7 @@
     <string name="wai_send">Отправить</string>
     <string name="wai_you">Ты</string>
     <string name="wai_assistant">Wai</string>
+    <string name="wai_loading">Wai думает…</string>
     <string name="settings_account">Аккаунт</string>
     <string name="settings_transcription">Расшифровка</string>
     <string name="settings_storage">Хранилище</string>

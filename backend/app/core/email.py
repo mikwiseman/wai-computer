@@ -4,14 +4,15 @@ import asyncio
 import functools
 
 import resend
-import sentry_sdk
 from fastapi import HTTPException, status
 
 from app.config import get_settings
+from app.core.observability import add_sentry_breadcrumb, capture_sentry_exception
 
 # Maps client identifiers to app URL schemes.
 # Using an enum-like mapping avoids open redirect vulnerabilities.
 APP_CLIENT_URLS = {
+    "android": "waisay://magic",
     "macos": "waisay://auth/verify",
     "ios": "waisay://auth/verify",
 }
@@ -58,18 +59,17 @@ async def send_magic_link_email(
     to_email: str, token: str, client: str | None = None
 ) -> None:
     """Send a magic link email to the user without blocking the event loop."""
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="email",
         message="Sending magic link email",
         data={"client": client},
-        level="info",
     )
     try:
         loop = asyncio.get_running_loop()
         func = functools.partial(_send_email_sync, to_email, token, client)
         await loop.run_in_executor(None, func)
     except Exception as e:
-        sentry_sdk.capture_exception(e)
+        capture_sentry_exception(e, extras={"client": client})
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to send email",

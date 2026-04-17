@@ -16,10 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import `is`.waiwai.say.R
 import `is`.waiwai.say.recording.Phase
+import `is`.waiwai.say.ui.TestTags
 
 @Composable
 fun RecordButton(
@@ -34,6 +36,7 @@ fun RecordButton(
             .size(80.dp)
             .scale(if (isRecording) 0.95f else 1f)
             .background(Color(0xFFDC2626), CircleShape)
+            .testTag(TestTags.RecordButton)
             .clickable(enabled = !isBusy, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

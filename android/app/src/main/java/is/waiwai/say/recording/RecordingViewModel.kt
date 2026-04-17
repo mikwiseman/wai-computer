@@ -76,7 +76,7 @@ class RecordingViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    fun startRecording(permissionGranted: Boolean) {
+    fun startRecording(permissionGranted: Boolean, folderId: String? = null) {
         if (!permissionGranted) {
             _uiState.value = _uiState.value.copy(
                 error = application.getString(`is`.waiwai.say.R.string.record_permission_denied),
@@ -105,7 +105,11 @@ class RecordingViewModel(
             val recordingId = if (isGuest) {
                 UUID.randomUUID().toString()
             } else {
-                waiApi.createRecording(type = _uiState.value.recordingType, language = language).id
+                waiApi.createRecording(
+                    type = _uiState.value.recordingType,
+                    language = language,
+                    folderId = folderId,
+                ).id
             }
 
             currentRecordingId = recordingId

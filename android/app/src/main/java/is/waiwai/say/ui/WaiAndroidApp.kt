@@ -46,6 +46,7 @@ import `is`.waiwai.say.onboarding.OnboardingAuthChoice
 import `is`.waiwai.say.onboarding.OnboardingCarousel
 import `is`.waiwai.say.qa.WaiScreen
 import `is`.waiwai.say.recording.RecordingScreen
+import `is`.waiwai.say.recording.RecordingViewModel
 import `is`.waiwai.say.settings.SettingsScreen
 import `is`.waiwai.say.ui.components.BannerCard
 import `is`.waiwai.say.ui.components.BannerVariant
@@ -70,6 +71,7 @@ fun WaiAndroidApp(
     container: AppContainer,
     pendingMagicLinkToken: String?,
     onMagicLinkConsumed: () -> Unit,
+    recordingViewModel: RecordingViewModel? = null,
 ) {
     val authState by container.authStore.state.collectAsStateWithLifecycle()
     val settings by container.settingsStore.settings.collectAsStateWithLifecycle(
@@ -86,6 +88,11 @@ fun WaiAndroidApp(
     val authViewModel = remember { AuthViewModel(container.authStore) }
     val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var previousAuthState by remember { mutableStateOf<AuthState>(AuthState.Unknown) }
+    val guestMigrationMessage = stringResource(R.string.auth_migrating_guest_recordings)
+    val magicLinkSentMessage = authUiState.magicLinkSentTo?.let { email ->
+        stringResource(R.string.auth_magic_link_sent_to, email)
+    }
 
     var authFlowScreen by rememberSaveable {
         mutableStateOf(if (settings.onboardingSeen) AuthFlowScreen.Choice else AuthFlowScreen.Carousel)
@@ -105,12 +112,21 @@ fun WaiAndroidApp(
                 showAuthOverlay = false
             }
             is AuthState.Authenticated -> {
+                if (previousAuthState is AuthState.Guest) {
+                    val pendingGuestRecordings = container.localRecordingStore.listPending()
+                        .count { it.requiresAuthentication || it.localOnly }
+                    if (pendingGuestRecordings > 0) {
+                        container.enqueuePendingSync()
+                        snackbarHostState.showSnackbar(guestMigrationMessage)
+                    }
+                }
                 showAuthOverlay = false
             }
             is AuthState.Guest,
             AuthState.Unknown,
             -> Unit
         }
+        previousAuthState = authState
     }
 
     LaunchedEffect(pendingMagicLinkToken) {
@@ -126,6 +142,13 @@ fun WaiAndroidApp(
         }
     }
 
+    if (magicLinkSentMessage != null) {
+        LaunchedEffect(magicLinkSentMessage) {
+            snackbarHostState.showSnackbar(magicLinkSentMessage)
+            authViewModel.consumeMagicLinkSent()
+        }
+    }
+
     when (val state = authState) {
         AuthState.Unknown -> AppLoadingScreen()
         is AuthState.Authenticated,
@@ -138,6 +161,7 @@ fun WaiAndroidApp(
                 container = container,
                 authViewModel = authViewModel,
                 snackbarHostState = snackbarHostState,
+                recordingViewModel = recordingViewModel,
                 onRequestAuth = {
                     showAuthOverlay = true
                     authFlowScreen = AuthFlowScreen.Choice
@@ -176,6 +200,7 @@ private fun MainTabsScaffold(
     container: AppContainer,
     authViewModel: AuthViewModel,
     snackbarHostState: SnackbarHostState,
+    recordingViewModel: RecordingViewModel?,
     onRequestAuth: () -> Unit,
 ) {
     var selectedRecordingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -236,6 +261,7 @@ private fun MainTabsScaffold(
                 modifier = Modifier.padding(padding),
                 container = container,
                 isGuest = isGuest,
+                viewModel = recordingViewModel,
             )
             MainTab.Library -> LibraryScreen(
                 modifier = Modifier.padding(padding),
@@ -251,6 +277,10 @@ private fun MainTabsScaffold(
                 modifier = Modifier.padding(padding),
                 container = container,
                 isGuest = isGuest,
+                onOpenRecording = { recordingId ->
+                    selectedRecordingId = recordingId
+                    selectedRecordingLocalOnly = false
+                },
             )
             MainTab.Settings -> SettingsScreen(
                 modifier = Modifier.padding(padding),

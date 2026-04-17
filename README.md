@@ -86,7 +86,7 @@ docker-compose up -d
 alembic upgrade head
 uvicorn app.main:app --reload
 
-# Run remote API smoke checks (default: https://api.wai.computer)
+# Run remote API smoke checks (default: https://say.waiwai.is)
 cd ..
 ./scripts/api-smoke.sh
 
@@ -121,6 +121,27 @@ For a signed direct-download macOS installer, use `scripts/build-macos-dmg.sh`. 
 
 Before running a release smoke on a developer machine, clear old desktop app state with `scripts/reset-macos-app-state.sh` so Debug/UI-test caches do not contaminate the Release app.
 
+### Android Development
+
+```bash
+cd android
+
+# Run the Android unit suite
+./gradlew testDebugUnitTest
+
+# Build local debug and release artifacts
+./gradlew assembleDebug assembleRelease
+
+# Run lint
+./gradlew lint
+```
+
+Android app highlights in the parity release:
+- onboarding with email auth, magic-link sign-in, and guest mode
+- one-tap local-first recording with foreground service protection
+- guest recording migration after sign-in via background sync
+- library/detail/settings flows aligned with iOS terminology and status handling
+
 ### Web Development
 
 ```bash
@@ -152,8 +173,9 @@ ANTHROPIC_API_KEY=your-anthropic-key
 
 # Optional - Email (magic links)
 RESEND_API_KEY=your-resend-api-key
-EMAIL_FROM=noreply@wai.computer
-FRONTEND_URL=https://wai.computer
+EMAIL_FROM=WaiSay <noreply@mail.waiwai.is>
+FRONTEND_URL=https://say.waiwai.is
+AUTH_COOKIE_DOMAIN=say.waiwai.is
 ```
 
 ## API Endpoints
