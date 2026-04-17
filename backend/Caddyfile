@@ -1,4 +1,4 @@
-wai.computer {
+say.waiwai.is {
     handle /api/* {
         reverse_proxy api:8000
     }
@@ -22,34 +22,4 @@ wai.computer {
         max_size 200MB
     }
 
-    log {
-        output file /data/access.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-        format json
-    }
-}
-
-api.wai.computer {
-    reverse_proxy api:8000
-
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        -Server
-    }
-
-    request_body {
-        max_size 200MB
-    }
-
-    log {
-        output file /data/api-access.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-        format json
-    }
 }
