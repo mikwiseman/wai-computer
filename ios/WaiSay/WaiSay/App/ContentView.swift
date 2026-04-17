@@ -5,15 +5,32 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
+        let environment = ProcessInfo.processInfo.environment
         Group {
             if appState.isCheckingAuth {
                 ProgressView("Loading...")
             } else if appState.isAuthenticated {
-                MainTabView()
+                if let recId = environment["WAISAY_RECORDING_ID"] {
+                    NavigationStack {
+                        RecordingDetailView(recording: screenshotRecording(for: recId))
+                    }
+                } else {
+                    MainTabView()
+                }
             } else {
                 AuthView()
             }
         }
+    }
+
+    private func screenshotRecording(for id: String) -> Recording {
+        #if DEBUG
+        if IOSTestingMode.current.isScreenshot {
+            return IOSScreenshotFixtures.recording(id: id)
+        }
+        #endif
+
+        return Recording(id: id, type: .meeting, createdAt: Date())
     }
 }
 
@@ -25,7 +42,7 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            WaiHomeView()
+            RecordingView()
                 .tabItem {
                     Label("Record", systemImage: "mic.circle.fill")
                 }
@@ -56,6 +73,9 @@ struct MainTabView: View {
         .onAppear {
             // Migrate stored tab index after removing Apps tab (was tag 4/5)
             if selectedTab > 2 { selectedTab = 0 }
+            // Allow env override for screenshots
+            if let tab = ProcessInfo.processInfo.environment["WAISAY_TAB"],
+               let n = Int(tab) { selectedTab = n }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingRecoveryNotice)) { notification in
             guard let message = notification.userInfo?["message"] as? String,

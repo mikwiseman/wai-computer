@@ -16,6 +16,10 @@ struct RecordingDetailView: View {
     @State private var selectedTab = 0
     @State private var showDeleteConfirmation = false
 
+    private var isScreenshotMode: Bool {
+        IOSTestingMode.current.isScreenshot
+    }
+
     init(
         recording: Recording,
         isTrash: Bool = false,
@@ -135,9 +139,14 @@ struct RecordingDetailView: View {
             )
         }
         .task {
-            await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
+            if isScreenshotMode {
+                viewModel.loadScreenshotFixture(recordingId: recording.id)
+            } else {
+                await viewModel.loadDetail(recordingId: recording.id, apiClient: appState.getAPIClient())
+            }
         }
         .task(id: detailRefreshKey) {
+            guard !isScreenshotMode else { return }
             await viewModel.refreshPendingDetailIfNeeded(
                 recordingId: recording.id,
                 apiClient: appState.getAPIClient()
@@ -146,7 +155,11 @@ struct RecordingDetailView: View {
         .onChange(of: recording.id) {
             selectedTab = 0
         }
+        .onAppear {
+            selectedTab = screenshotSelectedTab
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { notification in
+            guard !isScreenshotMode else { return }
             guard let syncedRecordingId = notification.userInfo?["recordingId"] as? String,
                   syncedRecordingId == recording.id else {
                 return
@@ -182,6 +195,17 @@ struct RecordingDetailView: View {
     private var detailRefreshKey: String {
         let status = viewModel.detail?.status.rawValue ?? "none"
         return "\(recording.id)-\(status)"
+    }
+
+    private var screenshotSelectedTab: Int {
+        switch ProcessInfo.processInfo.environment["WAISAY_DETAIL_TAB"] {
+        case "summary":
+            return 1
+        case "actions":
+            return 2
+        default:
+            return 0
+        }
     }
 }
 
@@ -282,7 +306,7 @@ struct SummaryTabView: View {
                         }
                     }
                 }
-                .padding()
+                .padding(24)
             } else {
                 ContentUnavailableView(
                     "No Summary",
@@ -532,6 +556,14 @@ class RecordingDetailViewModel: ObservableObject {
         case .ready, .failed, .none:
             return false
         }
+    }
+
+    func loadScreenshotFixture(recordingId: String) {
+        #if DEBUG
+        detail = IOSScreenshotFixtures.detail
+        isLoading = false
+        error = nil
+        #endif
     }
 }
 

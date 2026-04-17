@@ -2,7 +2,6 @@ import SwiftUI
 import WaiSayKit
 
 struct RecordingView: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var viewModel: RecordingViewModel
 
@@ -35,6 +34,28 @@ struct RecordingView: View {
                         .font(.system(size: 48, weight: .light, design: .monospaced))
                         .foregroundStyle(viewModel.phase == .idle ? .secondary : .primary)
                         .accessibilityLabel(durationAccessibilityLabel)
+                }
+
+                // Offline transcription banner
+                if viewModel.liveTranscriptionOffline && viewModel.phase == .recording {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.exclamationmark")
+                            .foregroundStyle(.white)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Live transcription unavailable")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.white)
+                            Text("Audio is recording locally — transcript will be generated when you stop.")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.orange)
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    .accessibilityLabel("Live transcription unavailable. Audio is recording locally and will be transcribed after you stop.")
                 }
 
                 // Reconnection banner
@@ -139,7 +160,6 @@ struct RecordingView: View {
             .onChange(of: viewModel.isServerComplete) { _, completed in
                 if completed {
                     viewModel.resetState()
-                    dismiss()
                 }
             }
         }

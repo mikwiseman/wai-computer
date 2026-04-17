@@ -28,6 +28,7 @@ class RecordingViewModel: ObservableObject {
     @Published var isServerComplete = false
     @Published private(set) var phase: RecordingPhase = .idle
     @Published var connectionState: RecordingConnectionState = .connected
+    @Published private(set) var liveTranscriptionOffline = false
 
     private var committedTranscript = ""
     private var interimText = ""
@@ -98,6 +99,7 @@ class RecordingViewModel: ObservableObject {
         interimText = ""
         currentRecordingId = nil
         isServerComplete = false
+        liveTranscriptionOffline = false
         duration = 0
         recording = nil
         self.apiClient = apiClient
@@ -146,7 +148,7 @@ class RecordingViewModel: ObservableObject {
             do {
                 try await ws.connect()
             } catch {
-                NSLog("[Recording] Failed to connect to transcription service: %@", "\(error)")
+                NSLog("[Recording] Live transcription unavailable at recording start")
                 SentryHelper.addBreadcrumb(
                     category: "recording",
                     message: "live transcription unavailable at recording start",
@@ -157,6 +159,7 @@ class RecordingViewModel: ObservableObject {
                     ]
                 )
                 isLiveTranscriptionActive = false
+                liveTranscriptionOffline = true
             }
 
             let capture = MicrophoneCapture()
@@ -183,9 +186,10 @@ class RecordingViewModel: ObservableObject {
                             do {
                                 try await ws.sendAudio(data: data)
                             } catch {
-                                NSLog("[Recording] Failed to send audio: %@", "\(error)")
+                                NSLog("[Recording] Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
                                 isLiveTranscriptionActive = false
+                                await MainActor.run { self.liveTranscriptionOffline = true }
                             }
                         }
                     }
@@ -402,7 +406,7 @@ class RecordingViewModel: ObservableObject {
         do {
             return try await manager.finishStreaming(timeout: .seconds(5))
         } catch {
-            print("Failed to finalize realtime transcription stream: \(error)")
+            NSLog("[Recording] Failed to finalize realtime transcription stream")
             return false
         }
     }
@@ -502,7 +506,7 @@ class RecordingViewModel: ObservableObject {
                         return
                     }
                 } catch {
-                    print("Server save after reconnection failure also failed: \(error)")
+                    NSLog("[Recording] Server save after reconnection failure also failed")
                 }
             }
 
@@ -595,7 +599,7 @@ class RecordingViewModel: ObservableObject {
                         return
                     }
                 } catch {
-                    print("Server save after failure also failed: \(error)")
+                    NSLog("[Recording] Server save after streaming failure also failed")
                 }
             }
 

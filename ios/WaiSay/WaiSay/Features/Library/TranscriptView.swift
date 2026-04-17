@@ -41,7 +41,7 @@ struct TranscriptView: View {
                         SegmentView(segment: segment)
                     }
                 }
-                .padding()
+                .padding(24)
             }
         }
     }

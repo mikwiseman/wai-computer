@@ -22,11 +22,12 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public var updatedAt: Date
     public var hasAudioFile: Bool
     public var isPermanentFailure: Bool
+    public var requiresAuthentication: Bool
 
     private enum CodingKeys: String, CodingKey {
         case recordingId, title, recordingType, createdAt, durationSeconds
         case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
-        case isPermanentFailure
+        case isPermanentFailure, requiresAuthentication
     }
 
     public init(from decoder: Decoder) throws {
@@ -42,6 +43,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         hasAudioFile = try container.decodeIfPresent(Bool.self, forKey: .hasAudioFile) ?? false
         isPermanentFailure = try container.decodeIfPresent(Bool.self, forKey: .isPermanentFailure) ?? false
+        requiresAuthentication = try container.decodeIfPresent(Bool.self, forKey: .requiresAuthentication) ?? false
     }
 
     public init(
@@ -55,7 +57,8 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastErrorMessage: String?,
         updatedAt: Date,
         hasAudioFile: Bool = false,
-        isPermanentFailure: Bool = false
+        isPermanentFailure: Bool = false,
+        requiresAuthentication: Bool = false
     ) {
         self.recordingId = recordingId
         self.title = title
@@ -68,6 +71,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         self.updatedAt = updatedAt
         self.hasAudioFile = hasAudioFile
         self.isPermanentFailure = isPermanentFailure
+        self.requiresAuthentication = requiresAuthentication
     }
 }
 
@@ -112,7 +116,9 @@ public enum RecordingBackupStore {
             transcript: transcript,
             lastErrorMessage: nil,
             updatedAt: Date(),
-            hasAudioFile: existingManifest?.hasAudioFile ?? false
+            hasAudioFile: existingManifest?.hasAudioFile ?? false,
+            isPermanentFailure: existingManifest?.isPermanentFailure ?? false,
+            requiresAuthentication: existingManifest?.requiresAuthentication ?? false
         )
         try writeManifest(manifest, to: backup.manifestURL)
 
@@ -155,7 +161,7 @@ public enum RecordingBackupStore {
         manifest.lastErrorMessage = message
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
-        log.warning("Recorded save failure for \(recordingId): \(message)")
+        log.warning("Recorded save failure for \(recordingId)")
         return backup
     }
 
@@ -173,9 +179,41 @@ public enum RecordingBackupStore {
             updatedAt: Date()
         )
         manifest.isPermanentFailure = true
+        manifest.requiresAuthentication = false
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.error("Marked permanent failure for \(recordingId)")
+    }
+
+    public static func markAuthenticationRequired(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        var manifest = try readManifest(from: backup.manifestURL) ?? RecordingBackupManifest(
+            recordingId: recordingId,
+            title: nil,
+            recordingType: RecordingType.note.rawValue,
+            createdAt: Date(),
+            durationSeconds: 0,
+            segmentCount: 0,
+            transcript: nil,
+            lastErrorMessage: nil,
+            updatedAt: Date()
+        )
+        manifest.requiresAuthentication = true
+        manifest.isPermanentFailure = false
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.error("Marked authentication required for \(recordingId)")
+    }
+
+    public static func clearAuthenticationRequired(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        guard manifest.requiresAuthentication else { return }
+
+        manifest.requiresAuthentication = false
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Cleared authentication required for \(recordingId)")
     }
 
     public static func removeRecording(recordingId: String) throws {

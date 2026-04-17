@@ -13,6 +13,10 @@ struct LibraryView: View {
     @State private var newFolderName = ""
     @State private var showDeleteFolderConfirmation: Folder?
 
+    private var isScreenshotMode: Bool {
+        IOSTestingMode.current.isScreenshot
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -141,12 +145,18 @@ struct LibraryView: View {
                 Text("Recordings in this folder will be moved to Unfiled.")
             }
             .refreshable {
+                guard !isScreenshotMode else { return }
                 await viewModel.loadLibrary(apiClient: appState.getAPIClient())
             }
             .task {
-                await viewModel.loadLibrary(apiClient: appState.getAPIClient())
+                if isScreenshotMode {
+                    viewModel.loadScreenshotFixtures()
+                } else {
+                    await viewModel.loadLibrary(apiClient: appState.getAPIClient())
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
+                guard !isScreenshotMode else { return }
                 Task {
                     await viewModel.loadLibrary(apiClient: appState.getAPIClient())
                 }
@@ -711,6 +721,16 @@ class LibraryViewModel: ObservableObject {
                 self.error = error.userFacingMessage(context: .library)
             }
         }
+    }
+
+    func loadScreenshotFixtures() {
+        #if DEBUG
+        recordings = IOSScreenshotFixtures.recordings
+        trashedRecordings = []
+        folders = []
+        isLoading = false
+        error = nil
+        #endif
     }
 
     // MARK: - Folder Operations

@@ -422,7 +422,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
             let body = try self.jsonBody(from: request)
             XCTAssertEqual(body["visibility"] as? String, "public")
-            XCTAssertEqual(body["app_url"] as? String, "https://habits.wai.computer")
+            XCTAssertEqual(body["app_url"] as? String, "https://habits.say.waiwai.is")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -439,7 +439,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "icon":"✅",
                 "template":"tracker",
                 "schema_def":null,
-                "app_url":"https://habits.wai.computer",
+                "app_url":"https://habits.say.waiwai.is",
                 "settings":null,
                 "status":"live",
                 "visibility":"public",
@@ -456,11 +456,11 @@ final class APIClientNewEndpointsTests: XCTestCase {
         let app = try await client.publishApp(
             "app-9",
             visibility: .public,
-            appUrl: "https://habits.wai.computer"
+            appUrl: "https://habits.say.waiwai.is"
         )
         XCTAssertEqual(app.status, .live)
         XCTAssertEqual(app.visibility, .public)
-        XCTAssertEqual(app.appUrl, "https://habits.wai.computer")
+        XCTAssertEqual(app.appUrl, "https://habits.say.waiwai.is")
         XCTAssertNotNil(app.publishedAt)
     }
 
