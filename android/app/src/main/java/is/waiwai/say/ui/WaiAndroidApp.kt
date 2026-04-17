@@ -1,358 +1,353 @@
 package `is`.waiwai.say.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import `is`.waiwai.say.data.RealtimeVoiceSession
-import `is`.waiwai.say.data.RecordingSummary
-import `is`.waiwai.say.data.SettingsStore
-import `is`.waiwai.say.data.WaiApi
-import kotlinx.coroutines.launch
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import `is`.waiwai.say.R
+import `is`.waiwai.say.auth.AuthState
+import `is`.waiwai.say.auth.AuthViewModel
+import `is`.waiwai.say.data.AppContainer
+import `is`.waiwai.say.library.LibraryScreen
+import `is`.waiwai.say.library.RecordingDetailScreen
+import `is`.waiwai.say.library.RecordingDetailViewModel
+import `is`.waiwai.say.onboarding.GuestModeInfoSheet
+import `is`.waiwai.say.onboarding.OnboardingAuthChoice
+import `is`.waiwai.say.onboarding.OnboardingCarousel
+import `is`.waiwai.say.qa.WaiScreen
+import `is`.waiwai.say.recording.RecordingScreen
+import `is`.waiwai.say.settings.SettingsScreen
+import `is`.waiwai.say.ui.components.BannerCard
+import `is`.waiwai.say.ui.components.BannerVariant
 
-private enum class AndroidTab(val label: String) {
-    Wai("Wai"),
-    Library("Library"),
-    Settings("Settings"),
+private enum class AuthFlowScreen {
+    Carousel,
+    Choice,
+    Login,
+    Register,
+    MagicLink,
 }
 
-data class AndroidMessage(
-    val id: String,
-    val role: String,
-    val content: String,
-    val meta: String? = null,
-)
+private enum class MainTab {
+    Record,
+    Library,
+    Wai,
+    Settings,
+}
 
 @Composable
 fun WaiAndroidApp(
-    api: WaiApi,
-    settingsStore: SettingsStore,
+    container: AppContainer,
+    pendingMagicLinkToken: String?,
+    onMagicLinkConsumed: () -> Unit,
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(AndroidTab.Wai) }
+    val authState by container.authStore.state.collectAsStateWithLifecycle()
+    val settings by container.settingsStore.settings.collectAsStateWithLifecycle(
+        initialValue = `is`.waiwai.say.data.AppSettings(
+            baseUrl = `is`.waiwai.say.BuildConfig.DEFAULT_BASE_URL,
+            transcriptionLanguage = `is`.waiwai.say.data.SettingsStore.DEFAULT_TRANSCRIPTION_LANGUAGE,
+            authMode = `is`.waiwai.say.data.StoredAuthMode.Onboarding,
+            authUserId = null,
+            onboardingSeen = false,
+            guestSinceEpochMillis = null,
+            legacyAccessToken = null,
+        ),
+    )
+    val authViewModel = remember { AuthViewModel(container.authStore) }
+    val authUiState by authViewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    MaterialTheme {
-        Scaffold(
-            topBar = {
-                AppTopBar(selectedTab.label)
-            },
-            bottomBar = {
-                NavigationBar {
-                    AndroidTab.entries.forEach { tab ->
+    var authFlowScreen by rememberSaveable {
+        mutableStateOf(if (settings.onboardingSeen) AuthFlowScreen.Choice else AuthFlowScreen.Carousel)
+    }
+    var showGuestInfo by rememberSaveable { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(MainTab.Record) }
+    var showAuthOverlay by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(authState) {
+        when (authState) {
+            AuthState.Onboarding -> {
+                authFlowScreen = if (settings.onboardingSeen) AuthFlowScreen.Choice else AuthFlowScreen.Carousel
+                showAuthOverlay = false
+            }
+            is AuthState.SessionExpired -> {
+                authFlowScreen = AuthFlowScreen.Choice
+                showAuthOverlay = false
+            }
+            is AuthState.Authenticated -> {
+                showAuthOverlay = false
+            }
+            is AuthState.Guest,
+            AuthState.Unknown,
+            -> Unit
+        }
+    }
+
+    LaunchedEffect(pendingMagicLinkToken) {
+        val token = pendingMagicLinkToken ?: return@LaunchedEffect
+        authViewModel.verifyMagicLink(token)
+        onMagicLinkConsumed()
+    }
+
+    if (authUiState.globalError != null) {
+        LaunchedEffect(authUiState.globalError) {
+            snackbarHostState.showSnackbar(authUiState.globalError.orEmpty())
+            authViewModel.clearError()
+        }
+    }
+
+    when (val state = authState) {
+        AuthState.Unknown -> AppLoadingScreen()
+        is AuthState.Authenticated,
+        is AuthState.Guest,
+        -> {
+            MainTabsScaffold(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
+                isGuest = state is AuthState.Guest,
+                container = container,
+                authViewModel = authViewModel,
+                snackbarHostState = snackbarHostState,
+                onRequestAuth = {
+                    showAuthOverlay = true
+                    authFlowScreen = AuthFlowScreen.Choice
+                },
+            )
+            if (state is AuthState.Guest && showAuthOverlay) {
+                AuthFlowSheet(
+                    authFlowScreen = authFlowScreen,
+                    authViewModel = authViewModel,
+                    showGuestInfo = showGuestInfo,
+                    onDismiss = { showAuthOverlay = false },
+                    onFlowScreenChange = { authFlowScreen = it },
+                    onGuestInfoChange = { showGuestInfo = it },
+                )
+            }
+        }
+        AuthState.Onboarding,
+        is AuthState.SessionExpired,
+        -> AuthFlowSheet(
+            authFlowScreen = authFlowScreen,
+            authViewModel = authViewModel,
+            showGuestInfo = showGuestInfo,
+            onDismiss = null,
+            onFlowScreenChange = { authFlowScreen = it },
+            onGuestInfoChange = { showGuestInfo = it },
+            showSessionExpiredBanner = state is AuthState.SessionExpired,
+        )
+    }
+}
+
+@Composable
+private fun MainTabsScaffold(
+    selectedTab: MainTab,
+    onTabSelected: (MainTab) -> Unit,
+    isGuest: Boolean,
+    container: AppContainer,
+    authViewModel: AuthViewModel,
+    snackbarHostState: SnackbarHostState,
+    onRequestAuth: () -> Unit,
+) {
+    var selectedRecordingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedRecordingLocalOnly by rememberSaveable { mutableStateOf(false) }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            if (selectedRecordingId == null) {
+                BottomAppBar {
+                    MainTab.entries.forEach { tab ->
+                        val label = when (tab) {
+                            MainTab.Record -> stringResource(R.string.tab_record)
+                            MainTab.Library -> stringResource(R.string.tab_library)
+                            MainTab.Wai -> stringResource(R.string.tab_wai)
+                            MainTab.Settings -> stringResource(R.string.tab_settings)
+                        }
+                        val icon = when (tab) {
+                            MainTab.Record -> Icons.Outlined.Mic
+                            MainTab.Library -> Icons.Outlined.Folder
+                            MainTab.Wai -> Icons.Outlined.AutoAwesome
+                            MainTab.Settings -> Icons.Outlined.Settings
+                        }
                         NavigationBarItem(
                             selected = selectedTab == tab,
-                            onClick = { selectedTab = tab },
-                            label = { Text(tab.label) },
-                            icon = {}
+                            onClick = { onTabSelected(tab) },
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label) },
                         )
                     }
                 }
             }
-        ) { innerPadding ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                when (selectedTab) {
-                    AndroidTab.Wai -> WaiScreen(api)
-                    AndroidTab.Library -> LibraryScreen(api)
-                    AndroidTab.Settings -> SettingsScreen(settingsStore)
-                }
+        },
+    ) { padding ->
+        if (selectedRecordingId != null) {
+            val detailViewModel = remember(selectedRecordingId, selectedRecordingLocalOnly) {
+                RecordingDetailViewModel(
+                    waiApi = container.waiApi,
+                    localRecordingStore = container.localRecordingStore,
+                    recordingId = requireNotNull(selectedRecordingId),
+                    localOnly = selectedRecordingLocalOnly,
+                )
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AppTopBar(title: String) {
-    TopAppBar(
-        title = { Text(title) },
-    )
-}
-
-@Composable
-private fun WaiScreen(api: WaiApi) {
-    val scope = rememberCoroutineScope()
-    val messages = remember { mutableStateListOf<AndroidMessage>() }
-    var input by rememberSaveable { mutableStateOf("") }
-    var voiceSession by remember { mutableStateOf<RealtimeVoiceSession?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        if (messages.isEmpty()) {
-            EmptyStateCard(
-                title = "Talk to your Second Brain",
-                body = "Ask questions about any of your recordings and notes."
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuickActionButton("Summarize recent") { input = "What happened in my recent meetings?" }
-                QuickActionButton("Action items") { input = "What are my action items for this week?" }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuickActionButton("Voice") {
-                    scope.launch {
-                        busy = true
-                        runCatching { api.createRealtimeVoiceSession("conversation") }
-                            .onSuccess { voiceSession = it; error = null }
-                            .onFailure { error = it.message }
-                        busy = false
-                    }
-                }
-                QuickActionButton("Record") {
-                    scope.launch {
-                        busy = true
-                        runCatching { api.createRealtimeVoiceSession("recording") }
-                            .onSuccess { voiceSession = it; error = null }
-                            .onFailure { error = it.message }
-                        busy = false
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    MessageBubble(message)
-                }
-            }
-        }
-
-        voiceSession?.let {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Realtime voice session ready", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Provider ${it.provider}, mode ${it.mode}, agent ${it.agentId}, expires in ${it.expiresInSeconds / 60}m.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        error?.let {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask about your recordings…") },
-            )
-            Button(
-                onClick = {
-                    val question = input.trim()
-                    if (question.isEmpty()) return@Button
-                    scope.launch {
-                        busy = true
-                        messages += AndroidMessage(id = "u-${System.nanoTime()}", role = "user", content = question)
-                        input = ""
-                        runCatching { api.askDatabase(question, null) }
-                            .onSuccess { result ->
-                                messages += AndroidMessage(
-                                    id = "a-${System.nanoTime()}",
-                                    role = "assistant",
-                                    content = result.answer,
-                                    meta = "${result.sources.size} sources"
-                                )
-                                error = null
-                            }
-                            .onFailure { error = it.message }
-                        busy = false
-                    }
+            RecordingDetailScreen(
+                modifier = Modifier.padding(padding),
+                viewModel = detailViewModel,
+                isGuest = isGuest,
+                onBack = {
+                    selectedRecordingId = null
+                    selectedRecordingLocalOnly = false
                 },
-                enabled = !busy
-            ) {
-                Text(if (busy) "…" else "Send")
-            }
+                onRequestSignIn = onRequestAuth,
+            )
+            return@Scaffold
+        }
+        when (selectedTab) {
+            MainTab.Record -> RecordingScreen(
+                modifier = Modifier.padding(padding),
+                container = container,
+                isGuest = isGuest,
+            )
+            MainTab.Library -> LibraryScreen(
+                modifier = Modifier.padding(padding),
+                container = container,
+                isGuest = isGuest,
+                onSwitchToRecord = { onTabSelected(MainTab.Record) },
+                onOpenRecording = { recordingId, localOnly ->
+                    selectedRecordingId = recordingId
+                    selectedRecordingLocalOnly = localOnly
+                },
+            )
+            MainTab.Wai -> WaiScreen(
+                modifier = Modifier.padding(padding),
+                container = container,
+                isGuest = isGuest,
+            )
+            MainTab.Settings -> SettingsScreen(
+                modifier = Modifier.padding(padding),
+                container = container,
+                isGuest = isGuest,
+                onContinueSignIn = onRequestAuth,
+                authViewModel = authViewModel,
+            )
         }
     }
 }
 
 @Composable
-private fun LibraryScreen(api: WaiApi) {
-    var recordings by remember { mutableStateOf<List<RecordingSummary>>(emptyList()) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        runCatching { api.listRecordings() }
-            .onSuccess {
-                recordings = it
-                error = null
-            }
-            .onFailure { error = it.message }
-    }
-
-    if (recordings.isEmpty()) {
-        EmptyStateCard(
-            title = "Library",
-            body = error ?: "No recordings loaded yet. Configure auth in Settings and refresh."
-        )
-    } else {
-        LazyColumn(
+private fun AuthFlowSheet(
+    authFlowScreen: AuthFlowScreen,
+    authViewModel: AuthViewModel,
+    showGuestInfo: Boolean,
+    onDismiss: (() -> Unit)?,
+    onFlowScreenChange: (AuthFlowScreen) -> Unit,
+    onGuestInfoChange: (Boolean) -> Unit,
+    showSessionExpiredBanner: Boolean = false,
+) {
+    Scaffold(
+        snackbarHost = {},
+    ) { padding ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(padding)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(recordings, key = { it.id }) { recording ->
-                Card {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(recording.title ?: "Untitled", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            recording.status,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsScreen(settingsStore: SettingsStore) {
-    var baseUrl by remember { mutableStateOf(settingsStore.baseUrl) }
-    var accessToken by remember { mutableStateOf(settingsStore.accessToken) }
-    var saved by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Card {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Connection", fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it; saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("API base URL") },
+            if (showSessionExpiredBanner) {
+                BannerCard(
+                    title = stringResource(R.string.session_expired),
+                    body = null,
+                    variant = BannerVariant.Warning,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = accessToken,
-                    onValueChange = { accessToken = it; saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Access token") },
+            }
+            when (authFlowScreen) {
+                AuthFlowScreen.Carousel -> OnboardingCarousel(
+                    onFinished = { onFlowScreenChange(AuthFlowScreen.Choice) },
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(onClick = {
-                    settingsStore.baseUrl = baseUrl
-                    settingsStore.accessToken = accessToken
-                    saved = true
-                }) {
-                    Text("Save")
-                }
-                if (saved) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Saved", color = Color(0xFF0F9D58), style = MaterialTheme.typography.bodySmall)
-                }
+                AuthFlowScreen.Choice -> OnboardingAuthChoice(
+                    onSignIn = { onFlowScreenChange(AuthFlowScreen.Login) },
+                    onCreateAccount = { onFlowScreenChange(AuthFlowScreen.Register) },
+                    onTryGuest = { onGuestInfoChange(true) },
+                )
+                AuthFlowScreen.Login -> AuthFormScreen(
+                    mode = AuthFormMode.Login,
+                    authViewModel = authViewModel,
+                    onBack = { onFlowScreenChange(AuthFlowScreen.Choice) },
+                    onMagicLink = { onFlowScreenChange(AuthFlowScreen.MagicLink) },
+                )
+                AuthFlowScreen.Register -> AuthFormScreen(
+                    mode = AuthFormMode.Register,
+                    authViewModel = authViewModel,
+                    onBack = { onFlowScreenChange(AuthFlowScreen.Choice) },
+                    onMagicLink = { onFlowScreenChange(AuthFlowScreen.MagicLink) },
+                )
+                AuthFlowScreen.MagicLink -> MagicLinkScreen(
+                    authViewModel = authViewModel,
+                    onBack = { onFlowScreenChange(AuthFlowScreen.Choice) },
+                )
             }
+        }
+        if (showGuestInfo) {
+            GuestModeInfoSheet(
+                onDismiss = { onGuestInfoChange(false) },
+                onConfirm = {
+                    onGuestInfoChange(false)
+                    authViewModel.continueAsGuest()
+                    onDismiss?.invoke()
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun EmptyStateCard(title: String, body: String) {
+private fun AppLoadingScreen() {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Card {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickActionButton(label: String, action: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(999.dp))
-            .clickable(onClick = action)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-    ) {
-        Text(label)
-    }
-}
-
-@Composable
-private fun MessageBubble(message: AndroidMessage) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.role == "user") Arrangement.End else Arrangement.Start
-    ) {
-        Card {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(message.content)
-                message.meta?.let {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.record_preparing),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
