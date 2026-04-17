@@ -28,6 +28,27 @@ struct LiveRecordingView: View {
                 .accessibilityIdentifier("reconnection-banner")
             }
 
+            // Offline transcription banner
+            if recordingVM.liveTranscriptionOffline && recordingVM.phase == .recording {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .foregroundStyle(.white)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Live transcription unavailable")
+                            .font(Typography.label)
+                            .foregroundStyle(.white)
+                        Text("Audio is recording locally — transcript will be generated when you stop.")
+                            .font(Typography.caption)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.orange)
+                .accessibilityIdentifier("live-transcription-offline-banner")
+            }
+
             // System audio stall warning
             if let warning = recordingVM.systemAudioWarning {
                 HStack(spacing: Spacing.sm) {
