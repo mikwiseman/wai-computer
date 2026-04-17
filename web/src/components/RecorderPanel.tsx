@@ -53,8 +53,8 @@ export function RecorderPanel({ onRecordingComplete, onError }: RecorderPanelPro
           const file = new File([blob], "recording.webm", { type: mimeType });
           const detail = await uploadAudio(rec.id, file);
           onRecordingComplete(detail);
-        } catch (err) {
-          onError(err instanceof Error ? err.message : "Recording upload failed");
+        } catch (error) {
+          onError(error instanceof Error ? error.message : "Recording upload failed");
         } finally {
           setProcessing(false);
           setDuration(0);
@@ -66,7 +66,7 @@ export function RecorderPanel({ onRecordingComplete, onError }: RecorderPanelPro
       setRecording(true);
       setDuration(0);
       timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
-    } catch (err) {
+    } catch {
       onError("Microphone access denied. Please allow microphone access in your browser.");
     }
   }, [onRecordingComplete, onError]);
