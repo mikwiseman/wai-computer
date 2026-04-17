@@ -73,6 +73,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published private(set) var phase: MacRecordingPhase = .idle
     @Published var systemAudioWarning: String?
     @Published var connectionState: RecordingConnectionState = .connected
+    @Published private(set) var liveTranscriptionOffline = false
 
     /// Committed (final) transcript lines, with speaker labels when available.
     private var committedLines: [(speaker: String?, text: String)] = []
@@ -204,6 +205,7 @@ class MacRecordingViewModel: ObservableObject {
         interimText = ""
         interimSpeaker = nil
         isServerComplete = false
+        liveTranscriptionOffline = false
         currentRecordingId = nil
         recordingType = type
         recordingInputSource = inputSource
@@ -292,7 +294,7 @@ class MacRecordingViewModel: ObservableObject {
             do {
                 try await ws.connect()
             } catch {
-                NSLog("[Recording] Failed to connect to live transcription: %@", "\(error)")
+                NSLog("[Recording] Live transcription unavailable at recording start")
                 SentryHelper.addBreadcrumb(
                     category: "recording",
                     message: "live transcription unavailable at recording start",
@@ -303,6 +305,7 @@ class MacRecordingViewModel: ObservableObject {
                     ]
                 )
                 isLiveTranscriptionActive = false
+                liveTranscriptionOffline = true
             }
 
             let encoder = AudioEncoder(channels: channels)
@@ -314,7 +317,7 @@ class MacRecordingViewModel: ObservableObject {
             let fileWriter = try AudioFileWriter(fileURL: audioFileURL, sampleRate: 16000, channels: channels)
             self.audioFileWriter = fileWriter
             try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
-            NSLog("[Recording] Local audio file: %@", audioFileURL.path)
+            NSLog("[Recording] Local audio file prepared")
 
             // Start the audio-sending loop
             NSLog("[Recording] Starting audio task (detached)...")
@@ -338,9 +341,10 @@ class MacRecordingViewModel: ObservableObject {
                             do {
                                 try await ws.sendAudio(data: data)
                             } catch {
-                                NSLog("[Recording] Failed to send audio: %@", "\(error)")
+                                NSLog("[Recording] Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
                                 isLiveTranscriptionActive = false
+                                await MainActor.run { self.liveTranscriptionOffline = true }
                             }
                         }
                     }
@@ -589,7 +593,7 @@ class MacRecordingViewModel: ObservableObject {
                     error,
                     extras: ["action": "uploadRecordedAudioFallback", "recordingId": recordingId]
                 )
-                NSLog("[Recording] Audio upload fallback failed: %@", "\(error)")
+                NSLog("[Recording] Audio upload fallback failed")
 
                 let technicalReason = error.userFacingMessage(context: .recording)
                 return await saveLocalBackupForRetry(
@@ -624,7 +628,7 @@ class MacRecordingViewModel: ObservableObject {
             return .remoteSaved(notice: directSaveNotice, breadcrumbMessage: "transcript saved")
         } catch {
             SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
-            NSLog("[Recording] Transcript save failed: %@", "\(error)")
+            NSLog("[Recording] Transcript save failed")
 
             let technicalReason = error.userFacingMessage(context: .recording)
             return await saveLocalBackupForRetry(
@@ -864,9 +868,12 @@ class MacRecordingViewModel: ObservableObject {
         }
     }
 
-    /// Build transcript text with speaker labels when multichannel or mono-mix diarization is active.
+    /// Show speaker labels only when realtime metadata actually contains them.
     private func buildTranscriptText() -> String {
-        let showSpeakers = audioChannels > 1 || isDualMixedToMono
+        let showSpeakers = committedLines.contains { speaker, _ in
+            guard let speaker else { return false }
+            return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        } || !(interimSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
 
         var parts: [String] = []
         if showSpeakers {
@@ -1049,7 +1056,7 @@ class MacRecordingViewModel: ObservableObject {
         do {
             return try await manager.finishStreaming(timeout: .seconds(5))
         } catch {
-            audioLog.error("Failed to finalize realtime transcription stream: \(error.localizedDescription)")
+            audioLog.error("Failed to finalize realtime transcription stream")
             return false
         }
     }
