@@ -7,10 +7,10 @@ private final class RequestCounter: @unchecked Sendable {
     private var value = 0
 
     func increment() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        value += 1
-        return value
+        lock.withLock {
+            value += 1
+            return value
+        }
     }
 }
 
@@ -515,7 +515,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: permanentId))
     }
 
-    func testSyncMarks401AsPermanentFailure() async throws {
+    func testSyncMarks401AsAuthenticationRequired() async throws {
         let recordingId = "pending-sync-401-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
 
@@ -554,11 +554,85 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         // Allow sync loop to process
         try await Task.sleep(for: .milliseconds(500))
 
-        // Backup should still exist but be marked as permanent failure
+        // Backup should still exist, but pause until a valid session returns.
         let backup = try XCTUnwrap(RecordingBackupStore.existingBackup(recordingId: recordingId))
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
-        XCTAssertTrue(manifest.isPermanentFailure)
+        XCTAssertFalse(manifest.isPermanentFailure)
+        XCTAssertTrue(manifest.requiresAuthentication)
         XCTAssertNotNil(manifest.lastErrorMessage)
+        XCTAssertEqual(backup.recordingId, recordingId)
+    }
+
+    func testSyncRecoversAfterReauthentication() async throws {
+        let recordingId = "pending-sync-reauth-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Needs reauth",
+            recordingType: .note,
+            durationSeconds: 4,
+            transcript: "Recover me",
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Recover me",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 4000,
+                    confidence: 1
+                )
+            ]
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("expired-token")
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(500))
+
+        var manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.requiresAuthentication)
+        XCTAssertFalse(manifest.isPermanentFailure)
+
+        let synced = expectation(description: "pending sync finishes after reauth")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        await client.setAccessToken("fresh-token")
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 2)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+        XCTAssertNil(try RecordingBackupStore.manifest(recordingId: recordingId))
     }
 
     func testSyncMarks413AsPermanentFailure() async throws {
@@ -730,7 +804,7 @@ private final class SendableSet: @unchecked Sendable {
     private let lock = NSLock()
 
     func insert(_ value: String) {
-        lock.withLock { set.insert(value) }
+        _ = lock.withLock { set.insert(value) }
     }
 
     var count: Int {

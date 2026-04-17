@@ -307,4 +307,20 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let bufferedCount = await manager.testingBufferedAudioCount()
         XCTAssertEqual(bufferedCount, 2, "Buffered audio should survive the reconnect window")
     }
+
+    func testSendEndDuringReconnectPreservesBufferedTail() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        await manager.testingBufferAudioChunk(Data("tail-1".utf8))
+        await manager.testingBufferAudioChunk(Data("tail-2".utf8))
+        await manager.testingSetReconnectState(enabled: true, reconnecting: true)
+
+        try await manager.sendEnd()
+        let bufferedCount = await manager.testingBufferedAudioCount()
+        let endRequested = await manager.testingEndOfStreamRequested()
+
+        XCTAssertEqual(bufferedCount, 2, "Stopping during reconnect must not discard buffered tail audio")
+        XCTAssertTrue(endRequested)
+    }
 }

@@ -23,6 +23,34 @@ platform :ios do
       }
     )
   end
+
+  desc "Submit latest uploaded iOS build for App Review"
+  lane :submit_for_review do |options|
+    api_key = app_store_connect_api_key(
+      key_id: "TND8C962YA",
+      issuer_id: "db1b8a2b-2870-44dc-baf5-bbc2a17db1a3",
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_TND8C962YA.p8"),
+      in_house: false
+    )
+
+    deliver(
+      api_key: api_key,
+      app_identifier: "is.waiwai.say",
+      build_number: options[:build_number],
+      app_version: options[:app_version] || "1.0.3",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: true,
+      automatic_release: true,
+      force: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false
+      }
+    )
+  end
 end
 
 platform :mac do

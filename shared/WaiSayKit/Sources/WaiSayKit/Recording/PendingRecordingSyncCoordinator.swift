@@ -18,6 +18,9 @@ public actor PendingRecordingSyncCoordinator {
 
     public func scheduleSync(using apiClient: APIClient) {
         guard syncTask == nil else {
+            Task { [weak self] in
+                await self?.clearAuthBlockedBackupsIfNeeded(using: apiClient)
+            }
             if retrySleepTask != nil {
                 log.info("Waking sync backoff delay (external trigger)")
                 wakePendingRetryDelay()
@@ -29,6 +32,7 @@ public actor PendingRecordingSyncCoordinator {
 
         log.info("Starting sync loop")
         syncTask = Task { [weak self] in
+            await self?.clearAuthBlockedBackupsIfNeeded(using: apiClient)
             await self?.runSyncLoop(using: apiClient)
         }
     }
@@ -88,7 +92,9 @@ public actor PendingRecordingSyncCoordinator {
         for backup in backups {
             let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId)
             if manifest?.isPermanentFailure == true {
-                remaining += 1
+                continue
+            }
+            if manifest?.requiresAuthentication == true {
                 continue
             }
             let didSync = await sync(backup: backup, using: apiClient)
@@ -129,7 +135,7 @@ public actor PendingRecordingSyncCoordinator {
             }
 
             if let detail, detail.status == .failed {
-                log.warning("Server returned failed for recording \(backup.recordingId): \(detail.failureMessage ?? "unknown")")
+                log.warning("Server returned failed status for recording \(backup.recordingId)")
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
                     message: UserFacingErrorFormatter.displayMessage(
@@ -155,15 +161,15 @@ public actor PendingRecordingSyncCoordinator {
             )
             return true
         } catch let apiError as APIError {
-            log.error("Sync failed for \(backup.recordingId): \(apiError.localizedDescription)")
+            log.error("Sync failed for \(backup.recordingId) with API error")
             switch apiError {
             case .unauthorized:
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
                     message: "Please sign in again to sync this recording."
                 )
-                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
-                log.error("Marked \(backup.recordingId) as permanent failure (unauthorized)")
+                try? RecordingBackupStore.markAuthenticationRequired(recordingId: backup.recordingId)
+                log.error("Marked \(backup.recordingId) as authentication-required")
             case .httpError(let statusCode, _) where statusCode == 413:
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,
@@ -179,7 +185,7 @@ public actor PendingRecordingSyncCoordinator {
             }
             return false
         } catch {
-            log.error("Sync failed for \(backup.recordingId): \(error.localizedDescription)")
+            log.error("Sync failed for \(backup.recordingId)")
             _ = try? RecordingBackupStore.recordSaveFailure(
                 recordingId: backup.recordingId,
                 message: error.userFacingMessage(context: .recording)
@@ -227,5 +233,20 @@ public actor PendingRecordingSyncCoordinator {
     private func wakePendingRetryDelay() {
         retrySleepTask?.cancel()
         retrySleepTask = nil
+    }
+
+    private func clearAuthBlockedBackupsIfNeeded(using apiClient: APIClient) async {
+        guard await apiClient.getAccessToken() != nil else { return }
+
+        let backups = (try? RecordingBackupStore.listBackups()) ?? []
+        for backup in backups {
+            guard let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId),
+                  manifest.requiresAuthentication else {
+                continue
+            }
+
+            try? RecordingBackupStore.clearAuthenticationRequired(recordingId: backup.recordingId)
+            log.info("Re-enabled sync for \(backup.recordingId) after session refresh")
+        }
     }
 }

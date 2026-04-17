@@ -406,6 +406,47 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertNoThrow(try RecordingBackupStore.markPermanentFailure(recordingId: recordingId))
     }
 
+    func testMarkAuthenticationRequiredUpdatesManifest() throws {
+        let recordingId = "backup-auth-required-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Auth required",
+            recordingType: .note,
+            durationSeconds: 3,
+            transcript: "Needs reauth",
+            segments: []
+        )
+
+        try RecordingBackupStore.markAuthenticationRequired(recordingId: recordingId)
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.requiresAuthentication)
+        XCTAssertFalse(manifest.isPermanentFailure)
+    }
+
+    func testClearAuthenticationRequiredRestoresRecoverableState() throws {
+        let recordingId = "backup-auth-clear-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Auth clear",
+            recordingType: .note,
+            durationSeconds: 3,
+            transcript: "Recoverable again",
+            segments: []
+        )
+
+        try RecordingBackupStore.markAuthenticationRequired(recordingId: recordingId)
+        try RecordingBackupStore.clearAuthenticationRequired(recordingId: recordingId)
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertFalse(manifest.requiresAuthentication)
+        XCTAssertFalse(manifest.isPermanentFailure)
+    }
+
     func testManifestsByRecordingIdReturnsAllManifests() throws {
         let id1 = "backup-manifests-1-\(UUID().uuidString)"
         let id2 = "backup-manifests-2-\(UUID().uuidString)"

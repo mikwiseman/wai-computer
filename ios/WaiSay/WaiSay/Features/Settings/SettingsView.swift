@@ -5,6 +5,10 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingLogoutConfirmation = false
 
+    private var isScreenshotMode: Bool {
+        IOSTestingMode.current.isScreenshot
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -16,9 +20,11 @@ struct SettingsView: View {
                                 .font(.largeTitle)
                                 .foregroundStyle(.blue)
 
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(user.email)
                                     .font(.headline)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.82)
                                 Text("Member since \(user.createdAt.formatted(date: .abbreviated, time: .omitted))")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -54,30 +60,32 @@ struct SettingsView: View {
                     }
                 }
 
-                // About section
-                Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
+                if !isScreenshotMode {
+                    // About section
+                    Section("About") {
+                        HStack {
+                            Text("Version")
+                            Spacer()
+                            Text("1.0.0")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Link(destination: URL(string: "https://waisay.com/privacy")!) {
+                            Label("Privacy Policy", systemImage: "lock.shield")
+                        }
+
+                        Link(destination: URL(string: "https://waisay.com/terms")!) {
+                            Label("Terms of Service", systemImage: "doc.text")
+                        }
                     }
 
-                    Link(destination: URL(string: "https://waisay.com/privacy")!) {
-                        Label("Privacy Policy", systemImage: "lock.shield")
-                    }
-
-                    Link(destination: URL(string: "https://waisay.com/terms")!) {
-                        Label("Terms of Service", systemImage: "doc.text")
-                    }
-                }
-
-                // Logout
-                Section {
-                    Button(role: .destructive) {
-                        showingLogoutConfirmation = true
-                    } label: {
-                        Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
+                    // Logout
+                    Section {
+                        Button(role: .destructive) {
+                            showingLogoutConfirmation = true
+                        } label: {
+                            Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
                     }
                 }
             }

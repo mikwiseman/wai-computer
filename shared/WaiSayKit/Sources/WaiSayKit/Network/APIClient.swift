@@ -325,7 +325,7 @@ public actor APIClient {
             var sentryExtras: [String: Any] = ["path": path, "method": method]
             sentryExtras.merge(extras) { _, new in new }
             SentryHelper.captureError(error, extras: sentryExtras)
-            Log.api.error("✗ \(method) \(path) failed: \(error.localizedDescription)")
+            Log.api.error("✗ \(method) \(path) failed")
             throw APIError.networkError(error)
         }
 

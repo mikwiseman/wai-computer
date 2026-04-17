@@ -114,6 +114,8 @@ public actor WebSocketManager {
 
     private var audioBuffer: [Data] = []
     private let maxBufferChunks = 300 // ~30s of audio at ~100ms/chunk
+    private var endOfStreamRequested = false
+    private var endOfStreamSent = false
 
     /// All final transcript segments collected during this session.
     /// Preserved across reconnections so no transcript data is lost.
@@ -159,6 +161,8 @@ public actor WebSocketManager {
         isReconnecting = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        endOfStreamRequested = false
+        endOfStreamSent = false
 
         let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
             language: language,
@@ -221,16 +225,14 @@ public actor WebSocketManager {
 
     /// Signal end of audio stream and wait briefly for the final transcript.
     public func sendEnd() async throws {
-        reconnectEnabled = false
-        cancelReconnection()
+        endOfStreamRequested = true
 
-        guard let webSocket else { return }
-        try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
-            data: Data(repeating: 0, count: 640),
-            previousText: nil,
-            commit: true
-        )))
-        wsLog.debug("Sent commit chunk to ElevenLabs")
+        if isReconnecting || webSocket == nil {
+            wsLog.debug("Deferring commit chunk until reconnection settles")
+            return
+        }
+
+        try await sendCommitChunkIfNeeded()
     }
 
     /// Ask the provider to finalize the stream.
@@ -242,6 +244,21 @@ public actor WebSocketManager {
         let deadline = reconnectClock.now + timeout
 
         while reconnectClock.now < deadline {
+            if endOfStreamRequested && !endOfStreamSent {
+                if isReconnecting {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    continue
+                }
+
+                guard webSocket != nil else {
+                    break
+                }
+
+                try await sendCommitChunkIfNeeded()
+                try? await Task.sleep(for: .milliseconds(100))
+                continue
+            }
+
             let now = reconnectClock.now
             let isSettled: Bool
             if let lastTranscriptReceivedAt {
@@ -257,8 +274,9 @@ public actor WebSocketManager {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
+        let didFinalize = endOfStreamSent
         disconnect()
-        return true
+        return didFinalize
     }
 
     @discardableResult
@@ -418,7 +436,7 @@ public actor WebSocketManager {
             }
         } catch {
             if connectionId == expectedId {
-                wsLog.error("receiveMessages error: \(error.localizedDescription, privacy: .public)")
+                wsLog.error("receiveMessages error for connection \(expectedId)")
                 if reconnectEnabled {
                     startReconnection(afterError: error)
                 } else {
@@ -556,7 +574,7 @@ public actor WebSocketManager {
         receiveTask?.cancel()
         receiveTask = nil
 
-        wsLog.info("Starting reconnection (error: \(afterError.localizedDescription, privacy: .public))")
+        wsLog.info("Starting reconnection after stream error \(type(of: afterError), privacy: .public)")
         SentryHelper.addBreadcrumb(
             category: "websocket",
             message: "reconnect started",
@@ -660,19 +678,19 @@ public actor WebSocketManager {
                         )
                         didSendReplayChunk = true
                     } catch {
-                        wsLog.error("Failed to replay buffered audio: \(error.localizedDescription, privacy: .public)")
+                        wsLog.error("Failed to replay buffered audio chunk")
                         // New connection is also broken — receiveMessages will trigger another reconnection
                         break
                     }
                 }
 
+                try await sendCommitChunkIfNeeded()
+
                 eventContinuation?.yield(.reconnected)
                 return // Success
 
             } catch {
-                wsLog.error(
-                    "Reconnect attempt \(self.reconnectAttempt) failed: \(error.localizedDescription, privacy: .public)"
-                )
+                wsLog.error("Reconnect attempt \(self.reconnectAttempt) failed")
                 // Clean up failed connection attempt
                 webSocket?.cancel(with: .goingAway, reason: nil)
                 webSocket = nil
@@ -701,11 +719,29 @@ public actor WebSocketManager {
         return String(fullText.suffix(48))
     }
 
-    private func cancelReconnection() {
+    private func sendCommitChunkIfNeeded() async throws {
+        guard endOfStreamRequested, !endOfStreamSent else { return }
+        guard let webSocket else { return }
+
+        try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
+            data: Data(repeating: 0, count: 640),
+            previousText: nil,
+            commit: true
+        )))
+
+        endOfStreamSent = true
+        reconnectEnabled = false
+        cancelReconnection(clearBufferedAudio: false)
+        wsLog.debug("Sent commit chunk to ElevenLabs")
+    }
+
+    private func cancelReconnection(clearBufferedAudio: Bool = true) {
         isReconnecting = false
         reconnectTask?.cancel()
         reconnectTask = nil
-        audioBuffer = []
+        if clearBufferedAudio {
+            audioBuffer = []
+        }
     }
 
     private func ensureEventStream() {
@@ -736,6 +772,15 @@ public actor WebSocketManager {
         isReconnecting = true
     }
 
+    func testingSetReconnectState(enabled: Bool, reconnecting: Bool) {
+        reconnectEnabled = enabled
+        isReconnecting = reconnecting
+    }
+
+    func testingEndOfStreamRequested() -> Bool {
+        endOfStreamRequested
+    }
+
     private func closeConnection(
         forConnection expectedId: UInt64,
         error: Error?,
@@ -761,6 +806,8 @@ public actor WebSocketManager {
         }
 
         sendCount = 0
+        endOfStreamRequested = false
+        endOfStreamSent = false
     }
 
     func testingYieldEvent(_ event: WebSocketEvent) {
