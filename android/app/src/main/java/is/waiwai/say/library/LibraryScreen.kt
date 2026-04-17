@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,7 @@ import `is`.waiwai.say.data.AppContainer
 import `is`.waiwai.say.data.RecordingStatus
 import `is`.waiwai.say.ui.recordingStatusLabel
 import `is`.waiwai.say.ui.recordingTypeLabel
+import `is`.waiwai.say.ui.TestTags
 import `is`.waiwai.say.ui.components.BannerCard
 import `is`.waiwai.say.ui.components.BannerVariant
 import `is`.waiwai.say.ui.components.EmptyState
@@ -164,6 +166,7 @@ fun LibraryScreen(
                         viewModel.delete(item.id, item.localOnly)
                         pendingDelete = null
                     },
+                    modifier = Modifier.testTag(TestTags.LibraryDeleteConfirmButton),
                 ) {
                     Text(stringResource(R.string.library_delete))
                 }
@@ -185,6 +188,7 @@ private fun LibraryItemCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(TestTags.libraryItem(item.id))
             .clickable(onClick = onClick),
     ) {
         Column(

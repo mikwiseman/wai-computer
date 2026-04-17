@@ -36,7 +36,10 @@ class MainActivity : ComponentActivity() {
 
     private fun parseMagicToken(intent: Intent?): String? {
         val data = intent?.data ?: return null
-        if (data.scheme != "waisay" || data.host != "magic") return null
+        if (data.scheme != "waisay") return null
+        val isCurrentAndroidLink = data.host == "magic"
+        val isLegacySharedLink = data.host == "auth" && data.path == "/verify"
+        if (!isCurrentAndroidLink && !isLegacySharedLink) return null
         return data.getQueryParameter("token")
     }
 }

@@ -10,10 +10,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import `is`.waiwai.say.R
+import `is`.waiwai.say.ui.TestTags
 
 @Composable
 fun OnboardingAuthChoice(
@@ -41,7 +43,12 @@ fun OnboardingAuthChoice(
         Button(onClick = onCreateAccount, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.auth_create_account))
         }
-        OutlinedButton(onClick = onTryGuest, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = onTryGuest,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(TestTags.AuthChoiceTryGuestButton),
+        ) {
             Text(stringResource(R.string.auth_try_guest))
         }
     }

@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 data class AuthUiState(
     val isBusy: Boolean = false,
     val globalError: String? = null,
-    val magicLinkSent: Boolean = false,
+    val magicLinkSentTo: String? = null,
 )
 
 class AuthViewModel(
@@ -22,6 +22,10 @@ class AuthViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(globalError = null)
+    }
+
+    fun consumeMagicLinkSent() {
+        _uiState.value = _uiState.value.copy(magicLinkSentTo = null)
     }
 
     fun login(email: String, password: String) {
@@ -40,8 +44,9 @@ class AuthViewModel(
 
     fun requestMagicLink(email: String) {
         submit {
-            authStore.requestMagicLink(email)
-            _uiState.value = AuthUiState(magicLinkSent = true)
+            val normalizedEmail = email.trim()
+            authStore.requestMagicLink(normalizedEmail)
+            _uiState.value = AuthUiState(magicLinkSentTo = normalizedEmail)
         }
     }
 

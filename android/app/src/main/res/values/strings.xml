@@ -25,10 +25,12 @@
     <string name="auth_magic_link_title">Send a magic link</string>
     <string name="auth_magic_link_body">We will send a secure sign-in link to your email.</string>
     <string name="auth_magic_link_sent">We sent a sign-in link to your email.</string>
+    <string name="auth_magic_link_sent_to">We sent a sign-in link to %1$s.</string>
     <string name="auth_invalid_email">Enter a valid email address.</string>
     <string name="auth_password_too_short">Password must be at least 8 characters.</string>
     <string name="auth_password_mismatch">Passwords do not match.</string>
     <string name="auth_too_many_attempts">Too many attempts, try again in a minute.</string>
+    <string name="auth_migrating_guest_recordings">Migrating your recordings…</string>
     <string name="guest_info_title">Use guest mode</string>
     <string name="guest_info_body">Guest recordings stay only on this device. Sign in later to sync and transcribe them.</string>
     <string name="guest_info_confirm">Continue as guest</string>
@@ -49,6 +51,7 @@
     <string name="record_folder">Folder</string>
     <string name="record_guest_badge">Guest mode</string>
     <string name="record_folder_none">No folder</string>
+    <string name="record_folder_picker_label">Folder: %1$s</string>
     <string name="record_duration_content_description">Recording duration</string>
     <string name="record_status_ring">Recording status</string>
     <string name="record_transcript">Live transcript</string>
@@ -99,6 +102,7 @@
     <string name="wai_send">Send</string>
     <string name="wai_you">You</string>
     <string name="wai_assistant">Wai</string>
+    <string name="wai_loading">Wai is thinking…</string>
     <string name="settings_account">Account</string>
     <string name="settings_transcription">Transcription</string>
     <string name="settings_storage">Storage</string>
