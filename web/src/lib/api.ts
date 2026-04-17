@@ -23,8 +23,6 @@ import type {
   Recording,
   RecordingDetail,
   RecordingType,
-  RealtimeVoiceMode,
-  RealtimeVoiceSession,
   RelatedRecordingsResponse,
   SearchResponse,
   SpeakerStatsResponse,
@@ -355,5 +353,4 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
   );
   return response.blob();
 }
-
 
