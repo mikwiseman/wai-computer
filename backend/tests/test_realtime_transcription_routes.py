@@ -85,6 +85,40 @@ async def test_realtime_transcription_session_returns_503_on_missing_config(
 
 
 @pytest.mark.asyncio
+async def test_realtime_transcription_session_captures_sentry_on_unexpected_error(
+    mock_authenticated_user,
+):
+    captured: dict[str, object] = {}
+
+    def fake_capture(error: Exception, *, extras: dict[str, object] | None = None) -> None:
+        captured["error"] = error
+        captured["extras"] = extras
+
+    with patch(
+        "app.api.routes.realtime_transcription.create_realtime_transcription_session",
+        new=AsyncMock(side_effect=RuntimeError("provider exploded")),
+    ), patch(
+        "app.api.routes.realtime_transcription.capture_sentry_exception",
+        new=fake_capture,
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/transcription/session",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"language": "multi", "channels": 2},
+            )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Live transcription is temporarily unavailable. Please try again in a moment."
+    )
+    assert isinstance(captured["error"], RuntimeError)
+    assert captured["extras"] == {"language": "multi", "channels": 2}
+
+
+@pytest.mark.asyncio
 async def test_realtime_transcription_session_requires_auth():
     app.dependency_overrides.clear()
 

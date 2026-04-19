@@ -95,7 +95,10 @@ async def test_register_duplicate_different_case(client: AsyncClient):
         json={"email": "DUP@EXAMPLE.COM", "password": "password456"},
     )
     assert response.status_code == 400
-    assert "already registered" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Unable to create account. Try signing in or request a magic link."
+    )
 
 
 @pytest.mark.asyncio
