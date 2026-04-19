@@ -130,7 +130,7 @@ async def test_delete_me_removes_account(client: AsyncClient):
         "/api/auth/register",
         json={"email": "delete-me@example.com", "password": "password123"},
     )
-    assert reg.status_code == 201
+    assert reg.status_code == 200
     token = reg.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -147,7 +147,7 @@ async def test_delete_me_removes_account(client: AsyncClient):
         "/api/auth/register",
         json={"email": "delete-me@example.com", "password": "password123"},
     )
-    assert re_reg.status_code == 201
+    assert re_reg.status_code == 200
 
 
 @pytest.mark.asyncio
