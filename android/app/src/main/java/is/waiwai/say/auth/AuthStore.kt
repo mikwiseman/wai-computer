@@ -148,6 +148,25 @@ class AuthStore(
         } catch (_: Throwable) {
             // Deliberately ignore logout transport failures; local auth must still be cleared.
         }
+        clearLocalSession()
+    }
+
+    /**
+     * Permanently delete the current account on the server and clear local
+     * credentials. Required by App Store / Play policy so the same flow is
+     * available to users who signed up on any platform.
+     */
+    suspend fun deleteAccount(): MessageResponse {
+        val response = transport.request<MessageResponse>(
+            method = io.ktor.http.HttpMethod.Delete,
+            path = "/api/auth/me",
+            bearerToken = secureTokenStore.readAccessToken(),
+        )
+        clearLocalSession()
+        return response
+    }
+
+    private suspend fun clearLocalSession() {
         secureTokenStore.clearAll()
         settingsStore.clearLegacyAccessToken()
         settingsStore.setAuthMode(StoredAuthMode.Onboarding)

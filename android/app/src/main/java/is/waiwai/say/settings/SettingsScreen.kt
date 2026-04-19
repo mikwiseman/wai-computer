@@ -75,6 +75,7 @@ fun SettingsScreen(
     var storageRefreshKey by rememberSaveable { mutableIntStateOf(0) }
     var showLanguageSheet by rememberSaveable { mutableStateOf(false) }
     var showClearCacheConfirm by rememberSaveable { mutableStateOf(false) }
+    var showDeleteAccountConfirm by rememberSaveable { mutableStateOf(false) }
     var draftBaseUrl by rememberSaveable(settings.baseUrl) { mutableStateOf(settings.baseUrl) }
     var draftAccessToken by rememberSaveable(settings.legacyAccessToken) { mutableStateOf(settings.legacyAccessToken.orEmpty()) }
     val storageSummary by produceState(initialValue = StorageSummary(), container, storageRefreshKey) {
@@ -110,18 +111,21 @@ fun SettingsScreen(
                     Button(onClick = authViewModel::logout, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.settings_sign_out))
                     }
+                    // In-app account deletion (App Store 5.1.1(v) / Play Data Safety).
                     TextButton(
-                        onClick = {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_SENDTO,
-                                    Uri.parse("mailto:support@waiwai.is?subject=Delete%20WaiSay%20account"),
-                                ),
-                            )
-                        },
+                        onClick = { showDeleteAccountConfirm = true },
+                        modifier = Modifier.testTag(TestTags.SettingsDeleteAccountButton),
                     ) {
-                        Text(stringResource(R.string.settings_delete_account))
+                        Text(
+                            text = stringResource(R.string.settings_delete_account),
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
+                    Text(
+                        text = stringResource(R.string.settings_delete_account_footer),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 is AuthState.Guest,
                 AuthState.Onboarding,
@@ -262,6 +266,32 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteAccountConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteAccountConfirm = false },
+            title = { Text(stringResource(R.string.settings_delete_account_title)) },
+            text = { Text(stringResource(R.string.settings_delete_account_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAccountConfirm = false
+                        authViewModel.deleteAccount()
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_delete_account_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccountConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 
     if (showClearCacheConfirm) {

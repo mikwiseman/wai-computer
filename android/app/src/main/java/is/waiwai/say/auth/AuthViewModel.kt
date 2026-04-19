@@ -71,6 +71,18 @@ class AuthViewModel(
         }
     }
 
+    /**
+     * Permanently delete the current account. On completion the AuthStore
+     * will emit AuthState.Onboarding so the Compose host routes back to the
+     * sign-in flow.
+     */
+    fun deleteAccount() {
+        submit {
+            authStore.deleteAccount()
+            _uiState.value = AuthUiState()
+        }
+    }
+
     private fun submit(block: suspend () -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isBusy = true, globalError = null)

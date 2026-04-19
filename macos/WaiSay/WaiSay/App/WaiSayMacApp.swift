@@ -235,12 +235,25 @@ class MacAppState: ObservableObject {
             }
         }
 
-        // Restore tokens from Keychain
-        if let accessToken = KeychainHelper.load(key: KeychainHelper.accessTokenKey) {
+        // Restore tokens from Keychain (or environment for screenshots)
+        let accessToken: String? = {
+            if let arg = ProcessInfo.processInfo.environment["WAISAY_ACCESS_TOKEN"] {
+                KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: arg)
+                return arg
+            }
+            return KeychainHelper.load(key: KeychainHelper.accessTokenKey)
+        }()
+        let refreshOverride = ProcessInfo.processInfo.environment["WAISAY_REFRESH_TOKEN"]
+        if let refreshOverride {
+            KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshOverride)
+        }
+
+        if let accessToken {
             Task {
                 await apiClient.setAccessToken(accessToken)
-                if let refreshToken = KeychainHelper.load(key: KeychainHelper.refreshTokenKey) {
-                    await apiClient.setRefreshToken(refreshToken)
+                let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
+                if let rt {
+                    await apiClient.setRefreshToken(rt)
                 }
                 await loadCurrentUser()
                 isCheckingAuth = false
@@ -346,9 +359,30 @@ class MacAppState: ObservableObject {
         do {
             _ = try await apiClient.logout(refreshToken: rt)
         } catch {
-            NSLog("[Auth] Server logout failed (proceeding with local logout): %@", error.localizedDescription)
+            NSLog("[Auth] Server logout failed (proceeding with local logout)")
         }
 
+        await clearLocalSession()
+    }
+
+    /// Permanently delete the signed-in account. Returns an error message on
+    /// failure; on success tokens + user context are cleared and the app
+    /// routes back to the auth screen.
+    func deleteAccount() async -> String? {
+        guard isAuthenticated else { return nil }
+
+        do {
+            _ = try await apiClient.deleteAccount()
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "deleteAccount"])
+            return error.userFacingMessage(context: .authentication)
+        }
+
+        await clearLocalSession()
+        return nil
+    }
+
+    private func clearLocalSession() async {
         dictationManager.disable()
         await apiClient.setAccessToken(nil)
         await apiClient.setRefreshToken(nil)
@@ -363,6 +397,10 @@ class MacAppState: ObservableObject {
     private func handleAuthenticationFailed() {
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
         KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        Task {
+            await apiClient.setAccessToken(nil)
+            await apiClient.setRefreshToken(nil)
+        }
         dictationManager.disable()
         currentUser = nil
         isAuthenticated = false
@@ -446,7 +484,7 @@ class MacAppState: ObservableObject {
     func uiTestRecordings() -> [Recording]? {
         #if DEBUG
         guard testingMode.isRecordingFlow || testingMode.isMainView else { return nil }
-        return [MacUITestFixtures.recording]
+        return MacUITestFixtures.recordings
         #else
         return nil
         #endif
