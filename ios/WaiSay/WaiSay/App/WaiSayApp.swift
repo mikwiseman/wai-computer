@@ -352,6 +352,34 @@ class AppState: ObservableObject {
             // Best-effort server logout
         }
 
+        await clearLocalSession()
+    }
+
+    /// Permanently delete the current account. Returns an error message on
+    /// failure; on success tokens are cleared and the app is routed back to
+    /// the auth screen.
+    func deleteAccount() async -> String? {
+        guard isAuthenticated else { return nil }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            _ = try await apiClient.deleteAccount()
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "deleteAccount"])
+            let message = error.userFacingMessage(context: .authentication)
+            self.error = message
+            return message
+        }
+
+        await clearLocalSession()
+        return nil
+    }
+
+    /// Clear in-memory auth state, API client tokens, Keychain entries, and
+    /// Sentry user context. Used by both `logout` and `deleteAccount`.
+    private func clearLocalSession() async {
         await apiClient.setAccessToken(nil)
         await apiClient.setRefreshToken(nil)
         KeychainHelper.delete(key: KeychainHelper.accessTokenKey)

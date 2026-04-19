@@ -124,7 +124,12 @@
     <string name="settings_reset_onboarding">Reset onboarding</string>
     <string name="settings_base_url">API base URL</string>
     <string name="settings_access_token">Legacy access token</string>
-    <string name="settings_delete_account">Delete account</string>
+    <string name="settings_delete_account">Delete account…</string>
+    <string name="settings_delete_account_title">Delete account?</string>
+    <string name="settings_delete_account_message">This will permanently erase your account, recordings, transcripts, and summaries. This action cannot be undone.</string>
+    <string name="settings_delete_account_confirm">Delete</string>
+    <string name="settings_delete_account_footer">Permanently removes your account, recordings, transcripts, and summaries from WaiSay. This cannot be undone.</string>
+    <string name="settings_delete_account_error">Couldn\'t delete account. Please try again.</string>
     <string name="settings_signed_in_as">Signed in as %1$s</string>
     <string name="settings_save_base_url">Save API URL</string>
     <string name="settings_save_access_token">Save access token</string>

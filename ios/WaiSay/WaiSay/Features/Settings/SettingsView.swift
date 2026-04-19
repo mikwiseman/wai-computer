@@ -4,6 +4,9 @@ import WaiSayKit
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingLogoutConfirmation = false
+    @State private var showingDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
 
     private var isScreenshotMode: Bool {
         IOSTestingMode.current.isScreenshot
@@ -87,6 +90,30 @@ struct SettingsView: View {
                             Label("Logout", systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     }
+
+                    // Danger zone: permanent account deletion.
+                    // Required by App Store guideline 5.1.1(v): apps that
+                    // support account creation must also offer in-app account
+                    // deletion.
+                    Section {
+                        Button(role: .destructive) {
+                            showingDeleteAccountConfirmation = true
+                        } label: {
+                            HStack {
+                                Label("Delete Account", systemImage: "trash")
+                                if isDeletingAccount {
+                                    Spacer()
+                                    ProgressView()
+                                }
+                            }
+                        }
+                        .disabled(isDeletingAccount)
+                        .accessibilityIdentifier("delete-account-button")
+                    } header: {
+                        Text("Danger zone")
+                    } footer: {
+                        Text("Permanently removes your account, recordings, transcripts, and summaries from WaiSay. This cannot be undone.")
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -99,6 +126,29 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to logout?")
+            }
+            .alert("Delete account?", isPresented: $showingDeleteAccountConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) {
+                    Task {
+                        isDeletingAccount = true
+                        deleteAccountError = await appState.deleteAccount()
+                        isDeletingAccount = false
+                    }
+                }
+            } message: {
+                Text("This will permanently erase your account, recordings, transcripts, and summaries. This action cannot be undone.")
+            }
+            .alert(
+                "Couldn't delete account",
+                isPresented: Binding(
+                    get: { deleteAccountError != nil },
+                    set: { if !$0 { deleteAccountError = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { deleteAccountError = nil }
+            } message: {
+                Text(deleteAccountError ?? "")
             }
         }
     }

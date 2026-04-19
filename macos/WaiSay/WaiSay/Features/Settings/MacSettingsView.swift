@@ -6,6 +6,9 @@ struct MacSettingsView: View {
     @EnvironmentObject var dictationManager: DictationManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
+    @State private var showDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
@@ -199,6 +202,32 @@ struct MacSettingsView: View {
                 .foregroundStyle(Palette.textSecondary)
                 .accessibilityIdentifier("settings-sign-out-button")
             }
+
+            // Required by App Store guideline 5.1.1(v): apps that support
+            // account creation must also offer in-app account deletion.
+            Section {
+                HStack {
+                    Button("Delete Account…") {
+                        showDeleteAccountConfirmation = true
+                    }
+                    .font(Typography.body)
+                    .foregroundStyle(.red)
+                    .disabled(isDeletingAccount)
+                    .accessibilityIdentifier("settings-delete-account-button")
+
+                    if isDeletingAccount {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                Text("Permanently erases your account, recordings, transcripts, and summaries from WaiSay. This cannot be undone.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+            } header: {
+                Text("Danger zone")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-danger-zone-header")
+            }
         }
         .formStyle(.grouped)
         .task {
@@ -218,6 +247,29 @@ struct MacSettingsView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert("Delete account?", isPresented: $showDeleteAccountConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task {
+                    isDeletingAccount = true
+                    deleteAccountError = await appState.deleteAccount()
+                    isDeletingAccount = false
+                }
+            }
+        } message: {
+            Text("This will permanently erase your account, recordings, transcripts, and summaries. This action cannot be undone.")
+        }
+        .alert(
+            "Couldn't delete account",
+            isPresented: Binding(
+                get: { deleteAccountError != nil },
+                set: { if !$0 { deleteAccountError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { deleteAccountError = nil }
+        } message: {
+            Text(deleteAccountError ?? "")
         }
     }
 

@@ -494,6 +494,16 @@ public actor APIClient {
         return try await request(.POST, path: "/api/auth/logout", body: body)
     }
 
+    /// Permanently delete the signed-in account and all of its server-side data.
+    ///
+    /// Backend: `DELETE /api/auth/me` → cascades through recordings, folders,
+    /// entities, tags, and refresh tokens. After a successful call the caller
+    /// must clear local tokens and route back to the auth screen — the
+    /// returned message is advisory only.
+    public func deleteAccount() async throws -> MessageResponse {
+        return try await request(.DELETE, path: "/api/auth/me")
+    }
+
     // MARK: - Settings Endpoints
 
     public func getSettings() async throws -> UserSettings {

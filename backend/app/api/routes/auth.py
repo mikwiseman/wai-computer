@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-import sentry_sdk
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
@@ -12,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
-from app.core.observability import bind_user_context
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    bind_user_context,
+    safe_email_metadata,
+    safe_text_digest,
+)
 from app.core.rate_limit import (
     check_login_rate_limit,
     check_magic_link_rate_limit,
@@ -32,6 +36,7 @@ from app.models.user import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
+GENERIC_REGISTER_ERROR = "Unable to create account. Try signing in or request a magic link."
 
 
 class RegisterRequest(BaseModel):
@@ -220,22 +225,27 @@ async def _create_auth_tokens(
 )
 async def register(request: RegisterRequest, response: Response, db: Database) -> AuthResponse:
     """Register a new user."""
-    sentry_sdk.add_breadcrumb(category="auth", message="User registration attempt", level="info")
+    add_sentry_breadcrumb(category="auth", message="User registration attempt")
+    password_hash = hash_password(request.password)
+
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == request.email))
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
-        logger.info("registration rejected duplicate_email=%s", request.email)
+        logger.info(
+            "registration rejected reason=duplicate_email email=%s",
+            safe_text_digest(request.email, label="email"),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail=GENERIC_REGISTER_ERROR,
         )
 
     # Create user
     user = User(
         email=request.email,
-        password_hash=hash_password(request.password),
+        password_hash=password_hash,
     )
     db.add(user)
     await db.flush()
@@ -244,7 +254,7 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
     access_token, refresh_token = await _create_auth_tokens(user.id, db)
     bind_user_context(str(user.id))
     _set_auth_cookies(response, access_token, refresh_token)
-    logger.info("registration succeeded email=%s", user.email)
+    logger.info("registration succeeded")
 
     return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
@@ -252,19 +262,29 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
 @router.post("/login", response_model=AuthResponse, dependencies=[Depends(check_login_rate_limit)])
 async def login(request: LoginRequest, response: Response, db: Database) -> AuthResponse:
     """Login with email and password."""
-    sentry_sdk.add_breadcrumb(category="auth", message="User login attempt", level="info")
+    add_sentry_breadcrumb(
+        category="auth",
+        message="User login attempt",
+        data=safe_email_metadata(request.email),
+    )
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
 
     if user is None or user.password_hash is None:
-        logger.info("login rejected email=%s reason=user_not_found", request.email)
+        logger.info(
+            "login rejected reason=user_not_found email=%s",
+            safe_text_digest(request.email, label="email"),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     if not verify_password(request.password, user.password_hash):
-        logger.info("login rejected email=%s reason=bad_password", request.email)
+        logger.info(
+            "login rejected reason=bad_password email=%s",
+            safe_text_digest(request.email, label="email"),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -273,7 +293,7 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Auth
     access_token, refresh_token = await _create_auth_tokens(user.id, db)
     bind_user_context(str(user.id))
     _set_auth_cookies(response, access_token, refresh_token)
-    logger.info("login succeeded email=%s", user.email)
+    logger.info("login succeeded")
     return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -284,7 +304,11 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Auth
 )
 async def request_magic_link(request: MagicLinkRequest, db: Database) -> MessageResponse:
     """Send a magic link to the user's email."""
-    sentry_sdk.add_breadcrumb(category="auth", message="Magic link requested", level="info")
+    add_sentry_breadcrumb(
+        category="auth",
+        message="Magic link requested",
+        data=safe_email_metadata(request.email),
+    )
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
 
@@ -304,6 +328,12 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     from app.core.email import send_magic_link_email
 
     await send_magic_link_email(user.email, token, client=request.client)
+    logger.info(
+        "magic_link requested client=%s email=%s user_created=%s",
+        request.client or "-",
+        safe_text_digest(request.email, label="email"),
+        user.password_hash is None,
+    )
 
     return MessageResponse(message="Magic link sent to your email")
 
@@ -315,7 +345,7 @@ async def verify_magic_link(
     db: Database,
 ) -> AuthResponse:
     """Verify a magic link token and return JWT."""
-    sentry_sdk.add_breadcrumb(category="auth", message="Magic link verification", level="info")
+    add_sentry_breadcrumb(category="auth", message="Magic link verification")
     result = await db.execute(
         select(User).where(User.magic_link_token == request.token)
     )
@@ -341,7 +371,7 @@ async def verify_magic_link(
     access_token, refresh_token = await _create_auth_tokens(user.id, db)
     bind_user_context(str(user.id))
     _set_auth_cookies(response, access_token, refresh_token)
-    logger.info("magic_link verification succeeded email=%s", user.email)
+    logger.info("magic_link verification succeeded")
     return AuthResponse(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -353,7 +383,7 @@ async def refresh_token(
     request: RefreshRequest | None = Body(default=None),
 ) -> AuthResponse:
     """Refresh tokens using a valid refresh token. Does NOT require a valid access token."""
-    sentry_sdk.add_breadcrumb(category="auth", message="Token refresh attempt", level="info")
+    add_sentry_breadcrumb(category="auth", message="Token refresh attempt")
     refresh_source = "body" if request and request.refresh_token else "cookie"
     refresh_token_value = _extract_refresh_token(request, raw_request)
     if not refresh_token_value:
@@ -396,7 +426,7 @@ async def logout(
     request: LogoutRequest | None = Body(default=None),
 ) -> MessageResponse:
     """Clear auth cookie and revoke refresh token."""
-    sentry_sdk.add_breadcrumb(category="auth", message="User logout", level="info")
+    add_sentry_breadcrumb(category="auth", message="User logout")
     _clear_auth_cookies(response)
     refresh_token_value = _extract_refresh_token(request, raw_request)
     if refresh_token_value:
@@ -425,3 +455,31 @@ async def get_current_user_info(user: CurrentUser) -> UserResponse:
         email=user.email,
         created_at=user.created_at,
     )
+
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_current_account(
+    response: Response,
+    user: CurrentUser,
+    db: Database,
+) -> MessageResponse:
+    """Permanently delete the current user and all their data.
+
+    Cascades through SQLAlchemy relationships + ON DELETE CASCADE on the
+    refresh_tokens FK, so recordings, folders, entities, tags, summaries,
+    highlights, and active sessions are all removed. Auth cookies are cleared
+    so the browser session also terminates.
+
+    This endpoint exists to satisfy App Store review guideline 5.1.1(v):
+    apps that support account creation must offer in-app account deletion.
+    """
+    bind_user_context(str(user.id))
+    add_sentry_breadcrumb(category="auth", message="account_delete_requested")
+    user_id = user.id
+
+    await db.delete(user)
+    await db.commit()
+
+    _clear_auth_cookies(response)
+    logger.info("account_deleted user_id=%s", user_id)
+    return MessageResponse(message="Account deleted")

@@ -124,7 +124,12 @@
     <string name="settings_reset_onboarding">Сбросить онбординг</string>
     <string name="settings_base_url">API base URL</string>
     <string name="settings_access_token">Legacy access token</string>
-    <string name="settings_delete_account">Удалить аккаунт</string>
+    <string name="settings_delete_account">Удалить аккаунт…</string>
+    <string name="settings_delete_account_title">Удалить аккаунт?</string>
+    <string name="settings_delete_account_message">Это навсегда удалит твой аккаунт, записи, транскрипты и саммари. Действие нельзя отменить.</string>
+    <string name="settings_delete_account_confirm">Удалить</string>
+    <string name="settings_delete_account_footer">Навсегда удаляет аккаунт, записи, транскрипты и саммари из WaiSay. Отменить нельзя.</string>
+    <string name="settings_delete_account_error">Не удалось удалить аккаунт. Попробуй ещё раз.</string>
     <string name="settings_signed_in_as">Выполнен вход: %1$s</string>
     <string name="settings_save_base_url">Сохранить API URL</string>
     <string name="settings_save_access_token">Сохранить access token</string>

@@ -32,7 +32,10 @@ async def test_register_duplicate_email(client: AsyncClient):
         json={"email": "duplicate@example.com", "password": "password456"},
     )
     assert response.status_code == 400
-    assert "already registered" in response.json()["detail"]
+    assert (
+        response.json()["detail"]
+        == "Unable to create account. Try signing in or request a magic link."
+    )
 
 
 @pytest.mark.asyncio
@@ -118,3 +121,37 @@ async def test_me(client: AsyncClient, auth_headers: dict):
     data = response.json()
     assert "email" in data
     assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_delete_me_removes_account(client: AsyncClient):
+    """DELETE /api/auth/me permanently removes the user and blocks future access."""
+    reg = await client.post(
+        "/api/auth/register",
+        json={"email": "delete-me@example.com", "password": "password123"},
+    )
+    assert reg.status_code == 201
+    token = reg.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    delete_resp = await client.delete("/api/auth/me", headers=headers)
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["message"] == "Account deleted"
+
+    # Token still valid as a JWT, but the user row is gone → /me should 401
+    me_resp = await client.get("/api/auth/me", headers=headers)
+    assert me_resp.status_code == 401
+
+    # The email is free again — we can re-register with it
+    re_reg = await client.post(
+        "/api/auth/register",
+        json={"email": "delete-me@example.com", "password": "password123"},
+    )
+    assert re_reg.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_delete_me_requires_auth(client: AsyncClient):
+    """Unauthenticated DELETE /api/auth/me must be rejected."""
+    response = await client.delete("/api/auth/me")
+    assert response.status_code == 401
