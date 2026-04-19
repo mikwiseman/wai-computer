@@ -76,7 +76,7 @@ services:
       resources:
         limits:
           memory: 1200M
-    command: ["sh", "-c", "alembic upgrade head && gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:8000 --timeout 120 --keep-alive 65 --access-logfile - --error-logfile - --capture-output"]
+    command: ["sh", "-c", "alembic upgrade head && gunicorn app.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:8000 --timeout 120 --keep-alive 65 --error-logfile - --capture-output"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -94,10 +94,16 @@ services:
     build:
       context: ..
       dockerfile: web/Dockerfile
+      args:
+        # Next.js rewrites are resolved during build, so the upstream must be present here too.
+        API_BASE_URL: http://api:8000
+        NEXT_PUBLIC_API_BASE_URL: ""
     container_name: waisay-web
     environment:
+      # Next rewrites should proxy straight to the backend service inside Docker.
+      API_BASE_URL: http://api:8000
       # Empty string enables relative URLs (/api/*) which Caddy proxies correctly.
-      # Do NOT remove — without this override, the default https://api.wai.computer kicks in.
+      # Do NOT remove — this keeps browser requests on the canonical say.waiwai.is host.
       NEXT_PUBLIC_API_BASE_URL: ""
     networks:
       - web
@@ -150,7 +156,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -qO- --header='Host: wai.computer' http://127.0.0.1/health >/dev/null",
+          "wget -qO- --header='Host: say.waiwai.is' http://127.0.0.1/health >/dev/null",
         ]
       interval: 30s
       timeout: 5s
