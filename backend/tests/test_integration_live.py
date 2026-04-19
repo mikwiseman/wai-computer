@@ -1,7 +1,7 @@
 """Live API integration tests against the deployed server.
 
 Run with: pytest -q -m integration --no-cov
-Requires: LIVE_API_URL env var (default: https://api.wai.computer)
+Requires: LIVE_API_URL env var (default: https://say.waiwai.is)
 
 These tests hit the REAL deployed API. Each test creates unique users with
 timestamped emails and cleans up all resources it creates. Tests are fully
@@ -14,7 +14,7 @@ import time
 import httpx
 import pytest
 
-BASE_URL = os.getenv("LIVE_API_URL", "https://api.wai.computer")
+BASE_URL = os.getenv("LIVE_API_URL", "https://say.waiwai.is")
 
 pytestmark = pytest.mark.integration
 
@@ -208,7 +208,10 @@ async def test_duplicate_registration():
             json={"email": email, "password": TEST_PASSWORD},
         )
         assert resp.status_code == 400
-        assert "already registered" in resp.json()["detail"]
+        assert (
+            resp.json()["detail"]
+            == "Unable to create account. Try signing in or request a magic link."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -605,7 +608,7 @@ async def test_cors_headers():
         resp = await client.options(
             "/api/auth/login",
             headers={
-                "Origin": "https://wai.computer",
+                "Origin": "https://say.waiwai.is",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "Authorization, Content-Type",
             },
@@ -613,6 +616,6 @@ async def test_cors_headers():
         # FastAPI CORS middleware returns 200 for preflight requests
         assert resp.status_code == 200
 
-        assert resp.headers.get("access-control-allow-origin") == "https://wai.computer"
+        assert resp.headers.get("access-control-allow-origin") == "https://say.waiwai.is"
         assert "POST" in resp.headers.get("access-control-allow-methods", "")
         assert "authorization" in resp.headers.get("access-control-allow-headers", "").lower()
