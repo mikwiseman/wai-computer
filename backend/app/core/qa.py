@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
+from app.core.observability import safe_text_digest
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -148,8 +149,9 @@ async def retrieve_context(
     result = await db.execute(hybrid_query, params)
     rows = result.fetchall()
     logger.info(
-        "retrieve_context user_id=%s query=%r results=%d",
-        user_id, question[:80], len(rows),
+        "retrieve_context query=%s results=%d",
+        safe_text_digest(question, label="query"),
+        len(rows),
     )
     return rows
 
@@ -188,8 +190,8 @@ async def ask_database(
 
     # Retrieve context
     logger.info(
-        "ask_database user_id=%s question_len=%d",
-        user_id, len(question),
+        "ask_database question=%s",
+        safe_text_digest(question, label="question"),
     )
     context_rows = await retrieve_context(db, user_id, question, recording_ids=recording_ids)
     context_text = build_context_text(context_rows)

@@ -3,11 +3,11 @@
 import logging
 import uuid
 
-import sentry_sdk
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, Database
+from app.core.observability import add_sentry_breadcrumb, safe_query_metadata
 from app.core.qa import QAResult, ask_database
 
 logger = logging.getLogger(__name__)
@@ -49,13 +49,13 @@ async def ask_question(
         "ask_question user_id=%s question_len=%d",
         user.id, len(request.question),
     )
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="qa",
         message="QA question sent",
         data={
             "has_recording_filter": bool(request.recording_ids),
+            **safe_query_metadata(request.question),
         },
-        level="info",
     )
     try:
         recording_ids = (

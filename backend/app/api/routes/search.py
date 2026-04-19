@@ -2,13 +2,13 @@
 
 import logging
 
-import sentry_sdk
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.api.deps import CurrentUser, Database
 from app.core.embeddings import format_embedding, generate_embedding
+from app.core.observability import add_sentry_breadcrumb, safe_query_metadata, safe_text_digest
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +51,16 @@ async def hybrid_search(
 
     Uses RRF (Reciprocal Rank Fusion) to combine results from both methods.
     """
-    logger.info("hybrid_search user_id=%s query=%r", user.id, q[:80])
-    sentry_sdk.add_breadcrumb(
+    logger.info(
+        "hybrid_search query=%s limit=%s offset=%s",
+        safe_text_digest(q, label="query"),
+        limit,
+        offset,
+    )
+    add_sentry_breadcrumb(
         category="search",
         message="Hybrid search",
-        data={"query_length": len(q), "limit": limit, "offset": offset},
-        level="info",
+        data={**safe_query_metadata(q), "limit": limit, "offset": offset},
     )
     # Generate embedding for semantic search
     query_embedding_list = await generate_embedding(q)
@@ -209,12 +213,16 @@ async def semantic_search(
 
     Returns segments with embeddings similar to the query.
     """
-    logger.info("semantic_search user_id=%s query=%r", user.id, q[:80])
-    sentry_sdk.add_breadcrumb(
+    logger.info(
+        "semantic_search query=%s limit=%s threshold=%s",
+        safe_text_digest(q, label="query"),
+        limit,
+        threshold,
+    )
+    add_sentry_breadcrumb(
         category="search",
         message="Semantic search",
-        data={"query_length": len(q), "limit": limit, "threshold": threshold},
-        level="info",
+        data={**safe_query_metadata(q), "limit": limit, "threshold": threshold},
     )
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
@@ -297,12 +305,16 @@ async def fulltext_search(
     """
     Pure full-text search using PostgreSQL FTS.
     """
-    logger.info("fulltext_search user_id=%s query=%r", user.id, q[:80])
-    sentry_sdk.add_breadcrumb(
+    logger.info(
+        "fulltext_search query=%s limit=%s offset=%s",
+        safe_text_digest(q, label="query"),
+        limit,
+        offset,
+    )
+    add_sentry_breadcrumb(
         category="search",
         message="Fulltext search",
-        data={"query_length": len(q), "limit": limit, "offset": offset},
-        level="info",
+        data={**safe_query_metadata(q), "limit": limit, "offset": offset},
     )
     query = text("""
         SELECT

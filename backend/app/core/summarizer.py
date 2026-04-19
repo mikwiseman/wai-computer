@@ -5,9 +5,12 @@ import logging
 import re
 from dataclasses import dataclass
 
-import sentry_sdk
-
 from app.config import get_settings
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    capture_sentry_exception,
+    safe_text_digest,
+)
 from app.core.qa import _get_anthropic_client
 
 logger = logging.getLogger(__name__)
@@ -148,11 +151,10 @@ async def summarize_transcript(
     Returns:
         SummaryResult with extracted information
     """
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
         data={"transcript_length": len(transcript), "language": language, "style": style},
-        level="info",
     )
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
@@ -190,13 +192,14 @@ async def summarize_transcript(
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude response as JSON: {e}")
-        logger.debug(f"Response was: {response_text[:500]}")
-        sentry_sdk.capture_exception(e)
+        logger.debug(
+            "Claude response digest=%s",
+            safe_text_digest(response_text, label="claude_response"),
+        )
+        capture_sentry_exception(e, extras={"response_text": response_text})
         raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
 
-    sentry_sdk.add_breadcrumb(
-        category="summarizer", message="Summarization completed", level="info"
-    )
+    add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
     return SummaryResult(
         title=data.get("title", "Untitled"),
         summary=data.get("summary", ""),
@@ -213,7 +216,7 @@ async def summarize_transcript(
 
 async def generate_title(transcript: str) -> str:
     """Generate a short descriptive title from transcript text using Claude."""
-    sentry_sdk.add_breadcrumb(category="summarizer", message="Generating title", level="info")
+    add_sentry_breadcrumb(category="summarizer", message="Generating title")
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
@@ -338,11 +341,10 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
     Returns:
         List of extracted entities
     """
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="summarizer",
         message="Extracting entities",
         data={"transcript_length": len(transcript)},
-        level="info",
     )
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
@@ -378,8 +380,11 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
         data = json.loads(json_str)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Claude entity response as JSON: {e}")
-        logger.debug(f"Response was: {response_text[:500]}")
-        sentry_sdk.capture_exception(e)
+        logger.debug(
+            "Claude entity response digest=%s",
+            safe_text_digest(response_text, label="claude_entities"),
+        )
+        capture_sentry_exception(e, extras={"response_text": response_text})
         raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
 
     return [

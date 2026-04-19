@@ -9,7 +9,6 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-import sentry_sdk
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text
@@ -18,7 +17,12 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
-from app.core.observability import bind_recording_context
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    bind_recording_context,
+    safe_filename_metadata,
+    safe_text_digest,
+)
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
 from app.core.transcription import transcribe_audio_file
 from app.models.highlight import Highlight
@@ -999,11 +1003,10 @@ async def create_recording(
     db: Database,
 ) -> RecordingResponse:
     """Create a new recording."""
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="recording",
         message="Creating recording",
         data={"type": request.type},
-        level="info",
     )
     language = request.language if request.language is not None else user.default_language
     folder = await _require_folder(request.folder_id, user.id, db)
@@ -1795,15 +1798,14 @@ async def save_transcript(
 ) -> RecordingDetailResponse:
     """Persist a live transcript without storing live-capture audio on the server."""
     bind_recording_context(str(recording_id))
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="recording",
         message="Saving transcript",
         data={"recording_id": str(recording_id), "segment_count": len(request.segments)},
-        level="info",
     )
     logger.info("live transcript save started segment_count=%s", len(request.segments))
     if not any(segment.text.strip() for segment in request.segments):
-        sentry_sdk.add_breadcrumb(
+        add_sentry_breadcrumb(
             category="recording",
             message="Saving empty live transcript",
             data={
@@ -1909,11 +1911,10 @@ async def generate_summary(
     db: Database,
 ) -> SummaryResponse:
     """Generate or regenerate AI summary for a recording."""
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="recording",
         message="Generating summary",
         data={"recording_id": str(recording_id)},
-        level="info",
     )
     recording = await _load_recording_detail(recording_id, user.id, db, include_deleted=False)
 
@@ -2082,13 +2083,15 @@ async def upload_audio_file(
 ) -> RecordingDetailResponse:
     """Upload an imported audio file to an existing recording."""
     bind_recording_context(str(recording_id))
-    sentry_sdk.add_breadcrumb(
+    add_sentry_breadcrumb(
         category="recording",
         message="Uploading audio file",
-        data={"recording_id": str(recording_id), "filename": file.filename},
-        level="info",
+        data={"recording_id": str(recording_id), **safe_filename_metadata(file.filename)},
     )
-    logger.info("audio upload started filename=%s", file.filename or "")
+    logger.info(
+        "audio upload started filename=%s",
+        safe_text_digest(file.filename or "", label="filename"),
+    )
     # Validate recording exists and belongs to user
     user_id = user.id
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
