@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser
+from app.core.observability import capture_sentry_exception
 from app.core.realtime_transcription import create_realtime_transcription_session
 
 logger = logging.getLogger(__name__)
@@ -62,8 +63,10 @@ async def create_session(
             detail=UNAVAILABLE_DETAIL,
         ) from exc
     except Exception as exc:
-        import sentry_sdk
-        sentry_sdk.capture_exception(exc)
+        capture_sentry_exception(
+            exc,
+            extras={"language": request.language, "channels": request.channels},
+        )
         logger.exception(
             "realtime transcription session failed user_id=%s error=%s",
             user.id,

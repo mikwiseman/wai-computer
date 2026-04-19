@@ -36,8 +36,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:8080",
-        "https://wai.computer",
-        "https://api.wai.computer",
+        "https://say.waiwai.is",
     ]
 
     # Voice providers
