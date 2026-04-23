@@ -324,7 +324,12 @@ public actor APIClient {
         } catch {
             var sentryExtras: [String: Any] = ["path": path, "method": method]
             sentryExtras.merge(extras) { _, new in new }
-            SentryHelper.captureError(error, extras: sentryExtras)
+            SentryHelper.captureRequestFailure(
+                APIError.networkError(error),
+                method: method,
+                path: path,
+                extras: sentryExtras
+            )
             Log.api.error("✗ \(method) \(path) failed")
             throw APIError.networkError(error)
         }
@@ -361,7 +366,12 @@ public actor APIClient {
             } catch {
                 var sentryExtras: [String: Any] = ["path": path, "method": method, "retry": true]
                 sentryExtras.merge(extras) { _, new in new }
-                SentryHelper.captureError(error, extras: sentryExtras)
+                SentryHelper.captureRequestFailure(
+                    APIError.networkError(error),
+                    method: method,
+                    path: path,
+                    extras: sentryExtras
+                )
                 throw APIError.networkError(error)
             }
 
@@ -375,7 +385,12 @@ public actor APIClient {
             }
             guard (200...299).contains(retryHttp.statusCode) else {
                 let error = apiError(from: retryData, response: retryHttp)
-                SentryHelper.captureError(error, extras: ["path": path, "method": method])
+                SentryHelper.captureRequestFailure(
+                    error,
+                    method: method,
+                    path: path,
+                    extras: extras
+                )
                 throw error
             }
             return (retryData, retryHttp)
@@ -383,7 +398,12 @@ public actor APIClient {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let error = apiError(from: data, response: httpResponse)
-            SentryHelper.captureError(error, extras: ["path": path, "method": method])
+            SentryHelper.captureRequestFailure(
+                error,
+                method: method,
+                path: path,
+                extras: extras
+            )
             throw error
         }
 

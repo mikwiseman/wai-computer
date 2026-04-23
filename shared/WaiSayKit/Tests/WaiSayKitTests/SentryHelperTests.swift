@@ -2,6 +2,11 @@ import XCTest
 @testable import WaiSayKit
 
 final class SentryHelperTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        SentryHelper.resetCapturedFingerprints()
+    }
+
     func testSanitizeDictionaryRedactsSensitiveKeys() {
         let sanitized = SentryHelper.sanitizeDictionary([
             "email": "alice@example.com",
@@ -51,5 +56,18 @@ final class SentryHelperTests: XCTestCase {
 
         XCTAssertTrue(sanitizedReason.hasPrefix("[redacted-text:"))
         XCTAssertTrue(sanitizedError.hasPrefix("[redacted-text:"))
+    }
+
+    func testNormalizedRequestPathCollapsesDynamicIdentifiers() {
+        let normalized = SentryHelper.normalizedRequestPath(
+            "/api/recordings/123E4567-E89B-12D3-A456-426614174000/upload"
+        )
+
+        XCTAssertEqual(normalized, "/api/recordings/:id/upload")
+    }
+
+    func testShouldCaptureFingerprintOnlyOnce() {
+        XCTAssertTrue(SentryHelper.shouldCaptureFingerprint("request:POST:/api/recordings/:id/upload:http_502"))
+        XCTAssertFalse(SentryHelper.shouldCaptureFingerprint("request:POST:/api/recordings/:id/upload:http_502"))
     }
 }
