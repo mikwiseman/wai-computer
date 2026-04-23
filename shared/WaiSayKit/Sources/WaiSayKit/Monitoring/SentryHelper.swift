@@ -4,7 +4,8 @@ import Sentry
 
 public enum SentryHelper {
     private static let fingerprintLock = NSLock()
-    private static var capturedFingerprints: Set<String> = []
+    private static var capturedFingerprints: [String: Date] = [:]
+    static let fingerprintDedupWindow: TimeInterval = 300
 
     public static func start(dsn: String, debug: Bool = false) {
         SentrySDK.start { options in
@@ -179,10 +180,22 @@ public enum SentryHelper {
     }
 
     static func shouldCaptureFingerprint(_ fingerprint: String) -> Bool {
+        shouldCaptureFingerprint(fingerprint, now: Date())
+    }
+
+    static func shouldCaptureFingerprint(_ fingerprint: String, now: Date) -> Bool {
         fingerprintLock.lock()
         defer { fingerprintLock.unlock() }
 
-        return capturedFingerprints.insert(fingerprint).inserted
+        let cutoff = now.addingTimeInterval(-fingerprintDedupWindow)
+        capturedFingerprints = capturedFingerprints.filter { $0.value > cutoff }
+
+        if let capturedAt = capturedFingerprints[fingerprint], capturedAt > cutoff {
+            return false
+        }
+
+        capturedFingerprints[fingerprint] = now
+        return true
     }
 
     static func resetCapturedFingerprints() {
@@ -252,8 +265,7 @@ public enum SentryHelper {
         if component.range(of: #"^[0-9]{6,}$"#, options: .regularExpression) != nil {
             return ":id"
         }
-        if component.count >= 16,
-           component.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil {
+        if component.range(of: #"^[0-9A-HJKMNP-TV-Z]{26}$"#, options: .regularExpression) != nil {
             return ":id"
         }
         return component

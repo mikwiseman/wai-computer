@@ -36,6 +36,7 @@ final class APIClientTests: XCTestCase {
     override func setUp() {
         super.setUp()
         MockURLProtocol.requestHandler = nil
+        SentryHelper.resetCapturedFingerprints()
     }
 
     private func makeClient(baseURL: URL = URL(string: "https://api.example.com")!) -> APIClient {
@@ -449,6 +450,58 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(counter.value, 3)
     }
 
+    func testRefreshServerFailureCapturesRefreshFingerprint() async {
+        let client = makeClient()
+        await client.setAccessToken("expired-access")
+        await client.setRefreshToken("refresh-1")
+
+        final class RequestCounter: @unchecked Sendable {
+            var value = 0
+        }
+        let counter = RequestCounter()
+
+        MockURLProtocol.requestHandler = { request in
+            counter.value += 1
+            switch counter.value {
+            case 1:
+                XCTAssertEqual(request.url?.path, "/api/auth/me")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 401,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data())
+            default:
+                XCTAssertEqual(request.url?.path, "/api/auth/refresh")
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 503,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data("upstream unavailable".utf8))
+            }
+        }
+
+        do {
+            _ = try await client.getCurrentUser()
+            XCTFail("Expected unauthorized after failed refresh")
+        } catch let error as APIError {
+            guard case .unauthorized = error else {
+                return XCTFail("Expected unauthorized, got \(error)")
+            }
+        } catch {
+            XCTFail("Expected APIError, got \(error)")
+        }
+
+        XCTAssertFalse(
+            SentryHelper.shouldCaptureFingerprint(
+                "request:POST:/api/auth/refresh:http_503"
+            )
+        )
+    }
+
     func testCleanupDictationUsesCleanupEndpoint() async throws {
         let client = makeClient()
 
@@ -509,6 +562,40 @@ final class APIClientTests: XCTestCase {
         }
 
         try await client.deleteRecording(id: "rec-del", permanent: true)
+    }
+
+    func testExportRecordingServerFailureCapturesFingerprint() async {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-export/export")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 502,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("bad gateway".utf8))
+        }
+
+        do {
+            _ = try await client.exportRecording(id: "rec-export", format: "markdown")
+            XCTFail("Expected export failure")
+        } catch let error as APIError {
+            guard case let .httpError(statusCode, _) = error else {
+                return XCTFail("Expected HTTP error, got \(error)")
+            }
+            XCTAssertEqual(statusCode, 502)
+        } catch {
+            XCTFail("Expected APIError, got \(error)")
+        }
+
+        XCTAssertFalse(
+            SentryHelper.shouldCaptureFingerprint(
+                "request:GET:/api/recordings/rec-export/export:http_502"
+            )
+        )
     }
 
     func testRestoreRecordingUsesRestoreEndpoint() async throws {

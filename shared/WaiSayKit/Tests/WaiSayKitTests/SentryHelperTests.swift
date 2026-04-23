@@ -66,8 +66,35 @@ final class SentryHelperTests: XCTestCase {
         XCTAssertEqual(normalized, "/api/recordings/:id/upload")
     }
 
+    func testNormalizedRequestPathKeepsStaticGenerateSummarySegment() {
+        let normalized = SentryHelper.normalizedRequestPath(
+            "/api/recordings/123E4567-E89B-12D3-A456-426614174000/generate-summary"
+        )
+
+        XCTAssertEqual(normalized, "/api/recordings/:id/generate-summary")
+    }
+
     func testShouldCaptureFingerprintOnlyOnce() {
         XCTAssertTrue(SentryHelper.shouldCaptureFingerprint("request:POST:/api/recordings/:id/upload:http_502"))
         XCTAssertFalse(SentryHelper.shouldCaptureFingerprint("request:POST:/api/recordings/:id/upload:http_502"))
+    }
+
+    func testShouldCaptureFingerprintAgainAfterDedupWindowExpires() {
+        let fingerprint = "request:POST:/api/recordings/:id/upload:http_502"
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(SentryHelper.shouldCaptureFingerprint(fingerprint, now: start))
+        XCTAssertFalse(
+            SentryHelper.shouldCaptureFingerprint(
+                fingerprint,
+                now: start.addingTimeInterval(60)
+            )
+        )
+        XCTAssertTrue(
+            SentryHelper.shouldCaptureFingerprint(
+                fingerprint,
+                now: start.addingTimeInterval(SentryHelper.fingerprintDedupWindow + 1)
+            )
+        )
     }
 }

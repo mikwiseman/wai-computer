@@ -213,6 +213,8 @@ public actor APIClient {
     /// Attempt to refresh tokens. Coalesces concurrent calls — only one refresh in flight.
     /// Returns the new access token on success.
     private func autoRefresh() async throws -> String {
+        let refreshPath = "/api/auth/refresh"
+
         // If already refreshing, wait for the result
         if isRefreshing {
             return try await withCheckedThrowingContinuation { continuation in
@@ -245,14 +247,45 @@ public actor APIClient {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = bodyData
 
-            let (data, response) = try await session.data(for: req)
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await session.data(for: req)
+            } catch {
+                let requestError = APIError.networkError(error)
+                SentryHelper.captureRequestFailure(
+                    requestError,
+                    method: "POST",
+                    path: refreshPath,
+                    extras: ["authFlow": "refresh"]
+                )
+                throw requestError
+            }
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw APIError.networkError(URLError(.badServerResponse))
+                let requestError = APIError.networkError(URLError(.badServerResponse))
+                SentryHelper.captureRequestFailure(
+                    requestError,
+                    method: "POST",
+                    path: refreshPath,
+                    extras: ["authFlow": "refresh"]
+                )
+                throw requestError
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
-                throw APIError.unauthorized
+                let requestError = if httpResponse.statusCode == 401 {
+                    APIError.unauthorized
+                } else {
+                    apiError(from: data, response: httpResponse)
+                }
+                SentryHelper.captureRequestFailure(
+                    requestError,
+                    method: "POST",
+                    path: refreshPath,
+                    extras: ["authFlow": "refresh"]
+                )
+                throw requestError
             }
 
             let authResponse = try decoder.decode(AuthResponse.self, from: data)
@@ -604,6 +637,7 @@ public actor APIClient {
 
     /// Export recording transcript in the given format (markdown, txt, srt).
     public func exportRecording(id: String, format: String) async throws -> String {
+        let path = "/api/recordings/\(id)/export"
         let url = baseURL.appendingPathComponent("/api/recordings/\(id)/export")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "format", value: format)]
@@ -612,17 +646,54 @@ public actor APIClient {
         if let token = accessToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await session.data(for: req)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            let requestError = APIError.networkError(error)
+            SentryHelper.captureRequestFailure(
+                requestError,
+                method: "GET",
+                path: path,
+                extras: ["format": format]
+            )
+            throw requestError
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
+            let requestError = APIError.networkError(URLError(.badServerResponse))
+            SentryHelper.captureRequestFailure(
+                requestError,
+                method: "GET",
+                path: path,
+                extras: ["format": format]
+            )
+            throw requestError
         }
         guard httpResponse.statusCode == 200 else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: "Export failed")
+            let requestError = APIError.httpError(
+                statusCode: httpResponse.statusCode,
+                message: "Export failed"
+            )
+            SentryHelper.captureRequestFailure(
+                requestError,
+                method: "GET",
+                path: path,
+                extras: ["format": format]
+            )
+            throw requestError
         }
         guard let text = String(data: data, encoding: .utf8) else {
-            throw APIError.decodingError(DecodingError.dataCorrupted(
+            let requestError = APIError.decodingError(DecodingError.dataCorrupted(
                 .init(codingPath: [], debugDescription: "Invalid UTF-8 data")
             ))
+            SentryHelper.captureRequestFailure(
+                requestError,
+                method: "GET",
+                path: path,
+                extras: ["format": format]
+            )
+            throw requestError
         }
         return text
     }
