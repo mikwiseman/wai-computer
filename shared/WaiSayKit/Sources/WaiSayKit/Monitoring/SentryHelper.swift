@@ -3,6 +3,9 @@ import Foundation
 import Sentry
 
 public enum SentryHelper {
+    private static let fingerprintLock = NSLock()
+    private static var capturedFingerprints: Set<String> = []
+
     public static func start(dsn: String, debug: Bool = false) {
         SentrySDK.start { options in
             options.dsn = dsn
@@ -10,7 +13,7 @@ public enum SentryHelper {
             options.tracesSampleRate = 0.1
             options.profilesSampleRate = 0.1
             options.enableAutoSessionTracking = true
-            options.enableCaptureFailedRequests = true
+            options.enableCaptureFailedRequests = false
             #if canImport(UIKit)
             options.attachScreenshot = false
             #endif
@@ -31,6 +34,108 @@ public enum SentryHelper {
                 }
             }
         }
+    }
+
+    public static func captureErrorOnce(
+        _ error: Error,
+        fingerprint: String,
+        extras: [String: Any]? = nil
+    ) {
+        guard shouldCaptureFingerprint(fingerprint) else { return }
+        captureError(error, extras: extras)
+    }
+
+    public static func captureRequestFailure(
+        _ error: Error,
+        method: String,
+        path: String,
+        extras: [String: Any]? = nil
+    ) {
+        let normalizedPath = normalizedRequestPath(path)
+        var mergedExtras = extras ?? [:]
+        mergedExtras["method"] = method
+        mergedExtras["path"] = normalizedPath
+
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .unauthorized:
+                addBreadcrumb(
+                    category: "api",
+                    message: "request unauthorized",
+                    level: .warning,
+                    data: mergedExtras
+                )
+                return
+            case .httpError(let statusCode, _):
+                mergedExtras["statusCode"] = statusCode
+                if statusCode < 500 {
+                    addBreadcrumb(
+                        category: "api",
+                        message: "request failed",
+                        level: .warning,
+                        data: mergedExtras
+                    )
+                    return
+                }
+                captureErrorOnce(
+                    apiError,
+                    fingerprint: requestFingerprint(
+                        method: method,
+                        path: normalizedPath,
+                        kind: "http_\(statusCode)"
+                    ),
+                    extras: mergedExtras
+                )
+            case .networkError(let underlying):
+                if let urlError = underlying as? URLError {
+                    mergedExtras["urlErrorCode"] = urlError.code.rawValue
+                }
+                captureErrorOnce(
+                    apiError,
+                    fingerprint: requestFingerprint(
+                        method: method,
+                        path: normalizedPath,
+                        kind: "network"
+                    ),
+                    extras: mergedExtras
+                )
+            case .decodingError, .invalidURL, .noData:
+                captureErrorOnce(
+                    apiError,
+                    fingerprint: requestFingerprint(
+                        method: method,
+                        path: normalizedPath,
+                        kind: "client"
+                    ),
+                    extras: mergedExtras
+                )
+            }
+            return
+        }
+
+        if let urlError = error as? URLError {
+            mergedExtras["urlErrorCode"] = urlError.code.rawValue
+            captureErrorOnce(
+                urlError,
+                fingerprint: requestFingerprint(
+                    method: method,
+                    path: normalizedPath,
+                    kind: "url_\(urlError.code.rawValue)"
+                ),
+                extras: mergedExtras
+            )
+            return
+        }
+
+        captureErrorOnce(
+            error,
+            fingerprint: requestFingerprint(
+                method: method,
+                path: normalizedPath,
+                kind: String(describing: type(of: error))
+            ),
+            extras: mergedExtras
+        )
     }
 
     public static func addBreadcrumb(
@@ -55,6 +160,35 @@ public enum SentryHelper {
 
     public static func clearUser() {
         SentrySDK.setUser(nil)
+    }
+
+    static func normalizedRequestPath(_ path: String) -> String {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false).map {
+            normalizePathComponent(String($0))
+        }
+
+        if path.hasPrefix("/") {
+            return "/" + components.dropFirst().joined(separator: "/")
+        }
+
+        return components.joined(separator: "/")
+    }
+
+    static func requestFingerprint(method: String, path: String, kind: String) -> String {
+        "request:\(method.uppercased()):\(path):\(kind)"
+    }
+
+    static func shouldCaptureFingerprint(_ fingerprint: String) -> Bool {
+        fingerprintLock.lock()
+        defer { fingerprintLock.unlock() }
+
+        return capturedFingerprints.insert(fingerprint).inserted
+    }
+
+    static func resetCapturedFingerprints() {
+        fingerprintLock.lock()
+        defer { fingerprintLock.unlock() }
+        capturedFingerprints.removeAll()
     }
 
     static func sanitizeDictionary(_ values: [String: Any]) -> [String: Any] {
@@ -108,6 +242,21 @@ public enum SentryHelper {
 
     private static func containsAny(_ key: String, fragments: [String]) -> Bool {
         fragments.contains { key.contains($0) }
+    }
+
+    private static func normalizePathComponent(_ component: String) -> String {
+        guard !component.isEmpty else { return component }
+        if UUID(uuidString: component) != nil {
+            return ":id"
+        }
+        if component.range(of: #"^[0-9]{6,}$"#, options: .regularExpression) != nil {
+            return ":id"
+        }
+        if component.count >= 16,
+           component.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil {
+            return ":id"
+        }
+        return component
     }
 
     private static func fingerprint(_ value: String) -> String {
