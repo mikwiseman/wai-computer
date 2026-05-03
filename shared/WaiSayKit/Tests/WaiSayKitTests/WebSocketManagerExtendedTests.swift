@@ -57,6 +57,68 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertNotNil(payload["audio_base_64"] as? String)
     }
 
+    func testTimestampedCommittedTranscriptReplacesPlainDuplicate() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let stream = await manager.events
+
+        let task = Task<[WebSocketEvent], Never> {
+            var iterator = stream.makeAsyncIterator()
+            var events: [WebSocketEvent] = []
+            if let first = await iterator.next() {
+                events.append(first)
+            }
+            if let second = await iterator.next() {
+                events.append(second)
+            }
+            return events
+        }
+
+        await manager.testingHandleElevenLabsMessage("""
+        {"message_type":"committed_transcript","text":"Hello world."}
+        """)
+        await manager.testingHandleElevenLabsMessage("""
+        {
+            "message_type":"committed_transcript_with_timestamps",
+            "text":"Hello world.",
+            "words":[
+                {"text":"Hello","start":0.0,"end":0.4,"type":"word","logprob":-0.1},
+                {"text":" ","start":0.4,"end":0.45,"type":"spacing"},
+                {"text":"world.","start":0.45,"end":0.8,"type":"word","logprob":-0.1}
+            ]
+        }
+        """)
+        await manager.disconnect()
+
+        let events = await task.value
+        let transcriptEvents = events.compactMap { event -> LiveTranscriptSegment? in
+            if case .transcript(let segment) = event { return segment }
+            return nil
+        }
+        let segments = await manager.collectedSegments
+
+        XCTAssertEqual(transcriptEvents.count, 1)
+        XCTAssertEqual(transcriptEvents.first?.text, "Hello world.")
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Hello world.")
+        XCTAssertEqual(segments.first?.endMs, 800)
+    }
+
+    func testRepeatedPlainCommittedTranscriptsArePreserved() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        await manager.testingHandleElevenLabsMessage("""
+        {"message_type":"committed_transcript","text":"Yes."}
+        """)
+        await manager.testingHandleElevenLabsMessage("""
+        {"message_type":"committed_transcript","text":"Yes."}
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.map(\.text), ["Yes.", "Yes."])
+    }
+
     // MARK: - events stream survives disconnects
 
     func testEventStreamRemainsUsableAfterDisconnect() async {
