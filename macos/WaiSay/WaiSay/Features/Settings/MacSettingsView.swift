@@ -12,6 +12,7 @@ struct MacSettingsView: View {
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
+    @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
@@ -71,6 +72,23 @@ struct MacSettingsView: View {
                 Text("Transcription")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-transcription-header")
+            }
+
+            Section {
+                Toggle("Show Dock icon after closing main window", isOn: $showDockIconWhenMainWindowClosed)
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-show-dock-icon-when-closed-toggle")
+                    .onChange(of: showDockIconWhenMainWindowClosed) { _, _ in
+                        MacPresentationCoordinator.shared.updateActivationPolicyForCurrentWindowState()
+                    }
+
+                Text("When disabled, WaiSay keeps running from the menu bar after the main window closes.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            } header: {
+                Text("App Behavior")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-app-behavior-header")
             }
 
             // MARK: - Summary Settings

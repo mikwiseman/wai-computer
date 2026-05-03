@@ -285,6 +285,8 @@ struct MacMainView: View {
         }
         .onAppear {
             handleCompletedRecordingChange()
+            handleSelectedRecordingFromMenu(appState.selectedRecordingFromMenu)
+            handlePendingMainWindowAction(appState.pendingMainWindowAction)
         }
         .onChange(of: selectedSection) { _, _ in
             selectedRecordingIds.removeAll()
@@ -294,12 +296,10 @@ struct MacMainView: View {
             handleCompletedRecordingChange()
         }
         .onChange(of: appState.selectedRecordingFromMenu) { _, newId in
-            if let id = newId {
-                selectedSection = .allRecordings
-                selectedRecordingIds = [id]
-                prefetchedRecordingDetail = nil
-                appState.selectedRecordingFromMenu = nil
-            }
+            handleSelectedRecordingFromMenu(newId)
+        }
+        .onChange(of: appState.pendingMainWindowAction) { _, action in
+            handlePendingMainWindowAction(action)
         }
         .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
             importAudioFile()
@@ -724,6 +724,27 @@ struct MacMainView: View {
             if importViewModel.importState == .done {
                 await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
             }
+        }
+    }
+
+    private func handleSelectedRecordingFromMenu(_ id: String?) {
+        guard let id else { return }
+
+        selectedSection = .allRecordings
+        selectedRecordingIds = [id]
+        prefetchedRecordingDetail = nil
+        appState.selectedRecordingFromMenu = nil
+    }
+
+    private func handlePendingMainWindowAction(_ action: MacMainWindowAction?) {
+        guard let action else { return }
+
+        appState.pendingMainWindowAction = nil
+        switch action {
+        case .importAudioFile:
+            importAudioFile()
+        case .settings:
+            selectedSection = .settings
         }
     }
 

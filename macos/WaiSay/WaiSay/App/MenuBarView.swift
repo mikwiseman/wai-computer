@@ -2,6 +2,7 @@ import SwiftUI
 import WaiSayKit
 
 struct MenuBarView: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingVM: MacRecordingViewModel
     @EnvironmentObject var dictationManager: DictationManager
@@ -146,8 +147,8 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
 
                     Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        NotificationCenter.default.post(name: .importAudioFile, object: nil)
+                        appState.pendingMainWindowAction = .importAudioFile
+                        openMainWindow()
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.down")
@@ -186,7 +187,7 @@ struct MenuBarView: View {
                     ForEach(recentRecordings.prefix(3)) { recording in
                         Button {
                             appState.selectedRecordingFromMenu = recording.id
-                            NSApp.activate(ignoringOtherApps: true)
+                            openMainWindow()
                         } label: {
                             HStack {
                                 Text(recording.title ?? "Untitled")
@@ -229,7 +230,12 @@ struct MenuBarView: View {
             // Bottom actions
             HStack {
                 Button("Open App") {
-                    NSApp.activate(ignoringOtherApps: true)
+                    openMainWindow()
+                }
+
+                Button("Settings") {
+                    appState.pendingMainWindowAction = .settings
+                    openMainWindow()
                 }
 
                 Spacer()
@@ -252,7 +258,7 @@ struct MenuBarView: View {
                 .font(Typography.headingSmall)
 
             Button("Open App") {
-                NSApp.activate(ignoringOtherApps: true)
+                openMainWindow()
             }
             .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
 
@@ -266,6 +272,12 @@ struct MenuBarView: View {
             .foregroundStyle(Palette.textSecondary)
         }
         .padding(Spacing.lg)
+    }
+
+    private func openMainWindow() {
+        MacPresentationCoordinator.shared.showMainWindow {
+            openWindow(id: MacPresentationCoordinator.mainWindowID)
+        }
     }
 
     private func loadRecentRecordings() async {
