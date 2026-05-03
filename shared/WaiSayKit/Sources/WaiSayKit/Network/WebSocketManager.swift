@@ -100,6 +100,11 @@ public actor WebSocketManager {
     private let reconnectClock = ContinuousClock()
     private var lastTranscriptReceivedAt: ContinuousClock.Instant?
 
+    private enum CommittedTranscriptKind {
+        case plain
+        case timestamped
+    }
+
     // MARK: - Reconnection state
 
     private var reconnectEnabled = false
@@ -120,6 +125,7 @@ public actor WebSocketManager {
     /// All final transcript segments collected during this session.
     /// Preserved across reconnections so no transcript data is lost.
     public private(set) var collectedSegments: [LiveTranscriptSegment] = []
+    private var collectedSegmentKinds: [CommittedTranscriptKind] = []
 
     /// Stream of WebSocket events. Call BEFORE connect() to not miss events.
     ///
@@ -155,6 +161,7 @@ public actor WebSocketManager {
         let thisConnection = connectionId
         sendCount = 0
         collectedSegments = []
+        collectedSegmentKinds = []
         lastTranscriptReceivedAt = nil
         reconnectAttempt = 0
         audioBuffer = []
@@ -487,8 +494,9 @@ public actor WebSocketManager {
         case "committed_transcript_with_timestamps":
             guard let segment = committedElevenLabsSegment(from: json, textOverride: nil) else { return }
             lastTranscriptReceivedAt = reconnectClock.now
-            collectedSegments.append(segment)
-            eventContinuation?.yield(.transcript(segment))
+            if let emittedSegment = collectCommittedSegment(segment, kind: .timestamped) {
+                eventContinuation?.yield(.transcript(emittedSegment))
+            }
 
         case "committed_transcript":
             guard let segment = committedElevenLabsSegment(
@@ -496,8 +504,9 @@ public actor WebSocketManager {
                 textOverride: json["text"] as? String
             ) else { return }
             lastTranscriptReceivedAt = reconnectClock.now
-            collectedSegments.append(segment)
-            eventContinuation?.yield(.transcript(segment))
+            if let emittedSegment = collectCommittedSegment(segment, kind: .plain) {
+                eventContinuation?.yield(.transcript(emittedSegment))
+            }
 
         default:
             if Self.documentedRealtimeErrorTypes.contains(messageType)
@@ -519,6 +528,36 @@ public actor WebSocketManager {
                 }
             }
         }
+    }
+
+    private func collectCommittedSegment(
+        _ segment: LiveTranscriptSegment,
+        kind: CommittedTranscriptKind
+    ) -> LiveTranscriptSegment? {
+        if let last = collectedSegments.last,
+           let lastKind = collectedSegmentKinds.last,
+           normalizedTranscriptText(last.text) == normalizedTranscriptText(segment.text) {
+            if lastKind == .plain, kind == .timestamped {
+                collectedSegments[collectedSegments.count - 1] = segment
+                collectedSegmentKinds[collectedSegmentKinds.count - 1] = kind
+                return nil
+            }
+
+            if lastKind == .timestamped, kind == .plain {
+                return nil
+            }
+        }
+
+        collectedSegments.append(segment)
+        collectedSegmentKinds.append(kind)
+        return segment
+    }
+
+    private func normalizedTranscriptText(_ text: String) -> String {
+        text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func committedElevenLabsSegment(
@@ -779,6 +818,10 @@ public actor WebSocketManager {
 
     func testingEndOfStreamRequested() -> Bool {
         endOfStreamRequested
+    }
+
+    func testingHandleElevenLabsMessage(_ text: String) {
+        handleElevenLabsMessage(text)
     }
 
     private func closeConnection(
