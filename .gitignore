@@ -54,6 +54,7 @@ Pods/
 
 # IDE
 .idea/
+.claude/
 *.xcworkspace
 !*.xcworkspace/contents.xcworkspacedata
 *.xccheckout
@@ -81,6 +82,8 @@ web/.next/
 web/coverage/
 web/test-results/
 web/playwright-report/
+**/fastlane/report.xml
+fastlane/mac_screenshots_en-US/
 
 # Audio files (don't commit recordings)
 *.opus
@@ -94,6 +97,7 @@ web/playwright-report/
 credentials.json
 
 # Android
+android/.gradle/
 android/keystore.properties
 *.jks
 *.keystore

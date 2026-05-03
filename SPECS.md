@@ -234,7 +234,7 @@ Data lives in Wai DB → accessible from ALL channels:
 - Web: Apps tab → click → CRUD
 - macOS: Apps in sidebar → collection viewer
 - Telegram: "habits" → inline checklist
-- Deployed app: Full UI at habits.wai.computer
+- Deployed app: Full UI at habits.say.waiwai.is
 ```
 
 **Cross-app intelligence** (the killer feature):
@@ -409,7 +409,7 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16 + pgvector, Redis, Celery
 **Server:** Hetzner VPS (157.180.47.68), 4GB RAM, 75GB disk
-**Domain:** wai.computer
+**Domain:** say.waiwai.is
 **Proxy:** Caddy 2 (auto-TLS)
 
 **Docker services:** db (pgvector:pg16), redis (7-alpine), api (FastAPI), celery-worker, web (Next.js), caddy
@@ -545,7 +545,7 @@ P2: Push, offline sync.
 
 - Access tokens: JWT HS256, 30-minute expiry
 - Refresh tokens: 180-day, SHA-256 hashed in DB, rotated on use
-- Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (.wai.computer)
+- Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (`say.waiwai.is`)
 - Magic links: 15-minute expiry, email via Resend
 - Deep links: `waisay://auth/verify?token=...` for native apps
 - Keychain storage on macOS/iOS (wai_access_token, wai_refresh_token)

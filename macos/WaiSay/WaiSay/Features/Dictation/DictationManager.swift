@@ -240,7 +240,7 @@ final class DictationManager: ObservableObject {
                         do {
                             try await ws.sendAudio(data: data)
                         } catch {
-                            log.error("Failed to send audio: \(error)")
+                            log.error("Failed to send dictation audio")
                             return
                         }
                     }
@@ -256,7 +256,7 @@ final class DictationManager: ObservableObject {
             }
 
         } catch {
-            log.error("Failed to start dictation: \(error)")
+            log.error("Failed to start dictation")
             self.error = error.userFacingMessage(context: .dictation)
             await resetAfterStartFailure()
         }
@@ -290,10 +290,7 @@ final class DictationManager: ObservableObject {
         timerTask = nil
 
         // Build final text — prefer segments, fall back to local accumulation
-        var finalText = segments.map(\.text).joined(separator: " ")
-        if finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            finalText = buildTranscript()
-        }
+        let finalText = finalTranscriptText(from: segments, didFinalize: didFinalize)
 
         let trimmedText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -316,7 +313,7 @@ final class DictationManager: ObservableObject {
                 textToInsert = cleaned
                 log.info("AI cleanup: \(trimmedText.count) → \(cleaned.count) chars")
             } catch {
-                log.warning("AI cleanup failed, using raw transcript: \(error)")
+                log.warning("AI cleanup failed, using raw transcript")
                 if let apiError = error as? APIError, case .unauthorized = apiError {
                     self.error = apiError.userFacingMessage(context: .dictation)
                 }
@@ -331,7 +328,16 @@ final class DictationManager: ObservableObject {
             NSSound(named: NSSound.Name("Pop"))?.play()
         } catch {
             let recoveryURL = try? saveRecoveryText(textToInsert)
-            if recoveryURL != nil {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "action": "dictationInsert",
+                    "hasRecoveryCopy": recoveryURL != nil,
+                ]
+            )
+            if recoveryURL != nil, let insertionError = error as? TextInsertionError {
+                self.error = "\(insertionError.localizedDescription) A recovery copy was kept on this Mac."
+            } else if recoveryURL != nil {
                 self.error = "We couldn't insert the dictated text into the current app. A recovery copy was kept on this Mac."
             } else {
                 self.error = error.userFacingMessage(context: .dictation)
@@ -429,7 +435,7 @@ final class DictationManager: ObservableObject {
             interimTranscript = buildTranscript()
         case .disconnected(let err):
             if let err, state == .listening {
-                log.error("WebSocket disconnected during dictation: \(err)")
+                log.error("WebSocket disconnected during dictation")
                 if (try? saveRecoveryText(buildTranscript())) != nil {
                     error = "Connection was interrupted. A recovery copy of your dictated text was kept on this Mac."
                 } else {
@@ -471,6 +477,41 @@ final class DictationManager: ObservableObject {
         return canStartDictation()
     }
 
+    private func finalTranscriptText(
+        from segments: [LiveTranscriptSegment],
+        didFinalize: Bool
+    ) -> String {
+        let remoteTranscript = segments
+            .map(\.text)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let localTranscript = buildTranscript().trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedInterim = currentInterim.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !remoteTranscript.isEmpty else { return localTranscript }
+        guard !localTranscript.isEmpty else { return remoteTranscript }
+
+        if remoteTranscript == localTranscript {
+            return remoteTranscript
+        }
+
+        if !trimmedInterim.isEmpty && remoteTranscript.hasSuffix(trimmedInterim) {
+            return remoteTranscript
+        }
+
+        if !trimmedInterim.isEmpty && localTranscript.hasPrefix(remoteTranscript) {
+            return localTranscript
+        }
+
+        if !didFinalize && localTranscript.count >= remoteTranscript.count {
+            return localTranscript
+        }
+
+        return remoteTranscript.count >= localTranscript.count ? remoteTranscript : localTranscript
+    }
+
     private func applyHotkeyAvailability() {
         hotkeyManager.hotkey = selectedHotkey
         let shouldEnable = isConfigured && dictationEnabledPreference
@@ -487,7 +528,7 @@ final class DictationManager: ObservableObject {
         do {
             return try await webSocket.finishStreaming(timeout: .seconds(5))
         } catch {
-            log.error("Failed to finalize dictation stream: \(error.localizedDescription)")
+            log.error("Failed to finalize dictation stream")
             return false
         }
     }

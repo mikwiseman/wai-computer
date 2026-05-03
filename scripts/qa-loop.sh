@@ -7,7 +7,7 @@
 #
 # Common environment variables:
 #   DURATION_HOURS=8
-#   BASE_URL=https://api.wai.computer
+#   BASE_URL=https://say.waiwai.is
 #   STRICT_GATE=1
 #   SLEEP_ON_FAIL_SECONDS=180
 #   SLEEP_ON_SUCCESS_SECONDS=30
@@ -33,7 +33,7 @@ SLEEP_ON_FAIL_SECONDS="${SLEEP_ON_FAIL_SECONDS:-180}"
 SLEEP_ON_SUCCESS_SECONDS="${SLEEP_ON_SUCCESS_SECONDS:-30}"
 STRICT_GATE="${STRICT_GATE:-1}"
 
-BASE_URL="${BASE_URL:-https://api.wai.computer}"
+BASE_URL="${BASE_URL:-https://say.waiwai.is}"
 DEPLOY_ON_GREEN="${DEPLOY_ON_GREEN:-1}"
 DEPLOY_CMD="${DEPLOY_CMD:-}"
 REQUIRE_DEPLOY_CMD="${REQUIRE_DEPLOY_CMD:-0}"

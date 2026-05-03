@@ -3,6 +3,7 @@ import {
   ApiError,
   apiFetch,
   apiFetchResponse,
+  apiUpload,
   getApiBaseUrl,
   syncLocalhostAuthCookie,
   syncLocalhostRefreshCookie,
@@ -727,6 +728,58 @@ describe("apiFetchResponse", () => {
     await expect(apiFetchResponse("/api/export")).rejects.toMatchObject({
       name: "ApiError",
       status: 401,
+    });
+  });
+});
+
+describe("apiUpload", () => {
+  it("syncs localhost access and refresh cookies after successful token refresh", async () => {
+    const originalHostname = window.location.hostname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: "localhost" },
+      writable: true,
+    });
+
+    document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
+    document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: "upload-access-token",
+          refresh_token: "upload-refresh-token",
+          token_type: "bearer",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const formData = new FormData();
+    formData.append("file", new File(["audio"], "upload.opus", { type: "audio/opus" }));
+
+    await expect(apiUpload<{ ok: boolean }>("/api/upload", formData)).resolves.toEqual({ ok: true });
+    expect(document.cookie).toContain("wai_access_token=upload-access-token");
+    expect(document.cookie).toContain("wai_refresh_token=upload-refresh-token");
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, hostname: originalHostname },
+      writable: true,
     });
   });
 });

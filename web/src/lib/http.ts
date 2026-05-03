@@ -52,6 +52,20 @@ export function syncLocalhostRefreshCookie(token: string | null): void {
   document.cookie = `${LOCALHOST_REFRESH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
 }
 
+function syncLocalhostAuthCookiesFromPayload(payload: unknown): void {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (typeof (payload as { access_token?: unknown }).access_token === "string") {
+    syncLocalhostAuthCookie((payload as { access_token: string }).access_token);
+  }
+
+  if (typeof (payload as { refresh_token?: unknown }).refresh_token === "string") {
+    syncLocalhostRefreshCookie((payload as { refresh_token: string }).refresh_token);
+  }
+}
+
 async function parseResponsePayload(response: Response): Promise<unknown> {
   const text = await response.text();
   if (text.trim().length === 0) {
@@ -131,6 +145,22 @@ async function doFetch(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+async function tryRefreshAuthSession(): Promise<boolean> {
+  const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!refreshResponse.ok) {
+    return false;
+  }
+
+  const refreshPayload = await parseResponsePayload(refreshResponse);
+  syncLocalhostAuthCookiesFromPayload(refreshPayload);
+  return true;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
@@ -151,33 +181,7 @@ export async function apiFetch<T>(
   // On 401, attempt a single token refresh then retry
   if (response.status === 401) {
     try {
-      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-      });
-
-      if (refreshResponse.ok) {
-        // Extract new token and sync localhost cookie so the retry uses it
-        const refreshPayload = await parseResponsePayload(refreshResponse);
-        if (
-          refreshPayload &&
-          typeof refreshPayload === "object" &&
-          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
-        ) {
-          syncLocalhostAuthCookie(
-            (refreshPayload as { access_token: string }).access_token,
-          );
-        }
-        if (
-          refreshPayload &&
-          typeof refreshPayload === "object" &&
-          typeof (refreshPayload as { refresh_token?: unknown }).refresh_token === "string"
-        ) {
-          syncLocalhostRefreshCookie(
-            (refreshPayload as { refresh_token: string }).refresh_token,
-          );
-        }
+      if (await tryRefreshAuthSession()) {
         response = await doFetch(url, fetchInit);
       }
     } catch {
@@ -217,32 +221,7 @@ export async function apiFetchResponse(
 
   if (response.status === 401) {
     try {
-      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-      });
-
-      if (refreshResponse.ok) {
-        const refreshPayload = await parseResponsePayload(refreshResponse);
-        if (
-          refreshPayload &&
-          typeof refreshPayload === "object" &&
-          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
-        ) {
-          syncLocalhostAuthCookie(
-            (refreshPayload as { access_token: string }).access_token,
-          );
-        }
-        if (
-          refreshPayload &&
-          typeof refreshPayload === "object" &&
-          typeof (refreshPayload as { refresh_token?: unknown }).refresh_token === "string"
-        ) {
-          syncLocalhostRefreshCookie(
-            (refreshPayload as { refresh_token: string }).refresh_token,
-          );
-        }
+      if (await tryRefreshAuthSession()) {
         response = await doFetch(url, fetchInit);
       }
     } catch {
@@ -282,22 +261,7 @@ export async function apiUpload<T>(
 
   if (response.status === 401) {
     try {
-      const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (refreshResponse.ok) {
-        const refreshPayload = await parseResponsePayload(refreshResponse);
-        if (
-          refreshPayload &&
-          typeof refreshPayload === "object" &&
-          typeof (refreshPayload as { access_token?: unknown }).access_token === "string"
-        ) {
-          syncLocalhostAuthCookie(
-            (refreshPayload as { access_token: string }).access_token,
-          );
-        }
+      if (await tryRefreshAuthSession()) {
         response = await doFetch(url, fetchInit);
       }
     } catch {

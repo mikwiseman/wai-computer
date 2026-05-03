@@ -79,7 +79,7 @@ ssh \
    };
    require_env_key() {
      local key=\"\$1\";
-     if ! grep -Eq \"^\\\${key}=.+\" \"\$PROD_ENV_FILE\"; then
+     if ! grep -Eq \"^\${key}=.+\" \"\$PROD_ENV_FILE\"; then
        echo \"ERROR: \$PROD_ENV_FILE is missing required key \$key\" >&2;
        exit 1;
      fi;
@@ -103,6 +103,7 @@ ssh \
    require_env_key FRONTEND_URL;
    require_env_key CORS_ORIGINS;
    require_env_key ELEVENLABS_API_KEY;
+   require_env_key AUTH_COOKIE_DOMAIN;
    cd \"\$PROD_ROOT/backend\";
    export WAISAY_ENV_FILE=\"\$PROD_ENV_FILE\";
    docker_compose config >/dev/null;
