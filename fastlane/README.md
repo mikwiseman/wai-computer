@@ -23,6 +23,27 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Upload iOS metadata and screenshots to App Store Connect
 
+### ios submit_for_review
+
+```sh
+[bundle exec] fastlane ios submit_for_review
+```
+
+Submit latest uploaded iOS build for App Review
+
+----
+
+
+## Android
+
+### android upload_internal
+
+```sh
+[bundle exec] fastlane android upload_internal
+```
+
+Upload Android AAB to Google Play internal track
+
 ----
 
 

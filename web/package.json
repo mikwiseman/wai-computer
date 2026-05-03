@@ -10,8 +10,8 @@
     "lint": "eslint .",
     "test": "pnpm test:unit && pnpm test:e2e",
     "test:unit": "vitest run --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e": "node ./scripts/run-playwright.mjs",
+    "test:e2e:ui": "node ./scripts/run-playwright.mjs --ui"
   },
   "dependencies": {
     "next": "16.1.6",

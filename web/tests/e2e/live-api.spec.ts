@@ -8,7 +8,7 @@ import { test, expect, type Page } from "@playwright/test";
 // with E2E_API_URL.
 // ---------------------------------------------------------------------------
 
-const LIVE = !!process.env.E2E_LIVE_API;
+const LIVE = process.env.E2E_LIVE_API === "1";
 const API_URL = process.env.E2E_API_URL || "https://say.waiwai.is";
 
 /** Generate a unique email for each test run to avoid collisions. */

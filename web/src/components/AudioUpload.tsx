@@ -11,9 +11,11 @@ interface AudioUploadProps {
 
 const ACCEPTED_TYPES = [
   "audio/mpeg", "audio/mp3", "audio/mp4", "audio/m4a", "audio/x-m4a",
-  "audio/wav", "audio/x-wav", "audio/webm", "audio/ogg", "audio/flac",
+  "audio/wav", "audio/x-wav", "audio/webm", "audio/ogg", "audio/opus", "audio/flac",
 ];
-const ACCEPTED_EXTENSIONS = ".mp3,.m4a,.wav,.webm,.ogg,.flac,.mp4";
+const ACCEPTED_FILE_EXTENSIONS = ["mp3", "m4a", "wav", "webm", "ogg", "opus", "flac"] as const;
+const ACCEPTED_FILE_INPUT = ".mp3,.m4a,.wav,.webm,.ogg,.opus,.flac";
+const UNSUPPORTED_FORMAT_MESSAGE = "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.";
 
 export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -22,8 +24,17 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(async (file: File) => {
-    if (!ACCEPTED_TYPES.includes(file.type) && !file.name.match(/\.(mp3|m4a|wav|webm|ogg|flac|mp4)$/i)) {
-      onError("Unsupported format. Use MP3, M4A, WAV, WebM, OGG, or FLAC.");
+    const fileNameParts = file.name.toLowerCase().split(".");
+    const fileExtension = fileNameParts.length > 1 ? fileNameParts.at(-1) : null;
+    const hasAllowedExtension =
+      fileExtension !== null &&
+      ACCEPTED_FILE_EXTENSIONS.includes(
+        fileExtension as (typeof ACCEPTED_FILE_EXTENSIONS)[number],
+      );
+    const hasAllowedType = ACCEPTED_TYPES.includes(file.type);
+
+    if ((!fileExtension && !hasAllowedType) || (fileExtension !== null && !hasAllowedExtension)) {
+      onError(UNSUPPORTED_FORMAT_MESSAGE);
       return;
     }
 
@@ -71,7 +82,7 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_EXTENSIONS}
+        accept={ACCEPTED_FILE_INPUT}
         onChange={handleFileSelect}
         style={{ display: "none" }}
       />
@@ -84,7 +95,7 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
         <div className="upload-zone__label">
           <span style={{ fontSize: "1.5rem" }}>+</span>
           <span>Drop audio file here or click to upload</span>
-          <span className="upload-zone__formats">MP3, M4A, WAV, WebM, OGG, FLAC</span>
+          <span className="upload-zone__formats">MP3, M4A, WAV, WebM, OGG, OPUS, FLAC</span>
         </div>
       )}
     </div>
