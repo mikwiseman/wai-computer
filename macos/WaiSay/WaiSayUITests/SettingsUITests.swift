@@ -58,6 +58,16 @@ final class SettingsUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(aboutHeader, in: app, timeout: 3))
 
+        let behaviorHeader = app.descendants(matching: .any)
+            .matching(identifier: "settings-app-behavior-header")
+            .firstMatch
+        XCTAssertTrue(waitForElement(behaviorHeader, in: app, timeout: 3))
+
+        let dockIconToggle = app.descendants(matching: .any)
+            .matching(identifier: "settings-show-dock-icon-when-closed-toggle")
+            .firstMatch
+        XCTAssertTrue(waitForElement(dockIconToggle, in: app, timeout: 3))
+
         // Sign out button
         let signOutButton = app.buttons.matching(identifier: "settings-sign-out-button").firstMatch
         XCTAssertTrue(waitForElement(signOutButton, in: app, timeout: 3))

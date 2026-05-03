@@ -11,6 +11,7 @@ extension Notification.Name {
 
 @main
 struct WaiSayMacApp: App {
+    @NSApplicationDelegateAdaptor(WaiSayAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var recordingViewModel: MacRecordingViewModel
     @StateObject private var appState: MacAppState
@@ -48,13 +49,16 @@ struct WaiSayMacApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("WaiSay", id: MacPresentationCoordinator.mainWindowID) {
             MacContentView()
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
                 .environmentObject(dictionaryStore)
+                .onAppear {
+                    MacPresentationCoordinator.shared.mainWindowDidAppear()
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     Task {
@@ -165,6 +169,115 @@ struct WaiSayMacApp: App {
     }
 }
 
+enum MacPresentationSettings {
+    static let showDockIconWhenMainWindowClosedKey = "showDockIconWhenMainWindowClosed"
+
+    static func showDockIconWhenMainWindowClosed(in defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: showDockIconWhenMainWindowClosedKey)
+    }
+}
+
+enum MacMainWindowAction: Equatable {
+    case importAudioFile
+    case settings
+}
+
+@MainActor
+final class MacPresentationCoordinator {
+    static let shared = MacPresentationCoordinator()
+    static let mainWindowID = "main"
+
+    private init() {}
+
+    func mainWindowDidAppear() {
+        setRegularActivationPolicy()
+    }
+
+    func mainWindowDidClose() {
+        guard !MacPresentationSettings.showDockIconWhenMainWindowClosed() else {
+            setRegularActivationPolicy()
+            return
+        }
+
+        setActivationPolicy(.accessory)
+    }
+
+    func updateActivationPolicyForCurrentWindowState() {
+        if hasVisibleMainWindow || MacPresentationSettings.showDockIconWhenMainWindowClosed() {
+            setRegularActivationPolicy()
+        } else {
+            setActivationPolicy(.accessory)
+        }
+    }
+
+    func showMainWindow(openMainWindow: () -> Void) {
+        setRegularActivationPolicy()
+
+        if let window = visibleMainWindows.first {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            openMainWindow()
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private var hasVisibleMainWindow: Bool {
+        !visibleMainWindows.isEmpty
+    }
+
+    private var visibleMainWindows: [NSWindow] {
+        NSApp.windows.filter { window in
+            window.isVisible &&
+                window.canBecomeMain &&
+                window.level == .normal &&
+                !window.isExcludedFromWindowsMenu &&
+                window.title == "WaiSay"
+        }
+    }
+
+    private func setRegularActivationPolicy() {
+        guard NSApp.activationPolicy() != .regular else { return }
+        setActivationPolicy(.regular)
+    }
+
+    private func setActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        guard !NSApp.setActivationPolicy(policy) else { return }
+        NSLog("[AppLifecycle] Failed to set activation policy %@", activationPolicyName(policy))
+    }
+
+    private func activationPolicyName(_ policy: NSApplication.ActivationPolicy) -> String {
+        switch policy {
+        case .regular:
+            return "regular"
+        case .accessory:
+            return "accessory"
+        case .prohibited:
+            return "prohibited"
+        @unknown default:
+            return "unknown"
+        }
+    }
+}
+
+@MainActor
+final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        MacPresentationCoordinator.shared.mainWindowDidClose()
+        return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            MacPresentationCoordinator.shared.mainWindowDidAppear()
+        }
+        return true
+    }
+}
+
 /// Mac-specific app state with system audio support
 @MainActor
 class MacAppState: ObservableObject {
@@ -176,6 +289,7 @@ class MacAppState: ObservableObject {
     @Published var magicLinkSent = false
     @Published var completedRecordingContext: CompletedRecordingContext?
     @Published var selectedRecordingFromMenu: String?
+    @Published var pendingMainWindowAction: MacMainWindowAction?
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
