@@ -296,6 +296,20 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls deleteRecording with permanent flag", async () => {
+    await api.deleteRecording("rec-to-delete", { permanent: true });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec-to-delete?permanent=true", {
+      method: "DELETE",
+    });
+  });
+
+  it("calls restoreRecording", async () => {
+    await api.restoreRecording("rec-to-restore");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec-to-restore/restore", {
+      method: "POST",
+    });
+  });
+
   it("calls updateActionItem with multiple fields in PATCH body", async () => {
     await api.updateActionItem("item42", {
       task: "Updated task description",
@@ -367,5 +381,17 @@ describe("api client wrappers", () => {
     mockedApiFetchResponse.mockRejectedValueOnce(new Error("Something went wrong. Please try again in a moment."));
 
     await expect(api.exportRecording("rec1", "txt")).rejects.toThrow();
+  });
+
+  it("calls createRecordingShareLink", async () => {
+    await api.createRecordingShareLink("rec1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/share", {
+      method: "POST",
+    });
+  });
+
+  it("calls getSharedRecording", async () => {
+    await api.getSharedRecording("share-token");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/shared/share-token");
   });
 });

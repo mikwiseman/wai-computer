@@ -285,12 +285,7 @@ async function installApiMock(page: Page, state: MockState) {
   await page.route("**/api/**", handler);
 }
 
-// TODO(web-dashboard): Dashboard was refactored around tab navigation; the
-// recording-title input lives behind tab-library now and sometimes isn't
-// mounted in time for the form fills below. Re-enable after the dashboard
-// UI stabilises around a single route (tracked separately — unrelated to
-// the account-deletion ship this commit is part of).
-test.skip("web dashboard flow covers core features", async ({ page }) => {
+test("web dashboard flow covers core features", async ({ page }) => {
   const state: MockState = {
     recordings: [
       {
@@ -333,17 +328,21 @@ test.skip("web dashboard flow covers core features", async ({ page }) => {
   await page.getByTestId("create-recording").click();
   await expect(page.getByTestId("dashboard-message")).toContainText("Recording created");
 
+  await page.getByTestId("tab-search").click();
   await page.getByTestId("search-query").fill("roadmap");
   await page.getByTestId("search-submit").click();
   await expect(page.getByTestId("search-total")).toContainText("0");
 
+  await page.getByTestId("tab-topics").click();
   await page.getByTestId("entity-name").fill("Roadmap");
   await page.getByTestId("create-entity").click();
   await expect(page.getByTestId("dashboard-message")).toContainText("Entity created");
 
+  await page.getByTestId("tab-actions").click();
   await page.getByTestId("set-complete-ai-1").click();
   await expect(page.getByTestId("dashboard-message")).toContainText("Action item updated");
 
+  await page.getByTestId("tab-settings").click();
   await page.getByTestId("current-password").fill("old-pass");
   await page.getByTestId("new-password").fill("new-pass");
   await page.getByTestId("change-password").click();

@@ -105,6 +105,27 @@ export interface RecordingDetail extends Recording {
   highlights: Highlight[];
 }
 
+export interface RecordingShareLink {
+  recording_id: string;
+  token: string;
+  url: string;
+  created_at: string;
+}
+
+export interface SharedRecording {
+  id: string;
+  title: string | null;
+  type: RecordingType;
+  duration_seconds: number | null;
+  language: string | null;
+  created_at: string;
+  shared_at: string;
+  segments: Segment[];
+  summary: Summary | null;
+  action_items: ActionItem[];
+  highlights: Highlight[];
+}
+
 export interface SpeakerStat {
   name: string;
   total_duration_ms: number;

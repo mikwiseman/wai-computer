@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
 from app.core.transcript_utils import TranscriptResult
-from app.models.recording import ActionItem, Recording, Segment, Summary
+from app.models.recording import ActionItem, Recording, RecordingShare, Segment, Summary
 from app.models.user import User
 
 
@@ -29,6 +29,16 @@ async def _create_recording(
     )
     assert response.status_code == 201
     return response.json()
+
+
+async def _register_headers(client: AsyncClient, email: str) -> dict:
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    return {"Authorization": f"Bearer {data['access_token']}"}
 
 
 @pytest.mark.asyncio
@@ -118,6 +128,137 @@ async def test_delete_recording_can_permanently_delete_from_trash(
 
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_share_link_returns_public_web_url_and_token_is_hashed(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Share creation should return a public web URL without storing the raw token."""
+    recording = await _create_recording(client, auth_headers, title="Shared Standup")
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/share",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["recording_id"] == recording["id"]
+    assert payload["token"]
+    assert payload["url"].endswith(f"/share/{payload['token']}")
+
+    share_result = await db_session.execute(select(RecordingShare))
+    share = share_result.scalar_one()
+    assert share.recording_id == UUID(recording["id"])
+    assert share.token_hash != payload["token"]
+    assert len(share.token_hash) == 64
+
+
+@pytest.mark.asyncio
+async def test_public_share_link_opens_recording_without_auth(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """A valid share token should expose a read-only note payload without auth."""
+    recording = await _create_recording(client, auth_headers, title="Public Planning")
+    recording_id = UUID(recording["id"])
+
+    result = await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    stored_recording = result.scalar_one()
+    stored_recording.duration_seconds = 125
+
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording_id,
+                speaker="Mik",
+                content="Ship the public share page.",
+                start_ms=0,
+                end_ms=5000,
+                confidence=0.96,
+            ),
+            Summary(
+                recording_id=recording_id,
+                summary="Public sharing was discussed.",
+                key_points=["Open shared notes in web"],
+                decisions=[],
+                topics=["sharing"],
+                people_mentioned=["Mik"],
+                sentiment="positive",
+            ),
+            ActionItem(
+                recording_id=recording_id,
+                task="Add a share button",
+                owner="Mik",
+                priority="high",
+                status="pending",
+                source="generated",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    share_response = await client.post(
+        f"/api/recordings/{recording['id']}/share",
+        headers=auth_headers,
+    )
+    token = share_response.json()["token"]
+
+    public_response = await client.get(f"/api/recordings/shared/{token}")
+
+    assert public_response.status_code == 200
+    payload = public_response.json()
+    assert payload["id"] == recording["id"]
+    assert payload["title"] == "Public Planning"
+    assert payload["duration_seconds"] == 125
+    assert payload["summary"]["summary"] == "Public sharing was discussed."
+    assert payload["segments"][0]["content"] == "Ship the public share page."
+    assert payload["action_items"][0]["task"] == "Add a share button"
+    assert "audio_url" not in payload
+
+
+@pytest.mark.asyncio
+async def test_public_share_link_404s_after_recording_is_trashed(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Public links should stop opening once the source recording leaves the active library."""
+    recording = await _create_recording(client, auth_headers, title="Temporary Share")
+    share_response = await client.post(
+        f"/api/recordings/{recording['id']}/share",
+        headers=auth_headers,
+    )
+    token = share_response.json()["token"]
+
+    delete_response = await client.delete(
+        f"/api/recordings/{recording['id']}",
+        headers=auth_headers,
+    )
+    assert delete_response.status_code == 204
+
+    public_response = await client.get(f"/api/recordings/shared/{token}")
+    assert public_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_share_link_requires_recording_ownership(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Users must not be able to create share links for another user's recording."""
+    recording = await _create_recording(client, auth_headers, title="Private")
+    other_headers = await _register_headers(client, "other-share@example.com")
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/share",
+        headers=other_headers,
+    )
+
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

@@ -146,6 +146,22 @@ async function openLibraryView(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId("tab-library"));
 }
 
+async function openSearchView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-search"));
+}
+
+async function openActionsView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-actions"));
+}
+
+async function openTopicsView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-topics"));
+}
+
+async function openSettingsView(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-settings"));
+}
+
 describe("DashboardClient", () => {
   beforeEach(() => {
     [
@@ -260,9 +276,10 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("delete-recording-r1"));
     await waitFor(() => {
       expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording deleted.");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording moved to trash.");
     });
 
+    await openSearchView(user);
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
@@ -284,6 +301,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 3");
     });
 
+    await openActionsView(user);
     await user.click(screen.getByTestId("set-complete-a1"));
     await waitFor(() => {
       expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "completed" });
@@ -295,6 +313,7 @@ describe("DashboardClient", () => {
       expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "pending" });
     });
 
+    await openTopicsView(user);
     await user.type(screen.getByTestId("entity-name"), "Budget");
     await user.click(screen.getByTestId("create-entity"));
     await waitFor(() => {
@@ -312,6 +331,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entity deleted.");
     });
 
+    await openSettingsView(user);
     await user.type(screen.getByTestId("current-password"), "old");
     await user.type(screen.getByTestId("new-password"), "new");
     await user.click(screen.getByTestId("change-password"));
@@ -331,6 +351,7 @@ describe("DashboardClient", () => {
       expect(mockReplace).toHaveBeenCalledWith("/login");
     });
 
+    await openLibraryView(user);
     mockCreateRecording.mockRejectedValueOnce(new ApiError(400, "Create failed"));
     await user.type(screen.getByTestId("recording-title"), "Bad");
     await user.click(screen.getByTestId("create-recording"));
@@ -356,6 +377,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Generate failed");
     });
 
+    await openSearchView(user);
     mockSearch.mockRejectedValueOnce(new Error("Search failed"));
     await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
     await user.click(screen.getByTestId("search-submit"));
@@ -363,12 +385,14 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Search failed");
     });
 
+    await openActionsView(user);
     mockUpdateActionItem.mockRejectedValueOnce(new Error("Action failed"));
     await user.click(screen.getByTestId("set-complete-a1"));
     await waitFor(() => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Action failed");
     });
 
+    await openTopicsView(user);
     mockCreateEntity.mockRejectedValueOnce(new Error("Create entity failed"));
     await user.type(screen.getByTestId("entity-name"), "Fail");
     await user.click(screen.getByTestId("create-entity"));
@@ -382,6 +406,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Delete entity failed");
     });
 
+    await openSettingsView(user);
     mockChangePassword.mockRejectedValueOnce(new Error("Change password failed"));
     await user.type(screen.getByTestId("current-password"), "old2");
     await user.type(screen.getByTestId("new-password"), "new2");
@@ -467,7 +492,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSearchView(user);
 
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
@@ -481,6 +506,12 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("0.95");
       expect(screen.getByTestId("search-result-seg2")).toHaveTextContent("(untitled)");
     });
+
+    await user.click(screen.getAllByRole("button", { name: "Open" })[0]);
+    await waitFor(() => {
+      expect(mockGetRecording).toHaveBeenCalledWith("r1");
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
   });
 
   it("renders no-results message when search returns empty", async () => {
@@ -491,14 +522,14 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSearchView(user);
 
     await user.type(screen.getByTestId("search-query"), "nonexistent");
     await user.click(screen.getByTestId("search-submit"));
 
     await waitFor(() => {
       expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
-      expect(screen.getByTestId("search-no-results")).toHaveTextContent("No results found.");
+      expect(screen.getByTestId("search-no-results")).toHaveTextContent("No matching transcript segments found.");
     });
   });
 
@@ -527,7 +558,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSearchView(user);
 
     // Perform a search to populate results
     await user.type(screen.getByTestId("search-query"), "roadmap");
@@ -555,20 +586,16 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSearchView(user);
 
     // Leave query empty and click search
     await user.click(screen.getByTestId("search-submit"));
 
-    // The form submits with empty string — verify the API was called with empty q
-    // (The current implementation does not guard against empty queries,
-    // so we verify that behavior is at least consistent)
     await waitFor(() => {
-      expect(mockSearch).toHaveBeenCalledWith({ q: "", limit: 25, offset: 0 });
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter a search query.");
     });
-
-    // Total should reflect the mock response
-    expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 5");
+    expect(mockSearch).not.toHaveBeenCalled();
+    expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
   });
 
   // --- Password change clears fields on success ---
@@ -579,7 +606,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSettingsView(user);
 
     const currentPwdInput = screen.getByTestId("current-password");
     const newPwdInput = screen.getByTestId("new-password");
@@ -613,7 +640,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSettingsView(user);
 
     const currentPwdInput = screen.getByTestId("current-password");
     const newPwdInput = screen.getByTestId("new-password");
@@ -640,7 +667,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openTopicsView(user);
 
     // Type a new entity name
     await user.type(screen.getByTestId("entity-name"), "Machine Learning");
@@ -694,7 +721,7 @@ describe("DashboardClient", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording deleted.");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording moved to trash.");
     });
   });
 
@@ -725,6 +752,25 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("recording-detail")).not.toBeInTheDocument();
     });
+  });
+
+  it("returns to the new recording pane from a selected recording", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openLibraryView(user);
+
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "New" }));
+
+    expect(screen.queryByTestId("recording-detail")).not.toBeInTheDocument();
+    expect(screen.getByTestId("recording-title")).toBeInTheDocument();
   });
 
   // --- Recording creation flow: fill form, submit, verify API called, list refreshed ---
@@ -832,7 +878,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openActionsView(user);
 
     // Step 1: Mark action item as complete
     await user.click(screen.getByTestId("set-complete-a1"));
@@ -899,7 +945,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openSearchView(user);
 
     // Search in hybrid mode
     await user.type(screen.getByTestId("search-query"), "test");

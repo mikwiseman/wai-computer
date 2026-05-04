@@ -564,6 +564,35 @@ final class APIClientTests: XCTestCase {
         try await client.deleteRecording(id: "rec-del", permanent: true)
     }
 
+    func testCreateRecordingShareLinkUsesShareEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-share/share")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 201,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "recording_id":"rec-share",
+              "token":"share-token",
+              "url":"https://say.waiwai.is/share/share-token",
+              "created_at":"2026-05-04T12:00:00Z"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let share = try await client.createRecordingShareLink(id: "rec-share")
+        XCTAssertEqual(share.recordingId, "rec-share")
+        XCTAssertEqual(share.url.absoluteString, "https://say.waiwai.is/share/share-token")
+    }
+
     func testExportRecordingServerFailureCapturesFingerprint() async {
         let client = makeClient()
 

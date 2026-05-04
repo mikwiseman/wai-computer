@@ -94,6 +94,35 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     highlights: Mapped[list["Highlight"]] = relationship(
         "Highlight", back_populates="recording", cascade="all, delete-orphan"
     )
+    share_links: Mapped[list["RecordingShare"]] = relationship(
+        "RecordingShare", back_populates="recording", cascade="all, delete-orphan"
+    )
+
+
+class RecordingShare(Base, UUIDMixin, TimestampMixin):
+    """Public share link for a recording.
+
+    Only a SHA-256 hash of the bearer token is stored. The raw token is returned
+    once when the owner creates a share link and is later verified by hashing the
+    token from the public URL.
+    """
+
+    __tablename__ = "recording_shares"
+
+    recording_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+
+    recording: Mapped["Recording"] = relationship("Recording", back_populates="share_links")
 
 
 class Segment(Base, UUIDMixin):

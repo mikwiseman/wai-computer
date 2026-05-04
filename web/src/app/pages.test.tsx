@@ -5,6 +5,7 @@ import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 import VerifyMagicLinkPage from "./auth/verify/page";
+import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
 import RootLayout, { metadata } from "./layout";
 
@@ -13,6 +14,7 @@ const mockRedirect = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
+const sharedRecordingClientMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -41,6 +43,13 @@ vi.mock("@/components/VerifyMagicLinkClient", () => ({
   VerifyMagicLinkClient: ({ token }: { token: string | null }) => {
     verifyClientMock(token);
     return <div data-testid="verify-client-mock">{token ?? "null-token"}</div>;
+  },
+}));
+
+vi.mock("@/components/SharedRecordingClient", () => ({
+  SharedRecordingClient: ({ token }: { token: string }) => {
+    sharedRecordingClientMock(token);
+    return <div data-testid="shared-recording-client-mock">{token}</div>;
   },
 }));
 
@@ -78,6 +87,12 @@ describe("app pages", () => {
     render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getAllByTestId("verify-client-mock")[1]).toHaveTextContent("null-token");
     expect(verifyClientMock).toHaveBeenCalledWith(null);
+  });
+
+  it("passes shared recording token from route params", async () => {
+    render(await SharedRecordingPage({ params: Promise.resolve({ token: "share-token" }) }));
+    expect(screen.getByTestId("shared-recording-client-mock")).toHaveTextContent("share-token");
+    expect(sharedRecordingClientMock).toHaveBeenCalledWith("share-token");
   });
 
   it("redirects home to login", () => {
