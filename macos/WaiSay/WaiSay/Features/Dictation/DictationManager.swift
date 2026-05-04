@@ -31,7 +31,7 @@ final class DictationManager: ObservableObject {
     // MARK: - Settings (persisted via UserDefaults)
 
     @AppStorage("dictationHotkey") var hotkeyChoice: String = DictationHotkey.rightOption.rawValue
-    @AppStorage("dictationAICleanup") var aiCleanupEnabled: Bool = false
+    @AppStorage("dictationAICleanup") var aiCleanupEnabled: Bool = true
     @AppStorage("dictationEnabled") private var dictationEnabledPreference: Bool = false
 
     var selectedHotkey: DictationHotkey {
