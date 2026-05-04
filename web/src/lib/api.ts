@@ -372,6 +372,16 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
   return response.blob();
 }
 
+export async function exportSharedRecording(
+  token: string,
+  format: Extract<ExportFormat, "markdown">,
+): Promise<Blob> {
+  const response = await apiFetchResponse(
+    `/api/recordings/shared/${token}/export?format=${format}`,
+  );
+  return response.blob();
+}
+
 export function createRecordingShareLink(recordingId: string): Promise<RecordingShareLink> {
   return apiFetch<RecordingShareLink>(`/api/recordings/${recordingId}/share`, {
     method: "POST",

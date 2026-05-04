@@ -557,14 +557,12 @@ class MacRecordingViewModel: ObservableObject {
 
         NSLog("[Recording] Persisting %d transcript segments for recording %@", segments.count, recordingId)
 
-        let shouldUploadAudio = segments.isEmpty
-            && audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        let shouldUploadAudio = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
 
         if shouldUploadAudio, let audioFileURL {
             SentryHelper.addBreadcrumb(
                 category: "recording",
-                message: "falling back to audio upload after empty live transcript",
-                level: .warning,
+                message: "uploading finalized audio for transcription",
                 data: ["recordingId": recordingId]
             )
 

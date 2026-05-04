@@ -939,6 +939,14 @@ h4 {
   padding: clamp(1.2rem, 4vw, 2.15rem);
 }
 
+.shared-note__topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
 .shared-note__brand {
   padding: 0 0 0.5rem;
 }
@@ -957,6 +965,15 @@ h4 {
   font-size: clamp(2rem, 5vw, 3.4rem);
   line-height: 1.08;
   overflow-wrap: anywhere;
+}
+
+.shared-note__download {
+  white-space: nowrap;
+}
+
+.shared-note__download-error {
+  color: var(--danger);
+  font-size: 0.86rem;
 }
 
 .shared-section {

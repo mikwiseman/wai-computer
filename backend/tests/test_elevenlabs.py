@@ -201,6 +201,64 @@ async def test_transcribe_audio_file_handles_multi_transcript_payload():
 
 
 @pytest.mark.asyncio
+async def test_transcribe_audio_file_splits_diarized_word_speaker_turns():
+    def word(
+        text: str,
+        start: float,
+        end: float,
+        speaker_id: str,
+        logprob: float,
+    ) -> dict:
+        return {
+            "text": text,
+            "start": start,
+            "end": end,
+            "speaker_id": speaker_id,
+            "logprob": logprob,
+        }
+
+    response = httpx.Response(
+        200,
+        json={
+            "text": "Alice starts. Bob replies. Alice finishes.",
+            "words": [
+                word("Alice", 0.0, 0.2, "Speaker 1", -0.1),
+                word("starts", 0.2, 0.5, "Speaker 1", -0.1),
+                word(".", 0.5, 0.51, "Speaker 1", -0.1),
+                word("Bob", 0.6, 0.8, "Speaker 2", -0.2),
+                word("replies", 0.8, 1.1, "Speaker 2", -0.2),
+                word(".", 1.1, 1.11, "Speaker 2", -0.2),
+                word("Alice", 1.2, 1.4, "Speaker 1", -0.15),
+                word("finishes", 1.4, 1.8, "Speaker 1", -0.15),
+                word(".", 1.8, 1.81, "Speaker 1", -0.15),
+            ],
+        },
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = True
+        results = await transcribe_audio_file(b"wav-data", content_type="audio/wav")
+
+    assert [(result.speaker, result.text) for result in results] == [
+        ("Speaker 1", "Alice starts."),
+        ("Speaker 2", "Bob replies."),
+        ("Speaker 1", "Alice finishes."),
+    ]
+    assert [(result.start_ms, result.end_ms) for result in results] == [
+        (0, 510),
+        (600, 1110),
+        (1200, 1810),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_file_handles_single_payload_and_raw_audio():
     response = httpx.Response(
         200,

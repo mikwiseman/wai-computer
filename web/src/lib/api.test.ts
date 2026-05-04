@@ -383,6 +383,21 @@ describe("api client wrappers", () => {
     await expect(api.exportRecording("rec1", "txt")).rejects.toThrow();
   });
 
+  it("calls exportSharedRecording with correct public URL and returns blob", async () => {
+    const mockBlob = new Blob(["# Shared"]);
+    const mockResponse = {
+      blob: vi.fn().mockResolvedValue(mockBlob),
+    } as unknown as Response;
+    mockedApiFetchResponse.mockResolvedValueOnce(mockResponse);
+
+    const result = await api.exportSharedRecording("share-token", "markdown");
+
+    expect(mockedApiFetchResponse).toHaveBeenCalledWith(
+      "/api/recordings/shared/share-token/export?format=markdown",
+    );
+    expect(result).toBeInstanceOf(Blob);
+  });
+
   it("calls createRecordingShareLink", async () => {
     await api.createRecordingShareLink("rec1");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/share", {

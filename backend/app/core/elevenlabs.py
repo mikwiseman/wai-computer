@@ -127,6 +127,28 @@ def _confidence_from_words(words: list[dict[str, Any]]) -> float:
     return max(0.0, min(1.0, 1.0 + (avg_logprob / 10.0)))
 
 
+def _word_text(word: dict[str, Any]) -> str:
+    value = word.get("text") or word.get("word")
+    return str(value).strip() if value is not None else ""
+
+
+def _join_word_texts(words: list[dict[str, Any]]) -> str:
+    text = ""
+    no_space_before = set(".,!?;:%)]}")
+    no_space_after = set("([{$")
+
+    for word in words:
+        token = _word_text(word)
+        if not token:
+            continue
+        if not text or token[0] in no_space_before or text[-1] in no_space_after:
+            text += token
+        else:
+            text += f" {token}"
+
+    return text.strip()
+
+
 def _result_from_transcript(
     transcript: dict[str, Any],
     *,
@@ -157,6 +179,56 @@ def _result_from_transcript(
         end_ms=end_ms,
         confidence=confidence,
     )
+
+
+def _results_from_transcript(
+    transcript: dict[str, Any],
+    *,
+    fallback_speaker: str | None = None,
+) -> list[TranscriptResult]:
+    text = str(transcript.get("text", "")).strip()
+    if not text:
+        return []
+
+    raw_words = transcript.get("words") or []
+    words = [word for word in raw_words if isinstance(word, dict)]
+    if not words or not any(_word_text(word) for word in words):
+        result = _result_from_transcript(transcript, fallback_speaker=fallback_speaker)
+        return [result] if result is not None else []
+
+    results: list[TranscriptResult] = []
+    current_speaker: str | None = None
+    current_words: list[dict[str, Any]] = []
+
+    def flush() -> None:
+        if not current_words:
+            return
+        segment_text = _join_word_texts(current_words)
+        if not segment_text:
+            return
+        first_word = current_words[0]
+        last_word = current_words[-1]
+        results.append(
+            TranscriptResult(
+                text=segment_text,
+                speaker=current_speaker,
+                is_final=True,
+                start_ms=int(float(first_word.get("start", 0)) * 1000),
+                end_ms=int(float(last_word.get("end", 0)) * 1000),
+                confidence=_confidence_from_words(current_words),
+            )
+        )
+
+    for word in words:
+        speaker = word.get("speaker_id") or fallback_speaker
+        if current_words and speaker != current_speaker:
+            flush()
+            current_words = []
+        current_speaker = speaker
+        current_words.append(word)
+
+    flush()
+    return results
 
 
 async def transcribe_audio_file(
@@ -212,14 +284,13 @@ async def transcribe_audio_file(
         for index, transcript in enumerate(transcripts, start=1):
             if not isinstance(transcript, dict):
                 continue
-            result = _result_from_transcript(transcript, fallback_speaker=f"Channel {index}")
-            if result is not None:
-                results.append(result)
+            results.extend(
+                _results_from_transcript(transcript, fallback_speaker=f"Channel {index}")
+            )
         return results
 
     if isinstance(payload, dict):
-        single = _result_from_transcript(payload)
-        return [single] if single is not None else []
+        return _results_from_transcript(payload)
 
     logger.warning("Unexpected ElevenLabs STT payload type=%s", type(payload).__name__)
     return []
