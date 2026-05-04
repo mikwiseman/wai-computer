@@ -1,0 +1,104 @@
+name: macOS Direct Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_web:
+        description: "Publish DMG and appcast to say.waiwai.is"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  push:
+    tags:
+      - "waisay-macos-v*"
+
+jobs:
+  direct-dmg:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_CERTIFICATE:-}" || -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]]; then
+            echo "ERROR: APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD secrets are required" >&2
+            exit 1
+          fi
+          KEYCHAIN_PATH="$RUNNER_TEMP/waisay-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Write App Store Connect API key
+        env:
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_API_KEY_PATH:-}" ]]; then
+            echo "ERROR: APPLE_API_KEY_PATH secret is required" >&2
+            exit 1
+          fi
+          printf '%s' "$APPLE_API_KEY_PATH" > "$RUNNER_TEMP/apple-api-key.p8"
+          chmod 600 "$RUNNER_TEMP/apple-api-key.p8"
+
+      - name: Build strict notarized DMG
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          NOTARY_KEY: ${{ runner.temp }}/apple-api-key.p8
+          NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY }}
+          NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MACOS_RELEASE_STRICT: "1"
+        run: |
+          set -euo pipefail
+          if [[ -z "${APPLE_API_KEY:-}" || -z "${APPLE_API_ISSUER:-}" || -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "ERROR: APPLE_API_KEY, APPLE_API_ISSUER, and SPARKLE_PRIVATE_KEY secrets are required" >&2
+            exit 1
+          fi
+          scripts/build-macos-dmg.sh
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: waisay-macos-direct-release
+          path: artifacts/releases/macos
+
+      - name: Configure SSH
+        if: github.event_name == 'push' || inputs.publish_web == 'true'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_SSH_KEY:-}" || -z "${VPS_HOST:-}" ]]; then
+            echo "ERROR: VPS_SSH_KEY and VPS_HOST secrets are required for publish" >&2
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Publish to say.waiwai.is
+        if: github.event_name == 'push' || inputs.publish_web == 'true'
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: scripts/publish-macos-dmg.sh

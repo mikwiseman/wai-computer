@@ -47,6 +47,7 @@ rsync \
   --exclude 'web/.next/' \
   --exclude 'android/.gradle/' \
   --exclude 'backups/' \
+  --exclude 'releases/' \
   -e "ssh -i ${SSH_KEY_PATH} -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   ./ \
   "${VPS_USER}@${VPS_HOST}:${REMOTE_ROOT}/"
@@ -88,6 +89,7 @@ ssh \
      docker compose --env-file \"\$PROD_ENV_FILE\" \"\$@\";
    };
    install -d -m 755 \"\$PROD_ROOT\";
+   install -d -m 755 \"\$PROD_ROOT/releases/macos\";
    if [[ ! -f \"\$PROD_ENV_FILE\" ]]; then
      echo \"ERROR: Missing production env file at \$PROD_ENV_FILE\" >&2;
      echo \"Provision it first or run CI bootstrap deploy.\" >&2;

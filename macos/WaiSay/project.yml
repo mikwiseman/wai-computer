@@ -22,6 +22,7 @@ targets:
         excludes:
           - "*.entitlements"
           - Info.plist
+          - Info.Direct.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say
@@ -53,6 +54,7 @@ targets:
         excludes:
           - "*.entitlements"
           - Info.plist
+          - Info.Direct.plist
     settings:
       base:
         PRODUCT_NAME: WaiSay
@@ -60,7 +62,7 @@ targets:
         DEVELOPMENT_TEAM: R4A779QVVY
         MARKETING_VERSION: "1.0.4"
         CURRENT_PROJECT_VERSION: "37"
-        INFOPLIST_FILE: WaiSay/Info.plist
+        INFOPLIST_FILE: WaiSay/Info.Direct.plist
         CODE_SIGN_ENTITLEMENTS: WaiSay/WaiSay.Sparkle.entitlements
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES

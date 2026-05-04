@@ -618,7 +618,7 @@
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				INFOPLIST_FILE = WaiSay/Info.plist;
+				INFOPLIST_FILE = WaiSay/Info.Direct.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -686,7 +686,7 @@
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				INFOPLIST_FILE = WaiSay/Info.plist;
+				INFOPLIST_FILE = WaiSay/Info.Direct.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

@@ -138,24 +138,8 @@ jobs:
       - name: Select default Xcode for builds
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
-      - name: Build macOS app
-        run: >
-          xcodebuild
-          -project macos/WaiSay/WaiSay.xcodeproj
-          -scheme WaiSay
-          -destination 'platform=macOS'
-          CODE_SIGNING_ALLOWED=NO
-          build
-
-      - name: Build direct macOS app
-        run: >
-          xcodebuild
-          -project macos/WaiSay/WaiSay.xcodeproj
-          -scheme WaiSayDirect
-          -configuration Release
-          -destination 'platform=macOS'
-          CODE_SIGNING_ALLOWED=NO
-          build
+      - name: Verify macOS App Store and direct channels
+        run: scripts/verify-macos-channels.sh
 
       - name: Build iOS app
         run: >
@@ -256,6 +240,7 @@ jobs:
             --exclude 'web/.next/' \
             --exclude 'android/.gradle/' \
             --exclude 'backups/' \
+            --exclude 'releases/' \
             ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/waisay/"
 
       - name: Copy bootstrap env file to VPS
@@ -304,6 +289,7 @@ jobs:
           }
 
           install -d -m 755 "$PROD_ROOT"
+          install -d -m 755 "$PROD_ROOT/releases/macos"
           install -d -m 700 "$PROD_ENV_DIR"
 
           if [[ ! -f "$PROD_ENV_FILE" ]]; then
