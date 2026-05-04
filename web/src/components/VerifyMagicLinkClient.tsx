@@ -33,7 +33,11 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
   }, [router, token]);
 
   return (
-    <section className="card stack">
+    <section className="auth-card auth-card--compact">
+      <div className="auth-card__brand">
+        <div className="brand-mark" aria-hidden="true" />
+        <span>WaiSay</span>
+      </div>
       <h1>Magic Link Verification</h1>
       <p data-testid="verify-message">{message}</p>
       <Link href="/login">Back to login</Link>

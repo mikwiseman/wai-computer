@@ -7,7 +7,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   return (
-    <main className="container">
+    <main className="container auth-page">
       <AuthForm mode="login" onSuccess={() => router.replace("/dashboard")} />
     </main>
   );
