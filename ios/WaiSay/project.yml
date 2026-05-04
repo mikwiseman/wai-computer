@@ -22,8 +22,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say
         DEVELOPMENT_TEAM: <apple-team-id>
-        MARKETING_VERSION: "1.0.3"
-        CURRENT_PROJECT_VERSION: "20"
+        MARKETING_VERSION: "1.0.4"
+        CURRENT_PROJECT_VERSION: "22"
         INFOPLIST_FILE: WaiSay/Info.plist
         SWIFT_VERSION: "5.9"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
