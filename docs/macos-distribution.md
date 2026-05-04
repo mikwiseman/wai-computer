@@ -22,8 +22,8 @@ WaiSay has two macOS channels:
 
 Prerequisites:
 
-- `create-dmg` installed locally, for example `brew install create-dmg`
 - `python3` with Pillow available for DMG background composition
+- Xcode command-line tools available for `xcodebuild`, `codesign`, `hdiutil`, `xcrun`, and `ditto`
 
 Use:
 
@@ -42,11 +42,12 @@ The script:
 1. archives the direct-distribution macOS app with the `WaiSayDirect` scheme in `Release`
 2. signs it with the configured `Developer ID Application` identity
 3. enables the hardened runtime for the archive build
-4. optionally notarizes the app payload when explicit credentials are provided
-5. creates a signed DMG with a minimal background and `Applications` drop link
-6. optionally notarizes and staples the DMG
-7. signs the DMG update with Sparkle EdDSA and writes `appcast.xml`
-8. writes a SHA-256 checksum and release metadata file
+4. re-signs Sparkle nested helper code for Developer ID distribution
+5. notarizes the app payload when credentials are provided by env vars or `~/.appstoreconnect/config.json`
+6. creates a signed DMG with a minimal background and `Applications` drop link
+7. notarizes and staples the DMG when notarization credentials are available
+8. signs the DMG update with Sparkle EdDSA and writes `appcast.xml`
+9. writes a SHA-256 checksum and release metadata file
 
 Artifacts are written under `artifacts/releases/macos/<version>-<build>/`. The latest appcast and convenience aliases are written under `artifacts/releases/macos/`.
 
@@ -95,6 +96,8 @@ export NOTARY_KEY="$HOME/.appstoreconnect/private_keys/AuthKey_XXXXXXXXXX.p8"
 export NOTARY_KEY_ID='XXXXXXXXXX'
 export NOTARY_ISSUER='00000000-0000-0000-0000-000000000000' # omit for individual keys
 ```
+
+If neither mode is provided, the script reads `~/.appstoreconnect/config.json` by default and uses `key_filepath`, `key_id`, and `issuer_id` from that file. Set `APPSTORECONNECT_CONFIG=/absolute/path/config.json` to use a different config.
 
 Strict-release controls:
 
@@ -160,6 +163,20 @@ VPS_USER=root bundle exec fastlane mac upload_all
 ```
 
 This uploads the Mac App Store build to TestFlight, then builds and publishes the direct DMG channel.
+
+## GitHub Actions release
+
+The `macOS Direct Release` workflow builds a strict notarized DMG, uploads the artifact, and can publish it to `say.waiwai.is`.
+
+Required repository secrets:
+
+- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`
+- `APPLE_CERTIFICATE_PASSWORD`: password for that `.p12`
+- `APPLE_API_PRIVATE_KEY`: App Store Connect `.p8` private key contents
+- `APPLE_API_KEY_ID`: App Store Connect API key ID
+- `APPLE_API_ISSUER_ID`: App Store Connect issuer ID
+- `SPARKLE_PRIVATE_KEY`: Sparkle EdDSA private key
+- `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`: publishing SSH credentials
 
 ## User Install Flow
 
