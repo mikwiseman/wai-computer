@@ -161,6 +161,7 @@ struct MacSettingsView: View {
                 Toggle("AI Text Cleanup", isOn: $dictationManager.aiCleanupEnabled)
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
+                    .accessibilityIdentifier("settings-ai-text-cleanup-toggle")
 
                 // Input Monitoring is required for global hold-to-talk monitoring.
                 HStack {
