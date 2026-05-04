@@ -1,13 +1,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SharedRecordingClient } from "./SharedRecordingClient";
 import type { SharedRecording } from "@/lib/types";
 
 const mockGetSharedRecording = vi.fn();
+const mockExportSharedRecording = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getSharedRecording: (...args: unknown[]) => mockGetSharedRecording(...args),
+  exportSharedRecording: (...args: unknown[]) => mockExportSharedRecording(...args),
 }));
 
 const sharedRecording: SharedRecording = {
@@ -55,6 +58,11 @@ const sharedRecording: SharedRecording = {
 describe("SharedRecordingClient", () => {
   beforeEach(() => {
     mockGetSharedRecording.mockReset();
+    mockExportSharedRecording.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("loads and renders a public shared recording", async () => {
@@ -75,6 +83,43 @@ describe("SharedRecordingClient", () => {
     expect(screen.getByText("Open the shared note in the web app.")).toBeInTheDocument();
     expect(screen.getByText("Mik")).toBeInTheDocument();
     expect(screen.getByText("2:05")).toBeInTheDocument();
+  });
+
+  it("downloads markdown from a public shared recording", async () => {
+    mockGetSharedRecording.mockResolvedValue(sharedRecording);
+    mockExportSharedRecording.mockResolvedValue(new Blob(["# Shared Planning"], { type: "text/markdown" }));
+
+    const createObjectURL = vi.fn(() => "blob:shared-markdown");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(globalThis, "URL", {
+      value: { createObjectURL, revokeObjectURL },
+      writable: true,
+    });
+
+    const clickSpy = vi.fn();
+    let createdAnchor: HTMLAnchorElement | null = null;
+    const createElementOrig = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = createElementOrig(tag);
+      if (tag === "a") {
+        createdAnchor = el as HTMLAnchorElement;
+        Object.defineProperty(el, "click", { value: clickSpy });
+      }
+      return el;
+    });
+
+    const user = userEvent.setup();
+    render(<SharedRecordingClient token="share-token" />);
+
+    await user.click(await screen.findByRole("button", { name: "Download Markdown" }));
+
+    await waitFor(() => {
+      expect(mockExportSharedRecording).toHaveBeenCalledWith("share-token", "markdown");
+      expect(createObjectURL).toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:shared-markdown");
+    });
+    expect(createdAnchor?.download).toBe("Shared_Planning.md");
   });
 
   it("renders unavailable state when the public token cannot be opened", async () => {

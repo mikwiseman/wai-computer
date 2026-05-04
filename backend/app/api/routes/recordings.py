@@ -553,6 +553,31 @@ def _serialize_shared_recording(
     )
 
 
+async def _load_active_share(token: str, db: Database) -> RecordingShare:
+    if len(token) < 20 or len(token) > 256:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
+
+    result = await db.execute(
+        select(RecordingShare)
+        .where(
+            RecordingShare.token_hash == _share_token_hash(token),
+            RecordingShare.revoked_at.is_(None),
+        )
+        .options(
+            selectinload(RecordingShare.recording).selectinload(Recording.segments),
+            selectinload(RecordingShare.recording).selectinload(Recording.summary),
+            selectinload(RecordingShare.recording).selectinload(Recording.action_items),
+            selectinload(RecordingShare.recording).selectinload(Recording.highlights),
+        )
+    )
+    share = result.scalar_one_or_none()
+
+    if share is None or share.recording.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
+
+    return share
+
+
 async def _require_folder(
     folder_id: UUID | None,
     user_id: UUID,
@@ -1154,28 +1179,26 @@ async def get_shared_recording(
     db: Database,
 ) -> SharedRecordingResponse:
     """Open a public, read-only recording by share token."""
-    if len(token) < 20 or len(token) > 256:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
-
-    result = await db.execute(
-        select(RecordingShare)
-        .where(
-            RecordingShare.token_hash == _share_token_hash(token),
-            RecordingShare.revoked_at.is_(None),
-        )
-        .options(
-            selectinload(RecordingShare.recording).selectinload(Recording.segments),
-            selectinload(RecordingShare.recording).selectinload(Recording.summary),
-            selectinload(RecordingShare.recording).selectinload(Recording.action_items),
-            selectinload(RecordingShare.recording).selectinload(Recording.highlights),
-        )
-    )
-    share = result.scalar_one_or_none()
-
-    if share is None or share.recording.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
-
+    share = await _load_active_share(token, db)
     return _serialize_shared_recording(share.recording, share)
+
+
+@router.get("/shared/{token}/export")
+async def export_shared_recording(
+    token: str,
+    db: Database,
+    format: Literal["markdown"] = Query("markdown"),
+) -> Response:
+    """Export a public shared recording as Markdown without requiring auth."""
+    share = await _load_active_share(token, db)
+
+    content = _export_markdown(share.recording)
+    filename = f"{_sanitize_filename(share.recording.title)}.md"
+    return Response(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
 
 
 @router.get("/{recording_id}", response_model=RecordingDetailResponse)

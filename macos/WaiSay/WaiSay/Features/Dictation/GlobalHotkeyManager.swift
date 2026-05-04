@@ -59,8 +59,9 @@ enum DictationHotkey: String, CaseIterable, Identifiable {
 
 /// Monitors the dictation hotkey.
 ///
-/// The Mac App Store build intentionally uses local AppKit event monitors only.
-/// The Sparkle build keeps the global event tap path for direct distribution.
+/// All builds use a listen-only CGEventTap so dictation can start while WaiSay
+/// is running in the background. The App Store build still delivers dictated
+/// text via the clipboard only; simulated paste remains direct-distribution only.
 @MainActor
 final class GlobalHotkeyManager: ObservableObject {
     /// Whether the hotkey is currently being held down
@@ -91,11 +92,9 @@ final class GlobalHotkeyManager: ObservableObject {
     private var lastTapTime: Date?
     private let doubleTapInterval: TimeInterval = 0.4
 
-    #if SPARKLE
-    // CGEventTap resources (direct distribution only)
+    // CGEventTap resources for global hold-to-talk monitoring.
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    #endif
 
     // Local monitors for app-focused keyboard handling.
     private var localFlagsMonitor: Any?
@@ -107,25 +106,18 @@ final class GlobalHotkeyManager: ObservableObject {
 
     /// Check if Input Monitoring permission is granted
     static var hasInputMonitoringPermission: Bool {
-        #if SPARKLE
         CGPreflightListenEventAccess()
-        #else
-        true
-        #endif
     }
 
     /// Request Input Monitoring permission — shows the system prompt
     static func requestInputMonitoringPermission() {
-        #if SPARKLE
         CGRequestListenEventAccess()
-        #endif
     }
 
     func start() {
         guard !isRunning else { return }
         isRunning = true
 
-        #if SPARKLE
         // Create CGEventTap for global monitoring (requires Input Monitoring, not Accessibility)
         let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
 
@@ -149,7 +141,6 @@ final class GlobalHotkeyManager: ObservableObject {
         } else {
             log.warning("Failed to create CGEventTap — Input Monitoring permission may be missing")
         }
-        #endif
 
         localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             DispatchQueue.main.async { self?.handleFlagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) }
@@ -163,11 +154,7 @@ final class GlobalHotkeyManager: ObservableObject {
             return event
         }
 
-        #if SPARKLE
         log.info("Global hotkey monitoring started (\(self.hotkey.label))")
-        #else
-        log.info("Local hotkey monitoring started (\(self.hotkey.label))")
-        #endif
     }
 
     func stop() {
@@ -176,7 +163,6 @@ final class GlobalHotkeyManager: ObservableObject {
         holdTimer?.cancel()
         holdTimer = nil
 
-        #if SPARKLE
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             if let source = runLoopSource {
@@ -185,7 +171,6 @@ final class GlobalHotkeyManager: ObservableObject {
         }
         eventTap = nil
         runLoopSource = nil
-        #endif
 
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
@@ -197,7 +182,6 @@ final class GlobalHotkeyManager: ObservableObject {
 
     // MARK: - Event Handling
 
-    #if SPARKLE
     /// Called from CGEventTap callback (on main thread)
     func handleCGEvent(type: CGEventType, event: CGEvent) {
         if type == .flagsChanged {
@@ -210,7 +194,12 @@ final class GlobalHotkeyManager: ObservableObject {
             }
         }
     }
-    #endif
+
+    func reenableEventTapIfNeeded() {
+        guard let eventTap else { return }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        log.info("CGEventTap re-enabled after system disable")
+    }
 
     private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
         let isTargetKey = isHotkeyEvent(keyCode: keyCode, flags: flags)
@@ -294,17 +283,14 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     deinit {
-        #if SPARKLE
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        #endif
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
     }
 }
 
-#if SPARKLE
 // MARK: - CGEventTap Callback (C function)
 
 private func globalEventCallback(
@@ -317,8 +303,9 @@ private func globalEventCallback(
 
     // Handle tap disabled by system (re-enable)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        if let tap = Unmanaged<AnyObject>.fromOpaque(refcon).takeUnretainedValue() as? NSObject {
-            // Re-enable will be handled by the manager
+        let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
+        DispatchQueue.main.async {
+            manager.reenableEventTapIfNeeded()
         }
         return Unmanaged.passUnretained(event)
     }
@@ -330,4 +317,3 @@ private func globalEventCallback(
 
     return nil // listenOnly — return nil
 }
-#endif

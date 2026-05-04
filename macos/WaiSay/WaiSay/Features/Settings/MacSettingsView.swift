@@ -161,8 +161,7 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                #if SPARKLE
-                // Input Monitoring (for global hotkey in direct distribution builds)
+                // Input Monitoring is required for global hold-to-talk monitoring.
                 HStack {
                     Text("Input Monitoring")
                         .font(Typography.body)
@@ -179,7 +178,6 @@ struct MacSettingsView: View {
                         .font(Typography.bodySmall)
                     }
                 }
-                #endif
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -292,16 +290,12 @@ struct MacSettingsView: View {
 
     private var dictationUsageText: String {
         if !dictationManager.isFeatureEnabled {
-            #if SPARKLE
             return "Enable Dictation to use a global hold-to-talk hotkey."
-            #else
-            return "Enable Dictation to use the in-app hold-to-talk hotkey."
-            #endif
         }
         #if SPARKLE
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
         #else
-        return "Hold \(dictationManager.selectedHotkey.shortLabel) while WaiSay is active to dictate. Release to copy text to the clipboard."
+        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate from anywhere. Release to copy text to the clipboard, then press \u{2318}V to paste."
         #endif
     }
 

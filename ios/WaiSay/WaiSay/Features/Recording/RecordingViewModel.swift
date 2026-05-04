@@ -264,15 +264,13 @@ class RecordingViewModel: ObservableObject {
         if let recordingId = currentRecordingId, let client {
             do {
                 let audioFileURL = try? RecordingBackupStore.audioFileURL(recordingId: recordingId)
-                let shouldUploadAudio = segments.isEmpty
-                    && audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+                let shouldUploadAudio = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
 
                 let detail: RecordingDetail
                 if shouldUploadAudio, let audioFileURL {
                     SentryHelper.addBreadcrumb(
                         category: "recording",
-                        message: "falling back to audio upload after empty live transcript",
-                        level: .warning,
+                        message: "uploading finalized audio for transcription",
                         data: ["recordingId": recordingId]
                     )
                     detail = try await client.uploadAudio(recordingId: recordingId, fileURL: audioFileURL)
@@ -304,7 +302,7 @@ class RecordingViewModel: ObservableObject {
                     transcriptSaved = true
                     SentryHelper.addBreadcrumb(
                         category: "recording",
-                        message: "transcript saved",
+                        message: shouldUploadAudio ? "audio uploaded for transcription" : "transcript saved",
                         data: ["recordingId": recordingId, "segments": segments.count]
                     )
                 }

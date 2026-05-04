@@ -300,7 +300,7 @@ struct MenuBarView: View {
         #if SPARKLE
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
         #else
-        return "Open WaiSay and hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
+        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
         #endif
     }
 }

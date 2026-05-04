@@ -222,6 +222,46 @@ async def test_public_share_link_opens_recording_without_auth(
 
 
 @pytest.mark.asyncio
+async def test_public_share_link_exports_markdown_without_auth(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """A shared note should download the same Markdown format without auth."""
+    recording = await _create_recording(client, auth_headers, title="Public Export")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Mik",
+            content="Download the shared note as Markdown.",
+            start_ms=0,
+            end_ms=4000,
+            confidence=0.97,
+        )
+    )
+    await db_session.flush()
+
+    share_response = await client.post(
+        f"/api/recordings/{recording['id']}/share",
+        headers=auth_headers,
+    )
+    token = share_response.json()["token"]
+
+    export_response = await client.get(
+        f"/api/recordings/shared/{token}/export",
+        params={"format": "markdown"},
+    )
+
+    assert export_response.status_code == 200
+    assert "text/markdown" in export_response.headers["content-type"]
+    assert "Public_Export.md" in export_response.headers["content-disposition"]
+    assert "# Public Export" in export_response.text
+    assert "Download the shared note as Markdown." in export_response.text
+
+
+@pytest.mark.asyncio
 async def test_public_share_link_404s_after_recording_is_trashed(
     client: AsyncClient,
     auth_headers: dict,

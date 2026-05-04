@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSharedRecording } from "@/lib/api";
+import { exportSharedRecording, getSharedRecording } from "@/lib/api";
 import type { SharedRecording } from "@/lib/types";
 
 function formatDate(value: string): string {
@@ -28,10 +28,32 @@ function formatError(error: unknown): string {
   return "Shared note unavailable.";
 }
 
+function downloadFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safeFileName(title: string | null): string {
+  const stem = (title ?? "shared-recording")
+    .replace(/[/\\:*?"<>|\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .slice(0, 100);
+  return `${stem || "shared-recording"}.md`;
+}
+
 export function SharedRecordingClient({ token }: { token: string }) {
   const [recording, setRecording] = useState<SharedRecording | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +76,20 @@ export function SharedRecordingClient({ token }: { token: string }) {
       cancelled = true;
     };
   }, [token]);
+
+  async function handleDownloadMarkdown() {
+    if (!recording) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const blob = await exportSharedRecording(token, "markdown");
+      downloadFile(blob, safeFileName(recording.title));
+    } catch (e) {
+      setDownloadError(formatError(e));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -82,12 +118,22 @@ export function SharedRecordingClient({ token }: { token: string }) {
     <main className="shared-page">
       <article className="shared-note">
         <header className="shared-note__header">
-          <div className="brand-block shared-note__brand">
-            <div className="brand-mark" aria-hidden="true" />
-            <div>
-              <strong>WaiSay</strong>
-              <span>Shared note</span>
+          <div className="shared-note__topline">
+            <div className="brand-block shared-note__brand">
+              <div className="brand-mark" aria-hidden="true" />
+              <div>
+                <strong>WaiSay</strong>
+                <span>Shared note</span>
+              </div>
             </div>
+            <button
+              type="button"
+              className="ghost-button compact-button shared-note__download"
+              onClick={() => void handleDownloadMarkdown()}
+              disabled={downloading}
+            >
+              {downloading ? "Downloading..." : "Download Markdown"}
+            </button>
           </div>
           <h1>{recording.title ?? "Untitled recording"}</h1>
           <div className="metadata-row">
@@ -95,6 +141,11 @@ export function SharedRecordingClient({ token }: { token: string }) {
             <span>{formatDate(recording.created_at)}</span>
             {recording.duration_seconds ? <span>{formatDuration(recording.duration_seconds)}</span> : null}
           </div>
+          {downloadError ? (
+            <p className="shared-note__download-error" role="alert">
+              {downloadError}
+            </p>
+          ) : null}
         </header>
 
         {recording.summary ? (
