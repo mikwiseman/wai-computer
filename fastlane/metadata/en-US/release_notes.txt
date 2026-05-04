@@ -1,5 +1,3 @@
-- New Android onboarding with email sign-in, account creation, magic-link entry, and guest mode
-- One-tap recording on Android with local-first audio capture and live transcription status banners
-- Android library now supports local-only guest recordings, richer recording detail, retry upload, share, and move to folder
-- Guest recordings now migrate after sign-in and sync safely in the background
-- Refreshed Settings, localisation, and observability for the Android parity release
+- Fixed recording completion handling for App Review devices.
+- Improved macOS dictation insertion reliability.
+- Dictated text is now also kept on the clipboard after insertion.
