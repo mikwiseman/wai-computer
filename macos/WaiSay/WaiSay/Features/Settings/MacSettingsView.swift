@@ -161,7 +161,8 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
 
-                // Input Monitoring (for global hotkey)
+                #if SPARKLE
+                // Input Monitoring (for global hotkey in direct distribution builds)
                 HStack {
                     Text("Input Monitoring")
                         .font(Typography.body)
@@ -178,9 +179,7 @@ struct MacSettingsView: View {
                         .font(Typography.bodySmall)
                     }
                 }
-
-                // Note: text insertion uses AppleScript (System Events).
-                // macOS prompts "WaiSay wants to control System Events" on first dictation.
+                #endif
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -190,7 +189,7 @@ struct MacSettingsView: View {
                     Text(dictationUsageText)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
-                    Text("AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before insertion.")
+                    Text(dictationPrivacyText)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -293,9 +292,25 @@ struct MacSettingsView: View {
 
     private var dictationUsageText: String {
         if !dictationManager.isFeatureEnabled {
+            #if SPARKLE
             return "Enable Dictation to use a global hold-to-talk hotkey."
+            #else
+            return "Enable Dictation to use the in-app hold-to-talk hotkey."
+            #endif
         }
+        #if SPARKLE
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
+        #else
+        return "Hold \(dictationManager.selectedHotkey.shortLabel) while WaiSay is active to dictate. Release to copy text to the clipboard."
+        #endif
+    }
+
+    private var dictationPrivacyText: String {
+        #if SPARKLE
+        return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before insertion."
+        #else
+        return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before copying."
+        #endif
     }
 
     private func refreshPermissions() {

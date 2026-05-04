@@ -7,7 +7,7 @@ import WaiSayKit
 private let log = Logger(subsystem: "com.waisay.app", category: "dictation")
 
 /// Orchestrates the complete dictation flow:
-/// Global hotkey → mic capture → provider-backed streaming → text insertion
+/// Hotkey → mic capture → provider-backed streaming → text delivery.
 @MainActor
 final class DictationManager: ObservableObject {
 
@@ -54,7 +54,7 @@ final class DictationManager: ObservableObject {
 
     private var overlayPanel: DictationOverlayPanel?
 
-    // MARK: - Target App (for restoring focus before paste)
+    // MARK: - Target App (for restoring focus before paste in direct builds)
 
     private var targetApp: NSRunningApplication?
 
@@ -182,8 +182,6 @@ final class DictationManager: ObservableObject {
 
         // Remember the target app so we can re-focus it before pasting
         targetApp = NSWorkspace.shared.frontmostApplication
-
-        // Text insertion uses AppleScript (System Events) — no manual permission needed
 
         // Check microphone permission
         let micGranted = await AVAudioApplication.requestRecordPermission()

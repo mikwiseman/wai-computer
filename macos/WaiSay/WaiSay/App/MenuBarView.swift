@@ -297,7 +297,11 @@ struct MenuBarView: View {
         if !dictationManager.isFeatureEnabled {
             return "Dictation is disabled"
         }
+        #if SPARKLE
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
+        #else
+        return "Open WaiSay and hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
+        #endif
     }
 }
 
