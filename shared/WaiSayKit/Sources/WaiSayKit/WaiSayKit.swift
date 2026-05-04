@@ -6,6 +6,7 @@
 public typealias WKUser = User
 public typealias WKRecording = Recording
 public typealias WKRecordingDetail = RecordingDetail
+public typealias WKRecordingShareLink = RecordingShareLink
 public typealias WKFolder = Folder
 public typealias WKSegment = Segment
 public typealias WKSummary = Summary

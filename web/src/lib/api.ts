@@ -24,8 +24,10 @@ import type {
   RecordingDetail,
   RecordingType,
   RelatedRecordingsResponse,
+  RecordingShareLink,
   SearchResponse,
   SpeakerStatsResponse,
+  SharedRecording,
   Summary,
   TokenResponse,
   TranscriptSearchResponse,
@@ -111,12 +113,18 @@ export function listRecordings(params?: {
   skip?: number;
   limit?: number;
   type?: RecordingType;
+  folder_id?: string | null;
+  trashed?: boolean;
+  starred?: boolean;
 }): Promise<Recording[]> {
   return apiFetch<Recording[]>(
     `/api/recordings${asQuery({
       skip: params?.skip,
       limit: params?.limit,
       type: params?.type,
+      folder_id: params?.folder_id,
+      trashed: params?.trashed,
+      starred: params?.starred,
     })}`,
   );
 }
@@ -150,8 +158,18 @@ export function updateRecording(
   });
 }
 
-export function deleteRecording(recordingId: string): Promise<void> {
-  return apiFetch<void>(`/api/recordings/${recordingId}`, { method: "DELETE" });
+export function deleteRecording(
+  recordingId: string,
+  options?: { permanent?: boolean },
+): Promise<void> {
+  return apiFetch<void>(
+    `/api/recordings/${recordingId}${asQuery({ permanent: options?.permanent })}`,
+    { method: "DELETE" },
+  );
+}
+
+export function restoreRecording(recordingId: string): Promise<Recording> {
+  return apiFetch<Recording>(`/api/recordings/${recordingId}/restore`, { method: "POST" });
 }
 
 export function uploadAudio(recordingId: string, file: File): Promise<RecordingDetail> {
@@ -354,3 +372,12 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
   return response.blob();
 }
 
+export function createRecordingShareLink(recordingId: string): Promise<RecordingShareLink> {
+  return apiFetch<RecordingShareLink>(`/api/recordings/${recordingId}/share`, {
+    method: "POST",
+  });
+}
+
+export function getSharedRecording(token: string): Promise<SharedRecording> {
+  return apiFetch<SharedRecording>(`/api/recordings/shared/${token}`);
+}

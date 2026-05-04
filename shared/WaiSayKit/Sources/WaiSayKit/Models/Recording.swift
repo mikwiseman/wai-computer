@@ -67,6 +67,28 @@ public struct Folder: Codable, Identifiable, Sendable {
     }
 }
 
+/// Public share link returned when a recording owner creates a web share.
+public struct RecordingShareLink: Codable, Sendable {
+    public let recordingId: String
+    public let token: String
+    public let url: URL
+    public let createdAt: Date
+
+    public init(recordingId: String, token: String, url: URL, createdAt: Date = Date()) {
+        self.recordingId = recordingId
+        self.token = token
+        self.url = url
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId = "recording_id"
+        case token
+        case url
+        case createdAt = "created_at"
+    }
+}
+
 /// Recording model
 public struct Recording: Codable, Identifiable, Sendable {
     public let id: String

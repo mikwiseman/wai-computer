@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { askDatabase } from "@/lib/api";
 import { ApiError } from "@/lib/http";
 import type { QASource, Recording } from "@/lib/types";
@@ -76,206 +76,104 @@ export function GlobalQAPanel({ recordings }: GlobalQAPanelProps) {
     );
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      const form = event.currentTarget.closest("form");
-      if (form) form.requestSubmit();
+      event.currentTarget.closest("form")?.requestSubmit();
     }
   }
 
   return (
-    <section className="card stack">
-      <h2>Ask Your Database</h2>
+    <section className="qa-panel">
+      <header className="qa-panel__header">
+        <h2>Ask Wai</h2>
+        <p>Search and reason across your recordings.</p>
+      </header>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px", minHeight: "400px" }}>
-        {/* Scope selector */}
-        {recordings.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              gap: "6px",
-              flexWrap: "wrap",
-              paddingBottom: "8px",
-              borderBottom: "1px solid #e0e0e0",
-              fontSize: "13px",
-            }}
-          >
-            <span style={{ color: "#666", lineHeight: "28px" }}>Scope:</span>
-            {recordings.map((rec) => (
-              <label
-                key={rec.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  backgroundColor: selectedRecordingIds.includes(rec.id)
-                    ? "#e8f0fe"
-                    : "#f5f5f5",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedRecordingIds.includes(rec.id)}
-                  onChange={() => handleRecordingToggle(rec.id)}
-                />
-                {rec.title ?? "(untitled)"}
-              </label>
-            ))}
-          </div>
-        )}
-
-        {/* Output area */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-            padding: "8px 0",
-          }}
-        >
-          {!answer && !loading && (
-            <p style={{ color: "#888", textAlign: "center", marginTop: "40px" }}>
-              Ask a question about any of your recordings and notes.
-            </p>
-          )}
-
-          {loading && (
-            <div style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: "8px",
-                  backgroundColor: "#f0f0f0",
-                  color: "#888",
-                  fontSize: "14px",
-                }}
-              >
-                Searching database...
-              </div>
-            </div>
-          )}
-
-          {answer && (
-            <div ref={answerRef} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <div
-                style={{
-                  padding: "16px",
-                  borderRadius: "8px",
-                  backgroundColor: "#f9f9f9",
-                  color: "#222",
-                  fontSize: "15px",
-                  lineHeight: "1.6",
-                  whiteSpace: "pre-wrap",
-                  borderLeft: "4px solid #0066cc"
-                }}
-              >
-                {answer}
-              </div>
-
-              {sources.length > 0 && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSources(!showSources)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      color: "#0066cc",
-                      padding: 0,
-                    }}
-                  >
-                    {showSources ? "Hide sources" : `Show sources (${sources.length})`}
-                  </button>
-
-                  {showSources && (
-                    <div
-                      style={{
-                        marginTop: "10px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                      }}
-                    >
-                      {sources.map((source, idx) => (
-                        <div
-                          key={`${source.segment_id}-${idx}`}
-                          style={{
-                            padding: "10px",
-                            backgroundColor: "#f0f0f0",
-                            borderRadius: "6px",
-                            fontSize: "13px",
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, marginBottom: "4px" }}>
-                            {source.recording_title ?? "Untitled recording"}
-                            {source.speaker && ` - ${source.speaker}`}
-                            {source.start_ms !== null && (
-                              <span style={{ color: "#666", marginLeft: "6px" }}>
-                                [{formatMs(source.start_ms)}
-                                {source.end_ms !== null && ` - ${formatMs(source.end_ms)}`}]
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ color: "#444", lineHeight: "1.4" }}>{source.content}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {error && (
-            <p role="alert" style={{ color: "#cc0000", fontSize: "14px", margin: "4px 0" }}>
-              {error}
-            </p>
-          )}
+      {recordings.length > 0 ? (
+        <div className="qa-scope" aria-label="Question scope">
+          <span>Scope</span>
+          {recordings.map((rec) => (
+            <label key={rec.id} className="scope-chip">
+              <input
+                type="checkbox"
+                checked={selectedRecordingIds.includes(rec.id)}
+                onChange={() => handleRecordingToggle(rec.id)}
+              />
+              {rec.title ?? "(untitled)"}
+            </label>
+          ))}
         </div>
+      ) : null}
 
-        {/* Input */}
-        <form
-          onSubmit={handleSend}
-          style={{
-            display: "flex",
-            gap: "8px",
-            paddingTop: "24px",
-            borderTop: "1px solid #e0e0e0",
-          }}
-        >
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about your recordings..."
-            rows={3}
-            style={{
-              flex: 1,
-              padding: "12px",
-              borderRadius: "6px",
-              border: "1px solid #ccc",
-              fontSize: "15px",
-              resize: "none",
-              fontFamily: "inherit",
-            }}
-          />
-          <button
-            type="submit"
-            disabled={loading || input.trim().length === 0}
-            style={{ padding: "10px 24px", alignSelf: "flex-end", fontWeight: "bold" }}
-          >
-            Ask
-          </button>
-        </form>
+      <div className="qa-output">
+        {!answer && !loading ? (
+          <div className="empty-state empty-state--center">
+            <h3>Ask about anything you have recorded</h3>
+            <p>Use all notes or narrow the scope to specific recordings.</p>
+          </div>
+        ) : null}
+
+        {loading ? <div className="qa-bubble qa-bubble--loading">Searching database...</div> : null}
+
+        {answer ? (
+          <div ref={answerRef} className="qa-answer">
+            <div className="qa-bubble">{answer}</div>
+
+            {sources.length > 0 ? (
+              <div className="qa-sources">
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  onClick={() => setShowSources(!showSources)}
+                >
+                  {showSources ? "Hide sources" : `Show sources (${sources.length})`}
+                </button>
+
+                {showSources ? (
+                  <div className="source-list">
+                    {sources.map((source, idx) => (
+                      <article key={`${source.segment_id}-${idx}`} className="source-card">
+                        <h3>
+                          {source.recording_title ?? "Untitled recording"}
+                          {source.speaker ? ` - ${source.speaker}` : ""}
+                          {source.start_ms !== null ? (
+                            <span>
+                              {" "}
+                              [{formatMs(source.start_ms)}
+                              {source.end_ms !== null ? ` - ${formatMs(source.end_ms)}` : ""}]
+                            </span>
+                          ) : null}
+                        </h3>
+                        <p>{source.content}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {error ? (
+          <p role="alert" className="inline-alert">
+            {error}
+          </p>
+        ) : null}
       </div>
+
+      <form className="qa-input" onSubmit={handleSend}>
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask about your recordings..."
+          rows={3}
+        />
+        <button type="submit" disabled={loading || input.trim().length === 0}>
+          Ask
+        </button>
+      </form>
     </section>
   );
 }

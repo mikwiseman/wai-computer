@@ -9,14 +9,17 @@ vi.mock("@/lib/api", () => ({
   generateSummary: vi.fn(),
   getRecording: vi.fn(),
   exportRecording: vi.fn(),
+  createRecordingShareLink: vi.fn(),
 }));
 
-const { generateSummary, getRecording, exportRecording } = await import(
+const { generateSummary, getRecording, exportRecording, createRecordingShareLink } = await import(
   "@/lib/api"
 );
 const mockGenerateSummary = vi.mocked(generateSummary);
 const mockGetRecording = vi.mocked(getRecording);
 const mockExportRecording = vi.mocked(exportRecording);
+const mockCreateRecordingShareLink = vi.mocked(createRecordingShareLink);
+let clipboardWriteText: ReturnType<typeof vi.fn>;
 
 function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
   return {
@@ -47,12 +50,25 @@ describe("RecordingDetailPanel", () => {
     mockGenerateSummary.mockReset();
     mockGetRecording.mockReset();
     mockExportRecording.mockReset();
+    mockCreateRecordingShareLink.mockReset();
+    vi.unstubAllGlobals();
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: undefined,
+    });
+    if (!navigator.clipboard) {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: vi.fn() },
+      });
+    }
+    clipboardWriteText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
   });
 
   it("renders title and metadata", () => {
     render(<RecordingDetailPanel recording={makeRecording()} />);
     expect(screen.getByText("Budget Meeting")).toBeTruthy();
-    expect(screen.getByText("meeting")).toBeTruthy();
+    expect(screen.getByText("Meeting")).toBeTruthy();
     expect(screen.getByText("6:00")).toBeTruthy();
   });
 
@@ -75,7 +91,7 @@ describe("RecordingDetailPanel", () => {
   // Transcript tab
   it("shows empty transcript message", () => {
     render(<RecordingDetailPanel recording={makeRecording()} />);
-    expect(screen.getByText("No transcript segments.")).toBeTruthy();
+    expect(screen.getByText("No Transcript")).toBeTruthy();
   });
 
   it("renders transcript segments with speakers and timestamps", () => {
@@ -112,7 +128,7 @@ describe("RecordingDetailPanel", () => {
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
     await user.click(screen.getByText("Summary"));
-    expect(screen.getByText("No summary generated yet.")).toBeTruthy();
+    expect(screen.getByText("No Summary")).toBeTruthy();
     expect(screen.getByText("Generate Summary")).toBeTruthy();
   });
 
@@ -180,7 +196,7 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={recording} />);
 
-    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await user.click(screen.getByRole("tab", { name: "Summary" }));
     expect(screen.getByText("Discussed Q2 plans.")).toBeTruthy();
     expect(screen.getByText("Increase budget")).toBeTruthy();
     expect(screen.getByText("Hire 2 engineers")).toBeTruthy();
@@ -193,9 +209,9 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
-    const actionsTab = screen.getByRole("button", { name: /Action Items/ });
+    const actionsTab = screen.getByRole("tab", { name: /Action Items/ });
     await user.click(actionsTab);
-    expect(screen.getByText("No action items.")).toBeTruthy();
+    expect(screen.getByText("No Action Items")).toBeTruthy();
   });
 
   it("renders action items with priority and status", async () => {
@@ -229,7 +245,7 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={recording} />);
 
-    const actionsTab = screen.getByRole("button", { name: /Action Items/ });
+    const actionsTab = screen.getByRole("tab", { name: /Action Items/ });
     await user.click(actionsTab);
     expect(screen.getByText("Send budget proposal")).toBeTruthy();
     expect(screen.getByText("Alice")).toBeTruthy();
@@ -259,6 +275,32 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("Action Items (1)")).toBeTruthy();
   });
 
+  it("creates and copies a web share link", async () => {
+    mockCreateRecordingShareLink.mockResolvedValue({
+      recording_id: "rec-1",
+      token: "share-token",
+      url: "https://say.waiwai.is/share/share-token",
+      created_at: "2026-05-04T12:00:00Z",
+    });
+
+    const user = userEvent.setup();
+    render(<RecordingDetailPanel recording={makeRecording()} />);
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() => {
+      expect(mockCreateRecordingShareLink).toHaveBeenCalledWith("rec-1");
+    });
+    await waitFor(() => {
+      expect(clipboardWriteText).toHaveBeenCalledWith(
+        "https://say.waiwai.is/share/share-token",
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Share link copied.")).toBeTruthy();
+    });
+  });
+
   // Export
   it("triggers export download", async () => {
     const blob = new Blob(["test content"], { type: "text/plain" });
@@ -284,7 +326,7 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
-    const select = screen.getByDisplayValue("Export...");
+    const select = screen.getByDisplayValue("Export");
     await user.selectOptions(select, "txt");
 
     await waitFor(() => {
@@ -303,11 +345,11 @@ describe("RecordingDetailPanel", () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
-    const select = screen.getByDisplayValue("Export...");
+    const select = screen.getByDisplayValue("Export");
     await user.selectOptions(select, "markdown");
 
     await waitFor(() => {
-      expect(screen.getByText("Export failed")).toBeTruthy();
+      expect(screen.getByText("Download failed")).toBeTruthy();
     });
   });
 });

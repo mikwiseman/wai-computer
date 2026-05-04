@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   changePassword,
@@ -16,6 +16,7 @@ import {
   listEntities,
   listRecordings,
   logout,
+  restoreRecording,
   search,
   semanticSearch,
   updateActionItem,
@@ -36,16 +37,34 @@ import type {
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
-type DashboardView = "wai" | "library";
+type DashboardView = "wai" | "library" | "trash" | "search" | "actions" | "topics" | "settings";
+type DetailMode = "active" | "trash";
 
 function formatError(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
   return "Unexpected error";
+}
+
+function formatDuration(seconds: number | null): string {
+  if (!seconds || seconds <= 0) return "";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+function typeLabel(type: RecordingType): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function statusText(recording: Recording): string | null {
+  if (recording.failure_message) return recording.failure_message;
+  if (!recording.status || recording.status === "ready") return null;
+  return recording.status.replace("_", " ");
 }
 
 export function DashboardClient() {
@@ -57,9 +76,11 @@ export function DashboardClient() {
   const [user, setUser] = useState<User | null>(null);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [trashRecordings, setTrashRecordings] = useState<Recording[]>([]);
   const [recordingTitle, setRecordingTitle] = useState("");
   const [recordingType, setRecordingType] = useState<RecordingType>("note");
   const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(null);
+  const [selectedMode, setSelectedMode] = useState<DetailMode>("active");
 
   const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -73,13 +94,24 @@ export function DashboardClient() {
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("wai");
 
+  const activeRecordingCount = recordings.length;
+  const pendingActionCount = useMemo(
+    () => actionItems.filter((item) => item.status !== "completed" && item.status !== "cancelled").length,
+    [actionItems],
+  );
+
   async function loadRecordingsState() {
-    const response = await listRecordings({ limit: 50 });
-    setRecordings(response);
+    const active = await listRecordings({ limit: 100 });
+    setRecordings(active);
+  }
+
+  async function loadTrashRecordingsState() {
+    const trashed = await listRecordings({ limit: 100, trashed: true });
+    setTrashRecordings(trashed);
   }
 
   async function loadActionItemsState() {
-    const response = await listActionItems({ limit: 50 });
+    const response = await listActionItems({ limit: 100 });
     setActionItems(response);
   }
 
@@ -128,31 +160,56 @@ export function DashboardClient() {
       });
       setRecordingTitle("");
       await loadRecordingsState();
+      setView("library");
       setMessage("Recording created.");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
   }
 
-  async function handleSelectRecording(recordingId: string) {
+  async function handleSelectRecording(recordingId: string, mode: DetailMode = "active") {
     setMessage(null);
     try {
       const detail = await getRecording(recordingId);
       setSelectedRecording(detail);
+      setSelectedMode(mode);
+      setView(mode === "trash" ? "trash" : "library");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
   }
 
-  async function handleDeleteRecording(recordingId: string) {
+  async function handleDeleteRecording(recordingId: string, options?: { permanent?: boolean }) {
     setMessage(null);
     try {
-      await deleteRecording(recordingId);
+      if (options) {
+        await deleteRecording(recordingId, options);
+      } else {
+        await deleteRecording(recordingId);
+      }
       if (selectedRecording?.id === recordingId) {
         setSelectedRecording(null);
       }
-      await Promise.all([loadRecordingsState(), loadActionItemsState()]);
-      setMessage("Recording deleted.");
+      await Promise.all([
+        loadRecordingsState(),
+        options?.permanent ? loadTrashRecordingsState() : Promise.resolve(),
+        loadActionItemsState(),
+      ]);
+      setMessage(options?.permanent ? "Recording permanently deleted." : "Recording moved to trash.");
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleRestoreRecording(recordingId: string) {
+    setMessage(null);
+    try {
+      await restoreRecording(recordingId);
+      if (selectedRecording?.id === recordingId) {
+        setSelectedRecording(null);
+      }
+      await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
+      setMessage("Recording restored.");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -164,6 +221,7 @@ export function DashboardClient() {
       await generateSummary(recordingId);
       const detail = await getRecording(recordingId);
       setSelectedRecording(detail);
+      setSelectedMode("active");
       await loadActionItemsState();
       setMessage("Summary generated.");
     } catch (error: unknown) {
@@ -173,17 +231,23 @@ export function DashboardClient() {
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const query = searchQuery.trim();
     setMessage(null);
+    if (query.length === 0) {
+      setSearchResponse(null);
+      setMessage("Enter a search query.");
+      return;
+    }
     try {
       if (searchMode === "hybrid") {
-        setSearchResponse(await search({ q: searchQuery, limit: 25, offset: 0 }));
+        setSearchResponse(await search({ q: query, limit: 25, offset: 0 }));
         return;
       }
       if (searchMode === "semantic") {
-        setSearchResponse(await semanticSearch({ q: searchQuery, limit: 25, threshold: 0.3 }));
+        setSearchResponse(await semanticSearch({ q: query, limit: 25, threshold: 0.3 }));
         return;
       }
-      setSearchResponse(await fulltextSearch({ q: searchQuery, limit: 25, offset: 0 }));
+      setSearchResponse(await fulltextSearch({ q: query, limit: 25, offset: 0 }));
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -248,149 +312,219 @@ export function DashboardClient() {
   }
 
   if (initializing) {
-    return <p data-testid="dashboard-loading">Loading dashboard...</p>;
+    return (
+      <div className="loading-screen">
+        <p data-testid="dashboard-loading">Loading dashboard...</p>
+      </div>
+    );
   }
 
+  const navigation = [
+    { key: "wai", label: "Wai", detail: "Ask across notes", count: null },
+    { key: "library", label: "All Recordings", detail: "Library", count: activeRecordingCount },
+    { key: "trash", label: "Trash", detail: "Recently removed", count: trashRecordings.length },
+    { key: "search", label: "Search", detail: "Transcript lookup", count: null },
+    { key: "actions", label: "Action Items", detail: "Follow-ups", count: pendingActionCount },
+    { key: "topics", label: "Topics", detail: "Entities", count: entities.length },
+    { key: "settings", label: "Settings", detail: "Account", count: null },
+  ] as const;
+
   return (
-    <div className="stack">
-      <header className="card row">
-        <div>
-          <h1>WaiSay Web</h1>
-          <p data-testid="user-email">{user?.email ?? "No user"}</p>
-          {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
+    <div className="web-app-shell">
+      <aside className="app-sidebar" aria-label="WaiSay navigation">
+        <div className="brand-block">
+          <div className="brand-mark" aria-hidden="true" />
+          <div>
+            <h1>WaiSay</h1>
+            <p data-testid="user-email">{user?.email ?? "No user"}</p>
+          </div>
         </div>
-        <div className="row">
+
+        <nav className="sidebar-nav">
+          {navigation.map((item) => (
+            <button
+              key={item.key}
+              data-testid={`tab-${item.key}`}
+              type="button"
+              className="sidebar-nav__item"
+              aria-current={view === item.key ? "page" : undefined}
+              onClick={() => {
+                setView(item.key);
+                if (item.key === "trash") {
+                  void loadTrashRecordingsState();
+                }
+              }}
+            >
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </span>
+              {item.count !== null ? <em>{item.count}</em> : null}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
           <button
             data-testid="reload-dashboard"
             type="button"
+            className="ghost-button"
             onClick={() => void initialize({ preserveView: true })}
             disabled={refreshing}
           >
             {refreshing ? "Reloading..." : "Reload"}
           </button>
-          <button data-testid="logout-button" type="button" onClick={handleLogout}>
+          <button data-testid="logout-button" type="button" className="ghost-button" onClick={handleLogout}>
             Logout
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Navigation Tabs */}
-      <nav className="row" style={{ gap: "0.25rem" }}>
-        {(
-          [
-            ["wai", "Wai"],
-            ["library", "Library"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setView(key as DashboardView)}
-            data-testid={`tab-${key}`}
-            style={{
-              background: view === key ? "var(--accent)" : "transparent",
-              color: view === key ? "#fff" : "var(--ink)",
-              border: view === key ? "none" : "1px solid var(--border)",
-              fontWeight: view === key ? 600 : 400,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <main className="workspace">
+        <header className="workspace-header">
+          <div>
+            <p className="workspace-header__eyebrow">{view === "wai" ? "Database" : "Workspace"}</p>
+            <h2>{navigation.find((item) => item.key === view)?.label ?? "WaiSay"}</h2>
+          </div>
+          {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
+        </header>
 
-      {message ? (
-        <p data-testid="dashboard-message" role="status">
-          {message}
-        </p>
-      ) : null}
+        {message ? (
+          <p className="dashboard-message" data-testid="dashboard-message" role="status">
+            {message}
+          </p>
+        ) : null}
 
-      {/* Wai (Global QA) — default view */}
-      {view === "wai" && (
-        <div className="card" style={{ height: "600px", padding: 0 }}>
-          <GlobalQAPanel recordings={recordings} />
-        </div>
-      )}
+        {view === "wai" ? <WaiView recordings={recordings} /> : null}
+        {view === "library" ? renderLibrary("active", recordings) : null}
+        {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
+        {view === "search" ? renderSearchView() : null}
+        {view === "actions" ? renderActionsView() : null}
+        {view === "topics" ? renderTopicsView() : null}
+        {view === "settings" ? renderSettingsView() : null}
+      </main>
+    </div>
+  );
 
-      {/* Library — existing content */}
-      {view === "library" && (
-        <>
-      <section className="card stack">
-        <h2>Recordings</h2>
+  function renderLibrary(mode: DetailMode, items: Recording[]) {
+    const isTrash = mode === "trash";
+    const title = isTrash ? "Trash" : "All Recordings";
 
-        <div className="row" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
-          <AudioUpload
-            onUploadComplete={() => loadRecordingsState()}
-            onError={(msg) => setMessage(msg)}
-          />
-          <RecorderPanel
-            onRecordingComplete={() => loadRecordingsState()}
-            onError={(msg) => setMessage(msg)}
-          />
-        </div>
-
-        <form className="row" onSubmit={handleCreateRecording}>
-          <input
-            data-testid="recording-title"
-            placeholder="Recording title"
-            value={recordingTitle}
-            onChange={(event) => setRecordingTitle(event.target.value)}
-          />
-          <select
-            data-testid="recording-type"
-            value={recordingType}
-            onChange={(event) => setRecordingType(event.target.value as RecordingType)}
-          >
-            <option value="note">note</option>
-            <option value="meeting">meeting</option>
-            <option value="reflection">reflection</option>
-          </select>
-          <button data-testid="create-recording" type="submit">
-            Create
-          </button>
-        </form>
-        <ul data-testid="recording-list">
-          {recordings.map((recording) => (
-            <li key={recording.id} className="row">
+    return (
+      <div className="library-grid">
+        <section className="recording-list-panel" aria-label={title}>
+          <header className="panel-header">
+            <div>
+              <h3>{title}</h3>
+              <p>{items.length} {items.length === 1 ? "recording" : "recordings"}</p>
+            </div>
+            {!isTrash ? (
               <button
                 type="button"
-                onClick={() => handleSelectRecording(recording.id)}
-                data-testid={`select-recording-${recording.id}`}
+                className="ghost-button compact-button"
+                onClick={() => {
+                  setSelectedRecording(null);
+                  setSelectedMode("active");
+                }}
               >
-                {recording.title ?? "(untitled)"} [{recording.type}]
+                New
               </button>
-              <button
-                type="button"
-                onClick={() => handleGenerateSummary(recording.id)}
-                data-testid={`generate-summary-${recording.id}`}
-              >
-                Generate summary
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteRecording(recording.id)}
-                data-testid={`delete-recording-${recording.id}`}
-              >
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+            ) : null}
+          </header>
 
-      {selectedRecording ? (
-        <RecordingDetailPanel
-          recording={selectedRecording}
-          onRecordingUpdate={(updated) => setSelectedRecording(updated)}
-        />
-      ) : null}
+          {items.length === 0 ? (
+            <div className="empty-state">
+              <h3>{isTrash ? "Trash is Empty" : "No Recordings"}</h3>
+              <p>{isTrash ? "Deleted recordings will appear here." : "Record in the browser or import an audio file."}</p>
+            </div>
+          ) : (
+            <ul className="recording-list" data-testid="recording-list">
+              {items.map((recording) => (
+                <li key={recording.id}>
+                  <button
+                    type="button"
+                    className="recording-row"
+                    aria-current={selectedRecording?.id === recording.id && selectedMode === mode ? "true" : undefined}
+                    onClick={() => void handleSelectRecording(recording.id, mode)}
+                    data-testid={`select-recording-${recording.id}`}
+                  >
+                    <span className="recording-row__main">
+                      <strong>{recording.title ?? "(untitled)"} [{recording.type}]</strong>
+                      <small>
+                        {typeLabel(recording.type)} / {formatDate(recording.created_at)}
+                        {recording.duration_seconds ? ` / ${formatDuration(recording.duration_seconds)}` : ""}
+                      </small>
+                    </span>
+                    {statusText(recording) ? <span className="status-pill">{statusText(recording)}</span> : null}
+                  </button>
 
-      <section className="card stack">
-        <h2>Search</h2>
-        <form className="row" onSubmit={handleSearch}>
+                  {!isTrash ? (
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="ghost-button compact-button"
+                        onClick={() => void handleGenerateSummary(recording.id)}
+                        data-testid={`generate-summary-${recording.id}`}
+                      >
+                        Summarize
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button compact-button danger-button"
+                        onClick={() => void handleDeleteRecording(recording.id)}
+                        data-testid={`delete-recording-${recording.id}`}
+                      >
+                        Trash
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="recording-detail-area" aria-label="Recording detail">
+          {selectedRecording && selectedMode === mode ? (
+            <RecordingDetailPanel
+              recording={selectedRecording}
+              mode={mode}
+              onRecordingUpdate={setSelectedRecording}
+              onRestore={(recordingId) => void handleRestoreRecording(recordingId)}
+              onDelete={(recordingId) => void handleDeleteRecording(recordingId, { permanent: isTrash })}
+            />
+          ) : isTrash ? (
+            <div className="empty-state empty-state--center">
+              <h3>Select a Recording</h3>
+              <p>Choose a trashed recording to restore or delete it permanently.</p>
+            </div>
+          ) : (
+            <NewRecordingPane
+              title={recordingTitle}
+              type={recordingType}
+              onTitleChange={setRecordingTitle}
+              onTypeChange={setRecordingType}
+              onSubmit={handleCreateRecording}
+              onComplete={async (detail) => {
+                setSelectedRecording(detail);
+                setSelectedMode("active");
+                await loadRecordingsState();
+              }}
+              onError={setMessage}
+            />
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderSearchView() {
+    return (
+      <section className="tool-panel">
+        <form className="search-form" onSubmit={handleSearch}>
           <input
             data-testid="search-query"
-            placeholder="Search query"
+            placeholder="Search recordings..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
           />
@@ -402,66 +536,100 @@ export function DashboardClient() {
               setSearchResponse(null);
             }}
           >
-            <option value="hybrid">hybrid</option>
-            <option value="semantic">semantic</option>
-            <option value="fts">fts</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="semantic">Semantic</option>
+            <option value="fts">Full text</option>
           </select>
           <button data-testid="search-submit" type="submit">
             Search
           </button>
         </form>
-        <p data-testid="search-total">Total: {searchResponse?.total ?? 0}</p>
+
+        <p data-testid="search-total" className="muted-text">Total: {searchResponse?.total ?? 0}</p>
         {searchResponse?.results && searchResponse.results.length > 0 ? (
-          <ul data-testid="search-results">
+          <ul className="search-results" data-testid="search-results">
             {searchResponse.results.map((result) => (
               <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
                 <strong>{result.recording_title ?? "(untitled)"}</strong>
-                {" "}
-                <span>{result.content}</span>
-                {result.speaker ? <small> — {result.speaker}</small> : null}
-                <small> (score: {result.score.toFixed(2)})</small>
+                <p>{result.content}</p>
+                <div className="search-result-footer">
+                  <small>
+                    {result.speaker ? `${result.speaker} / ` : ""}Score {result.score.toFixed(2)}
+                  </small>
+                  <button
+                    type="button"
+                    className="ghost-button compact-button"
+                    onClick={() => void handleSelectRecording(result.recording_id)}
+                  >
+                    Open
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         ) : searchResponse && searchResponse.total === 0 ? (
-          <p data-testid="search-no-results">No results found.</p>
+          <div className="empty-state" data-testid="search-no-results">
+            <h3>No Results</h3>
+            <p>No matching transcript segments found.</p>
+          </div>
         ) : null}
       </section>
+    );
+  }
 
-      <GlobalQAPanel recordings={recordings} />
-
-      <section className="card stack">
-        <h2>Action Items</h2>
-        <ul data-testid="action-item-list">
-          {actionItems.map((item) => (
-            <li key={item.id} className="row">
-              <span>{item.task}</span>
-              <span>{item.status}</span>
-              <button
-                type="button"
-                data-testid={`set-complete-${item.id}`}
-                onClick={() => handleUpdateAction(item.id, "completed")}
-              >
-                Complete
-              </button>
-              <button
-                type="button"
-                data-testid={`set-pending-${item.id}`}
-                onClick={() => handleUpdateAction(item.id, "pending")}
-              >
-                Pending
-              </button>
-            </li>
-          ))}
-        </ul>
+  function renderActionsView() {
+    return (
+      <section className="tool-panel">
+        {actionItems.length === 0 ? (
+          <div className="empty-state">
+            <h3>No Action Items</h3>
+            <p>Generated follow-ups will appear here after summaries are created.</p>
+          </div>
+        ) : (
+          <ul className="action-list" data-testid="action-item-list">
+            {actionItems.map((item) => (
+              <li key={item.id} className="action-list__item">
+                <div>
+                  <strong>{item.task}</strong>
+                  <p className="metadata-row">
+                    <span>{item.status.replace("_", " ")}</span>
+                    {item.priority ? <span>{item.priority}</span> : null}
+                    {item.owner ? <span>{item.owner}</span> : null}
+                  </p>
+                </div>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    data-testid={`set-complete-${item.id}`}
+                    className="ghost-button compact-button"
+                    onClick={() => void handleUpdateAction(item.id, "completed")}
+                  >
+                    Complete
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`set-pending-${item.id}`}
+                    className="ghost-button compact-button"
+                    onClick={() => void handleUpdateAction(item.id, "pending")}
+                  >
+                    Pending
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
+    );
+  }
 
-      <section className="card stack">
-        <h2>Entities</h2>
-        <form className="row" onSubmit={handleCreateEntity}>
+  function renderTopicsView() {
+    return (
+      <section className="tool-panel">
+        <form className="search-form" onSubmit={handleCreateEntity}>
           <input
             data-testid="entity-name"
-            placeholder="Entity name"
+            placeholder="Topic name"
             value={entityName}
             onChange={(event) => setEntityName(event.target.value)}
             required
@@ -470,13 +638,14 @@ export function DashboardClient() {
             Create topic
           </button>
         </form>
-        <ul data-testid="entity-list">
+        <ul className="topic-list" data-testid="entity-list">
           {entities.map((entity) => (
-            <li key={entity.id} className="row">
+            <li key={entity.id}>
               <span>{entity.name}</span>
               <button
                 type="button"
-                onClick={() => handleDeleteEntity(entity.id)}
+                className="ghost-button compact-button danger-button"
+                onClick={() => void handleDeleteEntity(entity.id)}
                 data-testid={`delete-entity-${entity.id}`}
               >
                 Delete
@@ -485,34 +654,99 @@ export function DashboardClient() {
           ))}
         </ul>
       </section>
+    );
+  }
 
-      <section className="card stack">
-        <h2>Settings</h2>
-        <form className="row" onSubmit={handleChangePassword}>
-          <input
-            data-testid="current-password"
-            type="password"
-            placeholder="Current password"
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            required
-          />
-          <input
-            data-testid="new-password"
-            type="password"
-            placeholder="New password"
-            value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
-            required
-          />
+  function renderSettingsView() {
+    return (
+      <section className="tool-panel settings-panel">
+        <form className="settings-form" onSubmit={handleChangePassword}>
+          <label>
+            <span>Current password</span>
+            <input
+              data-testid="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            <span>New password</span>
+            <input
+              data-testid="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              required
+            />
+          </label>
           <button data-testid="change-password" type="submit">
             Change password
           </button>
         </form>
       </section>
-        </>
-      )}
+    );
+  }
+}
 
+function WaiView({ recordings }: { recordings: Recording[] }) {
+  return (
+    <div className="wai-panel">
+      <GlobalQAPanel recordings={recordings} />
     </div>
+  );
+}
+
+function NewRecordingPane({
+  title,
+  type,
+  onTitleChange,
+  onTypeChange,
+  onSubmit,
+  onComplete,
+  onError,
+}: {
+  title: string;
+  type: RecordingType;
+  onTitleChange: (value: string) => void;
+  onTypeChange: (value: RecordingType) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onComplete: (detail: RecordingDetail) => void | Promise<void>;
+  onError: (message: string) => void;
+}) {
+  return (
+    <section className="new-recording-panel">
+      <div className="new-recording-panel__intro">
+        <div className="app-glyph" aria-hidden="true" />
+        <h3>New Recording</h3>
+      </div>
+
+      <div className="recording-options">
+        <RecorderPanel onRecordingComplete={onComplete} onError={onError} />
+        <AudioUpload onUploadComplete={onComplete} onError={onError} />
+      </div>
+
+      <form className="manual-note-form" onSubmit={onSubmit}>
+        <input
+          data-testid="recording-title"
+          placeholder="Create an empty note..."
+          value={title}
+          onChange={(event) => onTitleChange(event.target.value)}
+        />
+        <select
+          data-testid="recording-type"
+          value={type}
+          onChange={(event) => onTypeChange(event.target.value as RecordingType)}
+        >
+          <option value="note">Note</option>
+          <option value="meeting">Meeting</option>
+          <option value="reflection">Reflection</option>
+        </select>
+        <button data-testid="create-recording" type="submit">
+          Create
+        </button>
+      </form>
+    </section>
   );
 }

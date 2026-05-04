@@ -623,6 +623,10 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(id)/restore")
     }
 
+    public func createRecordingShareLink(id: String) async throws -> RecordingShareLink {
+        return try await request(.POST, path: "/api/recordings/\(id)/share")
+    }
+
     public func getTranscript(recordingId: String) async throws -> [Segment] {
         return try await request(.GET, path: "/api/recordings/\(recordingId)/transcript")
     }

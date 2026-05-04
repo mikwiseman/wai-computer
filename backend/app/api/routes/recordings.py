@@ -2,8 +2,10 @@
 
 import logging
 import re
+import secrets
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -26,7 +28,15 @@ from app.core.observability import (
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
 from app.core.transcription import transcribe_audio_file
 from app.models.highlight import Highlight
-from app.models.recording import ActionItem, Folder, Recording, RecordingStatus, Segment, Summary
+from app.models.recording import (
+    ActionItem,
+    Folder,
+    Recording,
+    RecordingShare,
+    RecordingStatus,
+    Segment,
+    Summary,
+)
 
 logger = logging.getLogger(__name__)
 app_settings = get_settings()
@@ -217,6 +227,31 @@ class RecordingResponse(BaseModel):
 class RecordingDetailResponse(RecordingResponse):
     """Detailed response for a recording including segments and summary."""
 
+    segments: list[SegmentResponse]
+    summary: SummaryResponse | None
+    action_items: list[ActionItemResponse]
+    highlights: list[HighlightResponse]
+
+
+class RecordingShareLinkResponse(BaseModel):
+    """Response returned when an owner creates a public share link."""
+
+    recording_id: str
+    token: str
+    url: str
+    created_at: datetime
+
+
+class SharedRecordingResponse(BaseModel):
+    """Public, read-only recording payload exposed by a share token."""
+
+    id: str
+    title: str | None
+    type: str
+    duration_seconds: int | None
+    language: str | None
+    created_at: datetime
+    shared_at: datetime
     segments: list[SegmentResponse]
     summary: SummaryResponse | None
     action_items: list[ActionItemResponse]
@@ -448,6 +483,59 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
 def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse:
     return RecordingDetailResponse(
         **_serialize_recording(recording).model_dump(),
+        segments=[
+            SegmentResponse(
+                id=str(s.id),
+                speaker=s.speaker,
+                content=s.content,
+                start_ms=s.start_ms,
+                end_ms=s.end_ms,
+                confidence=s.confidence,
+            )
+            for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
+        ],
+        summary=_serialize_summary(recording.summary),
+        action_items=[_serialize_action_item(a) for a in recording.action_items],
+        highlights=[_serialize_highlight(h) for h in recording.highlights],
+    )
+
+
+def _share_token_hash(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def _shared_recording_url(token: str) -> str:
+    return f"{app_settings.frontend_url.rstrip('/')}/share/{token}"
+
+
+async def _generate_unique_share_token(db: Database) -> tuple[str, str]:
+    for _ in range(5):
+        token = secrets.token_urlsafe(32)
+        token_hash = _share_token_hash(token)
+        existing_result = await db.execute(
+            select(RecordingShare.id).where(RecordingShare.token_hash == token_hash)
+        )
+        if existing_result.scalar_one_or_none() is None:
+            return token, token_hash
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Unable to create a share link. Please try again.",
+    )
+
+
+def _serialize_shared_recording(
+    recording: Recording,
+    share: RecordingShare,
+) -> SharedRecordingResponse:
+    return SharedRecordingResponse(
+        id=str(recording.id),
+        title=recording.title,
+        type=recording.type,
+        duration_seconds=recording.duration_seconds,
+        language=recording.language,
+        created_at=recording.created_at,
+        shared_at=share.created_at,
         segments=[
             SegmentResponse(
                 id=str(s.id),
@@ -1023,6 +1111,71 @@ async def create_recording(
     logger.info("recording created type=%s language=%s", request.type, language)
 
     return _serialize_recording(recording)
+
+
+@router.post(
+    "/{recording_id}/share",
+    response_model=RecordingShareLinkResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_recording_share_link(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> RecordingShareLinkResponse:
+    """Create a public, read-only share link for an active recording."""
+    recording = await _load_active_recording(recording_id, user.id, db)
+
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    token, token_hash = await _generate_unique_share_token(db)
+    share = RecordingShare(recording_id=recording.id, token_hash=token_hash)
+    db.add(share)
+    await db.flush()
+
+    add_sentry_breadcrumb(
+        category="recording",
+        message="Created recording share link",
+        data={"recording_id": str(recording.id)},
+    )
+
+    return RecordingShareLinkResponse(
+        recording_id=str(recording.id),
+        token=token,
+        url=_shared_recording_url(token),
+        created_at=share.created_at,
+    )
+
+
+@router.get("/shared/{token}", response_model=SharedRecordingResponse)
+async def get_shared_recording(
+    token: str,
+    db: Database,
+) -> SharedRecordingResponse:
+    """Open a public, read-only recording by share token."""
+    if len(token) < 20 or len(token) > 256:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
+
+    result = await db.execute(
+        select(RecordingShare)
+        .where(
+            RecordingShare.token_hash == _share_token_hash(token),
+            RecordingShare.revoked_at.is_(None),
+        )
+        .options(
+            selectinload(RecordingShare.recording).selectinload(Recording.segments),
+            selectinload(RecordingShare.recording).selectinload(Recording.summary),
+            selectinload(RecordingShare.recording).selectinload(Recording.action_items),
+            selectinload(RecordingShare.recording).selectinload(Recording.highlights),
+        )
+    )
+    share = result.scalar_one_or_none()
+
+    if share is None or share.recording.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shared note not found")
+
+    return _serialize_shared_recording(share.recording, share)
 
 
 @router.get("/{recording_id}", response_model=RecordingDetailResponse)

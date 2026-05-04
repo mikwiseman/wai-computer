@@ -19,6 +19,8 @@ struct MacRecordingDetailView: View {
     @State private var showDeleteConfirmation = false
     @State private var loadTask: Task<Void, Never>?
     @State private var copiedSection: String?
+    @State private var isSharing = false
+    @State private var pendingSharePayload: SharePickerPayload?
 
     init(
         recordingId: String,
@@ -82,6 +84,10 @@ struct MacRecordingDetailView: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("recording-detail-root")
+                .background(
+                    SharePickerPresenter(payload: $pendingSharePayload)
+                        .frame(width: 0, height: 0)
+                )
             } else {
                 ContentUnavailableView(
                     "Recording Not Found",
@@ -190,6 +196,28 @@ struct MacRecordingDetailView: View {
         }
     }
 
+    @MainActor
+    private func shareRecording(_ detail: RecordingDetail) async {
+        isSharing = true
+        defer { isSharing = false }
+
+        do {
+            let link = try await appState.getAPIClient().createRecordingShareLink(id: detail.id)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
+            copiedSection = "share-link"
+            pendingSharePayload = SharePickerPayload(url: link.url)
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                if copiedSection == "share-link" {
+                    copiedSection = nil
+                }
+            }
+        } catch {
+            viewModel.error = error.userFacingMessage(context: .library)
+        }
+    }
+
     private func detailHeader(_ detail: RecordingDetail) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -237,6 +265,22 @@ struct MacRecordingDetailView: View {
                     }
                     .buttonStyle(WaiGhostButtonStyle())
                     .help("Export Recording")
+                }
+
+                if mode == .active {
+                    Button {
+                        Task {
+                            await shareRecording(detail)
+                        }
+                    } label: {
+                        Label(
+                            copiedSection == "share-link" ? "Copied" : "Share",
+                            systemImage: copiedSection == "share-link" ? "checkmark" : "square.and.arrow.up"
+                        )
+                    }
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .help("Create a web share link")
+                    .disabled(isSharing)
                 }
 
                 if mode == .active {
@@ -539,6 +583,29 @@ struct MacRecordingDetailView: View {
                 Spacer()
             }
             .accessibilityIdentifier("actions-empty-state")
+        }
+    }
+}
+
+private struct SharePickerPayload: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct SharePickerPresenter: NSViewRepresentable {
+    @Binding var payload: SharePickerPayload?
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let payload else { return }
+
+        DispatchQueue.main.async {
+            let picker = NSSharingServicePicker(items: [payload.url])
+            picker.show(relativeTo: nsView.bounds, of: nsView, preferredEdge: .minY)
+            self.payload = nil
         }
     }
 }
