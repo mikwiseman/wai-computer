@@ -17,6 +17,7 @@ SPARKLE_KEYCHAIN_ACCOUNT=${SPARKLE_KEYCHAIN_ACCOUNT:-is.waiwai.say.sparkle}
 SPARKLE_PRIVATE_KEY=${SPARKLE_PRIVATE_KEY:-}
 SPARKLE_PRIVATE_KEY_FILE=${SPARKLE_PRIVATE_KEY_FILE:-}
 SPARKLE_SIGN_UPDATE_BIN=${SPARKLE_SIGN_UPDATE_BIN:-}
+APPSTORECONNECT_CONFIG=${APPSTORECONNECT_CONFIG:-"$APPSTORECONNECT_CONFIG"}
 NOTARY_PROFILE=${NOTARY_KEYCHAIN_PROFILE:-}
 NOTARY_KEY=${NOTARY_KEY:-}
 NOTARY_KEY_ID=${NOTARY_KEY_ID:-}
@@ -56,6 +57,51 @@ require_tool() {
   fi
 }
 
+expand_user_path() {
+  case "$1" in
+    "~")
+      printf '%s\n' "$HOME"
+      ;;
+    "~/"*)
+      printf '%s\n' "$HOME/${1#"~/"}"
+      ;;
+    *)
+      printf '%s\n' "$1"
+      ;;
+  esac
+}
+
+read_appstoreconnect_config_value() {
+  if [[ ! -f "$APPSTORECONNECT_CONFIG" ]]; then
+    return 0
+  fi
+
+  /usr/bin/plutil -extract "$1" raw -o - "$APPSTORECONNECT_CONFIG" 2>/dev/null || true
+}
+
+load_notary_defaults_from_appstoreconnect_config() {
+  if [[ -n "$NOTARY_PROFILE" || -n "$NOTARY_KEY" || -n "$NOTARY_KEY_ID" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$APPSTORECONNECT_CONFIG" ]]; then
+    return 0
+  fi
+
+  local config_key config_key_id config_issuer
+  config_key=$(read_appstoreconnect_config_value key_filepath)
+  config_key_id=$(read_appstoreconnect_config_value key_id)
+  config_issuer=$(read_appstoreconnect_config_value issuer_id)
+
+  if [[ -n "$config_key" && -n "$config_key_id" ]]; then
+    NOTARY_KEY=$(expand_user_path "$config_key")
+    NOTARY_KEY_ID="$config_key_id"
+    if [[ -n "$config_issuer" ]]; then
+      NOTARY_ISSUER="$config_issuer"
+    fi
+  fi
+}
+
 build_notary_args() {
   NOTARY_ARGS=()
 
@@ -65,6 +111,10 @@ build_notary_args() {
   fi
 
   if [[ -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" ]]; then
+    if [[ ! -f "$NOTARY_KEY" ]]; then
+      echo "Notary API key file not found: $NOTARY_KEY" >&2
+      return 1
+    fi
     NOTARY_ARGS=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID")
     if [[ -n "$NOTARY_ISSUER" ]]; then
       NOTARY_ARGS+=(--issuer "$NOTARY_ISSUER")
@@ -78,13 +128,25 @@ build_notary_args() {
 notarize_file() {
   local artifact_path=$1
   local artifact_label=$2
+  local notary_output status submission_id
 
   if ! build_notary_args; then
     return 1
   fi
 
   echo "Submitting ${artifact_label} for notarization..."
-  xcrun notarytool submit "$artifact_path" "${NOTARY_ARGS[@]}" --wait
+  notary_output=$(xcrun notarytool submit "$artifact_path" "${NOTARY_ARGS[@]}" --wait --output-format json)
+  printf '%s\n' "$notary_output"
+
+  status=$(printf '%s' "$notary_output" | /usr/bin/plutil -extract status raw -o - - 2>/dev/null || true)
+  submission_id=$(printf '%s' "$notary_output" | /usr/bin/plutil -extract id raw -o - - 2>/dev/null || true)
+  if [[ "$status" != "Accepted" ]]; then
+    echo "Notarization failed for ${artifact_label}: status ${status:-unknown}, id ${submission_id:-unknown}." >&2
+    if [[ -n "$submission_id" ]]; then
+      xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" || true
+    fi
+    return 1
+  fi
 }
 
 gatekeeper_check() {
@@ -155,6 +217,46 @@ detach_sparse_image() {
   return 1
 }
 
+sign_bundle_if_present() {
+  local bundle_path=$1
+  shift
+
+  if [[ ! -e "$bundle_path" ]]; then
+    return 0
+  fi
+
+  codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime "$@" "$bundle_path"
+  codesign --verify --strict --verbose=2 "$bundle_path"
+}
+
+resign_sparkle_for_distribution() {
+  local sparkle_framework="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+  local sparkle_version_dir current_version
+
+  if [[ ! -d "$sparkle_framework" ]]; then
+    return 0
+  fi
+
+  current_version=$(readlink "$sparkle_framework/Versions/Current" 2>/dev/null || true)
+  if [[ -n "$current_version" && -d "$sparkle_framework/Versions/$current_version" ]]; then
+    sparkle_version_dir="$sparkle_framework/Versions/$current_version"
+  else
+    sparkle_version_dir="$sparkle_framework/Versions/Current"
+  fi
+
+  if [[ ! -d "$sparkle_version_dir" ]]; then
+    echo "Sparkle framework version directory not found under $sparkle_framework" >&2
+    exit 1
+  fi
+
+  echo "Re-signing Sparkle nested code for Developer ID distribution..."
+  sign_bundle_if_present "$sparkle_version_dir/XPCServices/Installer.xpc" --preserve-metadata=identifier,entitlements
+  sign_bundle_if_present "$sparkle_version_dir/XPCServices/Downloader.xpc" --preserve-metadata=identifier,entitlements
+  sign_bundle_if_present "$sparkle_version_dir/Autoupdate"
+  sign_bundle_if_present "$sparkle_version_dir/Updater.app"
+  sign_bundle_if_present "$sparkle_framework"
+}
+
 require_tool xcodebuild
 require_tool codesign
 require_tool hdiutil
@@ -162,6 +264,8 @@ require_tool ditto
 require_tool shasum
 require_tool file
 require_tool xcrun
+
+load_notary_defaults_from_appstoreconnect_config
 
 find_sign_update_bin() {
   if [[ -n "$SPARKLE_SIGN_UPDATE_BIN" ]]; then
@@ -240,6 +344,7 @@ APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
 UNIVERSAL_INFO=$(file "$APP_BINARY")
 echo "$UNIVERSAL_INFO"
 
+resign_sparkle_for_distribution
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 if build_notary_args; then
@@ -250,10 +355,10 @@ if build_notary_args; then
   xcrun stapler validate "$APP_PATH"
   NOTARIZATION_MODE="app-and-dmg"
 elif [[ "$REQUIRE_NOTARIZATION" == "1" ]]; then
-  echo "Notarization is required but credentials are missing. Set NOTARY_KEYCHAIN_PROFILE or NOTARY_KEY + NOTARY_KEY_ID [+ NOTARY_ISSUER]." >&2
+  echo "Notarization is required but credentials are missing. Set NOTARY_KEYCHAIN_PROFILE, NOTARY_KEY + NOTARY_KEY_ID [+ NOTARY_ISSUER], or APPSTORECONNECT_CONFIG." >&2
   exit 1
 else
-  echo "Skipping notarization: set NOTARY_KEYCHAIN_PROFILE or NOTARY_KEY + NOTARY_KEY_ID [+ NOTARY_ISSUER]."
+  echo "Skipping notarization: set NOTARY_KEYCHAIN_PROFILE, NOTARY_KEY + NOTARY_KEY_ID [+ NOTARY_ISSUER], or APPSTORECONNECT_CONFIG."
 fi
 
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
@@ -264,7 +369,7 @@ DMG_MOUNT="$TMP_DIR/dmg-mount"
 rm -f "$DMG_PATH" "$SPARSE_PATH"
 
 echo "Creating sparse image..."
-hdiutil create -size 200m -fs HFS+ -volname "$DMG_VOLUME_NAME" -type SPARSE "$SPARSE_PATH"
+hdiutil create -size 200m -fs APFS -volname "$DMG_VOLUME_NAME" -type SPARSE "$SPARSE_PATH"
 
 echo "Mounting sparse image to custom mount point..."
 mkdir -p "$DMG_MOUNT"
@@ -287,7 +392,7 @@ echo "Detaching sparse image..."
 detach_sparse_image
 
 echo "Converting to compressed DMG..."
-hdiutil convert "$SPARSE_PATH" -format UDZO -o "$DMG_PATH" -quiet
+hdiutil convert "$SPARSE_PATH" -format ULFO -o "$DMG_PATH" -quiet
 
 echo "Signing DMG..."
 codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
