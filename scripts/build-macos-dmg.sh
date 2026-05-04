@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 PROJECT_PATH="$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj"
-SCHEME="WaiSay"
+SCHEME=${MACOS_SCHEME:-WaiSayDirect}
+CONFIGURATION=${MACOS_CONFIGURATION:-Release}
 APP_NAME="WaiSay"
 DMG_VOLUME_NAME=${MACOS_DMG_VOLUME_NAME:-"${APP_NAME} Installer"}
 APP_ICON_PATH="$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
@@ -166,7 +167,7 @@ echo "Archiving ${APP_NAME} with Developer ID signing..."
 xcodebuild archive \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
-  -configuration Release \
+  -configuration "$CONFIGURATION" \
   -destination 'generic/platform=macOS' \
   -archivePath "$ARCHIVE_PATH" \
   DEVELOPMENT_TEAM="$TEAM_ID" \

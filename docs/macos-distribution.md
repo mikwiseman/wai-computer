@@ -34,7 +34,7 @@ MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh
 
 The script:
 
-1. archives the macOS app in `Release`
+1. archives the direct-distribution macOS app with the `WaiSayDirect` scheme in `Release`
 2. signs it with the configured `Developer ID Application` identity
 3. enables the hardened runtime for the archive build
 4. optionally notarizes the app payload when explicit credentials are provided
@@ -96,6 +96,13 @@ Strict-release controls:
 export MACOS_RELEASE_STRICT=1          # enables both checks below
 export MACOS_REQUIRE_NOTARIZATION=1    # fail if notarization credentials are missing or submit fails
 export MACOS_REQUIRE_GATEKEEPER=1      # fail if spctl rejects the app or DMG
+```
+
+Build controls:
+
+```bash
+export MACOS_SCHEME=WaiSayDirect       # default direct-distribution scheme
+export MACOS_CONFIGURATION=Release     # default build configuration
 ```
 
 For clean developer-machine QA before validating a release build:
