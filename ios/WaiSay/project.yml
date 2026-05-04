@@ -23,7 +23,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say
         DEVELOPMENT_TEAM: R4A779QVVY
         MARKETING_VERSION: "1.0.3"
-        CURRENT_PROJECT_VERSION: "19"
+        CURRENT_PROJECT_VERSION: "20"
         INFOPLIST_FILE: WaiSay/Info.plist
         SWIFT_VERSION: "5.9"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
@@ -34,3 +34,4 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say.dev
     dependencies:
       - package: WaiSayKit
+    scheme: {}
