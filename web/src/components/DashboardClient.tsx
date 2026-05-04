@@ -383,7 +383,6 @@ export function DashboardClient() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="workspace-header__eyebrow">{view === "wai" ? "Database" : "Workspace"}</p>
             <h2>{navigation.find((item) => item.key === view)?.label ?? "WaiSay"}</h2>
           </div>
           {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
@@ -449,7 +448,7 @@ export function DashboardClient() {
                     data-testid={`select-recording-${recording.id}`}
                   >
                     <span className="recording-row__main">
-                      <strong>{recording.title ?? "(untitled)"} [{recording.type}]</strong>
+                      <strong>{recording.title ?? "(untitled)"}</strong>
                       <small>
                         {typeLabel(recording.type)} / {formatDate(recording.created_at)}
                         {recording.duration_seconds ? ` / ${formatDuration(recording.duration_seconds)}` : ""}

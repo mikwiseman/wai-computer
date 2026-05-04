@@ -61,38 +61,51 @@ export function AuthForm({ mode, onSuccess }: AuthFormProps) {
   }
 
   return (
-    <section className="card">
-      <h1>{mode === "login" ? "Sign In" : "Create Account"}</h1>
-      <form onSubmit={onSubmit} className="stack">
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          data-testid="auth-email"
-          name="email"
-          type="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
+    <section className="auth-card">
+      <div className="auth-card__brand">
+        <div className="brand-mark" aria-hidden="true" />
+        <span>WaiSay</span>
+      </div>
 
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          data-testid="auth-password"
-          name="password"
-          type="password"
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
+      <header className="auth-card__header">
+        <h1>{mode === "login" ? "Sign In" : "Create Account"}</h1>
+      </header>
 
-        <button data-testid="auth-submit" type="submit" disabled={loading}>
+      <form onSubmit={onSubmit} className="auth-form">
+        <label htmlFor="email">
+          <span>Email</span>
+          <input
+            id="email"
+            data-testid="auth-email"
+            name="email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+
+        <label htmlFor="password">
+          <span>Password</span>
+          <input
+            id="password"
+            data-testid="auth-password"
+            name="password"
+            type="password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+
+        <button className="primary-button" data-testid="auth-submit" type="submit" disabled={loading}>
           {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
         </button>
       </form>
 
-      <div className="row">
+      <div className="auth-card__secondary">
         <button
+          className="ghost-button"
           data-testid="magic-link-button"
           type="button"
           onClick={onSendMagicLink}
@@ -106,7 +119,7 @@ export function AuthForm({ mode, onSuccess }: AuthFormProps) {
       </div>
 
       {message ? (
-        <p data-testid="auth-message" role="status">
+        <p className="auth-card__message" data-testid="auth-message" role="status">
           {message}
         </p>
       ) : null}

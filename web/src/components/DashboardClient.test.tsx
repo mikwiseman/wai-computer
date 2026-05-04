@@ -444,7 +444,8 @@ describe("DashboardClient", () => {
     await openLibraryView(user);
 
     await waitFor(() => {
-      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("(untitled) [note]");
+      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("(untitled)");
+      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Note / Feb 27, 2026");
     });
 
     await user.click(screen.getByTestId("delete-recording-r2"));

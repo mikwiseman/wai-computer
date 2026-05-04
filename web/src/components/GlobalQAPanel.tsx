@@ -87,7 +87,7 @@ export function GlobalQAPanel({ recordings }: GlobalQAPanelProps) {
     <section className="qa-panel">
       <header className="qa-panel__header">
         <h2>Ask Wai</h2>
-        <p>Search and reason across your recordings.</p>
+        <p>{recordings.length} {recordings.length === 1 ? "recording" : "recordings"}</p>
       </header>
 
       {recordings.length > 0 ? (
@@ -109,8 +109,7 @@ export function GlobalQAPanel({ recordings }: GlobalQAPanelProps) {
       <div className="qa-output">
         {!answer && !loading ? (
           <div className="empty-state empty-state--center">
-            <h3>Ask about anything you have recorded</h3>
-            <p>Use all notes or narrow the scope to specific recordings.</p>
+            <h3>No answer yet</h3>
           </div>
         ) : null}
 

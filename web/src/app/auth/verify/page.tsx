@@ -8,7 +8,7 @@ export default async function VerifyMagicLinkPage({ searchParams }: VerifyPagePr
   const params = await searchParams;
 
   return (
-    <main className="container">
+    <main className="container auth-page">
       <VerifyMagicLinkClient token={params.token ?? null} />
     </main>
   );
