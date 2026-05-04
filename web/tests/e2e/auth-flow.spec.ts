@@ -264,11 +264,28 @@ test.describe("Auth flow", () => {
     await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
   });
 
-  test("home page redirects to login", async ({ page }) => {
+  test("home page shows download CTAs", async ({ page }) => {
     await page.goto("/");
 
-    // The root page does a server-side redirect to /login
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/$/);
+
+    const macLink = page.getByTestId("download-mac");
+    await expect(macLink).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiSay-latest.dmg",
+    );
+    await expect(macLink).toHaveAttribute("download", "");
+
+    const iosLink = page.getByTestId("download-ios");
+    await expect(iosLink).toHaveAttribute(
+      "href",
+      "https://apps.apple.com/app/waisay/id6761768729",
+    );
+
+    await expect(page.getByRole("link", { name: /sign in/i })).toHaveAttribute(
+      "href",
+      "/login",
+    );
   });
 
   test("magic link verification with valid token redirects to dashboard", async ({ page }) => {
