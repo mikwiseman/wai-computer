@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     elevenlabs_recording_agent_id: str = ""
     elevenlabs_speech_to_text_model: str = "scribe_v2"
     elevenlabs_realtime_speech_to_text_model: str = "scribe_v2_realtime"
+    elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
     # Claude/Anthropic

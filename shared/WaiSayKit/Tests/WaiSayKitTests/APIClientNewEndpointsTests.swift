@@ -493,7 +493,8 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "language":"multi",
                 "channels":1,
                 "model":"scribe_v2_realtime",
-                "commit_strategy":"vad"
+                "commit_strategy":"vad",
+                "no_verbatim":true
             }
             """.data(using: .utf8)!
             return (response, payload)
@@ -504,6 +505,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(config.token, "sutkn_123")
         XCTAssertEqual(config.model, "scribe_v2_realtime")
         XCTAssertEqual(config.commitStrategy, "vad")
+        XCTAssertEqual(config.noVerbatim, true)
     }
 
     func testCreateRealtimeVoiceSessionSendsMode() async throws {

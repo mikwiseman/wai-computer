@@ -33,6 +33,7 @@ class RealtimeTranscriptionSessionResponse(BaseModel):
     model: str
     keep_alive_interval_seconds: int | None = None
     commit_strategy: str | None = None
+    no_verbatim: bool
 
 
 @router.post("/session", response_model=RealtimeTranscriptionSessionResponse)
@@ -94,4 +95,5 @@ async def create_session(
         model=session.model,
         keep_alive_interval_seconds=session.keep_alive_interval_seconds,
         commit_strategy=session.commit_strategy,
+        no_verbatim=session.no_verbatim,
     )

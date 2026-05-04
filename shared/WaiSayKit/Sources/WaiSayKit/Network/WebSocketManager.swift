@@ -320,7 +320,8 @@ public actor WebSocketManager {
     func buildElevenLabsURL(
         token: String,
         model: String,
-        commitStrategy: String?
+        commitStrategy: String?,
+        noVerbatim: Bool = false
     ) throws -> URL {
         var components = URLComponents(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")
         var queryItems = [
@@ -336,6 +337,9 @@ public actor WebSocketManager {
         }
         if let commitStrategy, !commitStrategy.isEmpty {
             queryItems.append(URLQueryItem(name: "commit_strategy", value: commitStrategy))
+        }
+        if noVerbatim {
+            queryItems.append(URLQueryItem(name: "no_verbatim", value: "true"))
         }
         components?.queryItems = queryItems
         guard let url = components?.url else {
@@ -358,7 +362,8 @@ public actor WebSocketManager {
         let url = try buildElevenLabsURL(
             token: sessionConfig.token,
             model: sessionConfig.model,
-            commitStrategy: sessionConfig.commitStrategy
+            commitStrategy: sessionConfig.commitStrategy,
+            noVerbatim: sessionConfig.noVerbatim ?? false
         )
 
         var request = URLRequest(url: url)

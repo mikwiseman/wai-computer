@@ -179,6 +179,8 @@ async def transcribe_audio_file(
         "diarize": "true" if (resolved_channels or 1) <= 1 else "false",
         "tag_audio_events": "true",
     }
+    if settings.elevenlabs_no_verbatim:
+        form_data["no_verbatim"] = "true"
     if language and language != "multi":
         form_data["language_code"] = language
     if resolved_channels and resolved_channels > 1:
