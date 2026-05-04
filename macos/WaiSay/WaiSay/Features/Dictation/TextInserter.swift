@@ -25,13 +25,18 @@ enum TextInsertionError: LocalizedError {
 
 /// Inserts text into the target application via clipboard + simulated Cmd+V.
 ///
+/// In the Mac App Store build this only writes the dictated text to the
+/// clipboard. Synthetic key posting is kept behind the Sparkle build flag
+/// because App Review rejects keystroke automation for non-accessibility use.
+///
+#if SPARKLE
 /// Uses `CGEvent.post` with `combinedSessionState` + `cgSessionEventTap` — the
-/// same approach as Maccy (a sandboxed Mac App Store clipboard manager). This
-/// avoids `AppleScript`/`System Events`, which the App Sandbox blocks without a
-/// `scripting-targets` entitlement for `com.apple.systemevents`.
+/// direct-distribution path for users who grant keyboard automation outside
+/// Mac App Store review.
 ///
 /// On any failure the text stays on the clipboard so the user can paste
 /// manually with ⌘V, and the error surfaces a message that says exactly that.
+#endif
 enum TextInserter {
 
     /// Insert `text` into `targetApp`. If `targetApp` is nil, paste goes to the
@@ -45,6 +50,15 @@ enum TextInserter {
         }
 
         let pasteboard = NSPasteboard.general
+
+        #if !SPARKLE
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            log.error("Clipboard write failed for \(text.count, privacy: .public)-char payload")
+            throw TextInsertionError.clipboardWriteFailed
+        }
+        log.info("Dictated text copied to clipboard for App Store build")
+        #else
         let snapshot = saveClipboard(pasteboard)
 
         pasteboard.clearContents()
@@ -83,10 +97,12 @@ enum TextInserter {
         // prior clipboard contents if we still own the pasteboard.
         try? await Task.sleep(for: .milliseconds(300))
         restoreClipboard(pasteboard, snapshot: snapshot, insertedChangeCount: insertedChangeCount)
+        #endif
     }
 
     // MARK: - Private
 
+    #if SPARKLE
     /// Re-focus `target`. Returns true if the app is now active (or becomes
     /// active within a short window), false otherwise.
     private static func activateTarget(_ target: NSRunningApplication?) -> Bool {
@@ -182,4 +198,5 @@ enum TextInserter {
             pasteboard.setData(item.data, forType: item.type)
         }
     }
+    #endif
 }
