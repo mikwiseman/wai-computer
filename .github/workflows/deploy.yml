@@ -147,6 +147,16 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
+      - name: Build direct macOS app
+        run: >
+          xcodebuild
+          -project macos/WaiSay/WaiSay.xcodeproj
+          -scheme WaiSayDirect
+          -configuration Release
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
       - name: Build iOS app
         run: >
           xcodebuild
