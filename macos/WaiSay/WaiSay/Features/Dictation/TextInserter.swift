@@ -59,14 +59,11 @@ enum TextInserter {
         }
         log.info("Dictated text copied to clipboard for App Store build")
         #else
-        let snapshot = saveClipboard(pasteboard)
-
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
             log.error("Clipboard write failed for \(text.count, privacy: .public)-char payload")
             throw TextInsertionError.clipboardWriteFailed
         }
-        let insertedChangeCount = pasteboard.changeCount
 
         // Re-focus the app that had focus when the hotkey was pressed.
         // If activation fails, we still fall through so the user ends up with
@@ -92,11 +89,7 @@ enum TextInserter {
             log.error("Paste simulation failed")
             throw TextInsertionError.pasteSimulationFailed
         }
-
-        // Wait for the destination app to consume the paste, then restore the
-        // prior clipboard contents if we still own the pasteboard.
-        try? await Task.sleep(for: .milliseconds(300))
-        restoreClipboard(pasteboard, snapshot: snapshot, insertedChangeCount: insertedChangeCount)
+        log.info("Dictated text inserted and left on clipboard")
         #endif
     }
 
@@ -158,45 +151,5 @@ enum TextInserter {
         keyUp.post(tap: .cgSessionEventTap)
     }
 
-    // MARK: - Clipboard snapshot & restore
-
-    private struct ClipboardItem {
-        let type: NSPasteboard.PasteboardType
-        let data: Data
-    }
-
-    private struct ClipboardSnapshot {
-        let items: [ClipboardItem]
-        let wasEmpty: Bool
-    }
-
-    private static func saveClipboard(_ pasteboard: NSPasteboard) -> ClipboardSnapshot {
-        var items: [ClipboardItem] = []
-        guard let types = pasteboard.types else {
-            return ClipboardSnapshot(items: [], wasEmpty: true)
-        }
-        for type in types {
-            if let data = pasteboard.data(forType: type) {
-                items.append(ClipboardItem(type: type, data: data))
-            }
-        }
-        return ClipboardSnapshot(items: items, wasEmpty: items.isEmpty)
-    }
-
-    /// Restore the previous clipboard contents only if nothing else wrote to
-    /// the pasteboard in the meantime. If someone else (e.g. a clipboard
-    /// manager) captured our dictated text, leave it alone.
-    private static func restoreClipboard(
-        _ pasteboard: NSPasteboard,
-        snapshot: ClipboardSnapshot,
-        insertedChangeCount: Int
-    ) {
-        guard pasteboard.changeCount == insertedChangeCount else { return }
-        pasteboard.clearContents()
-        guard !snapshot.wasEmpty else { return }
-        for item in snapshot.items {
-            pasteboard.setData(item.data, forType: item.type)
-        }
-    }
     #endif
 }
