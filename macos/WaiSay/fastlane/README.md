@@ -23,6 +23,22 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Build and upload to TestFlight
 
+### mac publish_dmg
+
+```sh
+[bundle exec] fastlane mac publish_dmg
+```
+
+Build strict notarized DMG and publish it to say.waiwai.is
+
+### mac upload_all
+
+```sh
+[bundle exec] fastlane mac upload_all
+```
+
+Upload macOS App Store build to TestFlight and publish direct DMG to web
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.

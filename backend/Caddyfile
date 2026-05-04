@@ -1,4 +1,10 @@
 say.waiwai.is {
+    handle_path /releases/macos/* {
+        root * /srv/releases/macos
+        file_server
+        header Cache-Control "public, max-age=300"
+    }
+
     handle /api/* {
         reverse_proxy api:8000
     }

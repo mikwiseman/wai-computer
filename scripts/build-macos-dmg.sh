@@ -11,6 +11,12 @@ APP_ICON_PATH="$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/
 TEAM_ID=${MACOS_TEAM_ID:-<apple-team-id>}
 SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:-"Developer ID Application: WaiWai, LLC (<apple-team-id>)"}
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}
+SPARKLE_DOWNLOAD_BASE_URL=${MACOS_SPARKLE_DOWNLOAD_BASE_URL:-"https://say.waiwai.is/releases/macos"}
+SPARKLE_FEED_URL=${MACOS_SPARKLE_FEED_URL:-"${SPARKLE_DOWNLOAD_BASE_URL}/appcast.xml"}
+SPARKLE_KEYCHAIN_ACCOUNT=${SPARKLE_KEYCHAIN_ACCOUNT:-is.waiwai.say.sparkle}
+SPARKLE_PRIVATE_KEY=${SPARKLE_PRIVATE_KEY:-}
+SPARKLE_PRIVATE_KEY_FILE=${SPARKLE_PRIVATE_KEY_FILE:-}
+SPARKLE_SIGN_UPDATE_BIN=${SPARKLE_SIGN_UPDATE_BIN:-}
 NOTARY_PROFILE=${NOTARY_KEYCHAIN_PROFILE:-}
 NOTARY_KEY=${NOTARY_KEY:-}
 NOTARY_KEY_ID=${NOTARY_KEY_ID:-}
@@ -29,10 +35,12 @@ NOTARY_ARGS=()
 CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
 REQUIRE_NOTARIZATION=${MACOS_REQUIRE_NOTARIZATION:-0}
 REQUIRE_GATEKEEPER=${MACOS_REQUIRE_GATEKEEPER:-0}
+REQUIRE_SPARKLE_SIGNATURE=${MACOS_REQUIRE_SPARKLE_SIGNATURE:-0}
 
 if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
   REQUIRE_NOTARIZATION=1
   REQUIRE_GATEKEEPER=1
+  REQUIRE_SPARKLE_SIGNATURE=1
 fi
 
 cleanup() {
@@ -155,6 +163,44 @@ require_tool shasum
 require_tool file
 require_tool xcrun
 
+find_sign_update_bin() {
+  if [[ -n "$SPARKLE_SIGN_UPDATE_BIN" ]]; then
+    if [[ -x "$SPARKLE_SIGN_UPDATE_BIN" ]]; then
+      printf '%s\n' "$SPARKLE_SIGN_UPDATE_BIN"
+      return 0
+    fi
+    echo "Configured SPARKLE_SIGN_UPDATE_BIN is not executable: $SPARKLE_SIGN_UPDATE_BIN" >&2
+    return 1
+  fi
+
+  local candidate
+  candidate=$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update' -type f -perm -111 2>/dev/null | head -n 1 || true)
+  if [[ -n "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  echo "Sparkle sign_update not found. Build or resolve the WaiSayDirect scheme first, or set SPARKLE_SIGN_UPDATE_BIN." >&2
+  return 1
+}
+
+sign_sparkle_update() {
+  local artifact_path=$1
+  local sign_update_bin=$2
+
+  if [[ -n "$SPARKLE_PRIVATE_KEY" ]]; then
+    printf '%s' "$SPARKLE_PRIVATE_KEY" | "$sign_update_bin" --ed-key-file - "$artifact_path"
+    return $?
+  fi
+
+  if [[ -n "$SPARKLE_PRIVATE_KEY_FILE" ]]; then
+    "$sign_update_bin" --ed-key-file "$SPARKLE_PRIVATE_KEY_FILE" "$artifact_path"
+    return $?
+  fi
+
+  "$sign_update_bin" --account "$SPARKLE_KEYCHAIN_ACCOUNT" "$artifact_path"
+}
+
 mkdir -p "$RELEASE_ROOT"
 
 if [[ -n "$CUSTOM_BACKGROUND_PATH" ]]; then
@@ -271,6 +317,56 @@ cp "$BACKGROUND_PATH" "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
 cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
 cp "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}-latest.dmg.sha256"
+RELEASE_NOTES_PATH="$RELEASE_DIR/release-notes.md"
+cat > "$RELEASE_NOTES_PATH" <<NOTES
+# ${APP_NAME} ${VERSION} (${BUILD})
+
+Direct-download macOS release.
+NOTES
+
+DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/${APP_NAME}-${VERSION}-${BUILD}.dmg"
+RELEASE_NOTES_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/release-notes.md"
+PUBLISHED_AT=$(date -u '+%a, %d %b %Y %H:%M:%S %z')
+SPARKLE_SIGNATURE=""
+if SIGN_UPDATE_BIN=$(find_sign_update_bin); then
+  if SPARKLE_SIGNATURE=$(sign_sparkle_update "$DMG_PATH" "$SIGN_UPDATE_BIN"); then
+    SPARKLE_SIGNATURE=$(printf '%s' "$SPARKLE_SIGNATURE" | tr -d '\n')
+  else
+    SPARKLE_SIGNATURE=""
+    echo "Warning: Sparkle sign_update failed; appcast will not contain an EdDSA signature." >&2
+  fi
+fi
+
+if [[ -z "$SPARKLE_SIGNATURE" && "$REQUIRE_SPARKLE_SIGNATURE" == "1" ]]; then
+  echo "Sparkle EdDSA signature is required. Set SPARKLE_PRIVATE_KEY, SPARKLE_PRIVATE_KEY_FILE, or keychain account ${SPARKLE_KEYCHAIN_ACCOUNT}." >&2
+  exit 1
+fi
+
+DMG_BYTES=$(stat -f '%z' "$DMG_PATH")
+SPARKLE_ENCLOSURE_ATTRS=${SPARKLE_SIGNATURE:-"length=\"${DMG_BYTES}\""}
+APPCAST_PATH="$RELEASE_ROOT/appcast.xml"
+cat > "$APPCAST_PATH" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>${APP_NAME}</title>
+    <link>${SPARKLE_FEED_URL}</link>
+    <description>Auto-update feed for ${APP_NAME} direct-download macOS releases.</description>
+    <language>en</language>
+    <item>
+      <title>${APP_NAME} ${VERSION}</title>
+      <pubDate>${PUBLISHED_AT}</pubDate>
+      <sparkle:version>${BUILD}</sparkle:version>
+      <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>${RELEASE_NOTES_URL}</sparkle:releaseNotesLink>
+      <enclosure url="${DOWNLOAD_URL}" type="application/x-apple-diskimage" ${SPARKLE_ENCLOSURE_ATTRS}/>
+    </item>
+  </channel>
+</rss>
+XML
+cp "$APPCAST_PATH" "$RELEASE_DIR/appcast.xml"
+cp "$RELEASE_NOTES_PATH" "$RELEASE_ROOT/release-notes.md"
 cat > "$RELEASE_DIR/release-metadata.txt" <<META
 app=${APP_NAME}
 version=${VERSION}
@@ -282,11 +378,17 @@ notarization_required=${REQUIRE_NOTARIZATION}
 gatekeeper_required=${REQUIRE_GATEKEEPER}
 archive=${ARCHIVE_PATH}
 dmg=${DMG_PATH}
+appcast=${APPCAST_PATH}
+sparkle_feed_url=${SPARKLE_FEED_URL}
+sparkle_download_url=${DOWNLOAD_URL}
+sparkle_signed=$([[ -n "$SPARKLE_SIGNATURE" ]] && printf yes || printf no)
 built_at=${TIMESTAMP}
 META
+cp "$RELEASE_DIR/release-metadata.txt" "$RELEASE_ROOT/latest-release-metadata.txt"
 
 echo
 printf 'DMG ready: %s\n' "$DMG_PATH"
 printf 'Checksum: %s\n' "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
+printf 'Appcast: %s\n' "$APPCAST_PATH"
 printf 'Background: %s\n' "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 printf 'Metadata: %s\n' "$RELEASE_DIR/release-metadata.txt"

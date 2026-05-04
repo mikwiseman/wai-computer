@@ -1,14 +1,18 @@
 default_platform(:ios)
 
+def waisay_app_store_connect_api_key
+  app_store_connect_api_key(
+    key_id: "<app-store-key-id>",
+    issuer_id: "<app-store-issuer-id>",
+    key_filepath: File.expand_path("$APPSTORECONNECT_CONFIG"),
+    in_house: false
+  )
+end
+
 platform :ios do
   desc "Upload iOS metadata and screenshots to App Store Connect"
   lane :upload_metadata do
-    api_key = app_store_connect_api_key(
-      key_id: "<app-store-key-id>",
-      issuer_id: "<app-store-issuer-id>",
-      key_filepath: File.expand_path("$APPSTORECONNECT_CONFIG"),
-      in_house: false
-    )
+    api_key = waisay_app_store_connect_api_key
 
     deliver(
       api_key: api_key,
@@ -26,12 +30,7 @@ platform :ios do
 
   desc "Submit latest uploaded iOS build for App Review"
   lane :submit_for_review do |options|
-    api_key = app_store_connect_api_key(
-      key_id: "<app-store-key-id>",
-      issuer_id: "<app-store-issuer-id>",
-      key_filepath: File.expand_path("$APPSTORECONNECT_CONFIG"),
-      in_house: false
-    )
+    api_key = waisay_app_store_connect_api_key
 
     deliver(
       api_key: api_key,
@@ -72,14 +71,42 @@ platform :android do
 end
 
 platform :mac do
+  desc "Build and upload macOS App Store build to TestFlight"
+  lane :upload_testflight do
+    api_key = waisay_app_store_connect_api_key
+
+    build_app(
+      project: "macos/WaiSay/WaiSay.xcodeproj",
+      scheme: "WaiSay",
+      export_method: "app-store",
+      output_directory: "artifacts/testflight/macos",
+      output_name: "WaiSay.pkg",
+      destination: "generic/platform=macOS",
+      clean: true
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      apple_id: "6761768729",
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Build strict notarized DMG and publish it to say.waiwai.is"
+  lane :publish_dmg do
+    sh("MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh")
+    sh("scripts/publish-macos-dmg.sh")
+  end
+
+  desc "Upload macOS App Store build to TestFlight and publish direct DMG to web"
+  lane :upload_all do
+    upload_testflight
+    publish_dmg
+  end
+
   desc "Upload macOS metadata and screenshots to App Store Connect"
   lane :upload_metadata do
-    api_key = app_store_connect_api_key(
-      key_id: "<app-store-key-id>",
-      issuer_id: "<app-store-issuer-id>",
-      key_filepath: File.expand_path("$APPSTORECONNECT_CONFIG"),
-      in_house: false
-    )
+    api_key = waisay_app_store_connect_api_key
 
     deliver(
       api_key: api_key,
