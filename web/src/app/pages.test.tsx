@@ -10,7 +10,6 @@ import Home from "./page";
 import RootLayout, { metadata } from "./layout";
 
 const mockReplace = vi.fn();
-const mockRedirect = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
@@ -18,7 +17,6 @@ const sharedRecordingClientMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
-  redirect: (...args: unknown[]) => mockRedirect(...args),
 }));
 
 vi.mock("next/font/google", () => ({
@@ -95,16 +93,43 @@ describe("app pages", () => {
     expect(sharedRecordingClientMock).toHaveBeenCalledWith("share-token");
   });
 
-  it("redirects home to login", () => {
-    Home();
-    expect(mockRedirect).toHaveBeenCalledWith("/login");
+  it("renders landing with download links and sign-in", () => {
+    render(<Home />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /AI second brain for everything you say/i,
+      }),
+    ).toBeInTheDocument();
+
+    const macLink = screen.getByTestId("download-mac");
+    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiSay-latest.dmg");
+    expect(macLink).toHaveAttribute("download");
+
+    const iosLink = screen.getByTestId("download-ios");
+    expect(iosLink).toHaveAttribute(
+      "href",
+      "https://apps.apple.com/app/waisay/id6761768729",
+    );
+    expect(iosLink).not.toHaveAttribute("target");
+
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
+      "href",
+      "/login",
+    );
+
+    const icon = document.querySelector("img[alt='']");
+    expect(icon).not.toBeNull();
   });
 });
 
 describe("layout", () => {
   it("exports metadata and renders html/body structure", () => {
-    expect(metadata.title).toBe("WaiSay Web");
-    expect(metadata.description).toBe("WaiSay browser client");
+    expect(metadata.title).toBe("WaiSay — AI second brain for voice");
+    expect(metadata.description).toBe(
+      "Record, transcribe, search, and ask anything across everything you've ever said.",
+    );
 
     const element = RootLayout({ children: <div data-testid="layout-child">Child</div> });
     expect(element.type).toBe("html");
