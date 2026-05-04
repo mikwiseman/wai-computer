@@ -12,6 +12,25 @@ struct SettingsView: View {
         IOSTestingMode.current.isScreenshot
     }
 
+    private static let privacyPolicyURL = URL(string: "https://waiwai.is/say/privacy")!
+    private static let termsOfServiceURL = URL(string: "https://waiwai.is/say/terms")!
+
+    private var appVersionDisplay: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+
+        switch (version?.isEmpty == false ? version : nil, build?.isEmpty == false ? build : nil) {
+        case let (.some(version), .some(build)):
+            return "\(version) (\(build))"
+        case let (.some(version), nil):
+            return version
+        case let (nil, .some(build)):
+            return build
+        case (nil, nil):
+            return "Unknown"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -69,15 +88,15 @@ struct SettingsView: View {
                         HStack {
                             Text("Version")
                             Spacer()
-                            Text("1.0.0")
+                            Text(appVersionDisplay)
                                 .foregroundStyle(.secondary)
                         }
 
-                        Link(destination: URL(string: "https://waisay.com/privacy")!) {
+                        Link(destination: Self.privacyPolicyURL) {
                             Label("Privacy Policy", systemImage: "lock.shield")
                         }
 
-                        Link(destination: URL(string: "https://waisay.com/terms")!) {
+                        Link(destination: Self.termsOfServiceURL) {
                             Label("Terms of Service", systemImage: "doc.text")
                         }
                     }
