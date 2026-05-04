@@ -38,6 +38,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
         model="scribe_v2_realtime",
         keep_alive_interval_seconds=None,
         commit_strategy="vad",
+        no_verbatim=True,
     )
 
     with patch(
@@ -59,6 +60,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
     assert payload["token"] == "sutkn_123"
     assert payload["model"] == "scribe_v2_realtime"
     assert payload["commit_strategy"] == "vad"
+    assert payload["no_verbatim"] is True
 
 
 @pytest.mark.asyncio

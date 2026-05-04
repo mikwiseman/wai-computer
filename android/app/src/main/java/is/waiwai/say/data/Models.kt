@@ -262,6 +262,7 @@ data class RealtimeTranscriptionSessionConfig(
     val model: String,
     @SerialName("keep_alive_interval_seconds") val keepAliveIntervalSeconds: Int? = null,
     @SerialName("commit_strategy") val commitStrategy: String? = null,
+    @SerialName("no_verbatim") val noVerbatim: Boolean = false,
 )
 
 @Serializable

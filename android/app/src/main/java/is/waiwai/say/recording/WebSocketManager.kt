@@ -112,6 +112,9 @@ class ElevenLabsWebSocketManager(
         if (!config.commitStrategy.isNullOrBlank()) {
             base.append("&commit_strategy=").append(config.commitStrategy)
         }
+        if (config.noVerbatim) {
+            base.append("&no_verbatim=true")
+        }
         return base.toString()
     }
 

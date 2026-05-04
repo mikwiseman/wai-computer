@@ -27,11 +27,13 @@ class WebSocketManagerTest {
                 channels = 1,
                 model = "scribe_v1",
                 commitStrategy = "auto",
+                noVerbatim = true,
             ),
         )
 
         assertTrue(url.contains("include_language_detection=true"))
         assertTrue(url.contains("commit_strategy=auto"))
+        assertTrue(url.contains("no_verbatim=true"))
         assertFalse(url.contains("language_code="))
     }
 

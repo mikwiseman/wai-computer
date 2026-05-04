@@ -24,7 +24,8 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let url = try await manager.buildElevenLabsURL(
             token: "sutkn_123",
             model: "scribe_v2_realtime",
-            commitStrategy: "vad"
+            commitStrategy: "vad",
+            noVerbatim: true
         )
         let urlString = url.absoluteString
 
@@ -35,6 +36,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(urlString.contains("audio_format=pcm_16000"))
         XCTAssertTrue(urlString.contains("include_language_detection=true"))
         XCTAssertTrue(urlString.contains("commit_strategy=vad"))
+        XCTAssertTrue(urlString.contains("no_verbatim=true"))
     }
 
     func testAudioChunkMessageIncludesExplicitCommitFlag() async throws {

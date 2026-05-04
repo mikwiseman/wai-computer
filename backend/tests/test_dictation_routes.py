@@ -85,6 +85,36 @@ async def test_cleanup_dictation_returns_cleaned_text(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object) -> _FakeMessage:
+        captured.update(kwargs)
+        return _FakeMessage("Что мы хотим дать LLM в России.")
+
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)  # type: ignore[arg-type]
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "э-э-э, что мы х-- мы хотим, а-а-а, дать LLM в России"},
+    )
+
+    assert response.status_code == 200
+    prompt = captured["messages"][0]["content"]  # type: ignore[index]
+    assert "э-э-э" in prompt
+    assert "а-а-а" in prompt
+    assert "мы х-- мы предлагаем" in prompt
+    assert "Do not summarize" in prompt
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_maps_upstream_connection_errors(
     client: AsyncClient,
     auth_headers: dict,

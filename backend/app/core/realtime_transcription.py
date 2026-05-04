@@ -27,6 +27,7 @@ class RealtimeTranscriptionSession:
     model: str
     keep_alive_interval_seconds: int | None = None
     commit_strategy: str | None = None
+    no_verbatim: bool = True
 
 
 async def _create_elevenlabs_realtime_token() -> tuple[str, int]:
@@ -78,4 +79,5 @@ async def create_realtime_transcription_session(
         model=settings.elevenlabs_realtime_speech_to_text_model,
         keep_alive_interval_seconds=None,
         commit_strategy="vad",
+        no_verbatim=bool(settings.elevenlabs_no_verbatim),
     )

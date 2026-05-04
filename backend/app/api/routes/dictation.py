@@ -59,15 +59,18 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
                 {
                     "role": "user",
                     "content": (
-                        "Clean up this dictated text. "
-                        "Remove filler words "
-                        "(um, uh, like, you know, I mean, basically, actually, so, well). "
-                        "Fix grammar and punctuation. "
-                        "Remove false starts and self-corrections "
-                        "(keep only the final intended version). "
-                        "Preserve the original meaning, tone, and style. "
-                        "Do NOT add information, change the meaning, or make it more formal "
-                        "unless the text is clearly informal. "
+                        "Lightly clean up this dictated text. "
+                        "Remove filler sounds and filler words in Russian and English, including "
+                        "э, эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, "
+                        "um, uh, like, you know, I mean, basically, actually, so, well. "
+                        "Remove repeated filler-only loops such as 'и, э-э-э, и, э-э-э'. "
+                        "Remove false starts and self-corrections, keeping only the final intended "
+                        "version, for example 'мы х-- мы предлагаем' becomes 'мы предлагаем'. "
+                        "Fix only obvious grammar, capitalization, and punctuation issues. "
+                        "Preserve the original language, meaning, tone, style, terminology, names, "
+                        "claims, and sentence order. "
+                        "Do not summarize, add information, change the meaning, or make it more "
+                        "formal unless the text is clearly formal already. "
                         "Output ONLY the cleaned text, nothing else.\n\n"
                         f"Dictated text: {text}"
                     ),

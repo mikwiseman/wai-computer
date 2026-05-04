@@ -26,6 +26,7 @@ public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
     public let model: String
     public let keepAliveIntervalSeconds: Int?
     public let commitStrategy: String?
+    public let noVerbatim: Bool?
 
     enum CodingKeys: String, CodingKey {
         case provider
@@ -38,6 +39,7 @@ public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
         case model
         case keepAliveIntervalSeconds = "keep_alive_interval_seconds"
         case commitStrategy = "commit_strategy"
+        case noVerbatim = "no_verbatim"
     }
 }
 

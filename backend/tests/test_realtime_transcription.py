@@ -66,6 +66,7 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
     ):
         mock_settings.return_value.speech_to_text_provider = "elevenlabs"
         mock_settings.return_value.elevenlabs_realtime_speech_to_text_model = "scribe_v2_realtime"
+        mock_settings.return_value.elevenlabs_no_verbatim = True
 
         from app.core.realtime_transcription import create_realtime_transcription_session
 
@@ -82,6 +83,7 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
         model="scribe_v2_realtime",
         keep_alive_interval_seconds=None,
         commit_strategy="vad",
+        no_verbatim=True,
     )
 
 
