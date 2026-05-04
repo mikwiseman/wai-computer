@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "com.waisay.app", category: "textinserter")
 enum TextInsertionError: LocalizedError {
     case emptyText
     case clipboardWriteFailed
+    case eventPostingPermissionDenied
     case pasteSimulationFailed
     case modifierStuck
 
@@ -15,6 +16,8 @@ enum TextInsertionError: LocalizedError {
             return "No text to insert."
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
+        case .eventPostingPermissionDenied:
+            return "WaiSay needs permission to paste into other apps. The text is on your clipboard — grant Paste permission in Settings and try again."
         case .pasteSimulationFailed:
             return "Could not paste text. It's been copied to your clipboard — press ⌘V to paste manually."
         case .modifierStuck:
@@ -25,19 +28,21 @@ enum TextInsertionError: LocalizedError {
 
 /// Inserts text into the target application via clipboard + simulated Cmd+V.
 ///
-/// In the Mac App Store build this only writes the dictated text to the
-/// clipboard. Synthetic key posting is kept behind the Sparkle build flag
-/// because App Review rejects keystroke automation for non-accessibility use.
-///
-#if SPARKLE
-/// Uses `CGEvent.post` with `combinedSessionState` + `cgSessionEventTap` — the
-/// direct-distribution path for users who grant keyboard automation outside
-/// Mac App Store review.
+/// Uses `CGEvent.post` with `combinedSessionState` + `cgSessionEventTap`.
+/// macOS protects this separately from listen-only Input Monitoring, so missing
+/// event-posting permission is reported before we attempt the paste.
 ///
 /// On any failure the text stays on the clipboard so the user can paste
 /// manually with ⌘V, and the error surfaces a message that says exactly that.
-#endif
 enum TextInserter {
+    static var hasEventPostingPermission: Bool {
+        CGPreflightPostEventAccess()
+    }
+
+    @discardableResult
+    static func requestEventPostingPermission() -> Bool {
+        CGRequestPostEventAccess()
+    }
 
     /// Insert `text` into `targetApp`. If `targetApp` is nil, paste goes to the
     /// currently frontmost app.
@@ -51,14 +56,6 @@ enum TextInserter {
 
         let pasteboard = NSPasteboard.general
 
-        #if !SPARKLE
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
-            log.error("Clipboard write failed for \(text.count, privacy: .public)-char payload")
-            throw TextInsertionError.clipboardWriteFailed
-        }
-        log.info("Dictated text copied to clipboard for App Store build")
-        #else
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
             log.error("Clipboard write failed for \(text.count, privacy: .public)-char payload")
@@ -90,12 +87,10 @@ enum TextInserter {
             throw TextInsertionError.pasteSimulationFailed
         }
         log.info("Dictated text inserted and left on clipboard")
-        #endif
     }
 
     // MARK: - Private
 
-    #if SPARKLE
     /// Re-focus `target`. Returns true if the app is now active (or becomes
     /// active within a short window), false otherwise.
     private static func activateTarget(_ target: NSRunningApplication?) -> Bool {
@@ -126,6 +121,11 @@ enum TextInserter {
     /// Post a synthesised ⌘V to the session event tap. Throws on failure so the
     /// caller can surface the manual-paste fallback message.
     private static func simulatePaste() throws {
+        guard hasEventPostingPermission || requestEventPostingPermission() else {
+            log.warning("Event posting permission missing — cannot simulate paste")
+            throw TextInsertionError.eventPostingPermissionDenied
+        }
+
         guard let source = CGEventSource(stateID: .combinedSessionState) else {
             throw TextInsertionError.pasteSimulationFailed
         }
@@ -150,6 +150,4 @@ enum TextInserter {
         keyDown.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cgSessionEventTap)
     }
-
-    #endif
 }

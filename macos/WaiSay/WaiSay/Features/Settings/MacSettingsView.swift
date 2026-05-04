@@ -10,6 +10,7 @@ struct MacSettingsView: View {
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
+    @State private var hasPastePermission = TextInserter.hasEventPostingPermission
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
@@ -179,6 +180,25 @@ struct MacSettingsView: View {
                     }
                 }
 
+                // Event-posting permission is required for the final paste into
+                // the app that had focus when dictation started.
+                HStack {
+                    Text("Paste Permission")
+                        .font(Typography.body)
+                    Spacer()
+                    if hasPastePermission {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant") {
+                            TextInserter.requestEventPostingPermission()
+                            startPermissionPolling()
+                        }
+                        .font(Typography.bodySmall)
+                    }
+                }
+
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("How to use")
@@ -292,24 +312,17 @@ struct MacSettingsView: View {
         if !dictationManager.isFeatureEnabled {
             return "Enable Dictation to use a global hold-to-talk hotkey."
         }
-        #if SPARKLE
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
-        #else
-        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate from anywhere. Release to copy text to the clipboard, then press \u{2318}V to paste."
-        #endif
     }
 
     private var dictationPrivacyText: String {
-        #if SPARKLE
         return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before insertion."
-        #else
-        return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before copying."
-        #endif
     }
 
     private func refreshPermissions() {
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-        if hasInputMonitoringPermission {
+        hasPastePermission = TextInserter.hasEventPostingPermission
+        if hasInputMonitoringPermission && hasPastePermission {
             stopPermissionPolling()
         }
     }
