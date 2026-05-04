@@ -8,74 +8,140 @@ BASE_BACKGROUND_PATH=${3:-}
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
-python3 - "$OUTPUT_PATH" "$ICON_PATH" "$BASE_BACKGROUND_PATH" <<'PY'
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
-from pathlib import Path
-import sys
+swift - "$OUTPUT_PATH" "$ICON_PATH" "$BASE_BACKGROUND_PATH" <<'SWIFT'
+import AppKit
+import Foundation
 
-output_path = Path(sys.argv[1])
-icon_path = Path(sys.argv[2])
-base_background_path = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
-if not icon_path.exists():
-    raise SystemExit(f"Icon file not found: {icon_path}")
+let outputPath = CommandLine.arguments[1]
+let iconPath = CommandLine.arguments[2]
+let baseBackgroundPath = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : ""
 
-W, H = 960, 620
+guard FileManager.default.fileExists(atPath: iconPath) else {
+    fputs("Icon file not found: \(iconPath)\n", stderr)
+    exit(1)
+}
 
+let width: CGFloat = 960
+let height: CGFloat = 620
+let canvasRect = NSRect(x: 0, y: 0, width: width, height: height)
+guard
+    let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int(width),
+        pixelsHigh: Int(height),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ),
+    let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap)
+else {
+    fputs("Failed to create DMG background bitmap context\n", stderr)
+    exit(1)
+}
+bitmap.size = canvasRect.size
 
-def fit_cover(image):
-    image = image.convert("RGBA")
-    src_w, src_h = image.size
-    scale = max(W / src_w, H / src_h)
-    resized = image.resize((int(round(src_w * scale)), int(round(src_h * scale))), Image.Resampling.LANCZOS)
-    left = max(0, (resized.width - W) // 2)
-    top = max(0, (resized.height - H) // 2)
-    return resized.crop((left, top, left + W, top + H))
+func drawCover(_ image: NSImage, in targetRect: NSRect, fraction: CGFloat) {
+    let sourceSize = image.size
+    guard sourceSize.width > 0, sourceSize.height > 0 else { return }
 
-if base_background_path and base_background_path.exists():
-    base = fit_cover(Image.open(base_background_path))
-    base = ImageOps.grayscale(base).convert("RGBA")
-    paper = Image.new("RGBA", (W, H), (246, 244, 238, 255))
-    canvas = Image.blend(paper, base, 0.16)
-else:
-    canvas = Image.new("RGBA", (W, H))
-    pix = canvas.load()
-    for y in range(H):
-        t = y / (H - 1)
-        top = (248, 246, 241)
-        bottom = (242, 240, 235)
-        row = tuple(int(top[i] * (1 - t) + bottom[i] * t) for i in range(3)) + (255,)
-        for x in range(W):
-            pix[x, y] = row
-    linework = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    line_draw = ImageDraw.Draw(linework)
-    line_draw.arc((-120, 112, 420, 660), start=202, end=325, fill=(32, 32, 32, 18), width=2)
-    line_draw.arc((544, -40, 1090, 570), start=220, end=342, fill=(32, 32, 32, 16), width=2)
-    linework = linework.filter(ImageFilter.GaussianBlur(0.4))
-    canvas = Image.alpha_composite(canvas, linework)
+    let scale = max(targetRect.width / sourceSize.width, targetRect.height / sourceSize.height)
+    let drawSize = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+    let drawRect = NSRect(
+        x: targetRect.midX - drawSize.width / 2,
+        y: targetRect.midY - drawSize.height / 2,
+        width: drawSize.width,
+        height: drawSize.height
+    )
 
-guide = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-guide_draw = ImageDraw.Draw(guide)
-guide_draw.line((406, 352, 552, 352), fill=(24, 24, 24, 160), width=3)
-guide_draw.polygon(((552, 352), (536, 342), (536, 362)), fill=(24, 24, 24, 160))
-canvas = Image.alpha_composite(canvas, guide)
+    NSGraphicsContext.current?.cgContext.saveGState()
+    targetRect.clip()
+    image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: fraction)
+    NSGraphicsContext.current?.cgContext.restoreGState()
+}
 
+func drawCurvedLine(from start: NSPoint, control1: NSPoint, control2: NSPoint, to end: NSPoint, alpha: CGFloat) {
+    let path = NSBezierPath()
+    path.move(to: start)
+    path.curve(to: end, controlPoint1: control1, controlPoint2: control2)
+    path.lineWidth = 2
+    NSColor(calibratedWhite: 0.13, alpha: alpha).setStroke()
+    path.stroke()
+}
 
-def load_font(path, size):
-    return ImageFont.truetype(str(path), size=size)
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = graphicsContext
+graphicsContext.imageInterpolation = .high
 
+if !baseBackgroundPath.isEmpty, let base = NSImage(contentsOfFile: baseBackgroundPath) {
+    NSColor(red: 246 / 255, green: 244 / 255, blue: 238 / 255, alpha: 1).setFill()
+    canvasRect.fill()
+    drawCover(base, in: canvasRect, fraction: 0.16)
+} else {
+    let gradient = NSGradient(
+        starting: NSColor(red: 248 / 255, green: 246 / 255, blue: 241 / 255, alpha: 1),
+        ending: NSColor(red: 242 / 255, green: 240 / 255, blue: 235 / 255, alpha: 1)
+    )
+    gradient?.draw(in: canvasRect, angle: -90)
 
-def centered_text(draw, text, font, y, fill):
-    bbox = draw.textbbox((0, 0), text, font=font)
-    x = (W - (bbox[2] - bbox[0])) / 2
-    draw.text((x, y), text, font=font, fill=fill)
+    drawCurvedLine(
+        from: NSPoint(x: -62, y: 176),
+        control1: NSPoint(x: 108, y: 44),
+        control2: NSPoint(x: 282, y: 80),
+        to: NSPoint(x: 392, y: 190),
+        alpha: 0.07
+    )
+    drawCurvedLine(
+        from: NSPoint(x: 598, y: 526),
+        control1: NSPoint(x: 742, y: 666),
+        control2: NSPoint(x: 984, y: 582),
+        to: NSPoint(x: 1030, y: 340),
+        alpha: 0.06
+    )
+}
 
+let guidePath = NSBezierPath()
+guidePath.move(to: NSPoint(x: 406, y: height - 352))
+guidePath.line(to: NSPoint(x: 552, y: height - 352))
+guidePath.lineWidth = 3
+NSColor(calibratedWhite: 0.1, alpha: 0.63).setStroke()
+guidePath.stroke()
 
-title_font = load_font(Path("/System/Library/Fonts/Avenir Next.ttc"), 26)
-text = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-draw = ImageDraw.Draw(text)
-centered_text(draw, "Drag to Applications", title_font, 92, (22, 22, 22, 196))
-canvas = Image.alpha_composite(canvas, text)
+let arrowPath = NSBezierPath()
+arrowPath.move(to: NSPoint(x: 552, y: height - 352))
+arrowPath.line(to: NSPoint(x: 536, y: height - 342))
+arrowPath.line(to: NSPoint(x: 536, y: height - 362))
+arrowPath.close()
+NSColor(calibratedWhite: 0.1, alpha: 0.63).setFill()
+arrowPath.fill()
 
-output_path.parent.mkdir(parents=True, exist_ok=True)
-canvas.save(output_path)
-PY
+let font = NSFont(name: "Avenir Next", size: 26) ?? NSFont.systemFont(ofSize: 26, weight: .medium)
+let attributes: [NSAttributedString.Key: Any] = [
+    .font: font,
+    .foregroundColor: NSColor(calibratedWhite: 0.09, alpha: 0.77)
+]
+let title = NSString(string: "Drag to Applications")
+let titleSize = title.size(withAttributes: attributes)
+title.draw(
+    at: NSPoint(x: (width - titleSize.width) / 2, y: height - 92 - titleSize.height),
+    withAttributes: attributes
+)
+
+NSGraphicsContext.restoreGraphicsState()
+
+guard
+    let png = bitmap.representation(using: .png, properties: [:])
+else {
+    fputs("Failed to render DMG background PNG\n", stderr)
+    exit(1)
+}
+
+try FileManager.default.createDirectory(
+    at: URL(fileURLWithPath: outputPath).deletingLastPathComponent(),
+    withIntermediateDirectories: true
+)
+try png.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+SWIFT
