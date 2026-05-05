@@ -221,38 +221,6 @@ struct WaiTabBar<T: Hashable>: View {
     }
 }
 
-// MARK: - Triangle Icon Shape
-
-/// The say.waiwai.is triangle icon (black triangle with computer cutout)
-struct WaiTriangleIcon: View {
-    let size: CGFloat
-
-    var body: some View {
-        ZStack {
-            // Black triangle
-            Triangle()
-                .fill(Color.primary)
-                .frame(width: size, height: size * 0.87) // equilateral proportions
-
-            // White retro computer icon inside
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: size * 0.28, weight: .medium))
-                .foregroundStyle(Color(nsColor: .windowBackgroundColor))
-                .offset(y: size * 0.06)
-        }
-    }
-}
-
-struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
 
 // MARK: - Thin Divider Replacement
 

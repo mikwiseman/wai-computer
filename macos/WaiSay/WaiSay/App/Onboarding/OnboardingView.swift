@@ -64,7 +64,7 @@ struct OnboardingView: View {
                             openInputMonitoringSettings: openInputMonitoringSettings,
                             openPasteSettings: openPasteSettings,
                             recheckPermissions: refreshPermissions,
-                            quitForPermissionRefresh: MacPrivacySettings.quitForPermissionRefresh
+                            restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                         )
                         .environmentObject(dictationManager)
                         .frame(width: geo.size.width)
@@ -129,7 +129,14 @@ struct OnboardingView: View {
     }
 
     private var primaryButtonTitle: String {
-        isLastPage ? (dictationPermissionsReady ? "Get Started" : "Grant Missing") : "Continue"
+        guard isLastPage else { return "Continue" }
+        if dictationPermissionsReady {
+            return "Get Started"
+        }
+        if permissionRestartRecommended {
+            return "Restart WaiSay"
+        }
+        return "Grant Missing"
     }
 
     private var primaryButtonAccessibilityId: String {
@@ -141,6 +148,8 @@ struct OnboardingView: View {
             refreshPermissions()
             if dictationPermissionsReady {
                 completeOnboarding()
+            } else if permissionRestartRecommended {
+                MacPrivacySettings.restartForPermissionRefresh()
             } else {
                 requestNextMissingPermission()
             }
@@ -157,11 +166,12 @@ struct OnboardingView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        #if SPARKLE
         hasMicrophonePermission && hasInputMonitoringPermission && hasPastePermission
-        #else
-        hasMicrophonePermission && hasInputMonitoringPermission
-        #endif
+    }
+
+    private var permissionRestartRecommended: Bool {
+        (inputMonitoringNeedsReview && !hasInputMonitoringPermission) ||
+            (pasteNeedsReview && !hasPastePermission)
     }
 
     private static var hasMicrophonePermission: Bool {
@@ -179,8 +189,8 @@ struct OnboardingView: View {
             hasMicrophonePermission = false
             hasInputMonitoringPermission = false
             hasPastePermission = false
-            inputMonitoringNeedsReview = false
-            pasteNeedsReview = false
+            inputMonitoringNeedsReview = MacPermissionTesting.needsInputMonitoringRestart
+            pasteNeedsReview = MacPermissionTesting.needsPasteRestart
             return
         }
         #endif
@@ -227,6 +237,11 @@ struct OnboardingView: View {
     private func requestInputMonitoringPermission() {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return
+        }
+        #endif
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
@@ -239,6 +254,11 @@ struct OnboardingView: View {
     private func requestPastePermission() {
         startPermissionPolling()
         pasteNeedsReview = true
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return
+        }
+        #endif
         _ = TextInserter.requestEventPostingPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
@@ -251,6 +271,11 @@ struct OnboardingView: View {
     private func openInputMonitoringSettings() {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return
+        }
+        #endif
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             MacPrivacySettings.openInputMonitoring()
@@ -260,6 +285,11 @@ struct OnboardingView: View {
     private func openPasteSettings() {
         startPermissionPolling()
         pasteNeedsReview = true
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return
+        }
+        #endif
         _ = TextInserter.requestEventPostingPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             TextInserter.openEventPostingSettings()
@@ -312,7 +342,7 @@ private struct OnboardingPermissionSlide: View {
     let openInputMonitoringSettings: () -> Void
     let openPasteSettings: () -> Void
     let recheckPermissions: () -> Void
-    let quitForPermissionRefresh: () -> Void
+    let restartForPermissionRefresh: () -> Void
 
     private var content: OnboardingPage.Content { OnboardingPage.permission.content }
 
@@ -320,10 +350,11 @@ private struct OnboardingPermissionSlide: View {
         VStack(spacing: Spacing.md) {
             Spacer(minLength: Spacing.md)
 
-            Image(systemName: content.symbol ?? "lock.shield")
-                .font(.system(size: 54, weight: .light))
-                .foregroundStyle(Palette.accent)
-                .frame(width: 68, height: 68)
+            Image("BrandIcon")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 76, height: 76)
 
             VStack(spacing: Spacing.xs) {
                 Text(content.eyebrow.uppercased())
@@ -364,10 +395,9 @@ private struct OnboardingPermissionSlide: View {
                     grantAction: requestInputMonitoringPermission,
                     settingsAction: openInputMonitoringSettings,
                     recheckAction: recheckPermissions,
-                    quitAction: quitForPermissionRefresh
+                    restartAction: restartForPermissionRefresh
                 )
 
-                #if SPARKLE
                 permissionRow(
                     title: "Automatic Paste",
                     detail: "Insert dictated text automatically",
@@ -377,9 +407,8 @@ private struct OnboardingPermissionSlide: View {
                     grantAction: requestPastePermission,
                     settingsAction: openPasteSettings,
                     recheckAction: recheckPermissions,
-                    quitAction: quitForPermissionRefresh
+                    restartAction: restartForPermissionRefresh
                 )
-                #endif
 
                 HStack {
                     Toggle("Enable Dictation", isOn: Binding(
@@ -419,11 +448,7 @@ private struct OnboardingPermissionSlide: View {
     }
 
     private var permissionBody: String {
-        #if SPARKLE
         return content.body
-        #else
-        return "Grant Microphone for recording and Input Monitoring for the global hotkey. App Store builds copy dictated text to the clipboard for manual paste."
-        #endif
     }
 
     @ViewBuilder
@@ -436,7 +461,7 @@ private struct OnboardingPermissionSlide: View {
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)? = nil,
         recheckAction: (() -> Void)? = nil,
-        quitAction: (() -> Void)? = nil
+        restartAction: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.md) {
@@ -478,7 +503,7 @@ private struct OnboardingPermissionSlide: View {
 
             if !isGranted && needsReview {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(MacPrivacySettings.duplicatePermissionHint)
+                    Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -492,12 +517,12 @@ private struct OnboardingPermissionSlide: View {
                             .accessibilityIdentifier("\(identifierBase)-recheck")
                         }
 
-                        if let quitAction {
-                            Button("Quit WaiSay") {
-                                quitAction()
+                        if let restartAction {
+                            Button("Restart WaiSay") {
+                                restartAction()
                             }
                             .font(Typography.bodySmall)
-                            .accessibilityIdentifier("\(identifierBase)-quit")
+                            .accessibilityIdentifier("\(identifierBase)-restart")
                         }
                     }
                 }

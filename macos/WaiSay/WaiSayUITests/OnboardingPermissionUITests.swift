@@ -6,7 +6,7 @@ final class OnboardingPermissionUITests: XCTestCase {
     }
 
     @MainActor
-    func testAppStoreOnboardingPermissionSlideShowsGrantControls() throws {
+    func testOnboardingPermissionSlideShowsGrantControlsForAllDictationPermissions() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
@@ -27,17 +27,39 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertEqual(grantMissingButton.label, "Grant Missing")
 
         XCTAssertTrue(app.staticTexts["Set up voice access."].exists)
-        let appStoreManualPasteText = app.staticTexts
-            .matching(NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", "manual paste", "manual paste"))
-            .firstMatch
-        XCTAssertTrue(waitForElement(appStoreManualPasteText, in: app, timeout: 3))
-
         XCTAssertTrue(waitForElement(app.staticTexts["Microphone"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.staticTexts["Input Monitoring"], in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.staticTexts["Automatic Paste"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-grant").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-settings").firstMatch, in: app, timeout: 3))
-        XCTAssertFalse(app.staticTexts["Automatic Paste"].exists)
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-grant").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-settings").firstMatch, in: app, timeout: 3))
+    }
+
+    @MainActor
+    func testOnboardingShowsRestartAfterInputMonitoringGrantAttempt() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_input"
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
+
+        let continueButton = app.buttons.matching(identifier: "onboarding-continue-button").firstMatch
+        for _ in 0..<4 {
+            XCTAssertTrue(waitForElement(continueButton, in: app, timeout: 3))
+            continueButton.tap()
+        }
+
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-recheck").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-restart").firstMatch, in: app, timeout: 3))
+
+        let primaryButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
+        XCTAssertTrue(waitForElement(primaryButton, in: app, timeout: 3))
+        XCTAssertEqual(primaryButton.label, "Restart WaiSay")
     }
 
     private func waitForElement(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval) -> Bool {

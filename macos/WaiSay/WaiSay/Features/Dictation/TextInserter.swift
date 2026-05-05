@@ -36,11 +36,7 @@ enum TextInsertionError: LocalizedError {
 /// manually with ⌘V, and the error surfaces a message that says exactly that.
 enum TextInserter {
     static var supportsAutomaticPaste: Bool {
-        #if SPARKLE
         return true
-        #else
-        return false
-        #endif
     }
 
     static var hasEventPostingPermission: Bool {
