@@ -8,6 +8,7 @@ timestamped emails and cleans up all resources it creates. Tests are fully
 independent of each other -- no shared state between tests.
 """
 
+import asyncio
 import os
 import time
 
@@ -15,8 +16,13 @@ import httpx
 import pytest
 
 BASE_URL = os.getenv("LIVE_API_URL", "https://say.waiwai.is")
+REGISTER_INTERVAL_SECONDS = float(os.getenv("LIVE_REGISTER_INTERVAL_SECONDS", "21.5"))
+REGISTER_LIMIT_WINDOW_SECONDS = float(os.getenv("LIVE_REGISTER_LIMIT_WINDOW_SECONDS", "61.0"))
 
 pytestmark = pytest.mark.integration
+
+_register_lock = asyncio.Lock()
+_last_register_at = 0.0
 
 
 def make_test_email(name: str) -> str:
@@ -42,14 +48,35 @@ async def register_user(
     password: str = TEST_PASSWORD,
 ) -> str:
     """Register a user and return the access token."""
-    resp = await client.post(
-        "/api/auth/register",
-        json={"email": email, "password": password},
-    )
+    for attempt in range(2):
+        await wait_for_register_slot()
+        resp = await client.post(
+            "/api/auth/register",
+            json={"email": email, "password": password},
+        )
+        if resp.status_code != 429 or attempt == 1:
+            break
+        await asyncio.sleep(REGISTER_LIMIT_WINDOW_SECONDS)
+
     assert resp.status_code == 200, f"Register failed: {resp.status_code} {resp.text}"
     data = resp.json()
     assert data["token_type"] == "bearer"
     return data["access_token"]
+
+
+async def wait_for_register_slot() -> None:
+    """Pace live account creation so integration tests respect prod rate limits."""
+    global _last_register_at
+
+    if REGISTER_INTERVAL_SECONDS <= 0:
+        return
+
+    async with _register_lock:
+        now = time.monotonic()
+        wait_seconds = REGISTER_INTERVAL_SECONDS - (now - _last_register_at)
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+        _last_register_at = time.monotonic()
 
 
 async def login_user(
@@ -92,7 +119,7 @@ async def delete_recording(
 ) -> None:
     """Delete a recording (best-effort cleanup)."""
     await client.delete(
-        f"/api/recordings/{recording_id}",
+        f"/api/recordings/{recording_id}?permanent=true",
         headers=auth_header(token),
     )
 
@@ -136,14 +163,13 @@ async def delete_entity(
 
 @pytest.mark.asyncio
 async def test_health_endpoints():
-    """GET / returns API info and GET /health returns healthy status."""
+    """GET / serves the web app and GET /health returns healthy API status."""
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
-        # Root
+        # Root is the web app on the canonical production host.
         resp = await client.get("/")
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["message"] == "WaiSay API"
-        assert "version" in data
+        assert "text/html" in resp.headers.get("content-type", "")
+        assert "WaiSay" in resp.text
 
         # Health
         resp = await client.get("/health")
@@ -323,7 +349,17 @@ async def test_recording_crud():
             resp = await client.delete(f"/api/recordings/{rec_id}", headers=headers)
             assert resp.status_code == 204
 
-            # Verify gone
+            # Regular delete is soft-delete: detail remains readable, but marked deleted.
+            resp = await client.get(f"/api/recordings/{rec_id}", headers=headers)
+            assert resp.status_code == 200
+            assert resp.json()["deleted_at"] is not None
+
+            # Permanent delete removes it completely.
+            resp = await client.delete(
+                f"/api/recordings/{rec_id}?permanent=true",
+                headers=headers,
+            )
+            assert resp.status_code == 204
             resp = await client.get(f"/api/recordings/{rec_id}", headers=headers)
             assert resp.status_code == 404
 
