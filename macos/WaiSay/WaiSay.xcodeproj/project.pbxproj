@@ -25,6 +25,7 @@
 		3BCC7635FF78D3ED6B9A305A /* DictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25C1FF960D1804EA22B5C52 /* DictationHistoryStore.swift */; };
 		4007C83EE153660DC5BF805E /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9557FBC052F94C3A1DD8399B /* MacContentView.swift */; };
 		402B62A24411C420860ADA4C /* DictationHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488CB5C1BE67B78682CB7A56 /* DictationHistoryView.swift */; };
+		40A793A79EEC62B070C94D14 /* OnboardingPermissionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFE9A72955E293344F247755 /* OnboardingPermissionUITests.swift */; };
 		40D636ACD7DBF3B1E43AFDDF /* SearchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D10DC5C7F3722F7A5C55A85 /* SearchUITests.swift */; };
 		41D4195EAA5E62B7355909D3 /* OnboardingSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF2EE93F2E5D30499791547 /* OnboardingSlide.swift */; };
 		4AD7410D393A0CC2F74259F6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E1968EF5728AB79EEFCA9A /* Assets.xcassets */; };
@@ -120,6 +121,7 @@
 		931DEDE1F4D3BBE785BCD66A /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
 		9557FBC052F94C3A1DD8399B /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		96DC086CE82D49061ABEF2D5 /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
+		AFE9A72955E293344F247755 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
 		B8399D6F915E5035FE4E9FF9 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		B89CA571AA631FC56333F5A3 /* WaiSay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiSay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
@@ -300,6 +302,7 @@
 				3471FD7708241841E87F76FF /* ImportUITests.swift */,
 				BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */,
 				8D7F2E11C0E5B4FFA0AA9565 /* NavigationUITests.swift */,
+				AFE9A72955E293344F247755 /* OnboardingPermissionUITests.swift */,
 				35452E05844016577A0D2407 /* RecordingDetailUITests.swift */,
 				CC068F2F69F4C77820F63077 /* RecordingFlowUITests.swift */,
 				5D10DC5C7F3722F7A5C55A85 /* SearchUITests.swift */,
@@ -486,6 +489,7 @@
 				D36520D8F2DF4086C22401F1 /* ImportUITests.swift in Sources */,
 				20A1E752E5B1EFC9C6A883C5 /* LibraryUITests.swift in Sources */,
 				50CE1068AA3E7BB6C6840E04 /* NavigationUITests.swift in Sources */,
+				40A793A79EEC62B070C94D14 /* OnboardingPermissionUITests.swift in Sources */,
 				5B51DD32BDC3F7044E0000C3 /* RecordingDetailUITests.swift in Sources */,
 				1C75963F225AEAFFA0FEA8B9 /* RecordingFlowUITests.swift in Sources */,
 				40D636ACD7DBF3B1E43AFDDF /* SearchUITests.swift in Sources */,
@@ -644,7 +648,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -668,7 +672,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.Sparkle.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -713,7 +717,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = YES;
 				INFOPLIST_FILE = WaiSay/Info.plist;
@@ -736,7 +740,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.Sparkle.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;

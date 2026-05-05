@@ -1,10 +1,15 @@
 import Cocoa
 import Carbon
+import IOKit.hid
 import os
 
 private let log = Logger(subsystem: "com.waisay.app", category: "hotkey")
 
 enum MacPrivacySettings {
+    static func openMicrophone() {
+        openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+    }
+
     static func openInputMonitoring() {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
     }
@@ -24,6 +29,52 @@ enum MacPrivacySettings {
     private static func openPrivacyPane(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+enum MacInputPermission {
+    static var hasListenEventAccess: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ||
+            CGPreflightListenEventAccess()
+    }
+
+    @discardableResult
+    static func requestListenEventAccess() -> Bool {
+        if hasListenEventAccess {
+            return true
+        }
+
+        log.info("Requesting Input Monitoring listen-event access")
+        if IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) {
+            return true
+        }
+
+        return CGRequestListenEventAccess()
+    }
+
+    static var hasPostEventAccess: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted ||
+            CGPreflightPostEventAccess() ||
+            AXIsProcessTrusted()
+    }
+
+    @discardableResult
+    static func requestPostEventAccess() -> Bool {
+        if hasPostEventAccess {
+            return true
+        }
+
+        log.info("Requesting Accessibility/post-event access")
+        if IOHIDRequestAccess(kIOHIDRequestTypePostEvent) {
+            return true
+        }
+
+        if CGRequestPostEventAccess() {
+            return true
+        }
+
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 }
 
@@ -129,20 +180,13 @@ final class GlobalHotkeyManager: ObservableObject {
 
     /// Check if Input Monitoring permission is granted
     static var hasInputMonitoringPermission: Bool {
-        CGPreflightListenEventAccess() || AXIsProcessTrusted()
+        MacInputPermission.hasListenEventAccess
     }
 
     /// Request Input Monitoring permission — shows the system prompt
     @discardableResult
     static func requestInputMonitoringPermission() -> Bool {
-        if CGRequestListenEventAccess() {
-            return true
-        }
-
-        // On some macOS releases/users' machines, keyboard event access may be
-        // granted through Accessibility instead of the newer ListenEvent pane.
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+        MacInputPermission.requestListenEventAccess()
     }
 
     func start() {
