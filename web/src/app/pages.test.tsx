@@ -1,6 +1,6 @@
 import type React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
@@ -14,9 +14,11 @@ const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
 const sharedRecordingClientMock = vi.fn();
+let mockSearchParams = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock("next/font/google", () => ({
@@ -52,6 +54,15 @@ vi.mock("@/components/SharedRecordingClient", () => ({
 }));
 
 describe("app pages", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    authFormMock.mockClear();
+    dashboardClientMock.mockClear();
+    verifyClientMock.mockClear();
+    sharedRecordingClientMock.mockClear();
+    mockSearchParams = new URLSearchParams();
+  });
+
   it("renders login page and wires onSuccess to router", () => {
     render(<LoginPage />);
     expect(screen.getByTestId("auth-form-mock")).toBeInTheDocument();
@@ -66,8 +77,28 @@ describe("app pages", () => {
     render(<RegisterPage />);
     expect(screen.getByTestId("auth-form-mock")).toBeInTheDocument();
 
-    const call = authFormMock.mock.calls[1]?.[0] as { mode: string; onSuccess: () => void };
+    const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
     expect(call.mode).toBe("register");
+    call.onSuccess();
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("uses a safe returnTo target after login", () => {
+    mockSearchParams = new URLSearchParams({
+      returnTo: "/api/mcp/oauth/consent?request=oauth-request",
+    });
+    render(<LoginPage />);
+
+    const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
+    call.onSuccess();
+    expect(mockReplace).toHaveBeenCalledWith("/api/mcp/oauth/consent?request=oauth-request");
+  });
+
+  it("rejects external returnTo targets after login", () => {
+    mockSearchParams = new URLSearchParams({ returnTo: "https://evil.example/callback" });
+    render(<LoginPage />);
+
+    const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
     call.onSuccess();
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });

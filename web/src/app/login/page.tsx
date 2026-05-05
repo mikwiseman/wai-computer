@@ -1,14 +1,12 @@
-"use client";
+import { Suspense } from "react";
+import { LoginClient, resolveLoginRedirect } from "./LoginClient";
 
-import { useRouter } from "next/navigation";
-import { AuthForm } from "@/components/AuthForm";
+export { resolveLoginRedirect };
 
 export default function LoginPage() {
-  const router = useRouter();
-
   return (
-    <main className="container auth-page">
-      <AuthForm mode="login" onSuccess={() => router.replace("/dashboard")} />
-    </main>
+    <Suspense fallback={null}>
+      <LoginClient />
+    </Suspense>
   );
 }

@@ -72,6 +72,17 @@ class Settings(BaseSettings):
     # URLs
     frontend_url: str = "http://localhost:3000"
 
+    # MCP remote connector OAuth
+    mcp_issuer_url: str | None = None
+    mcp_resource_url: str | None = None
+    mcp_access_token_expire_minutes: int = 60
+    mcp_refresh_token_expire_days: int = 90
+    mcp_authorization_request_expire_minutes: int = 10
+    mcp_authorization_code_expire_minutes: int = 10
+    mcp_client_secret_expire_days: int = 90
+    mcp_max_search_results: int = 20
+    mcp_max_tool_text_chars: int = 12000
+
     @property
     def auth_cookie_secure_resolved(self) -> bool:
         """Use secure cookies on HTTPS frontends unless explicitly overridden."""
@@ -108,6 +119,16 @@ class Settings(BaseSettings):
             return ".".join(parts[-3:])
 
         return ".".join(parts[-2:])
+
+    @property
+    def mcp_issuer_url_resolved(self) -> str:
+        """Canonical OAuth issuer URL advertised to MCP clients."""
+        return (self.mcp_issuer_url or self.frontend_url).rstrip("/")
+
+    @property
+    def mcp_resource_url_resolved(self) -> str:
+        """Canonical MCP resource URL used for OAuth resource indicators."""
+        return (self.mcp_resource_url or f"{self.frontend_url.rstrip('/')}/mcp").rstrip("/")
 
 
 @lru_cache

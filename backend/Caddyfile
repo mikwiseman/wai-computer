@@ -9,6 +9,34 @@ say.waiwai.is {
         reverse_proxy api:8000
     }
 
+    handle /mcp {
+        reverse_proxy api:8000
+    }
+
+    handle /.well-known/oauth-* {
+        reverse_proxy api:8000
+    }
+
+    handle /authorize {
+        reverse_proxy api:8000
+    }
+
+    handle /token {
+        reverse_proxy api:8000
+    }
+
+    handle /revoke {
+        reverse_proxy api:8000
+    }
+
+    @mcpRegistration {
+        method POST OPTIONS
+        path /register
+    }
+    handle @mcpRegistration {
+        reverse_proxy api:8000
+    }
+
     handle /health {
         reverse_proxy api:8000
     }
