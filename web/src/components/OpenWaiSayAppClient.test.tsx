@@ -1,11 +1,8 @@
 import type React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildWaiSayAppUrl,
-  normalizeWaiSayAppClient,
-  OpenWaiSayAppClient,
-} from "./OpenWaiSayAppClient";
+import { buildWaiSayAppUrl, normalizeWaiSayAppClient } from "@/lib/app-client";
+import { OpenWaiSayAppClient } from "./OpenWaiSayAppClient";
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => (
