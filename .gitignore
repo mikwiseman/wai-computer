@@ -48,6 +48,7 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
+!shared/WaiSayKit/Package.resolved
 
 # CocoaPods
 Pods/
@@ -57,6 +58,20 @@ Pods/
 .claude/
 *.xcworkspace
 !*.xcworkspace/contents.xcworkspacedata
+
+# Xcode package lockfiles used by CI
+!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/
+ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/
+!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
+!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/
+macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/
+!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
+!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 *.xccheckout
 
 # Logs
