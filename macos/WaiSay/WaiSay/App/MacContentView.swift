@@ -122,6 +122,7 @@ struct MacMainView: View {
                 )
         } detail: {
             detailColumn
+                .id(detailPhaseKey)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

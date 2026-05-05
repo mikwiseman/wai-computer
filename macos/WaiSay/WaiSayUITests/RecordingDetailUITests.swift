@@ -16,11 +16,10 @@ final class RecordingDetailUITests: XCTestCase {
         app.activate()
 
         // Start recording
-        let startButton = app.descendants(matching: .any)
-            .matching(identifier: "start-recording-button")
-            .firstMatch
+        let startButton = app.buttons.matching(identifier: "start-recording-button").firstMatch
         _ = startButton.waitForExistence(timeout: 5)
         app.activate()
+        XCTAssertTrue(startButton.isHittable)
         startButton.tap()
 
         // Wait for live recording view

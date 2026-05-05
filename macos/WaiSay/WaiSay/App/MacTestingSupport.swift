@@ -90,6 +90,17 @@ enum MacUITestFixtures {
 
     static let recording = recordings[0]
 
+    static let completedRecording = Recording(
+        id: "ui-test-completed-recording",
+        title: "UI Test Completed Recording",
+        type: .note,
+        status: .ready,
+        durationSeconds: 3,
+        createdAt: createdAt.addingTimeInterval(60)
+    )
+
+    static let recordingFlowRecordings: [Recording] = [completedRecording] + recordings
+
     static let recordingDetail = RecordingDetail(
         id: recording.id,
         title: recording.title,
@@ -134,13 +145,50 @@ enum MacUITestFixtures {
             return try! JSONDecoder().decode([ActionItem].self, from: json)
         }()
     )
+
+    static let completedRecordingDetail = RecordingDetail(
+        id: completedRecording.id,
+        title: completedRecording.title,
+        type: completedRecording.type,
+        status: completedRecording.status,
+        durationSeconds: completedRecording.durationSeconds,
+        language: "en",
+        createdAt: completedRecording.createdAt,
+        segments: [
+            Segment(
+                id: "ui-test-final-segment",
+                speaker: nil,
+                content: "UI test finalized transcript.",
+                startMs: 0,
+                endMs: 3000,
+                confidence: 1
+            ),
+        ]
+    )
 }
 #endif
 
 #if DEBUG
 enum MacPermissionTesting {
+    private static var permissionMock: String? {
+        ProcessInfo.processInfo.environment["WAI_MOCK_DICTATION_PERMISSIONS"]
+    }
+
     static var forcesMissingDictationPermissions: Bool {
-        ProcessInfo.processInfo.environment["WAI_MOCK_DICTATION_PERMISSIONS"] == "missing"
+        switch permissionMock {
+        case "missing", "needs_restart_input", "needs_restart_paste":
+            return true
+        default:
+            return false
+        }
+    }
+
+    static var needsInputMonitoringRestart: Bool {
+        permissionMock == "needs_restart_input"
+    }
+
+    static var needsPasteRestart: Bool {
+        permissionMock == "needs_restart_paste"
     }
 }
 #endif

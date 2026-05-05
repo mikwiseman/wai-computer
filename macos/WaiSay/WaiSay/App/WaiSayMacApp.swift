@@ -649,7 +649,10 @@ class MacAppState: ObservableObject {
 
     func uiTestRecordings() -> [Recording]? {
         #if DEBUG
-        guard testingMode.isRecordingFlow || testingMode.isMainView else { return nil }
+        if testingMode.isRecordingFlow {
+            return MacUITestFixtures.recordingFlowRecordings
+        }
+        guard testingMode.isMainView else { return nil }
         return MacUITestFixtures.recordings
         #else
         return nil
@@ -658,11 +661,16 @@ class MacAppState: ObservableObject {
 
     func uiTestRecordingDetail(id: String) async -> RecordingDetail? {
         #if DEBUG
-        guard testingMode.isRecordingFlow || testingMode.isMainView,
-              id == MacUITestFixtures.recording.id else { return nil }
+        guard testingMode.isRecordingFlow || testingMode.isMainView else { return nil }
 
         try? await Task.sleep(for: .milliseconds(200))
-        return MacUITestFixtures.recordingDetail
+        if testingMode.isRecordingFlow, id == MacUITestFixtures.completedRecording.id {
+            return MacUITestFixtures.completedRecordingDetail
+        }
+        if id == MacUITestFixtures.recording.id {
+            return MacUITestFixtures.recordingDetail
+        }
+        return nil
         #else
         return nil
         #endif

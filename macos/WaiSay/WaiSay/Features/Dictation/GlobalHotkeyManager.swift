@@ -18,8 +18,22 @@ enum MacPrivacySettings {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
-    static func quitForPermissionRefresh() {
-        NSApp.terminate(nil)
+    static func restartForPermissionRefresh() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = true
+
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            if let error {
+                log.error("Failed to relaunch WaiSay after permission change: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            NSApp.terminate(nil)
+        }
+    }
+
+    static var permissionRestartHint: String {
+        "After you switch WaiSay on in System Settings, restart WaiSay so macOS applies the permission."
     }
 
     static var duplicatePermissionHint: String {
@@ -34,8 +48,8 @@ enum MacPrivacySettings {
 
 enum MacInputPermission {
     static var hasListenEventAccess: Bool {
-        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted ||
-            CGPreflightListenEventAccess()
+        CGPreflightListenEventAccess() ||
+            IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
     }
 
     @discardableResult
@@ -45,17 +59,16 @@ enum MacInputPermission {
         }
 
         log.info("Requesting Input Monitoring listen-event access")
-        if IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) {
+        if CGRequestListenEventAccess() {
             return true
         }
 
-        return CGRequestListenEventAccess()
+        return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
     static var hasPostEventAccess: Bool {
-        IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted ||
-            CGPreflightPostEventAccess() ||
-            AXIsProcessTrusted()
+        CGPreflightPostEventAccess() ||
+            IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted
     }
 
     @discardableResult
@@ -65,16 +78,11 @@ enum MacInputPermission {
         }
 
         log.info("Requesting Accessibility/post-event access")
-        if IOHIDRequestAccess(kIOHIDRequestTypePostEvent) {
-            return true
-        }
-
         if CGRequestPostEventAccess() {
             return true
         }
 
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+        return IOHIDRequestAccess(kIOHIDRequestTypePostEvent)
     }
 }
 
@@ -134,8 +142,8 @@ enum DictationHotkey: String, CaseIterable, Identifiable {
 /// Monitors the dictation hotkey.
 ///
 /// All builds use a listen-only CGEventTap so dictation can start while WaiSay
-/// is running in the background. The App Store build still delivers dictated
-/// text via the clipboard only; simulated paste remains direct-distribution only.
+/// is running in the background. Text insertion is clipboard-first and then
+/// posts Cmd+V when the user grants macOS post-event permission.
 @MainActor
 final class GlobalHotkeyManager: ObservableObject {
     /// Whether the hotkey is currently being held down
