@@ -35,13 +35,27 @@ enum TextInsertionError: LocalizedError {
 /// On any failure the text stays on the clipboard so the user can paste
 /// manually with ⌘V, and the error surfaces a message that says exactly that.
 enum TextInserter {
+    static var supportsAutomaticPaste: Bool {
+        #if SPARKLE
+        return true
+        #else
+        return false
+        #endif
+    }
+
     static var hasEventPostingPermission: Bool {
-        CGPreflightPostEventAccess()
+        guard supportsAutomaticPaste else { return false }
+        return CGPreflightPostEventAccess()
     }
 
     @discardableResult
     static func requestEventPostingPermission() -> Bool {
-        CGRequestPostEventAccess()
+        guard supportsAutomaticPaste else { return false }
+        return CGRequestPostEventAccess()
+    }
+
+    static func openEventPostingSettings() {
+        MacPrivacySettings.openAccessibility()
     }
 
     /// Insert `text` into `targetApp`. If `targetApp` is nil, paste goes to the
@@ -80,12 +94,12 @@ enum TextInserter {
             throw TextInsertionError.modifierStuck
         }
 
-        do {
-            try simulatePaste()
-        } catch {
-            log.error("Paste simulation failed")
-            throw TextInsertionError.pasteSimulationFailed
+        guard supportsAutomaticPaste else {
+            log.info("Dictated text copied to clipboard; automatic paste is unavailable in this build")
+            return
         }
+
+        try simulatePaste()
         log.info("Dictated text inserted and left on clipboard")
     }
 
@@ -121,6 +135,10 @@ enum TextInserter {
     /// Post a synthesised ⌘V to the session event tap. Throws on failure so the
     /// caller can surface the manual-paste fallback message.
     private static func simulatePaste() throws {
+        guard supportsAutomaticPaste else {
+            throw TextInsertionError.eventPostingPermissionDenied
+        }
+
         guard hasEventPostingPermission || requestEventPostingPermission() else {
             log.warning("Event posting permission missing — cannot simulate paste")
             throw TextInsertionError.eventPostingPermissionDenied

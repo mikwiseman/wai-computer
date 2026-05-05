@@ -61,6 +61,7 @@ struct WaiSayMacApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
+                    dictationManager.refreshPermissionState()
                     Task {
                         await appState.resumePendingRecordingSyncIfNeeded()
                     }
@@ -292,7 +293,7 @@ class MacAppState: ObservableObject {
     @Published var pendingMainWindowAction: MacMainWindowAction?
     @Published var hasCompletedOnboarding: Bool = false
 
-    static let onboardingCompletedKey = "hasCompletedOnboarding"
+    static let onboardingCompletedKey = "nativeOnboardingV1Completed"
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
@@ -303,6 +304,7 @@ class MacAppState: ObservableObject {
     let testingMode: MacTestingMode
 
     private let apiClient: APIClient
+    private var hasAttemptedStoredSessionRestore = false
 
     init(
         recordingViewModel: MacRecordingViewModel,
@@ -367,7 +369,33 @@ class MacAppState: ObservableObject {
             }
         }
 
-        // Restore tokens from Keychain (or environment for screenshots)
+        if hasCompletedOnboarding {
+            beginStoredSessionRestoreIfNeeded()
+        } else {
+            isCheckingAuth = false
+        }
+    }
+
+    /// Mark the welcome tour as seen. The flag persists across logout and
+    /// account deletion — onboarding is a product introduction, not part of
+    /// the auth lifecycle.
+    func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        hasCompletedOnboarding = true
+        beginStoredSessionRestoreIfNeeded()
+    }
+
+    private func beginStoredSessionRestoreIfNeeded() {
+        guard !hasAttemptedStoredSessionRestore else {
+            isCheckingAuth = false
+            return
+        }
+
+        hasAttemptedStoredSessionRestore = true
+        isCheckingAuth = true
+
+        // Restore tokens only after onboarding. This avoids a first-launch
+        // Keychain prompt and prevents old installs from silently skipping the tour.
         let accessToken: String? = {
             if let arg = ProcessInfo.processInfo.environment["WAISAY_ACCESS_TOKEN"] {
                 KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: arg)
@@ -380,33 +408,20 @@ class MacAppState: ObservableObject {
             KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshOverride)
         }
 
-        if let accessToken {
-            Task {
-                await apiClient.setAccessToken(accessToken)
-                let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
-                if let rt {
-                    await apiClient.setRefreshToken(rt)
-                }
-                await loadCurrentUser()
-                // Returning user with valid tokens — they've already conceptually
-                // onboarded, even if UserDefaults was wiped (clean install with
-                // Keychain restored). Skip the welcome tour.
-                if isAuthenticated && !hasCompletedOnboarding {
-                    completeOnboarding()
-                }
-                isCheckingAuth = false
+        guard let accessToken else {
+            isCheckingAuth = false
+            return
+        }
+
+        Task {
+            await apiClient.setAccessToken(accessToken)
+            let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
+            if let rt {
+                await apiClient.setRefreshToken(rt)
             }
-        } else {
+            await loadCurrentUser()
             isCheckingAuth = false
         }
-    }
-
-    /// Mark the welcome tour as seen. The flag persists across logout and
-    /// account deletion — onboarding is a product introduction, not part of
-    /// the auth lifecycle.
-    func completeOnboarding() {
-        UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
-        hasCompletedOnboarding = true
     }
 
     func login(email: String, password: String) async {

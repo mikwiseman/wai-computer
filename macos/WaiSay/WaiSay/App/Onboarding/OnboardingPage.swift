@@ -47,15 +47,15 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
             return Content(
                 eyebrow: "Dictate",
                 title: "Speak into anything.",
-                body: "A global hotkey turns your voice into text in any app. We'll set up the hotkey in Settings.",
+                body: "A global hotkey turns your voice into text in any app. You can set it up before signing in.",
                 symbol: "keyboard.badge.eye",
                 useTriangleIcon: false
             )
         case .permission:
             return Content(
-                eyebrow: "Permission",
-                title: "We need your microphone.",
-                body: "WaiSay only records when you press record. We never listen in the background.",
+                eyebrow: "Setup",
+                title: "Choose the permissions.",
+                body: "Microphone is for recording. Input Monitoring is for the global hotkey. Direct downloads can also enable automatic insertion.",
                 symbol: "lock.shield",
                 useTriangleIcon: false
             )

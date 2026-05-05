@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import WaiSayKit
 
 struct MacSettingsView: View {
@@ -9,6 +10,7 @@ struct MacSettingsView: View {
     @State private var showDeleteAccountConfirmation = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
+    @State private var hasMicrophonePermission = MacSettingsView.hasMicrophonePermission
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var hasPastePermission = TextInserter.hasEventPostingPermission
     @State private var permissionPollTimer: Timer?
@@ -143,7 +145,13 @@ struct MacSettingsView: View {
             Section {
                 Toggle("Enable Dictation", isOn: Binding(
                     get: { dictationManager.isFeatureEnabled },
-                    set: { dictationManager.updateEnabled($0) }
+                    set: { enabled in
+                        dictationManager.updateEnabled(enabled)
+                        refreshPermissions()
+                        if enabled, !dictationPermissionsReady {
+                            startPermissionPolling()
+                        }
+                    }
                 ))
                 .font(Typography.body)
 
@@ -163,42 +171,36 @@ struct MacSettingsView: View {
                     .disabled(!dictationManager.isFeatureEnabled)
                     .accessibilityIdentifier("settings-ai-text-cleanup-toggle")
 
-                // Input Monitoring is required for global hold-to-talk monitoring.
-                HStack {
-                    Text("Input Monitoring")
-                        .font(Typography.body)
-                    Spacer()
-                    if hasInputMonitoringPermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .font(Typography.bodySmall)
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant") {
-                            GlobalHotkeyManager.requestInputMonitoringPermission()
-                            startPermissionPolling()
-                        }
-                        .font(Typography.bodySmall)
-                    }
-                }
+                permissionRow(
+                    title: "Microphone",
+                    isGranted: hasMicrophonePermission,
+                    grantAction: requestMicrophonePermission
+                )
 
-                // Event-posting permission is required for the final paste into
-                // the app that had focus when dictation started.
+                permissionRow(
+                    title: "Input Monitoring",
+                    isGranted: hasInputMonitoringPermission,
+                    grantAction: requestInputMonitoringPermission,
+                    settingsAction: MacPrivacySettings.openInputMonitoring
+                )
+
+                #if SPARKLE
+                permissionRow(
+                    title: "Paste Permission",
+                    isGranted: hasPastePermission,
+                    grantAction: requestPastePermission,
+                    settingsAction: TextInserter.openEventPostingSettings
+                )
+                #else
                 HStack {
-                    Text("Paste Permission")
+                    Text("Paste Method")
                         .font(Typography.body)
                     Spacer()
-                    if hasPastePermission {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .font(Typography.bodySmall)
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant") {
-                            TextInserter.requestEventPostingPermission()
-                            startPermissionPolling()
-                        }
+                    Label("Clipboard", systemImage: "doc.on.clipboard")
                         .font(Typography.bodySmall)
-                    }
+                        .foregroundStyle(Palette.textSecondary)
                 }
+                #endif
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -313,6 +315,17 @@ struct MacSettingsView: View {
         if !dictationManager.isFeatureEnabled {
             return "Enable Dictation to use a global hold-to-talk hotkey."
         }
+        if !hasMicrophonePermission {
+            return "Grant Microphone permission to capture your voice."
+        }
+        if !hasInputMonitoringPermission {
+            return "Grant Input Monitoring to use the hotkey outside WaiSay."
+        }
+        #if SPARKLE
+        if !hasPastePermission {
+            return "Grant Paste Permission to insert text automatically. Dictated text is still copied to the clipboard."
+        }
+        #endif
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
     }
 
@@ -320,17 +333,95 @@ struct MacSettingsView: View {
         return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before insertion."
     }
 
+    private var dictationPermissionsReady: Bool {
+        #if SPARKLE
+        hasMicrophonePermission && hasInputMonitoringPermission && hasPastePermission
+        #else
+        hasMicrophonePermission && hasInputMonitoringPermission
+        #endif
+    }
+
+    private static var hasMicrophonePermission: Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    @ViewBuilder
+    private func permissionRow(
+        title: String,
+        isGranted: Bool,
+        grantAction: @escaping () -> Void,
+        settingsAction: (() -> Void)? = nil
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(Typography.body)
+            Spacer()
+            if isGranted {
+                Label("Granted", systemImage: "checkmark.circle.fill")
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.green)
+            } else {
+                Button("Grant") {
+                    grantAction()
+                }
+                .font(Typography.bodySmall)
+
+                if let settingsAction {
+                    Button("Open Settings") {
+                        settingsAction()
+                        startPermissionPolling()
+                    }
+                    .font(Typography.bodySmall)
+                }
+            }
+        }
+    }
+
     private func refreshPermissions() {
+        hasMicrophonePermission = Self.hasMicrophonePermission
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
         hasPastePermission = TextInserter.hasEventPostingPermission
-        if hasInputMonitoringPermission && hasPastePermission {
+        dictationManager.refreshPermissionState()
+        if dictationPermissionsReady {
             stopPermissionPolling()
+        }
+    }
+
+    private func requestMicrophonePermission() {
+        startPermissionPolling()
+        Task {
+            _ = await AVAudioApplication.requestRecordPermission()
+            await MainActor.run {
+                refreshPermissions()
+            }
+        }
+    }
+
+    private func requestInputMonitoringPermission() {
+        startPermissionPolling()
+        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            refreshPermissions()
+            if !hasInputMonitoringPermission {
+                MacPrivacySettings.openInputMonitoring()
+            }
+        }
+    }
+
+    private func requestPastePermission() {
+        startPermissionPolling()
+        _ = TextInserter.requestEventPostingPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            refreshPermissions()
+            if !hasPastePermission {
+                TextInserter.openEventPostingSettings()
+            }
         }
     }
 
     private func startPermissionPolling() {
         stopPermissionPolling()
-        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             DispatchQueue.main.async {
                 refreshPermissions()
             }

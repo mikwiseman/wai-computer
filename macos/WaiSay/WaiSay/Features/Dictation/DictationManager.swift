@@ -110,7 +110,13 @@ final class DictationManager: ObservableObject {
     func updateHotkey(_ hotkey: DictationHotkey) {
         hotkeyChoice = hotkey.rawValue
         hotkeyManager.hotkey = hotkey
+        refreshPermissionState()
         log.info("Hotkey updated to \(hotkey.label)")
+    }
+
+    func refreshPermissionState() {
+        hotkeyManager.refreshAfterPermissionChange()
+        applyHotkeyAvailability()
     }
 
     // MARK: - Hotkey Callbacks

@@ -137,6 +137,7 @@ describe("app pages", () => {
     const macLink = screen.getByTestId("download-mac");
     expect(macLink).toHaveAttribute("href", "/releases/macos/WaiSay-latest.dmg");
     expect(macLink).toHaveAttribute("download");
+    expect(macLink).toHaveTextContent("macOS 14+");
 
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
