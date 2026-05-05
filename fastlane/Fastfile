@@ -1,10 +1,28 @@
+require "json"
+require "shellwords"
+
 default_platform(:ios)
 
+def repo_root
+  File.expand_path("..", __dir__)
+end
+
+def strip_quarantine_attributes(*paths)
+  paths.each do |path|
+    next unless File.exist?(path)
+
+    sh("find #{path.shellescape} -xattrname com.apple.quarantine -exec xattr -d com.apple.quarantine {} +")
+  end
+end
+
 def waisay_app_store_connect_api_key
+  config_path = File.expand_path("$APPSTORECONNECT_CONFIG")
+  config = JSON.parse(File.read(config_path))
+
   app_store_connect_api_key(
-    key_id: "<app-store-key-id>",
-    issuer_id: "<app-store-issuer-id>",
-    key_filepath: File.expand_path("$APPSTORECONNECT_CONFIG"),
+    key_id: config.fetch("key_id"),
+    issuer_id: config.fetch("issuer_id"),
+    key_filepath: File.expand_path(config.fetch("key_filepath")),
     in_house: false
   )
 end
@@ -74,15 +92,22 @@ platform :mac do
   desc "Build and upload macOS App Store build to TestFlight"
   lane :upload_testflight do
     api_key = waisay_app_store_connect_api_key
+    pkg_path = File.join(repo_root, "artifacts/testflight/macos/WaiSay.pkg")
 
-    sh("scripts/verify-macos-channels.sh")
+    strip_quarantine_attributes(
+      File.join(repo_root, "macos/WaiSay/WaiSay/AppIcon.icon"),
+      File.join(repo_root, "macos/WaiSay/WaiSay/Assets.xcassets"),
+      File.join(repo_root, "ios/WaiSay/WaiSay/AppIcon.icon"),
+      File.join(repo_root, "ios/WaiSay/WaiSay/Assets.xcassets")
+    )
+    sh(File.join(repo_root, "scripts/verify-macos-channels.sh"))
 
     build_app(
-      project: "macos/WaiSay/WaiSay.xcodeproj",
+      project: File.join(repo_root, "macos/WaiSay/WaiSay.xcodeproj"),
       scheme: "WaiSay",
       export_method: "app-store",
-      output_directory: "artifacts/testflight/macos",
-      output_name: "WaiSay.pkg",
+      output_directory: File.dirname(pkg_path),
+      output_name: "WaiSay",
       destination: "generic/platform=macOS",
       clean: true
     )
@@ -90,15 +115,20 @@ platform :mac do
     upload_to_testflight(
       api_key: api_key,
       apple_id: "6761768729",
+      pkg: Actions.lane_context[SharedValues::PKG_OUTPUT_PATH] || pkg_path,
       skip_waiting_for_build_processing: true
     )
   end
 
   desc "Build strict notarized DMG and publish it to say.waiwai.is"
   lane :publish_dmg do
-    sh("scripts/verify-macos-channels.sh")
-    sh("MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh")
-    sh("scripts/publish-macos-dmg.sh")
+    strip_quarantine_attributes(
+      File.join(repo_root, "macos/WaiSay/WaiSay/AppIcon.icon"),
+      File.join(repo_root, "macos/WaiSay/WaiSay/Assets.xcassets")
+    )
+    sh(File.join(repo_root, "scripts/verify-macos-channels.sh"))
+    sh("MACOS_RELEASE_STRICT=1 #{File.join(repo_root, "scripts/build-macos-dmg.sh")}")
+    sh(File.join(repo_root, "scripts/publish-macos-dmg.sh"))
   end
 
   desc "Upload macOS App Store build to TestFlight and publish direct DMG to web"
@@ -115,7 +145,7 @@ platform :mac do
       api_key: api_key,
       platform: "osx",
       app_identifier: "is.waiwai.say",
-      screenshots_path: "fastlane/screenshots_macos",
+      screenshots_path: File.join(repo_root, "fastlane/screenshots_macos"),
       skip_binary_upload: true,
       skip_app_version_update: true,
       force: true,
