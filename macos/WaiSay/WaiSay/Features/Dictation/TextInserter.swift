@@ -17,7 +17,7 @@ enum TextInsertionError: LocalizedError {
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
         case .eventPostingPermissionDenied:
-            return "WaiSay needs permission to paste into other apps. The text is on your clipboard — grant Paste permission in Settings and try again."
+            return "WaiSay needs permission to paste into other apps. The text is on your clipboard — turn on Automatic Paste in Settings, restart WaiSay, and try again."
         case .pasteSimulationFailed:
             return "Could not paste text. It's been copied to your clipboard — press ⌘V to paste manually."
         case .modifierStuck:

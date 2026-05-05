@@ -70,8 +70,41 @@ final class OnboardingPermissionUITests: XCTestCase {
             continueButton.tap()
         }
 
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-input-monitoring-restart-required").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-recheck").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-settings").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-grant").firstMatch.exists)
+
+        let primaryButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
+        XCTAssertTrue(waitForElement(primaryButton, in: app, timeout: 3))
+        XCTAssertEqual(primaryButton.label, "Restart WaiSay")
+    }
+
+    @MainActor
+    func testOnboardingShowsRestartRequiredForAutomaticPastePermissionRefresh() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_paste"
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
+
+        let continueButton = app.buttons.matching(identifier: "onboarding-continue-button").firstMatch
+        for _ in 0..<4 {
+            XCTAssertTrue(waitForElement(continueButton, in: app, timeout: 3))
+            continueButton.tap()
+        }
+
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-automatic-paste-restart-required").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-recheck").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-settings").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-grant").firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-grant").firstMatch.exists)
 
         let primaryButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
         XCTAssertTrue(waitForElement(primaryButton, in: app, timeout: 3))

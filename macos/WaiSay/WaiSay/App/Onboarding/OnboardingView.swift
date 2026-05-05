@@ -176,8 +176,8 @@ struct OnboardingView: View {
 
     private static var hasMicrophonePermission: Bool {
         #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return false
+        if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
+            return snapshot.hasMicrophonePermission
         }
         #endif
         return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
@@ -185,12 +185,12 @@ struct OnboardingView: View {
 
     private func refreshPermissions() {
         #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            hasMicrophonePermission = false
-            hasInputMonitoringPermission = false
-            hasPastePermission = false
-            inputMonitoringNeedsReview = MacPermissionTesting.needsInputMonitoringRestart
-            pasteNeedsReview = MacPermissionTesting.needsPasteRestart
+        if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
+            hasMicrophonePermission = snapshot.hasMicrophonePermission
+            hasInputMonitoringPermission = snapshot.hasInputMonitoringPermission
+            hasPastePermission = snapshot.hasPastePermission
+            inputMonitoringNeedsReview = snapshot.inputMonitoringNeedsReview
+            pasteNeedsReview = snapshot.pasteNeedsReview
             return
         }
         #endif
@@ -448,6 +448,10 @@ private struct OnboardingPermissionSlide: View {
     }
 
     private var permissionBody: String {
+        if (inputMonitoringNeedsReview && !hasInputMonitoringPermission) ||
+            (pasteNeedsReview && !hasPastePermission) {
+            return "After you turn WaiSay on in System Settings, restart WaiSay so macOS applies voice access to this running app."
+        }
         return content.body
     }
 
@@ -484,6 +488,11 @@ private struct OnboardingPermissionSlide: View {
                     Text("Granted")
                         .font(Typography.bodySmall)
                         .foregroundStyle(.green)
+                } else if needsReview {
+                    Label("Restart Required", systemImage: "arrow.clockwise.circle.fill")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("\(identifierBase)-restart-required")
                 } else {
                     Button("Grant") {
                         grantAction()
@@ -515,6 +524,14 @@ private struct OnboardingPermissionSlide: View {
                             }
                             .font(Typography.bodySmall)
                             .accessibilityIdentifier("\(identifierBase)-recheck")
+                        }
+
+                        if let settingsAction {
+                            Button("Settings") {
+                                settingsAction()
+                            }
+                            .font(Typography.bodySmall)
+                            .accessibilityIdentifier("\(identifierBase)-settings")
                         }
 
                         if let restartAction {

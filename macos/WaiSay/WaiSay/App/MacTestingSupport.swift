@@ -169,26 +169,60 @@ enum MacUITestFixtures {
 #endif
 
 #if DEBUG
+struct MacPermissionTestingSnapshot {
+    let hasMicrophonePermission: Bool
+    let hasInputMonitoringPermission: Bool
+    let hasPastePermission: Bool
+    let inputMonitoringNeedsReview: Bool
+    let pasteNeedsReview: Bool
+}
+
 enum MacPermissionTesting {
     private static var permissionMock: String? {
         ProcessInfo.processInfo.environment["WAI_MOCK_DICTATION_PERMISSIONS"]
     }
 
-    static var forcesMissingDictationPermissions: Bool {
+    static var dictationPermissionSnapshot: MacPermissionTestingSnapshot? {
         switch permissionMock {
-        case "missing", "needs_restart_input", "needs_restart_paste":
-            return true
+        case "missing":
+            return MacPermissionTestingSnapshot(
+                hasMicrophonePermission: false,
+                hasInputMonitoringPermission: false,
+                hasPastePermission: false,
+                inputMonitoringNeedsReview: false,
+                pasteNeedsReview: false
+            )
+        case "needs_restart_input":
+            return MacPermissionTestingSnapshot(
+                hasMicrophonePermission: true,
+                hasInputMonitoringPermission: false,
+                hasPastePermission: true,
+                inputMonitoringNeedsReview: true,
+                pasteNeedsReview: false
+            )
+        case "needs_restart_paste":
+            return MacPermissionTestingSnapshot(
+                hasMicrophonePermission: true,
+                hasInputMonitoringPermission: true,
+                hasPastePermission: false,
+                inputMonitoringNeedsReview: false,
+                pasteNeedsReview: true
+            )
         default:
-            return false
+            return nil
         }
     }
 
+    static var forcesMissingDictationPermissions: Bool {
+        dictationPermissionSnapshot != nil
+    }
+
     static var needsInputMonitoringRestart: Bool {
-        permissionMock == "needs_restart_input"
+        dictationPermissionSnapshot?.inputMonitoringNeedsReview == true
     }
 
     static var needsPasteRestart: Bool {
-        permissionMock == "needs_restart_paste"
+        dictationPermissionSnapshot?.pasteNeedsReview == true
     }
 }
 #endif

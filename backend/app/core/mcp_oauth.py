@@ -62,6 +62,7 @@ class McpAuthorizationRequestView:
     csrf_token: str
     client_name: str
     client_uri: str | None
+    redirect_uri: str
     scopes: list[str]
     expires_at: datetime
 
@@ -235,6 +236,7 @@ async def load_authorization_request_view(
         csrf_token=request.csrf_token,
         client_name=request.client.client_name or "MCP client",
         client_uri=request.client.client_uri,
+        redirect_uri=request.redirect_uri,
         scopes=request.scopes,
         expires_at=request.expires_at,
     )

@@ -29,7 +29,8 @@ are routed to the API for MCP dynamic client registration.
 5. The browser is redirected to WaiSay web. If the browser is not signed in,
    WaiSay redirects to
    `/login?returnTo=/api/mcp/oauth/consent?...`.
-6. After login, the user approves read-only MCP access. WaiSay redirects back to
+6. After login, the user sees the requesting client name, requested scope, and
+   redirect URI, then approves read-only MCP access. WaiSay redirects back to
    the client callback with an authorization code.
 7. The client exchanges the code and PKCE verifier at `/token`.
 8. Subsequent MCP calls use `Authorization: Bearer <access-token>`.
@@ -60,6 +61,8 @@ Write tools must use separate scopes and explicit user consent. Do not extend
   They are not accepted as MCP bearer tokens.
 - OAuth authorization codes are one-use and PKCE-bound.
 - Access tokens must arrive in the `Authorization` header, never query strings.
+- The consent page must clearly show the client name, requested scopes, and
+  redirect URI before issuing a code.
 - Tool outputs must stay privacy-safe: no server logs containing transcript
   text, search queries, filenames, raw emails, or tokens.
 - Redirect URIs must use HTTPS, except localhost loopback callbacks used by
@@ -81,10 +84,10 @@ Write tools must use separate scopes and explicit user consent. Do not extend
 
 ## References
 
-- MCP Authorization, latest spec: https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
-- MCP security best practices: https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices
-- OpenAI MCP servers for ChatGPT and API integrations: https://platform.openai.com/docs/mcp/
-- OpenAI ChatGPT developer mode for MCP connectors: https://platform.openai.com/docs/developer-mode
-- Claude.ai custom connectors with remote MCP: https://support.anthropic.com/en/articles/11175166-getting-started-with-custom-integrations-using-remote-mcp
-- Claude Code MCP: https://code.claude.com/docs/en/mcp
-- Cursor MCP: https://docs.cursor.com/advanced/model-context-protocol
+- MCP Authorization, latest spec: https://modelcontextprotocol.io/specification/latest/basic/authorization
+- MCP security best practices: https://modelcontextprotocol.io/specification/latest/basic/security_best_practices
+- OpenAI MCP servers for ChatGPT and API integrations: https://platform.openai.com/docs/mcp
+- OpenAI Apps SDK authentication: https://developers.openai.com/apps-sdk/build/auth
+- Claude.ai remote MCP connectors: https://claude.com/docs/connectors/custom/remote-mcp
+- Claude connector authentication: https://claude.com/docs/connectors/building/authentication
+- Cursor MCP: https://cursor.com/docs/mcp

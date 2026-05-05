@@ -5,11 +5,14 @@ final class SettingsUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launchToSettings() -> XCUIApplication {
+    private func launchToSettings(permissionMock: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
         app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        if let permissionMock {
+            app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = permissionMock
+        }
         app.launch()
         app.activate()
 
@@ -25,6 +28,17 @@ final class SettingsUITests: XCTestCase {
         settingsButton.tap()
 
         return app
+    }
+
+    private func revealElementIfNeeded(_ element: XCUIElement, in app: XCUIApplication) {
+        guard !element.exists else { return }
+        let scrollContainer = app.scrollViews.firstMatch.exists
+            ? app.scrollViews.firstMatch
+            : app.tables.firstMatch
+        guard scrollContainer.exists else { return }
+        for _ in 0..<6 where !element.exists {
+            scrollContainer.swipeUp()
+        }
     }
 
     private func waitForElement(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
@@ -98,5 +112,21 @@ final class SettingsUITests: XCTestCase {
 
         XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
         XCTAssertFalse(app.textFields["Email"].exists, "Sign out should clear onboarding/auth state before returning to the app")
+    }
+
+    @MainActor
+    func testSettingsShowsRestartRequiredForAutomaticPastePermissionRefresh() throws {
+        let app = launchToSettings(permissionMock: "needs_restart_paste")
+
+        let restartRequired = app.descendants(matching: .any)
+            .matching(identifier: "settings-permission-automatic-paste-restart-required")
+            .firstMatch
+        revealElementIfNeeded(restartRequired, in: app)
+
+        XCTAssertTrue(waitForElement(restartRequired, in: app, timeout: 5))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-automatic-paste-recheck").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-automatic-paste-settings").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-automatic-paste-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "settings-permission-automatic-paste-grant").firstMatch.exists)
     }
 }
