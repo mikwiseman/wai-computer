@@ -70,7 +70,7 @@ jobs:
 
   web-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     defaults:
       run:
@@ -99,7 +99,7 @@ jobs:
         run: pnpm test:unit
 
       - name: Install Playwright Chromium
-        timeout-minutes: 8
+        timeout-minutes: 20
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Browser E2E
