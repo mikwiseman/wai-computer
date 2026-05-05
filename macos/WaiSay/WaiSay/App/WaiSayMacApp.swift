@@ -290,6 +290,10 @@ class MacAppState: ObservableObject {
     @Published var completedRecordingContext: CompletedRecordingContext?
     @Published var selectedRecordingFromMenu: String?
     @Published var pendingMainWindowAction: MacMainWindowAction?
+    @Published var hasCompletedOnboarding: Bool = false
+
+    static let onboardingCompletedKey = "hasCompletedOnboarding"
+    static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
@@ -312,15 +316,29 @@ class MacAppState: ObservableObject {
         let baseURL = URL(string: "https://say.waiwai.is")!
         apiClient = APIClient(baseURL: baseURL)
 
+        // Resolve onboarding flag honoring env-var overrides used by tests/dev.
+        let env = ProcessInfo.processInfo.environment
+        if env["WAI_FORCE_ONBOARDING"] == "1" {
+            UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
+            hasCompletedOnboarding = false
+        } else if env["WAI_SKIP_ONBOARDING"] == "1" {
+            UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+            hasCompletedOnboarding = true
+        } else {
+            hasCompletedOnboarding = UserDefaults.standard.bool(forKey: MacAppState.onboardingCompletedKey)
+        }
+
         #if DEBUG
         if testingMode.isRecordingFlow || testingMode.isMainView {
             currentUser = MacUITestFixtures.user
             isAuthenticated = true
             isCheckingAuth = false
+            hasCompletedOnboarding = true
             return
         }
         if testingMode.isAuthFlow {
             isCheckingAuth = false
+            hasCompletedOnboarding = true
             return
         }
         #endif
@@ -370,11 +388,25 @@ class MacAppState: ObservableObject {
                     await apiClient.setRefreshToken(rt)
                 }
                 await loadCurrentUser()
+                // Returning user with valid tokens — they've already conceptually
+                // onboarded, even if UserDefaults was wiped (clean install with
+                // Keychain restored). Skip the welcome tour.
+                if isAuthenticated && !hasCompletedOnboarding {
+                    completeOnboarding()
+                }
                 isCheckingAuth = false
             }
         } else {
             isCheckingAuth = false
         }
+    }
+
+    /// Mark the welcome tour as seen. The flag persists across logout and
+    /// account deletion — onboarding is a product introduction, not part of
+    /// the auth lifecycle.
+    func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        hasCompletedOnboarding = true
     }
 
     func login(email: String, password: String) async {
@@ -458,6 +490,11 @@ class MacAppState: ObservableObject {
             }
             magicLinkSent = false
             await loadCurrentUser()
+            // External-trigger auth (deep link from email) can land mid-onboarding.
+            // Don't trap an authenticated user behind the welcome tour.
+            if isAuthenticated && !hasCompletedOnboarding {
+                completeOnboarding()
+            }
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
