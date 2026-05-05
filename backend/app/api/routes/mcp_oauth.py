@@ -55,10 +55,12 @@ def _consent_html(
     csrf_token: str,
     client_name: str,
     client_uri: str | None,
+    redirect_uri: str,
     scopes: list[str],
 ) -> str:
     escaped_client = html.escape(client_name)
     escaped_uri = html.escape(client_uri or "")
+    escaped_redirect_uri = html.escape(redirect_uri)
     escaped_request = html.escape(request_token)
     escaped_csrf = html.escape(csrf_token)
     scope_rows = "\n".join(
@@ -115,6 +117,21 @@ def _consent_html(
       color: #6b6b63;
       word-break: break-word;
     }}
+    .redirect {{
+      margin-top: 18px;
+      padding: 12px;
+      border: 1px solid #deded8;
+      border-radius: 6px;
+      background: #f7f7f4;
+      font-size: 13px;
+      color: #3f3f3a;
+      word-break: break-word;
+    }}
+    .redirect strong {{
+      display: block;
+      color: #171717;
+      margin-bottom: 4px;
+    }}
     .actions {{
       display: flex;
       gap: 12px;
@@ -143,6 +160,7 @@ def _consent_html(
     {uri_markup}
     <p>This MCP client is requesting read-only access to your WaiSay library.</p>
     <ul>{scope_rows}</ul>
+    <p class="redirect"><strong>Redirect URI</strong>{escaped_redirect_uri}</p>
     <form method="post" action="/api/mcp/oauth/consent">
       <input type="hidden" name="request" value="{escaped_request}" />
       <input type="hidden" name="csrf" value="{escaped_csrf}" />
@@ -181,6 +199,7 @@ async def get_consent(
             csrf_token=view.csrf_token,
             client_name=view.client_name,
             client_uri=view.client_uri,
+            redirect_uri=view.redirect_uri,
             scopes=view.scopes,
         ),
         headers={"Cache-Control": "no-store"},

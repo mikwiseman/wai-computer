@@ -109,6 +109,7 @@ async def test_mcp_oauth_consent_and_token_exchange(
     consent_page = await client.get(consent_location, headers=auth_headers)
     assert consent_page.status_code == 200
     assert "Test MCP Client" in consent_page.text
+    assert redirect_uri in consent_page.text
     csrf_match = re.search(r'name="csrf" value="([^"]+)"', consent_page.text)
     assert csrf_match is not None
 
