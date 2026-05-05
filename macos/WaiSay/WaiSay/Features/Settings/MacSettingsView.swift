@@ -13,6 +13,8 @@ struct MacSettingsView: View {
     @State private var hasMicrophonePermission = MacSettingsView.hasMicrophonePermission
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var hasPastePermission = TextInserter.hasEventPostingPermission
+    @State private var inputMonitoringNeedsReview = false
+    @State private var pasteNeedsReview = false
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
@@ -180,16 +182,18 @@ struct MacSettingsView: View {
                 permissionRow(
                     title: "Input Monitoring",
                     isGranted: hasInputMonitoringPermission,
+                    needsReview: inputMonitoringNeedsReview,
                     grantAction: requestInputMonitoringPermission,
-                    settingsAction: MacPrivacySettings.openInputMonitoring
+                    settingsAction: openInputMonitoringSettings
                 )
 
                 #if SPARKLE
                 permissionRow(
-                    title: "Paste Permission",
+                    title: "Automatic Paste",
                     isGranted: hasPastePermission,
+                    needsReview: pasteNeedsReview,
                     grantAction: requestPastePermission,
-                    settingsAction: TextInserter.openEventPostingSettings
+                    settingsAction: openPasteSettings
                 )
                 #else
                 HStack {
@@ -323,7 +327,7 @@ struct MacSettingsView: View {
         }
         #if SPARKLE
         if !hasPastePermission {
-            return "Grant Paste Permission to insert text automatically. Dictated text is still copied to the clipboard."
+            return "Grant Automatic Paste to insert text automatically. Dictated text is still copied to the clipboard."
         }
         #endif
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
@@ -349,27 +353,48 @@ struct MacSettingsView: View {
     private func permissionRow(
         title: String,
         isGranted: Bool,
+        needsReview: Bool = false,
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)? = nil
     ) -> some View {
-        HStack {
-            Text(title)
-                .font(Typography.body)
-            Spacer()
-            if isGranted {
-                Label("Granted", systemImage: "checkmark.circle.fill")
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack {
+                Text(title)
+                    .font(Typography.body)
+                Spacer()
+                if isGranted {
+                    Label("Granted", systemImage: "checkmark.circle.fill")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Grant") {
+                        grantAction()
+                    }
                     .font(Typography.bodySmall)
-                    .foregroundStyle(.green)
-            } else {
-                Button("Grant") {
-                    grantAction()
-                }
-                .font(Typography.bodySmall)
 
-                if let settingsAction {
-                    Button("Open Settings") {
-                        settingsAction()
-                        startPermissionPolling()
+                    if let settingsAction {
+                        Button("Settings") {
+                            settingsAction()
+                        }
+                        .font(Typography.bodySmall)
+                    }
+                }
+            }
+
+            if !isGranted && needsReview {
+                Text(MacPrivacySettings.duplicatePermissionHint)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Spacing.sm) {
+                    Button("Recheck") {
+                        refreshPermissions()
+                    }
+                    .font(Typography.bodySmall)
+
+                    Button("Quit WaiSay") {
+                        MacPrivacySettings.quitForPermissionRefresh()
                     }
                     .font(Typography.bodySmall)
                 }
@@ -381,6 +406,12 @@ struct MacSettingsView: View {
         hasMicrophonePermission = Self.hasMicrophonePermission
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
         hasPastePermission = TextInserter.hasEventPostingPermission
+        if hasInputMonitoringPermission {
+            inputMonitoringNeedsReview = false
+        }
+        if hasPastePermission {
+            pasteNeedsReview = false
+        }
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -399,6 +430,7 @@ struct MacSettingsView: View {
 
     private func requestInputMonitoringPermission() {
         startPermissionPolling()
+        inputMonitoringNeedsReview = true
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             refreshPermissions()
@@ -410,6 +442,7 @@ struct MacSettingsView: View {
 
     private func requestPastePermission() {
         startPermissionPolling()
+        pasteNeedsReview = true
         _ = TextInserter.requestEventPostingPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             refreshPermissions()
@@ -417,6 +450,18 @@ struct MacSettingsView: View {
                 TextInserter.openEventPostingSettings()
             }
         }
+    }
+
+    private func openInputMonitoringSettings() {
+        startPermissionPolling()
+        inputMonitoringNeedsReview = true
+        MacPrivacySettings.openInputMonitoring()
+    }
+
+    private func openPasteSettings() {
+        startPermissionPolling()
+        pasteNeedsReview = true
+        TextInserter.openEventPostingSettings()
     }
 
     private func startPermissionPolling() {

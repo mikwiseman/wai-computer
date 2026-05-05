@@ -229,7 +229,7 @@ class AppState: ObservableObject {
     @Published var error: String?
     @Published var hasCompletedOnboarding: Bool = false
 
-    static let onboardingCompletedKey = "nativeOnboardingV1Completed"
+    static let onboardingCompletedKey = "nativeOnboardingV2Completed"
 
     let apiClient: APIClient
     private var hasAttemptedStoredSessionRestore = false

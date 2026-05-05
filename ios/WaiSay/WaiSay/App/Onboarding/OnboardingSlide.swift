@@ -47,8 +47,13 @@ struct OnboardingSlide: View {
 
     @ViewBuilder
     private var iconView: some View {
-        if content.useTriangleIcon {
-            WaiTriangleIcon(size: 96)
+        if content.useAppIcon {
+            Image("BrandIcon")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 8)
         } else if let symbol = content.symbol {
             Image(systemName: symbol)
                 .font(.system(size: 72, weight: .light))

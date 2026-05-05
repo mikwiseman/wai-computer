@@ -13,6 +13,14 @@ enum MacPrivacySettings {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
+    static func quitForPermissionRefresh() {
+        NSApp.terminate(nil)
+    }
+
+    static var duplicatePermissionHint: String {
+        "If WaiSay appears more than once, enable the installed copy and remove old rows with minus, then reopen WaiSay."
+    }
+
     private static func openPrivacyPane(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
         NSWorkspace.shared.open(url)
@@ -121,13 +129,20 @@ final class GlobalHotkeyManager: ObservableObject {
 
     /// Check if Input Monitoring permission is granted
     static var hasInputMonitoringPermission: Bool {
-        CGPreflightListenEventAccess()
+        CGPreflightListenEventAccess() || AXIsProcessTrusted()
     }
 
     /// Request Input Monitoring permission — shows the system prompt
     @discardableResult
     static func requestInputMonitoringPermission() -> Bool {
-        CGRequestListenEventAccess()
+        if CGRequestListenEventAccess() {
+            return true
+        }
+
+        // On some macOS releases/users' machines, keyboard event access may be
+        // granted through Accessibility instead of the newer ListenEvent pane.
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     func start() {
