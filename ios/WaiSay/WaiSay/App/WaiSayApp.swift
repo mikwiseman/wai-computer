@@ -229,9 +229,10 @@ class AppState: ObservableObject {
     @Published var error: String?
     @Published var hasCompletedOnboarding: Bool = false
 
-    static let onboardingCompletedKey = "hasCompletedOnboarding"
+    static let onboardingCompletedKey = "nativeOnboardingV1Completed"
 
     let apiClient: APIClient
+    private var hasAttemptedStoredSessionRestore = false
 
     init() {
         #if !DEBUG
@@ -288,7 +289,33 @@ class AppState: ObservableObject {
             }
         }
 
-        // Restore tokens from Keychain (or launch arguments for screenshots)
+        if hasCompletedOnboarding {
+            beginStoredSessionRestoreIfNeeded()
+        } else {
+            isCheckingAuth = false
+        }
+    }
+
+    /// Mark the welcome tour as seen. The flag persists across logout and
+    /// account deletion — onboarding is a product introduction, not part of
+    /// the auth lifecycle.
+    func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
+        hasCompletedOnboarding = true
+        beginStoredSessionRestoreIfNeeded()
+    }
+
+    private func beginStoredSessionRestoreIfNeeded() {
+        guard !hasAttemptedStoredSessionRestore else {
+            isCheckingAuth = false
+            return
+        }
+
+        hasAttemptedStoredSessionRestore = true
+        isCheckingAuth = true
+
+        // Restore tokens only after onboarding. This avoids a first-launch
+        // Keychain prompt and prevents old installs from silently skipping the tour.
         let accessToken: String? = {
             if let arg = ProcessInfo.processInfo.environment["WAISAY_ACCESS_TOKEN"] {
                 KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: arg)
@@ -301,33 +328,20 @@ class AppState: ObservableObject {
             KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshOverride)
         }
 
-        if let accessToken {
-            Task {
-                await apiClient.setAccessToken(accessToken)
-                let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
-                if let rt {
-                    await apiClient.setRefreshToken(rt)
-                }
-                await loadCurrentUser()
-                // If a returning user lands here with valid tokens (e.g. iCloud
-                // restore wiped UserDefaults but kept the Keychain), skip the
-                // onboarding tour they've conceptually already seen.
-                if isAuthenticated && !hasCompletedOnboarding {
-                    completeOnboarding()
-                }
-                isCheckingAuth = false
+        guard let accessToken else {
+            isCheckingAuth = false
+            return
+        }
+
+        Task {
+            await apiClient.setAccessToken(accessToken)
+            let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
+            if let rt {
+                await apiClient.setRefreshToken(rt)
             }
-        } else {
+            await loadCurrentUser()
             isCheckingAuth = false
         }
-    }
-
-    /// Mark the welcome tour as seen. The flag persists across logout and
-    /// account deletion — onboarding is a product introduction, not part of
-    /// the auth lifecycle.
-    func completeOnboarding() {
-        UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
-        hasCompletedOnboarding = true
     }
 
     func login(email: String, password: String) async {

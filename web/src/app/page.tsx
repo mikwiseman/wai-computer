@@ -46,7 +46,7 @@ export default function Home() {
             data-testid="download-mac"
           >
             <span className={styles.downloadTitle}>Download for Mac</span>
-            <span className={styles.downloadMeta}>macOS 13+ · DMG</span>
+            <span className={styles.downloadMeta}>macOS 14+ · DMG</span>
           </a>
           <a
             className={styles.downloadGhost}

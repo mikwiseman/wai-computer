@@ -4,6 +4,21 @@ import os
 
 private let log = Logger(subsystem: "com.waisay.app", category: "hotkey")
 
+enum MacPrivacySettings {
+    static func openInputMonitoring() {
+        openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+    }
+
+    static func openAccessibility() {
+        openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
+    private static func openPrivacyPane(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
 // MARK: - Hotkey Configuration
 
 enum DictationHotkey: String, CaseIterable, Identifiable {
@@ -110,49 +125,21 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     /// Request Input Monitoring permission — shows the system prompt
-    static func requestInputMonitoringPermission() {
+    @discardableResult
+    static func requestInputMonitoringPermission() -> Bool {
         CGRequestListenEventAccess()
     }
 
     func start() {
-        guard !isRunning else { return }
+        if isRunning {
+            installEventTapIfPossible()
+            return
+        }
+
         isRunning = true
+        installEventTapIfPossible()
 
-        // Create CGEventTap for global monitoring (requires Input Monitoring, not Accessibility)
-        let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
-
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: eventMask,
-            callback: globalEventCallback,
-            userInfo: refcon
-        )
-
-        if let tap {
-            eventTap = tap
-            let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
-            runLoopSource = source
-            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
-            log.info("CGEventTap started (\(self.hotkey.label))")
-        } else {
-            log.warning("Failed to create CGEventTap — Input Monitoring permission may be missing")
-        }
-
-        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            DispatchQueue.main.async { self?.handleFlagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) }
-            return event
-        }
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            DispatchQueue.main.async {
-                guard let self, self.isHotkeyHeld else { return }
-                self.otherKeyPressed = true
-            }
-            return event
-        }
+        installLocalMonitorsIfNeeded()
 
         log.info("Global hotkey monitoring started (\(self.hotkey.label))")
     }
@@ -199,6 +186,63 @@ final class GlobalHotkeyManager: ObservableObject {
         guard let eventTap else { return }
         CGEvent.tapEnable(tap: eventTap, enable: true)
         log.info("CGEventTap re-enabled after system disable")
+    }
+
+    func refreshAfterPermissionChange() {
+        guard isRunning else { return }
+        installEventTapIfPossible()
+    }
+
+    private func installEventTapIfPossible() {
+        guard eventTap == nil else { return }
+        guard Self.hasInputMonitoringPermission else {
+            log.warning("Input Monitoring permission missing; global event tap not installed")
+            return
+        }
+
+        // Create CGEventTap for global monitoring (requires Input Monitoring, not Accessibility)
+        let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
+
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let tap = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: globalEventCallback,
+            userInfo: refcon
+        )
+
+        guard let tap else {
+            log.warning("Failed to create CGEventTap despite Input Monitoring preflight success")
+            return
+        }
+
+        eventTap = tap
+        let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        log.info("CGEventTap started (\(self.hotkey.label))")
+    }
+
+    private func installLocalMonitorsIfNeeded() {
+        if localFlagsMonitor == nil {
+            localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                DispatchQueue.main.async { self?.handleFlagsChanged(keyCode: event.keyCode, flags: event.modifierFlags) }
+                return event
+            }
+        }
+
+        if localKeyMonitor == nil {
+            localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                DispatchQueue.main.async {
+                    guard let self, self.isHotkeyHeld else { return }
+                    self.otherKeyPressed = true
+                }
+                return event
+            }
+        }
     }
 
     private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
@@ -315,5 +359,5 @@ private func globalEventCallback(
         manager.handleCGEvent(type: type, event: event)
     }
 
-    return nil // listenOnly — return nil
+    return Unmanaged.passUnretained(event)
 }

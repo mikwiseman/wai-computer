@@ -11,6 +11,7 @@ final class RecordingDetailUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["UITEST_SCENARIO"] = "recording_flow"
+        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
         app.launch()
         app.activate()
 
