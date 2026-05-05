@@ -394,12 +394,6 @@ struct MacSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: Spacing.sm) {
-                    Button("Recheck") {
-                        refreshPermissions()
-                    }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("\(identifierBase)-recheck")
-
                     if let settingsAction {
                         Button("Settings") {
                             settingsAction()

@@ -71,9 +71,9 @@ final class OnboardingPermissionUITests: XCTestCase {
         }
 
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-input-monitoring-restart-required").firstMatch, in: app, timeout: 3))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-recheck").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-settings").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-recheck").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-grant").firstMatch.exists)
 
         let primaryButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
@@ -99,9 +99,9 @@ final class OnboardingPermissionUITests: XCTestCase {
         }
 
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-automatic-paste-restart-required").firstMatch, in: app, timeout: 3))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-recheck").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-settings").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-recheck").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-automatic-paste-grant").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-input-monitoring-grant").firstMatch.exists)
