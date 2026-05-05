@@ -31,7 +31,6 @@ struct OnboardingView: View {
         }
         .frame(minWidth: 760, minHeight: 620)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
-        .accessibilityIdentifier("onboarding-view")
         .onAppear {
             refreshPermissions()
             startPermissionPollingIfNeeded()
@@ -166,10 +165,26 @@ struct OnboardingView: View {
     }
 
     private static var hasMicrophonePermission: Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return false
+        }
+        #endif
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
     private func refreshPermissions() {
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            hasMicrophonePermission = false
+            hasInputMonitoringPermission = false
+            hasPastePermission = false
+            inputMonitoringNeedsReview = false
+            pasteNeedsReview = false
+            return
+        }
+        #endif
+
         hasMicrophonePermission = Self.hasMicrophonePermission
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
         hasPastePermission = TextInserter.hasEventPostingPermission
@@ -187,11 +202,25 @@ struct OnboardingView: View {
 
     private func requestMicrophonePermission() {
         startPermissionPolling()
-        Task {
-            _ = await AVAudioApplication.requestRecordPermission()
-            await MainActor.run {
-                refreshPermissions()
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            refreshPermissions()
+        case .notDetermined:
+            Task {
+                _ = await AVAudioApplication.requestRecordPermission()
+                await MainActor.run {
+                    refreshPermissions()
+                    if !hasMicrophonePermission {
+                        MacPrivacySettings.openMicrophone()
+                    }
+                }
             }
+        case .denied, .restricted:
+            MacPrivacySettings.openMicrophone()
+            refreshPermissions()
+        @unknown default:
+            MacPrivacySettings.openMicrophone()
+            refreshPermissions()
         }
     }
 
@@ -199,7 +228,7 @@ struct OnboardingView: View {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
             if !hasInputMonitoringPermission {
                 MacPrivacySettings.openInputMonitoring()
@@ -211,7 +240,7 @@ struct OnboardingView: View {
         startPermissionPolling()
         pasteNeedsReview = true
         _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
             if !hasPastePermission {
                 TextInserter.openEventPostingSettings()
@@ -222,13 +251,19 @@ struct OnboardingView: View {
     private func openInputMonitoringSettings() {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
-        MacPrivacySettings.openInputMonitoring()
+        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            MacPrivacySettings.openInputMonitoring()
+        }
     }
 
     private func openPasteSettings() {
         startPermissionPolling()
         pasteNeedsReview = true
-        TextInserter.openEventPostingSettings()
+        _ = TextInserter.requestEventPostingPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            TextInserter.openEventPostingSettings()
+        }
     }
 
     private func startPermissionPollingIfNeeded() {
@@ -302,7 +337,7 @@ private struct OnboardingPermissionSlide: View {
                     .foregroundStyle(Palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(content.body)
+                Text(permissionBody)
                     .font(Typography.body)
                     .lineSpacing(3)
                     .multilineTextAlignment(.center)
@@ -316,6 +351,7 @@ private struct OnboardingPermissionSlide: View {
                     title: "Microphone",
                     detail: "Record meetings and dictation",
                     isGranted: hasMicrophonePermission,
+                    identifierBase: "onboarding-permission-microphone",
                     grantAction: requestMicrophonePermission
                 )
 
@@ -324,6 +360,7 @@ private struct OnboardingPermissionSlide: View {
                     detail: "Use the hotkey from any app",
                     isGranted: hasInputMonitoringPermission,
                     needsReview: inputMonitoringNeedsReview,
+                    identifierBase: "onboarding-permission-input-monitoring",
                     grantAction: requestInputMonitoringPermission,
                     settingsAction: openInputMonitoringSettings,
                     recheckAction: recheckPermissions,
@@ -336,6 +373,7 @@ private struct OnboardingPermissionSlide: View {
                     detail: "Insert dictated text automatically",
                     isGranted: hasPastePermission,
                     needsReview: pasteNeedsReview,
+                    identifierBase: "onboarding-permission-automatic-paste",
                     grantAction: requestPastePermission,
                     settingsAction: openPasteSettings,
                     recheckAction: recheckPermissions,
@@ -380,12 +418,21 @@ private struct OnboardingPermissionSlide: View {
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
     }
 
+    private var permissionBody: String {
+        #if SPARKLE
+        return content.body
+        #else
+        return "Grant Microphone for recording and Input Monitoring for the global hotkey. App Store builds copy dictated text to the clipboard for manual paste."
+        #endif
+    }
+
     @ViewBuilder
     private func permissionRow(
         title: String,
         detail: String,
         isGranted: Bool,
         needsReview: Bool = false,
+        identifierBase: String,
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)? = nil,
         recheckAction: (() -> Void)? = nil,
@@ -417,12 +464,14 @@ private struct OnboardingPermissionSlide: View {
                         grantAction()
                     }
                     .font(Typography.bodySmall)
+                    .accessibilityIdentifier("\(identifierBase)-grant")
 
                     if let settingsAction {
                         Button("Settings") {
                             settingsAction()
                         }
                         .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-settings")
                     }
                 }
             }
@@ -440,6 +489,7 @@ private struct OnboardingPermissionSlide: View {
                                 recheckAction()
                             }
                             .font(Typography.bodySmall)
+                            .accessibilityIdentifier("\(identifierBase)-recheck")
                         }
 
                         if let quitAction {
@@ -447,6 +497,7 @@ private struct OnboardingPermissionSlide: View {
                                 quitAction()
                             }
                             .font(Typography.bodySmall)
+                            .accessibilityIdentifier("\(identifierBase)-quit")
                         }
                     }
                 }

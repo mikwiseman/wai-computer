@@ -136,3 +136,11 @@ enum MacUITestFixtures {
     )
 }
 #endif
+
+#if DEBUG
+enum MacPermissionTesting {
+    static var forcesMissingDictationPermissions: Bool {
+        ProcessInfo.processInfo.environment["WAI_MOCK_DICTATION_PERMISSIONS"] == "missing"
+    }
+}
+#endif

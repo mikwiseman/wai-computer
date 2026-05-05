@@ -176,6 +176,7 @@ struct MacSettingsView: View {
                 permissionRow(
                     title: "Microphone",
                     isGranted: hasMicrophonePermission,
+                    identifierBase: "settings-permission-microphone",
                     grantAction: requestMicrophonePermission
                 )
 
@@ -183,6 +184,7 @@ struct MacSettingsView: View {
                     title: "Input Monitoring",
                     isGranted: hasInputMonitoringPermission,
                     needsReview: inputMonitoringNeedsReview,
+                    identifierBase: "settings-permission-input-monitoring",
                     grantAction: requestInputMonitoringPermission,
                     settingsAction: openInputMonitoringSettings
                 )
@@ -192,6 +194,7 @@ struct MacSettingsView: View {
                     title: "Automatic Paste",
                     isGranted: hasPastePermission,
                     needsReview: pasteNeedsReview,
+                    identifierBase: "settings-permission-automatic-paste",
                     grantAction: requestPastePermission,
                     settingsAction: openPasteSettings
                 )
@@ -346,7 +349,12 @@ struct MacSettingsView: View {
     }
 
     private static var hasMicrophonePermission: Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return false
+        }
+        #endif
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
     @ViewBuilder
@@ -354,6 +362,7 @@ struct MacSettingsView: View {
         title: String,
         isGranted: Bool,
         needsReview: Bool = false,
+        identifierBase: String,
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)? = nil
     ) -> some View {
@@ -371,12 +380,14 @@ struct MacSettingsView: View {
                         grantAction()
                     }
                     .font(Typography.bodySmall)
+                    .accessibilityIdentifier("\(identifierBase)-grant")
 
                     if let settingsAction {
                         Button("Settings") {
                             settingsAction()
                         }
                         .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-settings")
                     }
                 }
             }
@@ -392,17 +403,30 @@ struct MacSettingsView: View {
                         refreshPermissions()
                     }
                     .font(Typography.bodySmall)
+                    .accessibilityIdentifier("\(identifierBase)-recheck")
 
                     Button("Quit WaiSay") {
                         MacPrivacySettings.quitForPermissionRefresh()
                     }
                     .font(Typography.bodySmall)
+                    .accessibilityIdentifier("\(identifierBase)-quit")
                 }
             }
         }
     }
 
     private func refreshPermissions() {
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            hasMicrophonePermission = false
+            hasInputMonitoringPermission = false
+            hasPastePermission = false
+            inputMonitoringNeedsReview = false
+            pasteNeedsReview = false
+            return
+        }
+        #endif
+
         hasMicrophonePermission = Self.hasMicrophonePermission
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
         hasPastePermission = TextInserter.hasEventPostingPermission
@@ -420,11 +444,25 @@ struct MacSettingsView: View {
 
     private func requestMicrophonePermission() {
         startPermissionPolling()
-        Task {
-            _ = await AVAudioApplication.requestRecordPermission()
-            await MainActor.run {
-                refreshPermissions()
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            refreshPermissions()
+        case .notDetermined:
+            Task {
+                _ = await AVAudioApplication.requestRecordPermission()
+                await MainActor.run {
+                    refreshPermissions()
+                    if !hasMicrophonePermission {
+                        MacPrivacySettings.openMicrophone()
+                    }
+                }
             }
+        case .denied, .restricted:
+            MacPrivacySettings.openMicrophone()
+            refreshPermissions()
+        @unknown default:
+            MacPrivacySettings.openMicrophone()
+            refreshPermissions()
         }
     }
 
@@ -432,7 +470,7 @@ struct MacSettingsView: View {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
             if !hasInputMonitoringPermission {
                 MacPrivacySettings.openInputMonitoring()
@@ -444,7 +482,7 @@ struct MacSettingsView: View {
         startPermissionPolling()
         pasteNeedsReview = true
         _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             refreshPermissions()
             if !hasPastePermission {
                 TextInserter.openEventPostingSettings()
@@ -455,13 +493,19 @@ struct MacSettingsView: View {
     private func openInputMonitoringSettings() {
         startPermissionPolling()
         inputMonitoringNeedsReview = true
-        MacPrivacySettings.openInputMonitoring()
+        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            MacPrivacySettings.openInputMonitoring()
+        }
     }
 
     private func openPasteSettings() {
         startPermissionPolling()
         pasteNeedsReview = true
-        TextInserter.openEventPostingSettings()
+        _ = TextInserter.requestEventPostingPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            TextInserter.openEventPostingSettings()
+        }
     }
 
     private func startPermissionPolling() {
