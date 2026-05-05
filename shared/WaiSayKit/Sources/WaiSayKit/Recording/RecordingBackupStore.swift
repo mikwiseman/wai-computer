@@ -222,6 +222,15 @@ public enum RecordingBackupStore {
         log.info("Removed backup for \(recordingId)")
     }
 
+    public static func removeAllRecordings() throws {
+        let base = try baseDirectory()
+        guard FileManager.default.fileExists(atPath: base.path) else {
+            return
+        }
+        try FileManager.default.removeItem(at: base)
+        log.info("Removed all pending recording backups")
+    }
+
     public static func existingBackup(recordingId: String) throws -> RecordingBackup? {
         let backup = try makeBackup(recordingId: recordingId)
         guard FileManager.default.fileExists(atPath: backup.directoryURL.path) else {

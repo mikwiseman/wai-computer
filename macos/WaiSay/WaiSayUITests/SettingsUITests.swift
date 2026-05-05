@@ -83,4 +83,20 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(waitForElement(signOutButton, in: app, timeout: 5))
         XCTAssertTrue(signOutButton.isEnabled, "Sign Out button should be enabled")
     }
+
+    @MainActor
+    func testSignOutClearsLocalStateAndReturnsToOnboarding() throws {
+        let app = launchToSettings()
+
+        let signOutButton = app.buttons.matching(identifier: "settings-sign-out-button").firstMatch
+        XCTAssertTrue(waitForElement(signOutButton, in: app, timeout: 5))
+        signOutButton.tap()
+
+        let confirmButton = app.buttons.matching(identifier: "settings-sign-out-confirm-button").firstMatch
+        XCTAssertTrue(waitForElement(confirmButton, in: app, timeout: 3))
+        confirmButton.tap()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
+        XCTAssertFalse(app.textFields["Email"].exists, "Sign out should clear onboarding/auth state before returning to the app")
+    }
 }

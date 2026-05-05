@@ -280,6 +280,7 @@ struct MacSettingsView: View {
                     await appState.logout()
                 }
             }
+            .accessibilityIdentifier("settings-sign-out-confirm-button")
             Button("Cancel", role: .cancel) {}
         }
         .alert("Delete account?", isPresented: $showDeleteAccountConfirmation) {
