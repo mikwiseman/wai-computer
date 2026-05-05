@@ -28,6 +28,7 @@ import type {
   TranscriptSearchMatch,
   TranscriptSearchResponse,
   TranscriptStatsResponse,
+  User,
   WeeklyDigestResponse,
 } from "./types";
 
@@ -39,6 +40,20 @@ function expectExactKeys(obj: Record<string, unknown>, expectedKeys: string[]) {
   const sorted = [...expectedKeys].sort();
   expect(actualKeys).toEqual(sorted);
 }
+
+describe("types-sync: User", () => {
+  it("User has all auth/me fields including password capability", () => {
+    const user: User = {
+      id: "u1",
+      email: "user@example.com",
+      created_at: "2026-03-01T00:00:00Z",
+      has_password: false,
+    };
+
+    expectExactKeys(user, ["id", "email", "created_at", "has_password"]);
+    expect(user.has_password).toBe(false);
+  });
+});
 
 describe("types-sync: Recording", () => {
   it("Recording has all backend-returned fields including starred_at", () => {

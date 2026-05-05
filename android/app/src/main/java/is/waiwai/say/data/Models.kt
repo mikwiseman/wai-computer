@@ -33,6 +33,7 @@ data class UserSummary(
     val id: String,
     val email: String,
     @SerialName("created_at") val createdAt: String,
+    @SerialName("has_password") val hasPassword: Boolean = true,
 )
 
 @Serializable

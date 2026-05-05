@@ -151,6 +151,7 @@ final class APIClientTests: XCTestCase {
         let user = try await client.getCurrentUser()
         XCTAssertEqual(user.id, "u1")
         XCTAssertEqual(user.email, "user@example.com")
+        XCTAssertTrue(user.hasPassword)
     }
 
     // MARK: - Auth Endpoint Tests
@@ -1034,12 +1035,13 @@ final class APIClientTests: XCTestCase {
                 headerFields: nil
             )!
             let payload = """
-            {"id":"u1","email":"user@example.com","created_at":"2026-01-01T00:00:00Z"}
+            {"id":"u1","email":"user@example.com","created_at":"2026-01-01T00:00:00Z","has_password":false}
             """.data(using: .utf8)!
             return (response, payload)
         }
 
         let user = try await client.getCurrentUser()
         XCTAssertEqual(user.id, "u1")
+        XCTAssertFalse(user.hasPassword)
     }
 }

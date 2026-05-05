@@ -54,6 +54,25 @@ final class OnboardingPermissionUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingResumesPersistedPermissionStepAfterRestart() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_paste"
+        app.launchArguments = [
+            "-nativeOnboardingV3CurrentPage", "4",
+            "-nativeOnboardingV3Completed", "NO",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Set up voice access."], in: app, timeout: 8))
+        XCTAssertTrue(waitForElement(app.staticTexts["Automatic Paste"], in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-automatic-paste-restart-required").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.staticTexts["Your AI second brain for voice."].exists)
+    }
+
+    @MainActor
     func testOnboardingShowsRestartAfterInputMonitoringGrantAttempt() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"

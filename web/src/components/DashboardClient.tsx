@@ -99,6 +99,7 @@ export function DashboardClient() {
     () => actionItems.filter((item) => item.status !== "completed" && item.status !== "cancelled").length,
     [actionItems],
   );
+  const accountHasPassword = user?.has_password !== false;
 
   async function loadRecordingsState() {
     const active = await listRecordings({ limit: 100 });
@@ -292,9 +293,10 @@ export function DashboardClient() {
     event.preventDefault();
     setMessage(null);
     try {
-      const response = await changePassword(currentPassword, newPassword);
+      const response = await changePassword(accountHasPassword ? currentPassword : "", newPassword);
       setCurrentPassword("");
       setNewPassword("");
+      setUser((current) => current ? { ...current, has_password: true } : current);
       setMessage(response.message);
     } catch (error: unknown) {
       setMessage(formatError(error));
@@ -660,16 +662,22 @@ export function DashboardClient() {
     return (
       <section className="tool-panel settings-panel">
         <form className="settings-form" onSubmit={handleChangePassword}>
-          <label>
-            <span>Current password</span>
-            <input
-              data-testid="current-password"
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              required
-            />
-          </label>
+          {!accountHasPassword ? (
+            <p className="settings-note" data-testid="set-password-note">
+              You signed in with a magic link. Set a password to use email and password login.
+            </p>
+          ) : (
+            <label>
+              <span>Current password</span>
+              <input
+                data-testid="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                required
+              />
+            </label>
+          )}
           <label>
             <span>New password</span>
             <input
@@ -681,7 +689,7 @@ export function DashboardClient() {
             />
           </label>
           <button data-testid="change-password" type="submit">
-            Change password
+            {accountHasPassword ? "Change password" : "Set password"}
           </button>
         </form>
       </section>

@@ -1,5 +1,9 @@
 import { VerifyMagicLinkClient } from "@/components/VerifyMagicLinkClient";
 
+export const metadata = {
+  referrer: "no-referrer",
+};
+
 interface VerifyPageProps {
   searchParams: Promise<{ token?: string }>;
 }

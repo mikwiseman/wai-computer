@@ -2,6 +2,8 @@
 
 import asyncio
 import functools
+from html import escape
+from urllib.parse import urlencode
 
 import resend
 from fastapi import HTTPException, status
@@ -18,22 +20,29 @@ APP_CLIENT_URLS = {
 }
 
 
+def _build_frontend_url(path: str, **query: str) -> str:
+    settings = get_settings()
+    return f"{settings.frontend_url}{path}?{urlencode(query)}"
+
+
 def _send_email_sync(to_email: str, token: str, client: str | None = None) -> None:
     """Synchronous email send — called via run_in_executor."""
     settings = get_settings()
     resend.api_key = settings.resend_api_key
 
-    web_url = f"{settings.frontend_url}/auth/verify?token={token}"
+    web_url = _build_frontend_url("/auth/verify", token=token)
+    web_url_html = escape(web_url, quote=True)
 
     if client and client in APP_CLIENT_URLS:
-        app_url = f"{APP_CLIENT_URLS[client]}?token={token}"
+        app_url = _build_frontend_url("/auth/app", token=token, client=client)
+        app_url_html = escape(app_url, quote=True)
         html = f"""
             <h2>Sign in to WaiSay</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{app_url}">Open in WaiSay App</a></p>
+            <p><a href="{app_url_html}">Open WaiSay App</a></p>
             <p style="color: #666; font-size: 14px;">
                 Link not working?
-                <a href="{web_url}">Sign in via browser instead</a>
+                <a href="{web_url_html}">Use browser instead</a>
             </p>
             <p>If you didn't request this, you can safely ignore this email.</p>
         """
@@ -41,7 +50,7 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         html = f"""
             <h2>Sign in to WaiSay</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{web_url}">Sign in to WaiSay</a></p>
+            <p><a href="{web_url_html}">Sign in to WaiSay</a></p>
             <p>If you didn't request this, you can safely ignore this email.</p>
         """
 

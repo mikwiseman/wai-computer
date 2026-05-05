@@ -212,7 +212,15 @@ async def test_verify_magic_link_success_clears_token(
         json={"token": captured["token"]},
     )
     assert verify_response.status_code == 200
-    assert verify_response.json()["access_token"]
+    access_token = verify_response.json()["access_token"]
+    assert access_token
+
+    me_response = await client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["has_password"] is False
 
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()

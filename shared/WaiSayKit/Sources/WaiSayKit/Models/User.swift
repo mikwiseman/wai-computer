@@ -5,17 +5,36 @@ public struct User: Codable, Identifiable, Sendable {
     public let id: String
     public let email: String
     public let createdAt: Date
+    public let hasPassword: Bool
 
-    public init(id: String, email: String, createdAt: Date) {
+    public init(id: String, email: String, createdAt: Date, hasPassword: Bool = true) {
         self.id = id
         self.email = email
         self.createdAt = createdAt
+        self.hasPassword = hasPassword
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case email
         case createdAt = "created_at"
+        case hasPassword = "has_password"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        email = try container.decode(String.self, forKey: .email)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        hasPassword = try container.decodeIfPresent(Bool.self, forKey: .hasPassword) ?? true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(email, forKey: .email)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(hasPassword, forKey: .hasPassword)
     }
 }
 

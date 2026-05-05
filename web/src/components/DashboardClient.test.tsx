@@ -49,6 +49,7 @@ const baseUser = {
   id: "u1",
   email: "dashboard@example.com",
   created_at: "2026-02-27T00:00:00Z",
+  has_password: true,
 };
 
 const baseRecording = {
@@ -630,6 +631,29 @@ describe("DashboardClient", () => {
     // Fields should be cleared after success
     expect(currentPwdInput).toHaveValue("");
     expect(newPwdInput).toHaveValue("");
+  });
+
+  it("sets first password for magic-link accounts without requiring current password", async () => {
+    arrangeHappyPathMocks();
+    mockGetCurrentUser.mockResolvedValue({ ...baseUser, has_password: false });
+    mockChangePassword.mockResolvedValue({ message: "Password set successfully" });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    expect(screen.getByTestId("set-password-note")).toHaveTextContent("magic link");
+    expect(screen.queryByTestId("current-password")).not.toBeInTheDocument();
+    await user.type(screen.getByTestId("new-password"), "firstPassword");
+    await user.click(screen.getByTestId("change-password"));
+
+    await waitFor(() => {
+      expect(mockChangePassword).toHaveBeenCalledWith("", "firstPassword");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Password set successfully");
+    });
+
+    expect(screen.getByTestId("current-password")).toBeInTheDocument();
   });
 
   // --- Password change does NOT clear fields on failure ---

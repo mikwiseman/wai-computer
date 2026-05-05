@@ -337,6 +337,7 @@ class MacAppState: ObservableObject {
     @Published var hasCompletedOnboarding: Bool = false
 
     static let onboardingCompletedKey = "nativeOnboardingV3Completed"
+    static let onboardingCurrentPageKey = "nativeOnboardingV3CurrentPage"
     static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed"]
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
 
@@ -425,6 +426,7 @@ class MacAppState: ObservableObject {
     /// Mark the current welcome and permission tour as seen.
     func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
         MacAppState.legacyOnboardingCompletedKeys.forEach {
             UserDefaults.standard.removeObject(forKey: $0)
         }
@@ -552,10 +554,11 @@ class MacAppState: ObservableObject {
             }
             magicLinkSent = false
             await loadCurrentUser()
-            // External-trigger auth (deep link from email) can land mid-onboarding.
-            // Don't trap an authenticated user behind the welcome tour.
             if isAuthenticated && !hasCompletedOnboarding {
-                completeOnboarding()
+                UserDefaults.standard.set(
+                    OnboardingPage.permission.rawValue,
+                    forKey: MacAppState.onboardingCurrentPageKey
+                )
             }
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -621,6 +624,12 @@ class MacAppState: ObservableObject {
         magicLinkSent = false
         hasAttemptedStoredSessionRestore = false
         if removeUserData {
+            UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCompletedKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.onboardingMicAcknowledgedKey)
+            MacAppState.legacyOnboardingCompletedKeys.forEach {
+                UserDefaults.standard.removeObject(forKey: $0)
+            }
             hasCompletedOnboarding = false
         }
         if !removedAccessToken || !removedRefreshToken {
