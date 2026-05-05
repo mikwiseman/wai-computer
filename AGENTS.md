@@ -60,6 +60,15 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 - Browser auth depends on `AUTH_COOKIE_DOMAIN=say.waiwai.is`; if prod login loops, check cookie domain + CORS first.
 - Apple versioning: `MARKETING_VERSION` = human-readable, `CURRENT_PROJECT_VERSION` = monotonic integer build number.
 
+## macOS Distribution Channels
+
+- App Store/TestFlight channel: build and upload only the `WaiSay` macOS target. It uses `WaiSay/Info.plist`, `WaiSay/WaiSay.entitlements`, App Sandbox, and must not include Sparkle, `SUFeedURL`, or `SUPublicEDKey`.
+- Direct web/DMG channel: build and publish only the `WaiSayDirect` macOS target. It uses `WaiSay/Info.Direct.plist`, `WaiSay/WaiSay.Sparkle.entitlements`, Developer ID signing, notarization, Sparkle, and `https://say.waiwai.is/releases/macos/appcast.xml`.
+- Before any macOS release, run `scripts/verify-macos-channels.sh` to prove the App Store build is Sparkle-free and the direct build contains Sparkle/appcast settings.
+- Production DMG releases must use `MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh` followed by `VPS_USER=root scripts/publish-macos-dmg.sh`, or `VPS_USER=root fastlane mac upload_all`.
+- `scripts/make-dmg.sh` is local smoke-only and intentionally guarded; never use it for release artifacts.
+- Do not install a direct DMG over a TestFlight/App Store copy unless intentionally switching channels. To fix a stale TestFlight `"No Longer Available"` install, verify the App Store Connect build is valid, remove the stale `/Applications/WaiSay.app`, then reinstall/update from TestFlight.
+
 ## Observability
 
 - Sentry via `SENTRY_DSN`. Privacy-safe logging mandatory.

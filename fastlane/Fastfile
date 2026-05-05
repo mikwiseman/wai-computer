@@ -75,6 +75,8 @@ platform :mac do
   lane :upload_testflight do
     api_key = waisay_app_store_connect_api_key
 
+    sh("scripts/verify-macos-channels.sh")
+
     build_app(
       project: "macos/WaiSay/WaiSay.xcodeproj",
       scheme: "WaiSay",
@@ -94,6 +96,7 @@ platform :mac do
 
   desc "Build strict notarized DMG and publish it to say.waiwai.is"
   lane :publish_dmg do
+    sh("scripts/verify-macos-channels.sh")
     sh("MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh")
     sh("scripts/publish-macos-dmg.sh")
   end
