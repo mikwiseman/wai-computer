@@ -4,8 +4,22 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 PROJECT_PATH="$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj"
 DERIVED_DATA_PATH=${MACOS_CHANNEL_DERIVED_DATA:-"$ROOT_DIR/artifacts/macos-channel-derived-data"}
+SWIFTPM_CACHE_PATH=${MACOS_SWIFTPM_CACHE_DIR:-"$ROOT_DIR/artifacts/macos-swiftpm-sourcepackages"}
+PACKAGE_RESOLVED="$PROJECT_PATH/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+
+if [[ ! -f "$PACKAGE_RESOLVED" ]]; then
+  echo "ERROR: missing macOS Package.resolved at $PACKAGE_RESOLVED" >&2
+  exit 1
+fi
 
 rm -rf "$DERIVED_DATA_PATH"
+mkdir -p "$SWIFTPM_CACHE_PATH"
+
+PACKAGE_FLAGS=(
+  -clonedSourcePackagesDirPath "$SWIFTPM_CACHE_PATH"
+  -disableAutomaticPackageResolution
+  -skipPackageUpdates
+)
 
 xcodebuild \
   -project "$PROJECT_PATH" \
@@ -13,6 +27,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA_PATH/appstore" \
+  "${PACKAGE_FLAGS[@]}" \
   CODE_SIGNING_ALLOWED=NO \
   build
 
@@ -22,6 +37,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA_PATH/direct" \
+  "${PACKAGE_FLAGS[@]}" \
   CODE_SIGNING_ALLOWED=NO \
   build
 

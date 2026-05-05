@@ -48,9 +48,9 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -77,13 +77,13 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "pnpm"
@@ -114,9 +114,9 @@ jobs:
         working-directory: android
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -129,19 +129,31 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - name: Cache Swift packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            artifacts/ci-swiftpm-sourcepackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode16-spm-${{ hashFiles('shared/WaiSayKit/Package.resolved', 'ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-xcode16-spm-
 
       - name: Shared Swift package tests
         working-directory: shared/WaiSayKit
         run: |
           # Use Xcode 16.2 for SPM — avoids sentry-cocoa Swift 6.1 manifest bug
           sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          swift test -q
+          swift test -q --cache-path "$GITHUB_WORKSPACE/artifacts/ci-swiftpm-sourcepackages" --disable-automatic-resolution --skip-update
 
       - name: Select default Xcode for builds
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Verify macOS App Store and direct channels
+        env:
+          MACOS_SWIFTPM_CACHE_DIR: ${{ github.workspace }}/artifacts/ci-swiftpm-sourcepackages
         run: scripts/verify-macos-channels.sh
 
       - name: Build iOS app
@@ -150,6 +162,9 @@ jobs:
           -project ios/WaiSay/WaiSayiOS.xcodeproj
           -scheme WaiSay
           -destination 'generic/platform=iOS Simulator'
+          -clonedSourcePackagesDirPath "${GITHUB_WORKSPACE}/artifacts/ci-swiftpm-sourcepackages"
+          -disableAutomaticPackageResolution
+          -skipPackageUpdates
           CODE_SIGNING_ALLOWED=NO
           build
 
@@ -159,7 +174,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure SSH
         env:
