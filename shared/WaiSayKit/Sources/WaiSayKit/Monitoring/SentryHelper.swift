@@ -15,6 +15,10 @@ public enum SentryHelper {
             options.profilesSampleRate = 0.1
             options.enableAutoSessionTracking = true
             options.enableCaptureFailedRequests = false
+            // App Hang detection produces high-volume events that the team
+            // already reviews via custom telemetry — opt out of the SDK path
+            // to keep the Sentry events quota for actionable failures.
+            options.enableAppHangTracking = false
             #if canImport(UIKit)
             options.attachScreenshot = false
             #endif
@@ -116,6 +120,18 @@ public enum SentryHelper {
 
         if let urlError = error as? URLError {
             mergedExtras["urlErrorCode"] = urlError.code.rawValue
+            // -999 (.cancelled) and -1001 (.timedOut) come from user navigation
+            // and transient network blips — they swamp the events quota
+            // without representing actionable failures.
+            if urlError.code == .cancelled || urlError.code == .timedOut {
+                addBreadcrumb(
+                    category: "api",
+                    message: "request \(urlError.code == .cancelled ? "cancelled" : "timed out")",
+                    level: .warning,
+                    data: mergedExtras
+                )
+                return
+            }
             captureErrorOnce(
                 urlError,
                 fingerprint: requestFingerprint(
