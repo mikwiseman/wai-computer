@@ -69,6 +69,19 @@ class TestSendMagicLinkEmail:
             )
             assert expected_url in call_args["html"]
 
+    async def test_magic_link_url_escapes_token_query_value(self):
+        """Magic link URL percent-encodes token query values."""
+        mock_settings = _mock_settings()
+
+        with patch("app.core.email.get_settings", return_value=mock_settings), \
+             patch("app.core.email.resend") as mock_resend:
+            from app.core.email import send_magic_link_email
+
+            await send_magic_link_email("user@example.com", "token with+symbols")
+
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert "token=token+with%2Bsymbols" in call_args["html"]
+
     async def test_client_none_sends_web_link_only(self):
         """When client=None, email contains only the web URL (no app scheme)."""
         mock_settings = _mock_settings()
@@ -84,7 +97,7 @@ class TestSendMagicLinkEmail:
             assert "waisay://" not in call_args["html"]
 
     async def test_client_macos_sends_app_link_with_web_fallback(self):
-        """When client='macos', email has app URL and web fallback."""
+        """When client='macos', email links to an HTTPS app-open page and web fallback."""
         mock_settings = _mock_settings()
 
         with patch("app.core.email.get_settings", return_value=mock_settings), \
@@ -94,11 +107,15 @@ class TestSendMagicLinkEmail:
             await send_magic_link_email("user@example.com", "token456", client="macos")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "waisay://auth/verify?token=token456" in call_args["html"]
+            assert (
+                "https://say.waiwai.is/auth/app?token=token456&amp;client=macos"
+                in call_args["html"]
+            )
             assert "https://say.waiwai.is/auth/verify?token=token456" in call_args["html"]
+            assert "waisay://" not in call_args["html"]
 
     async def test_client_android_sends_app_link_with_web_fallback(self):
-        """When client='android', email has app URL and web fallback."""
+        """When client='android', email links to an HTTPS app-open page and web fallback."""
         mock_settings = _mock_settings()
 
         with patch("app.core.email.get_settings", return_value=mock_settings), \
@@ -108,8 +125,12 @@ class TestSendMagicLinkEmail:
             await send_magic_link_email("user@example.com", "token789", client="android")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "waisay://magic?token=token789" in call_args["html"]
+            assert (
+                "https://say.waiwai.is/auth/app?token=token789&amp;client=android"
+                in call_args["html"]
+            )
             assert "https://say.waiwai.is/auth/verify?token=token789" in call_args["html"]
+            assert "waisay://" not in call_args["html"]
 
     async def test_unknown_client_sends_web_link_only(self):
         """When client is an unknown value, email contains only the web URL."""

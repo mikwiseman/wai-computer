@@ -586,6 +586,13 @@ h4 {
   gap: 0.7rem;
 }
 
+.settings-note {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
 .manual-note-form {
   grid-template-columns: minmax(0, 1fr) 140px auto;
 }

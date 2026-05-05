@@ -274,6 +274,7 @@ require_tool ditto
 require_tool shasum
 require_tool file
 require_tool xcrun
+require_tool osascript
 
 load_notary_defaults_from_appstoreconnect_config
 
@@ -313,6 +314,44 @@ sign_sparkle_update() {
   fi
 
   "$sign_update_bin" --account "$SPARKLE_KEYCHAIN_ACCOUNT" "$artifact_path"
+}
+
+configure_dmg_window() {
+  local mount_path=$1
+  local background_dir="$mount_path/.background"
+  local background_file="$background_dir/background.png"
+
+  mkdir -p "$background_dir"
+  cp "$BACKGROUND_PATH" "$background_file"
+
+  DMG_LAYOUT_VOLUME_NAME="$DMG_VOLUME_NAME" \
+  DMG_LAYOUT_MOUNT_PATH="$mount_path" \
+  DMG_LAYOUT_APP_NAME="$APP_NAME" \
+  /usr/bin/osascript <<'OSA'
+set volumeName to system attribute "DMG_LAYOUT_VOLUME_NAME"
+set mountPath to system attribute "DMG_LAYOUT_MOUNT_PATH"
+set appName to system attribute "DMG_LAYOUT_APP_NAME"
+set backgroundPath to mountPath & "/.background/background.png"
+
+tell application "Finder"
+    tell disk volumeName
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {100, 100, 740, 420}
+        set viewOptions to icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 96
+        set background picture of viewOptions to (POSIX file backgroundPath as alias)
+        set position of item (appName & ".app") of container window to {190, 190}
+        set position of item "Applications" of container window to {480, 190}
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+OSA
 }
 
 mkdir -p "$RELEASE_ROOT"
@@ -395,6 +434,7 @@ fi
 echo "Copying app payload..."
 ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
 ln -s /Applications "$DMG_MOUNT/Applications"
+configure_dmg_window "$DMG_MOUNT"
 
 sync
 

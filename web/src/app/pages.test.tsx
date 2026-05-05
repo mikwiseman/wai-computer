@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
+import AppMagicLinkPage from "./auth/app/page";
 import VerifyMagicLinkPage from "./auth/verify/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
@@ -13,6 +14,7 @@ const mockReplace = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
+const appMagicLinkClientMock = vi.fn();
 const sharedRecordingClientMock = vi.fn();
 let mockSearchParams = new URLSearchParams();
 
@@ -46,6 +48,16 @@ vi.mock("@/components/VerifyMagicLinkClient", () => ({
   },
 }));
 
+vi.mock("@/components/OpenWaiSayAppClient", () => ({
+  normalizeWaiSayAppClient: (client: string | null | undefined) => (
+    client === "android" || client === "ios" || client === "macos" ? client : null
+  ),
+  OpenWaiSayAppClient: ({ token, client }: { token: string | null; client: string | null }) => {
+    appMagicLinkClientMock({ token, client });
+    return <div data-testid="open-app-client-mock">{`${client}:${token ?? "null-token"}`}</div>;
+  },
+}));
+
 vi.mock("@/components/SharedRecordingClient", () => ({
   SharedRecordingClient: ({ token }: { token: string }) => {
     sharedRecordingClientMock(token);
@@ -59,6 +71,7 @@ describe("app pages", () => {
     authFormMock.mockClear();
     dashboardClientMock.mockClear();
     verifyClientMock.mockClear();
+    appMagicLinkClientMock.mockClear();
     sharedRecordingClientMock.mockClear();
     mockSearchParams = new URLSearchParams();
   });
@@ -116,6 +129,13 @@ describe("app pages", () => {
     render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getAllByTestId("verify-client-mock")[1]).toHaveTextContent("null-token");
     expect(verifyClientMock).toHaveBeenCalledWith(null);
+  });
+
+  it("resolves app magic-link token and client from searchParams", async () => {
+    render(await AppMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", client: "macos" }) }));
+
+    expect(screen.getByTestId("open-app-client-mock")).toHaveTextContent("macos:abc-token");
+    expect(appMagicLinkClientMock).toHaveBeenCalledWith({ token: "abc-token", client: "macos" });
   });
 
   it("passes shared recording token from route params", async () => {

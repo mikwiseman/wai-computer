@@ -5,7 +5,7 @@ struct OnboardingView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
     @Environment(\.scenePhase) private var scenePhase
-    @State private var currentPage: Int = 0
+    @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var hasPastePermission = TextInserter.hasEventPostingPermission
@@ -14,6 +14,10 @@ struct OnboardingView: View {
     @State private var permissionPollTimer: Timer?
 
     private let pages = OnboardingPage.allCases
+
+    init() {
+        _currentPage = State(initialValue: Self.initialCurrentPage())
+    }
 
     private var isLastPage: Bool { currentPage == pages.count - 1 }
 
@@ -32,8 +36,13 @@ struct OnboardingView: View {
         .frame(minWidth: 760, minHeight: 620)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .onAppear {
+            currentPage = Self.clampedPageIndex(currentPage)
+            persistCurrentPage()
             refreshPermissions()
             startPermissionPollingIfNeeded()
+        }
+        .onChange(of: currentPage) { _, _ in
+            persistCurrentPage()
         }
         .onDisappear(perform: stopPermissionPolling)
         .onChange(of: scenePhase) { _, newPhase in
@@ -162,6 +171,18 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
         appState.completeOnboarding()
+    }
+
+    private static func initialCurrentPage() -> Int {
+        clampedPageIndex(UserDefaults.standard.integer(forKey: MacAppState.onboardingCurrentPageKey))
+    }
+
+    private static func clampedPageIndex(_ value: Int) -> Int {
+        min(max(value, 0), OnboardingPage.allCases.count - 1)
+    }
+
+    private func persistCurrentPage() {
+        UserDefaults.standard.set(Self.clampedPageIndex(currentPage), forKey: MacAppState.onboardingCurrentPageKey)
     }
 
     private var dictationPermissionsReady: Bool {

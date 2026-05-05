@@ -111,6 +111,7 @@ async def test_me_endpoint_returns_user(client: AsyncClient):
     assert data["email"] == "medata@example.com"
     assert "id" in data
     assert "created_at" in data
+    assert data["has_password"] is True
 
 
 @pytest.mark.asyncio

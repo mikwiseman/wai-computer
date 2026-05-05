@@ -123,6 +123,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     created_at: datetime
+    has_password: bool
 
 
 class MessageResponse(BaseModel):
@@ -454,6 +455,7 @@ async def get_current_user_info(user: CurrentUser) -> UserResponse:
         id=str(user.id),
         email=user.email,
         created_at=user.created_at,
+        has_password=user.password_hash is not None,
     )
 
 
