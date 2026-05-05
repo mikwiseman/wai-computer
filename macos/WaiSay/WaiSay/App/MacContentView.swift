@@ -9,6 +9,8 @@ struct MacContentView: View {
             if appState.isCheckingAuth {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !appState.hasCompletedOnboarding {
+                OnboardingView()
             } else if appState.isAuthenticated {
                 MacMainView()
             } else {

@@ -227,6 +227,9 @@ class AppState: ObservableObject {
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var error: String?
+    @Published var hasCompletedOnboarding: Bool = false
+
+    static let onboardingCompletedKey = "hasCompletedOnboarding"
 
     let apiClient: APIClient
 
@@ -239,11 +242,24 @@ class AppState: ObservableObject {
         let baseURL = URL(string: "https://say.waiwai.is")!
         apiClient = APIClient(baseURL: baseURL)
 
+        // Resolve onboarding flag honoring env-var overrides used by tests/dev.
+        let env = ProcessInfo.processInfo.environment
+        if env["WAI_FORCE_ONBOARDING"] == "1" {
+            UserDefaults.standard.set(false, forKey: AppState.onboardingCompletedKey)
+            hasCompletedOnboarding = false
+        } else if env["WAI_SKIP_ONBOARDING"] == "1" {
+            UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
+            hasCompletedOnboarding = true
+        } else {
+            hasCompletedOnboarding = UserDefaults.standard.bool(forKey: AppState.onboardingCompletedKey)
+        }
+
         #if DEBUG
         if IOSTestingMode.current.isScreenshot {
             currentUser = IOSScreenshotFixtures.user
             isAuthenticated = true
             isCheckingAuth = false
+            hasCompletedOnboarding = true
             return
         }
         #endif
@@ -293,11 +309,25 @@ class AppState: ObservableObject {
                     await apiClient.setRefreshToken(rt)
                 }
                 await loadCurrentUser()
+                // If a returning user lands here with valid tokens (e.g. iCloud
+                // restore wiped UserDefaults but kept the Keychain), skip the
+                // onboarding tour they've conceptually already seen.
+                if isAuthenticated && !hasCompletedOnboarding {
+                    completeOnboarding()
+                }
                 isCheckingAuth = false
             }
         } else {
             isCheckingAuth = false
         }
+    }
+
+    /// Mark the welcome tour as seen. The flag persists across logout and
+    /// account deletion — onboarding is a product introduction, not part of
+    /// the auth lifecycle.
+    func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
+        hasCompletedOnboarding = true
     }
 
     func login(email: String, password: String) async {

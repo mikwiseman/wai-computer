@@ -9,6 +9,8 @@ struct ContentView: View {
         Group {
             if appState.isCheckingAuth {
                 ProgressView("Loading...")
+            } else if !appState.hasCompletedOnboarding {
+                OnboardingView()
             } else if appState.isAuthenticated {
                 if let recId = environment["WAISAY_RECORDING_ID"] {
                     NavigationStack {
