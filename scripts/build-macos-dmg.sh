@@ -44,6 +44,16 @@ if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
   REQUIRE_SPARKLE_SIGNATURE=1
 fi
 
+if [[ "$SCHEME" != "WaiSayDirect" && ( "${MACOS_RELEASE_STRICT:-0}" == "1" || "${MACOS_ALLOW_NON_DIRECT_SCHEME:-0}" != "1" ) ]]; then
+  cat >&2 <<EOF
+ERROR: direct DMG releases must build the WaiSayDirect scheme, got "$SCHEME".
+
+Set MACOS_SCHEME=WaiSayDirect, or set MACOS_ALLOW_NON_DIRECT_SCHEME=1 only for
+an intentional non-strict local experiment that must not be published.
+EOF
+  exit 1
+fi
+
 cleanup() {
   detach_sparse_image || true
   rm -rf "$TMP_DIR" >/dev/null 2>&1 || true

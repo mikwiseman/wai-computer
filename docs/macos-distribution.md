@@ -22,7 +22,6 @@ WaiSay has two macOS channels:
 
 Prerequisites:
 
-- `python3` with Pillow available for DMG background composition
 - Xcode command-line tools available for `xcodebuild`, `codesign`, `hdiutil`, `xcrun`, and `ditto`
 
 Use:
@@ -148,6 +147,8 @@ scripts/verify-macos-channels.sh
 
 In strict mode, Gatekeeper and notarization failures stop the build instead of being reported as warnings.
 
+Do not use `scripts/make-dmg.sh` for a release. It is intentionally guarded as a local unsigned/unnotarized smoke helper and uses `WaiSayDirect` only when `MACOS_ALLOW_LOCAL_UNNOTARIZED_DMG=1` is set.
+
 ## Publish to web
 
 After building a strict release, publish the versioned DMG, checksum, release notes, and appcast to the production host:
@@ -159,10 +160,12 @@ VPS_USER=<release-user> scripts/publish-macos-dmg.sh
 Fastlane can run the complete macOS release sequence:
 
 ```bash
-VPS_USER=<release-user> bundle exec fastlane mac upload_all
+VPS_USER=<release-user> fastlane mac upload_all
 ```
 
 This uploads the Mac App Store build to TestFlight, then builds and publishes the direct DMG channel.
+
+If a TestFlight install shows `"WaiSay" No Longer Available`, first verify the build state in App Store Connect. If the latest macOS build is still valid and in beta testing, remove the stale TestFlight install from `/Applications` and reinstall/update from TestFlight. Do not install the direct DMG over a TestFlight copy unless you are intentionally switching channels.
 
 ## GitHub Actions release
 

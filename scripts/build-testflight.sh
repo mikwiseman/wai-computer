@@ -1,12 +1,18 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT_DIR"
 
 # Load App Store Connect credentials
-CONFIG_FILE=$APPSTORECONNECT_CONFIG
-KEY_ID=$(grep '"key_id"' "$CONFIG_FILE" | cut -d '"' -f 4)
-ISSUER_ID=$(grep '"issuer_id"' "$CONFIG_FILE" | cut -d '"' -f 4)
-KEY_FILEPATH=$(grep '"key_filepath"' "$CONFIG_FILE" | cut -d '"' -f 4)
+CONFIG_FILE="$APPSTORECONNECT_CONFIG"
+KEY_ID=$(/usr/bin/plutil -extract key_id raw -o - "$CONFIG_FILE")
+ISSUER_ID=$(/usr/bin/plutil -extract issuer_id raw -o - "$CONFIG_FILE")
+KEY_FILEPATH=$(/usr/bin/plutil -extract key_filepath raw -o - "$CONFIG_FILE")
 KEY_FILEPATH="${KEY_FILEPATH/#\~/$HOME}"
+
+echo "Verifying macOS channel isolation..."
+"$ROOT_DIR/scripts/verify-macos-channels.sh"
 
 echo "Building iOS Archive..."
 xcodebuild archive \
