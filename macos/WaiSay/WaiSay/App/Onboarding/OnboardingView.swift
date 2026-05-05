@@ -63,7 +63,6 @@ struct OnboardingView: View {
                             requestPastePermission: requestPastePermission,
                             openInputMonitoringSettings: openInputMonitoringSettings,
                             openPasteSettings: openPasteSettings,
-                            recheckPermissions: refreshPermissions,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                         )
                         .environmentObject(dictationManager)
@@ -341,7 +340,6 @@ private struct OnboardingPermissionSlide: View {
     let requestPastePermission: () -> Void
     let openInputMonitoringSettings: () -> Void
     let openPasteSettings: () -> Void
-    let recheckPermissions: () -> Void
     let restartForPermissionRefresh: () -> Void
 
     private var content: OnboardingPage.Content { OnboardingPage.permission.content }
@@ -394,7 +392,6 @@ private struct OnboardingPermissionSlide: View {
                     identifierBase: "onboarding-permission-input-monitoring",
                     grantAction: requestInputMonitoringPermission,
                     settingsAction: openInputMonitoringSettings,
-                    recheckAction: recheckPermissions,
                     restartAction: restartForPermissionRefresh
                 )
 
@@ -406,7 +403,6 @@ private struct OnboardingPermissionSlide: View {
                     identifierBase: "onboarding-permission-automatic-paste",
                     grantAction: requestPastePermission,
                     settingsAction: openPasteSettings,
-                    recheckAction: recheckPermissions,
                     restartAction: restartForPermissionRefresh
                 )
 
@@ -464,7 +460,6 @@ private struct OnboardingPermissionSlide: View {
         identifierBase: String,
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)? = nil,
-        recheckAction: (() -> Void)? = nil,
         restartAction: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -518,14 +513,6 @@ private struct OnboardingPermissionSlide: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: Spacing.sm) {
-                        if let recheckAction {
-                            Button("Recheck") {
-                                recheckAction()
-                            }
-                            .font(Typography.bodySmall)
-                            .accessibilityIdentifier("\(identifierBase)-recheck")
-                        }
-
                         if let settingsAction {
                             Button("Settings") {
                                 settingsAction()
