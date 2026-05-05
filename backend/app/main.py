@@ -1,12 +1,13 @@
 """FastAPI application entry point."""
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.routing import Route
 
 from app.api.routes import (
     action_items,
@@ -14,6 +15,7 @@ from app.api.routes import (
     dictation,
     entities,
     folders,
+    mcp_oauth,
     qa,
     realtime_transcription,
     realtime_voice,
@@ -28,6 +30,7 @@ from app.core.observability import (
     end_request_context,
     initialize_sentry,
 )
+from app.mcp_server import create_mcp_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +44,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 app_settings = get_settings()
+mcp_asgi_app = create_mcp_app(app_settings)
 initialize_sentry(
     dsn=app_settings.sentry_dsn,
     debug=app_settings.debug,
@@ -79,15 +83,18 @@ async def lifespan(app: FastAPI):
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
     if not app_settings.redis_url:
         logger.warning("REDIS_URL is not configured — agent scheduling will not work")
-    # Startup: pre-load sentence-transformers model
-    logger.info("Pre-loading sentence-transformers embedding model...")
-    from app.core.embeddings import get_embedding_generator
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp_asgi_app.router.lifespan_context(mcp_asgi_app))
 
-    generator = get_embedding_generator()
-    generator._load_model()
-    logger.info("Embedding model loaded successfully.")
+        # Startup: pre-load sentence-transformers model
+        logger.info("Pre-loading sentence-transformers embedding model...")
+        from app.core.embeddings import get_embedding_generator
 
-    yield
+        generator = get_embedding_generator()
+        generator._load_model()
+        logger.info("Embedding model loaded successfully.")
+
+        yield
     # Shutdown
     logger.info("Application shutting down.")
 
@@ -134,7 +141,7 @@ app.add_middleware(
     allow_origins=app_settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Mcp-Protocol-Version"],
 )
 
 # Include routers
@@ -145,6 +152,7 @@ app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
+app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(qa.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
@@ -167,3 +175,16 @@ async def health():
     async with async_session_maker() as session:
         await session.execute(text("SELECT 1"))
     return {"status": "healthy", "database": "connected"}
+
+
+for mcp_route in mcp_asgi_app.routes:
+    if isinstance(mcp_route, Route):
+        app.router.routes.append(
+            Route(
+                mcp_route.path,
+                endpoint=mcp_asgi_app,
+                methods=mcp_route.methods,
+                include_in_schema=False,
+                name=f"mcp:{mcp_route.name}",
+            )
+        )
