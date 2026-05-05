@@ -279,6 +279,49 @@ final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+enum MacLocalUserDataStore {
+    static func removeWaiSaySupportDirectories(
+        fileManager: FileManager = .default,
+        bundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) throws {
+        try removeRelativeDirectories(
+            in: .applicationSupportDirectory,
+            relativePaths: [["WaiSay"]],
+            fileManager: fileManager
+        )
+
+        var cachePaths = [["WaiSay"], ["SentryCrash", "WaiSay"]]
+        if let bundleIdentifier, !bundleIdentifier.isEmpty {
+            cachePaths.append([bundleIdentifier])
+        }
+        try removeRelativeDirectories(
+            in: .cachesDirectory,
+            relativePaths: cachePaths,
+            fileManager: fileManager
+        )
+    }
+
+    private static func removeRelativeDirectories(
+        in searchPathDirectory: FileManager.SearchPathDirectory,
+        relativePaths: [[String]],
+        fileManager: FileManager
+    ) throws {
+        guard let base = fileManager.urls(for: searchPathDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        for relativePath in relativePaths {
+            let directory = relativePath.reduce(base) { url, component in
+                url.appendingPathComponent(component, isDirectory: true)
+            }
+            guard fileManager.fileExists(atPath: directory.path) else {
+                continue
+            }
+            try fileManager.removeItem(at: directory)
+        }
+    }
+}
+
 /// Mac-specific app state with system audio support
 @MainActor
 class MacAppState: ObservableObject {
@@ -293,7 +336,8 @@ class MacAppState: ObservableObject {
     @Published var pendingMainWindowAction: MacMainWindowAction?
     @Published var hasCompletedOnboarding: Bool = false
 
-    static let onboardingCompletedKey = "nativeOnboardingV2Completed"
+    static let onboardingCompletedKey = "nativeOnboardingV3Completed"
+    static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed"]
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
@@ -319,6 +363,8 @@ class MacAppState: ObservableObject {
         apiClient = APIClient(baseURL: baseURL)
 
         // Resolve onboarding flag honoring env-var overrides used by tests/dev.
+        // The V3 key intentionally invalidates older completion flags because
+        // permission onboarding now includes Input Monitoring and Automatic Paste.
         let env = ProcessInfo.processInfo.environment
         if env["WAI_FORCE_ONBOARDING"] == "1" {
             UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
@@ -376,11 +422,12 @@ class MacAppState: ObservableObject {
         }
     }
 
-    /// Mark the welcome tour as seen. The flag persists across logout and
-    /// account deletion — onboarding is a product introduction, not part of
-    /// the auth lifecycle.
+    /// Mark the current welcome and permission tour as seen.
     func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        MacAppState.legacyOnboardingCompletedKeys.forEach {
+            UserDefaults.standard.removeObject(forKey: $0)
+        }
         hasCompletedOnboarding = true
         beginStoredSessionRestoreIfNeeded()
     }
@@ -520,15 +567,17 @@ class MacAppState: ObservableObject {
     }
 
     func logout() async {
-        // Best-effort server logout with refresh token revocation
-        let rt = await apiClient.getRefreshToken()
-        do {
-            _ = try await apiClient.logout(refreshToken: rt)
-        } catch {
-            NSLog("[Auth] Server logout failed (proceeding with local logout)")
+        if testingMode == .live {
+            // Best-effort server logout with refresh token revocation.
+            let rt = await apiClient.getRefreshToken()
+            do {
+                _ = try await apiClient.logout(refreshToken: rt)
+            } catch {
+                NSLog("[Auth] Server logout failed (proceeding with local logout)")
+            }
         }
 
-        await clearLocalSession()
+        await clearLocalSession(removeUserData: true)
     }
 
     /// Permanently delete the signed-in account. Returns an error message on
@@ -544,19 +593,51 @@ class MacAppState: ObservableObject {
             return error.userFacingMessage(context: .authentication)
         }
 
-        await clearLocalSession()
+        await clearLocalSession(removeUserData: true)
         return nil
     }
 
-    private func clearLocalSession() async {
+    private func clearLocalSession(removeUserData: Bool = false) async {
         dictationManager.disable()
+        dictationManager.updateEnabled(false)
         await apiClient.setAccessToken(nil)
         await apiClient.setRefreshToken(nil)
-        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
-        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        let removedAccessToken = KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
+        let removedRefreshToken = KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        var cleanupFailure: String?
+
+        if removeUserData {
+            do {
+                try clearLocalUserData()
+            } catch {
+                SentryHelper.captureError(error, extras: ["action": "clearLocalUserData"])
+                cleanupFailure = "Signed out, but WaiSay could not remove all local app data. Quit WaiSay and remove its local data manually before sharing this Mac."
+            }
+        }
+
         SentryHelper.clearUser()
         currentUser = nil
         isAuthenticated = false
+        magicLinkSent = false
+        hasAttemptedStoredSessionRestore = false
+        if removeUserData {
+            hasCompletedOnboarding = false
+        }
+        if !removedAccessToken || !removedRefreshToken {
+            cleanupFailure = "Signed out, but WaiSay could not remove all saved login tokens from Keychain."
+        }
+        error = cleanupFailure
+    }
+
+    private func clearLocalUserData() throws {
+        dictationManager.historyStore?.clearAll()
+        dictationManager.dictionaryStore?.clearAll()
+        try RecordingBackupStore.removeAllRecordings()
+        try MacLocalUserDataStore.removeWaiSaySupportDirectories()
+        if let bundleIdentifier = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
+        }
+        UserDefaults.standard.synchronize()
     }
 
     /// Called when auto-refresh fails — transition to login screen

@@ -182,6 +182,32 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertNoThrow(try RecordingBackupStore.removeRecording(recordingId: recordingId))
     }
 
+    func testRemoveAllRecordingsDeletesEveryBackup() throws {
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: "backup-remove-all-1-\(UUID().uuidString)",
+            title: "First",
+            recordingType: .note,
+            durationSeconds: 1,
+            transcript: "First",
+            segments: []
+        )
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: "backup-remove-all-2-\(UUID().uuidString)",
+            title: "Second",
+            recordingType: .meeting,
+            durationSeconds: 2,
+            transcript: "Second",
+            segments: []
+        )
+
+        XCTAssertEqual(try RecordingBackupStore.listBackups().count, 2)
+
+        try RecordingBackupStore.removeAllRecordings()
+
+        XCTAssertEqual(try RecordingBackupStore.listBackups(), [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backupRoot.path))
+    }
+
     func testRecordSaveFailureForNonExistentRecordingReturnsNil() throws {
         let recordingId = "backup-no-exist-failure-\(UUID().uuidString)"
 

@@ -54,6 +54,11 @@ final class DictationDictionaryStore: ObservableObject {
         save()
     }
 
+    func clearAll() {
+        words.removeAll()
+        save()
+    }
+
     /// Vocabulary list for prompt conditioning — sent to transcription provider
     var vocabularyList: [String] {
         words.map(\.word)
@@ -88,6 +93,10 @@ final class DictationDictionaryStore: ObservableObject {
 
     private func save() {
         do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             let data = try JSONEncoder().encode(words)
             try data.write(to: fileURL, options: .atomic)
         } catch {

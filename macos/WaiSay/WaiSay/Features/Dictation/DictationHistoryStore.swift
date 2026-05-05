@@ -118,6 +118,10 @@ final class DictationHistoryStore: ObservableObject {
 
     private func save() {
         do {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             let data = try JSONEncoder().encode(entries)
             try data.write(to: fileURL, options: .atomic)
         } catch {

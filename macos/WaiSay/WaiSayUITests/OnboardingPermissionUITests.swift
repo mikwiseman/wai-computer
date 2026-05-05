@@ -38,6 +38,22 @@ final class OnboardingPermissionUITests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyCompletedOnboardingFlagDoesNotSkipUpdatedPermissionOnboarding() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
+        app.launchArguments = [
+            "-nativeOnboardingV2Completed", "YES",
+            "-nativeOnboardingV3Completed", "NO",
+        ]
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
+        XCTAssertFalse(app.textFields["Email"].exists, "Legacy onboarding completion must not route first to auth")
+    }
+
+    @MainActor
     func testOnboardingShowsRestartAfterInputMonitoringGrantAttempt() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
