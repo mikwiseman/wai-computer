@@ -1,7 +1,5 @@
-import {
-  normalizeWaiSayAppClient,
-  OpenWaiSayAppClient,
-} from "@/components/OpenWaiSayAppClient";
+import { OpenWaiSayAppClient } from "@/components/OpenWaiSayAppClient";
+import { normalizeWaiSayAppClient } from "@/lib/app-client";
 
 export const metadata = {
   referrer: "no-referrer",
