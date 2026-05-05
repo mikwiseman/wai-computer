@@ -14,7 +14,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         let title: String
         let body: String
         let symbol: String?
-        let useTriangleIcon: Bool
+        let useAppIcon: Bool
     }
 
     var content: Content {
@@ -25,7 +25,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Your AI second brain for voice.",
                 body: "Capture meetings, notes, and reflections — instantly searchable.",
                 symbol: nil,
-                useTriangleIcon: true
+                useAppIcon: true
             )
         case .record:
             return Content(
@@ -33,7 +33,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "One tap. Anywhere.",
                 body: "Meetings, voice notes, late-night ideas. WaiSay keeps recording even when offline.",
                 symbol: "mic.circle",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         case .transcribe:
             return Content(
@@ -41,7 +41,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Transcripts that think.",
                 body: "Real-time transcription, AI summaries, action items, and key decisions — without the busywork.",
                 symbol: "sparkles",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         case .dictate:
             return Content(
@@ -49,15 +49,15 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Speak into anything.",
                 body: "A global hotkey turns your voice into text in any app. You can set it up before signing in.",
                 symbol: "keyboard.badge.eye",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         case .permission:
             return Content(
                 eyebrow: "Setup",
-                title: "Choose the permissions.",
-                body: "Microphone is for recording. Input Monitoring is for the global hotkey. Direct downloads can also enable automatic insertion.",
+                title: "Set up voice access.",
+                body: "Grant Microphone for recording, Input Monitoring for the global hotkey, and Automatic Paste for text insertion.",
                 symbol: "lock.shield",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         }
     }

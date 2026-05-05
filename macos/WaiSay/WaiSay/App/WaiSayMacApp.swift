@@ -293,7 +293,7 @@ class MacAppState: ObservableObject {
     @Published var pendingMainWindowAction: MacMainWindowAction?
     @Published var hasCompletedOnboarding: Bool = false
 
-    static let onboardingCompletedKey = "nativeOnboardingV1Completed"
+    static let onboardingCompletedKey = "nativeOnboardingV2Completed"
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,

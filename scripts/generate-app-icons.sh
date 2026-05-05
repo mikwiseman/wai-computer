@@ -17,24 +17,11 @@ generate_png() {
 }
 
 echo "Generating iOS app icons from $SOURCE_ICON"
-generate_png 40 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-20@2x.png"
-generate_png 60 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-20@3x.png"
-generate_png 58 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-29@2x.png"
-generate_png 87 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-29@3x.png"
-generate_png 80 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-40@2x.png"
-generate_png 120 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-40@3x.png"
-generate_png 120 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-60@2x.png"
-generate_png 180 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-60@3x.png"
-generate_png 20 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-20@1x-ipad.png"
-generate_png 40 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-20@2x-ipad.png"
-generate_png 29 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-29@1x-ipad.png"
-generate_png 58 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-29@2x-ipad.png"
-generate_png 40 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-40@1x-ipad.png"
-generate_png 80 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-40@2x-ipad.png"
-generate_png 76 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-76@1x.png"
-generate_png 152 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-76@2x.png"
-generate_png 167 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-83.5@2x.png"
 generate_png 1024 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+cp "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
+  "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
+cp "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
+  "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
 
 echo "Generating macOS app icons"
 generate_png 16 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
@@ -47,6 +34,13 @@ generate_png 256 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appicons
 generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_256x256@2x.png"
 generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512.png"
 generate_png 1024 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
+
+echo "Generating onboarding and web icons"
+generate_png 256 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
+generate_png 512 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
+generate_png 256 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
+generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
+generate_png 1024 "$ROOT_DIR/web/public/app-icon.png"
 
 echo "Generating Android launcher icons"
 generate_png 48 "$ROOT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png"

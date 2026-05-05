@@ -13,7 +13,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         let title: String
         let body: String
         let symbol: String?
-        let useTriangleIcon: Bool
+        let useAppIcon: Bool
     }
 
     var content: Content {
@@ -24,7 +24,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Your AI second brain for voice.",
                 body: "Capture meetings, notes, and reflections — instantly searchable.",
                 symbol: nil,
-                useTriangleIcon: true
+                useAppIcon: true
             )
         case .record:
             return Content(
@@ -32,7 +32,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "One tap. Anywhere.",
                 body: "Meetings, voice notes, late-night ideas. WaiSay keeps recording even when offline.",
                 symbol: "mic.circle",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         case .transcribe:
             return Content(
@@ -40,7 +40,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Transcripts that think.",
                 body: "Real-time transcription, AI summaries, action items, and key decisions — without the busywork.",
                 symbol: "sparkles",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         case .permission:
             return Content(
@@ -48,7 +48,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "We need your microphone.",
                 body: "WaiSay only records when you press record. We never listen in the background.",
                 symbol: "lock.shield",
-                useTriangleIcon: false
+                useAppIcon: false
             )
         }
     }

@@ -45,13 +45,18 @@ enum TextInserter {
 
     static var hasEventPostingPermission: Bool {
         guard supportsAutomaticPaste else { return false }
-        return CGPreflightPostEventAccess()
+        return CGPreflightPostEventAccess() || AXIsProcessTrusted()
     }
 
     @discardableResult
     static func requestEventPostingPermission() -> Bool {
         guard supportsAutomaticPaste else { return false }
-        return CGRequestPostEventAccess()
+        if CGRequestPostEventAccess() {
+            return true
+        }
+
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     static func openEventPostingSettings() {

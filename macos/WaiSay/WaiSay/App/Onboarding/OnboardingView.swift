@@ -4,10 +4,13 @@ import AVFoundation
 struct OnboardingView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int = 0
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
     @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
     @State private var hasPastePermission = TextInserter.hasEventPostingPermission
+    @State private var inputMonitoringNeedsReview = false
+    @State private var pasteNeedsReview = false
     @State private var permissionPollTimer: Timer?
 
     private let pages = OnboardingPage.allCases
@@ -34,6 +37,12 @@ struct OnboardingView: View {
             startPermissionPollingIfNeeded()
         }
         .onDisappear(perform: stopPermissionPolling)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                refreshPermissions()
+                startPermissionPollingIfNeeded()
+            }
+        }
     }
 
     // MARK: - Slide area
@@ -48,9 +57,15 @@ struct OnboardingView: View {
                             hasMicrophonePermission: hasMicrophonePermission,
                             hasInputMonitoringPermission: hasInputMonitoringPermission,
                             hasPastePermission: hasPastePermission,
+                            inputMonitoringNeedsReview: inputMonitoringNeedsReview,
+                            pasteNeedsReview: pasteNeedsReview,
                             requestMicrophonePermission: requestMicrophonePermission,
                             requestInputMonitoringPermission: requestInputMonitoringPermission,
-                            requestPastePermission: requestPastePermission
+                            requestPastePermission: requestPastePermission,
+                            openInputMonitoringSettings: openInputMonitoringSettings,
+                            openPasteSettings: openPasteSettings,
+                            recheckPermissions: refreshPermissions,
+                            quitForPermissionRefresh: MacPrivacySettings.quitForPermissionRefresh
                         )
                         .environmentObject(dictationManager)
                         .frame(width: geo.size.width)
@@ -86,10 +101,14 @@ struct OnboardingView: View {
     @ViewBuilder
     private var footerControls: some View {
         HStack {
-            if !isLastPage {
-                Button("Skip") {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentPage = pages.count - 1
+            if !isLastPage || !dictationPermissionsReady {
+                Button(isLastPage ? "Skip for Now" : "Skip") {
+                    if isLastPage {
+                        completeOnboarding()
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            currentPage = pages.count - 1
+                        }
                     }
                 }
                 .buttonStyle(WaiGhostButtonStyle())
@@ -111,7 +130,7 @@ struct OnboardingView: View {
     }
 
     private var primaryButtonTitle: String {
-        isLastPage ? (dictationPermissionsReady ? "Get Started" : "Finish Setup") : "Continue"
+        isLastPage ? (dictationPermissionsReady ? "Get Started" : "Grant Missing") : "Continue"
     }
 
     private var primaryButtonAccessibilityId: String {
@@ -120,13 +139,22 @@ struct OnboardingView: View {
 
     private func handlePrimaryTap() {
         if isLastPage {
-            UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
-            appState.completeOnboarding()
+            refreshPermissions()
+            if dictationPermissionsReady {
+                completeOnboarding()
+            } else {
+                requestNextMissingPermission()
+            }
         } else {
             withAnimation(.easeInOut(duration: 0.3)) {
                 currentPage += 1
             }
         }
+    }
+
+    private func completeOnboarding() {
+        UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
+        appState.completeOnboarding()
     }
 
     private var dictationPermissionsReady: Bool {
@@ -145,6 +173,12 @@ struct OnboardingView: View {
         hasMicrophonePermission = Self.hasMicrophonePermission
         hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
         hasPastePermission = TextInserter.hasEventPostingPermission
+        if hasInputMonitoringPermission {
+            inputMonitoringNeedsReview = false
+        }
+        if hasPastePermission {
+            pasteNeedsReview = false
+        }
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -163,6 +197,7 @@ struct OnboardingView: View {
 
     private func requestInputMonitoringPermission() {
         startPermissionPolling()
+        inputMonitoringNeedsReview = true
         _ = GlobalHotkeyManager.requestInputMonitoringPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             refreshPermissions()
@@ -174,6 +209,7 @@ struct OnboardingView: View {
 
     private func requestPastePermission() {
         startPermissionPolling()
+        pasteNeedsReview = true
         _ = TextInserter.requestEventPostingPermission()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             refreshPermissions()
@@ -181,6 +217,18 @@ struct OnboardingView: View {
                 TextInserter.openEventPostingSettings()
             }
         }
+    }
+
+    private func openInputMonitoringSettings() {
+        startPermissionPolling()
+        inputMonitoringNeedsReview = true
+        MacPrivacySettings.openInputMonitoring()
+    }
+
+    private func openPasteSettings() {
+        startPermissionPolling()
+        pasteNeedsReview = true
+        TextInserter.openEventPostingSettings()
     }
 
     private func startPermissionPollingIfNeeded() {
@@ -202,6 +250,16 @@ struct OnboardingView: View {
         permissionPollTimer?.invalidate()
         permissionPollTimer = nil
     }
+
+    private func requestNextMissingPermission() {
+        if !hasMicrophonePermission {
+            requestMicrophonePermission()
+        } else if !hasInputMonitoringPermission {
+            requestInputMonitoringPermission()
+        } else if !hasPastePermission {
+            requestPastePermission()
+        }
+    }
 }
 
 private struct OnboardingPermissionSlide: View {
@@ -211,9 +269,15 @@ private struct OnboardingPermissionSlide: View {
     let hasMicrophonePermission: Bool
     let hasInputMonitoringPermission: Bool
     let hasPastePermission: Bool
+    let inputMonitoringNeedsReview: Bool
+    let pasteNeedsReview: Bool
     let requestMicrophonePermission: () -> Void
     let requestInputMonitoringPermission: () -> Void
     let requestPastePermission: () -> Void
+    let openInputMonitoringSettings: () -> Void
+    let openPasteSettings: () -> Void
+    let recheckPermissions: () -> Void
+    let quitForPermissionRefresh: () -> Void
 
     private var content: OnboardingPage.Content { OnboardingPage.permission.content }
 
@@ -259,17 +323,23 @@ private struct OnboardingPermissionSlide: View {
                     title: "Input Monitoring",
                     detail: "Use the hotkey from any app",
                     isGranted: hasInputMonitoringPermission,
+                    needsReview: inputMonitoringNeedsReview,
                     grantAction: requestInputMonitoringPermission,
-                    settingsAction: MacPrivacySettings.openInputMonitoring
+                    settingsAction: openInputMonitoringSettings,
+                    recheckAction: recheckPermissions,
+                    quitAction: quitForPermissionRefresh
                 )
 
                 #if SPARKLE
                 permissionRow(
-                    title: "Paste Permission",
+                    title: "Automatic Paste",
                     detail: "Insert dictated text automatically",
                     isGranted: hasPastePermission,
+                    needsReview: pasteNeedsReview,
                     grantAction: requestPastePermission,
-                    settingsAction: TextInserter.openEventPostingSettings
+                    settingsAction: openPasteSettings,
+                    recheckAction: recheckPermissions,
+                    quitAction: quitForPermissionRefresh
                 )
                 #endif
 
@@ -315,43 +385,74 @@ private struct OnboardingPermissionSlide: View {
         title: String,
         detail: String,
         isGranted: Bool,
+        needsReview: Bool = false,
         grantAction: @escaping () -> Void,
-        settingsAction: (() -> Void)? = nil
+        settingsAction: (() -> Void)? = nil,
+        recheckAction: (() -> Void)? = nil,
+        quitAction: (() -> Void)? = nil
     ) -> some View {
-        HStack(spacing: Spacing.md) {
-            Image(systemName: isGranted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isGranted ? .green : Palette.textTertiary)
-                .frame(width: 22)
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.md) {
+                Image(systemName: isGranted ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isGranted ? .green : Palette.textTertiary)
+                    .frame(width: 22)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(Typography.body)
-                    .foregroundStyle(Palette.textPrimary)
-                Text(detail)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textSecondary)
-            }
-
-            Spacer()
-
-            if isGranted {
-                Text("Granted")
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(.green)
-            } else {
-                Button("Grant") {
-                    grantAction()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.textPrimary)
+                    Text(detail)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
                 }
-                .font(Typography.bodySmall)
 
-                if let settingsAction {
-                    Button("Open Settings") {
-                        settingsAction()
+                Spacer()
+
+                if isGranted {
+                    Text("Granted")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Grant") {
+                        grantAction()
                     }
                     .font(Typography.bodySmall)
+
+                    if let settingsAction {
+                        Button("Settings") {
+                            settingsAction()
+                        }
+                        .font(Typography.bodySmall)
+                    }
                 }
             }
+
+            if !isGranted && needsReview {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(MacPrivacySettings.duplicatePermissionHint)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: Spacing.sm) {
+                        if let recheckAction {
+                            Button("Recheck") {
+                                recheckAction()
+                            }
+                            .font(Typography.bodySmall)
+                        }
+
+                        if let quitAction {
+                            Button("Quit WaiSay") {
+                                quitAction()
+                            }
+                            .font(Typography.bodySmall)
+                        }
+                    }
+                }
+                .padding(.leading, 34)
+            }
         }
-        .frame(minHeight: 38)
+        .frame(minHeight: needsReview ? 58 : 38)
     }
 }
