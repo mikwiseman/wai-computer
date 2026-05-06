@@ -1,0 +1,477 @@
+"""WaiSay nightly QA harness — Tier 1.
+
+Generates TTS audio from Inworld, streams it through Inworld STT, computes WER
+and latency vs ground-truth text, writes structured report.
+
+Run: ./scripts/nightly/run.sh
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import base64
+import json
+import logging
+import math
+import os
+import statistics
+import sys
+import time
+import urllib.request
+import wave
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import websockets
+
+logger = logging.getLogger("nightly")
+
+INWORLD_TTS_URL = "https://api.inworld.ai/tts/v1/voice"
+INWORLD_STT_WS = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional"
+TTS_MODEL = "inworld-tts-1.5-max"
+STT_MODEL = "soniox/stt-rt-v4"
+SAMPLE_RATE = 16000
+CHUNK_MS = 50
+
+
+@dataclass
+class ScenarioResult:
+    id: str
+    category: str
+    language: str
+    voice: str
+    expected: str
+    transcript: str
+    wer: float
+    e2e_latency_ms: float
+    tts_ms: float
+    stt_ms: float
+    status: str
+    notes: list[str] = field(default_factory=list)
+
+
+def normalize(text: str) -> list[str]:
+    keep = []
+    for ch in text.lower():
+        if ch.isalnum() or ch.isspace():
+            keep.append(ch)
+        else:
+            keep.append(" ")
+    return "".join(keep).split()
+
+
+def wer(reference: str, hypothesis: str) -> float:
+    """Word error rate via Levenshtein on word tokens."""
+    ref = normalize(reference)
+    hyp = normalize(hypothesis)
+    if not ref:
+        return 0.0 if not hyp else 1.0
+    n, m = len(ref), len(hyp)
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        dp[i][0] = i
+    for j in range(m + 1):
+        dp[0][j] = j
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = 0 if ref[i - 1] == hyp[j - 1] else 1
+            dp[i][j] = min(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost,
+            )
+    return dp[n][m] / n
+
+
+def load_inworld_key() -> str:
+    candidate = Path.home() / ".config" / "waisay" / "inworld.env"
+    if not candidate.exists():
+        raise RuntimeError(
+            f"INWORLD_API_KEY missing. Expected at {candidate} (mode 0600).\n"
+            "Fetch with: ssh root@157.180.47.68 'grep ^INWORLD_API_KEY= /etc/waisay/backend.env' "
+            "> ~/.config/waisay/inworld.env && chmod 600 ~/.config/waisay/inworld.env"
+        )
+    raw = candidate.read_text().strip()
+    if "=" in raw:
+        raw = raw.split("=", 1)[1].strip().strip("\"'")
+    if not raw:
+        raise RuntimeError(f"INWORLD_API_KEY at {candidate} is empty")
+    # Normalize per backend/app/core/inworld.py: if `id:secret`, base64-encode for HTTP Basic.
+    if ":" in raw:
+        raw = base64.b64encode(raw.encode()).decode()
+    return raw
+
+
+def synthesize_silence(out_path: Path, duration_ms: int) -> None:
+    n = int(SAMPLE_RATE * duration_ms / 1000)
+    with wave.open(str(out_path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SAMPLE_RATE)
+        w.writeframes(b"\x00\x00" * n)
+
+
+def synthesize_tts(api_key: str, text: str, voice: str, language: str, out_path: Path) -> float:
+    """Inworld TTS sync REST. Returns wall-clock ms."""
+    body = {
+        "text": text,
+        "voiceId": voice,
+        "modelId": TTS_MODEL,
+        "audioConfig": {
+            "audioEncoding": "LINEAR16",
+            "sampleRateHertz": SAMPLE_RATE,
+        },
+        "applyTextNormalization": "ON",
+    }
+    req = urllib.request.Request(
+        INWORLD_TTS_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Basic {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    t0 = time.perf_counter()
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read())
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    audio_b64 = payload.get("audioContent") or payload.get("result", {}).get("audioContent")
+    if not audio_b64:
+        raise RuntimeError(f"TTS response missing audioContent: keys={list(payload.keys())}")
+    audio_bytes = base64.b64decode(audio_b64)
+    # Inworld returns a complete WAV (RIFF header) when audioEncoding=LINEAR16 — write as-is.
+    out_path.write_bytes(audio_bytes)
+    return elapsed_ms
+
+
+def read_pcm(path: Path) -> bytes:
+    with wave.open(str(path), "rb") as r:
+        if r.getframerate() != SAMPLE_RATE:
+            raise RuntimeError(f"{path} sample rate {r.getframerate()} != {SAMPLE_RATE}")
+        if r.getsampwidth() != 2:
+            raise RuntimeError(f"{path} sample width {r.getsampwidth()} != 2")
+        return r.readframes(r.getnframes())
+
+
+async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, float]:
+    """Stream WAV PCM to Inworld STT (Soniox v4 RT), return (final_transcript, end-of-audio-to-last-final ms).
+
+    Protocol from shared/WaiSayKit/Sources/WaiSayKit/Network/InworldProviderSession.swift:
+      send: transcribe_config -> N x audio_chunk -> end_turn -> close_stream
+      recv: {transcription:{text, is_final, language}}, {usage:{...}}, {error:{...}}
+    """
+    pcm = read_pcm(wav_path)
+    chunk_bytes = SAMPLE_RATE * 2 * CHUNK_MS // 1000
+    final_segments: list[str] = []
+    end_of_audio_ts: float | None = None
+    last_final_ts: float | None = None
+
+    async with websockets.connect(
+        INWORLD_STT_WS,
+        additional_headers={"Authorization": f"Basic {api_key}"},
+        max_size=2**22,
+    ) as ws:
+        await ws.send(json.dumps({
+            "transcribe_config": {
+                "model_id": STT_MODEL,
+                "language": language,
+                "audio_encoding": "LINEAR16",
+                "sample_rate_hertz": SAMPLE_RATE,
+                "number_of_channels": 1,
+            }
+        }))
+
+        # Inworld validation: chunk duration must be 20..1000ms. We pad the final
+        # short chunk with silence so the server accepts it; alternative would
+        # be to drop it but that loses audio at the boundary.
+        min_chunk_bytes = SAMPLE_RATE * 2 * 20 // 1000  # 20ms
+
+        async def sender() -> None:
+            for i in range(0, len(pcm), chunk_bytes):
+                chunk = pcm[i : i + chunk_bytes]
+                if len(chunk) < min_chunk_bytes:
+                    chunk = chunk + b"\x00" * (min_chunk_bytes - len(chunk))
+                await ws.send(json.dumps({"audio_chunk": {"content": base64.b64encode(chunk).decode()}}))
+                await asyncio.sleep(CHUNK_MS / 1000)
+            nonlocal end_of_audio_ts
+            end_of_audio_ts = time.perf_counter()
+            await ws.send(json.dumps({"end_turn": {}}))
+            await ws.send(json.dumps({"close_stream": {}}))
+
+        send_task = asyncio.create_task(sender())
+
+        trace = os.environ.get("NIGHTLY_TRACE") == "1"
+        usage_seen = False
+        try:
+            while True:
+                raw = await asyncio.wait_for(ws.recv(), timeout=15.0)
+                if trace:
+                    logger.info("STT frame: %s", raw[:400])
+                msg = json.loads(raw)
+                inner = msg.get("result") if isinstance(msg.get("result"), dict) else msg
+                tx = inner.get("transcription") if isinstance(inner, dict) else None
+                if tx:
+                    text = (tx.get("transcript") or tx.get("text") or "").strip()
+                    is_final = tx.get("isFinal") or tx.get("is_final") or False
+                    if is_final and text:
+                        final_segments.append(text)
+                        last_final_ts = time.perf_counter()
+                    elif not is_final and text and trace:
+                        logger.info("STT interim: %r", text)
+                if (inner.get("usage") if isinstance(inner, dict) else None) is not None:
+                    usage_seen = True
+                err = (inner.get("error") if isinstance(inner, dict) else None) or msg.get("error")
+                if err:
+                    raise RuntimeError(f"inworld error frame: {err}")
+                # Server emits usage as the last frame; close to avoid 15s recv timeout.
+                if usage_seen:
+                    break
+        except asyncio.TimeoutError:
+            pass
+        except websockets.ConnectionClosedOK:
+            pass
+        except websockets.ConnectionClosed:
+            pass
+        finally:
+            send_task.cancel()
+            try:
+                await send_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    e2e_ms = 0.0
+    if end_of_audio_ts and last_final_ts:
+        e2e_ms = max(0.0, (last_final_ts - end_of_audio_ts) * 1000)
+    return " ".join(final_segments).strip(), e2e_ms
+
+
+async def run_scenario(
+    api_key: str, scenario: dict[str, Any], run_dir: Path
+) -> ScenarioResult:
+    sid = scenario["id"]
+    audio_path = run_dir / "audio" / f"{sid}.wav"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    transcripts_path = run_dir / "transcripts" / f"{sid}.json"
+    transcripts_path.parent.mkdir(parents=True, exist_ok=True)
+
+    notes: list[str] = []
+    tts_ms = 0.0
+    if scenario.get("synthesize_silence_ms"):
+        synthesize_silence(audio_path, scenario["synthesize_silence_ms"])
+        notes.append(f"silence {scenario['synthesize_silence_ms']}ms")
+    else:
+        try:
+            tts_ms = synthesize_tts(
+                api_key,
+                scenario["text"],
+                scenario["voice"],
+                scenario["language"],
+                audio_path,
+            )
+        except Exception as e:
+            return ScenarioResult(
+                id=sid,
+                category=scenario["category"],
+                language=scenario["language"],
+                voice=scenario["voice"],
+                expected=scenario["text"],
+                transcript="",
+                wer=1.0,
+                e2e_latency_ms=0.0,
+                tts_ms=0.0,
+                stt_ms=0.0,
+                status="ERROR_TTS",
+                notes=[f"tts failed: {e}"],
+            )
+
+    stt_t0 = time.perf_counter()
+    try:
+        transcript, e2e_ms = await stream_stt(api_key, audio_path, scenario["language"])
+    except Exception as e:
+        return ScenarioResult(
+            id=sid,
+            category=scenario["category"],
+            language=scenario["language"],
+            voice=scenario["voice"],
+            expected=scenario["text"],
+            transcript="",
+            wer=1.0,
+            e2e_latency_ms=0.0,
+            tts_ms=tts_ms,
+            stt_ms=0.0,
+            status="ERROR_STT",
+            notes=[f"stt failed: {e}"],
+        )
+    stt_ms = (time.perf_counter() - stt_t0) * 1000
+
+    transcripts_path.write_text(
+        json.dumps({"expected": scenario["text"], "transcript": transcript}, ensure_ascii=False, indent=2)
+    )
+
+    expect_empty = scenario.get("expect_empty_transcript")
+    if expect_empty:
+        wer_value = 0.0 if not transcript.strip() else 1.0
+        status = "PASS" if wer_value == 0.0 else "FAIL_NONEMPTY_SILENCE"
+    else:
+        wer_value = wer(scenario["text"], transcript)
+        status = "PASS"
+        if wer_value > scenario["max_wer"]:
+            status = "FAIL_WER"
+            notes.append(f"WER {wer_value:.3f} > max {scenario['max_wer']:.3f}")
+        if e2e_ms > scenario["max_latency_ms"]:
+            status = "FAIL_LATENCY" if status == "PASS" else f"{status}+LATENCY"
+            notes.append(f"E2E {e2e_ms:.0f}ms > max {scenario['max_latency_ms']}ms")
+
+    return ScenarioResult(
+        id=sid,
+        category=scenario["category"],
+        language=scenario["language"],
+        voice=scenario["voice"],
+        expected=scenario["text"],
+        transcript=transcript,
+        wer=wer_value,
+        e2e_latency_ms=e2e_ms,
+        tts_ms=tts_ms,
+        stt_ms=stt_ms,
+        status=status,
+        notes=notes,
+    )
+
+
+def aggregate_metrics(results: list[ScenarioResult]) -> dict[str, Any]:
+    total = len(results)
+    passed = sum(1 for r in results if r.status == "PASS")
+    by_cat: dict[str, dict[str, Any]] = {}
+    for r in results:
+        cat = by_cat.setdefault(r.category, {"total": 0, "passed": 0, "wers": [], "lats": []})
+        cat["total"] += 1
+        if r.status == "PASS":
+            cat["passed"] += 1
+        cat["wers"].append(r.wer)
+        cat["lats"].append(r.e2e_latency_ms)
+    wers = [r.wer for r in results if r.status != "ERROR_TTS" and r.status != "ERROR_STT"]
+    lats = [r.e2e_latency_ms for r in results if r.e2e_latency_ms > 0]
+    return {
+        "total": total,
+        "passed": passed,
+        "pass_rate": passed / total if total else 0.0,
+        "wer_p50": statistics.median(wers) if wers else None,
+        "wer_p95": (sorted(wers)[int(0.95 * (len(wers) - 1))] if len(wers) > 1 else (wers[0] if wers else None)),
+        "latency_p50_ms": statistics.median(lats) if lats else None,
+        "latency_p95_ms": (sorted(lats)[int(0.95 * (len(lats) - 1))] if len(lats) > 1 else (lats[0] if lats else None)),
+        "by_category": {k: {**v, "wers": None, "lats": None,
+                             "wer_p50": statistics.median(v["wers"]),
+                             "lat_p50": statistics.median(v["lats"]) if v["lats"] else 0.0}
+                        for k, v in by_cat.items()},
+    }
+
+
+def render_report(results: list[ScenarioResult], metrics: dict[str, Any], started_at: str) -> str:
+    lines = [
+        "# WaiSay Nightly QA Report",
+        "",
+        f"- Started: {started_at}",
+        f"- Total scenarios: {metrics['total']}",
+        f"- Passed: {metrics['passed']} ({metrics['pass_rate']*100:.1f}%)",
+        f"- WER p50: {metrics['wer_p50']:.3f}" if metrics["wer_p50"] is not None else "- WER p50: n/a",
+        f"- WER p95: {metrics['wer_p95']:.3f}" if metrics["wer_p95"] is not None else "- WER p95: n/a",
+        f"- E2E latency p50: {metrics['latency_p50_ms']:.0f} ms" if metrics["latency_p50_ms"] is not None else "- Latency p50: n/a",
+        f"- E2E latency p95: {metrics['latency_p95_ms']:.0f} ms" if metrics["latency_p95_ms"] is not None else "- Latency p95: n/a",
+        "",
+        "## Per scenario",
+        "",
+        "| ID | Cat | Lang | Voice | Status | WER | E2E ms | Notes |",
+        "|----|-----|------|-------|--------|-----|--------|-------|",
+    ]
+    for r in results:
+        notes = "; ".join(r.notes) if r.notes else ""
+        lines.append(
+            f"| `{r.id}` | {r.category} | {r.language} | {r.voice} | "
+            f"{r.status} | {r.wer:.3f} | {r.e2e_latency_ms:.0f} | {notes} |"
+        )
+    lines.extend(["", "## Per category", ""])
+    for cat, c in metrics["by_category"].items():
+        lines.append(
+            f"- **{cat}**: {c['passed']}/{c['total']} pass · "
+            f"WER p50 {c['wer_p50']:.3f} · lat p50 {c['lat_p50']:.0f}ms"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+async def main_async(scenarios_path: Path, artifacts_root: Path) -> int:
+    api_key = load_inworld_key()
+    scenarios = json.loads(scenarios_path.read_text())["scenarios"]
+
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    run_dir = artifacts_root / "runs" / started_at
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    results: list[ScenarioResult] = []
+    for scenario in scenarios:
+        logger.info("scenario %s start", scenario["id"])
+        try:
+            r = await run_scenario(api_key, scenario, run_dir)
+        except Exception as e:
+            logger.exception("scenario %s crashed", scenario["id"])
+            r = ScenarioResult(
+                id=scenario["id"],
+                category=scenario.get("category", "unknown"),
+                language=scenario.get("language", "?"),
+                voice=scenario.get("voice", "?"),
+                expected=scenario.get("text", ""),
+                transcript="",
+                wer=1.0,
+                e2e_latency_ms=0.0,
+                tts_ms=0.0,
+                stt_ms=0.0,
+                status="CRASH",
+                notes=[str(e)],
+            )
+        results.append(r)
+        logger.info(
+            "scenario %s status=%s wer=%.3f e2e=%.0fms",
+            r.id, r.status, r.wer, r.e2e_latency_ms,
+        )
+
+    metrics = aggregate_metrics(results)
+    metrics["started_at"] = started_at
+
+    (run_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, default=str))
+    (run_dir / "results.json").write_text(
+        json.dumps([asdict(r) for r in results], ensure_ascii=False, indent=2)
+    )
+
+    report_md = render_report(results, metrics, started_at)
+    (run_dir / "report.md").write_text(report_md)
+    (artifacts_root / "last-report.md").write_text(report_md)
+    (artifacts_root / "last-report.json").write_text(
+        json.dumps({"metrics": metrics, "results": [asdict(r) for r in results]},
+                   ensure_ascii=False, indent=2, default=str)
+    )
+
+    return 0 if metrics["passed"] == metrics["total"] else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scenarios", default=str(Path(__file__).parent / "scenarios.json"))
+    parser.add_argument("--artifacts", default=str(Path(__file__).parent / ".artifacts"))
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    return asyncio.run(main_async(Path(args.scenarios), Path(args.artifacts)))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
