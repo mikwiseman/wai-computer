@@ -107,8 +107,7 @@ struct OnboardingView: View {
                     } else if pages[index] == .verify {
                         OnboardingVerifySlide(
                             isActive: index == currentPage,
-                            onConfirm: completeOnboarding,
-                            onEditShortcut: openShortcutEditor
+                            onConfirm: completeOnboarding
                         )
                         .environmentObject(dictationManager)
                         .frame(width: geo.size.width)
@@ -153,57 +152,72 @@ struct OnboardingView: View {
 
     // MARK: - Footer
 
+    private var isPermissionPage: Bool {
+        pages[currentPage] == .permission
+    }
+
+    private var isVerifyPage: Bool {
+        pages[currentPage] == .verify
+    }
+
     @ViewBuilder
     private var footerControls: some View {
         HStack {
-            if !isLastPage || !dictationPermissionsReady {
-                Button(isLastPage ? "Skip for Now" : "Skip") {
-                    if isLastPage {
-                        completeOnboarding()
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            currentPage = pages.count - 1
-                        }
-                    }
-                }
-                .buttonStyle(WaiGhostButtonStyle())
-                .accessibilityIdentifier("onboarding-skip-button")
-            } else {
-                Spacer().frame(width: 1)
+            // Skip is always available — drops the user straight into the
+            // main UI. Missing permissions are surfaced as a banner there,
+            // so skipping is safe.
+            Button(isPermissionPage || isVerifyPage ? "Skip for Now" : "Skip") {
+                completeOnboarding()
             }
+            .buttonStyle(WaiGhostButtonStyle())
+            .accessibilityIdentifier("onboarding-skip-button")
 
             Spacer()
 
-            Button(action: handlePrimaryTap) {
-                Text(primaryButtonTitle)
-                    .frame(minWidth: 160)
+            // Verify slide owns its own Continue CTA. Footer hides the
+            // primary button there to avoid two competing CTAs.
+            if !isVerifyPage {
+                Button(action: handlePrimaryTap) {
+                    Text(primaryButtonTitle)
+                        .frame(minWidth: 160)
+                }
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
+                .accessibilityIdentifier(primaryButtonAccessibilityId)
+                .keyboardShortcut(.defaultAction)
             }
-            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
-            .accessibilityIdentifier(primaryButtonAccessibilityId)
-            .keyboardShortcut(.defaultAction)
         }
     }
 
     private var primaryButtonTitle: String {
-        guard isLastPage else { return "Continue" }
-        if dictationPermissionsReady {
-            return "Get Started"
+        if isPermissionPage {
+            if dictationPermissionsReady {
+                return "Continue"
+            }
+            if permissionRestartRecommended {
+                return "Restart WaiSay"
+            }
+            return "Open Settings"
         }
-        if permissionRestartRecommended {
-            return "Restart WaiSay"
-        }
-        return "Open Settings"
+        return "Continue"
     }
 
     private var primaryButtonAccessibilityId: String {
-        return isLastPage ? "onboarding-get-started-button" : "onboarding-continue-button"
+        // Tests still reference `onboarding-get-started-button` for the
+        // permission page; keep that identifier stable.
+        if isPermissionPage {
+            return "onboarding-get-started-button"
+        }
+        return "onboarding-continue-button"
     }
 
     private func handlePrimaryTap() {
-        if isLastPage {
+        if isPermissionPage {
             refreshPermissions()
             if dictationPermissionsReady {
-                completeOnboarding()
+                // Advance to the verify slide.
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    currentPage = min(currentPage + 1, pages.count - 1)
+                }
             } else if permissionRestartRecommended {
                 MacPrivacySettings.restartForPermissionRefresh()
             } else {
@@ -211,7 +225,7 @@ struct OnboardingView: View {
             }
         } else {
             withAnimation(.easeInOut(duration: 0.3)) {
-                currentPage += 1
+                currentPage = min(currentPage + 1, pages.count - 1)
             }
         }
     }
@@ -225,12 +239,6 @@ struct OnboardingView: View {
         if let url = URL(string: "https://say.waiwai.is/help") {
             NSWorkspace.shared.open(url)
         }
-    }
-
-    private func openShortcutEditor() {
-        // Navigate to Settings for full shortcut customization. The user
-        // returns to onboarding after; the verify slide updates live.
-        NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
     }
 
     private static func initialCurrentPage() -> Int {
@@ -870,7 +878,6 @@ private struct OnboardingVerifySlide: View {
 
     let isActive: Bool
     let onConfirm: () -> Void
-    let onEditShortcut: () -> Void
 
     @State private var pressedAtLeastOnce = false
     @State private var pressFlash = false
@@ -905,26 +912,22 @@ private struct OnboardingVerifySlide: View {
                 keyVisualization
 
                 HStack(spacing: 12) {
-                    Button(action: onEditShortcut) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Edit shortcut")
-                                .font(.system(size: 13, weight: .medium))
+                    // Inline hotkey picker — lets the user change the key
+                    // right here if the test fails. Avoids the broken
+                    // "open Settings" jump that doesn't exist during
+                    // pre-auth onboarding.
+                    Picker("", selection: Binding(
+                        get: { dictationManager.selectedHotkey },
+                        set: { dictationManager.updateHotkey($0) }
+                    )) {
+                        ForEach(DictationHotkey.allCases) { hotkey in
+                            Text(hotkey.label).tag(hotkey)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                .fill(Color(NSColor.windowBackgroundColor))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                .strokeBorder(Palette.border, lineWidth: 1)
-                        )
-                        .foregroundStyle(Palette.textPrimary)
                     }
-                    .buttonStyle(.plain)
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 220)
+                    .accessibilityIdentifier("onboarding-verify-hotkey-picker")
 
                     Button(action: onConfirm) {
                         Text("Continue")
@@ -960,13 +963,19 @@ private struct OnboardingVerifySlide: View {
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
-        .onAppear { installLocalMonitor() }
+        .onAppear {
+            if isActive { installLocalMonitor() }
+        }
         .onDisappear { removeLocalMonitor() }
         .onChange(of: isActive) { _, newValue in
             if newValue {
                 installLocalMonitor()
             } else {
                 removeLocalMonitor()
+                // When user navigates away from verify, drop the press flash
+                // (but keep `pressedAtLeastOnce` so a partial confirmation
+                // survives a quick back-and-forth).
+                pressFlash = false
             }
         }
     }
