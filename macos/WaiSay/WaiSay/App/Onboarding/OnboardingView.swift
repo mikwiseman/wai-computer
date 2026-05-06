@@ -21,18 +21,50 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            pageIndicator
+                .padding(.top, 18)
+                .padding(.bottom, 8)
+
             slideArea
 
-            VStack(spacing: Spacing.lg) {
-                pageIndicator
-                footerControls
-            }
-            .padding(.horizontal, Spacing.xxl)
-            .padding(.bottom, Spacing.xxl)
-            .padding(.top, Spacing.lg)
+            footerControls
+                .padding(.horizontal, Spacing.xxl)
+                .padding(.bottom, Spacing.xxl)
+                .padding(.top, Spacing.md)
         }
-        .frame(minWidth: 760, minHeight: 620)
+        .frame(minWidth: 800, minHeight: 640)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .overlay(alignment: .bottomLeading) {
+            Button(action: openHelp) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .stroke(Palette.textTertiary, lineWidth: 1)
+                            .frame(width: 16, height: 16)
+                        Image(systemName: "questionmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                    Text("Help")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Color(NSColor.windowBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, Spacing.xl)
+            .padding(.bottom, Spacing.xl)
+            .accessibilityIdentifier("onboarding-help-button")
+        }
         .onAppear {
             currentPage = Self.clampedPageIndex(currentPage)
             persistCurrentPage()
@@ -87,12 +119,24 @@ struct OnboardingView: View {
     // MARK: - Page indicator
 
     private var pageIndicator: some View {
-        HStack(spacing: Spacing.sm) {
+        HStack(spacing: 6) {
             ForEach(pages.indices, id: \.self) { index in
-                Capsule()
-                    .fill(index == currentPage ? Palette.accent : Palette.border)
-                    .frame(width: index == currentPage ? 22 : 6, height: 6)
-                    .animation(.easeInOut(duration: 0.25), value: currentPage)
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.textTertiary.opacity(0.5))
+                }
+                VStack(spacing: 6) {
+                    Text(pages[index].breadcrumbLabel.uppercased())
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(1.3)
+                        .foregroundStyle(index == currentPage ? Palette.textPrimary : Palette.textTertiary)
+                    Rectangle()
+                        .fill(index == currentPage ? Palette.accent : Color.clear)
+                        .frame(height: 1.5)
+                }
+                .padding(.horizontal, 12)
+                .animation(.easeInOut(duration: 0.25), value: currentPage)
             }
         }
         .accessibilityIdentifier("onboarding-page-indicator")
@@ -166,6 +210,12 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
         appState.completeOnboarding()
+    }
+
+    private func openHelp() {
+        if let url = URL(string: "https://say.waiwai.is/help") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private static func initialCurrentPage() -> Int {
@@ -338,53 +388,72 @@ private struct OnboardingPermissionSlide: View {
     private var content: OnboardingPage.Content { OnboardingPage.permission.content }
 
     var body: some View {
-        VStack(spacing: Spacing.md) {
-            Spacer(minLength: Spacing.md)
-
-            Image("BrandIcon")
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: 76, height: 76)
-
-            VStack(spacing: Spacing.xs) {
-                Text(content.eyebrow.uppercased())
-                    .font(Typography.labelSmall)
-                    .tracking(1.6)
-                    .foregroundStyle(Palette.accent)
-
-                Text(content.title)
-                    .font(Typography.displaySmall)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Palette.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-
+        HStack(spacing: 0) {
+            // Left pane — title, body, permission cards
+            VStack(alignment: .leading, spacing: 24) {
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Give WaiSay permissions")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(Palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("on your computer")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(Palette.textPrimary)
+                }
                 Text(permissionBody)
-                    .font(Typography.body)
-                    .lineSpacing(3)
-                    .multilineTextAlignment(.center)
+                    .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: 520)
 
-            VStack(spacing: Spacing.sm) {
-                microphoneRow
-                inputMonitoringRow
-                automaticPasteRow
+                VStack(spacing: 12) {
+                    microphoneRow
+                    inputMonitoringRow
+                    automaticPasteRow
+                }
+                Spacer(minLength: 0)
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: 560)
-            .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .frame(maxWidth: 480, alignment: .leading)
+            .padding(.horizontal, 48)
+            .frame(maxHeight: .infinity)
 
-            Spacer(minLength: Spacing.md)
+            // Right pane — illustrated visual aid (warm beige)
+            currentPermissionPreview
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(red: 0.98, green: 0.96, blue: 0.92))
         }
-        .padding(.horizontal, Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
+    }
+
+    @ViewBuilder
+    private var currentPermissionPreview: some View {
+        // Show the visual aid for whichever permission row is currently active
+        if !hasMicrophonePermission {
+            PermissionPreviewMicrophone()
+        } else if inputMonitoringStatus != .granted {
+            PermissionPreviewSettings(
+                paneTitle: "Input Monitoring",
+                rowLabel: "WaiSay"
+            )
+        } else if pasteStatus != .granted {
+            PermissionPreviewSettings(
+                paneTitle: "Accessibility",
+                rowLabel: "WaiSay"
+            )
+        } else {
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.green)
+                Text("All set")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Palette.textPrimary)
+            }
+        }
     }
 
     private var permissionBody: String {
@@ -498,94 +567,278 @@ private struct PermissionRow: View {
     let restartAction: Action?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack(spacing: Spacing.md) {
-                statusIcon
-                    .frame(width: 22)
-
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(Typography.body)
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Palette.textPrimary)
                     Text(detail)
-                        .font(Typography.caption)
+                        .font(.system(size: 13))
                         .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer()
-
+                Spacer(minLength: 16)
                 trailingControls
             }
-
             if status == .staleNeedsRestart {
                 Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
-                    .font(Typography.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 34)
             }
         }
-        .frame(minHeight: status == .staleNeedsRestart ? 58 : 38)
-    }
-
-    @ViewBuilder
-    private var statusIcon: some View {
-        switch status {
-        case .granted:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        case .denied:
-            Image(systemName: "circle")
-                .foregroundStyle(Palette.textTertiary)
-        case .staleNeedsRestart:
-            Image(systemName: "arrow.clockwise.circle.fill")
-                .foregroundStyle(Palette.accent)
-        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        )
     }
 
     @ViewBuilder
     private var trailingControls: some View {
-        if status == .granted {
-            Text("Granted")
-                .font(Typography.bodySmall)
+        switch status {
+        case .granted:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 22))
                 .foregroundStyle(.green)
-        } else if status == .staleNeedsRestart {
-            HStack(spacing: Spacing.sm) {
+        case .denied:
+            if let primaryAction {
+                Button(action: primaryAction.run) {
+                    Text(primaryAction.label)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                .fill(Color.black)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("\(identifierBase)-\(primaryAction.identifier)")
+            }
+        case .staleNeedsRestart:
+            HStack(spacing: 6) {
                 Text("Restart Required")
-                    .font(Typography.bodySmall)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.accent)
                     .accessibilityIdentifier("\(identifierBase)-restart-required")
-
-                if let secondaryAction {
-                    Button(secondaryAction.label) { secondaryAction.run() }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-\(secondaryAction.identifier)")
-                }
-
                 if let restartAction {
-                    Button(restartAction.label) { restartAction.run() }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-\(restartAction.identifier)")
-                }
-            }
-        } else {
-            HStack(spacing: Spacing.sm) {
-                if let primaryAction {
-                    Button(primaryAction.label) { primaryAction.run() }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-\(primaryAction.identifier)")
-                }
-                if let secondaryAction {
-                    Button(secondaryAction.label) { secondaryAction.run() }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-\(secondaryAction.identifier)")
-                }
-                if let recheckAction {
-                    Button(recheckAction.label) { recheckAction.run() }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-\(recheckAction.identifier)")
+                    Button(action: restartAction.run) {
+                        Text(restartAction.label)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                    .fill(Color.black)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("\(identifierBase)-\(restartAction.identifier)")
                 }
             }
         }
+    }
+}
+
+// MARK: - Permission preview illustrations (right pane)
+
+/// Stylized macOS system dialog asking for Microphone access. Acts as a
+/// visual hint so the user knows exactly what window appears after pressing
+/// Allow on the left card. Pure SwiftUI — no PNG asset required.
+private struct PermissionPreviewMicrophone: View {
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                // Window chrome (looks like a system alert)
+                VStack(spacing: 14) {
+                    HStack(spacing: 6) {
+                        Spacer()
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.gray.opacity(0.5))
+                    }
+
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.blue.opacity(0.85))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(spacing: 6) {
+                        Text("\u{201C}WaiSay\u{201D} would like to")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("access the microphone.")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("WaiSay needs access to your")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.gray)
+                            .padding(.top, 4)
+                        Text("microphone to record dictation!")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.gray)
+                    }
+                    .multilineTextAlignment(.center)
+
+                    HStack(spacing: 6) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.gray.opacity(0.18))
+                            Text("Don\u{2019}t Allow")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.black.opacity(0.75))
+                        }
+                        .frame(height: 28)
+
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.gray.opacity(0.28))
+                            Text("OK")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.black.opacity(0.85))
+                        }
+                        .frame(height: 28)
+                        .overlay(
+                            // Cursor + hand pointing to OK
+                            HStack {
+                                Spacer()
+                                Image(systemName: "hand.point.up.left.fill")
+                                    .font(.system(size: 18))
+                                    .rotationEffect(.degrees(-25))
+                                    .foregroundStyle(.black.opacity(0.85))
+                                    .offset(x: 18, y: 10)
+                                    .scaleEffect(pulse ? 1.05 : 1.0)
+                                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
+                            }
+                        )
+                    }
+                }
+                .padding(20)
+                .frame(width: 270)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 22, y: 10)
+            }
+        }
+        .onAppear { pulse = true }
+    }
+}
+
+/// Stylized macOS System Settings window (Privacy & Security pane) showing
+/// a list with the current app's row toggled ON. Used for Input Monitoring
+/// and Accessibility steps so the user sees exactly what to look for.
+private struct PermissionPreviewSettings: View {
+    let paneTitle: String
+    let rowLabel: String
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                // Title bar
+                HStack(spacing: 6) {
+                    Circle().fill(Color.red.opacity(0.85)).frame(width: 9, height: 9)
+                    Circle().fill(Color.yellow.opacity(0.85)).frame(width: 9, height: 9)
+                    Circle().fill(Color.green.opacity(0.85)).frame(width: 9, height: 9)
+                    Spacer()
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.gray.opacity(0.5))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.gray.opacity(0.4))
+                    Text(paneTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.gray.opacity(0.07))
+
+                Divider()
+
+                // Settings rows
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Allow the applications below to control your computer.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.gray)
+                        Spacer()
+                    }
+                    .padding(.bottom, 2)
+
+                    settingsRow(name: "Screen Studio", on: true)
+                    settingsRow(name: "Terminal", on: true)
+                    settingsRow(name: rowLabel, on: true, highlight: true)
+                    HStack {
+                        Text("+")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.gray)
+                        Text("\u{2013}")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.gray.opacity(0.5))
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(14)
+            }
+            .frame(width: 320)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white)
+            )
+            .shadow(color: .black.opacity(0.18), radius: 22, y: 10)
+            .overlay(alignment: .topTrailing) {
+                // Cursor pointing at the toggle
+                Image(systemName: "cursorarrow")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.black)
+                    .rotationEffect(.degrees(-15))
+                    .offset(x: -18, y: 92)
+                    .scaleEffect(pulse ? 1.08 : 1.0)
+                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
+            }
+        }
+        .onAppear { pulse = true }
+    }
+
+    @ViewBuilder
+    private func settingsRow(name: String, on: Bool, highlight: Bool = false) -> some View {
+        HStack {
+            ZStack {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 18, height: 18)
+            }
+            Text(name)
+                .font(.system(size: 12, weight: highlight ? .semibold : .regular))
+            Spacer()
+            ZStack(alignment: on ? .trailing : .leading) {
+                Capsule()
+                    .fill(on ? Color.blue.opacity(0.9) : Color.gray.opacity(0.3))
+                    .frame(width: 28, height: 16)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 12, height: 12)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.2), radius: 1)
+            }
+        }
+        .padding(.vertical, 3)
     }
 }
