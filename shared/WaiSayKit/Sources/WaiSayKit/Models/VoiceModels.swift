@@ -5,13 +5,24 @@ public enum RealtimeVoiceMode: String, Codable, Sendable {
     case recording
 }
 
+public enum RealtimeTranscriptionPurpose: String, Codable, Sendable {
+    case recording
+    case dictation
+}
+
 public struct CreateRealtimeTranscriptionSessionRequest: Codable, Sendable {
     public let language: String
     public let channels: Int
+    public let purpose: RealtimeTranscriptionPurpose
 
-    public init(language: String = "multi", channels: Int = 1) {
+    public init(
+        language: String = "multi",
+        channels: Int = 1,
+        purpose: RealtimeTranscriptionPurpose = .recording
+    ) {
         self.language = language
         self.channels = channels
+        self.purpose = purpose
     }
 }
 
@@ -27,6 +38,8 @@ public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
     public let keepAliveIntervalSeconds: Int?
     public let commitStrategy: String?
     public let noVerbatim: Bool?
+    public let websocketURL: String?
+    public let authScheme: String?
 
     enum CodingKeys: String, CodingKey {
         case provider
@@ -40,6 +53,38 @@ public struct RealtimeTranscriptionSessionConfig: Codable, Sendable {
         case keepAliveIntervalSeconds = "keep_alive_interval_seconds"
         case commitStrategy = "commit_strategy"
         case noVerbatim = "no_verbatim"
+        case websocketURL = "websocket_url"
+        case authScheme = "auth_scheme"
+    }
+
+    public init(
+        provider: String,
+        token: String,
+        expiresInSeconds: Int,
+        sampleRate: Int,
+        audioFormat: String,
+        language: String,
+        channels: Int,
+        model: String,
+        keepAliveIntervalSeconds: Int? = nil,
+        commitStrategy: String? = nil,
+        noVerbatim: Bool? = nil,
+        websocketURL: String? = nil,
+        authScheme: String? = nil
+    ) {
+        self.provider = provider
+        self.token = token
+        self.expiresInSeconds = expiresInSeconds
+        self.sampleRate = sampleRate
+        self.audioFormat = audioFormat
+        self.language = language
+        self.channels = channels
+        self.model = model
+        self.keepAliveIntervalSeconds = keepAliveIntervalSeconds
+        self.commitStrategy = commitStrategy
+        self.noVerbatim = noVerbatim
+        self.websocketURL = websocketURL
+        self.authScheme = authScheme
     }
 }
 

@@ -797,11 +797,13 @@ public actor APIClient {
 
     public func createRealtimeTranscriptionSession(
         language: String = "multi",
-        channels: Int = 1
+        channels: Int = 1,
+        purpose: RealtimeTranscriptionPurpose = .recording
     ) async throws -> RealtimeTranscriptionSessionConfig {
         let body = CreateRealtimeTranscriptionSessionRequest(
             language: language,
-            channels: channels
+            channels: channels,
+            purpose: purpose
         )
         return try await request(.POST, path: "/api/transcription/session", body: body)
     }
