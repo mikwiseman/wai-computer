@@ -48,7 +48,11 @@ def _patch_settings(monkeypatch: pytest.MonkeyPatch, api_key: str = "test-key") 
     """Patch settings with a test API key (or empty string to simulate missing key)."""
     monkeypatch.setattr(
         "app.api.routes.dictation.get_settings",
-        lambda: SimpleNamespace(anthropic_api_key=api_key, anthropic_model="test-model"),
+        lambda: SimpleNamespace(
+            anthropic_api_key=api_key,
+            anthropic_model="test-model",
+            anthropic_dictation_model="test-dictation-model",
+        ),
     )
 
 
