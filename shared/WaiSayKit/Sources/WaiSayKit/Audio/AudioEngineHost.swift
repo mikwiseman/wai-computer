@@ -61,6 +61,12 @@ public actor AudioEngineHost {
         }
         self.resampler = resampler
 
+        // Defensive: remove any stale tap from a prior failed prewarm() so
+        // a retry doesn't crash with "Already attached" (NSInvalidArgumentException
+        // — `installTap` crashes if a tap already exists on the bus).
+        // `removeTap` on a clean bus is a no-op.
+        input.removeTap(onBus: 0)
+
         // Install a tap with `format: nil` (native format). On macOS this is
         // the only supported configuration — passing a different format
         // throws an exception. Resampling happens manually below.
@@ -75,7 +81,15 @@ public actor AudioEngineHost {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            // Roll back the tap so the next retry can install cleanly.
+            input.removeTap(onBus: 0)
+            self.resampler = nil
+            hostLog.error("[Host] engine.start() failed — tap removed for retry safety")
+            throw error
+        }
         preWarmed = true
         hostLog.info("[Host] Engine started")
     }

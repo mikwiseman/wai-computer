@@ -157,6 +157,7 @@ public actor DictationSession {
         case .closed(let reason):
             if case .serverError = reason {
                 phase = .failed("provider.closed.serverError")
+                audioTask?.cancel()
             }
         default:
             break

@@ -479,6 +479,7 @@ final class DictationManager: ObservableObject {
         dictationSession = nil
         providerSession = nil
         deferredStop = false
+        firstTokenReported = false
 
         targetApp = nil
         setState(.idle)
@@ -517,14 +518,28 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Provider Events (Inworld)
 
+    /// Track whether the first transcript token has arrived this session so
+    /// we can emit a `firstTokenReceived` instrumentation event at the
+    /// correct moment (used for `arm → first_token` latency in Sentry).
+    private var firstTokenReported = false
+
     private func handleProviderEvent(_ event: TranscriptionEvent) async {
         switch event {
         case .opened:
-            break
+            instrumentationSession?.event(.providerOpened)
         case .interim(let text, _):
+            if !firstTokenReported {
+                firstTokenReported = true
+                instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": false])
+            }
             currentInterim = text
             interimTranscript = buildTranscript()
         case .committed(let segment):
+            if !firstTokenReported {
+                firstTokenReported = true
+                instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": true])
+            }
+            instrumentationSession?.event(.committedTranscript, data: ["chars": segment.text.count])
             committedTexts.append(segment.text)
             currentInterim = ""
             interimTranscript = buildTranscript()
@@ -541,14 +556,19 @@ final class DictationManager: ObservableObject {
                 await cancelDictation()
             }
         case .closed(let reason):
+            instrumentationSession?.event(.providerClosed, data: [
+                "reason": String(describing: reason)
+            ])
             if state == .listening {
                 if case .serverError = reason {
                     self.error = "Live transcription was interrupted. Try again."
                     await cancelDictation()
                 }
             }
-        case .usage:
-            break
+        case .usage(let seconds):
+            instrumentationSession?.event(.providerClosed, data: [
+                "promptedSeconds": seconds
+            ])
         }
     }
 
