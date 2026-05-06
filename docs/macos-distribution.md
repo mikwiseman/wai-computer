@@ -1,11 +1,8 @@
 # macOS Direct Distribution
 
-This project ships the mac app as a signed DMG for direct download outside the Mac App Store.
+WaiSay's macOS app ships as a Developer ID-signed, notarized DMG with Sparkle auto-update — **a single Direct channel**. The Mac App Store / TestFlight path was retired for macOS (iOS continues to ship via TestFlight).
 
-WaiSay has two macOS channels:
-
-- `WaiSay` is the Mac App Store/TestFlight target. It is sandboxed and must not include Sparkle or any `SU*` update keys.
-- `WaiSayDirect` is the direct-download target. It uses the same bundle ID, embeds Sparkle, and checks `https://say.waiwai.is/releases/macos/appcast.xml`.
+The single target is `WaiSay` in `macos/WaiSay/project.yml`. It uses `WaiSay/Info.plist`, `WaiSay/WaiSay.entitlements`, App Sandbox is OFF, Hardened Runtime is ON, Sparkle is always built in, and the appcast lives at `https://say.waiwai.is/releases/macos/appcast.xml`.
 
 ## Best-practice baseline
 
@@ -17,6 +14,14 @@ WaiSay has two macOS channels:
 - Publish a checksum next to the DMG.
 
 `Developer ID Installer` is only needed for `.pkg` installers. It is not required for a DMG-based app release.
+
+## Release flow checklist
+
+1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiSay/project.yml` (monotonic — Sparkle requires it).
+2. `cd macos/WaiSay && xcodegen generate` to refresh `WaiSay.xcodeproj/project.pbxproj`.
+3. Commit + push.
+4. Trigger CI: `gh workflow run "macOS Direct Release" --ref main -f publish_web=true`.
+5. After ~10-15 min, `curl https://say.waiwai.is/releases/macos/appcast.xml` and verify the new `sparkle:version`.
 
 ## Script
 
@@ -38,7 +43,7 @@ MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh
 
 The script:
 
-1. archives the direct-distribution macOS app with the `WaiSayDirect` scheme in `Release`
+1. archives the macOS app with the `WaiSay` scheme in `Release`
 2. signs it with the configured `Developer ID Application` identity
 3. enables the hardened runtime for the archive build
 4. re-signs Sparkle nested helper code for Developer ID distribution
@@ -110,7 +115,7 @@ export MACOS_REQUIRE_SPARKLE_SIGNATURE=1 # fail if the appcast cannot be signed
 Build controls:
 
 ```bash
-export MACOS_SCHEME=WaiSayDirect       # default direct-distribution scheme
+export MACOS_SCHEME=WaiSay             # the only macOS scheme
 export MACOS_CONFIGURATION=Release     # default build configuration
 ```
 
@@ -139,15 +144,9 @@ The script verifies:
 - Gatekeeper assessment with `spctl`
 - Sparkle appcast signing in strict mode
 
-The channel split can be verified without signing:
-
-```bash
-scripts/verify-macos-channels.sh
-```
-
 In strict mode, Gatekeeper and notarization failures stop the build instead of being reported as warnings.
 
-Do not use `scripts/make-dmg.sh` for a release. It is intentionally guarded as a local unsigned/unnotarized smoke helper and uses `WaiSayDirect` only when `MACOS_ALLOW_LOCAL_UNNOTARIZED_DMG=1` is set.
+Do not use `scripts/make-dmg.sh` for a release. It is intentionally guarded as a local unsigned/unnotarized smoke helper.
 
 ## Publish to web
 
@@ -157,19 +156,27 @@ After building a strict release, publish the versioned DMG, checksum, release no
 VPS_USER=<release-user> scripts/publish-macos-dmg.sh
 ```
 
-Fastlane can run the complete macOS release sequence:
+Fastlane can run the complete macOS release sequence (build + publish):
 
 ```bash
 VPS_USER=<release-user> fastlane mac upload_all
 ```
 
-This uploads the Mac App Store build to TestFlight, then builds and publishes the direct DMG channel.
-
-If a TestFlight install shows `"WaiSay" No Longer Available`, first verify the build state in App Store Connect. If the latest macOS build is still valid and in beta testing, remove the stale TestFlight install from `/Applications` and reinstall/update from TestFlight. Do not install the direct DMG over a TestFlight copy unless you are intentionally switching channels.
-
 ## GitHub Actions release
 
-The `macOS Direct Release` workflow builds a strict notarized DMG, uploads the artifact, and can publish it to `say.waiwai.is`.
+The `macOS Direct Release` workflow (`.github/workflows/macos-release.yml`) builds a strict notarized DMG, uploads the artifact, and can publish it to `say.waiwai.is`.
+
+**Triggers:**
+- `workflow_dispatch` (manual via `gh workflow run` or the Actions UI)
+- `push` of a tag matching `waisay-macos-v*`
+
+**Push to `main` does NOT auto-publish a DMG.** The Deploy workflow handles backend / web / Apple build verification on push, but the DMG release is a deliberate, version-bumped action.
+
+To trigger from the CLI:
+
+```bash
+gh workflow run "macOS Direct Release" --ref main -f publish_web=true
+```
 
 Required repository secrets:
 
@@ -187,6 +194,8 @@ Required repository secrets:
 2. Drag `WaiSay.app` into `Applications`.
 3. Eject the DMG.
 4. Launch `WaiSay` from `/Applications`.
+
+Subsequent updates are delivered automatically by Sparkle from the appcast.
 
 ## Apple references
 

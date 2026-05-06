@@ -89,36 +89,9 @@ platform :android do
 end
 
 platform :mac do
-  desc "Build and upload macOS App Store build to TestFlight"
-  lane :upload_testflight do
-    api_key = waisay_app_store_connect_api_key
-    pkg_path = File.join(repo_root, "artifacts/testflight/macos/WaiSay.pkg")
-
-    strip_quarantine_attributes(
-      File.join(repo_root, "macos/WaiSay/WaiSay/AppIcon.icon"),
-      File.join(repo_root, "macos/WaiSay/WaiSay/Assets.xcassets"),
-      File.join(repo_root, "ios/WaiSay/WaiSay/AppIcon.icon"),
-      File.join(repo_root, "ios/WaiSay/WaiSay/Assets.xcassets")
-    )
-    sh(File.join(repo_root, "scripts/verify-macos-channels.sh"))
-
-    build_app(
-      project: File.join(repo_root, "macos/WaiSay/WaiSay.xcodeproj"),
-      scheme: "WaiSay",
-      export_method: "app-store",
-      output_directory: File.dirname(pkg_path),
-      output_name: "WaiSay",
-      destination: "generic/platform=macOS",
-      clean: true
-    )
-
-    upload_to_testflight(
-      api_key: api_key,
-      apple_id: "6761768729",
-      pkg: Actions.lane_context[SharedValues::PKG_OUTPUT_PATH] || pkg_path,
-      skip_waiting_for_build_processing: true
-    )
-  end
+  # macOS ships only via the Direct DMG channel (Developer ID + Sparkle).
+  # Mac App Store / TestFlight was retired; iOS still uses TestFlight via the
+  # ios platform above.
 
   desc "Build strict notarized DMG and publish it to say.waiwai.is"
   lane :publish_dmg do
@@ -126,34 +99,12 @@ platform :mac do
       File.join(repo_root, "macos/WaiSay/WaiSay/AppIcon.icon"),
       File.join(repo_root, "macos/WaiSay/WaiSay/Assets.xcassets")
     )
-    sh(File.join(repo_root, "scripts/verify-macos-channels.sh"))
     sh("MACOS_RELEASE_STRICT=1 #{File.join(repo_root, "scripts/build-macos-dmg.sh")}")
     sh(File.join(repo_root, "scripts/publish-macos-dmg.sh"))
   end
 
-  desc "Upload macOS App Store build to TestFlight and publish direct DMG to web"
+  desc "Build strict notarized DMG and publish it to say.waiwai.is (alias for publish_dmg)"
   lane :upload_all do
-    upload_testflight
     publish_dmg
-  end
-
-  desc "Upload macOS metadata and screenshots to App Store Connect"
-  lane :upload_metadata do
-    api_key = waisay_app_store_connect_api_key
-
-    deliver(
-      api_key: api_key,
-      platform: "osx",
-      app_identifier: "is.waiwai.say",
-      screenshots_path: File.join(repo_root, "fastlane/screenshots_macos"),
-      skip_binary_upload: true,
-      skip_app_version_update: true,
-      force: true,
-      overwrite_screenshots: true,
-      precheck_include_in_app_purchases: false,
-      submission_information: {
-        add_id_info_uses_idfa: false
-      }
-    )
   end
 end
