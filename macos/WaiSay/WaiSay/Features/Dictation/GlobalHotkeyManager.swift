@@ -1,6 +1,7 @@
 import Cocoa
 import Carbon
 import IOKit.hid
+import ApplicationServices
 import os
 
 private let log = Logger(subsystem: "com.waisay.app", category: "hotkey")
@@ -33,11 +34,11 @@ enum MacPrivacySettings {
     }
 
     static var permissionRestartHint: String {
-        "After you switch WaiSay on in System Settings, restart WaiSay so macOS applies the permission."
+        "WaiSay is enabled in System Settings — restart so macOS applies the permission to this running app."
     }
 
     static var duplicatePermissionHint: String {
-        "If WaiSay appears more than once, enable the installed copy and remove old rows with minus, then reopen WaiSay."
+        "If WaiSay appears more than once in the list, keep only the installed copy enabled (remove old rows with the minus button)."
     }
 
     private static func openPrivacyPane(_ urlString: String) {
@@ -47,14 +48,78 @@ enum MacPrivacySettings {
 }
 
 enum MacInputPermission {
+    /// Live state of an input-related TCC permission for the running process.
+    ///
+    /// macOS caches the answer to `CGPreflight*` and `IOHIDCheckAccess` at the
+    /// kernel level. After a user toggles a permission in System Settings the
+    /// cached answer can lag reality for the lifetime of the running process.
+    /// Functional probes (`CGEvent.tapCreate(.listenOnly)`, `AXIsProcessTrusted`)
+    /// reflect the *effective* grant for this process and disambiguate between
+    /// "really granted" and "preflight is still lying".
+    enum Status: Equatable {
+        /// Preflight + functional probe both agree — the permission works now.
+        case granted
+        /// No grant is recorded — the user has not yet enabled it (or denied it).
+        case denied
+        /// Cached APIs say granted but a live probe fails — typically because the
+        /// user toggled the permission in System Settings while the app was
+        /// running (or the entry in TCC is stale after a re-sign / path change).
+        /// Restarting the app is the only reliable fix.
+        case staleNeedsRestart
+    }
+
+    /// `true` when running inside an App Sandbox container.
+    ///
+    /// Apple confirms that `CGEventTap` with `.listenOnly` + Input Monitoring
+    /// permission *is* compatible with the App Sandbox (since macOS 10.15) —
+    /// it's the path WaiSay uses for the global dictation hotkey on the App
+    /// Store / TestFlight build. So the probe should work in both channels.
+    /// We keep a sandbox flag only as a *fallback*: if the probe ever fails
+    /// despite preflight saying granted, in a sandboxed build we trust the
+    /// preflight cache rather than push the user into a permanent
+    /// "Restart Required" state, since some sandbox edge cases can interfere
+    /// with the probe in ways that don't reflect the live tap.
+    static let isSandboxed: Bool = {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    }()
+
+    // MARK: - Listen events (Input Monitoring)
+
+    static func listenEventStatus() -> Status {
+        let preflight = CGPreflightListenEventAccess()
+        let iohid = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+
+        guard preflight || iohid else {
+            return .denied
+        }
+
+        // Try the functional probe first — it's authoritative when it succeeds.
+        if canCreateListenOnlyTap() {
+            return .granted
+        }
+
+        // Probe failed even though the preflight cache claims the permission is
+        // granted. In a non-sandboxed build (Direct DMG) this is a real stale
+        // TCC entry — the user toggled the permission while the app was running
+        // or the bundle was re-signed. A restart is the only reliable fix.
+        // In a sandboxed build (App Store / TestFlight) sandbox boundaries can
+        // cause the probe to fail spuriously even when the live tap installed
+        // by `installEventTapIfPossible` succeeds, so we fall back to trusting
+        // preflight to avoid a permanent "Restart Required" loop.
+        if isSandboxed {
+            log.info("Listen-event probe failed in sandbox — trusting preflight cache")
+            return .granted
+        }
+        return .staleNeedsRestart
+    }
+
     static var hasListenEventAccess: Bool {
-        CGPreflightListenEventAccess() ||
-            IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        listenEventStatus() == .granted
     }
 
     @discardableResult
     static func requestListenEventAccess() -> Bool {
-        if hasListenEventAccess {
+        if listenEventStatus() == .granted {
             return true
         }
 
@@ -66,14 +131,54 @@ enum MacInputPermission {
         return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
+    /// Functional probe: install a listen-only event tap and immediately disable
+    /// + invalidate it. Returns `true` only if the kernel actually let us see
+    /// events. This is the same trick used by other dictation utilities to
+    /// detect stale TCC grants.
+    private static func canCreateListenOnlyTap() -> Bool {
+        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
+        let probe = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: { _, _, event, _ in Unmanaged.passUnretained(event) },
+            userInfo: nil
+        )
+        guard let probe else { return false }
+        CGEvent.tapEnable(tap: probe, enable: false)
+        CFMachPortInvalidate(probe)
+        return true
+    }
+
+    // MARK: - Post events (Accessibility)
+
+    static func postEventStatus() -> Status {
+        let axTrusted = AXIsProcessTrusted()
+        if axTrusted {
+            return .granted
+        }
+
+        // AX is the live source of truth for the Accessibility / post-event
+        // permission. If the kernel cache disagrees, the entry exists but is
+        // stale — typically the user toggled it while the app was running, or
+        // the bundle was re-signed and the cdhash drifted.
+        let preflight = CGPreflightPostEventAccess()
+        let iohid = IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted
+        if preflight || iohid {
+            return .staleNeedsRestart
+        }
+
+        return .denied
+    }
+
     static var hasPostEventAccess: Bool {
-        CGPreflightPostEventAccess() ||
-            IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted
+        postEventStatus() == .granted
     }
 
     @discardableResult
     static func requestPostEventAccess() -> Bool {
-        if hasPostEventAccess {
+        if postEventStatus() == .granted {
             return true
         }
 

@@ -171,10 +171,8 @@ enum MacUITestFixtures {
 #if DEBUG
 struct MacPermissionTestingSnapshot {
     let hasMicrophonePermission: Bool
-    let hasInputMonitoringPermission: Bool
-    let hasPastePermission: Bool
-    let inputMonitoringNeedsReview: Bool
-    let pasteNeedsReview: Bool
+    let inputMonitoringStatus: MacInputPermission.Status
+    let pasteStatus: MacInputPermission.Status
 }
 
 enum MacPermissionTesting {
@@ -187,26 +185,26 @@ enum MacPermissionTesting {
         case "missing":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: false,
-                hasInputMonitoringPermission: false,
-                hasPastePermission: false,
-                inputMonitoringNeedsReview: false,
-                pasteNeedsReview: false
+                inputMonitoringStatus: .denied,
+                pasteStatus: .denied
             )
         case "needs_restart_input":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                hasInputMonitoringPermission: false,
-                hasPastePermission: true,
-                inputMonitoringNeedsReview: true,
-                pasteNeedsReview: false
+                inputMonitoringStatus: .staleNeedsRestart,
+                pasteStatus: .granted
             )
         case "needs_restart_paste":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                hasInputMonitoringPermission: true,
-                hasPastePermission: false,
-                inputMonitoringNeedsReview: false,
-                pasteNeedsReview: true
+                inputMonitoringStatus: .granted,
+                pasteStatus: .staleNeedsRestart
+            )
+        case "all_granted":
+            return MacPermissionTestingSnapshot(
+                hasMicrophonePermission: true,
+                inputMonitoringStatus: .granted,
+                pasteStatus: .granted
             )
         default:
             return nil
@@ -215,14 +213,6 @@ enum MacPermissionTesting {
 
     static var forcesMissingDictationPermissions: Bool {
         dictationPermissionSnapshot != nil
-    }
-
-    static var needsInputMonitoringRestart: Bool {
-        dictationPermissionSnapshot?.inputMonitoringNeedsReview == true
-    }
-
-    static var needsPasteRestart: Bool {
-        dictationPermissionSnapshot?.pasteNeedsReview == true
     }
 }
 #endif
