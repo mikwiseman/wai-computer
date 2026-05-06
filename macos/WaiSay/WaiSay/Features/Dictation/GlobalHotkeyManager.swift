@@ -116,10 +116,21 @@ enum MacInputPermission {
     /// permissions that currently appear ungranted, so a partially-valid
     /// state (e.g., Microphone granted but Accessibility stale) does not
     /// force an unnecessary re-grant of the working permission.
+    ///
+    /// Relaunch dance: after `tccutil reset`, the running process keeps
+    /// stale state in IOHID/CG that swallows subsequent prompts —
+    /// `CGRequestListenEventAccess`/`CGRequestPostEventAccess` silently
+    /// return false instead of triggering a fresh dialog (only modern
+    /// `AVAudioApplication.requestRecordPermission` re-prompts cleanly).
+    /// To make Input Monitoring and Accessibility prompts work after the
+    /// reset, we relaunch the app — same pattern Sparkle uses post-install.
+    /// Returns `true` if a relaunch is required; the caller is responsible
+    /// for triggering it before SwiftUI mounts.
     @MainActor
-    static func performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: Bool) {
-        let key = "waisayTCCLegacyMigrationV1Done"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
+    @discardableResult
+    static func performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: Bool) -> Bool {
+        let key = "waisayTCCLegacyMigrationV2Done"
+        guard !UserDefaults.standard.bool(forKey: key) else { return false }
 
         let accessibilityGranted = AXIsProcessTrusted()
         let inputMonitoringGranted = listenEventStatus() == .granted
@@ -127,12 +138,12 @@ enum MacInputPermission {
         if microphoneGranted && accessibilityGranted && inputMonitoringGranted {
             UserDefaults.standard.set(true, forKey: key)
             log.info("TCC legacy migration: all permissions already granted; marking done without reset")
-            return
+            return false
         }
 
         guard let bundleId = Bundle.main.bundleIdentifier else {
             UserDefaults.standard.set(true, forKey: key)
-            return
+            return false
         }
 
         var servicesToReset: [String] = []
@@ -142,6 +153,7 @@ enum MacInputPermission {
 
         log.info("TCC legacy migration: clearing stale entries for services [\(servicesToReset.joined(separator: ","), privacy: .public)] on \(bundleId, privacy: .public)")
 
+        var didActuallyReset = false
         for service in servicesToReset {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
@@ -149,7 +161,9 @@ enum MacInputPermission {
             do {
                 try process.run()
                 process.waitUntilExit()
-                if process.terminationStatus != 0 {
+                if process.terminationStatus == 0 {
+                    didActuallyReset = true
+                } else {
                     log.warning("tccutil reset \(service, privacy: .public) returned \(process.terminationStatus)")
                 }
             } catch {
@@ -158,6 +172,27 @@ enum MacInputPermission {
         }
 
         UserDefaults.standard.set(true, forKey: key)
+        return didActuallyReset
+    }
+
+    /// Spawn a fresh instance of the running app and terminate the current
+    /// process. Used after `performOneTimeLegacyTCCMigrationIfNeeded` returns
+    /// `true` so post-reset permission prompts are not swallowed by stale
+    /// IOHID/CG handles in the existing process.
+    @MainActor
+    static func relaunchAfterTCCMigration() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            if let error {
+                log.error("Relaunch after TCC migration failed: \(error.localizedDescription, privacy: .public). Continuing without relaunch.")
+                return
+            }
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     /// Reset TCC entries for this app's bundle id across the three permissions

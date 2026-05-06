@@ -261,6 +261,28 @@ final class MacPresentationCoordinator {
 
 @MainActor
 final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Run TCC legacy migration before SwiftUI mounts and before any
+        // TCC-protected API is touched. If we end up resetting any stale
+        // entries, relaunch — `CGRequestListenEventAccess` and
+        // `CGRequestPostEventAccess` cache process-level "already asked"
+        // state that survives `tccutil reset` and silently swallows the
+        // next prompt. Relaunching gives the new process a clean slate so
+        // onboarding's Grant clicks trigger fresh system dialogs.
+        // Skipped under WAI_ENABLE_UI_TEST_MODE so test runs cannot
+        // mutate the host machine's TCC database.
+        let isUITestEnvironment = ProcessInfo.processInfo.environment["WAI_ENABLE_UI_TEST_MODE"] == "1"
+        guard !isUITestEnvironment else { return }
+
+        let microphoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let needsRelaunch = MacInputPermission.performOneTimeLegacyTCCMigrationIfNeeded(
+            microphoneGranted: microphoneGranted
+        )
+        if needsRelaunch {
+            MacInputPermission.relaunchAfterTCCMigration()
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         MacPresentationCoordinator.shared.mainWindowDidClose()
         return false
@@ -397,17 +419,6 @@ class MacAppState: ObservableObject {
             return
         }
         #endif
-
-        // One-time cleanup of legacy TCC entries from sandboxed/dual-channel
-        // era. Runs synchronously before any UI shows so onboarding's permission
-        // prompts work cleanly. No-op when permissions are already granted.
-        // Skipped under any UI test mode so test runs cannot mutate the host
-        // machine's TCC database.
-        let isUITestEnvironment = ProcessInfo.processInfo.environment["WAI_ENABLE_UI_TEST_MODE"] == "1"
-        if !isUITestEnvironment {
-            let microphoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-            MacInputPermission.performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: microphoneGranted)
-        }
 
         // Set up token refresh callbacks
         Task {
