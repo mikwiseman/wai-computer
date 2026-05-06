@@ -107,20 +107,18 @@ final class DictationManager: ObservableObject {
 
     private var targetApp: NSRunningApplication?
 
-    // MARK: - Audio & Transcription
+    // MARK: - Dictation pipeline (Phase 4 — Inworld + Soniox v4 RT)
 
-    private var audioCapture: MicrophoneCapture?
-    private var audioEncoder: AudioEncoder?
-    private var webSocket: WebSocketManager?
-    private var audioTask: Task<Void, Never>?
-    private var transcriptTask: Task<Void, Never>?
+    private var dictationSession: DictationSession?
+    private var providerSession: InworldProviderSession?
+    private var sessionEventTask: Task<Void, Never>?
     private var timerTask: Task<Void, Never>?
 
-    // Transcript accumulation
+    // Transcript accumulation (live updates for overlay).
     private var committedTexts: [String] = []
     private var currentInterim = ""
     private var isConfigured = false
-    private var pendingPushToTalkStop = false
+    private var deferredStop = false
 
     // MARK: - Lifecycle
 
@@ -202,7 +200,7 @@ final class DictationManager: ObservableObject {
             guard let self else { return }
             guard !self.isHandsFree else { return } // Don't stop if in hands-free mode
             if self.state == .connecting {
-                self.pendingPushToTalkStop = true
+                self.deferredStop = true
             } else if self.state == .listening {
                 Task { await self.stopAndInsert() }
             }
@@ -276,7 +274,7 @@ final class DictationManager: ObservableObject {
         currentInterim = ""
         interimTranscript = ""
         dictationDuration = 0
-        pendingPushToTalkStop = false
+        deferredStop = false
         setState(.connecting)
         session.event(.providerConnecting, data: ["isHandsFree": isHandsFree])
 
@@ -287,54 +285,82 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
-            // Set up microphone capture
-            let capture = MicrophoneCapture()
-            audioCapture = capture
-            try await capture.startRecording()
+            // 1. Pre-warm the shared engine if it isn't already. This is
+            //    a one-time cost on the first ever press; subsequent presses
+            //    instantly install the tap on a running engine.
+            try await AudioEngineHost.shared.prewarm()
 
-            // Set up provider-backed realtime transcription.
+            // 2. Lease the engine — installs the tap, snapshots the 500 ms
+            //    pre-roll buffer (so the user's first word is never lost).
+            let lease = try await AudioEngineHost.shared.lease()
+            session.event(.audioLeaseAcquired, data: [
+                "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
+            ])
+
+            // 3. Mint a fresh Inworld session (Soniox v4 RT for Russian /
+            //    multi-language by default — backend chooses model).
             let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
-            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
-            webSocket = ws
+            let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+                language: language,
+                channels: 1,
+                purpose: .dictation
+            )
+            session.event(.tokenMinted, data: [
+                "provider": sessionConfig.provider,
+                "model": sessionConfig.model,
+            ])
 
-            // Start receiving transcript events BEFORE connecting
-            let eventStream = await ws.events
-            transcriptTask = Task { [weak self] in
+            guard let urlString = sessionConfig.websocketURL,
+                  let url = URL(string: urlString) else {
+                throw DictationInstrumentationError.unknown("missing websocket URL in session config")
+            }
+
+            // 4. Build the provider session and the orchestrating
+            //    DictationSession actor, then arm.
+            let provider = InworldProviderSession(
+                websocketURL: url,
+                authHeader: sessionConfig.token,  // already "Basic <base64>"
+                modelId: sessionConfig.model,
+                language: sessionConfig.language,
+                sampleRate: sessionConfig.sampleRate,
+                channels: sessionConfig.channels
+            )
+            providerSession = provider
+            session.event(.providerConnecting, data: [
+                "model": sessionConfig.model,
+                "language": sessionConfig.language,
+            ])
+
+            let dSession = DictationSession(
+                provider: provider,
+                lease: lease,
+                host: AudioEngineHost.shared
+            )
+            dictationSession = dSession
+
+            // 5. Subscribe to provider events for live overlay updates.
+            //    The DictationSession actor accumulates segments internally
+            //    for the final transcript; we only need this stream for UI.
+            let stream = provider.events
+            sessionEventTask = Task { [weak self] in
                 guard let self else { return }
-                for await event in eventStream {
-                    await self.handleWebSocketEvent(event)
+                for await event in stream {
+                    await self.handleProviderEvent(event)
                 }
             }
 
-            // Connect
-            try await ws.connect()
+            try await dSession.arm()
+            session.event(.providerOpened)
 
-            // Set up audio encoding pipeline
-            let encoder = AudioEncoder(channels: 1)
-            audioEncoder = encoder
-
-            // Stream audio to the configured transcription provider.
-            audioTask = Task.detached(priority: .userInitiated) {
-                for await buffer in capture.audioBuffers {
-                    if let data = encoder.encode(buffer) {
-                        do {
-                            try await ws.sendAudio(data: data)
-                        } catch {
-                            log.error("Failed to send dictation audio")
-                            return
-                        }
-                    }
-                }
-            }
-
-            // Start duration timer
             startTimer()
             setState(.listening)
-            if pendingPushToTalkStop && !isHandsFree {
-                pendingPushToTalkStop = false
+            session.event(.audioFirstChunkSent)
+
+            // Hotkey released during connect — apply now.
+            if deferredStop && !isHandsFree {
+                deferredStop = false
                 await stopAndInsert()
             }
-
         } catch {
             log.error("Failed to start dictation")
             self.error = error.userFacingMessage(context: .dictation)
@@ -349,33 +375,20 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
-        // Stop audio capture
-        await audioCapture?.stopRecording()
-        _ = await audioTask?.result
-        audioTask = nil
+        // Drain the provider session — sends end_turn + close_stream and
+        // collects committed segments with a bounded quiet window.
+        let outcome = await dictationSession?.commit(timeout: .seconds(3))
 
-        let didFinalize = await finishStreaming()
-
-        // If cancelDictation ran during finalization (e.g. WebSocket disconnect), bail out
+        // If cancelDictation ran during finalization, bail out cleanly.
         guard state == .processing else { return }
 
-        // Collect final segments
-        let segments = await webSocket?.collectedSegments ?? []
-
-        // Stop transcript listener and WebSocket
-        transcriptTask?.cancel()
-        transcriptTask = nil
-        await webSocket?.disconnect()
-        webSocket = nil
-
-        // Stop timer
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         timerTask?.cancel()
         timerTask = nil
 
-        // Build final text — prefer segments, fall back to local accumulation
-        let finalText = finalTranscriptText(from: segments, didFinalize: didFinalize)
-
-        let trimmedText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedText = (outcome?.transcript ?? buildTranscript())
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedText.isEmpty else {
             log.info("No text transcribed — nothing to insert")
@@ -445,15 +458,11 @@ final class DictationManager: ObservableObject {
             instrumentationSession = nil
         }
 
-        await audioCapture?.stopRecording()
-        audioTask?.cancel()
-        audioTask = nil
-        transcriptTask?.cancel()
-        transcriptTask = nil
+        await dictationSession?.cancel()
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         timerTask?.cancel()
         timerTask = nil
-        await webSocket?.disconnect()
-        webSocket = nil
 
         await cleanup()
     }
@@ -467,9 +476,9 @@ final class DictationManager: ObservableObject {
     }
 
     private func cleanup() async {
-        audioCapture = nil
-        audioEncoder = nil
-        pendingPushToTalkStop = false
+        dictationSession = nil
+        providerSession = nil
+        deferredStop = false
 
         targetApp = nil
         setState(.idle)
@@ -485,18 +494,11 @@ final class DictationManager: ObservableObject {
     }
 
     private func resetAfterStartFailure() async {
-        audioTask?.cancel()
-        audioTask = nil
-        transcriptTask?.cancel()
-        transcriptTask = nil
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         timerTask?.cancel()
         timerTask = nil
-        await audioCapture?.stopRecording()
-        audioCapture = nil
-        audioEncoder = nil
-        let ws = webSocket
-        webSocket = nil
-        await ws?.disconnect()
+        await dictationSession?.cancel()
         await cleanup()
     }
 
@@ -513,45 +515,63 @@ final class DictationManager: ObservableObject {
         }
     }
 
-    // MARK: - WebSocket Events
+    // MARK: - Provider Events (Inworld)
 
-    private func handleWebSocketEvent(_ event: WebSocketEvent) async {
+    private func handleProviderEvent(_ event: TranscriptionEvent) async {
         switch event {
-        case .connected:
+        case .opened:
             break
-        case .transcript(let segment):
-            if segment.isFinal {
-                committedTexts.append(segment.text)
-                currentInterim = ""
-            } else {
-                currentInterim = segment.text
-            }
+        case .interim(let text, _):
+            currentInterim = text
             interimTranscript = buildTranscript()
-        case .disconnected(let err):
-            if let err, state == .listening {
-                log.error("WebSocket disconnected during dictation")
-                if (try? saveRecoveryText(buildTranscript())) != nil {
-                    error = "Connection was interrupted. A recovery copy of your dictated text was kept on this Mac."
-                } else {
-                    error = err.userFacingMessage(context: .dictation)
-                }
-                await cancelDictation()
-            }
-        case .reconnecting:
-            break // Dictation sessions are short — reconnection handled by WebSocketManager
-        case .reconnected:
+        case .committed(let segment):
+            committedTexts.append(segment.text)
+            currentInterim = ""
+            interimTranscript = buildTranscript()
+        case .voiceProfile:
             break
-        case .reconnectionFailed(let err):
+        case .providerWarning(let providerError):
+            instrumentationSession?.event(.providerWarning, data: [
+                "fingerprint": providerError.fingerprint
+            ])
+            // No silent fallbacks: only auth_error gets a single in-session
+            // retry (handled by the session); everything else surfaces.
             if state == .listening {
-                log.error("WebSocket reconnection failed during dictation")
-                if (try? saveRecoveryText(buildTranscript())) != nil {
-                    error = "Connection was interrupted. A recovery copy of your dictated text was kept on this Mac."
-                } else {
-                    error = err?.userFacingMessage(context: .dictation)
-                        ?? "We couldn't keep dictation connected. Check your internet connection and try again."
-                }
+                self.error = userFacingMessage(for: providerError)
                 await cancelDictation()
             }
+        case .closed(let reason):
+            if state == .listening {
+                if case .serverError = reason {
+                    self.error = "Live transcription was interrupted. Try again."
+                    await cancelDictation()
+                }
+            }
+        case .usage:
+            break
+        }
+    }
+
+    private func userFacingMessage(for error: ProviderError) -> String {
+        switch error {
+        case .authError:
+            return "Authentication with the transcription service failed. Please try again."
+        case .quotaExceeded:
+            return "Dictation quota exceeded. Please try again later."
+        case .rateLimited:
+            return "Dictation service is busy. Please wait a moment and try again."
+        case .insufficientAudioActivity:
+            return "Hold the hotkey and speak clearly to dictate."
+        case .sessionTimeLimitExceeded:
+            return "Dictation session time limit reached. Please start a new session."
+        case .chunkSizeExceeded, .commitThrottled, .malformedFrame:
+            return "Live transcription was interrupted. Try again."
+        case .unsupportedModel(let model):
+            return "Dictation model \(model) is not supported."
+        case .transcriberInternal(let message):
+            return message.isEmpty
+                ? "The transcription service returned an error. Please try again."
+                : "Transcription error: \(message)"
         }
     }
 
@@ -571,41 +591,6 @@ final class DictationManager: ObservableObject {
         return canStartDictation()
     }
 
-    private func finalTranscriptText(
-        from segments: [LiveTranscriptSegment],
-        didFinalize: Bool
-    ) -> String {
-        let remoteTranscript = segments
-            .map(\.text)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-
-        let localTranscript = buildTranscript().trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedInterim = currentInterim.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !remoteTranscript.isEmpty else { return localTranscript }
-        guard !localTranscript.isEmpty else { return remoteTranscript }
-
-        if remoteTranscript == localTranscript {
-            return remoteTranscript
-        }
-
-        if !trimmedInterim.isEmpty && remoteTranscript.hasSuffix(trimmedInterim) {
-            return remoteTranscript
-        }
-
-        if !trimmedInterim.isEmpty && localTranscript.hasPrefix(remoteTranscript) {
-            return localTranscript
-        }
-
-        if !didFinalize && localTranscript.count >= remoteTranscript.count {
-            return localTranscript
-        }
-
-        return remoteTranscript.count >= localTranscript.count ? remoteTranscript : localTranscript
-    }
-
     private func applyHotkeyAvailability() {
         hotkeyManager.hotkey = selectedHotkey
         hotkeyManager.handsFreeHotkey = selectedHandsFreeHotkey
@@ -615,16 +600,6 @@ final class DictationManager: ObservableObject {
             hotkeyManager.start()
         } else {
             hotkeyManager.stop()
-        }
-    }
-
-    private func finishStreaming() async -> Bool {
-        guard let webSocket else { return true }
-        do {
-            return try await webSocket.finishStreaming(timeout: .seconds(5))
-        } catch {
-            log.error("Failed to finalize dictation stream")
-            return false
         }
     }
 
