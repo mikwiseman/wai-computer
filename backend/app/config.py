@@ -40,8 +40,17 @@ class Settings(BaseSettings):
     ]
 
     # Voice providers
+    # Recording flow uses ElevenLabs Scribe v2 (until Phase 7).
+    # Dictation flow uses Inworld with `soniox/stt-rt-v4` — best-in-class
+    # Russian recognition (human-parity per Soniox v4 multilingual benchmarks).
     speech_to_text_provider: str = "elevenlabs"
     realtime_voice_provider: str = "elevenlabs"
+    dictation_stt_provider: str = "inworld"
+    dictation_stt_model: str = "soniox/stt-rt-v4"
+    dictation_stt_language: str = "multi"
+
+    # Inworld AI (provides unified STT WebSocket to multiple engines)
+    inworld_api_key: str = ""
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
