@@ -35,37 +35,6 @@ struct OnboardingView: View {
         }
         .frame(minWidth: 800, minHeight: 640)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
-        .overlay(alignment: .bottomLeading) {
-            Button(action: openHelp) {
-                HStack(spacing: 6) {
-                    ZStack {
-                        Circle()
-                            .stroke(Palette.textTertiary, lineWidth: 1)
-                            .frame(width: 16, height: 16)
-                        Image(systemName: "questionmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Palette.textTertiary)
-                    }
-                    Text("Help")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.textSecondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(Color(NSColor.windowBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .strokeBorder(Palette.border, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, Spacing.xl)
-            .padding(.bottom, Spacing.xl)
-            .accessibilityIdentifier("onboarding-help-button")
-        }
         .onAppear {
             currentPage = Self.clampedPageIndex(currentPage)
             persistCurrentPage()
@@ -162,17 +131,45 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var footerControls: some View {
-        HStack {
-            // Skip is always available — drops the user straight into the
-            // main UI. Missing permissions are surfaced as a banner there,
-            // so skipping is safe.
+        HStack(spacing: 12) {
+            // Help pill anchored to footer-leading so it never overlaps Skip.
+            Button(action: openHelp) {
+                HStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .stroke(Palette.textTertiary, lineWidth: 1)
+                            .frame(width: 16, height: 16)
+                        Image(systemName: "questionmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                    Text("Help")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Color(NSColor.windowBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("onboarding-help-button")
+
+            Spacer()
+
+            // Skip drops the user into the main UI. Missing permissions
+            // surface as a banner there, so skipping is safe.
             Button(isPermissionPage || isVerifyPage ? "Skip for Now" : "Skip") {
                 completeOnboarding()
             }
             .buttonStyle(WaiGhostButtonStyle())
             .accessibilityIdentifier("onboarding-skip-button")
-
-            Spacer()
 
             // Verify slide owns its own Continue CTA. Footer hides the
             // primary button there to avoid two competing CTAs.

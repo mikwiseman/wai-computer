@@ -398,6 +398,17 @@ class MacAppState: ObservableObject {
         }
         #endif
 
+        // One-time cleanup of legacy TCC entries from sandboxed/dual-channel
+        // era. Runs synchronously before any UI shows so onboarding's permission
+        // prompts work cleanly. No-op when permissions are already granted.
+        // Skipped under any UI test mode so test runs cannot mutate the host
+        // machine's TCC database.
+        let isUITestEnvironment = ProcessInfo.processInfo.environment["WAI_ENABLE_UI_TEST_MODE"] == "1"
+        if !isUITestEnvironment {
+            let microphoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+            MacInputPermission.performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: microphoneGranted)
+        }
+
         // Set up token refresh callbacks
         Task {
             await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
