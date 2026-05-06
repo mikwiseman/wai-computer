@@ -96,6 +96,70 @@ enum MacInputPermission {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
+    /// One-time cleanup of legacy TCC entries accumulated during the
+    /// sandboxed → non-sandboxed migration and entitlement flips that preceded
+    /// 1.0.6-46. Each architectural change produced a slightly different
+    /// designated requirement, so TCC stored multiple distinct grant entries
+    /// for `is.waiwai.say`, none of which match the current binary's csreq.
+    /// Result: onboarding asks for permissions even though Settings shows
+    /// "WaiSay" appearing twice with toggles enabled.
+    ///
+    /// macOS does not expose an API to inspect TCC.db (SIP-protected), but
+    /// `tccutil reset <service> <bundle-id>` clears all entries for our
+    /// bundle without sudo. After clearing, fresh prompts in onboarding work
+    /// cleanly and the new entries are recorded with the current (now
+    /// stable from 1.0.6-46+) designated requirement. Subsequent Sparkle
+    /// updates with the same DR preserve the grant naturally — exactly how
+    /// Wispr Flow / Raycast / VoiceInk behave.
+    ///
+    /// Runs at most once (UserDefaults flag). Per-service: only resets
+    /// permissions that currently appear ungranted, so a partially-valid
+    /// state (e.g., Microphone granted but Accessibility stale) does not
+    /// force an unnecessary re-grant of the working permission.
+    @MainActor
+    static func performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: Bool) {
+        let key = "waisayTCCLegacyMigrationV1Done"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let accessibilityGranted = AXIsProcessTrusted()
+        let inputMonitoringGranted = listenEventStatus() == .granted
+
+        if microphoneGranted && accessibilityGranted && inputMonitoringGranted {
+            UserDefaults.standard.set(true, forKey: key)
+            log.info("TCC legacy migration: all permissions already granted; marking done without reset")
+            return
+        }
+
+        guard let bundleId = Bundle.main.bundleIdentifier else {
+            UserDefaults.standard.set(true, forKey: key)
+            return
+        }
+
+        var servicesToReset: [String] = []
+        if !microphoneGranted { servicesToReset.append("Microphone") }
+        if !inputMonitoringGranted { servicesToReset.append("ListenEvent") }
+        if !accessibilityGranted { servicesToReset.append("Accessibility") }
+
+        log.info("TCC legacy migration: clearing stale entries for services [\(servicesToReset.joined(separator: ","), privacy: .public)] on \(bundleId, privacy: .public)")
+
+        for service in servicesToReset {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, bundleId]
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    log.warning("tccutil reset \(service, privacy: .public) returned \(process.terminationStatus)")
+                }
+            } catch {
+                log.error("tccutil reset \(service, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
     /// Reset TCC entries for this app's bundle id across the three permissions
     /// we care about, then ask the caller to relaunch. Spawning `tccutil`
     /// requires the app to be unsandboxed (which WaiSay always is now). This is
