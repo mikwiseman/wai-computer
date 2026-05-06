@@ -28,9 +28,7 @@ ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
-DMG_ATTACHED=0
-DMG_DEVICE=""
-DMG_MOUNT_ACTUAL=""
+DMGBUILD_BIN="${DMGBUILD_BIN:-}"
 NOTARIZATION_MODE="skipped"
 NOTARY_ARGS=()
 CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
@@ -55,10 +53,45 @@ EOF
 fi
 
 cleanup() {
-  detach_sparse_image || true
   rm -rf "$TMP_DIR" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+ensure_dmgbuild() {
+  if [[ -n "${DMGBUILD_BIN:-}" && -x "$DMGBUILD_BIN" ]]; then
+    return 0
+  fi
+
+  local candidate
+  for candidate in "$HOME/Library/Python/3.14/bin/dmgbuild" "$HOME/Library/Python/3.13/bin/dmgbuild" "$HOME/Library/Python/3.12/bin/dmgbuild" "$HOME/Library/Python/3.11/bin/dmgbuild"; do
+    if [[ -x "$candidate" ]]; then
+      DMGBUILD_BIN="$candidate"
+      return 0
+    fi
+  done
+
+  if command -v dmgbuild >/dev/null 2>&1; then
+    DMGBUILD_BIN=$(command -v dmgbuild)
+    return 0
+  fi
+
+  echo "Installing dmgbuild via pip..."
+  python3 -m pip install --user --quiet --break-system-packages dmgbuild >&2
+  for candidate in "$HOME/Library/Python/3.14/bin/dmgbuild" "$HOME/Library/Python/3.13/bin/dmgbuild" "$HOME/Library/Python/3.12/bin/dmgbuild" "$HOME/Library/Python/3.11/bin/dmgbuild"; do
+    if [[ -x "$candidate" ]]; then
+      DMGBUILD_BIN="$candidate"
+      return 0
+    fi
+  done
+
+  if command -v dmgbuild >/dev/null 2>&1; then
+    DMGBUILD_BIN=$(command -v dmgbuild)
+    return 0
+  fi
+
+  echo "dmgbuild not found after pip install; install it manually." >&2
+  exit 1
+}
 
 require_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -175,58 +208,6 @@ gatekeeper_check() {
   echo "Warning: Gatekeeper rejected ${artifact_label}; continuing because MACOS_REQUIRE_GATEKEEPER=0." >&2
 }
 
-is_dmg_mounted() {
-  mount | grep -Fq " on ${DMG_MOUNT_ACTUAL:-$DMG_MOUNT} "
-}
-
-detach_sparse_image() {
-  if [[ "$DMG_ATTACHED" != "1" ]]; then
-    return 0
-  fi
-
-  if ! is_dmg_mounted; then
-    DMG_ATTACHED=0
-    DMG_DEVICE=""
-    DMG_MOUNT_ACTUAL=""
-    return 0
-  fi
-
-  local target="${DMG_DEVICE:-${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}}"
-  local attempt
-  for attempt in 1 2 3 4 5; do
-    if hdiutil detach "$target" -quiet; then
-      break
-    fi
-    sleep 1
-  done
-
-  if is_dmg_mounted; then
-    for attempt in 1 2 3 4 5; do
-      if hdiutil detach "${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}" -quiet; then
-        break
-      fi
-      sleep 1
-    done
-  fi
-
-  if is_dmg_mounted; then
-    hdiutil detach "$target" -force -quiet || hdiutil detach "${DMG_MOUNT_ACTUAL:-$DMG_MOUNT}" -force -quiet || true
-  fi
-
-  for attempt in 1 2 3 4 5; do
-    if ! is_dmg_mounted; then
-      DMG_ATTACHED=0
-      DMG_DEVICE=""
-      DMG_MOUNT_ACTUAL=""
-      return 0
-    fi
-    sleep 1
-  done
-
-  echo "Failed to detach DMG mount at $DMG_MOUNT" >&2
-  return 1
-}
-
 sign_bundle_if_present() {
   local bundle_path=$1
   shift
@@ -274,7 +255,7 @@ require_tool ditto
 require_tool shasum
 require_tool file
 require_tool xcrun
-require_tool osascript
+require_tool python3
 
 load_notary_defaults_from_appstoreconnect_config
 
@@ -316,45 +297,35 @@ sign_sparkle_update() {
   "$sign_update_bin" --account "$SPARKLE_KEYCHAIN_ACCOUNT" "$artifact_path"
 }
 
-configure_dmg_window() {
-  local mount_path=$1
-  local background_dir="$mount_path/.background"
-  local background_file="$background_dir/background.png"
+render_dmgbuild_settings() {
+  cat <<'PY'
+import os
 
-  mkdir -p "$background_dir"
-  cp "$BACKGROUND_PATH" "$background_file"
+volume_name = os.environ["DMG_VOLUME_NAME"]
+app_path = os.environ["APP_PATH"]
+app_name = os.environ["APP_NAME"]
+background = os.environ["BACKGROUND_PATH"]
 
-  DMG_LAYOUT_VOLUME_NAME="$DMG_VOLUME_NAME" \
-  DMG_LAYOUT_MOUNT_PATH="$mount_path" \
-  DMG_LAYOUT_APP_NAME="$APP_NAME" \
-  /usr/bin/osascript <<'OSA'
-set volumeName to system attribute "DMG_LAYOUT_VOLUME_NAME"
-set mountPath to system attribute "DMG_LAYOUT_MOUNT_PATH"
-set appName to system attribute "DMG_LAYOUT_APP_NAME"
-set backgroundPath to mountPath & "/.background/background.png"
-
-tell application "Finder"
-    activate
-    delay 1
-    tell disk volumeName
-        open
-        delay 1
-        set current view of container window to icon view
-        set toolbar visible of container window to false
-        set statusbar visible of container window to false
-        set the bounds of container window to {100, 100, 740, 420}
-        set viewOptions to icon view options of container window
-        set arrangement of viewOptions to not arranged
-        set icon size of viewOptions to 96
-        set background picture of viewOptions to (POSIX file backgroundPath as alias)
-        set position of item (appName & ".app") of container window to {190, 190}
-        set position of item "Applications" of container window to {480, 190}
-        update without registering applications
-        delay 1
-        close
-    end tell
-end tell
-OSA
+format = "ULFO"
+size = "200M"
+files = [app_path]
+symlinks = {"Applications": "/Applications"}
+icon_locations = {
+    f"{app_name}.app": (190, 190),
+    "Applications": (480, 190),
+}
+window_rect = ((100, 100), (640, 320))
+default_view = "icon-view"
+show_status_bar = False
+show_tab_view = False
+show_toolbar = False
+show_pathbar = False
+show_sidebar = False
+icon_size = 96
+text_size = 12
+include_icon_view_settings = "auto"
+include_list_view_settings = "auto"
+PY
 }
 
 mkdir -p "$RELEASE_ROOT"
@@ -416,36 +387,18 @@ fi
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 
 DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
-SPARSE_PATH="$TMP_DIR/${APP_NAME}.sparseimage"
-DMG_MOUNT="$TMP_DIR/dmg-mount"
-rm -f "$DMG_PATH" "$SPARSE_PATH"
+rm -f "$DMG_PATH"
 
-echo "Creating sparse image..."
-hdiutil create -size 200m -fs APFS -volname "$DMG_VOLUME_NAME" -type SPARSE "$SPARSE_PATH"
+ensure_dmgbuild
+DMG_SETTINGS="$TMP_DIR/dmgbuild-settings.py"
+render_dmgbuild_settings > "$DMG_SETTINGS"
 
-echo "Mounting sparse image to custom mount point..."
-mkdir -p "$DMG_MOUNT"
-ATTACH_OUTPUT=$(hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -noverify)
-printf '%s\n' "$ATTACH_OUTPUT"
-DMG_ATTACHED=1
-DMG_DEVICE=$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'END {print $1}')
-DMG_MOUNT_ACTUAL=$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'END {print $NF}')
-if [[ -z "$DMG_DEVICE" ]]; then
-  echo "Warning: unable to determine mounted DMG device for $DMG_MOUNT; falling back to mountpoint detach." >&2
-fi
-
-echo "Copying app payload..."
-ditto "$APP_PATH" "$DMG_MOUNT/${APP_NAME}.app"
-ln -s /Applications "$DMG_MOUNT/Applications"
-configure_dmg_window "$DMG_MOUNT"
-
-sync
-
-echo "Detaching sparse image..."
-detach_sparse_image
-
-echo "Converting to compressed DMG..."
-hdiutil convert "$SPARSE_PATH" -format ULFO -o "$DMG_PATH" -quiet
+echo "Building DMG with dmgbuild..."
+DMG_VOLUME_NAME="$DMG_VOLUME_NAME" \
+APP_PATH="$APP_PATH" \
+APP_NAME="$APP_NAME" \
+BACKGROUND_PATH="$BACKGROUND_PATH" \
+"$DMGBUILD_BIN" -s "$DMG_SETTINGS" "$DMG_VOLUME_NAME" "$DMG_PATH"
 
 echo "Signing DMG..."
 codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
