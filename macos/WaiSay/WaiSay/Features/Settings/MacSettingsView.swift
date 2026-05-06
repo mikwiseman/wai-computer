@@ -155,7 +155,7 @@ struct MacSettingsView: View {
                 ))
                 .font(Typography.body)
 
-                Picker("Hotkey", selection: Binding(
+                Picker("Push to talk", selection: Binding(
                     get: { dictationManager.selectedHotkey },
                     set: { dictationManager.updateHotkey($0) }
                 )) {
@@ -165,6 +165,20 @@ struct MacSettingsView: View {
                 }
                 .font(Typography.body)
                 .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-push-to-talk-picker")
+
+                Picker("Hands-free toggle", selection: Binding<DictationHotkey?>(
+                    get: { dictationManager.selectedHandsFreeHotkey },
+                    set: { dictationManager.updateHandsFreeHotkey($0) }
+                )) {
+                    Text("Double-tap of push-to-talk").tag(DictationHotkey?.none)
+                    ForEach(DictationHotkey.allCases) { hotkey in
+                        Text(hotkey.label).tag(DictationHotkey?.some(hotkey))
+                    }
+                }
+                .font(Typography.body)
+                .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-hands-free-picker")
 
                 Toggle("AI Text Cleanup", isOn: $dictationManager.aiCleanupEnabled)
                     .font(Typography.body)
