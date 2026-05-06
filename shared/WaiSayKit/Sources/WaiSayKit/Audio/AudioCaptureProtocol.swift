@@ -196,4 +196,6 @@ public enum AudioCaptureError: Error, Sendable {
     case invalidFormat
     case permissionDenied
     case engineStartFailed
+    case leaseInUse
+    case notStarted
 }
