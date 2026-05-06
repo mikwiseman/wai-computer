@@ -8,8 +8,7 @@ struct OnboardingView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
-    @State private var inputMonitoringStatus: MacInputPermission.Status = .denied
-    @State private var pasteStatus: MacInputPermission.Status = .denied
+    @State private var accessibilityStatus: MacInputPermission.Status = .denied
     @State private var permissionPollTimer: Timer?
 
     private let pages = OnboardingPage.allCases
@@ -63,11 +62,9 @@ struct OnboardingView: View {
                         OnboardingPermissionSlide(
                             isActive: index == currentPage,
                             hasMicrophonePermission: hasMicrophonePermission,
-                            inputMonitoringStatus: inputMonitoringStatus,
-                            pasteStatus: pasteStatus,
+                            accessibilityStatus: accessibilityStatus,
                             requestMicrophonePermission: requestMicrophonePermission,
-                            openInputMonitoringSettings: openInputMonitoringSettings,
-                            openPasteSettings: openPasteSettings,
+                            openAccessibilitySettings: openAccessibilitySettings,
                             recheckPermissions: refreshPermissions,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                         )
@@ -251,13 +248,11 @@ struct OnboardingView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        hasMicrophonePermission &&
-            inputMonitoringStatus == .granted &&
-            pasteStatus == .granted
+        hasMicrophonePermission && accessibilityStatus == .granted
     }
 
     private var permissionRestartRecommended: Bool {
-        inputMonitoringStatus == .staleNeedsRestart || pasteStatus == .staleNeedsRestart
+        accessibilityStatus == .staleNeedsRestart
     }
 
     private static var hasMicrophonePermission: Bool {
@@ -273,15 +268,13 @@ struct OnboardingView: View {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
-            inputMonitoringStatus = snapshot.inputMonitoringStatus
-            pasteStatus = snapshot.pasteStatus
+            accessibilityStatus = snapshot.accessibilityStatus
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
-        inputMonitoringStatus = MacInputPermission.listenEventStatus()
-        pasteStatus = MacInputPermission.postEventStatus()
+        accessibilityStatus = MacInputPermission.accessibilityStatus()
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -312,53 +305,21 @@ struct OnboardingView: View {
         }
     }
 
-    /// Single entry point for the Input Monitoring row's primary action.
-    ///
-    /// When the permission has never been requested, `requestListenEventAccess`
-    /// brings up the system consent sheet. If the user has previously denied or
-    /// the system prompt does not appear (`returns false`), we open System
-    /// Settings ourselves so the user has a clear path. We never preemptively
-    /// flip the row into the "Restart Required" state — the polling loop will
-    /// promote it via `MacInputPermission.listenEventStatus()` only when the
-    /// kernel cache and the live probe disagree.
-    private func openInputMonitoringSettings() {
+    /// Single Accessibility grant flow: covers both the global hotkey
+    /// monitor (NSEvent.addGlobalMonitorForEvents needs Accessibility) and
+    /// ⌘V paste (CGEvent.post is governed by the same TCC service on
+    /// macOS 11+). Reveals WaiSay.app in Finder so the user can drag onto
+    /// the "+" if Settings shows an empty Accessibility list.
+    private func openAccessibilitySettings() {
         startPermissionPolling()
         #if DEBUG
         if MacPermissionTesting.forcesMissingDictationPermissions {
             return
         }
         #endif
-        // `IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)` does not show
-        // an inline system dialog on macOS 14+ — Apple expects the user to
-        // drag the app onto the "+" in Settings → Privacy & Security →
-        // Input Monitoring. After a `tccutil reset` removes our prior
-        // entry from that list, there is no row to toggle. Always reveal
-        // WaiSay.app in Finder + open Settings so the drag-to-"+" gesture
-        // is one motion. (Same recovery flow the permission banner uses.)
-        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
+        _ = GlobalHotkeyManager.requestAccessibilityPermission()
         MacInputPermission.revealAppInFinder()
-        MacPrivacySettings.openInputMonitoring()
-    }
-
-    private func openPasteSettings() {
-        startPermissionPolling()
-        #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return
-        }
-        #endif
-        // Accessibility's canonical prompt API is
-        // `AXIsProcessTrustedWithOptions(prompt: true)`. We were calling
-        // `CGRequestPostEventAccess` (different TCC service) which silently
-        // returns false on many macOS versions. Trigger the AX dialog, then
-        // also reveal-in-Finder + open Settings as a fallback (the dialog
-        // sometimes does not appear if a stale process-level cache exists,
-        // and the user can drag from Finder onto the "+" either way).
-        let axOptions: CFDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(axOptions)
-        _ = TextInserter.requestEventPostingPermission()
-        MacInputPermission.revealAppInFinder()
-        TextInserter.openEventPostingSettings()
+        MacPrivacySettings.openAccessibility()
     }
 
     private func startPermissionPollingIfNeeded() {
@@ -384,10 +345,8 @@ struct OnboardingView: View {
     private func requestNextMissingPermission() {
         if !hasMicrophonePermission {
             requestMicrophonePermission()
-        } else if inputMonitoringStatus != .granted {
-            openInputMonitoringSettings()
-        } else if pasteStatus != .granted {
-            openPasteSettings()
+        } else if accessibilityStatus != .granted {
+            openAccessibilitySettings()
         }
     }
 }
@@ -397,11 +356,9 @@ private struct OnboardingPermissionSlide: View {
 
     let isActive: Bool
     let hasMicrophonePermission: Bool
-    let inputMonitoringStatus: MacInputPermission.Status
-    let pasteStatus: MacInputPermission.Status
+    let accessibilityStatus: MacInputPermission.Status
     let requestMicrophonePermission: () -> Void
-    let openInputMonitoringSettings: () -> Void
-    let openPasteSettings: () -> Void
+    let openAccessibilitySettings: () -> Void
     let recheckPermissions: () -> Void
     let restartForPermissionRefresh: () -> Void
 
@@ -429,8 +386,7 @@ private struct OnboardingPermissionSlide: View {
 
                 VStack(spacing: 12) {
                     microphoneRow
-                    inputMonitoringRow
-                    automaticPasteRow
+                    accessibilityRow
                 }
                 Spacer(minLength: 0)
             }
@@ -454,12 +410,7 @@ private struct OnboardingPermissionSlide: View {
         // Show the visual aid for whichever permission row is currently active
         if !hasMicrophonePermission {
             PermissionPreviewMicrophone()
-        } else if inputMonitoringStatus != .granted {
-            PermissionPreviewSettings(
-                paneTitle: "Input Monitoring",
-                rowLabel: "WaiSay"
-            )
-        } else if pasteStatus != .granted {
+        } else if accessibilityStatus != .granted {
             PermissionPreviewSettings(
                 paneTitle: "Accessibility",
                 rowLabel: "WaiSay"
@@ -477,10 +428,10 @@ private struct OnboardingPermissionSlide: View {
     }
 
     private var permissionBody: String {
-        if inputMonitoringStatus == .staleNeedsRestart || pasteStatus == .staleNeedsRestart {
+        if accessibilityStatus == .staleNeedsRestart {
             return "WaiSay is enabled in System Settings. Restart WaiSay so macOS applies the new permission to this running app."
         }
-        return content.body
+        return "Grant Microphone for recording, and Accessibility for the global hotkey and text insertion."
     }
 
     @ViewBuilder
@@ -504,64 +455,31 @@ private struct OnboardingPermissionSlide: View {
         var restart: PermissionRow.Action?
     }
 
-    private func inputMonitoringActions() -> PermissionActions {
-        switch inputMonitoringStatus {
+    private func accessibilityActions() -> PermissionActions {
+        switch accessibilityStatus {
         case .granted:
             return PermissionActions()
         case .denied:
             return PermissionActions(
-                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openInputMonitoringSettings),
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openInputMonitoring() })
+                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openAccessibilitySettings),
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openAccessibility() })
             )
         case .staleNeedsRestart:
             return PermissionActions(
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openInputMonitoring() }),
-                restart: PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
-            )
-        }
-    }
-
-    private func pasteActions() -> PermissionActions {
-        switch pasteStatus {
-        case .granted:
-            return PermissionActions()
-        case .denied:
-            return PermissionActions(
-                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openPasteSettings),
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { TextInserter.openEventPostingSettings() })
-            )
-        case .staleNeedsRestart:
-            return PermissionActions(
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { TextInserter.openEventPostingSettings() }),
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openAccessibility() }),
                 restart: PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
             )
         }
     }
 
     @ViewBuilder
-    private var inputMonitoringRow: some View {
-        let actions = inputMonitoringActions()
+    private var accessibilityRow: some View {
+        let actions = accessibilityActions()
         PermissionRow(
-            title: "Input Monitoring",
-            detail: "Use the hotkey from any app",
-            status: inputMonitoringStatus,
-            identifierBase: "onboarding-permission-input-monitoring",
-            primaryAction: actions.primary,
-            secondaryAction: actions.secondary,
-            recheckAction: actions.recheck,
-            restartAction: actions.restart
-        )
-    }
-
-    @ViewBuilder
-    private var automaticPasteRow: some View {
-        let actions = pasteActions()
-
-        PermissionRow(
-            title: "Automatic Paste",
-            detail: "Insert dictated text automatically",
-            status: pasteStatus,
-            identifierBase: "onboarding-permission-automatic-paste",
+            title: "Accessibility",
+            detail: "Listen for the global hotkey and paste dictated text",
+            status: accessibilityStatus,
+            identifierBase: "onboarding-permission-accessibility",
             primaryAction: actions.primary,
             secondaryAction: actions.secondary,
             recheckAction: actions.recheck,
