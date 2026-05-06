@@ -26,7 +26,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 XCODE_PROJECT="$PROJECT_DIR/macos/WaiSay/WaiSay.xcodeproj"
-SCHEME="WaiSayDirect"
+SCHEME="WaiSay"
 DMG_PATH="/tmp/WaiSay.dmg"
 MOUNT_POINT="/tmp/wai_dmg_mount"
 STAGING="/tmp/wai_dmg_staging"

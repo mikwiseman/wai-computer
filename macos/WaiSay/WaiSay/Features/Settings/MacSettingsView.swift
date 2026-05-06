@@ -210,6 +210,30 @@ struct MacSettingsView: View {
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
+
+                // Recovery actions for permission state drift after updates
+                HStack(spacing: Spacing.sm) {
+                    Button("Re-run Setup") {
+                        UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
+                        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+                        appState.hasCompletedOnboarding = false
+                    }
+                    .font(Typography.bodySmall)
+                    .accessibilityIdentifier("settings-rerun-setup-button")
+
+                    Button("Reveal in Finder") {
+                        MacInputPermission.revealAppInFinder()
+                    }
+                    .font(Typography.bodySmall)
+                    .accessibilityIdentifier("settings-reveal-app-button")
+
+                    Button("Reset Permissions") {
+                        MacInputPermission.resetTCCEntries()
+                        MacPrivacySettings.restartForPermissionRefresh()
+                    }
+                    .font(Typography.bodySmall)
+                    .accessibilityIdentifier("settings-reset-permissions-button")
+                }
             } header: {
                 Text("Dictation")
                     .waiSectionHeader()

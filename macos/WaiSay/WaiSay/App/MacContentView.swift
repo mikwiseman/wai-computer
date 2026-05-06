@@ -3,6 +3,7 @@ import WaiSayKit
 
 struct MacContentView: View {
     @EnvironmentObject var appState: MacAppState
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -13,9 +14,37 @@ struct MacContentView: View {
                 OnboardingView()
             } else if appState.isAuthenticated {
                 MacMainView()
+                    .overlay(alignment: .bottom) {
+                        permissionBannerLayer
+                    }
             } else {
                 MacAuthView()
             }
+        }
+        .onAppear { appState.refreshPermissionStatus(rearmDismissed: true) }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                appState.refreshPermissionStatus(rearmDismissed: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var permissionBannerLayer: some View {
+        if let kind = appState.visiblePermissionBanner {
+            PermissionBanner(
+                kind: kind == .microphone ? .microphone : .accessibility,
+                onPrimaryTap: {
+                    appState.handlePermissionBannerTap(kind)
+                },
+                onDismiss: {
+                    appState.dismissPermissionBanner(kind)
+                }
+            )
+            .frame(maxWidth: 540)
+            .padding(.bottom, Spacing.xl)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.25), value: kind)
         }
     }
 }

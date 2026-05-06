@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 PROJECT_PATH="$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj"
-SCHEME=${MACOS_SCHEME:-WaiSayDirect}
+SCHEME=${MACOS_SCHEME:-WaiSay}
 CONFIGURATION=${MACOS_CONFIGURATION:-Release}
 APP_NAME="WaiSay"
 DMG_VOLUME_NAME=${MACOS_DMG_VOLUME_NAME:-"${APP_NAME} Installer"}
@@ -42,12 +42,12 @@ if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
   REQUIRE_SPARKLE_SIGNATURE=1
 fi
 
-if [[ "$SCHEME" != "WaiSayDirect" && ( "${MACOS_RELEASE_STRICT:-0}" == "1" || "${MACOS_ALLOW_NON_DIRECT_SCHEME:-0}" != "1" ) ]]; then
+if [[ "$SCHEME" != "WaiSay" && "${MACOS_ALLOW_NON_DEFAULT_SCHEME:-0}" != "1" ]]; then
   cat >&2 <<EOF
-ERROR: direct DMG releases must build the WaiSayDirect scheme, got "$SCHEME".
+ERROR: macOS DMG releases must build the WaiSay scheme, got "$SCHEME".
 
-Set MACOS_SCHEME=WaiSayDirect, or set MACOS_ALLOW_NON_DIRECT_SCHEME=1 only for
-an intentional non-strict local experiment that must not be published.
+Set MACOS_SCHEME=WaiSay, or set MACOS_ALLOW_NON_DEFAULT_SCHEME=1 only for
+an intentional local experiment that must not be published.
 EOF
   exit 1
 fi
@@ -276,7 +276,7 @@ find_sign_update_bin() {
     return 0
   fi
 
-  echo "Sparkle sign_update not found. Build or resolve the WaiSayDirect scheme first, or set SPARKLE_SIGN_UPDATE_BIN." >&2
+  echo "Sparkle sign_update not found. Build or resolve the WaiSay scheme first, or set SPARKLE_SIGN_UPDATE_BIN." >&2
   return 1
 }
 

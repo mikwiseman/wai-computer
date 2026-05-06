@@ -1,8 +1,7 @@
 import SwiftUI
+import AVFoundation
 import WaiSayKit
-#if SPARKLE
 import Sparkle
-#endif
 
 extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
@@ -18,9 +17,7 @@ struct WaiSayMacApp: App {
     @StateObject private var dictationManager: DictationManager
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
-    #if SPARKLE
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-    #endif
 
     init() {
         #if !DEBUG
@@ -113,12 +110,10 @@ struct WaiSayMacApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
 
-                #if SPARKLE
                 Divider()
                 Button("Check for Updates…") {
                     updaterController.checkForUpdates(nil)
                 }
-                #endif
             }
 
             // View menu — sidebar navigation
@@ -335,6 +330,17 @@ class MacAppState: ObservableObject {
     @Published var selectedRecordingFromMenu: String?
     @Published var pendingMainWindowAction: MacMainWindowAction?
     @Published var hasCompletedOnboarding: Bool = false
+    @Published var missingPermissions: Set<MissingPermission> = []
+    /// Permission kinds the user has explicitly dismissed for this launch only.
+    /// Re-armed on every `scenePhase == .active` so a real outage cannot be
+    /// permanently silenced.
+    @Published var dismissedPermissionBanners: Set<MissingPermission> = []
+    private var permissionPollTimer: Timer?
+
+    enum MissingPermission: Hashable {
+        case microphone
+        case accessibility
+    }
 
     static let onboardingCompletedKey = "nativeOnboardingV3Completed"
     static let onboardingCurrentPageKey = "nativeOnboardingV3CurrentPage"
@@ -395,8 +401,14 @@ class MacAppState: ObservableObject {
         // Set up token refresh callbacks
         Task {
             await apiClient.setOnTokenRefreshed { accessToken, refreshToken in
-                KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: accessToken)
-                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshToken)
+                do {
+                    try SessionStore.shared.save(
+                        accessToken: accessToken,
+                        refreshToken: refreshToken
+                    )
+                } catch {
+                    SentryHelper.captureError(error, extras: ["action": "sessionSaveOnRefresh"])
+                }
                 Task {
                     await PendingRecordingSyncCoordinator.shared.scheduleSync(using: self.apiClient)
                 }
@@ -445,16 +457,24 @@ class MacAppState: ObservableObject {
 
         // Restore tokens only after onboarding. This avoids a first-launch
         // Keychain prompt and prevents old installs from silently skipping the tour.
-        let accessToken: String? = {
-            if let arg = ProcessInfo.processInfo.environment["WAISAY_ACCESS_TOKEN"] {
-                KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: arg)
-                return arg
+        let envAccess = ProcessInfo.processInfo.environment["WAISAY_ACCESS_TOKEN"]
+        let envRefresh = ProcessInfo.processInfo.environment["WAISAY_REFRESH_TOKEN"]
+
+        let accessToken: String?
+        let refreshToken: String?
+        if let envAccess {
+            try? SessionStore.shared.save(accessToken: envAccess, refreshToken: envRefresh)
+            accessToken = envAccess
+            refreshToken = envRefresh
+        } else if let session = SessionStore.shared.load() {
+            accessToken = session.accessToken
+            refreshToken = envRefresh ?? session.refreshToken
+            if let envRefresh, envRefresh != session.refreshToken {
+                try? SessionStore.shared.save(accessToken: session.accessToken, refreshToken: envRefresh)
             }
-            return KeychainHelper.load(key: KeychainHelper.accessTokenKey)
-        }()
-        let refreshOverride = ProcessInfo.processInfo.environment["WAISAY_REFRESH_TOKEN"]
-        if let refreshOverride {
-            KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: refreshOverride)
+        } else {
+            accessToken = nil
+            refreshToken = envRefresh
         }
 
         guard let accessToken else {
@@ -464,9 +484,8 @@ class MacAppState: ObservableObject {
 
         Task {
             await apiClient.setAccessToken(accessToken)
-            let rt = refreshOverride ?? KeychainHelper.load(key: KeychainHelper.refreshTokenKey)
-            if let rt {
-                await apiClient.setRefreshToken(rt)
+            if let refreshToken {
+                await apiClient.setRefreshToken(refreshToken)
             }
             await loadCurrentUser()
             isCheckingAuth = false
@@ -480,11 +499,10 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.login(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
             if let rt = response.refreshToken {
                 await apiClient.setRefreshToken(rt)
-                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
             }
+            persistSession(accessToken: response.accessToken, refreshToken: response.refreshToken)
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -502,11 +520,10 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.register(email: email, password: password)
             await apiClient.setAccessToken(response.accessToken)
-            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
             if let rt = response.refreshToken {
                 await apiClient.setRefreshToken(rt)
-                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
             }
+            persistSession(accessToken: response.accessToken, refreshToken: response.refreshToken)
             await loadCurrentUser()
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -547,11 +564,10 @@ class MacAppState: ObservableObject {
         do {
             let response = try await apiClient.verifyMagicLink(token: token)
             await apiClient.setAccessToken(response.accessToken)
-            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
             if let rt = response.refreshToken {
                 await apiClient.setRefreshToken(rt)
-                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
             }
+            persistSession(accessToken: response.accessToken, refreshToken: response.refreshToken)
             magicLinkSent = false
             await loadCurrentUser()
             if isAuthenticated && !hasCompletedOnboarding {
@@ -600,13 +616,20 @@ class MacAppState: ObservableObject {
         return nil
     }
 
+    private func persistSession(accessToken: String, refreshToken: String?) {
+        do {
+            try SessionStore.shared.save(accessToken: accessToken, refreshToken: refreshToken)
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "sessionSave"])
+        }
+    }
+
     private func clearLocalSession(removeUserData: Bool = false) async {
         dictationManager.disable()
         dictationManager.updateEnabled(false)
         await apiClient.setAccessToken(nil)
         await apiClient.setRefreshToken(nil)
-        let removedAccessToken = KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
-        let removedRefreshToken = KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        SessionStore.shared.clear()
         var cleanupFailure: String?
 
         if removeUserData {
@@ -632,9 +655,6 @@ class MacAppState: ObservableObject {
             }
             hasCompletedOnboarding = false
         }
-        if !removedAccessToken || !removedRefreshToken {
-            cleanupFailure = "Signed out, but WaiSay could not remove all saved login tokens from Keychain."
-        }
         error = cleanupFailure
     }
 
@@ -651,8 +671,7 @@ class MacAppState: ObservableObject {
 
     /// Called when auto-refresh fails — transition to login screen
     private func handleAuthenticationFailed() {
-        KeychainHelper.delete(key: KeychainHelper.accessTokenKey)
-        KeychainHelper.delete(key: KeychainHelper.refreshTokenKey)
+        SessionStore.shared.clear()
         Task {
             await apiClient.setAccessToken(nil)
             await apiClient.setRefreshToken(nil)
@@ -683,6 +702,93 @@ class MacAppState: ObservableObject {
     func resumePendingRecordingSyncIfNeeded() async {
         guard isAuthenticated else { return }
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+    }
+
+    // MARK: - Permission tracking (Wispr Flow-style toast)
+
+    /// Recompute which required permissions are missing. Drops banners that
+    /// have been satisfied; re-arms previously dismissed banners only when
+    /// scenePhase becomes active so users can't permanently silence one by
+    /// accident.
+    func refreshPermissionStatus(rearmDismissed: Bool = false) {
+        if rearmDismissed {
+            dismissedPermissionBanners.removeAll()
+        }
+
+        var missing: Set<MissingPermission> = []
+        if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
+            missing.insert(.microphone)
+        }
+        if MacInputPermission.postEventStatus() != .granted {
+            missing.insert(.accessibility)
+        }
+
+        if missing != missingPermissions {
+            missingPermissions = missing
+        }
+
+        // Drive a polling timer only while the banner is visible — stop the
+        // moment everything is granted to avoid waking on idle.
+        if missing.subtracting(dismissedPermissionBanners).isEmpty {
+            stopPermissionPolling()
+        } else {
+            startPermissionPollingIfNeeded()
+        }
+    }
+
+    /// The single banner kind to show right now (microphone takes priority).
+    var visiblePermissionBanner: MissingPermission? {
+        let visible = missingPermissions.subtracting(dismissedPermissionBanners)
+        if visible.contains(.microphone) { return .microphone }
+        if visible.contains(.accessibility) { return .accessibility }
+        return nil
+    }
+
+    func dismissPermissionBanner(_ kind: MissingPermission) {
+        dismissedPermissionBanners.insert(kind)
+    }
+
+    /// Tap handler for the banner's primary action. Triggers the system prompt
+    /// when possible, otherwise opens System Settings + reveals the .app in
+    /// Finder so the user can drag it onto the "+" if WaiSay is missing from
+    /// the list.
+    func handlePermissionBannerTap(_ kind: MissingPermission) {
+        switch kind {
+        case .microphone:
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .notDetermined:
+                Task {
+                    _ = await AVAudioApplication.requestRecordPermission()
+                    await MainActor.run { self.refreshPermissionStatus() }
+                }
+            default:
+                MacInputPermission.revealAppInFinder()
+                MacPrivacySettings.openMicrophone()
+            }
+        case .accessibility:
+            // AXIsProcessTrustedWithOptions(prompt: true) does nothing if a
+            // prior decision exists, so always reveal-in-Finder + open Settings.
+            MacInputPermission.revealAppInFinder()
+            MacPrivacySettings.openAccessibility()
+        }
+        startPermissionPolling()
+    }
+
+    private func startPermissionPollingIfNeeded() {
+        guard permissionPollTimer == nil else { return }
+        startPermissionPolling()
+    }
+
+    private func startPermissionPolling() {
+        stopPermissionPolling()
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.refreshPermissionStatus() }
+        }
+    }
+
+    private func stopPermissionPolling() {
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
     }
 
     private func handleAPIError(_ error: APIError) {
