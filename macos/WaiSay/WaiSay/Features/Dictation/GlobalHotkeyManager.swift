@@ -11,10 +11,6 @@ enum MacPrivacySettings {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
     }
 
-    static func openInputMonitoring() {
-        openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-    }
-
     static func openAccessibility() {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
@@ -48,42 +44,45 @@ enum MacPrivacySettings {
 }
 
 enum MacInputPermission {
-    /// Live state of an input-related TCC permission for the running process.
+    /// Live state of the Accessibility TCC permission for the running process.
     ///
-    /// macOS caches the answer to `CGPreflight*` and `IOHIDCheckAccess` at the
-    /// kernel level. After a user toggles a permission in System Settings the
-    /// cached answer can lag reality for the lifetime of the running process.
-    /// Functional probes (`CGEvent.tapCreate(.listenOnly)`, `AXIsProcessTrusted`)
-    /// reflect the *effective* grant for this process and disambiguate between
-    /// "really granted" and "preflight is still lying".
+    /// We use Accessibility for two capabilities: (a) global modifier-key
+    /// hotkey detection via `NSEvent.addGlobalMonitorForEvents`, and (b)
+    /// posting ⌘V via `CGEvent.post` for automatic paste. Both are governed
+    /// by the single "Accessibility" entry in System Settings → Privacy &
+    /// Security on macOS 11+, mirroring how Wispr Flow / Raycast operate.
+    /// Input Monitoring is no longer required.
     enum Status: Equatable {
-        /// Preflight + functional probe both agree — the permission works now.
         case granted
-        /// No grant is recorded — the user has not yet enabled it (or denied it).
         case denied
-        /// Cached APIs say granted but a live probe fails — typically because the
-        /// user toggled the permission in System Settings while the app was
-        /// running (or the entry in TCC is stale after a re-sign / path change).
-        /// Restarting the app is the only reliable fix.
         case staleNeedsRestart
     }
 
-    // MARK: - Listen events (Input Monitoring)
+    // MARK: - Accessibility (global hotkey monitor + event posting)
 
-    static func listenEventStatus() -> Status {
-        let preflight = CGPreflightListenEventAccess()
-        let iohid = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
-
-        guard preflight || iohid else {
-            return .denied
-        }
-
-        // Functional probe is authoritative when it succeeds. WaiSay ships as a
-        // single Direct DMG channel (Developer ID, no sandbox), so probe failure
-        // means a real stale TCC entry — the user toggled while running, or the
-        // bundle was re-signed and cdhash drifted. A restart is the fix.
-        return canCreateListenOnlyTap() ? .granted : .staleNeedsRestart
+    static func accessibilityStatus() -> Status {
+        AXIsProcessTrusted() ? .granted : .denied
     }
+
+    static var hasAccessibilityAccess: Bool {
+        AXIsProcessTrusted()
+    }
+
+    @discardableResult
+    static func requestAccessibilityAccess() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        log.info("Requesting Accessibility via AXIsProcessTrustedWithOptions(prompt: true)")
+        let options: CFDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    // Aliases for the previous post-event-only naming. CGEvent.post is now
+    // governed by the same Accessibility TCC service so the underlying
+    // implementation is identical.
+    static var hasPostEventAccess: Bool { hasAccessibilityAccess }
+    @discardableResult
+    static func requestPostEventAccess() -> Bool { requestAccessibilityAccess() }
+    static func postEventStatus() -> Status { accessibilityStatus() }
 
     // MARK: - Recovery utilities
 
@@ -129,29 +128,31 @@ enum MacInputPermission {
     @MainActor
     @discardableResult
     static func performOneTimeLegacyTCCMigrationIfNeeded(microphoneGranted: Bool) -> Bool {
-        let key = "waisayTCCLegacyMigrationV2Done"
+        // Bumped to V3: pre-V3 builds required both Input Monitoring and
+        // Accessibility; we now only require Accessibility (NSEvent global
+        // monitor + CGEvent.post are governed by the same TCC service on
+        // macOS 11+). The migration always cleans the orphaned ListenEvent
+        // entry from prior installs so System Settings → Privacy & Security
+        // → Input Monitoring stops showing a stale WaiSay row.
+        let key = "waisayTCCLegacyMigrationV3Done"
         guard !UserDefaults.standard.bool(forKey: key) else { return false }
 
         let accessibilityGranted = AXIsProcessTrusted()
-        let inputMonitoringGranted = listenEventStatus() == .granted
-
-        if microphoneGranted && accessibilityGranted && inputMonitoringGranted {
-            UserDefaults.standard.set(true, forKey: key)
-            log.info("TCC legacy migration: all permissions already granted; marking done without reset")
-            return false
-        }
 
         guard let bundleId = Bundle.main.bundleIdentifier else {
             UserDefaults.standard.set(true, forKey: key)
             return false
         }
 
-        var servicesToReset: [String] = []
+        // Always clear the legacy ListenEvent row (we no longer use it).
+        // Reset Microphone / Accessibility only if currently denied — keeping
+        // valid grants intact when Sparkle updates a user from a working
+        // post-V2 state.
+        var servicesToReset = ["ListenEvent"]
         if !microphoneGranted { servicesToReset.append("Microphone") }
-        if !inputMonitoringGranted { servicesToReset.append("ListenEvent") }
         if !accessibilityGranted { servicesToReset.append("Accessibility") }
 
-        log.info("TCC legacy migration: clearing stale entries for services [\(servicesToReset.joined(separator: ","), privacy: .public)] on \(bundleId, privacy: .public)")
+        log.info("TCC legacy migration V3: clearing services [\(servicesToReset.joined(separator: ","), privacy: .public)] on \(bundleId, privacy: .public)")
 
         var didActuallyReset = false
         for service in servicesToReset {
@@ -172,7 +173,10 @@ enum MacInputPermission {
         }
 
         UserDefaults.standard.set(true, forKey: key)
-        return didActuallyReset
+        // Relaunch only if Mic or Accessibility was reset — the legacy
+        // ListenEvent reset on its own does not affect any running API.
+        let appLevelReset = !microphoneGranted || !accessibilityGranted
+        return didActuallyReset && appLevelReset
     }
 
     /// Spawn a fresh instance of the running app and terminate the current
@@ -195,10 +199,12 @@ enum MacInputPermission {
         }
     }
 
-    /// Reset TCC entries for this app's bundle id across the three permissions
-    /// we care about, then ask the caller to relaunch. Spawning `tccutil`
-    /// requires the app to be unsandboxed (which WaiSay always is now). This is
-    /// the most thorough recovery for stale ACLs after cdhash drift.
+    /// Reset TCC entries for this app's bundle id across the permissions we
+    /// use today (Accessibility, Microphone) plus the legacy ListenEvent
+    /// service that earlier WaiSay versions required for `CGEventTap`.
+    /// Cleaning ListenEvent here removes the orphaned WaiSay row from
+    /// System Settings → Privacy & Security → Input Monitoring on machines
+    /// that were upgraded from a pre-NSEvent-monitor build.
     @discardableResult
     static func resetTCCEntries() -> Bool {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
@@ -220,83 +226,6 @@ enum MacInputPermission {
             }
         }
         return allOK
-    }
-
-    static var hasListenEventAccess: Bool {
-        listenEventStatus() == .granted
-    }
-
-    @discardableResult
-    static func requestListenEventAccess() -> Bool {
-        if listenEventStatus() == .granted {
-            return true
-        }
-
-        log.info("Requesting Input Monitoring listen-event access")
-        if CGRequestListenEventAccess() {
-            return true
-        }
-
-        return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-    }
-
-    /// Functional probe: install a listen-only event tap and immediately disable
-    /// + invalidate it. Returns `true` only if the kernel actually let us see
-    /// events. This is the same trick used by other dictation utilities to
-    /// detect stale TCC grants.
-    private static func canCreateListenOnlyTap() -> Bool {
-        let mask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue)
-        let probe = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: { _, _, event, _ in Unmanaged.passUnretained(event) },
-            userInfo: nil
-        )
-        guard let probe else { return false }
-        CGEvent.tapEnable(tap: probe, enable: false)
-        CFMachPortInvalidate(probe)
-        return true
-    }
-
-    // MARK: - Post events (Accessibility)
-
-    static func postEventStatus() -> Status {
-        let axTrusted = AXIsProcessTrusted()
-        if axTrusted {
-            return .granted
-        }
-
-        // AX is the live source of truth for the Accessibility / post-event
-        // permission. If the kernel cache disagrees, the entry exists but is
-        // stale — typically the user toggled it while the app was running, or
-        // the bundle was re-signed and the cdhash drifted.
-        let preflight = CGPreflightPostEventAccess()
-        let iohid = IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted
-        if preflight || iohid {
-            return .staleNeedsRestart
-        }
-
-        return .denied
-    }
-
-    static var hasPostEventAccess: Bool {
-        postEventStatus() == .granted
-    }
-
-    @discardableResult
-    static func requestPostEventAccess() -> Bool {
-        if postEventStatus() == .granted {
-            return true
-        }
-
-        log.info("Requesting Accessibility/post-event access")
-        if CGRequestPostEventAccess() {
-            return true
-        }
-
-        return IOHIDRequestAccess(kIOHIDRequestTypePostEvent)
     }
 }
 
@@ -396,37 +325,44 @@ final class GlobalHotkeyManager: ObservableObject {
     private var lastTapTime: Date?
     private let doubleTapInterval: TimeInterval = 0.4
 
-    // CGEventTap resources for global hold-to-talk monitoring.
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    // NSEvent global monitor (Accessibility-gated) — sees keystrokes in
+    // OTHER apps. Read-only by Apple's design; for modifier-key push-to-talk
+    // we only need detection, not consumption. Replaces the previous
+    // CGEventTap path which required the separate Input Monitoring TCC
+    // permission.
+    private var globalFlagsMonitor: Any?
+    private var globalKeyMonitor: Any?
 
-    // Local monitors for app-focused keyboard handling.
+    // Local monitors for app-focused keyboard handling (no permission
+    // required — receive only events delivered to our process).
     private var localFlagsMonitor: Any?
     private var localKeyMonitor: Any?
 
     private var isRunning = false
 
-    // MARK: - Input Monitoring Permission
+    // MARK: - Accessibility Permission
 
-    /// Check if Input Monitoring permission is granted
-    static var hasInputMonitoringPermission: Bool {
-        MacInputPermission.hasListenEventAccess
+    /// Check if Accessibility permission is granted (covers both global
+    /// keyboard monitoring and CGEvent.post for ⌘V paste).
+    static var hasAccessibilityPermission: Bool {
+        MacInputPermission.hasAccessibilityAccess
     }
 
-    /// Request Input Monitoring permission — shows the system prompt
+    /// Request Accessibility permission — shows the system prompt and/or
+    /// opens System Settings → Privacy & Security → Accessibility.
     @discardableResult
-    static func requestInputMonitoringPermission() -> Bool {
-        MacInputPermission.requestListenEventAccess()
+    static func requestAccessibilityPermission() -> Bool {
+        MacInputPermission.requestAccessibilityAccess()
     }
 
     func start() {
         if isRunning {
-            installEventTapIfPossible()
+            installGlobalMonitorIfPossible()
             return
         }
 
         isRunning = true
-        installEventTapIfPossible()
+        installGlobalMonitorIfPossible()
 
         installLocalMonitorsIfNeeded()
 
@@ -439,80 +375,47 @@ final class GlobalHotkeyManager: ObservableObject {
         holdTimer?.cancel()
         holdTimer = nil
 
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            if let source = runLoopSource {
-                CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-            }
-        }
-        eventTap = nil
-        runLoopSource = nil
-
+        if let m = globalFlagsMonitor { NSEvent.removeMonitor(m) }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
+        globalFlagsMonitor = nil
+        globalKeyMonitor = nil
         localFlagsMonitor = nil
         localKeyMonitor = nil
 
         log.info("Hotkey monitoring stopped")
     }
 
-    // MARK: - Event Handling
-
-    /// Called from CGEventTap callback (on main thread)
-    func handleCGEvent(type: CGEventType, event: CGEvent) {
-        if type == .flagsChanged {
-            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            let nsFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
-            handleFlagsChanged(keyCode: keyCode, flags: nsFlags)
-        } else if type == .keyDown {
-            if isHotkeyHeld {
-                otherKeyPressed = true
-            }
-        }
-    }
-
-    func reenableEventTapIfNeeded() {
-        guard let eventTap else { return }
-        CGEvent.tapEnable(tap: eventTap, enable: true)
-        log.info("CGEventTap re-enabled after system disable")
-    }
-
     func refreshAfterPermissionChange() {
         guard isRunning else { return }
-        installEventTapIfPossible()
+        installGlobalMonitorIfPossible()
     }
 
-    private func installEventTapIfPossible() {
-        guard eventTap == nil else { return }
-        guard Self.hasInputMonitoringPermission else {
-            log.warning("Input Monitoring permission missing; global event tap not installed")
+    private func installGlobalMonitorIfPossible() {
+        guard globalFlagsMonitor == nil else { return }
+        guard Self.hasAccessibilityPermission else {
+            log.warning("Accessibility permission missing; global hotkey monitor not installed")
             return
         }
 
-        // Create CGEventTap for global monitoring (requires Input Monitoring, not Accessibility)
-        let eventMask: CGEventMask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
-
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: eventMask,
-            callback: globalEventCallback,
-            userInfo: refcon
-        )
-
-        guard let tap else {
-            log.warning("Failed to create CGEventTap despite Input Monitoring preflight success")
-            return
+        // .flagsChanged covers all modifier-only hotkeys (rightOption, fn, etc).
+        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            DispatchQueue.main.async {
+                self?.handleFlagsChanged(keyCode: event.keyCode, flags: event.modifierFlags)
+            }
         }
 
-        eventTap = tap
-        let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
-        runLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        log.info("CGEventTap started (\(self.hotkey.label))")
+        // .keyDown so we can mark "another key was pressed during the hold"
+        // and abort push-to-talk (user typed a real shortcut, not dictation).
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.isHotkeyHeld else { return }
+                self.otherKeyPressed = true
+            }
+        }
+
+        log.info("Global key monitor installed (\(self.hotkey.label))")
     }
 
     private func installLocalMonitorsIfNeeded() {
@@ -643,37 +546,9 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     deinit {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
+        if let m = globalFlagsMonitor { NSEvent.removeMonitor(m) }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
         if let m = localFlagsMonitor { NSEvent.removeMonitor(m) }
         if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
     }
-}
-
-// MARK: - CGEventTap Callback (C function)
-
-private func globalEventCallback(
-    proxy: CGEventTapProxy,
-    type: CGEventType,
-    event: CGEvent,
-    refcon: UnsafeMutableRawPointer?
-) -> Unmanaged<CGEvent>? {
-    guard let refcon else { return nil }
-
-    // Handle tap disabled by system (re-enable)
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
-        DispatchQueue.main.async {
-            manager.reenableEventTapIfNeeded()
-        }
-        return Unmanaged.passUnretained(event)
-    }
-
-    let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
-    DispatchQueue.main.async {
-        manager.handleCGEvent(type: type, event: event)
-    }
-
-    return Unmanaged.passUnretained(event)
 }

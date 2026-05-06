@@ -171,8 +171,7 @@ enum MacUITestFixtures {
 #if DEBUG
 struct MacPermissionTestingSnapshot {
     let hasMicrophonePermission: Bool
-    let inputMonitoringStatus: MacInputPermission.Status
-    let pasteStatus: MacInputPermission.Status
+    let accessibilityStatus: MacInputPermission.Status
 }
 
 enum MacPermissionTesting {
@@ -185,26 +184,20 @@ enum MacPermissionTesting {
         case "missing":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: false,
-                inputMonitoringStatus: .denied,
-                pasteStatus: .denied
+                accessibilityStatus: .denied
             )
-        case "needs_restart_input":
+        case "needs_restart_accessibility", "needs_restart_paste", "needs_restart_input":
+            // Legacy aliases (the latter two referred to TCC services that
+            // the app no longer requires individually). All map to the
+            // single Accessibility-stale state under the unified model.
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                inputMonitoringStatus: .staleNeedsRestart,
-                pasteStatus: .granted
-            )
-        case "needs_restart_paste":
-            return MacPermissionTestingSnapshot(
-                hasMicrophonePermission: true,
-                inputMonitoringStatus: .granted,
-                pasteStatus: .staleNeedsRestart
+                accessibilityStatus: .staleNeedsRestart
             )
         case "all_granted":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                inputMonitoringStatus: .granted,
-                pasteStatus: .granted
+                accessibilityStatus: .granted
             )
         default:
             return nil
