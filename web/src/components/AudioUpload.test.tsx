@@ -61,7 +61,7 @@ describe("AudioUpload", () => {
 
     await waitFor(() => {
       expect(mockCreateRecording).toHaveBeenCalledWith({
-        title: "meeting",
+        title: "",
         type: "note",
         language: "multi",
       });
