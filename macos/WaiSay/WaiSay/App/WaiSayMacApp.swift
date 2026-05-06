@@ -109,6 +109,11 @@ struct WaiSayMacApp: App {
                     NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+                // Opening Settings while recording swaps the detail column
+                // and tears down the live recording view, killing the audio
+                // task. Block the shortcut + menu item during recording so
+                // users can't accidentally lose the take.
+                .disabled(isRecordingActivityVisible)
 
                 Divider()
                 Button("Check for Updates…") {
@@ -183,10 +188,24 @@ final class MacPresentationCoordinator {
     static let shared = MacPresentationCoordinator()
     static let mainWindowID = "main"
 
+    private let closeInterceptor = MainWindowCloseInterceptor()
+
     private init() {}
 
     func mainWindowDidAppear() {
         setRegularActivationPolicy()
+        attachCloseInterceptorToMainWindow()
+    }
+
+    /// Find the SwiftUI-managed main NSWindow and route close attempts
+    /// through `MainWindowCloseInterceptor`. When the "Show Dock icon after
+    /// closing main window" toggle is ON the interceptor hides the window
+    /// instead of letting it close — macOS hides the dock icon for any app
+    /// without visible windows even with `.regular` policy, so we have to
+    /// keep at least one window alive.
+    private func attachCloseInterceptorToMainWindow() {
+        guard let window = visibleMainWindows.first else { return }
+        closeInterceptor.attach(to: window)
     }
 
     func mainWindowDidClose() {
@@ -259,6 +278,49 @@ final class MacPresentationCoordinator {
     }
 }
 
+/// NSWindowDelegate proxy that intercepts the main window's close attempts.
+/// When `showDockIconWhenMainWindowClosed` is enabled we hide the window via
+/// `orderOut` instead of letting it actually close — this keeps the app in
+/// the dock (macOS hides the dock icon for any windowless app even with
+/// `.regular` activation policy).
+///
+/// Forwards every other delegate call to the original SwiftUI-managed
+/// delegate so we don't break SwiftUI's own bookkeeping.
+@MainActor
+final class MainWindowCloseInterceptor: NSObject, NSWindowDelegate {
+    private weak var attachedWindow: NSWindow?
+    private weak var originalDelegate: NSWindowDelegate?
+
+    func attach(to window: NSWindow) {
+        guard attachedWindow !== window else { return }
+        if let existing = window.delegate, !(existing is MainWindowCloseInterceptor) {
+            originalDelegate = existing
+        }
+        window.delegate = self
+        attachedWindow = window
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if MacPresentationSettings.showDockIconWhenMainWindowClosed() {
+            sender.orderOut(nil)
+            return false
+        }
+        return originalDelegate?.windowShouldClose?(sender) ?? true
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        if super.responds(to: aSelector) { return true }
+        return originalDelegate?.responds(to: aSelector) ?? false
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        if let original = originalDelegate, original.responds(to: aSelector) {
+            return original
+        }
+        return super.forwardingTarget(for: aSelector)
+    }
+}
+
 @MainActor
 final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -290,6 +352,15 @@ final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
+            // Re-show the main window if it was hidden via orderOut(_:) by
+            // MainWindowCloseInterceptor (toggle ON close path). If no
+            // window is hidden, fall through and let SwiftUI open a new one.
+            for window in NSApp.windows where window.title == "WaiSay" && !window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                MacPresentationCoordinator.shared.mainWindowDidAppear()
+                return false
+            }
             MacPresentationCoordinator.shared.mainWindowDidAppear()
         }
         return true

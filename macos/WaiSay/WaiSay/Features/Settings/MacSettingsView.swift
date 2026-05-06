@@ -142,17 +142,14 @@ struct MacSettingsView: View {
             // MARK: - Dictation Settings
 
             Section {
-                Toggle("Enable Dictation", isOn: Binding(
-                    get: { dictationManager.isFeatureEnabled },
-                    set: { enabled in
-                        dictationManager.updateEnabled(enabled)
+                Toggle("Enable Dictation", isOn: $dictationManager.isFeatureEnabled)
+                    .font(Typography.body)
+                    .onChange(of: dictationManager.isFeatureEnabled) { _, enabled in
                         refreshPermissions()
                         if enabled, !dictationPermissionsReady {
                             startPermissionPolling()
                         }
                     }
-                ))
-                .font(Typography.body)
 
                 Picker("Push to talk", selection: Binding(
                     get: { dictationManager.selectedHotkey },

@@ -246,8 +246,8 @@ public actor WebSocketManager {
     @discardableResult
     public func finishStreaming(timeout: Duration = .seconds(5)) async throws -> Bool {
         try await sendEnd()
-        let minimumWaitUntil = reconnectClock.now + .milliseconds(350)
-        let quietWindow: Duration = .milliseconds(750)
+        let minimumWaitUntil = reconnectClock.now + .milliseconds(150)
+        let quietWindow: Duration = .milliseconds(350)
         let deadline = reconnectClock.now + timeout
 
         while reconnectClock.now < deadline {

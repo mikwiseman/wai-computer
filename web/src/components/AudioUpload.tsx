@@ -42,8 +42,9 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
     setProgress("Creating recording...");
 
     try {
-      const title = file.name.replace(/\.[^.]+$/, "");
-      const recording = await createRecording({ title, type: "note", language: "multi" });
+      // Pass an empty title so the backend auto-generates one from the
+      // transcript content instead of using the filename verbatim.
+      const recording = await createRecording({ title: "", type: "note", language: "multi" });
 
       setProgress("Uploading audio...");
       const detail = await uploadAudio(recording.id, file);

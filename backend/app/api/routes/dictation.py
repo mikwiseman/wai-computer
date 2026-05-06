@@ -53,7 +53,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         client = _get_anthropic_client()
 
         message = await client.messages.create(
-            model=settings.anthropic_model,
+            model=settings.anthropic_dictation_model,
             max_tokens=4096,
             messages=[
                 {
