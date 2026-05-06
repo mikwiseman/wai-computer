@@ -107,6 +107,69 @@
       "max_wer": 0.0,
       "max_latency_ms": 2500,
       "expect_empty_transcript": true
+    },
+    {
+      "id": "core_one_word_en",
+      "category": "minimal_input",
+      "language": "en",
+      "voice": "Dennis",
+      "text": "Save.",
+      "max_wer": 0.20,
+      "max_latency_ms": 1500
+    },
+    {
+      "id": "filler_words_en",
+      "category": "filler_words",
+      "language": "en",
+      "voice": "Sarah",
+      "text": "Um, so, like, send the email to John tomorrow morning.",
+      "max_wer": 0.30,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "stutter_repeat_en",
+      "category": "disfluency",
+      "language": "en",
+      "voice": "Brandon",
+      "text": "I want to to send a message about the new feature.",
+      "max_wer": 0.20,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "url_dictation_en",
+      "category": "url_email",
+      "language": "en",
+      "voice": "Alex",
+      "text": "Go to github dot com slash anthropic slash claude code.",
+      "max_wer": 0.50,
+      "max_latency_ms": 2500
+    },
+    {
+      "id": "apostrophe_contraction_en",
+      "category": "punctuation_edge",
+      "language": "en",
+      "voice": "Bianca",
+      "text": "Schedule O'Brien's meeting for next Friday afternoon.",
+      "max_wer": 0.25,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "tech_jargon_en",
+      "category": "jargon",
+      "language": "en",
+      "voice": "Dennis",
+      "text": "Run npm install with the save dev flag and then run the test suite.",
+      "max_wer": 0.30,
+      "max_latency_ms": 2500
+    },
+    {
+      "id": "medical_terms_en",
+      "category": "jargon",
+      "language": "en",
+      "voice": "Bianca",
+      "text": "Schedule a follow up for the patient with chronic obstructive pulmonary disease.",
+      "max_wer": 0.30,
+      "max_latency_ms": 2500
     }
   ]
 }
