@@ -6,6 +6,7 @@ import Sparkle
 extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
     static let showNewRecording = Notification.Name("showNewRecording")
+    static let waisayIncomingURL = Notification.Name("waisayIncomingURL")
 }
 
 @main
@@ -64,6 +65,12 @@ struct WaiSayMacApp: App {
                     }
                 }
                 .onOpenURL { url in
+                    Task { await appState.handleIncomingURL(url) }
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: .waisayIncomingURL)
+                ) { notification in
+                    guard let url = notification.object as? URL else { return }
                     Task { await appState.handleIncomingURL(url) }
                 }
                 .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
@@ -336,6 +343,13 @@ final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
         let isUITestEnvironment = ProcessInfo.processInfo.environment["WAI_ENABLE_UI_TEST_MODE"] == "1"
         guard !isUITestEnvironment else { return }
 
+        // Re-register the .app with LaunchServices on every launch. After
+        // a Sparkle update macOS keeps the previous binary's `waisay://`
+        // URL scheme handler cached, so magic-link clicks open the page
+        // but the running app never receives the URL. Forcing a re-register
+        // updates the bundle hash that LaunchServices routes to.
+        reregisterWithLaunchServices()
+
         let microphoneGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let needsRelaunch = MacInputPermission.performOneTimeLegacyTCCMigrationIfNeeded(
             microphoneGranted: microphoneGranted
@@ -345,9 +359,40 @@ final class WaiSayAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func reregisterWithLaunchServices() {
+        let bundleURL = Bundle.main.bundleURL
+        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        guard FileManager.default.isExecutableFile(atPath: lsregister) else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: lsregister)
+        process.arguments = ["-f", bundleURL.path]
+        process.standardOutput = nil
+        process.standardError = nil
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            NSLog("[AppLifecycle] lsregister failed: %@", "\(error)")
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         MacPresentationCoordinator.shared.mainWindowDidClose()
         return false
+    }
+
+    /// Canonical macOS URL handler — fires reliably for `waisay://` links
+    /// even when the app is already running. SwiftUI's `.onOpenURL` modifier
+    /// is unreliable for already-running apps (the scene receives the URL
+    /// only on launch in some macOS releases). We forward to MacAppState via
+    /// NotificationCenter so we don't need a global pointer to it.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            NotificationCenter.default.post(
+                name: .waisayIncomingURL,
+                object: url
+            )
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
