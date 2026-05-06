@@ -276,6 +276,14 @@ final class GlobalHotkeyManager: ObservableObject {
         didSet { log.info("Hotkey changed to \(self.hotkey.label)") }
     }
 
+    /// Optional separate hotkey that toggles hands-free mode on a single tap.
+    /// When `nil`, hands-free still works via double-tap of `hotkey` (legacy).
+    var handsFreeHotkey: DictationHotkey? {
+        didSet { log.info("Hands-free hotkey: \(self.handsFreeHotkey?.label ?? "double-tap of push-to-talk")") }
+    }
+
+    private var handsFreeKeyHeld = false
+
     /// How long the key must be held before starting push-to-talk (ms)
     private let holdThreshold: TimeInterval = 0.25
 
@@ -428,8 +436,28 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
-        let isTargetKey = isHotkeyEvent(keyCode: keyCode, flags: flags)
+        // 1. If a dedicated hands-free hotkey is configured and is being
+        //    pressed, fire onHandsFreeToggle on the press (not on hold).
+        //    Distinct from push-to-talk: single press = toggle.
+        if let handsFreeHotkey, handsFreeHotkey != hotkey {
+            let pressed = isHotkeyEvent(
+                keyCode: keyCode,
+                flags: flags,
+                hotkey: handsFreeHotkey
+            )
+            if pressed && !handsFreeKeyHeld {
+                handsFreeKeyHeld = true
+                log.info("Hands-free hotkey pressed — toggling")
+                onHandsFreeToggle?()
+                return
+            } else if !pressed && handsFreeKeyHeld {
+                handsFreeKeyHeld = false
+                return
+            }
+        }
 
+        // 2. Push-to-talk hotkey
+        let isTargetKey = isHotkeyEvent(keyCode: keyCode, flags: flags)
         if isTargetKey && !isHotkeyHeld {
             hotkeyDown()
         } else if !isTargetKey && isHotkeyHeld {
@@ -437,9 +465,12 @@ final class GlobalHotkeyManager: ObservableObject {
         }
     }
 
-    private func isHotkeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+    private func isHotkeyEvent(
+        keyCode: UInt16,
+        flags: NSEvent.ModifierFlags,
+        hotkey: DictationHotkey
+    ) -> Bool {
         let clean = flags.intersection(.deviceIndependentFlagsMask)
-
         switch hotkey {
         case .rightOption:
             return keyCode == UInt16(kVK_RightOption) && clean.contains(.option)
@@ -452,6 +483,10 @@ final class GlobalHotkeyManager: ObservableObject {
         case .controlOption:
             return clean.contains(.control) && clean.contains(.option)
         }
+    }
+
+    private func isHotkeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        isHotkeyEvent(keyCode: keyCode, flags: flags, hotkey: hotkey)
     }
 
     private func hotkeyDown() {

@@ -31,11 +31,19 @@ final class DictationManager: ObservableObject {
     // MARK: - Settings (persisted via UserDefaults)
 
     @AppStorage("dictationHotkey") var hotkeyChoice: String = DictationHotkey.rightOption.rawValue
+    @AppStorage("dictationHandsFreeHotkey") var handsFreeHotkeyChoice: String = ""
     @AppStorage("dictationAICleanup") var aiCleanupEnabled: Bool = true
     @AppStorage("dictationEnabled") private var dictationEnabledPreference: Bool = false
 
     var selectedHotkey: DictationHotkey {
         DictationHotkey(rawValue: hotkeyChoice) ?? .rightOption
+    }
+
+    /// Optional dedicated hotkey for toggling hands-free mode. Empty string
+    /// stored = use legacy double-tap of `selectedHotkey` instead.
+    var selectedHandsFreeHotkey: DictationHotkey? {
+        guard !handsFreeHotkeyChoice.isEmpty else { return nil }
+        return DictationHotkey(rawValue: handsFreeHotkeyChoice)
     }
 
     var isFeatureEnabled: Bool {
@@ -106,12 +114,20 @@ final class DictationManager: ObservableObject {
         }
     }
 
-    /// Update hotkey from settings
+    /// Update push-to-talk hotkey from settings
     func updateHotkey(_ hotkey: DictationHotkey) {
         hotkeyChoice = hotkey.rawValue
         hotkeyManager.hotkey = hotkey
         refreshPermissionState()
-        log.info("Hotkey updated to \(hotkey.label)")
+        log.info("Push-to-talk hotkey updated to \(hotkey.label)")
+    }
+
+    /// Update hands-free hotkey from settings. Pass `nil` to fall back to the
+    /// legacy double-tap of the push-to-talk key.
+    func updateHandsFreeHotkey(_ hotkey: DictationHotkey?) {
+        handsFreeHotkeyChoice = hotkey?.rawValue ?? ""
+        hotkeyManager.handsFreeHotkey = hotkey
+        refreshPermissionState()
     }
 
     func refreshPermissionState() {
@@ -518,6 +534,7 @@ final class DictationManager: ObservableObject {
 
     private func applyHotkeyAvailability() {
         hotkeyManager.hotkey = selectedHotkey
+        hotkeyManager.handsFreeHotkey = selectedHandsFreeHotkey
         let shouldEnable = isConfigured && dictationEnabledPreference
         isEnabled = shouldEnable
         if shouldEnable {
