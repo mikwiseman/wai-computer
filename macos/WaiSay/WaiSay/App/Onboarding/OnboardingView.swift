@@ -372,29 +372,6 @@ private struct OnboardingPermissionSlide: View {
                 microphoneRow
                 inputMonitoringRow
                 automaticPasteRow
-
-                HStack {
-                    Toggle("Enable Dictation", isOn: Binding(
-                        get: { dictationManager.isFeatureEnabled },
-                        set: { dictationManager.updateEnabled($0) }
-                    ))
-                    .font(Typography.body)
-
-                    Spacer()
-
-                    Picker("Hotkey", selection: Binding(
-                        get: { dictationManager.selectedHotkey },
-                        set: { dictationManager.updateHotkey($0) }
-                    )) {
-                        ForEach(DictationHotkey.allCases) { hotkey in
-                            Text(hotkey.label).tag(hotkey)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 180)
-                    .disabled(!dictationManager.isFeatureEnabled)
-                }
-                .padding(.vertical, Spacing.sm)
             }
             .padding(Spacing.md)
             .frame(maxWidth: 560)

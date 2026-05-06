@@ -68,21 +68,6 @@ enum MacInputPermission {
         case staleNeedsRestart
     }
 
-    /// `true` when running inside an App Sandbox container.
-    ///
-    /// Apple confirms that `CGEventTap` with `.listenOnly` + Input Monitoring
-    /// permission *is* compatible with the App Sandbox (since macOS 10.15) —
-    /// it's the path WaiSay uses for the global dictation hotkey on the App
-    /// Store / TestFlight build. So the probe should work in both channels.
-    /// We keep a sandbox flag only as a *fallback*: if the probe ever fails
-    /// despite preflight saying granted, in a sandboxed build we trust the
-    /// preflight cache rather than push the user into a permanent
-    /// "Restart Required" state, since some sandbox edge cases can interfere
-    /// with the probe in ways that don't reflect the live tap.
-    static let isSandboxed: Bool = {
-        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-    }()
-
     // MARK: - Listen events (Input Monitoring)
 
     static func listenEventStatus() -> Status {
@@ -93,24 +78,49 @@ enum MacInputPermission {
             return .denied
         }
 
-        // Try the functional probe first — it's authoritative when it succeeds.
-        if canCreateListenOnlyTap() {
-            return .granted
-        }
+        // Functional probe is authoritative when it succeeds. WaiSay ships as a
+        // single Direct DMG channel (Developer ID, no sandbox), so probe failure
+        // means a real stale TCC entry — the user toggled while running, or the
+        // bundle was re-signed and cdhash drifted. A restart is the fix.
+        return canCreateListenOnlyTap() ? .granted : .staleNeedsRestart
+    }
 
-        // Probe failed even though the preflight cache claims the permission is
-        // granted. In a non-sandboxed build (Direct DMG) this is a real stale
-        // TCC entry — the user toggled the permission while the app was running
-        // or the bundle was re-signed. A restart is the only reliable fix.
-        // In a sandboxed build (App Store / TestFlight) sandbox boundaries can
-        // cause the probe to fail spuriously even when the live tap installed
-        // by `installEventTapIfPossible` succeeds, so we fall back to trusting
-        // preflight to avoid a permanent "Restart Required" loop.
-        if isSandboxed {
-            log.info("Listen-event probe failed in sandbox — trusting preflight cache")
-            return .granted
+    // MARK: - Recovery utilities
+
+    /// Reveal the running app bundle in Finder so the user can drag it onto
+    /// the "+" button in System Settings → Privacy & Security to create a
+    /// fresh TCC entry tied to the current cdhash. Works without any
+    /// entitlement and is the recommended recovery when `CGRequestListenEventAccess`
+    /// has gone silent because of a prior denied decision in `TCC.db`.
+    static func revealAppInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
+    /// Reset TCC entries for this app's bundle id across the three permissions
+    /// we care about, then ask the caller to relaunch. Spawning `tccutil`
+    /// requires the app to be unsandboxed (which WaiSay always is now). This is
+    /// the most thorough recovery for stale ACLs after cdhash drift.
+    @discardableResult
+    static func resetTCCEntries() -> Bool {
+        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
+        var allOK = true
+        for service in ["ListenEvent", "Accessibility", "Microphone"] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, bundleId]
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    log.warning("tccutil reset \(service, privacy: .public) returned \(process.terminationStatus)")
+                    allOK = false
+                }
+            } catch {
+                log.error("tccutil reset \(service, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
+                allOK = false
+            }
         }
-        return .staleNeedsRestart
+        return allOK
     }
 
     static var hasListenEventAccess: Bool {
