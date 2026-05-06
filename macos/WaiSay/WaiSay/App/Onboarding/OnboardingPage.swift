@@ -9,6 +9,17 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
+    /// Short label shown in the top breadcrumb navigation.
+    var breadcrumbLabel: String {
+        switch self {
+        case .welcome: return "Welcome"
+        case .record: return "Record"
+        case .transcribe: return "Understand"
+        case .dictate: return "Dictate"
+        case .permission: return "Permissions"
+        }
+    }
+
     struct Content {
         let eyebrow: String
         let title: String

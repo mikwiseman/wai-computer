@@ -16,18 +16,23 @@ struct PermissionBanner: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: Spacing.md) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Palette.recording)
+        HStack(alignment: .center, spacing: Spacing.md) {
+            ZStack {
+                Circle()
+                    .stroke(Color.red.opacity(0.6), lineWidth: 1.5)
+                    .frame(width: 22, height: 22)
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.red.opacity(0.9))
+            }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(Typography.headingSmall)
-                    .foregroundStyle(Palette.textPrimary)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.white)
                 Text(subtitle)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textSecondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .lineLimit(1)
             }
 
@@ -35,32 +40,44 @@ struct PermissionBanner: View {
 
             Button(action: onPrimaryTap) {
                 Text(actionLabel)
-                    .font(Typography.bodySmall.weight(.medium))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.black)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            .fill(Color.white.opacity(0.95))
+                    )
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .buttonStyle(.plain)
             .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)-action")
 
             Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.textSecondary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 22, height: 22)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
             .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)-dismiss")
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.sm + 2)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Palette.border, lineWidth: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black.opacity(0.92))
         )
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.35), radius: 22, y: 8)
         .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)")
     }
 
@@ -106,4 +123,5 @@ extension PermissionBanner.Kind {
     }
     .padding()
     .frame(width: 600)
+    .background(Color.gray.opacity(0.1))
 }
