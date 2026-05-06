@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Claude/Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
+    # Latency-optimised model for dictation cleanup. Sonnet is overkill for
+    # filler-word removal + light grammar fixes, and adds 600-1500ms of paste
+    # latency; Haiku gives the same quality on this task in a fraction of the time.
+    anthropic_dictation_model: str = "claude-haiku-4-5-20251001"
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"

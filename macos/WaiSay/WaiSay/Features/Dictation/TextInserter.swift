@@ -135,8 +135,14 @@ enum TextInserter {
             throw TextInsertionError.eventPostingPermissionDenied
         }
 
-        guard hasEventPostingPermission || requestEventPostingPermission() else {
-            log.warning("Event posting permission missing — cannot simulate paste")
+        // Pre-check WITHOUT triggering a system prompt. After a Sparkle
+        // update macOS may invalidate the previous Accessibility grant
+        // (cdhash drift) and `requestEventPostingPermission()` would surface
+        // a confusing system dialog mid-dictation. Surface the in-app
+        // permission banner instead — the user grants once, restarts WaiSay,
+        // and the next dictation completes cleanly.
+        guard hasEventPostingPermission else {
+            log.warning("Event posting permission missing — surfacing banner instead of system prompt")
             throw TextInsertionError.eventPostingPermissionDenied
         }
 

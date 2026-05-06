@@ -29,11 +29,50 @@ final class DictationManager: ObservableObject {
     @Published var error: String?
 
     // MARK: - Settings (persisted via UserDefaults)
+    //
+    // We use @Published + manual UserDefaults persistence rather than @AppStorage
+    // because @AppStorage in an ObservableObject (vs in a SwiftUI View) is known
+    // to drop writes that originate from method calls instead of property
+    // bindings — every time the user picks a hotkey or toggles "Enable
+    // Dictation" we'd lose the value on relaunch. Manual didSet is boring and
+    // bulletproof.
 
-    @AppStorage("dictationHotkey") var hotkeyChoice: String = DictationHotkey.rightOption.rawValue
-    @AppStorage("dictationHandsFreeHotkey") var handsFreeHotkeyChoice: String = ""
-    @AppStorage("dictationAICleanup") var aiCleanupEnabled: Bool = true
-    @AppStorage("dictationEnabled") private var dictationEnabledPreference: Bool = false
+    static let hotkeyDefaultsKey = "dictationHotkey"
+    static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
+    static let aiCleanupDefaultsKey = "dictationAICleanup"
+    static let enabledDefaultsKey = "dictationEnabled"
+
+    @Published var hotkeyChoice: String {
+        didSet {
+            guard hotkeyChoice != oldValue else { return }
+            UserDefaults.standard.set(hotkeyChoice, forKey: Self.hotkeyDefaultsKey)
+        }
+    }
+
+    @Published var handsFreeHotkeyChoice: String {
+        didSet {
+            guard handsFreeHotkeyChoice != oldValue else { return }
+            UserDefaults.standard.set(handsFreeHotkeyChoice, forKey: Self.handsFreeHotkeyDefaultsKey)
+        }
+    }
+
+    @Published var aiCleanupEnabled: Bool {
+        didSet {
+            guard aiCleanupEnabled != oldValue else { return }
+            UserDefaults.standard.set(aiCleanupEnabled, forKey: Self.aiCleanupDefaultsKey)
+        }
+    }
+
+    @Published var isFeatureEnabled: Bool {
+        didSet {
+            guard isFeatureEnabled != oldValue else { return }
+            UserDefaults.standard.set(isFeatureEnabled, forKey: Self.enabledDefaultsKey)
+            applyHotkeyAvailability()
+            if !isFeatureEnabled {
+                Task { await cancelDictation() }
+            }
+        }
+    }
 
     var selectedHotkey: DictationHotkey {
         DictationHotkey(rawValue: hotkeyChoice) ?? .rightOption
@@ -44,10 +83,6 @@ final class DictationManager: ObservableObject {
     var selectedHandsFreeHotkey: DictationHotkey? {
         guard !handsFreeHotkeyChoice.isEmpty else { return nil }
         return DictationHotkey(rawValue: handsFreeHotkeyChoice)
-    }
-
-    var isFeatureEnabled: Bool {
-        dictationEnabledPreference
     }
 
     // MARK: - Dependencies
@@ -84,6 +119,17 @@ final class DictationManager: ObservableObject {
     // MARK: - Lifecycle
 
     init() {
+        let defaults = UserDefaults.standard
+        self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.rightOption.rawValue
+        self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
+        // `aiCleanup` defaults to true; only treat the missing key as "true",
+        // an explicitly-stored `false` should stay `false`.
+        if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
+            self.aiCleanupEnabled = true
+        } else {
+            self.aiCleanupEnabled = defaults.bool(forKey: Self.aiCleanupDefaultsKey)
+        }
+        self.isFeatureEnabled = defaults.bool(forKey: Self.enabledDefaultsKey)
         setupHotkeyCallbacks()
     }
 
@@ -107,11 +153,7 @@ final class DictationManager: ObservableObject {
     }
 
     func updateEnabled(_ enabled: Bool) {
-        dictationEnabledPreference = enabled
-        applyHotkeyAvailability()
-        if !enabled {
-            Task { await cancelDictation() }
-        }
+        isFeatureEnabled = enabled
     }
 
     /// Update push-to-talk hotkey from settings
@@ -535,7 +577,7 @@ final class DictationManager: ObservableObject {
     private func applyHotkeyAvailability() {
         hotkeyManager.hotkey = selectedHotkey
         hotkeyManager.handsFreeHotkey = selectedHandsFreeHotkey
-        let shouldEnable = isConfigured && dictationEnabledPreference
+        let shouldEnable = isConfigured && isFeatureEnabled
         isEnabled = shouldEnable
         if shouldEnable {
             hotkeyManager.start()
