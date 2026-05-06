@@ -31,7 +31,6 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertTrue(waitForElement(app.staticTexts["Accessibility"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-grant").firstMatch, in: app, timeout: 3))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-settings").firstMatch, in: app, timeout: 3))
         // Input Monitoring is no longer required — the global hotkey monitor
         // uses NSEvent.addGlobalMonitorForEvents which is governed by the same
         // Accessibility TCC service as ⌘V paste.
@@ -92,9 +91,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         }
 
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-accessibility-restart-required").firstMatch, in: app, timeout: 3))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-settings").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-restart").firstMatch, in: app, timeout: 3))
-        XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-accessibility-recheck").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-accessibility-grant").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch.exists)
 

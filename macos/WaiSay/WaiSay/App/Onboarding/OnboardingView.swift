@@ -65,7 +65,6 @@ struct OnboardingView: View {
                             accessibilityStatus: accessibilityStatus,
                             requestMicrophonePermission: requestMicrophonePermission,
                             openAccessibilitySettings: openAccessibilitySettings,
-                            recheckPermissions: refreshPermissions,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                         )
                         .environmentObject(dictationManager)
@@ -359,10 +358,7 @@ private struct OnboardingPermissionSlide: View {
     let accessibilityStatus: MacInputPermission.Status
     let requestMicrophonePermission: () -> Void
     let openAccessibilitySettings: () -> Void
-    let recheckPermissions: () -> Void
     let restartForPermissionRefresh: () -> Void
-
-    private var content: OnboardingPage.Content { OnboardingPage.permission.content }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -442,48 +438,25 @@ private struct OnboardingPermissionSlide: View {
             status: hasMicrophonePermission ? .granted : .denied,
             identifierBase: "onboarding-permission-microphone",
             primaryAction: PermissionRow.Action(label: "Grant", identifier: "grant", run: requestMicrophonePermission),
-            secondaryAction: nil,
-            recheckAction: nil,
             restartAction: nil
         )
     }
 
-    private struct PermissionActions {
-        var primary: PermissionRow.Action?
-        var secondary: PermissionRow.Action?
-        var recheck: PermissionRow.Action?
-        var restart: PermissionRow.Action?
-    }
-
-    private func accessibilityActions() -> PermissionActions {
-        switch accessibilityStatus {
-        case .granted:
-            return PermissionActions()
-        case .denied:
-            return PermissionActions(
-                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openAccessibilitySettings),
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openAccessibility() })
-            )
-        case .staleNeedsRestart:
-            return PermissionActions(
-                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openAccessibility() }),
-                restart: PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
-            )
-        }
-    }
-
     @ViewBuilder
     private var accessibilityRow: some View {
-        let actions = accessibilityActions()
+        let primary: PermissionRow.Action? = accessibilityStatus == .denied
+            ? PermissionRow.Action(label: "Grant", identifier: "grant", run: openAccessibilitySettings)
+            : nil
+        let restart: PermissionRow.Action? = accessibilityStatus == .staleNeedsRestart
+            ? PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
+            : nil
         PermissionRow(
             title: "Accessibility",
             detail: "Listen for the global hotkey and paste dictated text",
             status: accessibilityStatus,
             identifierBase: "onboarding-permission-accessibility",
-            primaryAction: actions.primary,
-            secondaryAction: actions.secondary,
-            recheckAction: actions.recheck,
-            restartAction: actions.restart
+            primaryAction: primary,
+            restartAction: restart
         )
     }
 }
@@ -500,8 +473,6 @@ private struct PermissionRow: View {
     let status: MacInputPermission.Status
     let identifierBase: String
     let primaryAction: Action?
-    let secondaryAction: Action?
-    let recheckAction: Action?
     let restartAction: Action?
 
     var body: some View {

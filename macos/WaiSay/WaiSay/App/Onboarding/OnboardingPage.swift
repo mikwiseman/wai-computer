@@ -68,7 +68,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
             return Content(
                 eyebrow: "Setup",
                 title: "Set up voice access.",
-                body: "Grant Microphone for recording, Input Monitoring for the global hotkey, and Automatic Paste for text insertion.",
+                body: "Grant Microphone for recording, and Accessibility for the global hotkey and text insertion.",
                 symbol: "lock.shield",
                 useAppIcon: false
             )
