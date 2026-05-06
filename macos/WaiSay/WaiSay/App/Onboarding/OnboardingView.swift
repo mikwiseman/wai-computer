@@ -328,17 +328,16 @@ struct OnboardingView: View {
             return
         }
         #endif
-        let prompted = GlobalHotkeyManager.requestInputMonitoringPermission()
-        if !prompted {
-            MacPrivacySettings.openInputMonitoring()
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                refreshPermissions()
-                if inputMonitoringStatus != .granted {
-                    MacPrivacySettings.openInputMonitoring()
-                }
-            }
-        }
+        // `IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)` does not show
+        // an inline system dialog on macOS 14+ — Apple expects the user to
+        // drag the app onto the "+" in Settings → Privacy & Security →
+        // Input Monitoring. After a `tccutil reset` removes our prior
+        // entry from that list, there is no row to toggle. Always reveal
+        // WaiSay.app in Finder + open Settings so the drag-to-"+" gesture
+        // is one motion. (Same recovery flow the permission banner uses.)
+        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
+        MacInputPermission.revealAppInFinder()
+        MacPrivacySettings.openInputMonitoring()
     }
 
     private func openPasteSettings() {
@@ -348,17 +347,18 @@ struct OnboardingView: View {
             return
         }
         #endif
-        let prompted = TextInserter.requestEventPostingPermission()
-        if !prompted {
-            TextInserter.openEventPostingSettings()
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                refreshPermissions()
-                if pasteStatus != .granted {
-                    TextInserter.openEventPostingSettings()
-                }
-            }
-        }
+        // Accessibility's canonical prompt API is
+        // `AXIsProcessTrustedWithOptions(prompt: true)`. We were calling
+        // `CGRequestPostEventAccess` (different TCC service) which silently
+        // returns false on many macOS versions. Trigger the AX dialog, then
+        // also reveal-in-Finder + open Settings as a fallback (the dialog
+        // sometimes does not appear if a stale process-level cache exists,
+        // and the user can drag from Finder onto the "+" either way).
+        let axOptions: CFDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(axOptions)
+        _ = TextInserter.requestEventPostingPermission()
+        MacInputPermission.revealAppInFinder()
+        TextInserter.openEventPostingSettings()
     }
 
     private func startPermissionPollingIfNeeded() {
