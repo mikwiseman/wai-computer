@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "voices_by_lang": {
+    "en": ["Dennis", "Sarah", "Alex", "Bianca", "Brandon", "Ashley"],
+    "ru": ["Dmitry", "Elena", "Nikolai", "Svetlana"]
+  },
+  "scenarios": [
+    {
+      "id": "core_short_en_command",
+      "category": "core_command",
+      "language": "en",
+      "voice": "Dennis",
+      "text": "Open the recording from yesterday and summarize the main action items.",
+      "max_wer": 0.10,
+      "max_latency_ms": 1500
+    },
+    {
+      "id": "core_short_en_alt_voice",
+      "category": "core_command",
+      "language": "en",
+      "voice": "Sarah",
+      "text": "Set a reminder for nine in the morning to review the budget spreadsheet.",
+      "max_wer": 0.12,
+      "max_latency_ms": 1500
+    },
+    {
+      "id": "core_short_en_male_alt",
+      "category": "core_command",
+      "language": "en",
+      "voice": "Brandon",
+      "text": "Schedule a quick sync with the design team this afternoon.",
+      "max_wer": 0.12,
+      "max_latency_ms": 1500
+    },
+    {
+      "id": "core_short_ru_male",
+      "category": "core_command",
+      "language": "ru",
+      "voice": "Dmitry",
+      "text": "Открой последнюю запись и покажи краткое содержание главных пунктов.",
+      "max_wer": 0.20,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "core_short_ru_female",
+      "category": "core_command",
+      "language": "ru",
+      "voice": "Elena",
+      "text": "Найди все встречи на следующей неделе с командой разработки.",
+      "max_wer": 0.20,
+      "max_latency_ms": 2000
+    },
+    {
+      "id": "long_form_en_paragraph",
+      "category": "long_form",
+      "language": "en",
+      "voice": "Bianca",
+      "text": "When we were planning the next quarter we agreed on three top priorities. First, we should ship the redesigned settings page by the end of May, including the new privacy controls. Second, we need to finish the migration to the v2 transcription pipeline, which will reduce latency for live dictation. Third, we want to onboard at least five enterprise pilot customers before the team retreat in June.",
+      "max_wer": 0.10,
+      "max_latency_ms": 4000
+    },
+    {
+      "id": "numbers_punct_en",
+      "category": "numbers_punct",
+      "language": "en",
+      "voice": "Alex",
+      "text": "Email me at hello at example dot com or call four one five five five five one two three four. The deadline is March third twenty twenty six.",
+      "max_wer": 0.20,
+      "max_latency_ms": 2500
+    },
+    {
+      "id": "code_dictation_en",
+      "category": "code_dictation",
+      "language": "en",
+      "voice": "Dennis",
+      "text": "Add a new function called process underscore audio that takes a buffer and returns a transcript object.",
+      "max_wer": 0.22,
+      "max_latency_ms": 2200
+    },
+    {
+      "id": "proper_nouns_en",
+      "category": "proper_nouns",
+      "language": "en",
+      "voice": "Sarah",
+      "text": "Schedule a meeting with Mikhail Wiseman and the WaiSay team in San Francisco next Tuesday.",
+      "max_wer": 0.30,
+      "max_latency_ms": 1800
+    },
+    {
+      "id": "whisper_low_volume_en",
+      "category": "whisper_low_gain",
+      "language": "en",
+      "voice": "Ashley",
+      "text": "Send a private message to the founder about the demo tomorrow.",
+      "max_wer": 0.25,
+      "max_latency_ms": 1800
+    },
+    {
+      "id": "silence_only",
+      "category": "silence_only",
+      "language": "en",
+      "voice": "Dennis",
+      "text": "",
+      "synthesize_silence_ms": 2000,
+      "max_wer": 0.0,
+      "max_latency_ms": 2500,
+      "expect_empty_transcript": true
+    }
+  ]
+}
