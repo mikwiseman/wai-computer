@@ -7,10 +7,8 @@ struct OnboardingView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
-    @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-    @State private var hasPastePermission = TextInserter.hasEventPostingPermission
-    @State private var inputMonitoringNeedsReview = false
-    @State private var pasteNeedsReview = false
+    @State private var inputMonitoringStatus: MacInputPermission.Status = .denied
+    @State private var pasteStatus: MacInputPermission.Status = .denied
     @State private var permissionPollTimer: Timer?
 
     private let pages = OnboardingPage.allCases
@@ -63,15 +61,12 @@ struct OnboardingView: View {
                         OnboardingPermissionSlide(
                             isActive: index == currentPage,
                             hasMicrophonePermission: hasMicrophonePermission,
-                            hasInputMonitoringPermission: hasInputMonitoringPermission,
-                            hasPastePermission: hasPastePermission,
-                            inputMonitoringNeedsReview: inputMonitoringNeedsReview,
-                            pasteNeedsReview: pasteNeedsReview,
+                            inputMonitoringStatus: inputMonitoringStatus,
+                            pasteStatus: pasteStatus,
                             requestMicrophonePermission: requestMicrophonePermission,
-                            requestInputMonitoringPermission: requestInputMonitoringPermission,
-                            requestPastePermission: requestPastePermission,
                             openInputMonitoringSettings: openInputMonitoringSettings,
                             openPasteSettings: openPasteSettings,
+                            recheckPermissions: refreshPermissions,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                         )
                         .environmentObject(dictationManager)
@@ -144,7 +139,7 @@ struct OnboardingView: View {
         if permissionRestartRecommended {
             return "Restart WaiSay"
         }
-        return "Grant Missing"
+        return "Open Settings"
     }
 
     private var primaryButtonAccessibilityId: String {
@@ -186,12 +181,13 @@ struct OnboardingView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        hasMicrophonePermission && hasInputMonitoringPermission && hasPastePermission
+        hasMicrophonePermission &&
+            inputMonitoringStatus == .granted &&
+            pasteStatus == .granted
     }
 
     private var permissionRestartRecommended: Bool {
-        (inputMonitoringNeedsReview && !hasInputMonitoringPermission) ||
-            (pasteNeedsReview && !hasPastePermission)
+        inputMonitoringStatus == .staleNeedsRestart || pasteStatus == .staleNeedsRestart
     }
 
     private static var hasMicrophonePermission: Bool {
@@ -207,23 +203,15 @@ struct OnboardingView: View {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
-            hasInputMonitoringPermission = snapshot.hasInputMonitoringPermission
-            hasPastePermission = snapshot.hasPastePermission
-            inputMonitoringNeedsReview = snapshot.inputMonitoringNeedsReview
-            pasteNeedsReview = snapshot.pasteNeedsReview
+            inputMonitoringStatus = snapshot.inputMonitoringStatus
+            pasteStatus = snapshot.pasteStatus
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
-        hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-        hasPastePermission = TextInserter.hasEventPostingPermission
-        if hasInputMonitoringPermission {
-            inputMonitoringNeedsReview = false
-        }
-        if hasPastePermission {
-            pasteNeedsReview = false
-        }
+        inputMonitoringStatus = MacInputPermission.listenEventStatus()
+        pasteStatus = MacInputPermission.postEventStatus()
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -254,65 +242,52 @@ struct OnboardingView: View {
         }
     }
 
-    private func requestInputMonitoringPermission() {
-        startPermissionPolling()
-        inputMonitoringNeedsReview = true
-        #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return
-        }
-        #endif
-        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            refreshPermissions()
-            if !hasInputMonitoringPermission {
-                MacPrivacySettings.openInputMonitoring()
-            }
-        }
-    }
-
-    private func requestPastePermission() {
-        startPermissionPolling()
-        pasteNeedsReview = true
-        #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return
-        }
-        #endif
-        _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            refreshPermissions()
-            if !hasPastePermission {
-                TextInserter.openEventPostingSettings()
-            }
-        }
-    }
-
+    /// Single entry point for the Input Monitoring row's primary action.
+    ///
+    /// When the permission has never been requested, `requestListenEventAccess`
+    /// brings up the system consent sheet. If the user has previously denied or
+    /// the system prompt does not appear (`returns false`), we open System
+    /// Settings ourselves so the user has a clear path. We never preemptively
+    /// flip the row into the "Restart Required" state — the polling loop will
+    /// promote it via `MacInputPermission.listenEventStatus()` only when the
+    /// kernel cache and the live probe disagree.
     private func openInputMonitoringSettings() {
         startPermissionPolling()
-        inputMonitoringNeedsReview = true
         #if DEBUG
         if MacPermissionTesting.forcesMissingDictationPermissions {
             return
         }
         #endif
-        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        let prompted = GlobalHotkeyManager.requestInputMonitoringPermission()
+        if !prompted {
             MacPrivacySettings.openInputMonitoring()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                refreshPermissions()
+                if inputMonitoringStatus != .granted {
+                    MacPrivacySettings.openInputMonitoring()
+                }
+            }
         }
     }
 
     private func openPasteSettings() {
         startPermissionPolling()
-        pasteNeedsReview = true
         #if DEBUG
         if MacPermissionTesting.forcesMissingDictationPermissions {
             return
         }
         #endif
-        _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        let prompted = TextInserter.requestEventPostingPermission()
+        if !prompted {
             TextInserter.openEventPostingSettings()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                refreshPermissions()
+                if pasteStatus != .granted {
+                    TextInserter.openEventPostingSettings()
+                }
+            }
         }
     }
 
@@ -339,10 +314,10 @@ struct OnboardingView: View {
     private func requestNextMissingPermission() {
         if !hasMicrophonePermission {
             requestMicrophonePermission()
-        } else if !hasInputMonitoringPermission {
-            requestInputMonitoringPermission()
-        } else if !hasPastePermission {
-            requestPastePermission()
+        } else if inputMonitoringStatus != .granted {
+            openInputMonitoringSettings()
+        } else if pasteStatus != .granted {
+            openPasteSettings()
         }
     }
 }
@@ -352,15 +327,12 @@ private struct OnboardingPermissionSlide: View {
 
     let isActive: Bool
     let hasMicrophonePermission: Bool
-    let hasInputMonitoringPermission: Bool
-    let hasPastePermission: Bool
-    let inputMonitoringNeedsReview: Bool
-    let pasteNeedsReview: Bool
+    let inputMonitoringStatus: MacInputPermission.Status
+    let pasteStatus: MacInputPermission.Status
     let requestMicrophonePermission: () -> Void
-    let requestInputMonitoringPermission: () -> Void
-    let requestPastePermission: () -> Void
     let openInputMonitoringSettings: () -> Void
     let openPasteSettings: () -> Void
+    let recheckPermissions: () -> Void
     let restartForPermissionRefresh: () -> Void
 
     private var content: OnboardingPage.Content { OnboardingPage.permission.content }
@@ -397,35 +369,9 @@ private struct OnboardingPermissionSlide: View {
             .frame(maxWidth: 520)
 
             VStack(spacing: Spacing.sm) {
-                permissionRow(
-                    title: "Microphone",
-                    detail: "Record meetings and dictation",
-                    isGranted: hasMicrophonePermission,
-                    identifierBase: "onboarding-permission-microphone",
-                    grantAction: requestMicrophonePermission
-                )
-
-                permissionRow(
-                    title: "Input Monitoring",
-                    detail: "Use the hotkey from any app",
-                    isGranted: hasInputMonitoringPermission,
-                    needsReview: inputMonitoringNeedsReview,
-                    identifierBase: "onboarding-permission-input-monitoring",
-                    grantAction: requestInputMonitoringPermission,
-                    settingsAction: openInputMonitoringSettings,
-                    restartAction: restartForPermissionRefresh
-                )
-
-                permissionRow(
-                    title: "Automatic Paste",
-                    detail: "Insert dictated text automatically",
-                    isGranted: hasPastePermission,
-                    needsReview: pasteNeedsReview,
-                    identifierBase: "onboarding-permission-automatic-paste",
-                    grantAction: requestPastePermission,
-                    settingsAction: openPasteSettings,
-                    restartAction: restartForPermissionRefresh
-                )
+                microphoneRow
+                inputMonitoringRow
+                automaticPasteRow
 
                 HStack {
                     Toggle("Enable Dictation", isOn: Binding(
@@ -465,28 +411,119 @@ private struct OnboardingPermissionSlide: View {
     }
 
     private var permissionBody: String {
-        if (inputMonitoringNeedsReview && !hasInputMonitoringPermission) ||
-            (pasteNeedsReview && !hasPastePermission) {
-            return "After you turn WaiSay on in System Settings, restart WaiSay so macOS applies voice access to this running app."
+        if inputMonitoringStatus == .staleNeedsRestart || pasteStatus == .staleNeedsRestart {
+            return "WaiSay is enabled in System Settings. Restart WaiSay so macOS applies the new permission to this running app."
         }
         return content.body
     }
 
     @ViewBuilder
-    private func permissionRow(
-        title: String,
-        detail: String,
-        isGranted: Bool,
-        needsReview: Bool = false,
-        identifierBase: String,
-        grantAction: @escaping () -> Void,
-        settingsAction: (() -> Void)? = nil,
-        restartAction: (() -> Void)? = nil
-    ) -> some View {
+    private var microphoneRow: some View {
+        PermissionRow(
+            title: "Microphone",
+            detail: "Record meetings and dictation",
+            status: hasMicrophonePermission ? .granted : .denied,
+            identifierBase: "onboarding-permission-microphone",
+            primaryAction: PermissionRow.Action(label: "Grant", identifier: "grant", run: requestMicrophonePermission),
+            secondaryAction: nil,
+            recheckAction: nil,
+            restartAction: nil
+        )
+    }
+
+    private struct PermissionActions {
+        var primary: PermissionRow.Action?
+        var secondary: PermissionRow.Action?
+        var recheck: PermissionRow.Action?
+        var restart: PermissionRow.Action?
+    }
+
+    private func inputMonitoringActions() -> PermissionActions {
+        switch inputMonitoringStatus {
+        case .granted:
+            return PermissionActions()
+        case .denied:
+            return PermissionActions(
+                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openInputMonitoringSettings),
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openInputMonitoring() })
+            )
+        case .staleNeedsRestart:
+            return PermissionActions(
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { MacPrivacySettings.openInputMonitoring() }),
+                restart: PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
+            )
+        }
+    }
+
+    private func pasteActions() -> PermissionActions {
+        switch pasteStatus {
+        case .granted:
+            return PermissionActions()
+        case .denied:
+            return PermissionActions(
+                primary: PermissionRow.Action(label: "Grant", identifier: "grant", run: openPasteSettings),
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { TextInserter.openEventPostingSettings() })
+            )
+        case .staleNeedsRestart:
+            return PermissionActions(
+                secondary: PermissionRow.Action(label: "Settings", identifier: "settings", run: { TextInserter.openEventPostingSettings() }),
+                restart: PermissionRow.Action(label: "Restart WaiSay", identifier: "restart", run: restartForPermissionRefresh)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var inputMonitoringRow: some View {
+        let actions = inputMonitoringActions()
+        PermissionRow(
+            title: "Input Monitoring",
+            detail: "Use the hotkey from any app",
+            status: inputMonitoringStatus,
+            identifierBase: "onboarding-permission-input-monitoring",
+            primaryAction: actions.primary,
+            secondaryAction: actions.secondary,
+            recheckAction: actions.recheck,
+            restartAction: actions.restart
+        )
+    }
+
+    @ViewBuilder
+    private var automaticPasteRow: some View {
+        let actions = pasteActions()
+
+        PermissionRow(
+            title: "Automatic Paste",
+            detail: "Insert dictated text automatically",
+            status: pasteStatus,
+            identifierBase: "onboarding-permission-automatic-paste",
+            primaryAction: actions.primary,
+            secondaryAction: actions.secondary,
+            recheckAction: actions.recheck,
+            restartAction: actions.restart
+        )
+    }
+}
+
+private struct PermissionRow: View {
+    struct Action {
+        let label: String
+        let identifier: String
+        let run: () -> Void
+    }
+
+    let title: String
+    let detail: String
+    let status: MacInputPermission.Status
+    let identifierBase: String
+    let primaryAction: Action?
+    let secondaryAction: Action?
+    let recheckAction: Action?
+    let restartAction: Action?
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.md) {
-                Image(systemName: isGranted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isGranted ? .green : Palette.textTertiary)
+                statusIcon
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -500,60 +537,78 @@ private struct OnboardingPermissionSlide: View {
 
                 Spacer()
 
-                if isGranted {
-                    Text("Granted")
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(.green)
-                } else if needsReview {
-                    Label("Restart Required", systemImage: "arrow.clockwise.circle.fill")
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.accent)
-                        .accessibilityIdentifier("\(identifierBase)-restart-required")
-                } else {
-                    Button("Grant") {
-                        grantAction()
-                    }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("\(identifierBase)-grant")
-
-                    if let settingsAction {
-                        Button("Settings") {
-                            settingsAction()
-                        }
-                        .font(Typography.bodySmall)
-                        .accessibilityIdentifier("\(identifierBase)-settings")
-                    }
-                }
+                trailingControls
             }
 
-            if !isGranted && needsReview {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: Spacing.sm) {
-                        if let settingsAction {
-                            Button("Settings") {
-                                settingsAction()
-                            }
-                            .font(Typography.bodySmall)
-                            .accessibilityIdentifier("\(identifierBase)-settings")
-                        }
-
-                        if let restartAction {
-                            Button("Restart WaiSay") {
-                                restartAction()
-                            }
-                            .font(Typography.bodySmall)
-                            .accessibilityIdentifier("\(identifierBase)-restart")
-                        }
-                    }
-                }
-                .padding(.leading, 34)
+            if status == .staleNeedsRestart {
+                Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 34)
             }
         }
-        .frame(minHeight: needsReview ? 58 : 38)
+        .frame(minHeight: status == .staleNeedsRestart ? 58 : 38)
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        switch status {
+        case .granted:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .denied:
+            Image(systemName: "circle")
+                .foregroundStyle(Palette.textTertiary)
+        case .staleNeedsRestart:
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .foregroundStyle(Palette.accent)
+        }
+    }
+
+    @ViewBuilder
+    private var trailingControls: some View {
+        if status == .granted {
+            Text("Granted")
+                .font(Typography.bodySmall)
+                .foregroundStyle(.green)
+        } else if status == .staleNeedsRestart {
+            HStack(spacing: Spacing.sm) {
+                Text("Restart Required")
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.accent)
+                    .accessibilityIdentifier("\(identifierBase)-restart-required")
+
+                if let secondaryAction {
+                    Button(secondaryAction.label) { secondaryAction.run() }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-\(secondaryAction.identifier)")
+                }
+
+                if let restartAction {
+                    Button(restartAction.label) { restartAction.run() }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-\(restartAction.identifier)")
+                }
+            }
+        } else {
+            HStack(spacing: Spacing.sm) {
+                if let primaryAction {
+                    Button(primaryAction.label) { primaryAction.run() }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-\(primaryAction.identifier)")
+                }
+                if let secondaryAction {
+                    Button(secondaryAction.label) { secondaryAction.run() }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-\(secondaryAction.identifier)")
+                }
+                if let recheckAction {
+                    Button(recheckAction.label) { recheckAction.run() }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-\(recheckAction.identifier)")
+                }
+            }
+        }
     }
 }

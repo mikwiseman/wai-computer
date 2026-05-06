@@ -22,9 +22,9 @@ final class OnboardingPermissionUITests: XCTestCase {
             continueButton.tap()
         }
 
-        let grantMissingButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
-        XCTAssertTrue(waitForElement(grantMissingButton, in: app, timeout: 5))
-        XCTAssertEqual(grantMissingButton.label, "Grant Missing")
+        let primaryActionButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
+        XCTAssertTrue(waitForElement(primaryActionButton, in: app, timeout: 5))
+        XCTAssertEqual(primaryActionButton.label, "Open Settings")
 
         XCTAssertTrue(app.staticTexts["Set up voice access."].exists)
         XCTAssertTrue(waitForElement(app.staticTexts["Microphone"], in: app, timeout: 3))

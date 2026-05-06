@@ -11,10 +11,8 @@ struct MacSettingsView: View {
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
     @State private var hasMicrophonePermission = MacSettingsView.hasMicrophonePermission
-    @State private var hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-    @State private var hasPastePermission = TextInserter.hasEventPostingPermission
-    @State private var inputMonitoringNeedsReview = false
-    @State private var pasteNeedsReview = false
+    @State private var inputMonitoringStatus: MacInputPermission.Status = .denied
+    @State private var pasteStatus: MacInputPermission.Status = .denied
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
@@ -175,27 +173,29 @@ struct MacSettingsView: View {
 
                 permissionRow(
                     title: "Microphone",
-                    isGranted: hasMicrophonePermission,
+                    status: hasMicrophonePermission ? .granted : .denied,
                     identifierBase: "settings-permission-microphone",
-                    grantAction: requestMicrophonePermission
+                    grantAction: requestMicrophonePermission,
+                    settingsAction: nil,
+                    restartAction: nil
                 )
 
                 permissionRow(
                     title: "Input Monitoring",
-                    isGranted: hasInputMonitoringPermission,
-                    needsReview: inputMonitoringNeedsReview,
+                    status: inputMonitoringStatus,
                     identifierBase: "settings-permission-input-monitoring",
-                    grantAction: requestInputMonitoringPermission,
-                    settingsAction: openInputMonitoringSettings
+                    grantAction: openInputMonitoringSettings,
+                    settingsAction: { MacPrivacySettings.openInputMonitoring() },
+                    restartAction: MacPrivacySettings.restartForPermissionRefresh
                 )
 
                 permissionRow(
                     title: "Automatic Paste",
-                    isGranted: hasPastePermission,
-                    needsReview: pasteNeedsReview,
+                    status: pasteStatus,
                     identifierBase: "settings-permission-automatic-paste",
-                    grantAction: requestPastePermission,
-                    settingsAction: openPasteSettings
+                    grantAction: openPasteSettings,
+                    settingsAction: { TextInserter.openEventPostingSettings() },
+                    restartAction: MacPrivacySettings.restartForPermissionRefresh
                 )
 
                 // Usage hint
@@ -312,19 +312,19 @@ struct MacSettingsView: View {
         if !dictationManager.isFeatureEnabled {
             return "Enable Dictation to use a global hold-to-talk hotkey."
         }
-        if inputMonitoringNeedsReview && !hasInputMonitoringPermission {
+        if inputMonitoringStatus == .staleNeedsRestart {
             return "Restart WaiSay so macOS applies Input Monitoring to this running app."
         }
-        if pasteNeedsReview && !hasPastePermission {
+        if pasteStatus == .staleNeedsRestart {
             return "Restart WaiSay so macOS applies Automatic Paste to this running app. Dictated text is still copied to the clipboard."
         }
         if !hasMicrophonePermission {
             return "Grant Microphone permission to capture your voice."
         }
-        if !hasInputMonitoringPermission {
+        if inputMonitoringStatus != .granted {
             return "Grant Input Monitoring to use the hotkey outside WaiSay."
         }
-        if !hasPastePermission {
+        if pasteStatus != .granted {
             return "Grant Automatic Paste to insert text automatically. Dictated text is still copied to the clipboard."
         }
         return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
@@ -335,7 +335,9 @@ struct MacSettingsView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        hasMicrophonePermission && hasInputMonitoringPermission && hasPastePermission
+        hasMicrophonePermission &&
+            inputMonitoringStatus == .granted &&
+            pasteStatus == .granted
     }
 
     private static var hasMicrophonePermission: Bool {
@@ -350,27 +352,24 @@ struct MacSettingsView: View {
     @ViewBuilder
     private func permissionRow(
         title: String,
-        isGranted: Bool,
-        needsReview: Bool = false,
+        status: MacInputPermission.Status,
         identifierBase: String,
         grantAction: @escaping () -> Void,
-        settingsAction: (() -> Void)? = nil
+        settingsAction: (() -> Void)?,
+        restartAction: (() -> Void)?
     ) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
                 Text(title)
                     .font(Typography.body)
                 Spacer()
-                if isGranted {
+
+                switch status {
+                case .granted:
                     Label("Granted", systemImage: "checkmark.circle.fill")
                         .font(Typography.bodySmall)
                         .foregroundStyle(.green)
-                } else if needsReview {
-                    Label("Restart Required", systemImage: "arrow.clockwise.circle.fill")
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.accent)
-                        .accessibilityIdentifier("\(identifierBase)-restart-required")
-                } else {
+                case .denied:
                     Button("Grant") {
                         grantAction()
                     }
@@ -384,10 +383,15 @@ struct MacSettingsView: View {
                         .font(Typography.bodySmall)
                         .accessibilityIdentifier("\(identifierBase)-settings")
                     }
+                case .staleNeedsRestart:
+                    Label("Restart Required", systemImage: "arrow.clockwise.circle.fill")
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("\(identifierBase)-restart-required")
                 }
             }
 
-            if !isGranted && needsReview {
+            if status == .staleNeedsRestart {
                 Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
@@ -402,11 +406,13 @@ struct MacSettingsView: View {
                         .accessibilityIdentifier("\(identifierBase)-settings")
                     }
 
-                    Button("Restart WaiSay") {
-                        MacPrivacySettings.restartForPermissionRefresh()
+                    if let restartAction {
+                        Button("Restart WaiSay") {
+                            restartAction()
+                        }
+                        .font(Typography.bodySmall)
+                        .accessibilityIdentifier("\(identifierBase)-restart")
                     }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("\(identifierBase)-restart")
                 }
             }
         }
@@ -416,23 +422,15 @@ struct MacSettingsView: View {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
-            hasInputMonitoringPermission = snapshot.hasInputMonitoringPermission
-            hasPastePermission = snapshot.hasPastePermission
-            inputMonitoringNeedsReview = snapshot.inputMonitoringNeedsReview
-            pasteNeedsReview = snapshot.pasteNeedsReview
+            inputMonitoringStatus = snapshot.inputMonitoringStatus
+            pasteStatus = snapshot.pasteStatus
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
-        hasInputMonitoringPermission = GlobalHotkeyManager.hasInputMonitoringPermission
-        hasPastePermission = TextInserter.hasEventPostingPermission
-        if hasInputMonitoringPermission {
-            inputMonitoringNeedsReview = false
-        }
-        if hasPastePermission {
-            pasteNeedsReview = false
-        }
+        inputMonitoringStatus = MacInputPermission.listenEventStatus()
+        pasteStatus = MacInputPermission.postEventStatus()
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -463,65 +461,52 @@ struct MacSettingsView: View {
         }
     }
 
-    private func requestInputMonitoringPermission() {
-        startPermissionPolling()
-        inputMonitoringNeedsReview = true
-        #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return
-        }
-        #endif
-        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            refreshPermissions()
-            if !hasInputMonitoringPermission {
-                MacPrivacySettings.openInputMonitoring()
-            }
-        }
-    }
-
-    private func requestPastePermission() {
-        startPermissionPolling()
-        pasteNeedsReview = true
-        #if DEBUG
-        if MacPermissionTesting.forcesMissingDictationPermissions {
-            return
-        }
-        #endif
-        _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            refreshPermissions()
-            if !hasPastePermission {
-                TextInserter.openEventPostingSettings()
-            }
-        }
-    }
-
+    /// Single primary action for the Input Monitoring row.
+    ///
+    /// First tries the system consent prompt — that path is only useful on the
+    /// very first request, and silently returns `false` once a decision exists.
+    /// In every other case we open System Settings so the user has somewhere to
+    /// go. The `staleNeedsRestart` state is set by `refreshPermissions` based on
+    /// `MacInputPermission.listenEventStatus()`, never by user action — so a
+    /// curious tap on this row no longer falsely promotes the app into a
+    /// "Restart Required" UI.
     private func openInputMonitoringSettings() {
         startPermissionPolling()
-        inputMonitoringNeedsReview = true
         #if DEBUG
         if MacPermissionTesting.forcesMissingDictationPermissions {
             return
         }
         #endif
-        _ = GlobalHotkeyManager.requestInputMonitoringPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        let prompted = GlobalHotkeyManager.requestInputMonitoringPermission()
+        if !prompted {
             MacPrivacySettings.openInputMonitoring()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                refreshPermissions()
+                if inputMonitoringStatus != .granted {
+                    MacPrivacySettings.openInputMonitoring()
+                }
+            }
         }
     }
 
     private func openPasteSettings() {
         startPermissionPolling()
-        pasteNeedsReview = true
         #if DEBUG
         if MacPermissionTesting.forcesMissingDictationPermissions {
             return
         }
         #endif
-        _ = TextInserter.requestEventPostingPermission()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        let prompted = TextInserter.requestEventPostingPermission()
+        if !prompted {
             TextInserter.openEventPostingSettings()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                refreshPermissions()
+                if pasteStatus != .granted {
+                    TextInserter.openEventPostingSettings()
+                }
+            }
         }
     }
 
