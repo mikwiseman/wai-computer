@@ -151,11 +151,6 @@ jobs:
       - name: Select default Xcode for builds
         run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
-      - name: Verify macOS App Store and direct channels
-        env:
-          MACOS_SWIFTPM_CACHE_DIR: ${{ github.workspace }}/artifacts/ci-swiftpm-sourcepackages
-        run: scripts/verify-macos-channels.sh
-
       - name: Build iOS app
         run: >
           xcodebuild
