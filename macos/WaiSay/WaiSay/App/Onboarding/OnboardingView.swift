@@ -10,6 +10,15 @@ struct OnboardingView: View {
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
     @State private var permissionPollTimer: Timer?
+    /// Set when the user clicks Grant for a permission whose state is
+    /// already `.denied` — that path opens System Settings instead of
+    /// triggering an in-process prompt. Per Apple's documented TCC
+    /// behavior, decisions made in Settings while the app is running do
+    /// not propagate to the cached authorization status; the app needs a
+    /// restart. We use this flag to surface a one-tap restart affordance
+    /// when scenePhase becomes active again with status still denied.
+    @State private var triggeredOpenMicrophoneSettings = false
+    @State private var triggeredOpenAccessibilitySettings = false
 
     private let pages = OnboardingPage.allCases
 
@@ -63,6 +72,7 @@ struct OnboardingView: View {
                             isActive: index == currentPage,
                             hasMicrophonePermission: hasMicrophonePermission,
                             accessibilityStatus: accessibilityStatus,
+                            showSettingsRestartHint: showSettingsRestartHint,
                             requestMicrophonePermission: requestMicrophonePermission,
                             openAccessibilitySettings: openAccessibilitySettings,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
@@ -250,6 +260,16 @@ struct OnboardingView: View {
         hasMicrophonePermission && accessibilityStatus == .granted
     }
 
+    /// True when the user clicked Grant for a denied permission (which
+    /// opens System Settings) and returned to the app without the cached
+    /// status updating. Per Apple's TCC docs, the running process needs
+    /// to restart for Settings-side changes to take effect.
+    private var showSettingsRestartHint: Bool {
+        let micStuck = triggeredOpenMicrophoneSettings && !hasMicrophonePermission
+        let axStuck = triggeredOpenAccessibilitySettings && accessibilityStatus != .granted
+        return micStuck || axStuck
+    }
+
     private var permissionRestartRecommended: Bool {
         accessibilityStatus == .staleNeedsRestart
     }
@@ -282,25 +302,32 @@ struct OnboardingView: View {
 
     private func requestMicrophonePermission() {
         startPermissionPolling()
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
+        let initialStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if initialStatus == .authorized {
             refreshPermissions()
-        case .notDetermined:
-            Task {
-                _ = await AVAudioApplication.requestRecordPermission()
-                await MainActor.run {
-                    refreshPermissions()
-                    if !hasMicrophonePermission {
-                        MacPrivacySettings.openMicrophone()
-                    }
+            return
+        }
+
+        // `AVCaptureDevice.requestAccess` is the canonical macOS API for
+        // microphone capture authorization. For `.notDetermined` it triggers
+        // the system prompt and updates the in-process status cache when the
+        // user clicks Allow — `AVAudioApplication.requestRecordPermission`
+        // sometimes silently fails on macOS 26 (Tahoe). For `.denied` it
+        // returns false without prompting; we fall through to opening
+        // Settings + revealing in Finder. Per Apple's documented TCC
+        // behavior, decisions made in Settings while the app is running
+        // do not propagate to the cached status — the user must restart
+        // the app, which is what `triggeredOpenMicrophoneSettings` arms.
+        Task {
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            await MainActor.run {
+                refreshPermissions()
+                if !granted {
+                    triggeredOpenMicrophoneSettings = true
+                    MacInputPermission.revealAppInFinder()
+                    MacPrivacySettings.openMicrophone()
                 }
             }
-        case .denied, .restricted:
-            MacPrivacySettings.openMicrophone()
-            refreshPermissions()
-        @unknown default:
-            MacPrivacySettings.openMicrophone()
-            refreshPermissions()
         }
     }
 
@@ -316,6 +343,7 @@ struct OnboardingView: View {
             return
         }
         #endif
+        triggeredOpenAccessibilitySettings = true
         _ = GlobalHotkeyManager.requestAccessibilityPermission()
         MacInputPermission.revealAppInFinder()
         MacPrivacySettings.openAccessibility()
@@ -356,6 +384,7 @@ private struct OnboardingPermissionSlide: View {
     let isActive: Bool
     let hasMicrophonePermission: Bool
     let accessibilityStatus: MacInputPermission.Status
+    let showSettingsRestartHint: Bool
     let requestMicrophonePermission: () -> Void
     let openAccessibilitySettings: () -> Void
     let restartForPermissionRefresh: () -> Void
@@ -383,6 +412,22 @@ private struct OnboardingPermissionSlide: View {
                 VStack(spacing: 12) {
                     microphoneRow
                     accessibilityRow
+                }
+
+                if showSettingsRestartHint {
+                    Button(action: restartForPermissionRefresh) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                                .font(.system(size: 13))
+                            Text("Already granted? Restart WaiSay to apply")
+                                .font(.system(size: 12, weight: .medium))
+                                .underline()
+                        }
+                        .foregroundStyle(Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("onboarding-permission-restart-hint")
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 Spacer(minLength: 0)
             }
