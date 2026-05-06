@@ -93,6 +93,12 @@ final class DictationManager: ObservableObject {
     var dictionaryStore: DictationDictionaryStore?
     let hotkeyManager = GlobalHotkeyManager()
 
+    // MARK: - Instrumentation
+
+    /// Per-press observability session. Tracks signposts + Sentry breadcrumbs.
+    /// `nil` outside an active dictation.
+    private var instrumentationSession: DictationInstrumentation.Session?
+
     // MARK: - Overlay
 
     private var overlayPanel: DictationOverlayPanel?
@@ -244,6 +250,12 @@ final class DictationManager: ObservableObject {
         }
         guard canBeginExternalDictation() else { return }
 
+        // Begin instrumentation as the very first step so every subsequent
+        // event is attributed to this session and timed from the hotkey-down
+        // moment. `instrumentationSession` lives until cleanup() / cancel().
+        let session = DictationInstrumentation.shared.startSession()
+        instrumentationSession = session
+
         // Remember the target app so we can re-focus it before pasting
         targetApp = NSWorkspace.shared.frontmostApplication
 
@@ -251,6 +263,11 @@ final class DictationManager: ObservableObject {
         let micGranted = await AVAudioApplication.requestRecordPermission()
         guard micGranted else {
             error = "Microphone permission denied."
+            session.failure(
+                DictationInstrumentationError.microphoneDenied,
+                extras: ["stage": "permission"]
+            )
+            instrumentationSession = nil
             return
         }
 
@@ -261,6 +278,7 @@ final class DictationManager: ObservableObject {
         dictationDuration = 0
         pendingPushToTalkStop = false
         setState(.connecting)
+        session.event(.providerConnecting, data: ["isHandsFree": isHandsFree])
 
         // Show overlay
         showOverlay()
@@ -320,6 +338,8 @@ final class DictationManager: ObservableObject {
         } catch {
             log.error("Failed to start dictation")
             self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: ["stage": "start"])
+            instrumentationSession = nil
             await resetAfterStartFailure()
         }
     }
@@ -327,6 +347,7 @@ final class DictationManager: ObservableObject {
     func stopAndInsert() async {
         guard state == .listening else { return }
         setState(.processing)
+        instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
         // Stop audio capture
         await audioCapture?.stopRecording()
@@ -419,6 +440,10 @@ final class DictationManager: ObservableObject {
     func cancelDictation() async {
         guard state != .idle else { return }
         log.info("Dictation cancelled")
+        if let session = instrumentationSession {
+            session.cancel(reason: "user_or_system")
+            instrumentationSession = nil
+        }
 
         await audioCapture?.stopRecording()
         audioTask?.cancel()
@@ -450,6 +475,13 @@ final class DictationManager: ObservableObject {
         setState(.idle)
         isHandsFree = false
         hideOverlay()
+
+        // Treat reaching idle without a prior failure() / cancel() as success.
+        // Failure paths nil out the session above to avoid double-counting.
+        if let session = instrumentationSession {
+            session.succeed()
+            instrumentationSession = nil
+        }
     }
 
     private func resetAfterStartFailure() async {
