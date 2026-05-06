@@ -26,7 +26,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertTrue(waitForElement(primaryActionButton, in: app, timeout: 5))
         XCTAssertEqual(primaryActionButton.label, "Open Settings")
 
-        XCTAssertTrue(app.staticTexts["Set up voice access."].exists)
+        XCTAssertTrue(app.staticTexts["Give WaiSay permissions"].exists)
         XCTAssertTrue(waitForElement(app.staticTexts["Microphone"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.staticTexts["Input Monitoring"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.staticTexts["Automatic Paste"], in: app, timeout: 3))
@@ -66,7 +66,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        XCTAssertTrue(waitForElement(app.staticTexts["Set up voice access."], in: app, timeout: 8))
+        XCTAssertTrue(waitForElement(app.staticTexts["Give WaiSay permissions"], in: app, timeout: 8))
         XCTAssertTrue(waitForElement(app.staticTexts["Automatic Paste"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-automatic-paste-restart-required").firstMatch, in: app, timeout: 3))
         XCTAssertFalse(app.staticTexts["Your AI second brain for voice."].exists)
