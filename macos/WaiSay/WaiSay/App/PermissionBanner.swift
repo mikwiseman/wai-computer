@@ -91,7 +91,7 @@ struct PermissionBanner: View {
     private var subtitle: String {
         switch kind {
         case .microphone: return "WaiSay needs microphone access to record."
-        case .accessibility: return "WaiSay needs accessibility access to insert dictated text."
+        case .accessibility: return "WaiSay needs accessibility access for the global hotkey and text insertion."
         }
     }
 

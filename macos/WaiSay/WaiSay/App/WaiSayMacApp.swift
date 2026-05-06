@@ -393,7 +393,7 @@ class MacAppState: ObservableObject {
 
         // Resolve onboarding flag honoring env-var overrides used by tests/dev.
         // The V3 key intentionally invalidates older completion flags because
-        // permission onboarding now includes Input Monitoring and Automatic Paste.
+        // permission onboarding now uses the unified Accessibility model.
         let env = ProcessInfo.processInfo.environment
         if env["WAI_FORCE_ONBOARDING"] == "1" {
             UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
@@ -788,8 +788,12 @@ class MacAppState: ObservableObject {
                 MacPrivacySettings.openMicrophone()
             }
         case .accessibility:
-            // AXIsProcessTrustedWithOptions(prompt: true) does nothing if a
-            // prior decision exists, so always reveal-in-Finder + open Settings.
+            // Trigger the canonical Accessibility prompt — Apple displays a
+            // system dialog and registers the app in System Settings →
+            // Privacy → Accessibility on first call. Reveal in Finder + open
+            // Settings as a belt-and-suspenders fallback if the dialog has
+            // already been dismissed in the past.
+            _ = MacInputPermission.requestAccessibilityAccess()
             MacInputPermission.revealAppInFinder()
             MacPrivacySettings.openAccessibility()
         }
