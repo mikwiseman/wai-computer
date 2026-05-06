@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import Carbon
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: MacAppState
@@ -100,6 +101,14 @@ struct OnboardingView: View {
                             openPasteSettings: openPasteSettings,
                             recheckPermissions: refreshPermissions,
                             restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
+                        )
+                        .environmentObject(dictationManager)
+                        .frame(width: geo.size.width)
+                    } else if pages[index] == .verify {
+                        OnboardingVerifySlide(
+                            isActive: index == currentPage,
+                            onConfirm: completeOnboarding,
+                            onEditShortcut: openShortcutEditor
                         )
                         .environmentObject(dictationManager)
                         .frame(width: geo.size.width)
@@ -216,6 +225,12 @@ struct OnboardingView: View {
         if let url = URL(string: "https://say.waiwai.is/help") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    private func openShortcutEditor() {
+        // Navigate to Settings for full shortcut customization. The user
+        // returns to onboarding after; the verify slide updates live.
+        NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
     }
 
     private static func initialCurrentPage() -> Int {
@@ -840,5 +855,191 @@ private struct PermissionPreviewSettings: View {
             }
         }
         .padding(.vertical, 3)
+    }
+}
+
+// MARK: - Hotkey verification slide
+
+/// Live key-press tester after the permissions step — proves the hotkey is
+/// actually wired up before the user lands in the main UI. Uses
+/// `NSEvent.addLocalMonitorForEvents`, which works while the onboarding window
+/// has focus and does not depend on Input Monitoring permission yet — useful
+/// because the user just granted it and TCC may not have caught up.
+private struct OnboardingVerifySlide: View {
+    @EnvironmentObject var dictationManager: DictationManager
+
+    let isActive: Bool
+    let onConfirm: () -> Void
+    let onEditShortcut: () -> Void
+
+    @State private var pressedAtLeastOnce = false
+    @State private var pressFlash = false
+    @State private var localMonitor: Any?
+
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Text("Test the keyboard shortcut")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(Palette.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                HStack(spacing: 6) {
+                    Text("We recommend the")
+                    keyChip(dictationManager.selectedHotkey.shortLabel, highlight: false)
+                    Text("key.")
+                }
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.textSecondary)
+            }
+
+            VStack(spacing: 18) {
+                Text(pressedAtLeastOnce
+                     ? "Looks good — release the key when you\u{2019}re ready."
+                     : "Press the shortcut now to test.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Palette.textSecondary)
+
+                keyVisualization
+
+                HStack(spacing: 12) {
+                    Button(action: onEditShortcut) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Edit shortcut")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                .fill(Color(NSColor.windowBackgroundColor))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                .strokeBorder(Palette.border, lineWidth: 1)
+                        )
+                        .foregroundStyle(Palette.textPrimary)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onConfirm) {
+                        Text("Continue")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                    .fill(pressedAtLeastOnce ? Color.black : Palette.textTertiary)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!pressedAtLeastOnce)
+                    .accessibilityIdentifier("onboarding-verify-continue")
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 540)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(NSColor.windowBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Palette.border, lineWidth: 1)
+            )
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(isActive ? 1 : 0)
+        .offset(y: isActive ? 0 : 16)
+        .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
+        .onAppear { installLocalMonitor() }
+        .onDisappear { removeLocalMonitor() }
+        .onChange(of: isActive) { _, newValue in
+            if newValue {
+                installLocalMonitor()
+            } else {
+                removeLocalMonitor()
+            }
+        }
+    }
+
+    private func installLocalMonitor() {
+        guard localMonitor == nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            let isHotkey = matchesSelectedHotkey(keyCode: event.keyCode, flags: event.modifierFlags)
+            if isHotkey {
+                pressFlash = true
+                pressedAtLeastOnce = true
+            } else if pressFlash {
+                pressFlash = false
+            }
+            return event
+        }
+    }
+
+    private func removeLocalMonitor() {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+    }
+
+    private func matchesSelectedHotkey(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        let clean = flags.intersection(.deviceIndependentFlagsMask)
+        switch dictationManager.selectedHotkey {
+        case .rightOption:
+            return keyCode == UInt16(kVK_RightOption) && clean.contains(.option)
+        case .leftOption:
+            return keyCode == UInt16(kVK_Option) && clean.contains(.option)
+        case .rightCommand:
+            return keyCode == UInt16(kVK_RightCommand) && clean.contains(.command)
+        case .fn:
+            return clean.contains(.function)
+        case .controlOption:
+            return clean.contains(.control) && clean.contains(.option)
+        }
+    }
+
+    @ViewBuilder
+    private var keyVisualization: some View {
+        let shouldHighlight = pressFlash
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(shouldHighlight ? Palette.accent : Color.white)
+                .frame(width: 96, height: 96)
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
+                )
+            VStack(spacing: 4) {
+                Text(dictationManager.selectedHotkey.shortLabel)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(shouldHighlight ? .white : Palette.textPrimary)
+            }
+        }
+        .animation(.easeInOut(duration: 0.12), value: shouldHighlight)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func keyChip(_ label: String, highlight: Bool) -> some View {
+        Text(label)
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(highlight ? Palette.accent.opacity(0.15) : Color.gray.opacity(0.12))
+            )
     }
 }
