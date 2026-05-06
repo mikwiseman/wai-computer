@@ -63,6 +63,62 @@ def normalize(text: str) -> list[str]:
     return "".join(keep).split()
 
 
+_PUNCT_LEFT_ATTACH = ",.;:!?)]}\"'"
+
+
+def merge_finals(segments: list[str]) -> str:
+    """Reconstruct a clean transcript from Inworld STT final segments.
+
+    Empirically observed Inworld STT (Soniox v4 RT) protocol via NIGHTLY_TRACE
+    logs on long-form audio:
+
+      - When a new final begins a NEW WORD, the segment text starts with a
+        single leading space (e.g. " agreed on three top priorities...").
+      - When a new final continues MID-WORD (rare; happens when silence-VAD
+        boundary lands inside a word like "qu"+"arter"), the segment has no
+        leading space and starts with an alnum char.
+      - Punctuation that attaches left (",.;:!?)]}\\"'") may appear at the
+        start of a final without a leading space.
+
+    Heuristic (in order):
+      1. Punctuation-left-attach -> no space
+      2. Leading whitespace in raw -> add a single space
+      3. Both boundary chars alnum (no leading ws) -> mid-word, no space
+      4. Anything else -> add a single space
+
+    The parser MUST pass raw text (not pre-stripped) for rules 2 and 3 to work.
+    """
+    if not segments:
+        return ""
+    parts: list[str] = []
+    for raw in segments:
+        if not raw:
+            continue
+        stripped = raw.lstrip()
+        if not stripped:
+            continue
+        if not parts:
+            parts.append(stripped)
+            continue
+        prev = parts[-1].rstrip()
+        if not prev:
+            parts[-1] = stripped
+            continue
+        parts[-1] = prev
+        first_char = stripped[0]
+        last_char = prev[-1]
+        leading_ws = raw != stripped
+        if first_char in _PUNCT_LEFT_ATTACH:
+            parts.append(stripped)
+        elif leading_ws:
+            parts.append(" " + stripped)
+        elif last_char.isalnum() and first_char.isalnum():
+            parts.append(stripped)
+        else:
+            parts.append(" " + stripped)
+    return "".join(parts).strip()
+
+
 def wer(reference: str, hypothesis: str) -> float:
     """Word error rate via Levenshtein on word tokens."""
     ref = normalize(reference)
@@ -216,13 +272,15 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
                 inner = msg.get("result") if isinstance(msg.get("result"), dict) else msg
                 tx = inner.get("transcription") if isinstance(inner, dict) else None
                 if tx:
-                    text = (tx.get("transcript") or tx.get("text") or "").strip()
+                    text_raw = tx.get("transcript") or tx.get("text") or ""
                     is_final = tx.get("isFinal") or tx.get("is_final") or False
-                    if is_final and text:
-                        final_segments.append(text)
+                    if is_final and text_raw.strip():
+                        # Preserve raw text — merge_finals() needs leading/trailing
+                        # whitespace as a boundary signal.
+                        final_segments.append(text_raw)
                         last_final_ts = time.perf_counter()
-                    elif not is_final and text and trace:
-                        logger.info("STT interim: %r", text)
+                    elif not is_final and text_raw.strip() and trace:
+                        logger.info("STT interim: %r", text_raw)
                 if (inner.get("usage") if isinstance(inner, dict) else None) is not None:
                     usage_seen = True
                 err = (inner.get("error") if isinstance(inner, dict) else None) or msg.get("error")
@@ -247,7 +305,7 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
     e2e_ms = 0.0
     if end_of_audio_ts and last_final_ts:
         e2e_ms = max(0.0, (last_final_ts - end_of_audio_ts) * 1000)
-    return " ".join(final_segments).strip(), e2e_ms
+    return merge_finals(final_segments), e2e_ms
 
 
 async def run_scenario(
@@ -458,17 +516,67 @@ async def main_async(scenarios_path: Path, artifacts_root: Path) -> int:
     return 0 if metrics["passed"] == metrics["total"] else 1
 
 
+def self_test() -> int:
+    """Lightweight assertion-based unit tests for pure helpers. No external IO."""
+    cases_wer = [
+        (("hello world", "hello world"), 0.0),
+        (("hello world", "hello"), 0.5),
+        (("", ""), 0.0),
+        (("", "anything"), 1.0),
+        (("a b c", "a x c"), 1 / 3),
+    ]
+    for (ref, hyp), expected in cases_wer:
+        got = wer(ref, hyp)
+        assert abs(got - expected) < 1e-6, f"wer({ref!r},{hyp!r})={got} expected {expected}"
+
+    cases_merge = [
+        ([], ""),
+        ([""], ""),
+        (["Open the recording from yesterday."], "Open the recording from yesterday."),
+        # Empirically observed real Inworld pattern: previous final ends mid-utterance,
+        # next final starts with a LEADING SPACE meaning "new word boundary".
+        (["When we were planning the next quarter we", " agreed on three top priorities"],
+         "When we were planning the next quarter we agreed on three top priorities"),
+        # Mid-word fragmentation (also observed): "qu" + "arter" with no leading space.
+        (["When we were planning the next qu", "arter, we agreed"],
+         "When we were planning the next quarter, we agreed"),
+        # Punctuation attaches left without a space, even with leading-ws absent.
+        (["Third", ", we want to onboard"], "Third, we want to onboard"),
+        # Two complete utterances separated by a leading-space signal.
+        (["controls.", " Second, we need"], "controls. Second, we need"),
+        # Mid-word continuation of "controls" into "s. Second" (no leading space).
+        (["control", "s. Second, we need"], "controls. Second, we need"),
+        # Empty middle segment skipped without affecting boundary detection.
+        (["alpha", "", " beta"], "alpha beta"),
+        # Leading-space wins over alnum-alnum heuristic.
+        (["hello", " world"], "hello world"),
+        # Whitespace-only segment treated as empty.
+        (["foo", "   ", " bar"], "foo bar"),
+    ]
+    for inputs, expected in cases_merge:
+        got = merge_finals(inputs)
+        assert got == expected, f"merge_finals({inputs!r})={got!r} expected {expected!r}"
+
+    print("self-test PASS:", len(cases_wer), "wer +", len(cases_merge), "merge_finals cases")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenarios", default=str(Path(__file__).parent / "scenarios.json"))
     parser.add_argument("--artifacts", default=str(Path(__file__).parent / ".artifacts"))
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--self-test", action="store_true",
+                        help="Run inline assertion tests for pure helpers and exit.")
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    if args.self_test:
+        return self_test()
 
     return asyncio.run(main_async(Path(args.scenarios), Path(args.artifacts)))
 
