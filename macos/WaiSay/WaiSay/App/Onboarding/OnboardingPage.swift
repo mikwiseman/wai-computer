@@ -6,6 +6,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
     case transcribe
     case dictate
     case permission
+    case verify
 
     var id: Int { rawValue }
 
@@ -17,6 +18,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         case .transcribe: return "Understand"
         case .dictate: return "Dictate"
         case .permission: return "Permissions"
+        case .verify: return "Test"
         }
     }
 
@@ -68,6 +70,14 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Set up voice access.",
                 body: "Grant Microphone for recording, Input Monitoring for the global hotkey, and Automatic Paste for text insertion.",
                 symbol: "lock.shield",
+                useAppIcon: false
+            )
+        case .verify:
+            return Content(
+                eyebrow: "Test",
+                title: "Test the keyboard shortcut.",
+                body: "Press the dictation hotkey. The key on screen should turn orange while you hold it.",
+                symbol: "keyboard",
                 useAppIcon: false
             )
         }
