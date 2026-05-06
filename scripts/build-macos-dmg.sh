@@ -334,8 +334,11 @@ set appName to system attribute "DMG_LAYOUT_APP_NAME"
 set backgroundPath to mountPath & "/.background/background.png"
 
 tell application "Finder"
+    activate
+    delay 1
     tell disk volumeName
         open
+        delay 1
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
@@ -422,7 +425,7 @@ hdiutil create -size 200m -fs APFS -volname "$DMG_VOLUME_NAME" -type SPARSE "$SP
 
 echo "Mounting sparse image to custom mount point..."
 mkdir -p "$DMG_MOUNT"
-ATTACH_OUTPUT=$(hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -nobrowse -noverify)
+ATTACH_OUTPUT=$(hdiutil attach "$SPARSE_PATH" -mountpoint "$DMG_MOUNT" -noverify)
 printf '%s\n' "$ATTACH_OUTPUT"
 DMG_ATTACHED=1
 DMG_DEVICE=$(printf '%s\n' "$ATTACH_OUTPUT" | awk 'END {print $1}')
