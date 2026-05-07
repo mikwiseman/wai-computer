@@ -1,5 +1,4 @@
 import XCTest
-@testable import WaiSay
 
 final class BetaChannelStoreTests: XCTestCase {
     func testAllowedChannelsIncludesBetaOnlyWhenOptedIn() {
