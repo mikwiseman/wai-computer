@@ -15,6 +15,7 @@ struct MacSettingsView: View {
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
+    @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
@@ -92,6 +93,20 @@ struct MacSettingsView: View {
                 Text("App Behavior")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-app-behavior-header")
+            }
+
+            Section {
+                Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-receive-beta-updates-toggle")
+
+                Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            } header: {
+                Text("Updates")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-updates-header")
             }
 
             // MARK: - Summary Settings

@@ -62,20 +62,46 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
 ## macOS Distribution
 
-- **Single channel: Developer ID-signed, notarized DMG with Sparkle auto-update.** App Store / TestFlight retired for macOS (iOS still ships via TestFlight).
+- **Two release channels via single appcast (Sparkle native channels):**
+  - **stable** — default. Reaches every macOS user. Items have no `<sparkle:channel>` element.
+  - **beta** — opt-in. Items carry `<sparkle:channel>beta</sparkle:channel>`. Only users who toggled "Receive beta updates" in Settings → Updates see them. Implemented via `BetaChannelUpdaterDelegate` returning `Set(["beta"])` from `allowedChannelsForUpdater:` when the `receiveBetaUpdates` UserDefaults key is on.
+- Developer ID-signed, notarized DMGs published to `https://say.waiwai.is/releases/macos/`. App Store / TestFlight retired for macOS (iOS still ships via TestFlight).
 - One target `WaiSay` in `macos/WaiSay/project.yml`. Files: `WaiSay/Info.plist`, `WaiSay/WaiSay.entitlements`. App Sandbox is OFF; Hardened Runtime is ON. Sparkle is always built in (no `#if SPARKLE`).
-- Release artifacts publish to `https://say.waiwai.is/releases/macos/`. Sparkle appcast: `https://say.waiwai.is/releases/macos/appcast.xml`.
+- Sparkle appcast: `https://say.waiwai.is/releases/macos/appcast.xml`.
 - Auth/session persistence on macOS uses file-based storage (`Application Support/WaiSay/session.json`, mode 0600) via `SessionStore` in `shared/WaiSayKit` — NOT Keychain. This survives cdhash drift across Sparkle updates.
-- Production release flow:
-  1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiSay/project.yml` (monotonic — Sparkle requires it).
-  2. `cd macos/WaiSay && xcodegen generate` so `WaiSay.xcodeproj/project.pbxproj` picks up the new build number.
-  3. Commit + push.
-  4. Trigger CI: `gh workflow run "macOS Direct Release" --ref main -f publish_web=true`.
-  5. After ~10-15 min, verify `https://say.waiwai.is/releases/macos/appcast.xml` shows the new `sparkle:version`.
-- `.github/workflows/macos-release.yml` triggers ONLY on `workflow_dispatch` or `push` of a `waisay-macos-v*` tag. **Push to `main` does NOT auto-publish a DMG.**
-- Local release fallback (CI unavailable): `MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh` then `VPS_USER=root scripts/publish-macos-dmg.sh`, or `VPS_USER=root fastlane mac upload_all`.
+
+### Branching → channel mapping
+
+| Trigger                                        | Channel  |
+|------------------------------------------------|----------|
+| Push to `main` (paths in `macos/`, `shared/WaiSayKit/`, release scripts) | **stable** |
+| Push to `dev`  (same paths)                    | **beta** |
+| Tag push `waisay-macos-v*`                     | **stable** |
+| `gh workflow run "macOS Direct Release"`       | choose `stable` or `beta` via input |
+
+Day-to-day flow: do work on a feature branch → merge into `dev` (auto-publishes a beta the opt-in users will install) → after it bakes, merge `dev` into `main` (auto-publishes the stable build).
+
+If `dev` does not exist locally yet, create it once: `git checkout -b dev && git push -u origin dev`.
+
+### Release flow (typical)
+
+1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiSay/project.yml` (monotonic — Sparkle requires it).
+2. `cd macos/WaiSay && xcodegen generate` so `WaiSay.xcodeproj/project.pbxproj` picks up the new build number.
+3. Commit + push to `dev` (beta) or `main` (stable). CI builds, signs, notarizes, and publishes automatically.
+4. Or skip the branch route and run `scripts/release-macos.sh stable|beta` to dispatch the workflow manually from any branch.
+5. After ~10-15 min, verify `https://say.waiwai.is/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta).
+
+### Appcast merge invariant
+
+`scripts/build-macos-dmg.sh` writes a single-item local appcast. `scripts/publish-macos-dmg.sh` then runs `scripts/merge-macos-appcast.py` to fetch the live remote appcast, dedupe by `(sparkle:version, sparkle:channel)`, cap at 10 items per channel, and upload the merged file. Never bypass the merge — overwriting the remote with a single-item file would erase the other channel's history.
+
+### Local fallback (CI unavailable)
+
+- `MACOS_RELEASE_STRICT=1 RELEASE_CHANNEL=stable scripts/build-macos-dmg.sh` then `VPS_USER=root scripts/publish-macos-dmg.sh`.
 - `scripts/make-dmg.sh` is local smoke-only (unsigned, not notarized) and intentionally guarded. Never use it for release artifacts.
-- iOS distribution still goes through TestFlight via `scripts/build-testflight.sh`.
+- `MACOS_REMOTE_APPCAST_URL` env can override the merge script's source URL for staging or dry runs.
+
+iOS distribution still goes through TestFlight via `scripts/build-testflight.sh`.
 
 ## Observability
 

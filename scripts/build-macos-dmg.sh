@@ -475,6 +475,15 @@ fi
 
 DMG_BYTES=$(stat -f '%z' "$DMG_PATH")
 SPARKLE_ENCLOSURE_ATTRS=${SPARKLE_SIGNATURE:-"length=\"${DMG_BYTES}\""}
+RELEASE_CHANNEL=${RELEASE_CHANNEL:-stable}
+case "$RELEASE_CHANNEL" in
+  stable|beta) ;;
+  *) echo "ERROR: RELEASE_CHANNEL must be 'stable' or 'beta', got '$RELEASE_CHANNEL'" >&2; exit 1 ;;
+esac
+CHANNEL_XML=""
+if [[ "$RELEASE_CHANNEL" == "beta" ]]; then
+  CHANNEL_XML=$'      <sparkle:channel>beta</sparkle:channel>\n'
+fi
 APPCAST_PATH="$RELEASE_ROOT/appcast.xml"
 cat > "$APPCAST_PATH" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -487,7 +496,7 @@ cat > "$APPCAST_PATH" <<XML
     <item>
       <title>${APP_NAME} ${VERSION}</title>
       <pubDate>${PUBLISHED_AT}</pubDate>
-      <sparkle:version>${BUILD}</sparkle:version>
+${CHANNEL_XML}      <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>${RELEASE_NOTES_URL}</sparkle:releaseNotesLink>
@@ -502,6 +511,7 @@ cat > "$RELEASE_DIR/release-metadata.txt" <<META
 app=${APP_NAME}
 version=${VERSION}
 build=${BUILD}
+release_channel=${RELEASE_CHANNEL}
 team_id=${TEAM_ID}
 signing_identity=${SIGNING_IDENTITY}
 notarization=${NOTARIZATION_MODE}

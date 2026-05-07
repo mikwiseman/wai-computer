@@ -44,6 +44,7 @@
 		BBB9C76ABEF5303EB936B27D /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F98C4F59D6757A4944D849A /* OnboardingPage.swift */; };
 		D36520D8F2DF4086C22401F1 /* ImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3471FD7708241841E87F76FF /* ImportUITests.swift */; };
 		D78FA661D9BEF4977F0DA1F7 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C25607A3B93A178C620600 /* GlobalHotkeyManager.swift */; };
+		E022EE575B0895BD49ED4A69 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C87A1A1F38059862231DFC /* BetaChannelStore.swift */; };
 		E0698FB34455EE8EF0445DE4 /* WaiSayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 47789AB5C115E562AAAC3ED9 /* WaiSayKit */; };
 		E0E7ADA85977D50D826640DF /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B97ECD44C298955F6CA9FC /* MacImportViewModel.swift */; };
 		E28A8CD2260F3AF3687E7D3A /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png in Resources */ = {isa = PBXBuildFile; fileRef = 5EF6F14238C910E75652372C /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png */; };
@@ -69,6 +70,7 @@
 		04D704A4D750E2908CF2CC29 /* MacTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTranscriptView.swift; sourceTree = "<group>"; };
 		14D794F9CA063770D73BFDA0 /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		168A7A158D6F41055426BDA7 /* MacAppsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsView.swift; sourceTree = "<group>"; };
+		17C87A1A1F38059862231DFC /* BetaChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStore.swift; sourceTree = "<group>"; };
 		1CD5661F4E178938FEC0546B /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 		22FAEE7103A8C19E710FC4C5 /* DictationOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationOverlayView.swift; sourceTree = "<group>"; };
 		2AF2EE93F2E5D30499791547 /* OnboardingSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingSlide.swift; sourceTree = "<group>"; };
@@ -126,6 +128,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		128257A1CBEB5D8A43115F78 /* Updates */ = {
+			isa = PBXGroup;
+			children = (
+				17C87A1A1F38059862231DFC /* BetaChannelStore.swift */,
+			);
+			path = Updates;
+			sourceTree = "<group>";
+		};
 		142EE494C8D1CA98F8085853 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -240,6 +250,7 @@
 				C041F106D292E5B99AD8FE25 /* Recording */,
 				FBDD13779AC5B85790A8BD3D /* Search */,
 				1E39221444F7E22C77E55FD0 /* Settings */,
+				128257A1CBEB5D8A43115F78 /* Updates */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -433,6 +444,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E022EE575B0895BD49ED4A69 /* BetaChannelStore.swift in Sources */,
 				B63DF78A8686D2FAA022F61E /* DesignSystem.swift in Sources */,
 				EBE705A07D4E3B7658F01A8D /* DictationDictionaryStore.swift in Sources */,
 				58479A746B79F201EF103EDD /* DictationDictionaryView.swift in Sources */,
@@ -548,7 +560,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 72;
+				CURRENT_PROJECT_VERSION = 73;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -558,7 +570,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say;
 				PRODUCT_NAME = WaiSay;
 				SDKROOT = macosx;
@@ -592,7 +604,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 72;
+				CURRENT_PROJECT_VERSION = 73;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -602,7 +614,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say.dev;
 				PRODUCT_NAME = WaiSay;
 				SDKROOT = macosx;

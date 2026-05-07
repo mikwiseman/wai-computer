@@ -3,6 +3,14 @@ name: macOS Direct Release
 on:
   workflow_dispatch:
     inputs:
+      release_channel:
+        description: "Release channel — 'stable' reaches everyone, 'beta' only opted-in users"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - "stable"
+          - "beta"
       publish_web:
         description: "Publish DMG and appcast to say.waiwai.is"
         required: true
@@ -12,6 +20,16 @@ on:
           - "true"
           - "false"
   push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'macos/**'
+      - 'shared/WaiSayKit/**'
+      - 'scripts/build-macos-dmg.sh'
+      - 'scripts/publish-macos-dmg.sh'
+      - 'scripts/merge-macos-appcast.py'
+      - '.github/workflows/macos-release.yml'
     tags:
       - "waisay-macos-v*"
 
@@ -57,6 +75,20 @@ jobs:
           printf '%s' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/apple-api-key.p8"
           chmod 600 "$RUNNER_TEMP/apple-api-key.p8"
 
+      - name: Determine release channel
+        id: channel
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.release_channel || '' }}" ]]; then
+            CHANNEL="${{ inputs.release_channel }}"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "Resolved release channel: $CHANNEL"
+
       - name: Build strict notarized DMG
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -66,6 +98,7 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           MACOS_RELEASE_STRICT: "1"
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.channel }}
         run: |
           set -euo pipefail
           if [[ -z "${APPLE_API_KEY_ID:-}" || -z "${APPLE_API_ISSUER_ID:-}" || -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
@@ -81,7 +114,7 @@ jobs:
           path: artifacts/releases/macos
 
       - name: Configure SSH
-        if: github.event_name == 'push' || inputs.publish_web == 'true'
+        if: github.event_name == 'push' || inputs.publish_web == 'true' || inputs.publish_web == ''
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -97,7 +130,7 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - name: Publish to say.waiwai.is
-        if: github.event_name == 'push' || inputs.publish_web == 'true'
+        if: github.event_name == 'push' || inputs.publish_web == 'true' || inputs.publish_web == ''
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
