@@ -42,6 +42,11 @@ CHUNK_MS = 50
 # Verbatim copy of backend/app/api/routes/dictation.py::cleanup_dictation prompt.
 # Update both files together if either changes — the harness's job is to detect
 # regressions in this exact prompt.
+#
+# Build 76 added an optional <preserve_exact> vocabulary block between the
+# trailing instruction and the dictated text marker. The harness doesn't pass a
+# vocabulary list, so the rendered string is identical to the pre-build-76
+# behaviour. The empty-vocab path is what we test below.
 _CLEANUP_PROMPT_TEMPLATE = (
     "Lightly clean up this dictated text. "
     "Remove filler sounds and filler words in Russian and English, including "
@@ -55,7 +60,10 @@ _CLEANUP_PROMPT_TEMPLATE = (
     "claims, and sentence order. "
     "Do not summarize, add information, change the meaning, or make it more "
     "formal unless the text is clearly formal already. "
-    "Output ONLY the cleaned text, nothing else.\n\n"
+    "Output ONLY the cleaned text, nothing else."
+    # Empty vocabulary block — backend appends an optional <preserve_exact>
+    # tag here when CleanupRequest.vocabulary is non-empty.
+    "\n\n"
     "Dictated text: {text}"
 )
 

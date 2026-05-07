@@ -21,6 +21,7 @@ struct OnboardingView: View {
     @State private var triggeredOpenAccessibilitySettings = false
 
     private let pages = OnboardingPage.allCases
+    @EnvironmentObject var languageStore: DictationLanguageStore
 
     init() {
         _currentPage = State(initialValue: Self.initialCurrentPage())
@@ -84,6 +85,11 @@ struct OnboardingView: View {
                                 restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                             )
                             .environmentObject(dictationManager)
+                        case .languages:
+                            OnboardingLanguagesSlide(
+                                isActive: index == currentPage,
+                                store: languageStore
+                            )
                         case .hotkey:
                             OnboardingHotkeyPickerSlide(
                                 isActive: index == currentPage,

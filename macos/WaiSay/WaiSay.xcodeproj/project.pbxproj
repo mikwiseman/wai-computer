@@ -46,6 +46,7 @@
 		B2BA382BF903F2AA65F12196 /* LanguagePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 786DC6CA0F393EF39B3547E3 /* LanguagePickerView.swift */; };
 		B63DF78A8686D2FAA022F61E /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B942628494C336C81E68294 /* DesignSystem.swift */; };
 		BBB9C76ABEF5303EB936B27D /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F98C4F59D6757A4944D849A /* OnboardingPage.swift */; };
+		BFCDD2B6A46C115880EFB274 /* OnboardingLanguagesSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C8D6079C01C44FAC2A3B17 /* OnboardingLanguagesSlide.swift */; };
 		D36520D8F2DF4086C22401F1 /* ImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3471FD7708241841E87F76FF /* ImportUITests.swift */; };
 		D78FA661D9BEF4977F0DA1F7 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C25607A3B93A178C620600 /* GlobalHotkeyManager.swift */; };
 		E022EE575B0895BD49ED4A69 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C87A1A1F38059862231DFC /* BetaChannelStore.swift */; };
@@ -119,6 +120,7 @@
 		CFFA0BF89667E34812C324EE /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
 		D183587D3BCFF00FBA97D1FB /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		DB06F8766DDED8591E1D7851 /* DictationDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryStore.swift; sourceTree = "<group>"; };
+		E1C8D6079C01C44FAC2A3B17 /* OnboardingLanguagesSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingLanguagesSlide.swift; sourceTree = "<group>"; };
 		E81650EC9B9C6B24ECD856DC /* OnboardingWelcomeSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomeSlide.swift; sourceTree = "<group>"; };
 		EB737FB32C4B8A349228D13A /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		EF3034772C26A86A581A4EDD /* OnboardingValuePropsSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingValuePropsSlide.swift; sourceTree = "<group>"; };
@@ -230,6 +232,7 @@
 			children = (
 				4B8CDCED3F628B2CF75CA393 /* OnboardingDictationSandboxSlide.swift */,
 				33902F1A668E65AD2558AD41 /* OnboardingHotkeyPickerSlide.swift */,
+				E1C8D6079C01C44FAC2A3B17 /* OnboardingLanguagesSlide.swift */,
 				5F98C4F59D6757A4944D849A /* OnboardingPage.swift */,
 				EF3034772C26A86A581A4EDD /* OnboardingValuePropsSlide.swift */,
 				D183587D3BCFF00FBA97D1FB /* OnboardingView.swift */,
@@ -535,6 +538,7 @@
 				1D731BE7B7C9F78F0804A071 /* NewRecordingView.swift in Sources */,
 				A94FA47609DBA1DF9ABA27E9 /* OnboardingDictationSandboxSlide.swift in Sources */,
 				11DCF5D033BC9617090284D3 /* OnboardingHotkeyPickerSlide.swift in Sources */,
+				BFCDD2B6A46C115880EFB274 /* OnboardingLanguagesSlide.swift in Sources */,
 				BBB9C76ABEF5303EB936B27D /* OnboardingPage.swift in Sources */,
 				8310149083863B3FD6536DCF /* OnboardingValuePropsSlide.swift in Sources */,
 				AA0F8A4C9DEC9D4DB70386D3 /* OnboardingView.swift in Sources */,
@@ -627,7 +631,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 78;
+				CURRENT_PROJECT_VERSION = 79;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -689,7 +693,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 78;
+				CURRENT_PROJECT_VERSION = 79;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;

@@ -25,6 +25,11 @@ final class DictationManager: ObservableObject {
     @Published private(set) var interimTranscript = ""
     @Published private(set) var dictationDuration: TimeInterval = 0
     @Published private(set) var isHandsFree = false
+    /// Final transcript from the most recently completed dictation, set just
+    /// before TextInserter runs. Lets sandboxes (e.g. the onboarding "Try it
+    /// now" slide) display the result without depending on paste-into-focused-
+    /// field, which is fragile when the dictation overlay grabs window focus.
+    @Published private(set) var lastFinalTranscript: String?
     @Published var isEnabled = false
     @Published var error: String?
 
@@ -477,6 +482,14 @@ final class DictationManager: ObservableObject {
                 // Continue with raw text
             }
         }
+
+        // Publish the final text so observers (onboarding sandbox, future
+        // analytics surfaces) receive it independent of TextInserter success.
+        // Re-set on every dictation so SwiftUI .onChange fires even when the
+        // text is identical to the previous one (we'd want to also use a
+        // monotonic counter if we needed strict identity, but for the current
+        // sandbox use case the text-change trigger is enough).
+        lastFinalTranscript = textToInsert
 
         // Insert text into target app
         setState(.inserting)
