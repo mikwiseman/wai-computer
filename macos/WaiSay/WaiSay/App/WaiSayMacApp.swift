@@ -7,6 +7,7 @@ extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
     static let showNewRecording = Notification.Name("showNewRecording")
     static let waisayIncomingURL = Notification.Name("waisayIncomingURL")
+    static let waisayCheckForUpdates = Notification.Name("waisayCheckForUpdates")
 }
 
 @main
@@ -78,6 +79,11 @@ struct WaiSayMacApp: App {
                 ) { notification in
                     guard let url = notification.object as? URL else { return }
                     Task { await appState.handleIncomingURL(url) }
+                }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: .waisayCheckForUpdates)
+                ) { _ in
+                    updaterController.checkForUpdates(nil)
                 }
                 .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
         }
@@ -174,6 +180,7 @@ struct WaiSayMacApp: App {
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
+                .environmentObject(historyStore)
         }
         .menuBarExtraStyle(.window)
     }
@@ -194,6 +201,7 @@ enum MacPresentationSettings {
 enum MacMainWindowAction: Equatable {
     case importAudioFile
     case settings
+    case dictationHistory
 }
 
 @MainActor

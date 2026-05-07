@@ -6,6 +6,7 @@ struct MenuBarView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingVM: MacRecordingViewModel
     @EnvironmentObject var dictationManager: DictationManager
+    @EnvironmentObject var historyStore: DictationHistoryStore
     @State private var recentRecordings: [Recording] = []
 
     private var isRecordingActivityVisible: Bool {
@@ -212,6 +213,33 @@ struct MenuBarView: View {
                 Text("DICTATION")
                     .waiSectionHeader()
                     .padding(.horizontal, Spacing.lg)
+
+                if let last = historyStore.entries.first {
+                    Button {
+                        appState.pendingMainWindowAction = .dictationHistory
+                        openMainWindow()
+                    } label: {
+                        HStack(alignment: .top, spacing: Spacing.sm) {
+                            Image(systemName: "text.bubble")
+                                .foregroundStyle(Palette.textSecondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(last.displayText)
+                                    .font(Typography.bodySmall)
+                                    .foregroundStyle(Palette.textPrimary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Text(last.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                    .font(Typography.caption)
+                                    .foregroundStyle(Palette.textTertiary)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.xs)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 HStack {
                     Image(systemName: "mic.badge.plus")

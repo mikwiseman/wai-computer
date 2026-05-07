@@ -247,6 +247,11 @@ struct MacSettingsView: View {
                     Text("\(version) (\(build))")
                         .font(Typography.mono)
                 }
+                Button("Check for Updates…") {
+                    NotificationCenter.default.post(name: .waisayCheckForUpdates, object: nil)
+                }
+                .font(Typography.body)
+                .accessibilityIdentifier("settings-check-for-updates-button")
             } header: {
                 Text("About")
                     .waiSectionHeader()

@@ -176,17 +176,12 @@ private struct HistoryEntryRow: View {
                 .buttonStyle(.plain)
                 .help("Copy to clipboard")
 
-                Menu {
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundStyle(Palette.textTertiary)
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .menuStyle(.borderlessButton)
-                .frame(width: 20)
+                .help("Delete")
             }
         }
         .padding(.horizontal, Spacing.xl)
