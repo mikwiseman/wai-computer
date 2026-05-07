@@ -21,6 +21,7 @@ struct OnboardingView: View {
     @State private var triggeredOpenAccessibilitySettings = false
 
     private let pages = OnboardingPage.allCases
+    @EnvironmentObject var languageStore: DictationLanguageStore
 
     init() {
         _currentPage = State(initialValue: Self.initialCurrentPage())
@@ -85,6 +86,12 @@ struct OnboardingView: View {
                             onConfirm: completeOnboarding
                         )
                         .environmentObject(dictationManager)
+                        .frame(width: geo.size.width)
+                    } else if pages[index] == .languages {
+                        OnboardingLanguageSlide(
+                            isActive: index == currentPage,
+                            store: languageStore
+                        )
                         .frame(width: geo.size.width)
                     } else {
                         OnboardingSlide(page: pages[index], isActive: index == currentPage)
@@ -375,6 +382,55 @@ struct OnboardingView: View {
         } else if accessibilityStatus != .granted {
             openAccessibilitySettings()
         }
+    }
+}
+
+/// Onboarding language picker — full-bleed slide with title, picker, and a
+/// "what does this mean" explainer. Mirrors the visual rhythm of the other
+/// onboarding slides.
+private struct OnboardingLanguageSlide: View {
+    let isActive: Bool
+    @ObservedObject var store: DictationLanguageStore
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer(minLength: 0)
+            VStack(spacing: 12) {
+                Image(systemName: "globe")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(Palette.accent)
+                    .padding(.bottom, 4)
+                Text("Pick your languages")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(Palette.textPrimary)
+                Text("Choose one for the lowest latency, several to switch fluidly, or auto-detect any language. You can change this later in Settings.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .frame(maxWidth: 540)
+            }
+            ScrollView {
+                LanguagePickerView(store: store)
+                    .padding(.horizontal, 4)
+            }
+            .frame(maxWidth: 520, maxHeight: 360)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(NSColor.windowBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Palette.border, lineWidth: 1)
+            )
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(isActive ? 1 : 0)
+        .offset(y: isActive ? 0 : 16)
+        .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
     }
 }
 

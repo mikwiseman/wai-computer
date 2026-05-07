@@ -5,6 +5,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
     case record
     case transcribe
     case dictate
+    case languages
     case permission
     case verify
 
@@ -17,6 +18,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         case .record: return "Record"
         case .transcribe: return "Understand"
         case .dictate: return "Dictate"
+        case .languages: return "Languages"
         case .permission: return "Permissions"
         case .verify: return "Test"
         }
@@ -62,6 +64,14 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "Speak into anything.",
                 body: "A global hotkey turns your voice into text in any app. You can set it up before signing in.",
                 symbol: "keyboard.badge.eye",
+                useAppIcon: false
+            )
+        case .languages:
+            return Content(
+                eyebrow: "Languages",
+                title: "Pick your languages.",
+                body: "Choose one for the lowest latency, several to switch fluidly, or auto-detect any language.",
+                symbol: "globe",
                 useAppIcon: false
             )
         case .permission:

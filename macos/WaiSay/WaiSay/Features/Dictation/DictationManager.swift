@@ -91,6 +91,7 @@ final class DictationManager: ObservableObject {
     private var canStartDictation: (() -> Bool)?
     var historyStore: DictationHistoryStore?
     var dictionaryStore: DictationDictionaryStore?
+    var languageStore: DictationLanguageStore?
     let hotkeyManager = GlobalHotkeyManager()
 
     // MARK: - Instrumentation
@@ -324,7 +325,16 @@ final class DictationManager: ObservableObject {
 
             // 3. Mint a fresh Inworld session (Soniox v4 RT for Russian /
             //    multi-language by default — backend chooses model).
-            let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            // Read from the multi-select language store. wireLanguageTag returns
+            // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
+            // a single-language selection.
+            let language: String
+            if let store = languageStore {
+                let tag = store.wireLanguageTag
+                language = tag.isEmpty ? "multi" : tag
+            } else {
+                language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            }
             let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
                 language: language,
                 channels: 1,
@@ -519,7 +529,16 @@ final class DictationManager: ObservableObject {
                 "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
             ])
 
-            let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            // Read from the multi-select language store. wireLanguageTag returns
+            // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
+            // a single-language selection.
+            let language: String
+            if let store = languageStore {
+                let tag = store.wireLanguageTag
+                language = tag.isEmpty ? "multi" : tag
+            } else {
+                language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            }
 
             // WebSocketManager.connect() calls createRealtimeTranscriptionSession()
             // WITHOUT purpose, so backend defaults to purpose="recording" which

@@ -19,6 +19,7 @@ struct WaiSayMacApp: App {
     @StateObject private var dictationManager: DictationManager
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
+    @StateObject private var languageStore: DictationLanguageStore
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     init() {
@@ -31,13 +32,16 @@ struct WaiSayMacApp: App {
         let dictation = DictationManager()
         let history = DictationHistoryStore()
         let dictionary = DictationDictionaryStore()
+        let languages = DictationLanguageStore()
         dictation.historyStore = history
         dictation.dictionaryStore = dictionary
+        dictation.languageStore = languages
 
         _recordingViewModel = StateObject(wrappedValue: recordingViewModel)
         _dictationManager = StateObject(wrappedValue: dictation)
         _historyStore = StateObject(wrappedValue: history)
         _dictionaryStore = StateObject(wrappedValue: dictionary)
+        _languageStore = StateObject(wrappedValue: languages)
         _appState = StateObject(
             wrappedValue: MacAppState(
                 recordingViewModel: recordingViewModel,
@@ -55,6 +59,7 @@ struct WaiSayMacApp: App {
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
                 .environmentObject(dictionaryStore)
+                .environmentObject(languageStore)
                 .onAppear {
                     MacPresentationCoordinator.shared.mainWindowDidAppear()
                 }
