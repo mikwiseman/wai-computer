@@ -137,10 +137,16 @@ public actor WebSocketManager {
         return _eventStream!
     }
 
-    public init(apiClient: APIClient, language: String = "multi", channels: Int = 1) {
+    /// Per-session biasing terms (vocabulary words to nudge the recognizer
+    /// toward — names, jargon, custom spellings). Capped + truncated to the
+    /// provider's hard limit inside `buildElevenLabsURL`.
+    private let keyTerms: [String]
+
+    public init(apiClient: APIClient, language: String = "multi", channels: Int = 1, keyTerms: [String] = []) {
         self.apiClient = apiClient
         self.language = language
         self.channels = channels
+        self.keyTerms = keyTerms
     }
 
     /// Connect to the configured transcription provider using a backend-issued session token.
@@ -341,11 +347,29 @@ public actor WebSocketManager {
         if noVerbatim {
             queryItems.append(URLQueryItem(name: "no_verbatim", value: "true"))
         }
+        // ElevenLabs Scribe v2 Realtime hard limits: 50 keyterms, 20 chars each.
+        // Trim then truncate so we send the most distinctive terms first
+        // (the dictionary list is already user-curated, so just take the head).
+        for term in Self.cappedKeyTerms(keyTerms) {
+            queryItems.append(URLQueryItem(name: "keyterms", value: term))
+        }
         components?.queryItems = queryItems
         guard let url = components?.url else {
             throw WebSocketConnectionError.invalidURL
         }
         return url
+    }
+
+    static let elevenLabsKeyTermsLimit = 50
+    static let elevenLabsKeyTermCharLimit = 20
+
+    static func cappedKeyTerms(_ terms: [String]) -> [String] {
+        terms
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(elevenLabsKeyTermsLimit)
+            .map { String($0.prefix(elevenLabsKeyTermCharLimit)) }
     }
 
     // MARK: - Private

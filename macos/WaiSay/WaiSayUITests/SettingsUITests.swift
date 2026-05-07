@@ -89,6 +89,31 @@ final class SettingsUITests: XCTestCase {
     }
 
     @MainActor
+    func testBetaUpdatesToggleIsGroupedWithUpdateControls() throws {
+        let app = launchToSettings()
+
+        let checkForUpdatesButton = app.buttons
+            .matching(identifier: "settings-check-for-updates-button")
+            .firstMatch
+        revealElementIfNeeded(checkForUpdatesButton, in: app)
+        XCTAssertTrue(waitForElement(checkForUpdatesButton, in: app, timeout: 5))
+
+        let betaUpdatesToggle = app.descendants(matching: .any)
+            .matching(identifier: "settings-receive-beta-updates-toggle")
+            .firstMatch
+        XCTAssertTrue(waitForElement(betaUpdatesToggle, in: app, timeout: 3))
+        XCTAssertTrue(
+            betaUpdatesToggle.frame.midY < checkForUpdatesButton.frame.midY,
+            "Receive beta updates should appear directly above Check for Updates."
+        )
+        XCTAssertLessThan(
+            abs(checkForUpdatesButton.frame.midY - betaUpdatesToggle.frame.midY),
+            120,
+            "Receive beta updates should be grouped with the version and update controls."
+        )
+    }
+
+    @MainActor
     func testSignOutButtonExists() throws {
         let app = launchToSettings()
 

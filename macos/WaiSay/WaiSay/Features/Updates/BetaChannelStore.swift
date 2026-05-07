@@ -8,10 +8,14 @@ enum BetaChannelStore {
     static var isOptedIn: Bool {
         UserDefaults.standard.bool(forKey: userDefaultsKey)
     }
+
+    static func allowedChannels(isOptedIn: Bool) -> Set<String> {
+        isOptedIn ? Set([channelName]) : Set()
+    }
 }
 
 final class BetaChannelUpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        BetaChannelStore.isOptedIn ? Set([BetaChannelStore.channelName]) : Set()
+        BetaChannelStore.allowedChannels(isOptedIn: BetaChannelStore.isOptedIn)
     }
 }

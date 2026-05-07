@@ -28,6 +28,7 @@ public actor InworldProviderSession: ProviderSession {
     private let language: String
     private let sampleRate: Int
     private let channels: Int
+    private let keyTerms: [String]
 
     private var webSocket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -48,6 +49,7 @@ public actor InworldProviderSession: ProviderSession {
         language: String,
         sampleRate: Int = 16_000,
         channels: Int = 1,
+        keyTerms: [String] = [],
         urlSession: URLSession = .shared
     ) {
         self.websocketURL = websocketURL
@@ -56,11 +58,36 @@ public actor InworldProviderSession: ProviderSession {
         self.language = language
         self.sampleRate = sampleRate
         self.channels = channels
+        self.keyTerms = keyTerms
         self.urlSession = urlSession
 
         let (stream, continuation) = AsyncStream.makeStream(of: TranscriptionEvent.self)
         self.events = stream
         self.eventContinuation = continuation
+    }
+
+    /// Soniox v4 RT documents a ~10K char total context budget across all
+    /// fields. Cap and de-dupe so a runaway dictionary doesn't get the
+    /// session rejected at the wire edge.
+    static let sonioxContextCharBudget = 9_000
+    static let sonioxTermCharLimit = 60
+
+    static func cappedKeyTerms(_ terms: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        var totalChars = 0
+        for raw in terms {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let term = String(trimmed.prefix(sonioxTermCharLimit))
+            let key = term.lowercased()
+            if seen.contains(key) { continue }
+            if totalChars + term.count > sonioxContextCharBudget { break }
+            seen.insert(key)
+            result.append(term)
+            totalChars += term.count + 1  // +1 for join separator
+        }
+        return result
     }
 
     // MARK: - ProviderSession
@@ -161,15 +188,26 @@ public actor InworldProviderSession: ProviderSession {
         }
         // `inactivity_timeout_seconds` keeps hands-free silent gaps alive
         // (Inworld's undocumented default fires too aggressively).
+        var transcribeConfig: [String: Any] = [
+            "model_id": modelId,
+            "language": normalisedLanguage,
+            "audio_encoding": "LINEAR16",
+            "sample_rate_hertz": sampleRate,
+            "number_of_channels": channels,
+            "inactivity_timeout_seconds": 60,
+        ]
+        // Soniox v4 RT supports per-session vocabulary biasing via
+        // `sonioxConfig.context.terms`. Inworld passes this through
+        // verbatim. Cap at ~10K total chars across the list — Soniox's
+        // documented hard limit on the context block.
+        let cappedTerms = Self.cappedKeyTerms(keyTerms)
+        if !cappedTerms.isEmpty, modelId.contains("soniox") {
+            transcribeConfig["soniox_config"] = [
+                "context": ["terms": cappedTerms]
+            ]
+        }
         let configPayload: [String: Any] = [
-            "transcribe_config": [
-                "model_id": modelId,
-                "language": normalisedLanguage,
-                "audio_encoding": "LINEAR16",
-                "sample_rate_hertz": sampleRate,
-                "number_of_channels": channels,
-                "inactivity_timeout_seconds": 60,
-            ] as [String: Any]
+            "transcribe_config": transcribeConfig
         ]
         try await task.send(.string(Self.encodeJSON(configPayload)))
         inworldLog.info("[Inworld] sent transcribe_config language='\(normalisedLanguage, privacy: .public)' (caller passed '\(self.language, privacy: .public)')")
