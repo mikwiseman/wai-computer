@@ -769,6 +769,7 @@ class MacAppState: ObservableObject {
         }
 
         await clearLocalSession(removeUserData: true)
+        relaunchIfLive()
     }
 
     /// Permanently delete the signed-in account. Returns an error message on
@@ -785,7 +786,20 @@ class MacAppState: ObservableObject {
         }
 
         await clearLocalSession(removeUserData: true)
+        relaunchIfLive()
         return nil
+    }
+
+    /// After a logout/delete-account flow that calls clearLocalSession with
+    /// removeUserData=true, the persistent-domain wipe leaves stale state in
+    /// any live @StateObject ViewModels (language store, hotkey choice, beta
+    /// channel toggle, dictation history, etc.) until the process restarts.
+    /// Relaunching here gives users a true fresh-install state — onboarding
+    /// reappears, all preferences default. Skip in test mode so the harness
+    /// can keep running.
+    private func relaunchIfLive() {
+        guard testingMode == .live else { return }
+        MacPrivacySettings.restartForPermissionRefresh()
     }
 
     private func persistSession(accessToken: String, refreshToken: String?) {
