@@ -179,9 +179,9 @@ struct WaiSayMacApp: App {
             CommandGroup(replacing: .windowList) {}
         }
 
-        // Menu bar extra — BrandIcon (line-art profile + waveform) renders as
-        // a monochrome template, picking up the current menu-bar tint. While
-        // recording, swap to a filled waveform symbol as a visual "active" cue.
+        // Menu bar extra — BrandIconMenuBar is a 22pt template asset, so SwiftUI
+        // sizes it correctly inside the menu bar without explicit frame modifiers.
+        // While recording, swap to a filled waveform symbol as a visual "active" cue.
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(appState)
@@ -192,11 +192,7 @@ struct WaiSayMacApp: App {
             if isRecordingActivityVisible {
                 Image(systemName: "waveform.circle.fill")
             } else {
-                Image("BrandIcon")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .frame(width: 18, height: 18)
+                Image("BrandIconMenuBar")
             }
         }
         .menuBarExtraStyle(.window)
