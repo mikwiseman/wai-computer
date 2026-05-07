@@ -15,6 +15,7 @@
 		20A1E752E5B1EFC9C6A883C5 /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */; };
 		23A62FA868B3F0805624D42D /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFFA0BF89667E34812C324EE /* MacSearchView.swift */; };
 		296DC4ECEED1B728B4C6C832 /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFB370471C8DF595012CFC3 /* DictationLanguageStore.swift */; };
+		2F3531288C38338A1E56ED36 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 9B60050FC39EBAD666E03D1C /* Sparkle */; };
 		3607D9E2309923AE1DB2DAC3 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB737FB32C4B8A349228D13A /* MacRecordingDetailView.swift */; };
 		38BE9D59B4EF1F052150EB07 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78333C306860DAE74E4A15ED /* SettingsUITests.swift */; };
 		39B6AFD92F1B24B697A1421A /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D704A4D750E2908CF2CC29 /* MacTranscriptView.swift */; };
@@ -57,16 +58,10 @@
 		EBE705A07D4E3B7658F01A8D /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB06F8766DDED8591E1D7851 /* DictationDictionaryStore.swift */; };
 		F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */; };
 		F6FEEE103FC6B5BB8CE6FDFC /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9557FBC052F94C3A1DD8399B /* MacContentView.swift */; };
+		F7ABFD5FCCBA00D37A2B5317 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C87A1A1F38059862231DFC /* BetaChannelStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		ABA6A964B6061962DEEE85F4 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 425E2D74FA7EAEE6409DE52D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = EA526461FF2878ADBFF48815;
-			remoteInfo = WaiSay;
-		};
 		E1A03935329223C5201FA7E5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 425E2D74FA7EAEE6409DE52D /* Project object */;
@@ -138,6 +133,14 @@
 			files = (
 				E0698FB34455EE8EF0445DE4 /* WaiSayKit in Frameworks */,
 				87A9F2D9550D2C526F5CB612 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E447EEBB96E1AE2DC6AE3D22 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2F3531288C38338A1E56ED36 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -380,14 +383,15 @@
 			buildConfigurationList = F3B67447F0C0B9D740C3E0A4 /* Build configuration list for PBXNativeTarget "WaiSayTests" */;
 			buildPhases = (
 				85F6D1F5055D0D5EF55483E6 /* Sources */,
+				E447EEBB96E1AE2DC6AE3D22 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				7DC530134EA8D97CA4967F1F /* PBXTargetDependency */,
 			);
 			name = WaiSayTests;
 			packageProductDependencies = (
+				9B60050FC39EBAD666E03D1C /* Sparkle */,
 			);
 			productName = WaiSayTests;
 			productReference = 3D4753FAC00AD6AE298A6963 /* WaiSayTests.xctest */;
@@ -495,6 +499,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F7ABFD5FCCBA00D37A2B5317 /* BetaChannelStore.swift in Sources */,
 				F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -544,11 +549,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		7DC530134EA8D97CA4967F1F /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = EA526461FF2878ADBFF48815 /* WaiSay */;
-			targetProxy = ABA6A964B6061962DEEE85F4 /* PBXContainerItemProxy */;
-		};
 		A3C9452D3F810FB2325983CE /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = EA526461FF2878ADBFF48815 /* WaiSay */;
@@ -660,7 +660,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say.tests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiSay.app/Contents/MacOS/WaiSay";
 			};
 			name = Release;
 		};
@@ -779,7 +778,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say.tests;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiSay.app/Contents/MacOS/WaiSay";
 			};
 			name = Debug;
 		};
@@ -867,6 +865,11 @@
 			productName = WaiSayKit;
 		};
 		5D41ED19D94A2EFAE4A075E3 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 928DD30D83A6344482107D75 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		9B60050FC39EBAD666E03D1C /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 928DD30D83A6344482107D75 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;

@@ -54,16 +54,16 @@ targets:
     platform: macOS
     sources:
       - path: WaiSayTests
+      - path: WaiSay/Features/Updates/BetaChannelStore.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.say.tests
         DEVELOPMENT_TEAM: <apple-team-id>
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/WaiSay.app/Contents/MacOS/WaiSay"
-        BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
-      - target: WaiSay
+      - package: Sparkle
+        product: Sparkle
 
   WaiSayUITests:
     type: bundle.ui-testing
