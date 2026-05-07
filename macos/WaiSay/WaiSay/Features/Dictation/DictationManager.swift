@@ -115,11 +115,15 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Dictation pipeline
 
-    // TEMPORARY ROLLBACK: dictation runs on ElevenLabs Scribe v2 Realtime
-    // (the pre-Phase-4 path) while we debug the Inworld + Soniox v4 RT
-    // production silence (build 60-66 closed/no-text symptoms). Set back to
-    // false to re-enable Inworld once the upstream issue is fixed.
-    private static let useElevenLabsForDictation = true
+    // Provider choice is user-controlled via Settings → Developer Mode →
+    // Speech recognizer. Default `.elevenLabs` matches the build 67 rollback
+    // (Inworld + Soniox path was disabled then for "production silence";
+    // since fixed in build 66/73/76 via language tag wire translation +
+    // keyTerms + soniox_config.context.terms). Re-exposed as opt-in for A/B
+    // signal on which provider transcribes the user's speech better.
+    private var useElevenLabsForDictation: Bool {
+        DeveloperSettingsStore.shared.dictationProvider == .elevenLabs
+    }
 
     // Inworld path state (Phase 4 — Inworld + Soniox v4 RT)
     private var dictationSession: DictationSession?
@@ -284,6 +288,17 @@ final class DictationManager: ObservableObject {
         }
         guard canBeginExternalDictation() else { return }
 
+        // Breadcrumb the active provider so error reports correlate with the
+        // user's pick (no audio, no transcript — just the routing choice).
+        SentryHelper.addBreadcrumb(
+            category: "dictation.session",
+            message: "starting dictation",
+            data: [
+                "provider": DeveloperSettingsStore.shared.dictationProvider.rawValue,
+                "isHandsFree": isHandsFree,
+            ]
+        )
+
         // Begin instrumentation as the very first step so every subsequent
         // event is attributed to this session and timed from the hotkey-down
         // moment. `instrumentationSession` lives until cleanup() / cancel().
@@ -320,9 +335,10 @@ final class DictationManager: ObservableObject {
         // Play start sound (subtle, non-alarming)
         NSSound(named: NSSound.Name("Morse"))?.play()
 
-        // ROLLBACK BRANCH: dictation runs on ElevenLabs Scribe v2 Realtime
-        // until the Inworld pipeline silence (build 60-66) is diagnosed.
-        if Self.useElevenLabsForDictation {
+        // Provider choice — read once per session via the computed property
+        // (which reads from DeveloperSettingsStore). Default `.elevenLabs`
+        // matches every install that hasn't toggled Developer Mode on.
+        if useElevenLabsForDictation {
             await startElevenLabsDictation(apiClient: apiClient, session: session)
             return
         }
