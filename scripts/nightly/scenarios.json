@@ -199,6 +199,19 @@
       "cleaned_expected": "I want to send a message about the new feature.",
       "max_clean_wer": 0.15,
       "note": "Tier 1.5: STT keeps the 'to to' stutter, cleanup must drop the false-start per the prompt's example pattern."
+    },
+    {
+      "id": "cleanup_filler_ru",
+      "category": "cleanup",
+      "language": "ru",
+      "voice": "Elena",
+      "text": "Ну, типа, отправь сообщение Ивану о встрече завтра утром.",
+      "max_wer": 0.30,
+      "max_latency_ms": 2500,
+      "apply_cleanup": true,
+      "cleaned_expected": "Отправь сообщение Ивану о встрече завтра утром.",
+      "max_clean_wer": 0.20,
+      "note": "Tier 1.5 Russian: cleanup prompt explicitly lists 'ну, вот, типа, как бы, значит' as Russian fillers to strip. This scenario verifies the RU branch of the prompt actually fires (previously only EN cleanup was covered)."
     }
   ]
 }
