@@ -1,5 +1,13 @@
 name: macOS Direct Release
 
+concurrency:
+  # Per-branch grouping so a fresh push cancels an in-flight build of a
+  # superseded commit on the same branch (saves ~5-12 min of macos-15 +
+  # notarization compute on rapid iterate-then-fix cycles). Tag pushes get
+  # their own group via github.ref so they never cancel a branch build.
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
