@@ -107,11 +107,27 @@ final class DictationManager: ObservableObject {
 
     private var targetApp: NSRunningApplication?
 
-    // MARK: - Dictation pipeline (Phase 4 — Inworld + Soniox v4 RT)
+    // MARK: - Dictation pipeline
 
+    // TEMPORARY ROLLBACK: dictation runs on ElevenLabs Scribe v2 Realtime
+    // (the pre-Phase-4 path) while we debug the Inworld + Soniox v4 RT
+    // production silence (build 60-66 closed/no-text symptoms). Set back to
+    // false to re-enable Inworld once the upstream issue is fixed.
+    private static let useElevenLabsForDictation = true
+
+    // Inworld path state (Phase 4 — Inworld + Soniox v4 RT)
     private var dictationSession: DictationSession?
     private var providerSession: InworldProviderSession?
     private var sessionEventTask: Task<Void, Never>?
+
+    // ElevenLabs rollback path state — owned only when useElevenLabsForDictation
+    // is true. WebSocketManager talks to backend's recording-purpose token mint
+    // which still routes through ElevenLabs Scribe v2 Realtime.
+    private var elevenLabsWebSocket: WebSocketManager?
+    private var elevenLabsLease: AudioEngineHost.Lease?
+    private var elevenLabsAudioTask: Task<Void, Never>?
+    private var elevenLabsEventTask: Task<Void, Never>?
+
     private var timerTask: Task<Void, Never>?
 
     // Transcript accumulation (live updates for overlay).
@@ -286,6 +302,13 @@ final class DictationManager: ObservableObject {
         // Play start sound (subtle, non-alarming)
         NSSound(named: NSSound.Name("Morse"))?.play()
 
+        // ROLLBACK BRANCH: dictation runs on ElevenLabs Scribe v2 Realtime
+        // until the Inworld pipeline silence (build 60-66) is diagnosed.
+        if Self.useElevenLabsForDictation {
+            await startElevenLabsDictation(apiClient: apiClient, session: session)
+            return
+        }
+
         do {
             // 1. Pre-warm the shared engine if it isn't already. This is
             //    a one-time cost on the first ever press; subsequent presses
@@ -377,19 +400,25 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
-        // Drain the provider session — sends end_turn + close_stream and
-        // collects committed segments with a bounded quiet window.
-        let outcome = await dictationSession?.commit(timeout: .seconds(3))
+        // Drain the active provider — Inworld via DictationSession, OR
+        // ElevenLabs via WebSocketManager (rollback path).
+        let inworldOutcome = await dictationSession?.commit(timeout: .seconds(3))
+        if let ws = elevenLabsWebSocket {
+            elevenLabsAudioTask?.cancel()
+            _ = try? await ws.finishStreaming(timeout: .seconds(3))
+        }
 
         // If cancelDictation ran during finalization, bail out cleanly.
         guard state == .processing else { return }
 
         sessionEventTask?.cancel()
         sessionEventTask = nil
+        elevenLabsEventTask?.cancel()
+        elevenLabsEventTask = nil
         timerTask?.cancel()
         timerTask = nil
 
-        let trimmedText = (outcome?.transcript ?? buildTranscript())
+        let trimmedText = (inworldOutcome?.transcript ?? buildTranscript())
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedText.isEmpty else {
@@ -461,12 +490,140 @@ final class DictationManager: ObservableObject {
         }
 
         await dictationSession?.cancel()
+        if let ws = elevenLabsWebSocket {
+            elevenLabsAudioTask?.cancel()
+            await ws.disconnect()
+        }
         sessionEventTask?.cancel()
         sessionEventTask = nil
+        elevenLabsEventTask?.cancel()
+        elevenLabsEventTask = nil
         timerTask?.cancel()
         timerTask = nil
 
         await cleanup()
+    }
+
+    // MARK: - ElevenLabs rollback path
+
+    private func startElevenLabsDictation(
+        apiClient: APIClient,
+        session: DictationInstrumentation.Session
+    ) async {
+        do {
+            // Pre-warm + lease shared mic engine — same as Inworld path.
+            try await AudioEngineHost.shared.prewarm()
+            let lease = try await AudioEngineHost.shared.lease()
+            elevenLabsLease = lease
+            session.event(.audioLeaseAcquired, data: [
+                "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
+            ])
+
+            let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+
+            // WebSocketManager.connect() calls createRealtimeTranscriptionSession()
+            // WITHOUT purpose, so backend defaults to purpose="recording" which
+            // routes through ElevenLabs Scribe v2 Realtime — the path we know
+            // works. No backend env flip required.
+            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
+            elevenLabsWebSocket = ws
+            session.event(.providerConnecting, data: ["provider": "elevenlabs"])
+
+            let stream = await ws.events
+            elevenLabsEventTask = Task { [weak self] in
+                guard let self else { return }
+                for await event in stream {
+                    await self.handleElevenLabsEvent(event)
+                }
+            }
+
+            try await ws.connect()
+            session.event(.providerOpened)
+
+            startTimer()
+            setState(.listening)
+            session.event(.audioFirstChunkSent)
+
+            // Audio pump: pre-roll first (so the user's first word survives
+            // mic warm-up), then live buffers from the lease stream.
+            let encoder = AudioEncoder(sampleRate: 16000, channels: 1)
+            let preRoll = lease.preRoll
+            let buffers = lease.buffers
+            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws] in
+                guard let ws else { return }
+                for buffer in preRoll {
+                    if Task.isCancelled { return }
+                    if let data = encoder.encode(buffer) {
+                        try? await ws.sendAudio(data: data)
+                    }
+                }
+                for await buffer in buffers {
+                    if Task.isCancelled { return }
+                    if let data = encoder.encode(buffer) {
+                        do {
+                            try await ws.sendAudio(data: data)
+                        } catch {
+                            // Drop silently — disconnect path will surface via
+                            // the .disconnected event.
+                        }
+                    }
+                }
+            }
+
+            // Hotkey released during connect — apply now.
+            if deferredStop && !isHandsFree {
+                deferredStop = false
+                await stopAndInsert()
+            }
+        } catch {
+            log.error("Failed to start ElevenLabs dictation")
+            self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: ["stage": "start.elevenlabs"])
+            instrumentationSession = nil
+            await resetAfterStartFailure()
+        }
+    }
+
+    private func handleElevenLabsEvent(_ event: WebSocketEvent) async {
+        switch event {
+        case .transcript(let segment):
+            if !firstTokenReported {
+                firstTokenReported = true
+                instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": segment.isFinal])
+            }
+            if segment.isFinal {
+                instrumentationSession?.event(.committedTranscript, data: ["chars": segment.text.count])
+                committedTexts.append(segment.text)
+                currentInterim = ""
+            } else {
+                currentInterim = segment.text
+            }
+            interimTranscript = buildTranscript()
+        case .disconnected(let err):
+            instrumentationSession?.event(.providerClosed, data: [
+                "reason": err.map { String(describing: $0) } ?? "clean",
+            ])
+            if state == .listening {
+                let closeError = NSError(
+                    domain: "is.waiwai.say.dictation",
+                    code: 1002,
+                    userInfo: [NSLocalizedDescriptionKey: "ElevenLabs WebSocket closed: \(err?.localizedDescription ?? "clean")"]
+                )
+                SentryHelper.captureError(
+                    closeError,
+                    extras: [
+                        "context": "dictation.elevenlabs.disconnected",
+                        "isHandsFree": isHandsFree,
+                    ]
+                )
+                self.error = "Connection to the transcription service was lost. Try again."
+                await cancelDictation()
+            }
+        case .reconnectionFailed(let err):
+            log.warning("ElevenLabs reconnection failed: \(err?.localizedDescription ?? "unknown", privacy: .public)")
+        default:
+            break
+        }
     }
 
     // MARK: - Private
@@ -482,6 +639,17 @@ final class DictationManager: ObservableObject {
         providerSession = nil
         deferredStop = false
         firstTokenReported = false
+
+        // Release ElevenLabs path resources (no-op if not in use).
+        if let lease = elevenLabsLease {
+            await AudioEngineHost.shared.release(lease)
+            elevenLabsLease = nil
+        }
+        elevenLabsAudioTask?.cancel()
+        elevenLabsAudioTask = nil
+        elevenLabsEventTask?.cancel()
+        elevenLabsEventTask = nil
+        elevenLabsWebSocket = nil
 
         targetApp = nil
         setState(.idle)

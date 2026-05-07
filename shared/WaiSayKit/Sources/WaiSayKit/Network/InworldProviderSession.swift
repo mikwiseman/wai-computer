@@ -34,6 +34,12 @@ public actor InworldProviderSession: ProviderSession {
     private var collectedSegments: [LiveTranscriptSegment] = []
     private var isClosing = false
     private var didOpen = false
+    // Diagnostic counters to debug "session ready but no transcripts" — log
+    // every 20 audio chunks (≈1 s of audio at 50 ms cadence) and every WS
+    // message we receive so the live trail in Console.app shows whether the
+    // problem is on the send side, receive side, or upstream silence.
+    private var audioChunksSent: Int = 0
+    private var rxFrames: Int = 0
 
     public init(
         websocketURL: URL,
@@ -67,6 +73,12 @@ public actor InworldProviderSession: ProviderSession {
             ]
         ]
         try await webSocket.send(.string(Self.encodeJSON(payload)))
+        audioChunksSent &+= 1
+        // Log first 5 chunks (so we see audio actually starts) then every 20th
+        // (so we get ~1Hz progress signal without spamming).
+        if audioChunksSent <= 5 || audioChunksSent % 20 == 0 {
+            inworldLog.info("[Inworld] TX audio_chunk #\(self.audioChunksSent) bytes=\(pcm16.count)")
+        }
     }
 
     public func endTurn() async throws {
@@ -183,15 +195,22 @@ public actor InworldProviderSession: ProviderSession {
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
+        rxFrames &+= 1
         switch message {
         case .string(let text):
+            // Log every received text frame in full (truncated to keep logs
+            // readable). When dictation appears stuck this is the only way to
+            // see whether Inworld is actually sending us anything.
+            let snippet = text.count > 400 ? String(text.prefix(400)) + "…" : text
+            inworldLog.info("[Inworld] RX #\(self.rxFrames) text: \(snippet, privacy: .public)")
             handleText(text)
         case .data(let data):
+            inworldLog.info("[Inworld] RX #\(self.rxFrames) binary: \(data.count) bytes")
             if let text = String(data: data, encoding: .utf8) {
                 handleText(text)
             }
         @unknown default:
-            break
+            inworldLog.warning("[Inworld] RX #\(self.rxFrames) unknown frame type")
         }
     }
 
