@@ -785,14 +785,20 @@ public actor APIClient {
         struct CleanupResponse: Decodable {
             let text: String
         }
-        // Trim + dedupe before sending. Empty vocab is sent as nil so older
-        // backends parsing the request stay happy with the existing schema.
-        let trimmed = vocabulary
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        // Trim + dedupe (case-insensitive, preserving first-seen order) before
+        // sending. Empty vocab is sent as nil so older backends parsing the
+        // request stay happy with the existing schema.
+        var seen = Set<String>()
+        let cleaned = vocabulary.compactMap { raw -> String? in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
         let payload = CleanupRequest(
             text: text,
-            vocabulary: trimmed.isEmpty ? nil : Array(NSOrderedSet(array: trimmed)) as? [String] ?? trimmed
+            vocabulary: cleaned.isEmpty ? nil : cleaned
         )
         let response: CleanupResponse = try await request(
             .POST,
