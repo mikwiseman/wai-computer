@@ -50,6 +50,13 @@ class ScenarioResult:
     tts_ms: float
     stt_ms: float
     status: str
+    # Perceived-latency breakdown. Both anchored to the moment we sent the
+    # first audio chunk (== STT session start). first_final_ms is when the
+    # first isFinal=true frame arrived; useful for comparing against the
+    # Wispr Flow <250ms "end-of-speech to first text" benchmark when the
+    # scenario is short enough that the only final IS the post-audio one.
+    stt_first_interim_ms: float = 0.0
+    stt_first_final_ms: float = 0.0
     notes: list[str] = field(default_factory=list)
 
 
@@ -214,8 +221,11 @@ def read_pcm(path: Path) -> bytes:
         return r.readframes(r.getnframes())
 
 
-async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, float]:
-    """Stream WAV PCM to Inworld STT (Soniox v4 RT), return (final_transcript, end-of-audio-to-last-final ms).
+async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, float, float, float]:
+    """Stream WAV PCM to Inworld STT (Soniox v4 RT).
+
+    Returns (final_transcript, last_final_after_audio_ms, first_interim_after_start_ms,
+    first_final_after_start_ms).
 
     Protocol from shared/WaiSayKit/Sources/WaiSayKit/Network/InworldProviderSession.swift:
       send: transcribe_config -> N x audio_chunk -> end_turn -> close_stream
@@ -226,6 +236,9 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
     final_segments: list[str] = []
     end_of_audio_ts: float | None = None
     last_final_ts: float | None = None
+    first_interim_ts: float | None = None
+    first_final_ts: float | None = None
+    session_start_ts = time.perf_counter()
 
     async with websockets.connect(
         INWORLD_STT_WS,
@@ -274,10 +287,14 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
                 if tx:
                     text_raw = tx.get("transcript") or tx.get("text") or ""
                     is_final = tx.get("isFinal") or tx.get("is_final") or False
+                    if text_raw.strip() and first_interim_ts is None:
+                        first_interim_ts = time.perf_counter()
                     if is_final and text_raw.strip():
                         # Preserve raw text — merge_finals() needs leading/trailing
                         # whitespace as a boundary signal.
                         final_segments.append(text_raw)
+                        if first_final_ts is None:
+                            first_final_ts = time.perf_counter()
                         last_final_ts = time.perf_counter()
                     elif not is_final and text_raw.strip() and trace:
                         logger.info("STT interim: %r", text_raw)
@@ -305,7 +322,15 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
     e2e_ms = 0.0
     if end_of_audio_ts and last_final_ts:
         e2e_ms = max(0.0, (last_final_ts - end_of_audio_ts) * 1000)
-    return merge_finals(final_segments), e2e_ms
+    first_interim_ms = (
+        max(0.0, (first_interim_ts - session_start_ts) * 1000)
+        if first_interim_ts is not None else 0.0
+    )
+    first_final_ms = (
+        max(0.0, (first_final_ts - session_start_ts) * 1000)
+        if first_final_ts is not None else 0.0
+    )
+    return merge_finals(final_segments), e2e_ms, first_interim_ms, first_final_ms
 
 
 async def run_scenario(
@@ -349,7 +374,9 @@ async def run_scenario(
 
     stt_t0 = time.perf_counter()
     try:
-        transcript, e2e_ms = await stream_stt(api_key, audio_path, scenario["language"])
+        transcript, e2e_ms, first_interim_ms, first_final_ms = await stream_stt(
+            api_key, audio_path, scenario["language"]
+        )
     except Exception as e:
         return ScenarioResult(
             id=sid,
@@ -397,6 +424,8 @@ async def run_scenario(
         tts_ms=tts_ms,
         stt_ms=stt_ms,
         status=status,
+        stt_first_interim_ms=first_interim_ms,
+        stt_first_final_ms=first_final_ms,
         notes=notes,
     )
 
@@ -414,14 +443,29 @@ def aggregate_metrics(results: list[ScenarioResult]) -> dict[str, Any]:
         cat["lats"].append(r.e2e_latency_ms)
     wers = [r.wer for r in results if r.status != "ERROR_TTS" and r.status != "ERROR_STT"]
     lats = [r.e2e_latency_ms for r in results if r.e2e_latency_ms > 0]
+    first_interims = [r.stt_first_interim_ms for r in results if r.stt_first_interim_ms > 0]
+    first_finals = [r.stt_first_final_ms for r in results if r.stt_first_final_ms > 0]
+
+    def _percentile(xs, p):
+        if not xs:
+            return None
+        if len(xs) == 1:
+            return xs[0]
+        s = sorted(xs)
+        return s[int(p * (len(s) - 1))]
+
     return {
         "total": total,
         "passed": passed,
         "pass_rate": passed / total if total else 0.0,
         "wer_p50": statistics.median(wers) if wers else None,
-        "wer_p95": (sorted(wers)[int(0.95 * (len(wers) - 1))] if len(wers) > 1 else (wers[0] if wers else None)),
+        "wer_p95": _percentile(wers, 0.95),
         "latency_p50_ms": statistics.median(lats) if lats else None,
-        "latency_p95_ms": (sorted(lats)[int(0.95 * (len(lats) - 1))] if len(lats) > 1 else (lats[0] if lats else None)),
+        "latency_p95_ms": _percentile(lats, 0.95),
+        "first_interim_p50_ms": statistics.median(first_interims) if first_interims else None,
+        "first_interim_p95_ms": _percentile(first_interims, 0.95),
+        "first_final_p50_ms": statistics.median(first_finals) if first_finals else None,
+        "first_final_p95_ms": _percentile(first_finals, 0.95),
         "by_category": {k: {**v, "wers": None, "lats": None,
                              "wer_p50": statistics.median(v["wers"]),
                              "lat_p50": statistics.median(v["lats"]) if v["lats"] else 0.0}
@@ -430,6 +474,9 @@ def aggregate_metrics(results: list[ScenarioResult]) -> dict[str, Any]:
 
 
 def render_report(results: list[ScenarioResult], metrics: dict[str, Any], started_at: str) -> str:
+    def _fmt(v, suffix=""):
+        return f"{v:.0f}{suffix}" if v is not None else "n/a"
+
     lines = [
         "# WaiSay Nightly QA Report",
         "",
@@ -438,19 +485,23 @@ def render_report(results: list[ScenarioResult], metrics: dict[str, Any], starte
         f"- Passed: {metrics['passed']} ({metrics['pass_rate']*100:.1f}%)",
         f"- WER p50: {metrics['wer_p50']:.3f}" if metrics["wer_p50"] is not None else "- WER p50: n/a",
         f"- WER p95: {metrics['wer_p95']:.3f}" if metrics["wer_p95"] is not None else "- WER p95: n/a",
-        f"- E2E latency p50: {metrics['latency_p50_ms']:.0f} ms" if metrics["latency_p50_ms"] is not None else "- Latency p50: n/a",
-        f"- E2E latency p95: {metrics['latency_p95_ms']:.0f} ms" if metrics["latency_p95_ms"] is not None else "- Latency p95: n/a",
+        "",
+        "### Latency",
+        f"- **End-of-audio → last final — p50 {_fmt(metrics.get('latency_p50_ms'))} ms · p95 {_fmt(metrics.get('latency_p95_ms'))} ms** ← compare to Whispr Flow <250ms target.",
+        f"- Session-start → first interim — p50 {_fmt(metrics.get('first_interim_p50_ms'))} ms · p95 {_fmt(metrics.get('first_interim_p95_ms'))} ms _(diagnostic; includes real-time-paced audio playback, so it's bounded below by audio length, not pure STT latency)_",
+        f"- Session-start → first final — p50 {_fmt(metrics.get('first_final_p50_ms'))} ms · p95 {_fmt(metrics.get('first_final_p95_ms'))} ms _(diagnostic; same playback-time floor)_",
         "",
         "## Per scenario",
         "",
-        "| ID | Cat | Lang | Voice | Status | WER | E2E ms | Notes |",
-        "|----|-----|------|-------|--------|-----|--------|-------|",
+        "| ID | Cat | Lang | Voice | Status | WER | First-I ms | First-F ms | Last-F ms | Notes |",
+        "|----|-----|------|-------|--------|-----|------------|------------|-----------|-------|",
     ]
     for r in results:
         notes = "; ".join(r.notes) if r.notes else ""
         lines.append(
             f"| `{r.id}` | {r.category} | {r.language} | {r.voice} | "
-            f"{r.status} | {r.wer:.3f} | {r.e2e_latency_ms:.0f} | {notes} |"
+            f"{r.status} | {r.wer:.3f} | {r.stt_first_interim_ms:.0f} | "
+            f"{r.stt_first_final_ms:.0f} | {r.e2e_latency_ms:.0f} | {notes} |"
         )
     lines.extend(["", "## Per category", ""])
     for cat, c in metrics["by_category"].items():
