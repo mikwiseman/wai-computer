@@ -122,10 +122,13 @@ final class DictationManager: ObservableObject {
     private var sessionEventTask: Task<Void, Never>?
 
     // ElevenLabs rollback path state — owned only when useElevenLabsForDictation
-    // is true. WebSocketManager talks to backend's recording-purpose token mint
-    // which still routes through ElevenLabs Scribe v2 Realtime.
+    // is true. Mirrors the pre-Phase-4 (build ≤56) working path: a fresh
+    // MicrophoneCapture per session, NOT the shared AudioEngineHost. The
+    // AudioEngineHost.lease() path was Phase 4-new and never validated against
+    // ElevenLabs in production — using MicrophoneCapture (which the working
+    // pre-Phase-4 dictation used) avoids that incompatibility.
     private var elevenLabsWebSocket: WebSocketManager?
-    private var elevenLabsLease: AudioEngineHost.Lease?
+    private var elevenLabsCapture: MicrophoneCapture?
     private var elevenLabsAudioTask: Task<Void, Never>?
     private var elevenLabsEventTask: Task<Void, Never>?
 
@@ -521,14 +524,6 @@ final class DictationManager: ObservableObject {
         session: DictationInstrumentation.Session
     ) async {
         do {
-            // Pre-warm + lease shared mic engine — same as Inworld path.
-            try await AudioEngineHost.shared.prewarm()
-            let lease = try await AudioEngineHost.shared.lease()
-            elevenLabsLease = lease
-            session.event(.audioLeaseAcquired, data: [
-                "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
-            ])
-
             // Read from the multi-select language store. wireLanguageTag returns
             // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
             // a single-language selection.
@@ -540,10 +535,20 @@ final class DictationManager: ObservableObject {
                 language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
             }
 
-            // WebSocketManager.connect() calls createRealtimeTranscriptionSession()
-            // WITHOUT purpose, so backend defaults to purpose="recording" which
-            // routes through ElevenLabs Scribe v2 Realtime — the path we know
-            // works. No backend env flip required.
+            // 1. Mic capture — fresh MicrophoneCapture per session. EXACTLY
+            //    what pre-Phase-4 (build ≤56) shipped working. The Phase-4
+            //    AudioEngineHost.lease() path never produced audio that the
+            //    ElevenLabs WebSocket would transcribe in the build-67/68
+            //    rollback test (zero bytes ever sent). Going back to the
+            //    proven class side-steps that incompatibility.
+            let capture = MicrophoneCapture()
+            elevenLabsCapture = capture
+            NSLog("[Dictation/EL] starting MicrophoneCapture")
+            try await capture.startRecording()
+
+            // 2. WebSocketManager.connect() asks backend for a session token.
+            //    Without `purpose`, backend defaults to "recording" which
+            //    routes through ElevenLabs Scribe v2 Realtime.
             let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
             elevenLabsWebSocket = ws
             session.event(.providerConnecting, data: ["provider": "elevenlabs"])
@@ -563,59 +568,37 @@ final class DictationManager: ObservableObject {
             setState(.listening)
             session.event(.audioFirstChunkSent)
 
-            // Audio pump: pre-roll first (so the user's first word survives
-            // mic warm-up), then live buffers from the lease stream.
-            // Diagnostic NSLogs (visible in Console.app filtered to WaiSay
-            // process) — without these, audio-pipeline failures look identical
-            // to ElevenLabs being silent.
-            let encoder = AudioEncoder(sampleRate: 16000, channels: 1)
-            let preRoll = lease.preRoll
-            let buffers = lease.buffers
-            NSLog("[Dictation/EL] audio task starting — preRoll=%d buffers", preRoll.count)
-            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws] in
-                guard let ws else {
-                    NSLog("[Dictation/EL] audio task exiting — ws is nil at start")
+            // 3. Audio pump — encode each MicrophoneCapture buffer and forward
+            //    to ws.sendAudio. Mirrors pre-Phase-4 audioTask exactly.
+            let encoder = AudioEncoder(channels: 1)
+            NSLog("[Dictation/EL] audio task starting (MicrophoneCapture)")
+            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture] in
+                guard let ws, let capture else {
+                    NSLog("[Dictation/EL] audio task exit — ws or capture nil")
                     return
                 }
-                NSLog("[Dictation/EL] audio task body running")
-                var preRollSent = 0
-                for buffer in preRoll {
-                    if Task.isCancelled { NSLog("[Dictation/EL] audio task cancelled during preRoll"); return }
-                    if let data = encoder.encode(buffer) {
-                        do {
-                            try await ws.sendAudio(data: data)
-                            preRollSent += 1
-                        } catch {
-                            NSLog("[Dictation/EL] preRoll send failed: %@", String(describing: error))
-                        }
-                    } else {
-                        NSLog("[Dictation/EL] preRoll buffer %d encode returned nil (frames=%d, format=%@)",
-                              preRollSent, Int(buffer.frameLength), String(describing: buffer.format))
-                    }
-                }
-                NSLog("[Dictation/EL] preRoll done — sent %d/%d, awaiting live buffers",
-                      preRollSent, preRoll.count)
                 var liveSent = 0
-                for await buffer in buffers {
-                    if Task.isCancelled { NSLog("[Dictation/EL] audio task cancelled during live"); return }
-                    if let data = encoder.encode(buffer) {
-                        do {
-                            try await ws.sendAudio(data: data)
-                            liveSent += 1
-                            if liveSent <= 3 || liveSent % 20 == 0 {
-                                NSLog("[Dictation/EL] live #%d sent %d bytes (frames=%d)",
-                                      liveSent, data.count, Int(buffer.frameLength))
-                            }
-                        } catch {
-                            NSLog("[Dictation/EL] live #%d send failed: %@",
-                                  liveSent, String(describing: error))
+                for await buffer in capture.audioBuffers {
+                    if Task.isCancelled {
+                        NSLog("[Dictation/EL] audio task cancelled (sent=%d)", liveSent)
+                        return
+                    }
+                    guard let data = encoder.encode(buffer) else {
+                        NSLog("[Dictation/EL] encode returned nil (frames=%d)", Int(buffer.frameLength))
+                        continue
+                    }
+                    do {
+                        try await ws.sendAudio(data: data)
+                        liveSent += 1
+                        if liveSent <= 3 || liveSent % 20 == 0 {
+                            NSLog("[Dictation/EL] sent #%d %d bytes", liveSent, data.count)
                         }
-                    } else {
-                        NSLog("[Dictation/EL] live buffer encode returned nil (frames=%d, format=%@)",
-                              Int(buffer.frameLength), String(describing: buffer.format))
+                    } catch {
+                        NSLog("[Dictation/EL] send #%d failed: %@", liveSent, String(describing: error))
+                        return
                     }
                 }
-                NSLog("[Dictation/EL] live loop ended — total sent %d", liveSent)
+                NSLog("[Dictation/EL] audio stream ended (sent=%d)", liveSent)
             }
 
             // Hotkey released during connect — apply now.
@@ -696,15 +679,15 @@ final class DictationManager: ObservableObject {
         deferredStop = false
         firstTokenReported = false
 
-        // Release ElevenLabs path resources (no-op if not in use).
-        if let lease = elevenLabsLease {
-            await AudioEngineHost.shared.release(lease)
-            elevenLabsLease = nil
-        }
+        // Tear down ElevenLabs path resources (no-op if not in use).
         elevenLabsAudioTask?.cancel()
         elevenLabsAudioTask = nil
         elevenLabsEventTask?.cancel()
         elevenLabsEventTask = nil
+        if let capture = elevenLabsCapture {
+            await capture.stopRecording()
+            elevenLabsCapture = nil
+        }
         elevenLabsWebSocket = nil
 
         targetApp = nil
