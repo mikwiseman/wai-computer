@@ -15,6 +15,7 @@ struct MacSettingsView: View {
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
+    @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
@@ -64,16 +65,16 @@ struct MacSettingsView: View {
             }
 
             Section {
-                Picker("Language", selection: $transcriptionLanguage) {
-                    ForEach(languageOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                }
-                .font(Typography.body)
+                LanguagePickerView(store: languageStore)
+                    .padding(.vertical, 4)
             } header: {
-                Text("Transcription")
+                Text("Dictation languages")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-transcription-header")
+            } footer: {
+                Text("Affects live dictation. Recording transcription auto-detects.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
             }
 
             Section {
