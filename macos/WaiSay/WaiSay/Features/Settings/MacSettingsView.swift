@@ -95,20 +95,6 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-app-behavior-header")
             }
 
-            Section {
-                Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-receive-beta-updates-toggle")
-
-                Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            } header: {
-                Text("Updates")
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-updates-header")
-            }
-
             // MARK: - Summary Settings
 
             Section {
@@ -263,6 +249,12 @@ struct MacSettingsView: View {
                     Text("\(version) (\(build))")
                         .font(Typography.mono)
                 }
+                Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-receive-beta-updates-toggle")
+                Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
                 Button("Check for Updates…") {
                     NotificationCenter.default.post(name: .waisayCheckForUpdates, object: nil)
                 }

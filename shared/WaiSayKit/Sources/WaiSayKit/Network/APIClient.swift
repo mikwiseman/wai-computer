@@ -777,17 +777,27 @@ public actor APIClient {
 
     // MARK: - Dictation Endpoints
 
-    public func cleanupDictation(text: String) async throws -> String {
+    public func cleanupDictation(text: String, vocabulary: [String] = []) async throws -> String {
         struct CleanupRequest: Encodable {
             let text: String
+            let vocabulary: [String]?
         }
         struct CleanupResponse: Decodable {
             let text: String
         }
+        // Trim + dedupe before sending. Empty vocab is sent as nil so older
+        // backends parsing the request stay happy with the existing schema.
+        let trimmed = vocabulary
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let payload = CleanupRequest(
+            text: text,
+            vocabulary: trimmed.isEmpty ? nil : Array(NSOrderedSet(array: trimmed)) as? [String] ?? trimmed
+        )
         let response: CleanupResponse = try await request(
             .POST,
             path: "/api/dictation/cleanup",
-            body: CleanupRequest(text: text),
+            body: payload,
             timeoutInterval: 60
         )
         return response.text

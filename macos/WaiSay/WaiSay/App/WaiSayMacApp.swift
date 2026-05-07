@@ -21,7 +21,8 @@ struct WaiSayMacApp: App {
     @StateObject private var dictionaryStore: DictationDictionaryStore
     @StateObject private var languageStore: DictationLanguageStore
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
-    private let updaterDelegate = BetaChannelUpdaterDelegate()
+    // Sparkle weakly references delegates, so keep this instance alive for the app lifetime.
+    private let updaterDelegate: BetaChannelUpdaterDelegate
     private let updaterController: SPUStandardUpdaterController
 
     init() {
@@ -29,8 +30,13 @@ struct WaiSayMacApp: App {
         SentryHelper.start(dsn: "<SENTRY_DSN>")
         #endif
 
-        let delegate = BetaChannelUpdaterDelegate()
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: delegate, userDriverDelegate: nil)
+        let updaterDelegate = BetaChannelUpdaterDelegate()
+        self.updaterDelegate = updaterDelegate
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: updaterDelegate,
+            userDriverDelegate: nil
+        )
 
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)

@@ -55,10 +55,18 @@
 		E58120139DE5C24EC073C08F /* icon.json in Resources */ = {isa = PBXBuildFile; fileRef = CBA1F7C1D0531C729A2D6937 /* icon.json */; };
 		E668861F4A0CF3BC7D1C4355 /* WaiSayMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F629CE4D1C03722172892950 /* WaiSayMacApp.swift */; };
 		EBE705A07D4E3B7658F01A8D /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB06F8766DDED8591E1D7851 /* DictationDictionaryStore.swift */; };
+		F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */; };
 		F6FEEE103FC6B5BB8CE6FDFC /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9557FBC052F94C3A1DD8399B /* MacContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		ABA6A964B6061962DEEE85F4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 425E2D74FA7EAEE6409DE52D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EA526461FF2878ADBFF48815;
+			remoteInfo = WaiSay;
+		};
 		E1A03935329223C5201FA7E5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 425E2D74FA7EAEE6409DE52D /* Project object */;
@@ -80,6 +88,7 @@
 		3471FD7708241841E87F76FF /* ImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportUITests.swift; sourceTree = "<group>"; };
 		35452E05844016577A0D2407 /* RecordingDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailUITests.swift; sourceTree = "<group>"; };
 		371DF485826E3255C64AE94E /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
+		3D4753FAC00AD6AE298A6963 /* WaiSayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaiSayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		488CB5C1BE67B78682CB7A56 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		4B8CDCED3F628B2CF75CA393 /* OnboardingDictationSandboxSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDictationSandboxSlide.swift; sourceTree = "<group>"; };
 		4DA739D7E8BA8165E99E209E /* NewRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewRecordingView.swift; sourceTree = "<group>"; };
@@ -103,6 +112,7 @@
 		AFE9A72955E293344F247755 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
 		B8399D6F915E5035FE4E9FF9 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		B89CA571AA631FC56333F5A3 /* WaiSay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiSay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
 		BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
 		BC6A02AFDEC781CCCA1D7BE5 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		C25C1FF960D1804EA22B5C52 /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
@@ -185,6 +195,7 @@
 			children = (
 				142EE494C8D1CA98F8085853 /* Packages */,
 				5F17057791CFEF9A3FEBB1D0 /* WaiSay */,
+				74AF89F34DBEAD154025D218 /* WaiSayTests */,
 				C61584C487679EE4B8513610 /* WaiSayUITests */,
 				F24D183C2F2E54FC3783D305 /* Products */,
 			);
@@ -222,6 +233,14 @@
 				E81650EC9B9C6B24ECD856DC /* OnboardingWelcomeSlide.swift */,
 			);
 			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		74AF89F34DBEAD154025D218 /* WaiSayTests */ = {
+			isa = PBXGroup;
+			children = (
+				BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */,
+			);
+			path = WaiSayTests;
 			sourceTree = "<group>";
 		};
 		8945586CBA2C378AF5526728 /* Dictation */ = {
@@ -310,6 +329,7 @@
 			isa = PBXGroup;
 			children = (
 				B89CA571AA631FC56333F5A3 /* WaiSay.app */,
+				3D4753FAC00AD6AE298A6963 /* WaiSayTests.xctest */,
 				873FA8856748FF79B46C4D06 /* WaiSayUITests.xctest */,
 			);
 			name = Products;
@@ -355,6 +375,24 @@
 			productReference = 873FA8856748FF79B46C4D06 /* WaiSayUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		59C202345930E0DAB171E368 /* WaiSayTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3B67447F0C0B9D740C3E0A4 /* Build configuration list for PBXNativeTarget "WaiSayTests" */;
+			buildPhases = (
+				85F6D1F5055D0D5EF55483E6 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7DC530134EA8D97CA4967F1F /* PBXTargetDependency */,
+			);
+			name = WaiSayTests;
+			packageProductDependencies = (
+			);
+			productName = WaiSayTests;
+			productReference = 3D4753FAC00AD6AE298A6963 /* WaiSayTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		EA526461FF2878ADBFF48815 /* WaiSay */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 15DCBA302161908FE364875F /* Build configuration list for PBXNativeTarget "WaiSay" */;
@@ -389,6 +427,9 @@
 						DevelopmentTeam = <apple-team-id>;
 						TestTargetID = EA526461FF2878ADBFF48815;
 					};
+					59C202345930E0DAB171E368 = {
+						DevelopmentTeam = <apple-team-id>;
+					};
 					EA526461FF2878ADBFF48815 = {
 						DevelopmentTeam = <apple-team-id>;
 						ProvisioningStyle = Automatic;
@@ -414,6 +455,7 @@
 			projectRoot = "";
 			targets = (
 				EA526461FF2878ADBFF48815 /* WaiSay */,
+				59C202345930E0DAB171E368 /* WaiSayTests */,
 				0D11BAB1AE671C4E9AB7254A /* WaiSayUITests */,
 			);
 		};
@@ -446,6 +488,14 @@
 				1C75963F225AEAFFA0FEA8B9 /* RecordingFlowUITests.swift in Sources */,
 				40D636ACD7DBF3B1E43AFDDF /* SearchUITests.swift in Sources */,
 				38BE9D59B4EF1F052150EB07 /* SettingsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		85F6D1F5055D0D5EF55483E6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -494,6 +544,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		7DC530134EA8D97CA4967F1F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EA526461FF2878ADBFF48815 /* WaiSay */;
+			targetProxy = ABA6A964B6061962DEEE85F4 /* PBXContainerItemProxy */;
+		};
 		A3C9452D3F810FB2325983CE /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = EA526461FF2878ADBFF48815 /* WaiSay */;
@@ -572,7 +627,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 76;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -587,6 +642,25 @@
 				PRODUCT_NAME = WaiSay;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		6E76D0C5E0EF12831049F4DE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = <apple-team-id>;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiSay.app/Contents/MacOS/WaiSay";
 			};
 			name = Release;
 		};
@@ -616,7 +690,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 76;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -690,6 +764,25 @@
 			};
 			name = Release;
 		};
+		F2CDB4E96383F38A3965F2F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = <apple-team-id>;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.say.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiSay.app/Contents/MacOS/WaiSay";
+			};
+			name = Debug;
+		};
 		F3B907F10B8F474AFD85A9C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -735,6 +828,15 @@
 			buildConfigurations = (
 				F3B907F10B8F474AFD85A9C8 /* Debug */,
 				80A27EC94E66EB39BE622959 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F3B67447F0C0B9D740C3E0A4 /* Build configuration list for PBXNativeTarget "WaiSayTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F2CDB4E96383F38A3965F2F2 /* Debug */,
+				6E76D0C5E0EF12831049F4DE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

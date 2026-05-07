@@ -449,9 +449,17 @@ final class DictationManager: ObservableObject {
         let rawText = textToInsert
         if aiCleanupEnabled, let apiClient {
             do {
-                let cleaned = try await apiClient.cleanupDictation(text: trimmedText)
+                // Pass the dictionary's vocabulary list so the cleanup pass
+                // preserves user-curated spellings exactly (proper nouns,
+                // jargon, custom terminology that the LLM might otherwise
+                // "correct" away).
+                let vocabulary = dictionaryStore?.vocabularyList ?? []
+                let cleaned = try await apiClient.cleanupDictation(
+                    text: trimmedText,
+                    vocabulary: vocabulary
+                )
                 textToInsert = cleaned
-                log.info("AI cleanup: \(trimmedText.count) → \(cleaned.count) chars")
+                log.info("AI cleanup: \(trimmedText.count) → \(cleaned.count) chars (vocab=\(vocabulary.count))")
             } catch {
                 log.warning("AI cleanup failed, using raw transcript")
                 if let apiError = error as? APIError, case .unauthorized = apiError {
@@ -549,9 +557,21 @@ final class DictationManager: ObservableObject {
             // 2. WebSocketManager.connect() asks backend for a session token.
             //    Without `purpose`, backend defaults to "recording" which
             //    routes through ElevenLabs Scribe v2 Realtime.
-            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
+            //    Per-session keyterms come from the user's dictation
+            //    dictionary — every entry biases the recognizer toward
+            //    that spelling. Cap is enforced inside WebSocketManager.
+            let keyTerms = dictionaryStore?.vocabularyList ?? []
+            let ws = WebSocketManager(
+                apiClient: apiClient,
+                language: language,
+                channels: 1,
+                keyTerms: keyTerms
+            )
             elevenLabsWebSocket = ws
-            session.event(.providerConnecting, data: ["provider": "elevenlabs"])
+            session.event(.providerConnecting, data: [
+                "provider": "elevenlabs",
+                "key_terms_count": keyTerms.count,
+            ])
 
             let stream = await ws.events
             elevenLabsEventTask = Task { [weak self] in
