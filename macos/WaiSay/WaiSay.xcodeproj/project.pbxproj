@@ -34,10 +34,12 @@
 		6FF6B6B196BCAEBEC1B59422 /* MacRecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 518C32DB1D70912467AA72E7 /* MacRecordingViewModel.swift */; };
 		72C79DC6A2D4A66CD6FA3C71 /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96DC086CE82D49061ABEF2D5 /* MacTestingSupport.swift */; };
 		7424E4CD48329A14F18220DD /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8399D6F915E5035FE4E9FF9 /* LiveRecordingView.swift */; };
+		795F722512B2844ECCB66DF3 /* DeveloperSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99F0C4CAA58E6AC5F8A4769 /* DeveloperSettingsStore.swift */; };
 		7EED2D3EEFE48FEA61943B30 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB50EADB74B2BD25B63684EC /* AuthFlowUITests.swift */; };
 		8310149083863B3FD6536DCF /* OnboardingValuePropsSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF3034772C26A86A581A4EDD /* OnboardingValuePropsSlide.swift */; };
 		86DA29AAEC52511D6C3E1C19 /* MacAppsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 168A7A158D6F41055426BDA7 /* MacAppsView.swift */; };
 		87A9F2D9550D2C526F5CB612 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 5D41ED19D94A2EFAE4A075E3 /* Sparkle */; };
+		87D7BC8750D6C8C559C64EDC /* DeveloperSettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 890924AFE11B29659A6A420B /* DeveloperSettingsStoreTests.swift */; };
 		8CA484F780B151F82D9158A0 /* DictationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B38A7D732BE7D6149F7628 /* DictationManager.swift */; };
 		93E90ED1B0BCD84C9D73C6B8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E1968EF5728AB79EEFCA9A /* Assets.xcassets */; };
 		9E5ABE0A28110DD379FAE1A3 /* DictationOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FAEE7103A8C19E710FC4C5 /* DictationOverlayView.swift */; };
@@ -49,6 +51,7 @@
 		BFCDD2B6A46C115880EFB274 /* OnboardingLanguagesSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C8D6079C01C44FAC2A3B17 /* OnboardingLanguagesSlide.swift */; };
 		D36520D8F2DF4086C22401F1 /* ImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3471FD7708241841E87F76FF /* ImportUITests.swift */; };
 		D78FA661D9BEF4977F0DA1F7 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C25607A3B93A178C620600 /* GlobalHotkeyManager.swift */; };
+		D8449AB4FBC3749DF4C2DD72 /* WaiSayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 337BABCA5E9D7C9964B0D0B0 /* WaiSayKit */; };
 		E022EE575B0895BD49ED4A69 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C87A1A1F38059862231DFC /* BetaChannelStore.swift */; };
 		E0698FB34455EE8EF0445DE4 /* WaiSayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 47789AB5C115E562AAAC3ED9 /* WaiSayKit */; };
 		E0E7ADA85977D50D826640DF /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B97ECD44C298955F6CA9FC /* MacImportViewModel.swift */; };
@@ -58,6 +61,7 @@
 		E668861F4A0CF3BC7D1C4355 /* WaiSayMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F629CE4D1C03722172892950 /* WaiSayMacApp.swift */; };
 		EBE705A07D4E3B7658F01A8D /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB06F8766DDED8591E1D7851 /* DictationDictionaryStore.swift */; };
 		F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */; };
+		F64522479A4E8F192B72D3E0 /* DeveloperSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99F0C4CAA58E6AC5F8A4769 /* DeveloperSettingsStore.swift */; };
 		F6FEEE103FC6B5BB8CE6FDFC /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9557FBC052F94C3A1DD8399B /* MacContentView.swift */; };
 		F7ABFD5FCCBA00D37A2B5317 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C87A1A1F38059862231DFC /* BetaChannelStore.swift */; };
 /* End PBXBuildFile section */
@@ -100,6 +104,7 @@
 		82B38A7D732BE7D6149F7628 /* DictationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationManager.swift; sourceTree = "<group>"; };
 		82B97ECD44C298955F6CA9FC /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		873FA8856748FF79B46C4D06 /* WaiSayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaiSayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		890924AFE11B29659A6A420B /* DeveloperSettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsStoreTests.swift; sourceTree = "<group>"; };
 		892016B85F211CF47E7123AD /* PermissionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionBanner.swift; sourceTree = "<group>"; };
 		8D7F2E11C0E5B4FFA0AA9565 /* NavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationUITests.swift; sourceTree = "<group>"; };
 		931DEDE1F4D3BBE785BCD66A /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
@@ -108,6 +113,7 @@
 		AFE9A72955E293344F247755 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
 		B8399D6F915E5035FE4E9FF9 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		B89CA571AA631FC56333F5A3 /* WaiSay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiSay.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B99F0C4CAA58E6AC5F8A4769 /* DeveloperSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsStore.swift; sourceTree = "<group>"; };
 		BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
 		BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
 		BC6A02AFDEC781CCCA1D7BE5 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
@@ -143,6 +149,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2F3531288C38338A1E56ED36 /* Sparkle in Frameworks */,
+				D8449AB4FBC3749DF4C2DD72 /* WaiSayKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -168,6 +175,7 @@
 		1E39221444F7E22C77E55FD0 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				B99F0C4CAA58E6AC5F8A4769 /* DeveloperSettingsStore.swift */,
 				371DF485826E3255C64AE94E /* MacSettingsView.swift */,
 			);
 			path = Settings;
@@ -245,6 +253,7 @@
 			isa = PBXGroup;
 			children = (
 				BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */,
+				890924AFE11B29659A6A420B /* DeveloperSettingsStoreTests.swift */,
 			);
 			path = WaiSayTests;
 			sourceTree = "<group>";
@@ -395,6 +404,7 @@
 			name = WaiSayTests;
 			packageProductDependencies = (
 				9B60050FC39EBAD666E03D1C /* Sparkle */,
+				337BABCA5E9D7C9964B0D0B0 /* WaiSayKit */,
 			);
 			productName = WaiSayTests;
 			productReference = 3D4753FAC00AD6AE298A6963 /* WaiSayTests.xctest */;
@@ -504,6 +514,8 @@
 			files = (
 				F7ABFD5FCCBA00D37A2B5317 /* BetaChannelStore.swift in Sources */,
 				F00A1C7FA1C656D20CAAFD49 /* BetaChannelStoreTests.swift in Sources */,
+				795F722512B2844ECCB66DF3 /* DeveloperSettingsStore.swift in Sources */,
+				87D7BC8750D6C8C559C64EDC /* DeveloperSettingsStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -513,6 +525,7 @@
 			files = (
 				E022EE575B0895BD49ED4A69 /* BetaChannelStore.swift in Sources */,
 				B63DF78A8686D2FAA022F61E /* DesignSystem.swift in Sources */,
+				F64522479A4E8F192B72D3E0 /* DeveloperSettingsStore.swift in Sources */,
 				EBE705A07D4E3B7658F01A8D /* DictationDictionaryStore.swift in Sources */,
 				58479A746B79F201EF103EDD /* DictationDictionaryView.swift in Sources */,
 				4F89861E4B946D385133A083 /* DictationHistoryStore.swift in Sources */,
@@ -631,7 +644,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -693,7 +706,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiSay/WaiSay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -864,6 +877,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		337BABCA5E9D7C9964B0D0B0 /* WaiSayKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WaiSayKit;
+		};
 		47789AB5C115E562AAAC3ED9 /* WaiSayKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = WaiSayKit;

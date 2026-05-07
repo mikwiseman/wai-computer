@@ -16,6 +16,8 @@ struct MacSettingsView: View {
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
+    @AppStorage(DeveloperSettingsStore.developerModeEnabledKey) private var developerModeEnabled = false
+    @AppStorage(DeveloperSettingsStore.dictationProviderKey) private var dictationProvider: DictationProvider = .elevenLabs
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
@@ -255,6 +257,12 @@ struct MacSettingsView: View {
                 Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
+                Toggle("Enable developer mode", isOn: $developerModeEnabled)
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-developer-mode-toggle")
+                Text("Exposes experimental dictation knobs. Off for everyone unless you flip it on.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
                 Button("Check for Updates…") {
                     NotificationCenter.default.post(name: .waisayCheckForUpdates, object: nil)
                 }
@@ -264,6 +272,34 @@ struct MacSettingsView: View {
                 Text("About")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-about-header")
+            }
+
+            if developerModeEnabled {
+                Section {
+                    Picker("Speech recognizer", selection: $dictationProvider) {
+                        ForEach(DictationProvider.allCases) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
+                    }
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-dictation-provider-picker")
+                    .help(dictationProvider.subtitle)
+
+                    Text(dictationProvider.subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Reset Developer settings") {
+                        DeveloperSettingsStore.shared.reset()
+                    }
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-developer-reset-button")
+                } header: {
+                    Text("Developer")
+                        .waiSectionHeader()
+                        .accessibilityIdentifier("settings-developer-header")
+                }
             }
 
             Section {
