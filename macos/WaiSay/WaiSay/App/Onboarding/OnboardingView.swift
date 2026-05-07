@@ -21,7 +21,6 @@ struct OnboardingView: View {
     @State private var triggeredOpenAccessibilitySettings = false
 
     private let pages = OnboardingPage.allCases
-    @EnvironmentObject var languageStore: DictationLanguageStore
 
     init() {
         _currentPage = State(initialValue: Self.initialCurrentPage())
@@ -68,35 +67,37 @@ struct OnboardingView: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 ForEach(pages.indices, id: \.self) { index in
-                    if pages[index] == .permission {
-                        OnboardingPermissionSlide(
-                            isActive: index == currentPage,
-                            hasMicrophonePermission: hasMicrophonePermission,
-                            accessibilityStatus: accessibilityStatus,
-                            showSettingsRestartHint: showSettingsRestartHint,
-                            requestMicrophonePermission: requestMicrophonePermission,
-                            openAccessibilitySettings: openAccessibilitySettings,
-                            restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
-                        )
-                        .environmentObject(dictationManager)
-                        .frame(width: geo.size.width)
-                    } else if pages[index] == .verify {
-                        OnboardingVerifySlide(
-                            isActive: index == currentPage,
-                            onConfirm: completeOnboarding
-                        )
-                        .environmentObject(dictationManager)
-                        .frame(width: geo.size.width)
-                    } else if pages[index] == .languages {
-                        OnboardingLanguageSlide(
-                            isActive: index == currentPage,
-                            store: languageStore
-                        )
-                        .frame(width: geo.size.width)
-                    } else {
-                        OnboardingSlide(page: pages[index], isActive: index == currentPage)
-                        .frame(width: geo.size.width)
+                    Group {
+                        switch pages[index] {
+                        case .welcome:
+                            OnboardingWelcomeSlide(isActive: index == currentPage)
+                        case .valueProps:
+                            OnboardingValuePropsSlide(isActive: index == currentPage)
+                        case .permission:
+                            OnboardingPermissionSlide(
+                                isActive: index == currentPage,
+                                hasMicrophonePermission: hasMicrophonePermission,
+                                accessibilityStatus: accessibilityStatus,
+                                showSettingsRestartHint: showSettingsRestartHint,
+                                requestMicrophonePermission: requestMicrophonePermission,
+                                openAccessibilitySettings: openAccessibilitySettings,
+                                restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
+                            )
+                            .environmentObject(dictationManager)
+                        case .hotkey:
+                            OnboardingHotkeyPickerSlide(
+                                isActive: index == currentPage,
+                                dictationManager: dictationManager
+                            )
+                        case .sandbox:
+                            OnboardingDictationSandboxSlide(
+                                isActive: index == currentPage,
+                                dictationManager: dictationManager,
+                                onContinue: completeOnboarding
+                            )
+                        }
                     }
+                    .frame(width: geo.size.width)
                 }
             }
             .frame(width: geo.size.width * CGFloat(pages.count), alignment: .leading)
@@ -138,8 +139,8 @@ struct OnboardingView: View {
         pages[currentPage] == .permission
     }
 
-    private var isVerifyPage: Bool {
-        pages[currentPage] == .verify
+    private var isSandboxPage: Bool {
+        pages[currentPage] == .sandbox
     }
 
     @ViewBuilder
@@ -178,15 +179,16 @@ struct OnboardingView: View {
 
             // Skip drops the user into the main UI. Missing permissions
             // surface as a banner there, so skipping is safe.
-            Button(isPermissionPage || isVerifyPage ? "Skip for Now" : "Skip") {
+            Button(isPermissionPage || isSandboxPage ? "Skip for Now" : "Skip") {
                 completeOnboarding()
             }
             .buttonStyle(WaiGhostButtonStyle())
             .accessibilityIdentifier("onboarding-skip-button")
 
-            // Verify slide owns its own Continue CTA. Footer hides the
-            // primary button there to avoid two competing CTAs.
-            if !isVerifyPage {
+            // Sandbox slide owns its own Continue CTA (gated on a successful
+            // dictation). Footer hides the primary button there to avoid two
+            // competing CTAs.
+            if !isSandboxPage {
                 Button(action: handlePrimaryTap) {
                     Text(primaryButtonTitle)
                         .frame(minWidth: 160)
@@ -385,54 +387,6 @@ struct OnboardingView: View {
     }
 }
 
-/// Onboarding language picker — full-bleed slide with title, picker, and a
-/// "what does this mean" explainer. Mirrors the visual rhythm of the other
-/// onboarding slides.
-private struct OnboardingLanguageSlide: View {
-    let isActive: Bool
-    @ObservedObject var store: DictationLanguageStore
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer(minLength: 0)
-            VStack(spacing: 12) {
-                Image(systemName: "globe")
-                    .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(Palette.accent)
-                    .padding(.bottom, 4)
-                Text("Pick your languages")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(Palette.textPrimary)
-                Text("Choose one for the lowest latency, several to switch fluidly, or auto-detect any language. You can change this later in Settings.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .frame(maxWidth: 540)
-            }
-            ScrollView {
-                LanguagePickerView(store: store)
-                    .padding(.horizontal, 4)
-            }
-            .frame(maxWidth: 520, maxHeight: 360)
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(NSColor.windowBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            )
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 48)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(isActive ? 1 : 0)
-        .offset(y: isActive ? 0 : 16)
-        .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
-    }
-}
 
 private struct OnboardingPermissionSlide: View {
     @EnvironmentObject var dictationManager: DictationManager
@@ -850,192 +804,5 @@ private struct PermissionPreviewSettings: View {
             }
         }
         .padding(.vertical, 3)
-    }
-}
-
-// MARK: - Hotkey verification slide
-
-/// Live key-press tester after the permissions step — proves the hotkey is
-/// actually wired up before the user lands in the main UI. Uses
-/// `NSEvent.addLocalMonitorForEvents`, which works while the onboarding window
-/// has focus and does not depend on Input Monitoring permission yet — useful
-/// because the user just granted it and TCC may not have caught up.
-private struct OnboardingVerifySlide: View {
-    @EnvironmentObject var dictationManager: DictationManager
-
-    let isActive: Bool
-    let onConfirm: () -> Void
-
-    @State private var pressedAtLeastOnce = false
-    @State private var pressFlash = false
-    @State private var localMonitor: Any?
-
-    var body: some View {
-        VStack(spacing: 32) {
-            Spacer(minLength: 0)
-
-            VStack(spacing: 10) {
-                Text("Test the keyboard shortcut")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Palette.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                HStack(spacing: 6) {
-                    Text("We recommend the")
-                    keyChip(dictationManager.selectedHotkey.shortLabel, highlight: false)
-                    Text("key.")
-                }
-                .font(.system(size: 14))
-                .foregroundStyle(Palette.textSecondary)
-            }
-
-            VStack(spacing: 18) {
-                Text(pressedAtLeastOnce
-                     ? "Looks good — release the key when you\u{2019}re ready."
-                     : "Press the shortcut now to test.")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Palette.textSecondary)
-
-                keyVisualization
-
-                HStack(spacing: 12) {
-                    // Inline hotkey picker — lets the user change the key
-                    // right here if the test fails. Avoids the broken
-                    // "open Settings" jump that doesn't exist during
-                    // pre-auth onboarding.
-                    Picker("", selection: Binding(
-                        get: { dictationManager.selectedHotkey },
-                        set: { dictationManager.updateHotkey($0) }
-                    )) {
-                        ForEach(DictationHotkey.allCases) { hotkey in
-                            Text(hotkey.label).tag(hotkey)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 220)
-                    .accessibilityIdentifier("onboarding-verify-hotkey-picker")
-
-                    Button(action: onConfirm) {
-                        Text("Continue")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                    .fill(pressedAtLeastOnce ? Color.black : Palette.textTertiary)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!pressedAtLeastOnce)
-                    .accessibilityIdentifier("onboarding-verify-continue")
-                }
-            }
-            .padding(28)
-            .frame(maxWidth: 540)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(NSColor.windowBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Palette.border, lineWidth: 1)
-            )
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 48)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(isActive ? 1 : 0)
-        .offset(y: isActive ? 0 : 16)
-        .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
-        .onAppear {
-            if isActive { installLocalMonitor() }
-        }
-        .onDisappear { removeLocalMonitor() }
-        .onChange(of: isActive) { _, newValue in
-            if newValue {
-                installLocalMonitor()
-            } else {
-                removeLocalMonitor()
-                // When user navigates away from verify, drop the press flash
-                // (but keep `pressedAtLeastOnce` so a partial confirmation
-                // survives a quick back-and-forth).
-                pressFlash = false
-            }
-        }
-    }
-
-    private func installLocalMonitor() {
-        guard localMonitor == nil else { return }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-            let isHotkey = matchesSelectedHotkey(keyCode: event.keyCode, flags: event.modifierFlags)
-            if isHotkey {
-                pressFlash = true
-                pressedAtLeastOnce = true
-            } else if pressFlash {
-                pressFlash = false
-            }
-            return event
-        }
-    }
-
-    private func removeLocalMonitor() {
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-            localMonitor = nil
-        }
-    }
-
-    private func matchesSelectedHotkey(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
-        let clean = flags.intersection(.deviceIndependentFlagsMask)
-        switch dictationManager.selectedHotkey {
-        case .rightOption:
-            return keyCode == UInt16(kVK_RightOption) && clean.contains(.option)
-        case .leftOption:
-            return keyCode == UInt16(kVK_Option) && clean.contains(.option)
-        case .rightCommand:
-            return keyCode == UInt16(kVK_RightCommand) && clean.contains(.command)
-        case .fn:
-            return clean.contains(.function)
-        case .controlOption:
-            return clean.contains(.control) && clean.contains(.option)
-        }
-    }
-
-    @ViewBuilder
-    private var keyVisualization: some View {
-        let shouldHighlight = pressFlash
-        ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(shouldHighlight ? Palette.accent : Color.white)
-                .frame(width: 96, height: 96)
-                .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.08), lineWidth: 1)
-                )
-            VStack(spacing: 4) {
-                Text(dictationManager.selectedHotkey.shortLabel)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(shouldHighlight ? .white : Palette.textPrimary)
-            }
-        }
-        .animation(.easeInOut(duration: 0.12), value: shouldHighlight)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private func keyChip(_ label: String, highlight: Bool) -> some View {
-        Text(label)
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(highlight ? Palette.accent.opacity(0.15) : Color.gray.opacity(0.12))
-            )
     }
 }
