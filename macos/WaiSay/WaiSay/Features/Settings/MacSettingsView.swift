@@ -351,7 +351,7 @@ struct MacSettingsView: View {
         if accessibilityStatus != .granted {
             return "Grant Accessibility for the global hotkey and automatic paste."
         }
-        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate, release to paste. Double-tap to start hands-free, single-tap to stop."
+        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate (release to paste). Double-tap to start hands-free; double-tap again to stop."
     }
 
     private var dictationPrivacyText: String {

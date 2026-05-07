@@ -243,20 +243,14 @@ final class DictationManager: ObservableObject {
             }
         }
 
-        hotkeyManager.onSingleTap = { [weak self] in
-            guard let self else { return }
-            // Single tap stops hands-free recording (like Wispr Flow). But
-            // ignore taps that arrive within the post-start grace window —
-            // they are almost certainly the lingering "first tap" of the
-            // double-tap that JUST started this session.
-            if self.state == .listening && self.isHandsFree {
-                if let started = self.listeningStartedAt,
-                   Date().timeIntervalSince(started) < Self.postStartGrace {
-                    log.info("Single-tap stop ignored — within post-start grace (\(Date().timeIntervalSince(started))s)")
-                    return
-                }
-                Task { await self.stopAndInsert() }
-            }
+        hotkeyManager.onSingleTap = {
+            // Wispr Flow pattern: hands-free is toggled exclusively via the
+            // double-tap gesture (start AND stop). Single-tap of the PTT key
+            // is intentionally NOT bound to any action — this is what makes
+            // their UX immune to the start/stop race we used to hit, where a
+            // stray flagsChanged event right after .listening would call
+            // stopAndInsert(). The hotkey manager still emits the callback
+            // for symmetry; we no-op here on purpose.
         }
 
         hotkeyManager.onCancelled = { [weak self] in
