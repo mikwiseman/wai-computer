@@ -28,6 +28,18 @@ final class DictationManager: ObservableObject {
     @Published var isEnabled = false
     @Published var error: String?
 
+    // Wall-clock timestamps used to suppress race conditions:
+    //  - listeningStartedAt: prevents a stray single-tap (which arrives
+    //    almost simultaneously with the second tap of a double-tap-to-toggle)
+    //    from stopping the session within ms of it starting.
+    //  - lastHandsFreeToggleAt: debounces double-fires of the toggle when
+    //    the same physical key is matched by both the dedicated-handsfree
+    //    branch and the PTT-double-tap branch.
+    private var listeningStartedAt: Date?
+    private var lastHandsFreeToggleAt: Date?
+    private static let postStartGrace: TimeInterval = 1.0
+    private static let toggleDebounce: TimeInterval = 0.5
+
     // MARK: - Settings (persisted via UserDefaults)
     //
     // We use @Published + manual UserDefaults persistence rather than @AppStorage
@@ -210,6 +222,17 @@ final class DictationManager: ObservableObject {
             guard let self else { return }
             guard self.isEnabled else { return }
 
+            // Debounce: ignore duplicate toggles within `toggleDebounce` to
+            // protect against the dedicated-handsfree-key path and the
+            // PTT-double-tap path both matching the same physical input.
+            let now = Date()
+            if let last = self.lastHandsFreeToggleAt,
+               now.timeIntervalSince(last) < Self.toggleDebounce {
+                log.info("Hands-free toggle debounced (\(now.timeIntervalSince(last))s since last)")
+                return
+            }
+            self.lastHandsFreeToggleAt = now
+
             if self.state == .listening && self.isHandsFree {
                 // Currently in hands-free — stop
                 Task { await self.stopAndInsert() }
@@ -222,8 +245,16 @@ final class DictationManager: ObservableObject {
 
         hotkeyManager.onSingleTap = { [weak self] in
             guard let self else { return }
-            // Single tap stops hands-free recording (like Wispr Flow)
+            // Single tap stops hands-free recording (like Wispr Flow). But
+            // ignore taps that arrive within the post-start grace window —
+            // they are almost certainly the lingering "first tap" of the
+            // double-tap that JUST started this session.
             if self.state == .listening && self.isHandsFree {
+                if let started = self.listeningStartedAt,
+                   Date().timeIntervalSince(started) < Self.postStartGrace {
+                    log.info("Single-tap stop ignored — within post-start grace (\(Date().timeIntervalSince(started))s)")
+                    return
+                }
                 Task { await self.stopAndInsert() }
             }
         }
@@ -354,6 +385,7 @@ final class DictationManager: ObservableObject {
 
             startTimer()
             setState(.listening)
+            listeningStartedAt = Date()
             session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
@@ -480,6 +512,7 @@ final class DictationManager: ObservableObject {
         providerSession = nil
         deferredStop = false
         firstTokenReported = false
+        listeningStartedAt = nil
 
         targetApp = nil
         setState(.idle)
@@ -551,7 +584,16 @@ final class DictationManager: ObservableObject {
             ])
             // No silent fallbacks: only auth_error gets a single in-session
             // retry (handled by the session); everything else surfaces.
+            // Exception: in hands-free mode, `insufficientAudioActivity` is
+            // expected (user pauses to think) — show the hint but keep the
+            // session alive. Push-to-talk still cancels because the user is
+            // actively holding the key.
             if state == .listening {
+                if isHandsFree, case .insufficientAudioActivity = providerError {
+                    self.error = userFacingMessage(for: providerError)
+                    log.info("Hands-free: insufficient audio activity warning, keeping session alive")
+                    return
+                }
                 self.error = userFacingMessage(for: providerError)
                 await cancelDictation()
             }
