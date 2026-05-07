@@ -157,4 +157,63 @@ final class WebSocketManagerTests: XCTestCase {
         XCTAssertNotNil(exhausted.errorDescription)
         XCTAssertTrue(exhausted.errorDescription!.contains("10"))
     }
+
+    // MARK: - cappedKeyTerms (ElevenLabs limits: 50 entries / 20 chars each)
+
+    func testCappedKeyTermsRespectsCountLimit() {
+        let input = (1...100).map { "term\($0)" }
+        let output = WebSocketManager.cappedKeyTerms(input)
+        XCTAssertEqual(output.count, WebSocketManager.elevenLabsKeyTermsLimit)
+        XCTAssertEqual(output.first, "term1")
+        XCTAssertEqual(output.last, "term50")
+    }
+
+    func testCappedKeyTermsTruncatesLongEntries() {
+        let long = String(repeating: "a", count: 50)
+        let output = WebSocketManager.cappedKeyTerms([long])
+        XCTAssertEqual(output.first?.count, WebSocketManager.elevenLabsKeyTermCharLimit)
+    }
+
+    func testCappedKeyTermsTrimsAndDropsEmpties() {
+        let output = WebSocketManager.cappedKeyTerms(["", "  ", "\nWaiSay\t", "Anthropic"])
+        XCTAssertEqual(output, ["WaiSay", "Anthropic"])
+    }
+
+    // MARK: - buildElevenLabsURL with keyTerms
+
+    func testBuildElevenLabsURLAppendsKeyTerms() async throws {
+        let manager = WebSocketManager(
+            apiClient: APIClient(baseURL: URL(string: "https://example.test")!),
+            language: "en",
+            channels: 1,
+            keyTerms: ["WaiSay", "Anthropic", "Mikhail"]
+        )
+        let url = try await manager.buildElevenLabsURL(
+            token: "tok",
+            model: "scribe_v2_realtime",
+            commitStrategy: nil
+        )
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        let keytermsValues = (comps.queryItems ?? [])
+            .filter { $0.name == "keyterms" }
+            .compactMap { $0.value }
+        XCTAssertEqual(keytermsValues, ["WaiSay", "Anthropic", "Mikhail"])
+    }
+
+    func testBuildElevenLabsURLOmitsKeyTermsWhenEmpty() async throws {
+        let manager = WebSocketManager(
+            apiClient: APIClient(baseURL: URL(string: "https://example.test")!),
+            language: "en",
+            channels: 1,
+            keyTerms: []
+        )
+        let url = try await manager.buildElevenLabsURL(
+            token: "tok",
+            model: "scribe_v2_realtime",
+            commitStrategy: nil
+        )
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        let keytermsValues = (comps.queryItems ?? []).filter { $0.name == "keyterms" }
+        XCTAssertTrue(keytermsValues.isEmpty)
+    }
 }

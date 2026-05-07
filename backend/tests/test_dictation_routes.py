@@ -335,3 +335,77 @@ async def test_cleanup_unexpected_exception_returns_500(
 
     assert response.status_code == 500
     assert response.json()["detail"] == "Dictation cleanup failed"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Vocabulary entries are wrapped in <preserve_exact> per Anthropic best practice."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object) -> _FakeMessage:
+        captured.update(kwargs)
+        return _FakeMessage("WaiSay is great with Anthropic.")
+
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)  # type: ignore[arg-type]
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": "wai say is great with anthropic",
+            "vocabulary": ["WaiSay", "Anthropic", "  WaiSay  ", "", "WAISAY"],
+        },
+    )
+
+    assert response.status_code == 200
+    prompt = captured["messages"][0]["content"]  # type: ignore[index]
+    assert "<preserve_exact>" in prompt
+    assert "</preserve_exact>" in prompt
+    assert "WaiSay" in prompt
+    assert "Anthropic" in prompt
+    # Dedup: WaiSay should appear once inside the preserve block, not three times.
+    block_start = prompt.index("<preserve_exact>")
+    block_end = prompt.index("</preserve_exact>")
+    block = prompt[block_start:block_end]
+    assert block.count("WaiSay") == 1
+    assert block.count("WAISAY") == 0  # Lowercased duplicate of WaiSay was dropped
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """No vocabulary → no preserve_exact tag in the prompt at all."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object) -> _FakeMessage:
+        captured.update(kwargs)
+        return _FakeMessage("Cleaned text.")
+
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)  # type: ignore[arg-type]
+
+    # Test both an explicit empty list and the default (omitted) field.
+    for payload in (
+        {"text": "please clean this up please"},
+        {"text": "please clean this up please", "vocabulary": []},
+        {"text": "please clean this up please", "vocabulary": ["", "  "]},
+    ):
+        captured.clear()
+        response = await client.post(
+            "/api/dictation/cleanup",
+            headers=auth_headers,
+            json=payload,
+        )
+        assert response.status_code == 200
+        prompt = captured["messages"][0]["content"]  # type: ignore[index]
+        assert "<preserve_exact>" not in prompt
