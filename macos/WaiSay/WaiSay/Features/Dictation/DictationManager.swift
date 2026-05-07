@@ -565,28 +565,57 @@ final class DictationManager: ObservableObject {
 
             // Audio pump: pre-roll first (so the user's first word survives
             // mic warm-up), then live buffers from the lease stream.
+            // Diagnostic NSLogs (visible in Console.app filtered to WaiSay
+            // process) — without these, audio-pipeline failures look identical
+            // to ElevenLabs being silent.
             let encoder = AudioEncoder(sampleRate: 16000, channels: 1)
             let preRoll = lease.preRoll
             let buffers = lease.buffers
+            NSLog("[Dictation/EL] audio task starting — preRoll=%d buffers", preRoll.count)
             elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws] in
-                guard let ws else { return }
-                for buffer in preRoll {
-                    if Task.isCancelled { return }
-                    if let data = encoder.encode(buffer) {
-                        try? await ws.sendAudio(data: data)
-                    }
+                guard let ws else {
+                    NSLog("[Dictation/EL] audio task exiting — ws is nil at start")
+                    return
                 }
-                for await buffer in buffers {
-                    if Task.isCancelled { return }
+                NSLog("[Dictation/EL] audio task body running")
+                var preRollSent = 0
+                for buffer in preRoll {
+                    if Task.isCancelled { NSLog("[Dictation/EL] audio task cancelled during preRoll"); return }
                     if let data = encoder.encode(buffer) {
                         do {
                             try await ws.sendAudio(data: data)
+                            preRollSent += 1
                         } catch {
-                            // Drop silently — disconnect path will surface via
-                            // the .disconnected event.
+                            NSLog("[Dictation/EL] preRoll send failed: %@", String(describing: error))
                         }
+                    } else {
+                        NSLog("[Dictation/EL] preRoll buffer %d encode returned nil (frames=%d, format=%@)",
+                              preRollSent, Int(buffer.frameLength), String(describing: buffer.format))
                     }
                 }
+                NSLog("[Dictation/EL] preRoll done — sent %d/%d, awaiting live buffers",
+                      preRollSent, preRoll.count)
+                var liveSent = 0
+                for await buffer in buffers {
+                    if Task.isCancelled { NSLog("[Dictation/EL] audio task cancelled during live"); return }
+                    if let data = encoder.encode(buffer) {
+                        do {
+                            try await ws.sendAudio(data: data)
+                            liveSent += 1
+                            if liveSent <= 3 || liveSent % 20 == 0 {
+                                NSLog("[Dictation/EL] live #%d sent %d bytes (frames=%d)",
+                                      liveSent, data.count, Int(buffer.frameLength))
+                            }
+                        } catch {
+                            NSLog("[Dictation/EL] live #%d send failed: %@",
+                                  liveSent, String(describing: error))
+                        }
+                    } else {
+                        NSLog("[Dictation/EL] live buffer encode returned nil (frames=%d, format=%@)",
+                              Int(buffer.frameLength), String(describing: buffer.format))
+                    }
+                }
+                NSLog("[Dictation/EL] live loop ended — total sent %d", liveSent)
             }
 
             // Hotkey released during connect — apply now.
@@ -605,7 +634,14 @@ final class DictationManager: ObservableObject {
 
     private func handleElevenLabsEvent(_ event: WebSocketEvent) async {
         switch event {
+        case .connected:
+            NSLog("[Dictation/EL] WebSocket connected event")
+        case .reconnected:
+            NSLog("[Dictation/EL] WebSocket RECONNECTED event")
+        case .reconnecting(let attempt, let max):
+            NSLog("[Dictation/EL] WebSocket reconnecting %d/%d", attempt, max)
         case .transcript(let segment):
+            NSLog("[Dictation/EL] transcript isFinal=%d text=%@", segment.isFinal ? 1 : 0, segment.text.prefix(80) as NSString)
             if !firstTokenReported {
                 firstTokenReported = true
                 instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": segment.isFinal])
@@ -619,6 +655,7 @@ final class DictationManager: ObservableObject {
             }
             interimTranscript = buildTranscript()
         case .disconnected(let err):
+            NSLog("[Dictation/EL] WebSocket DISCONNECTED err=%@", err.map { String(describing: $0) } ?? "clean")
             instrumentationSession?.event(.providerClosed, data: [
                 "reason": err.map { String(describing: $0) } ?? "clean",
             ])
