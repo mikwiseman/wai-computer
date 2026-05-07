@@ -153,7 +153,16 @@ final class DictationManager: ObservableObject {
         } else {
             self.aiCleanupEnabled = defaults.bool(forKey: Self.aiCleanupDefaultsKey)
         }
-        self.isFeatureEnabled = defaults.bool(forKey: Self.enabledDefaultsKey)
+        // Same idiom: default ON for fresh installs so the onboarding sandbox
+        // (build 74+) can actually fire the hotkey, and so first-launch users
+        // get the marquee feature without hunting through Settings. An
+        // explicitly-stored `false` (user toggled it off in Settings) stays
+        // `false`.
+        if defaults.object(forKey: Self.enabledDefaultsKey) == nil {
+            self.isFeatureEnabled = true
+        } else {
+            self.isFeatureEnabled = defaults.bool(forKey: Self.enabledDefaultsKey)
+        }
         setupHotkeyCallbacks()
     }
 
