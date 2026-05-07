@@ -174,13 +174,25 @@ struct WaiSayMacApp: App {
             CommandGroup(replacing: .windowList) {}
         }
 
-        // Menu bar extra
-        MenuBarExtra("WaiSay", systemImage: isRecordingActivityVisible ? "waveform.circle.fill" : "brain.head.profile") {
+        // Menu bar extra — BrandIcon (line-art profile + waveform) renders as
+        // a monochrome template, picking up the current menu-bar tint. While
+        // recording, swap to a filled waveform symbol as a visual "active" cue.
+        MenuBarExtra {
             MenuBarView()
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
+        } label: {
+            if isRecordingActivityVisible {
+                Image(systemName: "waveform.circle.fill")
+            } else {
+                Image("BrandIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+            }
         }
         .menuBarExtraStyle(.window)
     }
@@ -201,7 +213,6 @@ enum MacPresentationSettings {
 enum MacMainWindowAction: Equatable {
     case importAudioFile
     case settings
-    case dictationHistory
 }
 
 @MainActor
