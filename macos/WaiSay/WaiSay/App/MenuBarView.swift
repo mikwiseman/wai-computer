@@ -8,6 +8,7 @@ struct MenuBarView: View {
     @EnvironmentObject var dictationManager: DictationManager
     @EnvironmentObject var historyStore: DictationHistoryStore
     @State private var recentRecordings: [Recording] = []
+    @State private var lastDictationCopied = false
 
     private var isRecordingActivityVisible: Bool {
         recordingVM.shouldPresentLiveView || appState.completedRecordingContext != nil
@@ -216,12 +217,16 @@ struct MenuBarView: View {
 
                 if let last = historyStore.entries.first {
                     Button {
-                        appState.pendingMainWindowAction = .dictationHistory
-                        openMainWindow()
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(last.displayText, forType: .string)
+                        lastDictationCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            lastDictationCopied = false
+                        }
                     } label: {
                         HStack(alignment: .top, spacing: Spacing.sm) {
-                            Image(systemName: "text.bubble")
-                                .foregroundStyle(Palette.textSecondary)
+                            Image(systemName: lastDictationCopied ? "checkmark" : "doc.on.doc")
+                                .foregroundStyle(lastDictationCopied ? .green : Palette.textSecondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(last.displayText)
                                     .font(Typography.bodySmall)
@@ -239,6 +244,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .help("Copy last dictation to clipboard")
                 }
 
                 HStack {

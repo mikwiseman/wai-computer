@@ -777,8 +777,6 @@ struct MacMainView: View {
             importAudioFile()
         case .settings:
             selectedSection = .settings
-        case .dictationHistory:
-            selectedSection = .history
         }
     }
 
