@@ -20,12 +20,17 @@ struct WaiSayMacApp: App {
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
     @StateObject private var languageStore: DictationLanguageStore
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
+    private let updaterDelegate = BetaChannelUpdaterDelegate()
+    private let updaterController: SPUStandardUpdaterController
 
     init() {
         #if !DEBUG
         SentryHelper.start(dsn: "<SENTRY_DSN>")
         #endif
+
+        let delegate = BetaChannelUpdaterDelegate()
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: delegate, userDriverDelegate: nil)
 
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
@@ -62,6 +67,9 @@ struct WaiSayMacApp: App {
                 .environmentObject(languageStore)
                 .onAppear {
                     MacPresentationCoordinator.shared.mainWindowDidAppear()
+                }
+                .onChange(of: receiveBetaUpdates) { _, _ in
+                    updaterController.updater.resetUpdateCycle()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }

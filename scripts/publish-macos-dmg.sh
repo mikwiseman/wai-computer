@@ -42,6 +42,18 @@ if [[ ! -f "$RELEASE_ROOT/appcast.xml" ]]; then
   exit 1
 fi
 
+REMOTE_APPCAST_URL=${MACOS_REMOTE_APPCAST_URL:-https://say.waiwai.is/releases/macos/appcast.xml}
+MERGE_SCRIPT="$ROOT_DIR/scripts/merge-macos-appcast.py"
+if [[ ! -x "$MERGE_SCRIPT" ]]; then
+  echo "ERROR: merge script not executable at $MERGE_SCRIPT" >&2
+  exit 1
+fi
+echo "Merging local appcast with remote at $REMOTE_APPCAST_URL ..."
+python3 "$MERGE_SCRIPT" \
+  --local "$RELEASE_ROOT/appcast.xml" \
+  --remote-url "$REMOTE_APPCAST_URL" \
+  --out "$RELEASE_ROOT/appcast.xml"
+
 REMOTE="${VPS_USER}@${VPS_HOST}"
 SSH_OPTS=(-i "$SSH_KEY_PATH" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 
