@@ -123,7 +123,12 @@ public actor InworldProviderSession: ProviderSession {
         task.resume()
         inworldLog.info("[Inworld] WebSocket task created, sending transcribe_config model=\(self.modelId, privacy: .public) lang=\(self.language, privacy: .public)")
 
-        // First message — provider session config.
+        // First message — provider session config. We explicitly set
+        // `inactivity_timeout_seconds` to 60s so silent gaps (hands-free
+        // user pausing to think) don't cause Inworld to fire an error
+        // frame and tear the session down. The undocumented server default
+        // is short enough (1-3s observed) that hands-free dictation closed
+        // before users could speak.
         let configPayload: [String: Any] = [
             "transcribe_config": [
                 "model_id": modelId,
@@ -131,6 +136,7 @@ public actor InworldProviderSession: ProviderSession {
                 "audio_encoding": "LINEAR16",
                 "sample_rate_hertz": sampleRate,
                 "number_of_channels": channels,
+                "inactivity_timeout_seconds": 60,
             ] as [String: Any]
         ]
         try await task.send(.string(Self.encodeJSON(configPayload)))
@@ -258,7 +264,13 @@ public actor InworldProviderSession: ProviderSession {
         let message = (payload["message"] as? String) ?? (payload["error_message"] as? String)
         let providerError: ProviderError = Self.mapError(code: code, message: message)
         eventContinuation.yield(.providerWarning(providerError))
-        inworldLog.error("[Inworld] error frame code=\(code, privacy: .public)")
+        // Log the raw code AND message — when an unmapped code falls into the
+        // `transcriberInternal` default branch, the message is the only clue
+        // we have about what Inworld actually wanted to say. Public privacy
+        // because these are server-defined diagnostic strings, not user data.
+        inworldLog.error(
+            "[Inworld] error frame code=\(code, privacy: .public) message=\(message ?? "<nil>", privacy: .public) mappedTo=\(String(describing: providerError), privacy: .public)"
+        )
     }
 
     private func handleSocketError(_ error: Error) {

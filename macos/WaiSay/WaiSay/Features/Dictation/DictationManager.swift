@@ -551,29 +551,89 @@ final class DictationManager: ObservableObject {
             instrumentationSession?.event(.providerWarning, data: [
                 "fingerprint": providerError.fingerprint
             ])
-            // No silent fallbacks: only auth_error gets a single in-session
-            // retry (handled by the session); everything else surfaces.
-            // Exception: in hands-free mode, `insufficientAudioActivity` is
-            // expected (user pauses to think) — show the hint but keep the
-            // session alive. Push-to-talk still cancels because the user is
-            // actively holding the key.
+            // In hands-free mode the user is explicitly waiting — pauses are
+            // expected, transient hiccups are recoverable. Only hard-fail for
+            // errors that genuinely cannot be retried within the same
+            // session: bad token, hit billing wall, model misconfigured,
+            // or the per-session time limit was reached. Everything else
+            // (insufficientAudioActivity, rateLimited, chunkSizeExceeded,
+            // commitThrottled, malformedFrame, transcriberInternal — most
+            // notably the `default` mapping for unknown Inworld codes) is
+            // surfaced as a hint but the overlay stays open and the audio
+            // pump keeps trying. PTT still fails-fast across the board
+            // because the user is actively holding the key and a frozen
+            // overlay would be confusing.
             if state == .listening {
-                if isHandsFree, case .insufficientAudioActivity = providerError {
-                    self.error = userFacingMessage(for: providerError)
-                    log.info("Hands-free: insufficient audio activity warning, keeping session alive")
-                    return
+                if isHandsFree {
+                    let isUnrecoverable: Bool
+                    switch providerError {
+                    case .authError, .quotaExceeded, .unsupportedModel, .sessionTimeLimitExceeded:
+                        isUnrecoverable = true
+                    default:
+                        isUnrecoverable = false
+                    }
+                    if !isUnrecoverable {
+                        self.error = userFacingMessage(for: providerError)
+                        log.info("Hands-free: provider warning '\(providerError.fingerprint, privacy: .public)' surfaced, session kept alive")
+                        // Surface to Sentry — without this, the only signal
+                        // is a breadcrumb that's never transmitted (Sentry
+                        // only sends breadcrumbs when an exception is captured).
+                        SentryHelper.captureError(
+                            providerError,
+                            extras: [
+                                "context": "dictation.providerWarning.recovered",
+                                "fingerprint": providerError.fingerprint,
+                                "isHandsFree": true,
+                            ]
+                        )
+                        return
+                    }
                 }
                 self.error = userFacingMessage(for: providerError)
+                log.info("Cancelling dictation — provider warning fingerprint=\(providerError.fingerprint, privacy: .public)")
+                // Capture to Sentry — providerWarning previously only added a
+                // breadcrumb that Sentry never transmits without a parent
+                // exception. This call makes the issue visible in production.
+                SentryHelper.captureError(
+                    providerError,
+                    extras: [
+                        "context": "dictation.providerWarning.fatal",
+                        "fingerprint": providerError.fingerprint,
+                        "isHandsFree": isHandsFree,
+                        "userFacing": userFacingMessage(for: providerError),
+                    ]
+                )
                 await cancelDictation()
             }
         case .closed(let reason):
             instrumentationSession?.event(.providerClosed, data: [
                 "reason": String(describing: reason)
             ])
+            // Both serverError and networkLost mean the WebSocket is dead —
+            // no point keeping the overlay up while the audio pump fails
+            // every send. clientRequested is OUR own close call so we don't
+            // act on it (cleanup() is already running).
             if state == .listening {
-                if case .serverError = reason {
-                    self.error = "Live transcription was interrupted. Try again."
+                switch reason {
+                case .serverError, .networkLost, .serverEndOfStream, .sessionTimeLimitExceeded:
+                    self.error = "Connection to the transcription service was lost. Try again."
+                    log.info("Cancelling dictation — provider closed reason=\(String(describing: reason), privacy: .public)")
+                    let closeError = NSError(
+                        domain: "is.waiwai.say.dictation",
+                        code: 1001,
+                        userInfo: [NSLocalizedDescriptionKey: "Provider closed unexpectedly: \(reason)"]
+                    )
+                    SentryHelper.captureError(
+                        closeError,
+                        extras: [
+                            "context": "dictation.provider.closed",
+                            "reason": String(describing: reason),
+                            "isHandsFree": isHandsFree,
+                        ]
+                    )
                     await cancelDictation()
+                case .clientRequested:
+                    break
                 }
             }
         case .usage(let seconds):
