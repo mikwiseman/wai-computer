@@ -123,16 +123,36 @@ public actor InworldProviderSession: ProviderSession {
         task.resume()
         inworldLog.info("[Inworld] WebSocket task created, sending transcribe_config model=\(self.modelId, privacy: .public) lang=\(self.language, privacy: .public)")
 
-        // First message — provider session config. We explicitly set
-        // `inactivity_timeout_seconds` to 60s so silent gaps (hands-free
-        // user pausing to think) don't cause Inworld to fire an error
-        // frame and tear the session down. The undocumented server default
-        // is short enough (1-3s observed) that hands-free dictation closed
-        // before users could speak.
+        // First message — provider session config.
+        //
+        // Language tag rules (verified against the live API on 2026-05-07):
+        //   - Simple 2-letter BCP-47 ("en", "ru") work and transcribe.
+        //   - Region-qualified BCP-47 ("en-US", "ru-RU") silently close the
+        //     socket despite the API's own error message claiming they are
+        //     valid. Don't send those.
+        //   - Empty string is the multi-language auto-detect (replaces the
+        //     legacy "multi" tag, which is now rejected with
+        //     "invalid language tag format 'multi'").
+        // We translate the legacy "multi" caller value to "" at the wire
+        // edge so backend + UserDefaults that still say "multi" keep
+        // working without a coordinated rollout.
+        let normalisedLanguage: String
+        switch language {
+        case "multi", "und":
+            normalisedLanguage = ""  // Soniox auto-detect
+        case let other where other.contains("-"):
+            // "en-US" → "en" — drop the region. The ASR model is
+            // multilingual already; the region was only ever a hint.
+            normalisedLanguage = String(other.split(separator: "-").first ?? Substring(other))
+        default:
+            normalisedLanguage = language
+        }
+        // `inactivity_timeout_seconds` keeps hands-free silent gaps alive
+        // (Inworld's undocumented default fires too aggressively).
         let configPayload: [String: Any] = [
             "transcribe_config": [
                 "model_id": modelId,
-                "language": language,
+                "language": normalisedLanguage,
                 "audio_encoding": "LINEAR16",
                 "sample_rate_hertz": sampleRate,
                 "number_of_channels": channels,
@@ -140,6 +160,7 @@ public actor InworldProviderSession: ProviderSession {
             ] as [String: Any]
         ]
         try await task.send(.string(Self.encodeJSON(configPayload)))
+        inworldLog.info("[Inworld] sent transcribe_config language='\(normalisedLanguage, privacy: .public)' (caller passed '\(self.language, privacy: .public)')")
 
         startReceiveLoop(for: task)
     }
