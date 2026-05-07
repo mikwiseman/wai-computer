@@ -150,6 +150,19 @@ class MacLibraryViewModel: ObservableObject {
         }
     }
 
+    func renameRecording(id: String, newTitle: String, apiClient: APIClient) async {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        error = nil
+
+        do {
+            _ = try await apiClient.updateRecording(id: id, title: trimmed)
+            await loadLibrary(apiClient: apiClient)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
     func trashRecordings(ids: [String], apiClient: APIClient) async {
         guard !ids.isEmpty else { return }
         error = nil

@@ -14,6 +14,8 @@ struct MacRecordingDetailView: View {
     var onDelete: (() -> Void)?
     var onRestore: (() -> Void)?
     var onMoveToFolder: ((String?) -> Void)?
+    var onDidRename: (() -> Void)?
+    @Binding var pendingTitleEditId: String?
     @EnvironmentObject var appState: MacAppState
     @StateObject private var viewModel: MacRecordingDetailViewModel
     @State private var showDeleteConfirmation = false
@@ -21,15 +23,20 @@ struct MacRecordingDetailView: View {
     @State private var copiedSection: String?
     @State private var isSharing = false
     @State private var pendingSharePayload: SharePickerPayload?
+    @State private var isEditingTitle = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFieldFocused: Bool
 
     init(
         recordingId: String,
         initialDetail: RecordingDetail? = nil,
         mode: Mode = .active,
         folders: [Folder] = [],
+        pendingTitleEditId: Binding<String?> = .constant(nil),
         onDelete: (() -> Void)? = nil,
         onRestore: (() -> Void)? = nil,
-        onMoveToFolder: ((String?) -> Void)? = nil
+        onMoveToFolder: ((String?) -> Void)? = nil,
+        onDidRename: (() -> Void)? = nil
     ) {
         self.recordingId = recordingId
         self.mode = mode
@@ -37,6 +44,8 @@ struct MacRecordingDetailView: View {
         self.onDelete = onDelete
         self.onRestore = onRestore
         self.onMoveToFolder = onMoveToFolder
+        self.onDidRename = onDidRename
+        _pendingTitleEditId = pendingTitleEditId
         _viewModel = StateObject(wrappedValue: MacRecordingDetailViewModel(initialDetail: initialDetail))
     }
 
@@ -139,6 +148,31 @@ struct MacRecordingDetailView: View {
                 )
             }
         }
+        .onChange(of: pendingTitleEditId) { _, requested in
+            guard let requested, requested == recordingId, mode == .active else { return }
+            startTitleEdit(currentTitle: viewModel.recordingDetail?.title)
+            pendingTitleEditId = nil
+        }
+    }
+
+    private func startTitleEdit(currentTitle: String?) {
+        titleDraft = currentTitle ?? ""
+        isEditingTitle = true
+        DispatchQueue.main.async {
+            titleFieldFocused = true
+        }
+    }
+
+    private func commitTitleEdit(originalTitle: String?) {
+        let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        defer { isEditingTitle = false }
+        guard !trimmed.isEmpty, trimmed != (originalTitle ?? "") else { return }
+        Task {
+            let success = await viewModel.renameRecording(trimmed, apiClient: appState.getAPIClient())
+            if success {
+                onDidRename?()
+            }
+        }
     }
 
     private var detailRefreshKey: String {
@@ -221,10 +255,34 @@ struct MacRecordingDetailView: View {
     private func detailHeader(_ detail: RecordingDetail) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(detail.title ?? "Untitled")
-                    .font(Typography.displayMedium)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityIdentifier("recording-title")
+                if isEditingTitle && mode == .active {
+                    TextField("Title", text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .font(Typography.displayMedium)
+                        .focused($titleFieldFocused)
+                        .onSubmit { commitTitleEdit(originalTitle: detail.title) }
+                        .onKeyPress(.escape) {
+                            isEditingTitle = false
+                            return .handled
+                        }
+                        .onChange(of: titleFieldFocused) { _, focused in
+                            if !focused && isEditingTitle {
+                                commitTitleEdit(originalTitle: detail.title)
+                            }
+                        }
+                        .accessibilityIdentifier("recording-title-edit")
+                } else {
+                    Text(detail.title ?? "Untitled")
+                        .font(Typography.displayMedium)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("recording-title")
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard mode == .active else { return }
+                            startTitleEdit(currentTitle: detail.title)
+                        }
+                        .help(mode == .active ? "Double-click to rename" : "")
+                }
 
                 HStack(spacing: Spacing.sm) {
                     Text(detail.type.rawValue.capitalized)
@@ -802,6 +860,20 @@ class MacRecordingDetailViewModel: ObservableObject {
         guard let id = recordingDetail?.id else { return false }
         do {
             _ = try await apiClient.moveRecording(id: id, folderId: folderId)
+            recordingDetail = try await apiClient.getRecording(id: id)
+            return true
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+            return false
+        }
+    }
+
+    func renameRecording(_ newTitle: String, apiClient: APIClient) async -> Bool {
+        guard let id = recordingDetail?.id else { return false }
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do {
+            _ = try await apiClient.updateRecording(id: id, title: trimmed)
             recordingDetail = try await apiClient.getRecording(id: id)
             return true
         } catch {

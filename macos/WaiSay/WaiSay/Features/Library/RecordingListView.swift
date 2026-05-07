@@ -11,6 +11,7 @@ struct RecordingListView: View {
     let onRestore: ([String]) -> Void
     let onPermanentDelete: ([String]) -> Void
     let onMoveToFolder: ([String], String?) -> Void
+    let onRequestRename: (String) -> Void
 
     var body: some View {
         List(recordings, selection: $selectedRecordingIds) { recording in
@@ -31,6 +32,11 @@ struct RecordingListView: View {
                             onPermanentDelete(contextSelection)
                         }
                     } else {
+                        Button("Rename…") {
+                            onRequestRename(recording.id)
+                        }
+                        .disabled(contextSelection.count > 1)
+
                         Menu("Move to Folder") {
                             Button("Unfiled") {
                                 onMoveToFolder(contextSelection, nil)

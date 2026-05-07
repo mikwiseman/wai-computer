@@ -59,6 +59,7 @@ struct MacMainView: View {
     @State private var selectedSection: SidebarSection? = .allRecordings
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
+    @State private var pendingTitleEditId: String?
     @State private var completionTask: Task<Void, Never>?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isShowingCreateFolderSheet = false
@@ -528,6 +529,10 @@ struct MacMainView: View {
                         },
                         onMoveToFolder: { ids, folderId in
                             moveRecordings(ids, to: folderId)
+                        },
+                        onRequestRename: { id in
+                            selectedRecordingIds = [id]
+                            pendingTitleEditId = id
                         }
                     )
                 }
@@ -591,6 +596,7 @@ struct MacMainView: View {
                     initialDetail: prefetchedRecordingDetail?.id == recordingId ? prefetchedRecordingDetail : nil,
                     mode: detailMode,
                     folders: activeFolders,
+                    pendingTitleEditId: $pendingTitleEditId,
                     onDelete: {
                         selectedRecordingIds.removeAll()
                         prefetchedRecordingDetail = nil
@@ -609,6 +615,12 @@ struct MacMainView: View {
                         if currentFolderId != nil, currentFolderId != folderId {
                             selectedRecordingIds.removeAll()
                         }
+                        prefetchedRecordingDetail = nil
+                        Task {
+                            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                        }
+                    },
+                    onDidRename: {
                         prefetchedRecordingDetail = nil
                         Task {
                             await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
