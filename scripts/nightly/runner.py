@@ -31,10 +31,33 @@ logger = logging.getLogger("nightly")
 
 INWORLD_TTS_URL = "https://api.inworld.ai/tts/v1/voice"
 INWORLD_STT_WS = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional"
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 TTS_MODEL = "inworld-tts-1.5-max"
 STT_MODEL = "soniox/stt-rt-v4"
+# Keep in sync with backend/app/config.py::Settings.anthropic_dictation_model.
+CLEANUP_MODEL = "claude-haiku-4-5"
 SAMPLE_RATE = 16000
 CHUNK_MS = 50
+
+# Verbatim copy of backend/app/api/routes/dictation.py::cleanup_dictation prompt.
+# Update both files together if either changes — the harness's job is to detect
+# regressions in this exact prompt.
+_CLEANUP_PROMPT_TEMPLATE = (
+    "Lightly clean up this dictated text. "
+    "Remove filler sounds and filler words in Russian and English, including "
+    "э, эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, "
+    "um, uh, like, you know, I mean, basically, actually, so, well. "
+    "Remove repeated filler-only loops such as 'и, э-э-э, и, э-э-э'. "
+    "Remove false starts and self-corrections, keeping only the final intended "
+    "version, for example 'мы х-- мы предлагаем' becomes 'мы предлагаем'. "
+    "Fix only obvious grammar, capitalization, and punctuation issues. "
+    "Preserve the original language, meaning, tone, style, terminology, names, "
+    "claims, and sentence order. "
+    "Do not summarize, add information, change the meaning, or make it more "
+    "formal unless the text is clearly formal already. "
+    "Output ONLY the cleaned text, nothing else.\n\n"
+    "Dictated text: {text}"
+)
 
 
 @dataclass
@@ -57,6 +80,13 @@ class ScenarioResult:
     # scenario is short enough that the only final IS the post-audio one.
     stt_first_interim_ms: float = 0.0
     stt_first_final_ms: float = 0.0
+    # Tier 1.5 — only populated when scenario has `apply_cleanup: true`.
+    # cleaned_transcript is the post-Anthropic output; clean_wer compares
+    # it against scenario.cleaned_expected; cleanup_ms is the wall-clock
+    # round-trip to the Anthropic API.
+    cleaned_transcript: str = ""
+    clean_wer: float = 0.0
+    cleanup_ms: float = 0.0
     notes: list[str] = field(default_factory=list)
 
 
@@ -147,6 +177,64 @@ def wer(reference: str, hypothesis: str) -> float:
                 dp[i - 1][j - 1] + cost,
             )
     return dp[n][m] / n
+
+
+def load_anthropic_key() -> str | None:
+    """Returns the Anthropic key for cleanup tests, or None if not configured.
+
+    Tier 1.5 is opt-in per scenario; if the key is missing we skip cleanup
+    rather than fail the run. Fetch with:
+      ssh root@157.180.47.68 'grep ^ANTHROPIC_API_KEY= /etc/waisay/backend.env' \\
+        > ~/.config/waisay/anthropic.env && chmod 600 ~/.config/waisay/anthropic.env
+    """
+    candidate = Path.home() / ".config" / "waisay" / "anthropic.env"
+    if not candidate.exists():
+        return None
+    raw = candidate.read_text().strip()
+    if "=" in raw:
+        raw = raw.split("=", 1)[1].strip().strip("\"'")
+    return raw or None
+
+
+def clean_with_anthropic(api_key: str, text: str) -> tuple[str, float]:
+    """Replicates backend/app/api/routes/dictation.py::cleanup_dictation.
+
+    Returns (cleaned_text, wall_clock_ms). Mirrors backend's early-returns:
+    empty input -> "", input < 10 chars -> input unchanged (no API call).
+    """
+    text = text.strip()
+    if not text:
+        return "", 0.0
+    if len(text) < 10:
+        return text, 0.0
+    body = {
+        "model": CLEANUP_MODEL,
+        "max_tokens": 4096,
+        "messages": [
+            {"role": "user", "content": _CLEANUP_PROMPT_TEMPLATE.format(text=text)},
+        ],
+    }
+    req = urllib.request.Request(
+        ANTHROPIC_MESSAGES_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    t0 = time.perf_counter()
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read())
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    blocks = payload.get("content") or []
+    if not blocks:
+        raise RuntimeError(f"anthropic response empty: keys={list(payload.keys())}")
+    cleaned = (blocks[0].get("text") or "").strip()
+    if not cleaned:
+        raise RuntimeError("anthropic returned empty text block")
+    return cleaned, elapsed_ms
 
 
 def load_inworld_key() -> str:
@@ -412,6 +500,28 @@ async def run_scenario(
             status = "FAIL_LATENCY" if status == "PASS" else f"{status}+LATENCY"
             notes.append(f"E2E {e2e_ms:.0f}ms > max {scenario['max_latency_ms']}ms")
 
+    cleaned_transcript = ""
+    clean_wer_value = 0.0
+    cleanup_ms = 0.0
+    if scenario.get("apply_cleanup") and transcript:
+        anthropic_key = load_anthropic_key()
+        if anthropic_key is None:
+            notes.append("cleanup_skipped_no_anthropic_key")
+        else:
+            try:
+                cleaned_transcript, cleanup_ms = clean_with_anthropic(anthropic_key, transcript)
+                cleaned_expected = scenario.get("cleaned_expected", scenario["text"])
+                clean_wer_value = wer(cleaned_expected, cleaned_transcript)
+                max_clean_wer = scenario.get("max_clean_wer", 0.20)
+                if clean_wer_value > max_clean_wer:
+                    status = "FAIL_CLEAN_WER" if status == "PASS" else f"{status}+CLEAN_WER"
+                    notes.append(
+                        f"clean WER {clean_wer_value:.3f} > max {max_clean_wer:.3f}"
+                    )
+            except Exception as e:
+                notes.append(f"cleanup failed: {e}")
+                status = "ERROR_CLEANUP" if status == "PASS" else f"{status}+CLEANUP"
+
     return ScenarioResult(
         id=sid,
         category=scenario["category"],
@@ -426,6 +536,9 @@ async def run_scenario(
         status=status,
         stt_first_interim_ms=first_interim_ms,
         stt_first_final_ms=first_final_ms,
+        cleaned_transcript=cleaned_transcript,
+        clean_wer=clean_wer_value,
+        cleanup_ms=cleanup_ms,
         notes=notes,
     )
 
@@ -503,6 +616,24 @@ def render_report(results: list[ScenarioResult], metrics: dict[str, Any], starte
             f"{r.status} | {r.wer:.3f} | {r.stt_first_interim_ms:.0f} | "
             f"{r.stt_first_final_ms:.0f} | {r.e2e_latency_ms:.0f} | {notes} |"
         )
+    cleanup_results = [r for r in results if r.cleanup_ms > 0 or r.clean_wer > 0 or r.category == "cleanup"]
+    if cleanup_results:
+        lines.extend([
+            "",
+            "## Cleanup tier (Tier 1.5 — Anthropic /cleanup post-processing)",
+            "",
+            "Mirrors backend/app/api/routes/dictation.py. Detects prompt drift by comparing",
+            "post-cleanup text against `cleaned_expected`.",
+            "",
+            "| ID | Raw transcript | Cleaned | Clean WER | Cleanup ms |",
+            "|----|----------------|---------|-----------|------------|",
+        ])
+        for r in cleanup_results:
+            raw = r.transcript[:50] + ("…" if len(r.transcript) > 50 else "")
+            cleaned = r.cleaned_transcript[:50] + ("…" if len(r.cleaned_transcript) > 50 else "")
+            lines.append(
+                f"| `{r.id}` | `{raw}` | `{cleaned}` | {r.clean_wer:.3f} | {r.cleanup_ms:.0f} |"
+            )
     lines.extend(["", "## Per category", ""])
     for cat, c in metrics["by_category"].items():
         lines.append(
