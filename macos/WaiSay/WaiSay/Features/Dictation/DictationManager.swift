@@ -28,18 +28,6 @@ final class DictationManager: ObservableObject {
     @Published var isEnabled = false
     @Published var error: String?
 
-    // Wall-clock timestamps used to suppress race conditions:
-    //  - listeningStartedAt: prevents a stray single-tap (which arrives
-    //    almost simultaneously with the second tap of a double-tap-to-toggle)
-    //    from stopping the session within ms of it starting.
-    //  - lastHandsFreeToggleAt: debounces double-fires of the toggle when
-    //    the same physical key is matched by both the dedicated-handsfree
-    //    branch and the PTT-double-tap branch.
-    private var listeningStartedAt: Date?
-    private var lastHandsFreeToggleAt: Date?
-    private static let postStartGrace: TimeInterval = 1.0
-    private static let toggleDebounce: TimeInterval = 0.5
-
     // MARK: - Settings (persisted via UserDefaults)
     //
     // We use @Published + manual UserDefaults persistence rather than @AppStorage
@@ -222,17 +210,6 @@ final class DictationManager: ObservableObject {
             guard let self else { return }
             guard self.isEnabled else { return }
 
-            // Debounce: ignore duplicate toggles within `toggleDebounce` to
-            // protect against the dedicated-handsfree-key path and the
-            // PTT-double-tap path both matching the same physical input.
-            let now = Date()
-            if let last = self.lastHandsFreeToggleAt,
-               now.timeIntervalSince(last) < Self.toggleDebounce {
-                log.info("Hands-free toggle debounced (\(now.timeIntervalSince(last))s since last)")
-                return
-            }
-            self.lastHandsFreeToggleAt = now
-
             if self.state == .listening && self.isHandsFree {
                 // Currently in hands-free — stop
                 Task { await self.stopAndInsert() }
@@ -379,7 +356,6 @@ final class DictationManager: ObservableObject {
 
             startTimer()
             setState(.listening)
-            listeningStartedAt = Date()
             session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
@@ -506,7 +482,6 @@ final class DictationManager: ObservableObject {
         providerSession = nil
         deferredStop = false
         firstTokenReported = false
-        listeningStartedAt = nil
 
         targetApp = nil
         setState(.idle)
