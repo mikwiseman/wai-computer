@@ -429,11 +429,31 @@ shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sh
 cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
 cp "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}-latest.dmg.sha256"
 RELEASE_NOTES_PATH="$RELEASE_DIR/release-notes.md"
-cat > "$RELEASE_NOTES_PATH" <<NOTES
-# ${APP_NAME} ${VERSION} (${BUILD})
-
-Direct-download macOS release.
-NOTES
+generate_release_notes() {
+  echo "# ${APP_NAME} ${VERSION} (${BUILD})"
+  echo
+  local prev_build prev_commit notes
+  prev_build=$((BUILD - 1))
+  prev_commit=""
+  if [[ "$prev_build" -gt 0 ]]; then
+    prev_commit=$(git log -S "CURRENT_PROJECT_VERSION: \"${prev_build}\"" --pretty=format:"%H" -- macos/WaiSay/project.yml 2>/dev/null | head -1 || true)
+  fi
+  notes=""
+  if [[ -n "$prev_commit" ]]; then
+    notes=$(git log --no-merges --pretty=format:"%s" "${prev_commit}..HEAD" -- macos/ shared/ scripts/build-macos-dmg.sh 2>/dev/null \
+      | grep -vE "^(chore|docs|test|refactor|wip)[\(:]" \
+      | sed -E 's/^macOS [0-9]+\.[0-9]+\.[0-9]+,? build [0-9]+ (— )?//' \
+      | sed -E 's/^/- /' \
+      | head -25 || true)
+  fi
+  if [[ -z "${notes:-}" ]]; then
+    notes=$(git log -1 --pretty=format:"%s" 2>/dev/null \
+      | sed -E 's/^macOS [0-9]+\.[0-9]+\.[0-9]+,? build [0-9]+ (— )?//' \
+      | sed -E 's/^/- /' || echo "- Build ${BUILD}")
+  fi
+  echo "$notes"
+}
+generate_release_notes > "$RELEASE_NOTES_PATH"
 
 DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/${APP_NAME}-${VERSION}-${BUILD}.dmg"
 RELEASE_NOTES_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/release-notes.md"
