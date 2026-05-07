@@ -1,5 +1,13 @@
 name: Deploy
 
+concurrency:
+  # Same idea as macos-release: per-branch grouping so rapid pushes to main
+  # don't compound. backend-test alone takes ~8-12 min with the postgres
+  # service; we'd rather pay for the latest commit's run than every commit
+  # in a 5-minute fix burst.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
