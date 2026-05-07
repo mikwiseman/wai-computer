@@ -49,8 +49,9 @@
       "language": "ru",
       "voice": "Elena",
       "text": "Найди все встречи на следующей неделе с командой разработки.",
-      "max_wer": 0.20,
-      "max_latency_ms": 2000
+      "max_wer": 0.30,
+      "max_latency_ms": 2000,
+      "note": "Russian case ambiguity for time expressions: 'на следующей неделе' (locative, 'in next week') vs 'на следующую неделю' (accusative, 'for next week'). Both grammatically valid; native speakers use both interchangeably. Inworld swaps cases stochastically. Same pattern + threshold as core_short_ru_male."
     },
     {
       "id": "long_form_en_paragraph",
@@ -212,6 +213,19 @@
       "cleaned_expected": "Отправь сообщение Ивану о встрече завтра утром.",
       "max_clean_wer": 0.20,
       "note": "Tier 1.5 Russian: cleanup prompt explicitly lists 'ну, вот, типа, как бы, значит' as Russian fillers to strip. This scenario verifies the RU branch of the prompt actually fires (previously only EN cleanup was covered)."
+    },
+    {
+      "id": "cleanup_phone_en",
+      "category": "cleanup",
+      "language": "en",
+      "voice": "Brandon",
+      "text": "My phone number is four one five five five five one two three four.",
+      "max_wer": 0.80,
+      "max_latency_ms": 2500,
+      "apply_cleanup": true,
+      "cleaned_expected": "My phone number is 415-555-1234.",
+      "max_clean_wer": 0.15,
+      "note": "Tier 1.5 phone-number normalisation: Inworld STT itself converts spelled-out US phone digits to '415-555-1234' (raw_wer 0.714 against the spoken form is expected — that's why max_wer is loose). Cleanup passes the digit form through unchanged. Lock-in: catches regressions where the digit normalisation breaks at either layer."
     }
   ]
 }
