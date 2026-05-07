@@ -320,14 +320,16 @@ struct MacSettingsView: View {
                 refreshPermissions()
             }
         }
-        .confirmationDialog("Are you sure you want to sign out?", isPresented: $showSignOutConfirmation) {
-            Button("Sign Out", role: .destructive) {
+        .confirmationDialog("Sign out and reset WaiSay on this Mac?", isPresented: $showSignOutConfirmation) {
+            Button("Sign Out and Reset", role: .destructive) {
                 Task {
                     await appState.logout()
                 }
             }
             .accessibilityIdentifier("settings-sign-out-confirm-button")
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Clears your session, preferences, dictation history, and onboarding state on this device. Server-side recordings and summaries stay intact. WaiSay will restart so the next launch is a clean install.")
         }
         .alert("Delete account?", isPresented: $showDeleteAccountConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -339,7 +341,7 @@ struct MacSettingsView: View {
                 }
             }
         } message: {
-            Text("This will permanently erase your account, recordings, transcripts, and summaries. This action cannot be undone.")
+            Text("This will permanently erase your account, recordings, transcripts, and summaries. WaiSay will restart afterwards. This action cannot be undone.")
         }
         .alert(
             "Couldn't delete account",
