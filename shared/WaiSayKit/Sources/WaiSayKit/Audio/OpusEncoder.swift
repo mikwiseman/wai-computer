@@ -16,7 +16,8 @@ public final class AudioEncoder: @unchecked Sendable {
 
     /// Encode PCM audio buffer to 16-bit linear PCM data.
     /// Handles mono and non-interleaved multichannel buffers.
-    /// For multichannel, interleaves channels into [L0,R0,L1,R1,...] for Deepgram.
+    /// For multichannel, interleaves channels into [L0,R0,L1,R1,...] — the
+    /// linear16 layout the backend (and downstream Inworld/ElevenLabs) expects.
     public func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floatData = buffer.floatChannelData else { return nil }
 

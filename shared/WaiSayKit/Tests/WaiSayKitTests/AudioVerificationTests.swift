@@ -6,7 +6,7 @@ import AVFoundation
 /// - MockAudioCapture.hasReceivedAudio (mirrors SystemAudioCapture's atomic flag)
 /// - AudioCaptureConfig sample rate / format construction
 /// - MockAudioCapture.systemAudio() stereo configuration
-/// - AudioEncoder (OpusEncoder) with edge-case buffer sizes
+/// - AudioEncoder with edge-case buffer sizes
 final class AudioVerificationTests: XCTestCase {
 
     // MARK: - hasReceivedAudio Verification
@@ -177,7 +177,7 @@ final class AudioVerificationTests: XCTestCase {
             "Stereo generateBuffer should also set hasReceivedAudio")
     }
 
-    // MARK: - AudioEncoder (OpusEncoder) Edge Cases: Very Small Buffers
+    // MARK: - AudioEncoder Edge Cases: Very Small Buffers
 
     /// Encoder should handle the minimum possible frame count (1 frame).
     func testEncoderHandsSingleFrame() {
@@ -246,7 +246,7 @@ final class AudioVerificationTests: XCTestCase {
         }
     }
 
-    // MARK: - AudioEncoder (OpusEncoder) Edge Cases: Large Buffers
+    // MARK: - AudioEncoder Edge Cases: Large Buffers
 
     /// Encoder should handle large buffers (32000+ frames = 2 seconds @ 16kHz).
     func testEncoderHandlesLargeMonoBuffer() {
@@ -397,7 +397,7 @@ final class AudioVerificationTests: XCTestCase {
             "hasReceivedAudio must remain false for all-zero stereo buffer")
     }
 
-    // MARK: - AudioEncoder (OpusEncoder) Edge Cases: Large Buffers (continued)
+    // MARK: - AudioEncoder Edge Cases: Large Buffers (continued)
 
     /// Encoder should handle exactly one second at 48kHz (48000 frames) — a realistic hi-fi buffer.
     func testEncoderHandles48kHzLargeBuffer() {
