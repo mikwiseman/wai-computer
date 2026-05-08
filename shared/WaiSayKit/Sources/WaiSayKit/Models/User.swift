@@ -189,7 +189,7 @@ public struct UserSettings: Codable, Sendable {
         dictationPostFilterModel = try container.decodeIfPresent(
             String.self,
             forKey: .dictationPostFilterModel
-        ) ?? "claude-haiku-4-5"
+        ) ?? "claude-haiku-4-5-20251001"
     }
 
     private enum CodingKeys: String, CodingKey {

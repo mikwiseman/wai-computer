@@ -2,14 +2,12 @@
 
 Two flows live side-by-side:
 
-- **Recording** (long-form library transcription) keeps using ElevenLabs
-  Scribe v2 Realtime via the existing `/v1/single-use-token/realtime_scribe`
-  endpoint. Migration to Inworld is Phase 7 of the dictation refactor.
-- **Dictation** (push-to-talk) uses Inworld's unified STT endpoint with the
-  `soniox/stt-rt-v4` model. Inworld auth is HTTP Basic with a base64
-  `<id>:<secret>` credential held server-side; the backend issues a
-  short-lived session payload to the Swift client which then connects
-  directly to `wss://api.inworld.ai`.
+- **Recording** (long-form library transcription) can use ElevenLabs,
+  OpenAI, or Inworld realtime STT based on account settings.
+- **Dictation** (push-to-talk) can use OpenAI, ElevenLabs, or Inworld. Inworld
+  auth is HTTP Basic with a base64 `<id>:<secret>` credential held server-side;
+  the backend issues a short-lived session payload to the native client which
+  then connects directly to `wss://api.inworld.ai`.
 """
 
 from __future__ import annotations
@@ -112,7 +110,7 @@ async def _build_openai_realtime_session(
     )
 
 
-def _build_inworld_dictation_session(
+def _build_inworld_realtime_session(
     language: str,
     channels: int,
     *,
@@ -155,8 +153,9 @@ async def create_realtime_transcription_session(
 ) -> RealtimeTranscriptionSession:
     """Create a realtime transcription session for the active speech runtime.
 
-    `purpose="dictation"` routes to Inworld + Soniox v4 RT.
-    `purpose="recording"` keeps the existing ElevenLabs path until Phase 7.
+    Both dictation and recording routes honor the authenticated user's curated
+    provider/model settings and then return provider-specific connection
+    details for the native client.
     """
     settings = get_settings()
     resolved_language = language.strip().lower() or "multi"
@@ -201,7 +200,7 @@ async def create_realtime_transcription_session(
             raise ValueError(
                 f"Unsupported dictation_live_stt_provider: {provider}."
             )
-        return _build_inworld_dictation_session(resolved_language, resolved_channels, model=model)
+        return _build_inworld_realtime_session(resolved_language, resolved_channels, model=model)
 
     provider = (
         user.recording_live_stt_provider
@@ -220,6 +219,8 @@ async def create_realtime_transcription_session(
             language=resolved_language,
             channels=resolved_channels,
         )
+    if provider == "inworld":
+        return _build_inworld_realtime_session(resolved_language, resolved_channels, model=model)
     if provider != "elevenlabs":
         raise ValueError(f"Unsupported recording_live_stt_provider: {provider}.")
 

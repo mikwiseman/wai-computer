@@ -131,7 +131,7 @@ class WaiApiTest {
         assertEquals("scribe_v2", settings.fileSttModel)
         assertTrue(settings.dictationPostFilterEnabled)
         assertEquals("anthropic", settings.dictationPostFilterProvider)
-        assertEquals("claude-haiku-4-5", settings.dictationPostFilterModel)
+        assertEquals("claude-haiku-4-5-20251001", settings.dictationPostFilterModel)
     }
 
     private fun testClient(engine: MockEngine): HttpClient {

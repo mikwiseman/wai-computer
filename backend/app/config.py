@@ -40,9 +40,9 @@ class Settings(BaseSettings):
     ]
 
     # Voice providers
-    # Recording flow uses ElevenLabs Scribe v2 (until Phase 7).
-    # Dictation flow uses Inworld with `soniox/stt-rt-v4` — best-in-class
-    # Russian recognition (human-parity per Soniox v4 multilingual benchmarks).
+    # Account-level STT provider/model settings are curated in
+    # app.core.transcription_options; these env defaults remain for legacy
+    # direct-provider helpers and runtime credentials.
     speech_to_text_provider: str = "elevenlabs"
     realtime_voice_provider: str = "elevenlabs"
     dictation_stt_provider: str = "inworld"
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     # Latency-optimised model for dictation cleanup. Sonnet is overkill for
     # filler-word removal + light grammar fixes, and adds 600-1500ms of paste
     # latency; Haiku gives the same quality on this task in a fraction of the time.
-    anthropic_dictation_model: str = "claude-haiku-4-5"
+    anthropic_dictation_model: str = "claude-haiku-4-5-20251001"
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"

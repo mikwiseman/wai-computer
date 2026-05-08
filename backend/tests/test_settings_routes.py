@@ -109,7 +109,7 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["file_stt_model"] == "scribe_v2"
     assert data["dictation_post_filter_enabled"] is True
     assert data["dictation_post_filter_provider"] == "anthropic"
-    assert data["dictation_post_filter_model"] == "claude-haiku-4-5"
+    assert data["dictation_post_filter_model"] == "claude-haiku-4-5-20251001"
 
 
 @pytest.mark.asyncio
@@ -325,9 +325,27 @@ async def test_get_transcription_options_returns_curated_choices(client: AsyncCl
     data = response.json()
     assert data["dictation_live_stt"][0]["provider"] == "openai"
     assert data["dictation_live_stt"][0]["model"] == "gpt-realtime-whisper"
-    assert any(option["model"] == "gpt-4o-transcribe" for option in data["file_stt"])
     assert any(
-        option["model"] == "claude-haiku-4-5"
+        option["provider"] == "inworld" and option["model"] == "soniox/stt-rt-v4"
+        for option in data["dictation_live_stt"]
+    )
+    assert any(
+        option["provider"] == "inworld"
+        and option["model"] == "assemblyai/universal-streaming-english"
+        for option in data["dictation_live_stt"]
+    )
+    assert any(
+        option["provider"] == "inworld" and option["model"] == "soniox/stt-rt-v4"
+        for option in data["recording_live_stt"]
+    )
+    assert any(
+        option["provider"] == "inworld" and option["model"] == "inworld/inworld-stt-1"
+        for option in data["file_stt"]
+    )
+    assert any(option["model"] == "gpt-4o-transcribe" for option in data["file_stt"])
+    assert any(option["model"] == "gpt-4o-transcribe-diarize" for option in data["file_stt"])
+    assert any(
+        option["model"] == "claude-haiku-4-5-20251001"
         for option in data["dictation_post_filter"]
     )
 
@@ -343,10 +361,10 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
         json={
             "dictation_live_stt_provider": "elevenlabs",
             "dictation_live_stt_model": "scribe_v2_realtime",
-            "recording_live_stt_provider": "openai",
-            "recording_live_stt_model": "gpt-realtime-whisper",
-            "file_stt_provider": "openai",
-            "file_stt_model": "gpt-4o-mini-transcribe",
+            "recording_live_stt_provider": "inworld",
+            "recording_live_stt_model": "soniox/stt-rt-v4",
+            "file_stt_provider": "inworld",
+            "file_stt_model": "inworld/inworld-stt-1",
             "dictation_post_filter_enabled": False,
             "dictation_post_filter_provider": "anthropic",
             "dictation_post_filter_model": "claude-sonnet-4-6",
@@ -356,13 +374,15 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
     assert response.status_code == 200
     data = response.json()
     assert data["dictation_live_stt_provider"] == "elevenlabs"
-    assert data["recording_live_stt_provider"] == "openai"
-    assert data["file_stt_model"] == "gpt-4o-mini-transcribe"
+    assert data["recording_live_stt_provider"] == "inworld"
+    assert data["recording_live_stt_model"] == "soniox/stt-rt-v4"
+    assert data["file_stt_provider"] == "inworld"
+    assert data["file_stt_model"] == "inworld/inworld-stt-1"
     assert data["dictation_post_filter_enabled"] is False
     assert data["dictation_post_filter_model"] == "claude-sonnet-4-6"
 
     get_response = await client.get("/api/settings", headers=headers)
-    assert get_response.json()["file_stt_model"] == "gpt-4o-mini-transcribe"
+    assert get_response.json()["file_stt_model"] == "inworld/inworld-stt-1"
 
 
 @pytest.mark.asyncio

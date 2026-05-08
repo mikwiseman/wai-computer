@@ -1,6 +1,7 @@
 """Provider-dispatched file transcription."""
 
 from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
+from app.core.inworld import transcribe_audio_file as inworld_transcribe_audio_file
 from app.core.openai_transcription import transcribe_audio_file as openai_transcribe_audio_file
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription_options import (
@@ -30,6 +31,14 @@ async def transcribe_audio_file(
             model=selected_model,
             language=language,
             content_type=content_type,
+        )
+    if provider == "inworld":
+        return await inworld_transcribe_audio_file(
+            audio_data,
+            model=selected_model,
+            language=language,
+            content_type=content_type,
+            channels=channels,
         )
     if provider != "elevenlabs":
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")

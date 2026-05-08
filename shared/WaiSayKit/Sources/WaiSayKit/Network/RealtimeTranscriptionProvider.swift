@@ -1,11 +1,10 @@
 import Foundation
 
-/// Provider-agnostic interface for realtime speech-to-text. Used by the
-/// dictation flow to plug in Inworld (which itself fans out to Soniox v4 RT,
-/// Inworld STT-1, AssemblyAI, etc. via `modelId`). The recording flow keeps
-/// using `WebSocketManager` directly until Phase 7 — we are not adding a
-/// fallback layer, just decoupling the dictation pipeline from the
-/// ElevenLabs-specific implementation.
+/// Provider-agnostic interface for realtime speech-to-text. The dictation
+/// flow uses this lower-level provider abstraction for direct Inworld
+/// sessions, while recording and account-selected live transcription use
+/// `WebSocketManager` because the backend already returns a provider-specific
+/// realtime session.
 public protocol RealtimeTranscriptionProvider: Sendable {
     var name: String { get }
     func openSession(

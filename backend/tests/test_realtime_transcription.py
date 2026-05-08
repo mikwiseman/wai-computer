@@ -88,7 +88,36 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_rejects_non_elevenlabs_provider():
+async def test_create_realtime_transcription_session_uses_inworld_recording_choice():
+    user = type(
+        "User",
+        (),
+        {
+            "recording_live_stt_provider": "inworld",
+            "recording_live_stt_model": "soniox/stt-rt-v4",
+        },
+    )()
+    from app.core.realtime_transcription import create_realtime_transcription_session
+
+    with patch("app.core.realtime_transcription.get_settings") as mock_settings:
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        session = await create_realtime_transcription_session(
+            language="ru",
+            channels=2,
+            purpose="recording",
+            user=user,
+        )
+
+    assert session.provider == "inworld"
+    assert session.model == "soniox/stt-rt-v4"
+    assert session.language == "ru"
+    assert session.channels == 2
+    assert session.auth_scheme == "basic"
+    assert session.websocket_url == "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional"
+
+
+@pytest.mark.asyncio
+async def test_create_realtime_transcription_session_rejects_bad_recording_model():
     user = type(
         "User",
         (),
