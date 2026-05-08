@@ -563,6 +563,10 @@ public actor APIClient {
         return try await request(.GET, path: "/api/settings")
     }
 
+    public func getTranscriptionOptions() async throws -> TranscriptionOptions {
+        return try await request(.GET, path: "/api/settings/transcription-options")
+    }
+
     public func updateSettings(_ settings: UpdateSettingsRequest) async throws -> UserSettings {
         return try await request(.PATCH, path: "/api/settings", body: settings)
     }

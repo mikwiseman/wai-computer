@@ -139,12 +139,30 @@ public struct UserSettings: Codable, Sendable {
     public let summaryLanguage: String
     public let summaryStyle: String
     public let summaryInstructions: String?
+    public let dictationLiveSTTProvider: String
+    public let dictationLiveSTTModel: String
+    public let recordingLiveSTTProvider: String
+    public let recordingLiveSTTModel: String
+    public let fileSTTProvider: String
+    public let fileSTTModel: String
+    public let dictationPostFilterEnabled: Bool
+    public let dictationPostFilterProvider: String
+    public let dictationPostFilterModel: String
 
     private enum CodingKeys: String, CodingKey {
         case defaultLanguage = "default_language"
         case summaryLanguage = "summary_language"
         case summaryStyle = "summary_style"
         case summaryInstructions = "summary_instructions"
+        case dictationLiveSTTProvider = "dictation_live_stt_provider"
+        case dictationLiveSTTModel = "dictation_live_stt_model"
+        case recordingLiveSTTProvider = "recording_live_stt_provider"
+        case recordingLiveSTTModel = "recording_live_stt_model"
+        case fileSTTProvider = "file_stt_provider"
+        case fileSTTModel = "file_stt_model"
+        case dictationPostFilterEnabled = "dictation_post_filter_enabled"
+        case dictationPostFilterProvider = "dictation_post_filter_provider"
+        case dictationPostFilterModel = "dictation_post_filter_model"
     }
 }
 
@@ -154,17 +172,44 @@ public struct UpdateSettingsRequest: Codable, Sendable {
     public var summaryLanguage: String?
     public var summaryStyle: String?
     public var summaryInstructions: String?
+    public var dictationLiveSTTProvider: String?
+    public var dictationLiveSTTModel: String?
+    public var recordingLiveSTTProvider: String?
+    public var recordingLiveSTTModel: String?
+    public var fileSTTProvider: String?
+    public var fileSTTModel: String?
+    public var dictationPostFilterEnabled: Bool?
+    public var dictationPostFilterProvider: String?
+    public var dictationPostFilterModel: String?
 
     public init(
         defaultLanguage: String? = nil,
         summaryLanguage: String? = nil,
         summaryStyle: String? = nil,
-        summaryInstructions: String? = nil
+        summaryInstructions: String? = nil,
+        dictationLiveSTTProvider: String? = nil,
+        dictationLiveSTTModel: String? = nil,
+        recordingLiveSTTProvider: String? = nil,
+        recordingLiveSTTModel: String? = nil,
+        fileSTTProvider: String? = nil,
+        fileSTTModel: String? = nil,
+        dictationPostFilterEnabled: Bool? = nil,
+        dictationPostFilterProvider: String? = nil,
+        dictationPostFilterModel: String? = nil
     ) {
         self.defaultLanguage = defaultLanguage
         self.summaryLanguage = summaryLanguage
         self.summaryStyle = summaryStyle
         self.summaryInstructions = summaryInstructions
+        self.dictationLiveSTTProvider = dictationLiveSTTProvider
+        self.dictationLiveSTTModel = dictationLiveSTTModel
+        self.recordingLiveSTTProvider = recordingLiveSTTProvider
+        self.recordingLiveSTTModel = recordingLiveSTTModel
+        self.fileSTTProvider = fileSTTProvider
+        self.fileSTTModel = fileSTTModel
+        self.dictationPostFilterEnabled = dictationPostFilterEnabled
+        self.dictationPostFilterProvider = dictationPostFilterProvider
+        self.dictationPostFilterModel = dictationPostFilterModel
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -172,5 +217,56 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         case summaryLanguage = "summary_language"
         case summaryStyle = "summary_style"
         case summaryInstructions = "summary_instructions"
+        case dictationLiveSTTProvider = "dictation_live_stt_provider"
+        case dictationLiveSTTModel = "dictation_live_stt_model"
+        case recordingLiveSTTProvider = "recording_live_stt_provider"
+        case recordingLiveSTTModel = "recording_live_stt_model"
+        case fileSTTProvider = "file_stt_provider"
+        case fileSTTModel = "file_stt_model"
+        case dictationPostFilterEnabled = "dictation_post_filter_enabled"
+        case dictationPostFilterProvider = "dictation_post_filter_provider"
+        case dictationPostFilterModel = "dictation_post_filter_model"
+    }
+}
+
+public struct TranscriptionModelOption: Codable, Sendable, Identifiable, Hashable {
+    public let provider: String
+    public let model: String
+    public let label: String
+    public let description: String
+
+    public var id: String { "\(provider):\(model)" }
+
+    public init(provider: String, model: String, label: String, description: String) {
+        self.provider = provider
+        self.model = model
+        self.label = label
+        self.description = description
+    }
+}
+
+public struct TranscriptionOptions: Codable, Sendable {
+    public let dictationLiveSTT: [TranscriptionModelOption]
+    public let recordingLiveSTT: [TranscriptionModelOption]
+    public let fileSTT: [TranscriptionModelOption]
+    public let dictationPostFilter: [TranscriptionModelOption]
+
+    public init(
+        dictationLiveSTT: [TranscriptionModelOption],
+        recordingLiveSTT: [TranscriptionModelOption],
+        fileSTT: [TranscriptionModelOption],
+        dictationPostFilter: [TranscriptionModelOption]
+    ) {
+        self.dictationLiveSTT = dictationLiveSTT
+        self.recordingLiveSTT = recordingLiveSTT
+        self.fileSTT = fileSTT
+        self.dictationPostFilter = dictationPostFilter
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case dictationLiveSTT = "dictation_live_stt"
+        case recordingLiveSTT = "recording_live_stt"
+        case fileSTT = "file_stt"
+        case dictationPostFilter = "dictation_post_filter"
     }
 }

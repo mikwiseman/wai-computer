@@ -235,6 +235,58 @@ data class QAResponse(
 )
 
 @Serializable
+data class UserSettings(
+    @SerialName("default_language") val defaultLanguage: String,
+    @SerialName("summary_language") val summaryLanguage: String,
+    @SerialName("summary_style") val summaryStyle: String,
+    @SerialName("summary_instructions") val summaryInstructions: String? = null,
+    @SerialName("dictation_live_stt_provider") val dictationLiveSttProvider: String,
+    @SerialName("dictation_live_stt_model") val dictationLiveSttModel: String,
+    @SerialName("recording_live_stt_provider") val recordingLiveSttProvider: String,
+    @SerialName("recording_live_stt_model") val recordingLiveSttModel: String,
+    @SerialName("file_stt_provider") val fileSttProvider: String,
+    @SerialName("file_stt_model") val fileSttModel: String,
+    @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean,
+    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String,
+    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String,
+)
+
+@Serializable
+data class UpdateSettingsRequest(
+    @SerialName("default_language") val defaultLanguage: String? = null,
+    @SerialName("summary_language") val summaryLanguage: String? = null,
+    @SerialName("summary_style") val summaryStyle: String? = null,
+    @SerialName("summary_instructions") val summaryInstructions: String? = null,
+    @SerialName("dictation_live_stt_provider") val dictationLiveSttProvider: String? = null,
+    @SerialName("dictation_live_stt_model") val dictationLiveSttModel: String? = null,
+    @SerialName("recording_live_stt_provider") val recordingLiveSttProvider: String? = null,
+    @SerialName("recording_live_stt_model") val recordingLiveSttModel: String? = null,
+    @SerialName("file_stt_provider") val fileSttProvider: String? = null,
+    @SerialName("file_stt_model") val fileSttModel: String? = null,
+    @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean? = null,
+    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String? = null,
+    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String? = null,
+)
+
+@Serializable
+data class TranscriptionModelOption(
+    val provider: String,
+    val model: String,
+    val label: String,
+    val description: String,
+) {
+    val id: String get() = "$provider:$model"
+}
+
+@Serializable
+data class TranscriptionOptions(
+    @SerialName("dictation_live_stt") val dictationLiveStt: List<TranscriptionModelOption>,
+    @SerialName("recording_live_stt") val recordingLiveStt: List<TranscriptionModelOption>,
+    @SerialName("file_stt") val fileStt: List<TranscriptionModelOption>,
+    @SerialName("dictation_post_filter") val dictationPostFilter: List<TranscriptionModelOption>,
+)
+
+@Serializable
 data class QASource(
     @SerialName("segment_id") val segmentId: String,
     @SerialName("recording_id") val recordingId: String,
@@ -264,6 +316,8 @@ data class RealtimeTranscriptionSessionConfig(
     @SerialName("keep_alive_interval_seconds") val keepAliveIntervalSeconds: Int? = null,
     @SerialName("commit_strategy") val commitStrategy: String? = null,
     @SerialName("no_verbatim") val noVerbatim: Boolean = false,
+    @SerialName("websocket_url") val websocketUrl: String? = null,
+    @SerialName("auth_scheme") val authScheme: String = "query_token",
 )
 
 @Serializable

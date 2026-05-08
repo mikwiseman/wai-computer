@@ -476,6 +476,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             let body = try self.jsonBody(from: request)
             XCTAssertEqual(body["language"] as? String, "multi")
             XCTAssertEqual(body["channels"] as? Int, 1)
+            XCTAssertEqual(body["purpose"] as? String, "recording")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -506,6 +507,50 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(config.model, "scribe_v2_realtime")
         XCTAssertEqual(config.commitStrategy, "vad")
         XCTAssertEqual(config.noVerbatim, true)
+    }
+
+    func testCreateRealtimeTranscriptionSessionSendsDictationPurpose() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/transcription/session")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["purpose"] as? String, "dictation")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "provider":"openai",
+                "token":"ek_test",
+                "expires_in_seconds":900,
+                "sample_rate":24000,
+                "audio_format":"pcm_24000",
+                "language":"multi",
+                "channels":1,
+                "model":"gpt-realtime-whisper",
+                "commit_strategy":"manual",
+                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "auth_scheme":"bearer"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let config = try await client.createRealtimeTranscriptionSession(
+            language: "multi",
+            channels: 1,
+            purpose: .dictation
+        )
+        XCTAssertEqual(config.provider, "openai")
+        XCTAssertEqual(config.sampleRate, 24_000)
+        XCTAssertEqual(config.authScheme, "bearer")
     }
 
     func testCreateRealtimeVoiceSessionSendsMode() async throws {

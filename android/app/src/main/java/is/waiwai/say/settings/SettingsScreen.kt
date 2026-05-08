@@ -5,9 +5,12 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,8 +20,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -41,6 +47,10 @@ import `is`.waiwai.say.R
 import `is`.waiwai.say.auth.AuthState
 import `is`.waiwai.say.auth.AuthViewModel
 import `is`.waiwai.say.data.AppContainer
+import `is`.waiwai.say.data.TranscriptionModelOption
+import `is`.waiwai.say.data.TranscriptionOptions
+import `is`.waiwai.say.data.UpdateSettingsRequest
+import `is`.waiwai.say.data.UserSettings
 import `is`.waiwai.say.ui.TestTags
 import kotlinx.coroutines.launch
 
@@ -48,6 +58,13 @@ private data class StorageSummary(
     val count: Int = 0,
     val sizeMb: Double = 0.0,
 )
+
+private enum class ModelPreference {
+    DictationLive,
+    RecordingLive,
+    File,
+    DictationPostFilter,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +91,10 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var storageRefreshKey by rememberSaveable { mutableIntStateOf(0) }
     var showLanguageSheet by rememberSaveable { mutableStateOf(false) }
+    var activeModelPreference by remember { mutableStateOf<ModelPreference?>(null) }
+    var accountSettings by remember { mutableStateOf<UserSettings?>(null) }
+    var transcriptionOptions by remember { mutableStateOf<TranscriptionOptions?>(null) }
+    var settingsError by remember { mutableStateOf<String?>(null) }
     var showClearCacheConfirm by rememberSaveable { mutableStateOf(false) }
     var showDeleteAccountConfirm by rememberSaveable { mutableStateOf(false) }
     var draftBaseUrl by rememberSaveable(settings.baseUrl) { mutableStateOf(settings.baseUrl) }
@@ -87,6 +108,33 @@ fun SettingsScreen(
 
     val languageOptions = remember {
         listOf("multi", "en", "ru", "es", "fr", "de", "ja", "ko", "zh")
+    }
+
+    fun saveAccountSettings(request: UpdateSettingsRequest) {
+        scope.launch {
+            try {
+                accountSettings = container.waiApi.updateSettings(request)
+                settingsError = null
+            } catch (error: Throwable) {
+                settingsError = error.localizedMessage ?: "Couldn't save account settings."
+            }
+        }
+    }
+
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            try {
+                accountSettings = container.waiApi.getSettings()
+                transcriptionOptions = container.waiApi.getTranscriptionOptions()
+                settingsError = null
+            } catch (error: Throwable) {
+                settingsError = error.localizedMessage ?: "Couldn't load account settings."
+            }
+        } else {
+            accountSettings = null
+            transcriptionOptions = null
+            settingsError = null
+        }
     }
 
     Column(
@@ -148,6 +196,96 @@ fun SettingsScreen(
         SettingsSectionCard(title = stringResource(R.string.settings_transcription)) {
             TextButton(onClick = { showLanguageSheet = true }) {
                 Text(languageLabel(settings.transcriptionLanguage))
+            }
+
+            when {
+                authState !is AuthState.Authenticated -> {
+                    Text(
+                        text = stringResource(R.string.settings_sign_in_sync),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                accountSettings != null && transcriptionOptions != null -> {
+                    val currentSettings = accountSettings!!
+                    val options = transcriptionOptions!!
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_dictation_live_model),
+                        value = optionLabel(
+                            options.dictationLiveStt,
+                            currentSettings.dictationLiveSttProvider,
+                            currentSettings.dictationLiveSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.DictationLive },
+                    )
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_recording_live_model),
+                        value = optionLabel(
+                            options.recordingLiveStt,
+                            currentSettings.recordingLiveSttProvider,
+                            currentSettings.recordingLiveSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.RecordingLive },
+                    )
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_file_model),
+                        value = optionLabel(
+                            options.fileStt,
+                            currentSettings.fileSttProvider,
+                            currentSettings.fileSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.File },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_dictation_post_filter),
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = currentSettings.dictationPostFilterEnabled,
+                            onCheckedChange = { enabled ->
+                                saveAccountSettings(
+                                    UpdateSettingsRequest(dictationPostFilterEnabled = enabled),
+                                )
+                            },
+                        )
+                    }
+                    if (currentSettings.dictationPostFilterEnabled) {
+                        ModelChoiceRow(
+                            title = stringResource(R.string.settings_dictation_post_filter_model),
+                            value = optionLabel(
+                                options.dictationPostFilter,
+                                currentSettings.dictationPostFilterProvider,
+                                currentSettings.dictationPostFilterModel,
+                            ),
+                            onClick = { activeModelPreference = ModelPreference.DictationPostFilter },
+                        )
+                    }
+                    if (settingsError != null) {
+                        Text(
+                            text = settingsError.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                settingsError != null -> {
+                    Text(
+                        text = settingsError.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                else -> {
+                    Text(
+                        text = stringResource(R.string.settings_loading_account_models),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
@@ -268,6 +406,52 @@ fun SettingsScreen(
         }
     }
 
+    if (activeModelPreference != null && accountSettings != null && transcriptionOptions != null) {
+        val preference = activeModelPreference!!
+        val options = modelOptionsFor(preference, transcriptionOptions!!)
+        val title = when (preference) {
+            ModelPreference.DictationLive -> stringResource(R.string.settings_dictation_live_model)
+            ModelPreference.RecordingLive -> stringResource(R.string.settings_recording_live_model)
+            ModelPreference.File -> stringResource(R.string.settings_file_model)
+            ModelPreference.DictationPostFilter -> stringResource(R.string.settings_dictation_post_filter_model)
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { activeModelPreference = null },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                options.forEach { option ->
+                    TextButton(
+                        onClick = {
+                            saveAccountSettings(updateRequestFor(preference, option))
+                            activeModelPreference = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(option.label)
+                            Text(
+                                text = option.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (showDeleteAccountConfirm) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDeleteAccountConfirm = false },
@@ -342,6 +526,71 @@ private fun SettingsSectionCard(
             },
         )
     }
+}
+
+@Composable
+private fun ModelChoiceRow(
+    title: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title)
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        TextButton(onClick = onClick) {
+            Text(stringResource(R.string.common_change))
+        }
+    }
+}
+
+private fun optionLabel(
+    options: List<TranscriptionModelOption>,
+    provider: String,
+    model: String,
+): String {
+    return options.firstOrNull { it.provider == provider && it.model == model }?.label ?: "$provider / $model"
+}
+
+private fun modelOptionsFor(
+    preference: ModelPreference,
+    options: TranscriptionOptions,
+): List<TranscriptionModelOption> = when (preference) {
+    ModelPreference.DictationLive -> options.dictationLiveStt
+    ModelPreference.RecordingLive -> options.recordingLiveStt
+    ModelPreference.File -> options.fileStt
+    ModelPreference.DictationPostFilter -> options.dictationPostFilter
+}
+
+private fun updateRequestFor(
+    preference: ModelPreference,
+    option: TranscriptionModelOption,
+): UpdateSettingsRequest = when (preference) {
+    ModelPreference.DictationLive -> UpdateSettingsRequest(
+        dictationLiveSttProvider = option.provider,
+        dictationLiveSttModel = option.model,
+    )
+    ModelPreference.RecordingLive -> UpdateSettingsRequest(
+        recordingLiveSttProvider = option.provider,
+        recordingLiveSttModel = option.model,
+    )
+    ModelPreference.File -> UpdateSettingsRequest(
+        fileSttProvider = option.provider,
+        fileSttModel = option.model,
+    )
+    ModelPreference.DictationPostFilter -> UpdateSettingsRequest(
+        dictationPostFilterProvider = option.provider,
+        dictationPostFilterModel = option.model,
+    )
 }
 
 @Composable

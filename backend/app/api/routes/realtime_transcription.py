@@ -67,6 +67,7 @@ async def create_session(
             language=request.language,
             channels=request.channels,
             purpose=request.purpose,
+            user=user,
         )
     except ValueError as exc:
         logger.warning(

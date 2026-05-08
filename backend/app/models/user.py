@@ -5,6 +5,16 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.transcription_options import (
+    DEFAULT_DICTATION_LIVE_STT_MODEL,
+    DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+    DEFAULT_DICTATION_POST_FILTER_MODEL,
+    DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+    DEFAULT_FILE_STT_MODEL,
+    DEFAULT_FILE_STT_PROVIDER,
+    DEFAULT_RECORDING_LIVE_STT_MODEL,
+    DEFAULT_RECORDING_LIVE_STT_PROVIDER,
+)
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
@@ -27,6 +37,47 @@ class User(Base, UUIDMixin, TimestampMixin):
         String(20), default="medium", server_default="medium"
     )
     summary_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dictation_live_stt_provider: Mapped[str] = mapped_column(
+        String(40),
+        default=DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+        server_default=DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+    )
+    dictation_live_stt_model: Mapped[str] = mapped_column(
+        String(100),
+        default=DEFAULT_DICTATION_LIVE_STT_MODEL,
+        server_default=DEFAULT_DICTATION_LIVE_STT_MODEL,
+    )
+    recording_live_stt_provider: Mapped[str] = mapped_column(
+        String(40),
+        default=DEFAULT_RECORDING_LIVE_STT_PROVIDER,
+        server_default=DEFAULT_RECORDING_LIVE_STT_PROVIDER,
+    )
+    recording_live_stt_model: Mapped[str] = mapped_column(
+        String(100),
+        default=DEFAULT_RECORDING_LIVE_STT_MODEL,
+        server_default=DEFAULT_RECORDING_LIVE_STT_MODEL,
+    )
+    file_stt_provider: Mapped[str] = mapped_column(
+        String(40),
+        default=DEFAULT_FILE_STT_PROVIDER,
+        server_default=DEFAULT_FILE_STT_PROVIDER,
+    )
+    file_stt_model: Mapped[str] = mapped_column(
+        String(100),
+        default=DEFAULT_FILE_STT_MODEL,
+        server_default=DEFAULT_FILE_STT_MODEL,
+    )
+    dictation_post_filter_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    dictation_post_filter_provider: Mapped[str] = mapped_column(
+        String(40),
+        default=DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+        server_default=DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+    )
+    dictation_post_filter_model: Mapped[str] = mapped_column(
+        String(100),
+        default=DEFAULT_DICTATION_POST_FILTER_MODEL,
+        server_default=DEFAULT_DICTATION_POST_FILTER_MODEL,
+    )
 
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(

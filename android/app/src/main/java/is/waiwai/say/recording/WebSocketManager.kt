@@ -67,6 +67,8 @@ class ElevenLabsWebSocketManager(
     private var endOfStreamRequested = false
     private var endOfStreamSent = false
     private var connected = false
+    private var currentConfig: RealtimeTranscriptionSessionConfig? = null
+    private val openAIInterimByItem = mutableMapOf<String, String>()
 
     override suspend fun connect() {
         collectedSegments.clear()
@@ -77,7 +79,7 @@ class ElevenLabsWebSocketManager(
     override suspend fun sendAudio(data: ByteArray) {
         bufferAudioChunk(data)
         val socket = webSocket ?: return
-        socket.send(makeAudioChunkMessage(data, commit = false))
+        socket.send(makeAudioMessage(data, commit = false))
     }
 
     override suspend fun finishStreaming(timeoutMillis: Long): Boolean {
@@ -118,7 +120,23 @@ class ElevenLabsWebSocketManager(
         return base.toString()
     }
 
+    internal fun buildOpenAIRequest(config: RealtimeTranscriptionSessionConfig): Request {
+        val url = requireNotNull(config.websocketUrl) { "Missing OpenAI realtime websocket URL" }
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer ${config.token}")
+            .build()
+    }
+
     internal fun handleIncomingMessage(text: String) {
+        if (currentConfig?.provider == "openai") {
+            handleOpenAIMessage(text)
+            return
+        }
+        handleElevenLabsMessage(text)
+    }
+
+    internal fun handleElevenLabsMessage(text: String) {
         val payload = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         val type = payload.string("message_type") ?: payload.string("type") ?: return
         when (type) {
@@ -153,6 +171,52 @@ class ElevenLabsWebSocketManager(
         }
     }
 
+    internal fun handleOpenAIMessage(text: String) {
+        val payload = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
+        when (payload.string("type")) {
+            "conversation.item.input_audio_transcription.delta" -> {
+                val itemId = payload.string("item_id") ?: "unknown"
+                val delta = payload.string("delta").orEmpty()
+                if (delta.isBlank()) return
+                val current = (openAIInterimByItem[itemId].orEmpty() + delta)
+                openAIInterimByItem[itemId] = current
+                events.tryEmit(
+                    WsEvent.Transcript(
+                        LiveTranscriptSegment(
+                            text = current,
+                            isFinal = false,
+                            startMs = collectedSegments.lastOrNull()?.endMs ?: 0,
+                            endMs = collectedSegments.lastOrNull()?.endMs ?: 0,
+                            confidence = 0.0,
+                        ),
+                    ),
+                )
+            }
+            "conversation.item.input_audio_transcription.completed" -> {
+                val itemId = payload.string("item_id") ?: "unknown"
+                val transcript = (payload.string("transcript") ?: openAIInterimByItem[itemId]).orEmpty().trim()
+                openAIInterimByItem.remove(itemId)
+                if (transcript.isBlank()) return
+                val endMs = collectedSegments.lastOrNull()?.endMs ?: 0
+                val segment = LiveTranscriptSegment(
+                    text = transcript,
+                    speaker = null,
+                    isFinal = true,
+                    startMs = endMs,
+                    endMs = endMs,
+                    confidence = 0.0,
+                )
+                collectedSegments += segment
+                events.tryEmit(WsEvent.Transcript(segment))
+            }
+            "error" -> {
+                val message = payload["error"]?.jsonObject?.string("message")
+                    ?: "OpenAI realtime transcription error"
+                scheduleReconnect(IllegalStateException(message))
+            }
+        }
+    }
+
     internal fun buildCommittedSegment(payload: JsonObject): LiveTranscriptSegment? {
         val transcript = payload.string("text").orEmpty().trim()
         if (transcript.isBlank()) return null
@@ -176,12 +240,20 @@ class ElevenLabsWebSocketManager(
     }
 
     private suspend fun openSocket(config: RealtimeTranscriptionSessionConfig) {
-        val request = Request.Builder().url(buildElevenLabsUrl(config)).build()
+        currentConfig = config
+        val request = if (config.provider == "openai") {
+            buildOpenAIRequest(config)
+        } else {
+            Request.Builder().url(buildElevenLabsUrl(config)).build()
+        }
         webSocket = okHttpClient.newWebSocket(
             request,
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     connected = true
+                    if (config.provider == "openai") {
+                        webSocket.send(makeOpenAISessionUpdateMessage(config))
+                    }
                     events.tryEmit(if (reconnectAttempt > 0) WsEvent.Reconnected else WsEvent.Connected)
                     scope.launch {
                         replayBufferedAudio()
@@ -224,14 +296,40 @@ class ElevenLabsWebSocketManager(
         if (!connected) return
         val socket = webSocket ?: return
         while (audioBuffer.isNotEmpty()) {
-            socket.send(makeAudioChunkMessage(audioBuffer.removeFirst(), commit = false))
+            socket.send(makeAudioMessage(audioBuffer.removeFirst(), commit = false))
         }
     }
 
     private suspend fun sendCommitChunkIfNeeded() {
         if (!endOfStreamRequested || endOfStreamSent || !connected) return
-        webSocket?.send(makeAudioChunkMessage(ByteArray(640), commit = true))
+        webSocket?.send(makeAudioMessage(ByteArray(640), commit = true))
         endOfStreamSent = true
+    }
+
+    private fun makeAudioMessage(data: ByteArray, commit: Boolean): String {
+        return if (currentConfig?.provider == "openai") {
+            if (commit) {
+                """{"type":"input_audio_buffer.commit"}"""
+            } else {
+                makeOpenAIAudioAppendMessage(data)
+            }
+        } else {
+            makeAudioChunkMessage(data, commit)
+        }
+    }
+
+    internal fun makeOpenAIAudioAppendMessage(data: ByteArray): String {
+        val audioBase64 = java.util.Base64.getEncoder().encodeToString(openAI24kMonoPCM(data))
+        return """{"type":"input_audio_buffer.append","audio":"$audioBase64"}"""
+    }
+
+    private fun makeOpenAISessionUpdateMessage(config: RealtimeTranscriptionSessionConfig): String {
+        val transcription = if (config.language.isNotBlank() && config.language != "multi") {
+            """"model":"${config.model}","language":"${config.language}""""
+        } else {
+            """"model":"${config.model}""""
+        }
+        return """{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":${config.sampleRate}},"transcription":{$transcription},"turn_detection":null}}}}"""
     }
 
     private fun makeAudioChunkMessage(data: ByteArray, commit: Boolean): String {
@@ -244,6 +342,29 @@ class ElevenLabsWebSocketManager(
             append("\"commit\":").append(commit)
             append("}")
         }
+    }
+
+    internal fun openAI24kMonoPCM(data: ByteArray): ByteArray {
+        if (data.size < 4) return data
+        val sourceSamples = ShortArray(data.size / 2)
+        for (index in sourceSamples.indices) {
+            val low = data[index * 2].toInt() and 0xff
+            val high = data[index * 2 + 1].toInt()
+            sourceSamples[index] = ((high shl 8) or low).toShort()
+        }
+        val outputCount = (sourceSamples.size * 24_000 / 16_000)
+        val output = ByteArray(outputCount * 2)
+        for (index in 0 until outputCount) {
+            val sourcePosition = index * 16_000.0 / 24_000.0
+            val lower = sourcePosition.toInt().coerceAtMost(sourceSamples.lastIndex)
+            val upper = (lower + 1).coerceAtMost(sourceSamples.lastIndex)
+            val fraction = sourcePosition - lower
+            val interpolated = sourceSamples[lower] + (sourceSamples[upper] - sourceSamples[lower]) * fraction
+            val sample = interpolated.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            output[index * 2] = (sample.toInt() and 0xff).toByte()
+            output[index * 2 + 1] = ((sample.toInt() shr 8) and 0xff).toByte()
+        }
+        return output
     }
 
     private fun bufferAudioChunk(data: ByteArray) {

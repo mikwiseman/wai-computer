@@ -89,6 +89,67 @@ async def test_cleanup_dictation_returns_cleaned_text(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_skips_when_post_filter_disabled(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch, api_key="")
+
+    settings_response = await client.patch(
+        "/api/settings",
+        headers=auth_headers,
+        json={"dictation_post_filter_enabled": False},
+    )
+    assert settings_response.status_code == 200
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um this is raw dictated text"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "um this is raw dictated text"}
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_uses_selected_post_filter_model(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object) -> _FakeMessage:
+        captured.update(kwargs)
+        return _FakeMessage("Cleaned text.")
+
+    mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)  # type: ignore[arg-type]
+
+    settings_response = await client.patch(
+        "/api/settings",
+        headers=auth_headers,
+        json={
+            "dictation_post_filter_provider": "anthropic",
+            "dictation_post_filter_model": "claude-sonnet-4-6",
+        },
+    )
+    assert settings_response.status_code == 200
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert captured["model"] == "claude-sonnet-4-6"
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts(
     client: AsyncClient,
     auth_headers: dict,

@@ -2357,6 +2357,7 @@ async def upload_audio_file(
                 staged_file.read(),
                 language=recording.language or "en",
                 content_type=content_type,
+                user=user,
             )
 
         for tr in transcript_results:

@@ -59,6 +59,40 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertNotNil(payload["audio_base_64"] as? String)
     }
 
+    func testOpenAIAudioAppendMessageUpsamplesTo24kMonoPCM() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        let source = Data([0x00, 0x00, 0x64, 0x00, 0xc8, 0x00, 0x2c, 0x01])
+        let message = await manager.testingMakeOpenAIAudioAppendMessage(data: source)
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+
+        XCTAssertEqual(payload["type"] as? String, "input_audio_buffer.append")
+        let audio = try XCTUnwrap(payload["audio"] as? String)
+        let decoded = try XCTUnwrap(Data(base64Encoded: audio))
+        XCTAssertEqual(decoded.count, 12, "16 kHz mono PCM should be converted to 24 kHz mono PCM")
+    }
+
+    func testOpenAICompletedTranscriptCollectsSegment() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hello"}
+        """)
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1","transcript":"Hello world."}
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Hello world.")
+        XCTAssertEqual(segments.first?.isFinal, true)
+    }
+
     func testTimestampedCommittedTranscriptReplacesPlainDuplicate() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)

@@ -12,6 +12,8 @@ import {
   generateSummary,
   getCurrentUser,
   getRecording,
+  getSettings,
+  getTranscriptionOptions,
   listActionItems,
   listEntities,
   listRecordings,
@@ -20,6 +22,7 @@ import {
   search,
   semanticSearch,
   updateActionItem,
+  updateSettings,
 } from "@/lib/api";
 import { GlobalQAPanel } from "@/components/GlobalQAPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
@@ -33,7 +36,10 @@ import type {
   RecordingDetail,
   RecordingType,
   SearchResponse,
+  TranscriptionModelOption,
+  TranscriptionOptions,
   User,
+  UserSettings,
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
@@ -67,6 +73,25 @@ function statusText(recording: Recording): string | null {
   return recording.status.replace("_", " ");
 }
 
+function modelOptionId(option: TranscriptionModelOption): string {
+  return `${option.provider}:${option.model}`;
+}
+
+function splitModelOptionId(value: string): { provider: string; model: string } | null {
+  const [provider, ...modelParts] = value.split(":");
+  const model = modelParts.join(":");
+  if (!provider || !model) return null;
+  return { provider, model };
+}
+
+function selectedModelDescription(
+  options: TranscriptionModelOption[],
+  provider: string,
+  model: string,
+): string | null {
+  return options.find((option) => option.provider === provider && option.model === model)?.description ?? null;
+}
+
 export function DashboardClient() {
   const router = useRouter();
 
@@ -93,6 +118,11 @@ export function DashboardClient() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("wai");
+  const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
+  const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsLoadedOnce, setSettingsLoadedOnce] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const activeRecordingCount = recordings.length;
   const pendingActionCount = useMemo(
@@ -119,6 +149,23 @@ export function DashboardClient() {
   async function loadEntitiesState() {
     const response = await listEntities();
     setEntities(response);
+  }
+
+  async function loadAccountSettings() {
+    setSettingsLoading(true);
+    try {
+      const [settingsResponse, optionsResponse] = await Promise.all([
+        getSettings(),
+        getTranscriptionOptions(),
+      ]);
+      setAccountSettings(settingsResponse);
+      setTranscriptionOptions(optionsResponse);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    } finally {
+      setSettingsLoadedOnce(true);
+      setSettingsLoading(false);
+    }
   }
 
   async function initialize(options?: { preserveView?: boolean }) {
@@ -149,6 +196,11 @@ export function DashboardClient() {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (view !== "settings" || settingsLoadedOnce || settingsLoading) return;
+    void loadAccountSettings();
+  }, [view, settingsLoadedOnce, settingsLoading]);
 
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -300,6 +352,20 @@ export function DashboardClient() {
       setMessage(response.message);
     } catch (error: unknown) {
       setMessage(formatError(error));
+    }
+  }
+
+  async function handleUpdateAccountSettings(patch: Partial<UserSettings>) {
+    setMessage(null);
+    setSettingsSaving(true);
+    try {
+      const updated = await updateSettings(patch);
+      setAccountSettings(updated);
+      setMessage("Settings updated.");
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    } finally {
+      setSettingsSaving(false);
     }
   }
 
@@ -658,10 +724,125 @@ export function DashboardClient() {
     );
   }
 
+  function renderModelSelect({
+    label,
+    options,
+    provider,
+    model,
+    buildPatch,
+    testId,
+  }: {
+    label: string;
+    options: TranscriptionModelOption[];
+    provider: string;
+    model: string;
+    buildPatch: (selection: { provider: string; model: string }) => Partial<UserSettings>;
+    testId: string;
+  }) {
+    const value = `${provider}:${model}`;
+    const description = selectedModelDescription(options, provider, model);
+
+    return (
+      <label className="settings-model-field">
+        <span>{label}</span>
+        <select
+          data-testid={testId}
+          value={value}
+          disabled={settingsSaving}
+          onChange={(event) => {
+            const selection = splitModelOptionId(event.target.value);
+            if (!selection) return;
+            void handleUpdateAccountSettings(buildPatch(selection));
+          }}
+        >
+          {options.map((option) => (
+            <option key={modelOptionId(option)} value={modelOptionId(option)}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {description ? <small>{description}</small> : null}
+      </label>
+    );
+  }
+
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
+        <div className="settings-form">
+          <h3>Transcription</h3>
+          {settingsLoading ? <p className="settings-note">Loading account model settings...</p> : null}
+          {accountSettings && transcriptionOptions ? (
+            <>
+              {renderModelSelect({
+                label: "Dictation live model",
+                options: transcriptionOptions.dictation_live_stt,
+                provider: accountSettings.dictation_live_stt_provider,
+                model: accountSettings.dictation_live_stt_model,
+                testId: "dictation-live-stt-model",
+                buildPatch: (selection) => ({
+                  dictation_live_stt_provider: selection.provider,
+                  dictation_live_stt_model: selection.model,
+                }),
+              })}
+              {renderModelSelect({
+                label: "Recording live model",
+                options: transcriptionOptions.recording_live_stt,
+                provider: accountSettings.recording_live_stt_provider,
+                model: accountSettings.recording_live_stt_model,
+                testId: "recording-live-stt-model",
+                buildPatch: (selection) => ({
+                  recording_live_stt_provider: selection.provider,
+                  recording_live_stt_model: selection.model,
+                }),
+              })}
+              {renderModelSelect({
+                label: "Full session model",
+                options: transcriptionOptions.file_stt,
+                provider: accountSettings.file_stt_provider,
+                model: accountSettings.file_stt_model,
+                testId: "file-stt-model",
+                buildPatch: (selection) => ({
+                  file_stt_provider: selection.provider,
+                  file_stt_model: selection.model,
+                }),
+              })}
+              <label className="settings-checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={accountSettings.dictation_post_filter_enabled}
+                  disabled={settingsSaving}
+                  onChange={(event) =>
+                    void handleUpdateAccountSettings({
+                      dictation_post_filter_enabled: event.target.checked,
+                    })
+                  }
+                />
+                <span>Post-filter dictated text</span>
+              </label>
+              {accountSettings.dictation_post_filter_enabled
+                ? renderModelSelect({
+                    label: "Post-filter model",
+                    options: transcriptionOptions.dictation_post_filter,
+                    provider: accountSettings.dictation_post_filter_provider,
+                    model: accountSettings.dictation_post_filter_model,
+                    testId: "dictation-post-filter-model",
+                    buildPatch: (selection) => ({
+                      dictation_post_filter_provider: selection.provider,
+                      dictation_post_filter_model: selection.model,
+                    }),
+                  })
+                : null}
+            </>
+          ) : settingsLoadedOnce && !settingsLoading ? (
+            <button type="button" className="ghost-button compact-button" onClick={() => void loadAccountSettings()}>
+              Retry loading model settings
+            </button>
+          ) : null}
+        </div>
+
         <form className="settings-form" onSubmit={handleChangePassword}>
+          <h3>Account</h3>
           {!accountHasPassword ? (
             <p className="settings-note" data-testid="set-password-note">
               You signed in with a magic link. Set a password to use email and password login.

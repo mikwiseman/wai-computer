@@ -98,6 +98,22 @@ class WaiApi(
             body = QARequest(question = question, recordingIds = recordingIds),
         )
 
+    suspend fun getSettings(): UserSettings = authorizedRequest(
+        method = HttpMethod.Get,
+        path = "/api/settings",
+    )
+
+    suspend fun getTranscriptionOptions(): TranscriptionOptions = authorizedRequest(
+        method = HttpMethod.Get,
+        path = "/api/settings/transcription-options",
+    )
+
+    suspend fun updateSettings(request: UpdateSettingsRequest): UserSettings = authorizedRequest(
+        method = HttpMethod.Patch,
+        path = "/api/settings",
+        body = request,
+    )
+
     suspend fun createRealtimeTranscriptionSession(
         language: String,
         channels: Int = 1,

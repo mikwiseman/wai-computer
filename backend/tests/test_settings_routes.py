@@ -101,6 +101,15 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["summary_language"] == "auto"
     assert data["summary_style"] == "medium"
     assert data["summary_instructions"] is None
+    assert data["dictation_live_stt_provider"] == "openai"
+    assert data["dictation_live_stt_model"] == "gpt-realtime-whisper"
+    assert data["recording_live_stt_provider"] == "elevenlabs"
+    assert data["recording_live_stt_model"] == "scribe_v2_realtime"
+    assert data["file_stt_provider"] == "elevenlabs"
+    assert data["file_stt_model"] == "scribe_v2"
+    assert data["dictation_post_filter_enabled"] is True
+    assert data["dictation_post_filter_provider"] == "anthropic"
+    assert data["dictation_post_filter_model"] == "claude-haiku-4-5"
 
 
 @pytest.mark.asyncio
@@ -303,3 +312,85 @@ async def test_update_summary_language_normalizes(client: AsyncClient):
     )
     assert response.status_code == 200
     assert response.json()["summary_language"] == "ru"
+
+
+@pytest.mark.asyncio
+async def test_get_transcription_options_returns_curated_choices(client: AsyncClient):
+    """GET /api/settings/transcription-options returns shared model choices."""
+    headers = await _register(client, "settings.options@example.com", "password-123")
+
+    response = await client.get("/api/settings/transcription-options", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dictation_live_stt"][0]["provider"] == "openai"
+    assert data["dictation_live_stt"][0]["model"] == "gpt-realtime-whisper"
+    assert any(option["model"] == "gpt-4o-transcribe" for option in data["file_stt"])
+    assert any(
+        option["model"] == "claude-haiku-4-5"
+        for option in data["dictation_post_filter"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_transcription_settings_persists_valid_choices(client: AsyncClient):
+    """PATCH /api/settings should persist curated transcription choices."""
+    headers = await _register(client, "settings.stt@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={
+            "dictation_live_stt_provider": "elevenlabs",
+            "dictation_live_stt_model": "scribe_v2_realtime",
+            "recording_live_stt_provider": "openai",
+            "recording_live_stt_model": "gpt-realtime-whisper",
+            "file_stt_provider": "openai",
+            "file_stt_model": "gpt-4o-mini-transcribe",
+            "dictation_post_filter_enabled": False,
+            "dictation_post_filter_provider": "anthropic",
+            "dictation_post_filter_model": "claude-sonnet-4-6",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dictation_live_stt_provider"] == "elevenlabs"
+    assert data["recording_live_stt_provider"] == "openai"
+    assert data["file_stt_model"] == "gpt-4o-mini-transcribe"
+    assert data["dictation_post_filter_enabled"] is False
+    assert data["dictation_post_filter_model"] == "claude-sonnet-4-6"
+
+    get_response = await client.get("/api/settings", headers=headers)
+    assert get_response.json()["file_stt_model"] == "gpt-4o-mini-transcribe"
+
+
+@pytest.mark.asyncio
+async def test_update_transcription_settings_rejects_mismatched_pair(client: AsyncClient):
+    """Provider/model pairs must be updated together."""
+    headers = await _register(client, "settings.partialstt@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"file_stt_provider": "openai"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_transcription_settings_rejects_invalid_model(client: AsyncClient):
+    """PATCH /api/settings should reject unknown provider/model choices."""
+    headers = await _register(client, "settings.badstt@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={
+            "dictation_live_stt_provider": "openai",
+            "dictation_live_stt_model": "gpt-realtime-2",
+        },
+    )
+
+    assert response.status_code == 422
