@@ -62,7 +62,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
         XCTAssertTrue(settings.dictationPostFilterEnabled)
         XCTAssertEqual(settings.dictationPostFilterProvider, "anthropic")
-        XCTAssertEqual(settings.dictationPostFilterModel, "claude-haiku-4-5")
+        XCTAssertEqual(settings.dictationPostFilterModel, "claude-haiku-4-5-20251001")
     }
 
     func testUserSettingsDecodeFromCurrentJSONUsesServerTranscriptionValues() throws {

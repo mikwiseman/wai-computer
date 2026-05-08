@@ -248,7 +248,7 @@ data class UserSettings(
     @SerialName("file_stt_model") val fileSttModel: String = "scribe_v2",
     @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean = true,
     @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "anthropic",
-    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "claude-haiku-4-5",
+    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "claude-haiku-4-5-20251001",
 )
 
 @Serializable

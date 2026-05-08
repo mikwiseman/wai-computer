@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
@@ -128,10 +130,24 @@ class ElevenLabsWebSocketManager(
             .build()
     }
 
+    internal fun buildInworldRequest(config: RealtimeTranscriptionSessionConfig): Request {
+        val url = requireNotNull(config.websocketUrl) { "Missing Inworld realtime websocket URL" }
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", config.token)
+            .build()
+    }
+
     internal fun handleIncomingMessage(text: String) {
-        if (currentConfig?.provider == "openai") {
-            handleOpenAIMessage(text)
-            return
+        when (currentConfig?.provider) {
+            "openai" -> {
+                handleOpenAIMessage(text)
+                return
+            }
+            "inworld" -> {
+                handleInworldMessage(text)
+                return
+            }
         }
         handleElevenLabsMessage(text)
     }
@@ -217,6 +233,74 @@ class ElevenLabsWebSocketManager(
         }
     }
 
+    internal fun handleInworldMessage(text: String) {
+        val payload = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
+        val transcription = payload["transcription"]?.jsonObject
+            ?: payload["result"]?.jsonObject?.get("transcription")?.jsonObject
+        if (transcription != null) {
+            handleInworldTranscription(transcription)
+            return
+        }
+        val error = payload["error"]?.jsonObject
+        if (error != null) {
+            scheduleReconnect(
+                IllegalStateException(
+                    error.string("message")
+                        ?: error.string("error_message")
+                        ?: "Inworld realtime transcription error",
+                ),
+            )
+        }
+    }
+
+    private fun handleInworldTranscription(payload: JsonObject) {
+        val transcript = (payload.string("text") ?: payload.string("transcript")).orEmpty().trim()
+        if (transcript.isBlank()) return
+        val isFinal = payload.boolean("is_final") ?: payload.boolean("isFinal") ?: false
+        val confidence = payload.double("confidence") ?: 0.0
+        if (isFinal) {
+            val words = payload["words"]?.jsonArray?.mapNotNull { it as? JsonObject }
+                ?: payload["word_timestamps"]?.jsonArray?.mapNotNull { it as? JsonObject }
+                ?: payload["wordTimestamps"]?.jsonArray?.mapNotNull { it as? JsonObject }
+                ?: emptyList()
+            val startMs = inworldTimestampMs(
+                words.firstOrNull()?.get("start_ms")
+                    ?: words.firstOrNull()?.get("startMs")
+                    ?: words.firstOrNull()?.get("start_time_ms")
+                    ?: words.firstOrNull()?.get("start"),
+            ) ?: (collectedSegments.lastOrNull()?.endMs ?: 0)
+            val endMs = inworldTimestampMs(
+                words.lastOrNull()?.get("end_ms")
+                    ?: words.lastOrNull()?.get("endMs")
+                    ?: words.lastOrNull()?.get("end_time_ms")
+                    ?: words.lastOrNull()?.get("end"),
+            ) ?: startMs
+            val segment = LiveTranscriptSegment(
+                text = transcript,
+                speaker = words.firstOrNull()?.string("speaker") ?: words.firstOrNull()?.string("speaker_id"),
+                isFinal = true,
+                startMs = startMs,
+                endMs = endMs,
+                confidence = confidence,
+            )
+            collectedSegments += segment
+            events.tryEmit(WsEvent.Transcript(segment))
+        } else {
+            events.tryEmit(
+                WsEvent.Transcript(
+                    LiveTranscriptSegment(
+                        text = transcript,
+                        speaker = null,
+                        isFinal = false,
+                        startMs = collectedSegments.lastOrNull()?.endMs ?: 0,
+                        endMs = collectedSegments.lastOrNull()?.endMs ?: 0,
+                        confidence = confidence,
+                    ),
+                ),
+            )
+        }
+    }
+
     internal fun buildCommittedSegment(payload: JsonObject): LiveTranscriptSegment? {
         val transcript = payload.string("text").orEmpty().trim()
         if (transcript.isBlank()) return null
@@ -241,10 +325,10 @@ class ElevenLabsWebSocketManager(
 
     private suspend fun openSocket(config: RealtimeTranscriptionSessionConfig) {
         currentConfig = config
-        val request = if (config.provider == "openai") {
-            buildOpenAIRequest(config)
-        } else {
-            Request.Builder().url(buildElevenLabsUrl(config)).build()
+        val request = when (config.provider) {
+            "openai" -> buildOpenAIRequest(config)
+            "inworld" -> buildInworldRequest(config)
+            else -> Request.Builder().url(buildElevenLabsUrl(config)).build()
         }
         webSocket = okHttpClient.newWebSocket(
             request,
@@ -253,6 +337,9 @@ class ElevenLabsWebSocketManager(
                     connected = true
                     if (config.provider == "openai") {
                         webSocket.send(makeOpenAISessionUpdateMessage(config))
+                    }
+                    if (config.provider == "inworld") {
+                        webSocket.send(makeInworldTranscribeConfigMessage(config))
                     }
                     events.tryEmit(if (reconnectAttempt > 0) WsEvent.Reconnected else WsEvent.Connected)
                     scope.launch {
@@ -302,7 +389,12 @@ class ElevenLabsWebSocketManager(
 
     private suspend fun sendCommitChunkIfNeeded() {
         if (!endOfStreamRequested || endOfStreamSent || !connected) return
-        webSocket?.send(makeAudioMessage(ByteArray(640), commit = true))
+        if (currentConfig?.provider == "inworld") {
+            webSocket?.send("""{"end_turn":{}}""")
+            webSocket?.send("""{"close_stream":{}}""")
+        } else {
+            webSocket?.send(makeAudioMessage(ByteArray(640), commit = true))
+        }
         endOfStreamSent = true
     }
 
@@ -313,6 +405,8 @@ class ElevenLabsWebSocketManager(
             } else {
                 makeOpenAIAudioAppendMessage(data)
             }
+        } else if (currentConfig?.provider == "inworld") {
+            makeInworldAudioChunkMessage(data)
         } else {
             makeAudioChunkMessage(data, commit)
         }
@@ -332,8 +426,31 @@ class ElevenLabsWebSocketManager(
         return """{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":${config.sampleRate}},"transcription":{$transcription},"turn_detection":null}}}}"""
     }
 
+    private fun makeInworldTranscribeConfigMessage(config: RealtimeTranscriptionSessionConfig): String {
+        val languageValue = when {
+            config.language == "multi" || config.language == "und" -> ""
+            "-" in config.language -> config.language.substringBefore("-")
+            else -> config.language
+        }
+        return buildString {
+            append("{\"transcribe_config\":{")
+            append("\"model_id\":\"").append(config.model).append("\",")
+            append("\"language\":\"").append(languageValue).append("\",")
+            append("\"audio_encoding\":\"LINEAR16\",")
+            append("\"sample_rate_hertz\":").append(config.sampleRate).append(",")
+            append("\"number_of_channels\":").append(config.channels).append(",")
+            append("\"inactivity_timeout_seconds\":60")
+            append("}}")
+        }
+    }
+
+    internal fun makeInworldAudioChunkMessage(data: ByteArray): String {
+        val audioBase64 = java.util.Base64.getEncoder().encodeToString(data)
+        return """{"audio_chunk":{"content":"$audioBase64"}}"""
+    }
+
     private fun makeAudioChunkMessage(data: ByteArray, commit: Boolean): String {
-        val audioBase64 = android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP)
+        val audioBase64 = java.util.Base64.getEncoder().encodeToString(data)
         return buildString {
             append("{")
             append("\"message_type\":\"input_audio_chunk\",")
@@ -383,6 +500,17 @@ class ElevenLabsWebSocketManager(
     private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.double(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
+
+    private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
+
+    private fun inworldTimestampMs(value: JsonElement?): Int? {
+        val primitive = value as? JsonPrimitive ?: return null
+        var numeric = primitive.doubleOrNull ?: primitive.contentOrNull?.toDoubleOrNull() ?: return null
+        if (numeric >= 0 && numeric < 10_000 && numeric % 1.0 != 0.0) {
+            numeric *= 1_000
+        }
+        return numeric.toInt()
+    }
 
     companion object {
         private const val MAX_RECONNECT_ATTEMPTS = 10

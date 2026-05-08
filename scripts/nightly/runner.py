@@ -35,7 +35,7 @@ ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 TTS_MODEL = "inworld-tts-1.5-max"
 STT_MODEL = "soniox/stt-rt-v4"
 # Keep in sync with backend/app/config.py::Settings.anthropic_dictation_model.
-CLEANUP_MODEL = "claude-haiku-4-5"
+CLEANUP_MODEL = "claude-haiku-4-5-20251001"
 SAMPLE_RATE = 16000
 CHUNK_MS = 50
 

@@ -20,7 +20,7 @@ DEFAULT_RECORDING_LIVE_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "anthropic"
-DEFAULT_DICTATION_POST_FILTER_MODEL = "claude-haiku-4-5"
+DEFAULT_DICTATION_POST_FILTER_MODEL = "claude-haiku-4-5-20251001"
 
 
 @dataclass(frozen=True)
@@ -57,7 +57,37 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             provider="inworld",
             model="soniox/stt-rt-v4",
             label="Inworld + Soniox v4 RT",
-            description="Experimental multilingual realtime recognizer.",
+            description="High-accuracy realtime streaming with semantic end-of-turn detection.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="inworld/inworld-stt-1",
+            label="Inworld STT 1",
+            description="Inworld first-party realtime STT with voice profile support.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/u3-rt-pro",
+            label="Inworld + AssemblyAI U3 RT Pro",
+            description="High-accuracy sub-300ms multilingual streaming via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/universal-streaming-multilingual",
+            label="Inworld + AssemblyAI Universal Multilingual",
+            description="Multilingual streaming recognizer via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/universal-streaming-english",
+            label="Inworld + AssemblyAI Universal English",
+            description="English-optimized streaming recognizer via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/whisper-rt",
+            label="Inworld + AssemblyAI Whisper RT",
+            description="Realtime Whisper transcription via Inworld.",
         ),
     ),
     "recording_live_stt": (
@@ -72,6 +102,42 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             model="gpt-realtime-whisper",
             label="OpenAI GPT Realtime Whisper",
             description="OpenAI realtime speech-to-text for live recording transcripts.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="soniox/stt-rt-v4",
+            label="Inworld + Soniox v4 RT",
+            description="High-accuracy realtime streaming with semantic end-of-turn detection.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="inworld/inworld-stt-1",
+            label="Inworld STT 1",
+            description="Inworld first-party realtime STT with voice profile support.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/u3-rt-pro",
+            label="Inworld + AssemblyAI U3 RT Pro",
+            description="High-accuracy sub-300ms multilingual streaming via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/universal-streaming-multilingual",
+            label="Inworld + AssemblyAI Universal Multilingual",
+            description="Multilingual streaming recognizer via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/universal-streaming-english",
+            label="Inworld + AssemblyAI Universal English",
+            description="English-optimized streaming recognizer via Inworld.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="assemblyai/whisper-rt",
+            label="Inworld + AssemblyAI Whisper RT",
+            description="Realtime Whisper transcription via Inworld.",
         ),
     ),
     "file_stt": (
@@ -93,13 +159,37 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             label="OpenAI GPT-4o mini Transcribe",
             description="Lower-cost OpenAI speech-to-text for uploaded audio files.",
         ),
+        ModelOption(
+            provider="openai",
+            model="gpt-4o-transcribe-diarize",
+            label="OpenAI GPT-4o Transcribe Diarize",
+            description="OpenAI file transcription with speaker labels for full sessions.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="inworld/inworld-stt-1",
+            label="Inworld STT 1",
+            description="Inworld sync STT with optional voice profile support.",
+        ),
+        ModelOption(
+            provider="inworld",
+            model="groq/whisper-large-v3",
+            label="Inworld + Groq Whisper Large v3",
+            description="General-purpose recorded-audio transcription through Inworld.",
+        ),
     ),
     "dictation_post_filter": (
         ModelOption(
             provider="anthropic",
-            model="claude-haiku-4-5",
+            model="claude-haiku-4-5-20251001",
             label="Claude Haiku 4.5",
             description="Default low-latency cleanup for dictated text.",
+        ),
+        ModelOption(
+            provider="anthropic",
+            model="claude-opus-4-7",
+            label="Claude Opus 4.7",
+            description="Highest-quality cleanup when latency and cost are less important.",
         ),
         ModelOption(
             provider="anthropic",
@@ -109,15 +199,9 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
         ),
         ModelOption(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
-            label="Claude Sonnet 4",
-            description="Pinned Claude 4 Sonnet snapshot.",
-        ),
-        ModelOption(
-            provider="anthropic",
-            model="claude-3-5-haiku-20241022",
-            label="Claude Haiku 3.5",
-            description="Older fast cleanup model.",
+            model="claude-opus-4-6",
+            label="Claude Opus 4.6",
+            description="Previous Opus generation for high-quality cleanup.",
         ),
     ),
 }

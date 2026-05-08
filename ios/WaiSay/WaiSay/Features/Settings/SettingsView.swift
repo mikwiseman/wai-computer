@@ -207,7 +207,7 @@ struct TranscriptionSettingsView: View {
     @State private var recordingLiveSTTSelection = "elevenlabs:scribe_v2_realtime"
     @State private var fileSTTSelection = "elevenlabs:scribe_v2"
     @State private var dictationPostFilterEnabled = true
-    @State private var dictationPostFilterSelection = "anthropic:claude-haiku-4-5"
+    @State private var dictationPostFilterSelection = "anthropic:claude-haiku-4-5-20251001"
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),

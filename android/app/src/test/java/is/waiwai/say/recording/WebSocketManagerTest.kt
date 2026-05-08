@@ -65,6 +65,29 @@ class WebSocketManagerTest {
     }
 
     @Test
+    fun `build Inworld request uses basic auth and configured websocket URL`() {
+        val manager = ElevenLabsWebSocketManager(api, language = "multi")
+        val request = manager.buildInworldRequest(
+            RealtimeTranscriptionSessionConfig(
+                provider = "inworld",
+                token = "Basic abc123",
+                expiresInSeconds = 60,
+                sampleRate = 16_000,
+                audioFormat = "linear16_16000",
+                language = "multi",
+                channels = 1,
+                model = "soniox/stt-rt-v4",
+                websocketUrl = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+                authScheme = "basic",
+            ),
+        )
+
+        assertEquals("api.inworld.ai", request.url.host)
+        assertEquals("/stt/v1/transcribe:streamBidirectional", request.url.encodedPath)
+        assertEquals("Basic abc123", request.header("Authorization"))
+    }
+
+    @Test
     fun `OpenAI append message upsamples 16k PCM to 24k PCM`() {
         val manager = ElevenLabsWebSocketManager(api, language = "multi")
         val message = manager.makeOpenAIAudioAppendMessage(byteArrayOf(0, 0, 100, 0, -56, 0, 44, 1))
@@ -74,6 +97,16 @@ class WebSocketManagerTest {
 
         assertEquals("input_audio_buffer.append", payload["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals(12, decoded.size)
+    }
+
+    @Test
+    fun `Inworld audio chunk uses provider payload shape`() {
+        val manager = ElevenLabsWebSocketManager(api, language = "multi")
+        val message = manager.makeInworldAudioChunkMessage(byteArrayOf(1, 2, 3))
+        val payload = Json.parseToJsonElement(message).jsonObject
+        val audio = payload["audio_chunk"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty()
+
+        assertEquals("AQID", audio)
     }
 
     @Test
@@ -100,6 +133,36 @@ class WebSocketManagerTest {
         val segment = (event as WsEvent.Transcript).segment
         assertEquals("hello world", segment.text)
         assertTrue(segment.isFinal)
+        assertEquals(1, manager.collectedSegments.size)
+    }
+
+    @Test
+    fun `Inworld final transcript emits final segment`() = runTest {
+        val manager = ElevenLabsWebSocketManager(api, language = "en")
+        manager.handleInworldMessage(
+            """
+            {
+              "transcription":{
+                "text":"hello world",
+                "is_final":true,
+                "confidence":0.92,
+                "words":[
+                  {"start_ms":100,"end_ms":400,"speaker":"Speaker 1"},
+                  {"start_ms":450,"end_ms":900,"speaker":"Speaker 1"}
+                ]
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val event = manager.events.replayCache.lastOrNull()
+        assertTrue(event is WsEvent.Transcript)
+        val segment = (event as WsEvent.Transcript).segment
+        assertEquals("hello world", segment.text)
+        assertEquals("Speaker 1", segment.speaker)
+        assertTrue(segment.isFinal)
+        assertEquals(100, segment.startMs)
+        assertEquals(900, segment.endMs)
         assertEquals(1, manager.collectedSegments.size)
     }
 

@@ -75,6 +75,42 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(decoded.count, 12, "16 kHz mono PCM should be converted to 24 kHz mono PCM")
     }
 
+    func testInworldRequestUsesConfiguredWebSocketURLAndBasicAuth() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let config = RealtimeTranscriptionSessionConfig(
+            provider: "inworld",
+            token: "Basic abc123",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "multi",
+            channels: 1,
+            model: "soniox/stt-rt-v4",
+            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            authScheme: "basic"
+        )
+
+        let request = try await manager.testingRequestForRealtimeSession(config)
+
+        XCTAssertEqual(request.url?.host, "api.inworld.ai")
+        XCTAssertEqual(request.url?.path, "/stt/v1/transcribe:streamBidirectional")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Basic abc123")
+    }
+
+    func testInworldAudioChunkMessageUsesProviderPayloadShape() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        let message = await manager.testingMakeInworldAudioChunkMessage(data: Data([0x01, 0x02, 0x03]))
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+        let audioChunk = try XCTUnwrap(payload["audio_chunk"] as? [String: Any])
+
+        XCTAssertEqual(audioChunk["content"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
+    }
+
     func testOpenAICompletedTranscriptCollectsSegment() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
@@ -91,6 +127,46 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.count, 1)
         XCTAssertEqual(segments.first?.text, "Hello world.")
         XCTAssertEqual(segments.first?.isFinal, true)
+    }
+
+    func testInworldFinalTranscriptCollectsSegment() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "inworld",
+            token: "Basic abc123",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "en",
+            channels: 1,
+            model: "soniox/stt-rt-v4",
+            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            authScheme: "basic"
+        ))
+
+        await manager.testingHandleInworldMessage("""
+        {
+            "transcription": {
+                "text": "Hello world.",
+                "is_final": true,
+                "confidence": 0.92,
+                "words": [
+                    {"start_ms": 100, "end_ms": 400, "speaker": "Speaker 1"},
+                    {"start_ms": 450, "end_ms": 900, "speaker": "Speaker 1"}
+                ]
+            }
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Hello world.")
+        XCTAssertEqual(segments.first?.speaker, "Speaker 1")
+        XCTAssertEqual(segments.first?.startMs, 100)
+        XCTAssertEqual(segments.first?.endMs, 900)
+        XCTAssertEqual(segments.first?.confidence, 0.92)
     }
 
     func testTimestampedCommittedTranscriptReplacesPlainDuplicate() async {
