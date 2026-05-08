@@ -123,12 +123,22 @@ fun SettingsScreen(
 
     LaunchedEffect(authState) {
         if (authState is AuthState.Authenticated) {
+            transcriptionOptions = null
             try {
                 accountSettings = container.waiApi.getSettings()
-                transcriptionOptions = container.waiApi.getTranscriptionOptions()
                 settingsError = null
             } catch (error: Throwable) {
                 settingsError = error.localizedMessage ?: "Couldn't load account settings."
+                transcriptionOptions = null
+                return@LaunchedEffect
+            }
+
+            try {
+                transcriptionOptions = container.waiApi.getTranscriptionOptions()
+                settingsError = null
+            } catch (error: Throwable) {
+                settingsError = error.localizedMessage ?: "Couldn't load transcription model options."
+                transcriptionOptions = null
             }
         } else {
             accountSettings = null

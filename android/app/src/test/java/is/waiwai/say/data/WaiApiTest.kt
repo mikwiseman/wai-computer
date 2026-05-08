@@ -107,6 +107,33 @@ class WaiApiTest {
         unmockkAll()
     }
 
+    @Test
+    fun `user settings decodes legacy response with compatible transcription defaults`() {
+        val payload = """
+            {
+                "default_language": "multi",
+                "summary_language": "auto",
+                "summary_style": "medium",
+                "summary_instructions": null
+            }
+        """.trimIndent()
+
+        val settings = requestJson.decodeFromString<UserSettings>(payload)
+
+        assertEquals("multi", settings.defaultLanguage)
+        assertEquals("auto", settings.summaryLanguage)
+        assertEquals("medium", settings.summaryStyle)
+        assertEquals("elevenlabs", settings.dictationLiveSttProvider)
+        assertEquals("scribe_v2_realtime", settings.dictationLiveSttModel)
+        assertEquals("elevenlabs", settings.recordingLiveSttProvider)
+        assertEquals("scribe_v2_realtime", settings.recordingLiveSttModel)
+        assertEquals("elevenlabs", settings.fileSttProvider)
+        assertEquals("scribe_v2", settings.fileSttModel)
+        assertTrue(settings.dictationPostFilterEnabled)
+        assertEquals("anthropic", settings.dictationPostFilterProvider)
+        assertEquals("claude-haiku-4-5", settings.dictationPostFilterModel)
+    }
+
     private fun testClient(engine: MockEngine): HttpClient {
         return HttpClient(engine) {
             install(ContentNegotiation) {

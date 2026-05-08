@@ -153,12 +153,19 @@ export function DashboardClient() {
 
   async function loadAccountSettings() {
     setSettingsLoading(true);
+    setTranscriptionOptions(null);
     try {
-      const [settingsResponse, optionsResponse] = await Promise.all([
-        getSettings(),
-        getTranscriptionOptions(),
-      ]);
+      const settingsResponse = await getSettings();
       setAccountSettings(settingsResponse);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+      setSettingsLoadedOnce(true);
+      setSettingsLoading(false);
+      return;
+    }
+
+    try {
+      const optionsResponse = await getTranscriptionOptions();
       setTranscriptionOptions(optionsResponse);
     } catch (error: unknown) {
       setMessage(formatError(error));

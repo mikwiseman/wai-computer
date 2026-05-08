@@ -37,6 +37,69 @@ final class ModelTests: XCTestCase {
         return encoder
     }
 
+    // MARK: - Settings Tests
+
+    func testUserSettingsDecodeFromLegacyJSONUsesCompatibleTranscriptionDefaults() throws {
+        let json = """
+        {
+            "default_language": "multi",
+            "summary_language": "auto",
+            "summary_style": "medium",
+            "summary_instructions": null
+        }
+        """.data(using: .utf8)!
+
+        let settings = try makeDecoder().decode(UserSettings.self, from: json)
+
+        XCTAssertEqual(settings.defaultLanguage, "multi")
+        XCTAssertEqual(settings.summaryLanguage, "auto")
+        XCTAssertEqual(settings.summaryStyle, "medium")
+        XCTAssertEqual(settings.dictationLiveSTTProvider, "elevenlabs")
+        XCTAssertEqual(settings.dictationLiveSTTModel, "scribe_v2_realtime")
+        XCTAssertEqual(settings.recordingLiveSTTProvider, "elevenlabs")
+        XCTAssertEqual(settings.recordingLiveSTTModel, "scribe_v2_realtime")
+        XCTAssertEqual(settings.fileSTTProvider, "elevenlabs")
+        XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
+        XCTAssertTrue(settings.dictationPostFilterEnabled)
+        XCTAssertEqual(settings.dictationPostFilterProvider, "anthropic")
+        XCTAssertEqual(settings.dictationPostFilterModel, "claude-haiku-4-5")
+    }
+
+    func testUserSettingsDecodeFromCurrentJSONUsesServerTranscriptionValues() throws {
+        let json = """
+        {
+            "default_language": "ru",
+            "summary_language": "en",
+            "summary_style": "detailed",
+            "summary_instructions": "Write formally",
+            "dictation_live_stt_provider": "openai",
+            "dictation_live_stt_model": "gpt-realtime-whisper",
+            "recording_live_stt_provider": "openai",
+            "recording_live_stt_model": "gpt-realtime-whisper",
+            "file_stt_provider": "openai",
+            "file_stt_model": "gpt-4o-transcribe",
+            "dictation_post_filter_enabled": false,
+            "dictation_post_filter_provider": "anthropic",
+            "dictation_post_filter_model": "claude-sonnet-4-6"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try makeDecoder().decode(UserSettings.self, from: json)
+
+        XCTAssertEqual(settings.defaultLanguage, "ru")
+        XCTAssertEqual(settings.summaryLanguage, "en")
+        XCTAssertEqual(settings.summaryStyle, "detailed")
+        XCTAssertEqual(settings.summaryInstructions, "Write formally")
+        XCTAssertEqual(settings.dictationLiveSTTProvider, "openai")
+        XCTAssertEqual(settings.dictationLiveSTTModel, "gpt-realtime-whisper")
+        XCTAssertEqual(settings.recordingLiveSTTProvider, "openai")
+        XCTAssertEqual(settings.recordingLiveSTTModel, "gpt-realtime-whisper")
+        XCTAssertEqual(settings.fileSTTProvider, "openai")
+        XCTAssertEqual(settings.fileSTTModel, "gpt-4o-transcribe")
+        XCTAssertFalse(settings.dictationPostFilterEnabled)
+        XCTAssertEqual(settings.dictationPostFilterModel, "claude-sonnet-4-6")
+    }
+
     // MARK: - Recording Tests
 
     func testFolderDecodeFromJSON() throws {
