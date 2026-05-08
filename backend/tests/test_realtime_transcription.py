@@ -89,10 +89,44 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
 
 @pytest.mark.asyncio
 async def test_create_realtime_transcription_session_rejects_non_elevenlabs_provider():
-    with patch("app.core.realtime_transcription.get_settings") as mock_settings:
-        mock_settings.return_value.speech_to_text_provider = "unsupported-provider"
+    user = type(
+        "User",
+        (),
+        {"recording_live_stt_provider": "openai", "recording_live_stt_model": "bad-model"},
+    )()
+    from app.core.realtime_transcription import create_realtime_transcription_session
 
+    with pytest.raises(ValueError, match="Unsupported recording_live_stt option"):
+        await create_realtime_transcription_session(user=user)
+
+
+@pytest.mark.asyncio
+async def test_create_dictation_session_uses_openai_user_default():
+    user = type(
+        "User",
+        (),
+        {
+            "dictation_live_stt_provider": "openai",
+            "dictation_live_stt_model": "gpt-realtime-whisper",
+        },
+    )()
+    with patch(
+        "app.core.realtime_transcription.create_openai_realtime_client_secret",
+        new=AsyncMock(return_value="oai-ephemeral"),
+    ):
         from app.core.realtime_transcription import create_realtime_transcription_session
 
-        with pytest.raises(ValueError, match="Only elevenlabs is supported"):
-            await create_realtime_transcription_session()
+        session = await create_realtime_transcription_session(
+            language="en",
+            channels=1,
+            purpose="dictation",
+            user=user,
+        )
+
+    assert session.provider == "openai"
+    assert session.model == "gpt-realtime-whisper"
+    assert session.token == "oai-ephemeral"
+    assert session.sample_rate == 24_000
+    assert session.audio_format == "pcm_24000"
+    assert session.websocket_url == "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper"
+    assert session.auth_scheme == "bearer"

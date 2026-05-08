@@ -12,6 +12,29 @@ export interface UserSettings {
   summary_language: string;
   summary_style: SummaryStyle;
   summary_instructions: string | null;
+  dictation_live_stt_provider: string;
+  dictation_live_stt_model: string;
+  recording_live_stt_provider: string;
+  recording_live_stt_model: string;
+  file_stt_provider: string;
+  file_stt_model: string;
+  dictation_post_filter_enabled: boolean;
+  dictation_post_filter_provider: string;
+  dictation_post_filter_model: string;
+}
+
+export interface TranscriptionModelOption {
+  provider: string;
+  model: string;
+  label: string;
+  description: string;
+}
+
+export interface TranscriptionOptions {
+  dictation_live_stt: TranscriptionModelOption[];
+  recording_live_stt: TranscriptionModelOption[];
+  file_stt: TranscriptionModelOption[];
+  dictation_post_filter: TranscriptionModelOption[];
 }
 
 export interface TokenResponse {

@@ -16,13 +16,18 @@ struct MacSettingsView: View {
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
-    @AppStorage(DeveloperSettingsStore.developerModeEnabledKey) private var developerModeEnabled = false
-    @AppStorage(DeveloperSettingsStore.dictationProviderKey) private var dictationProvider: DictationProvider = .elevenLabs
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
     @State private var settingsLoaded = false
+    @State private var settingsError: String?
+    @State private var transcriptionOptions: TranscriptionOptions?
+    @State private var dictationLiveSTTSelection = "openai:gpt-realtime-whisper"
+    @State private var recordingLiveSTTSelection = "elevenlabs:scribe_v2_realtime"
+    @State private var fileSTTSelection = "elevenlabs:scribe_v2"
+    @State private var dictationPostFilterEnabled = true
+    @State private var dictationPostFilterSelection = "anthropic:claude-haiku-4-5"
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -78,6 +83,51 @@ struct MacSettingsView: View {
                 Text("Affects live dictation. Recording transcription auto-detects.")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
+            }
+
+            Section {
+                if let transcriptionOptions {
+                    transcriptionModelPicker(
+                        "Dictation live",
+                        selection: $dictationLiveSTTSelection,
+                        options: transcriptionOptions.dictationLiveSTT,
+                        identifier: "settings-dictation-live-stt-picker",
+                        save: { await saveDictationLiveSTT(selection: $0) }
+                    )
+
+                    transcriptionModelPicker(
+                        "Recording live",
+                        selection: $recordingLiveSTTSelection,
+                        options: transcriptionOptions.recordingLiveSTT,
+                        identifier: "settings-recording-live-stt-picker",
+                        save: { await saveRecordingLiveSTT(selection: $0) }
+                    )
+
+                    transcriptionModelPicker(
+                        "Full session",
+                        selection: $fileSTTSelection,
+                        options: transcriptionOptions.fileSTT,
+                        identifier: "settings-file-stt-picker",
+                        save: { await saveFileSTT(selection: $0) }
+                    )
+
+                    if let settingsError {
+                        Text(settingsError)
+                            .font(Typography.caption)
+                            .foregroundStyle(.red)
+                    }
+                } else if let settingsError {
+                    Text(settingsError)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            } header: {
+                Text("Transcription Models")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-transcription-models-header")
             }
 
             Section {
@@ -180,10 +230,25 @@ struct MacSettingsView: View {
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
-                Toggle("AI Text Cleanup", isOn: $dictationManager.aiCleanupEnabled)
+                Toggle("Post-filter dictated text", isOn: $dictationPostFilterEnabled)
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
-                    .accessibilityIdentifier("settings-ai-text-cleanup-toggle")
+                    .accessibilityIdentifier("settings-dictation-post-filter-toggle")
+                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
+                        guard settingsLoaded else { return }
+                        Task { await saveDictationPostFilterEnabled(enabled) }
+                    }
+
+                if let transcriptionOptions, dictationPostFilterEnabled {
+                    transcriptionModelPicker(
+                        "Post-filter model",
+                        selection: $dictationPostFilterSelection,
+                        options: transcriptionOptions.dictationPostFilter,
+                        identifier: "settings-dictation-post-filter-model-picker",
+                        save: { await saveDictationPostFilter(selection: $0) }
+                    )
+                    .disabled(!dictationManager.isFeatureEnabled)
+                }
 
                 permissionRow(
                     title: "Microphone",
@@ -257,12 +322,6 @@ struct MacSettingsView: View {
                 Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
-                Toggle("Enable developer mode", isOn: $developerModeEnabled)
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-developer-mode-toggle")
-                Text("Exposes experimental dictation knobs. Off for everyone unless you flip it on.")
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
                 Button("Check for Updates…") {
                     NotificationCenter.default.post(name: .waisayCheckForUpdates, object: nil)
                 }
@@ -272,34 +331,6 @@ struct MacSettingsView: View {
                 Text("About")
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-about-header")
-            }
-
-            if developerModeEnabled {
-                Section {
-                    Picker("Speech recognizer", selection: $dictationProvider) {
-                        ForEach(DictationProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider)
-                        }
-                    }
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-dictation-provider-picker")
-                    .help(dictationProvider.subtitle)
-
-                    Text(dictationProvider.subtitle)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button("Reset Developer settings") {
-                        DeveloperSettingsStore.shared.reset()
-                    }
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-developer-reset-button")
-                } header: {
-                    Text("Developer")
-                        .waiSectionHeader()
-                        .accessibilityIdentifier("settings-developer-header")
-                }
             }
 
             Section {
@@ -401,7 +432,10 @@ struct MacSettingsView: View {
     }
 
     private var dictationPrivacyText: String {
-        return "AI Text Cleanup sends dictated text to WaiSay's backend and Anthropic before insertion."
+        if dictationPostFilterEnabled {
+            return "Post-filtering sends dictated text through the selected cleanup model before insertion."
+        }
+        return "Post-filtering is off; dictated text is inserted after dictionary replacements."
     }
 
     private var dictationPermissionsReady: Bool {
@@ -486,6 +520,58 @@ struct MacSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private func transcriptionModelPicker(
+        _ title: String,
+        selection: Binding<String>,
+        options: [TranscriptionModelOption],
+        identifier: String,
+        save: @escaping (String) async -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Picker(title, selection: selection) {
+                ForEach(options) { option in
+                    Text(option.label).tag(option.id)
+                }
+            }
+            .font(Typography.body)
+            .disabled(options.isEmpty)
+            .accessibilityIdentifier(identifier)
+            .onChange(of: selection.wrappedValue) { _, newValue in
+                guard settingsLoaded else { return }
+                Task { await save(newValue) }
+            }
+
+            if let description = selectedOptionDescription(selection.wrappedValue, in: options) {
+                Text(description)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func selectedOptionDescription(_ selection: String, in options: [TranscriptionModelOption]) -> String? {
+        options.first { $0.id == selection }?.description
+    }
+
+    private func splitSelection(_ selection: String) -> (provider: String, model: String)? {
+        let parts = selection.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    private func applySettings(_ settings: UserSettings) {
+        summaryLanguage = settings.summaryLanguage
+        summaryStyle = settings.summaryStyle
+        summaryInstructions = settings.summaryInstructions ?? ""
+        dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
+        recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
+        fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
+        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
+    }
+
     private func refreshPermissions() {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
@@ -560,13 +646,66 @@ struct MacSettingsView: View {
     private func loadSummarySettings() async {
         guard !settingsLoaded else { return }
         do {
-            let settings = try await appState.getAPIClient().getSettings()
-            summaryLanguage = settings.summaryLanguage
-            summaryStyle = settings.summaryStyle
-            summaryInstructions = settings.summaryInstructions ?? ""
+            async let settingsRequest = appState.getAPIClient().getSettings()
+            async let optionsRequest = appState.getAPIClient().getTranscriptionOptions()
+            let (settings, options) = try await (settingsRequest, optionsRequest)
+            applySettings(settings)
+            transcriptionOptions = options
+            settingsError = nil
             settingsLoaded = true
         } catch {
-            // Settings will use defaults
+            settingsError = "Couldn't load account settings: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveDictationLiveSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        let request = UpdateSettingsRequest(
+            dictationLiveSTTProvider: pair.provider,
+            dictationLiveSTTModel: pair.model
+        )
+        await saveTranscriptionSettings(request)
+    }
+
+    private func saveRecordingLiveSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        let request = UpdateSettingsRequest(
+            recordingLiveSTTProvider: pair.provider,
+            recordingLiveSTTModel: pair.model
+        )
+        await saveTranscriptionSettings(request)
+    }
+
+    private func saveFileSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        let request = UpdateSettingsRequest(
+            fileSTTProvider: pair.provider,
+            fileSTTModel: pair.model
+        )
+        await saveTranscriptionSettings(request)
+    }
+
+    private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
+        let request = UpdateSettingsRequest(dictationPostFilterEnabled: enabled)
+        await saveTranscriptionSettings(request)
+    }
+
+    private func saveDictationPostFilter(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        let request = UpdateSettingsRequest(
+            dictationPostFilterProvider: pair.provider,
+            dictationPostFilterModel: pair.model
+        )
+        await saveTranscriptionSettings(request)
+    }
+
+    private func saveTranscriptionSettings(_ request: UpdateSettingsRequest) async {
+        do {
+            let settings = try await appState.getAPIClient().updateSettings(request)
+            applySettings(settings)
+            settingsError = nil
+        } catch {
+            settingsError = "Couldn't save account settings: \(error.localizedDescription)"
         }
     }
 

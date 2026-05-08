@@ -197,8 +197,17 @@ struct AudioSettingsView: View {
 }
 
 struct TranscriptionSettingsView: View {
+    @EnvironmentObject var appState: AppState
     @AppStorage("transcriptionLanguage") private var language = "multi"
     @AppStorage("enableDiarization") private var enableDiarization = true
+    @State private var settingsLoaded = false
+    @State private var settingsError: String?
+    @State private var transcriptionOptions: TranscriptionOptions?
+    @State private var dictationLiveSTTSelection = "openai:gpt-realtime-whisper"
+    @State private var recordingLiveSTTSelection = "elevenlabs:scribe_v2_realtime"
+    @State private var fileSTTSelection = "elevenlabs:scribe_v2"
+    @State private var dictationPostFilterEnabled = true
+    @State private var dictationPostFilterSelection = "anthropic:claude-haiku-4-5"
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -224,8 +233,170 @@ struct TranscriptionSettingsView: View {
             Section("Features") {
                 Toggle("Speaker Diarization", isOn: $enableDiarization)
             }
+
+            Section("Models") {
+                if let transcriptionOptions {
+                    transcriptionModelPicker(
+                        "Dictation live",
+                        selection: $dictationLiveSTTSelection,
+                        options: transcriptionOptions.dictationLiveSTT,
+                        save: { await saveDictationLiveSTT(selection: $0) }
+                    )
+                    transcriptionModelPicker(
+                        "Recording live",
+                        selection: $recordingLiveSTTSelection,
+                        options: transcriptionOptions.recordingLiveSTT,
+                        save: { await saveRecordingLiveSTT(selection: $0) }
+                    )
+                    transcriptionModelPicker(
+                        "Full session",
+                        selection: $fileSTTSelection,
+                        options: transcriptionOptions.fileSTT,
+                        save: { await saveFileSTT(selection: $0) }
+                    )
+                } else if let settingsError {
+                    Text(settingsError)
+                        .foregroundStyle(.red)
+                } else {
+                    ProgressView()
+                }
+            }
+
+            Section("Dictation post-filter") {
+                Toggle("Enabled", isOn: $dictationPostFilterEnabled)
+                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
+                        guard settingsLoaded else { return }
+                        Task { await saveDictationPostFilterEnabled(enabled) }
+                    }
+
+                if let transcriptionOptions, dictationPostFilterEnabled {
+                    transcriptionModelPicker(
+                        "Model",
+                        selection: $dictationPostFilterSelection,
+                        options: transcriptionOptions.dictationPostFilter,
+                        save: { await saveDictationPostFilter(selection: $0) }
+                    )
+                }
+
+                if let settingsError, transcriptionOptions != nil {
+                    Text(settingsError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
         }
         .navigationTitle("Transcription")
+        .task {
+            await loadSettings()
+        }
+    }
+
+    @ViewBuilder
+    private func transcriptionModelPicker(
+        _ title: String,
+        selection: Binding<String>,
+        options: [TranscriptionModelOption],
+        save: @escaping (String) async -> Void
+    ) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(options) { option in
+                Text(option.label).tag(option.id)
+            }
+        }
+        .disabled(options.isEmpty)
+        .onChange(of: selection.wrappedValue) { _, newValue in
+            guard settingsLoaded else { return }
+            Task { await save(newValue) }
+        }
+
+        if let description = options.first(where: { $0.id == selection.wrappedValue })?.description {
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func splitSelection(_ selection: String) -> (provider: String, model: String)? {
+        let parts = selection.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    private func applySettings(_ settings: UserSettings) {
+        dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
+        recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
+        fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
+        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
+    }
+
+    private func loadSettings() async {
+        guard !settingsLoaded else { return }
+        do {
+            async let settingsRequest = appState.getAPIClient().getSettings()
+            async let optionsRequest = appState.getAPIClient().getTranscriptionOptions()
+            let (settings, options) = try await (settingsRequest, optionsRequest)
+            applySettings(settings)
+            transcriptionOptions = options
+            settingsError = nil
+            settingsLoaded = true
+        } catch {
+            settingsError = "Couldn't load account settings: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveDictationLiveSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        await saveTranscriptionSettings(
+            UpdateSettingsRequest(
+                dictationLiveSTTProvider: pair.provider,
+                dictationLiveSTTModel: pair.model
+            )
+        )
+    }
+
+    private func saveRecordingLiveSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        await saveTranscriptionSettings(
+            UpdateSettingsRequest(
+                recordingLiveSTTProvider: pair.provider,
+                recordingLiveSTTModel: pair.model
+            )
+        )
+    }
+
+    private func saveFileSTT(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        await saveTranscriptionSettings(
+            UpdateSettingsRequest(
+                fileSTTProvider: pair.provider,
+                fileSTTModel: pair.model
+            )
+        )
+    }
+
+    private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
+        await saveTranscriptionSettings(UpdateSettingsRequest(dictationPostFilterEnabled: enabled))
+    }
+
+    private func saveDictationPostFilter(selection: String) async {
+        guard let pair = splitSelection(selection) else { return }
+        await saveTranscriptionSettings(
+            UpdateSettingsRequest(
+                dictationPostFilterProvider: pair.provider,
+                dictationPostFilterModel: pair.model
+            )
+        )
+    }
+
+    private func saveTranscriptionSettings(_ request: UpdateSettingsRequest) async {
+        do {
+            let settings = try await appState.getAPIClient().updateSettings(request)
+            applySettings(settings)
+            settingsError = nil
+        } catch {
+            settingsError = "Couldn't save account settings: \(error.localizedDescription)"
+        }
     }
 }
 

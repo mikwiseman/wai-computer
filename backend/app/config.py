@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     dictation_stt_model: str = "soniox/stt-rt-v4"
     dictation_stt_language: str = "multi"
 
+    # OpenAI speech-to-text
+    openai_api_key: str = ""
+    openai_realtime_transcription_model: str = "gpt-realtime-whisper"
+    openai_file_transcription_model: str = "gpt-4o-transcribe"
+
     # Inworld AI (provides unified STT WebSocket to multiple engines)
     inworld_api_key: str = ""
 

@@ -90,6 +90,7 @@ public actor WebSocketManager {
     private let apiClient: APIClient
     private let language: String
     private let channels: Int
+    private let purpose: RealtimeTranscriptionPurpose
 
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
@@ -99,6 +100,7 @@ public actor WebSocketManager {
     private var transcriptionSession: RealtimeTranscriptionSessionConfig?
     private let reconnectClock = ContinuousClock()
     private var lastTranscriptReceivedAt: ContinuousClock.Instant?
+    private var openAIInterimByItem: [String: String] = [:]
 
     private enum CommittedTranscriptKind {
         case plain
@@ -142,10 +144,17 @@ public actor WebSocketManager {
     /// provider's hard limit inside `buildElevenLabsURL`.
     private let keyTerms: [String]
 
-    public init(apiClient: APIClient, language: String = "multi", channels: Int = 1, keyTerms: [String] = []) {
+    public init(
+        apiClient: APIClient,
+        language: String = "multi",
+        channels: Int = 1,
+        purpose: RealtimeTranscriptionPurpose = .recording,
+        keyTerms: [String] = []
+    ) {
         self.apiClient = apiClient
         self.language = language
         self.channels = channels
+        self.purpose = purpose
         self.keyTerms = keyTerms
     }
 
@@ -169,6 +178,7 @@ public actor WebSocketManager {
         collectedSegments = []
         collectedSegmentKinds = []
         lastTranscriptReceivedAt = nil
+        openAIInterimByItem = [:]
         reconnectAttempt = 0
         audioBuffer = []
         isReconnecting = false
@@ -179,7 +189,8 @@ public actor WebSocketManager {
 
         let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
             language: language,
-            channels: channels
+            channels: channels,
+            purpose: purpose
         )
         transcriptionSession = sessionConfig
         let request = try requestForRealtimeSession(sessionConfig)
@@ -196,6 +207,7 @@ public actor WebSocketManager {
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
         }
+        try await sendOpenAISessionUpdateIfNeeded(sessionConfig)
 
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
@@ -377,6 +389,17 @@ public actor WebSocketManager {
     private func requestForRealtimeSession(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) throws -> URLRequest {
+        if sessionConfig.provider == "openai" {
+            guard let urlString = sessionConfig.websocketURL,
+                  let url = URL(string: urlString) else {
+                throw WebSocketConnectionError.invalidURL
+            }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 300
+            request.setValue("Bearer \(sessionConfig.token)", forHTTPHeaderField: "Authorization")
+            return request
+        }
+
         guard sessionConfig.provider == "elevenlabs" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(sessionConfig.provider)"
@@ -402,6 +425,11 @@ public actor WebSocketManager {
     ) async throws {
         guard let webSocket else {
             throw APIError.networkError(URLError(.notConnectedToInternet))
+        }
+
+        if transcriptionSession?.provider == "openai" {
+            try await webSocket.send(.string(makeOpenAIAudioAppendMessage(data: data)))
+            return
         }
 
         try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
@@ -430,6 +458,78 @@ public actor WebSocketManager {
         return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
     }
 
+    private func makeOpenAIAudioAppendMessage(data: Data) -> String {
+        let payload: [String: Any] = [
+            "type": "input_audio_buffer.append",
+            "audio": Self.openAI24kMonoPCM(from16kPCM: data, channels: channels).base64EncodedString(),
+        ]
+        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
+        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+    }
+
+    private func makeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        var transcription: [String: Any] = ["model": sessionConfig.model]
+        if !sessionConfig.language.isEmpty, sessionConfig.language != "multi" {
+            transcription["language"] = sessionConfig.language
+        }
+        let payload: [String: Any] = [
+            "type": "session.update",
+            "session": [
+                "type": "transcription",
+                "audio": [
+                    "input": [
+                        "format": [
+                            "type": "audio/pcm",
+                            "rate": sessionConfig.sampleRate,
+                        ],
+                        "transcription": transcription,
+                        "turn_detection": NSNull(),
+                    ],
+                ],
+            ],
+        ]
+        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
+        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+    }
+
+    static func openAI24kMonoPCM(from16kPCM data: Data, channels: Int) -> Data {
+        let sourceChannels = max(1, channels)
+        let bytesPerFrame = sourceChannels * MemoryLayout<Int16>.size
+        guard data.count >= bytesPerFrame else { return data }
+
+        var monoSamples: [Double] = []
+        monoSamples.reserveCapacity(data.count / bytesPerFrame)
+        data.withUnsafeBytes { rawBuffer in
+            let samples = rawBuffer.bindMemory(to: Int16.self)
+            let frameCount = samples.count / sourceChannels
+            for frame in 0..<frameCount {
+                var mixed = 0
+                for channel in 0..<sourceChannels {
+                    mixed += Int(Int16(littleEndian: samples[frame * sourceChannels + channel]))
+                }
+                monoSamples.append(Double(mixed) / Double(sourceChannels))
+            }
+        }
+
+        guard monoSamples.count > 1 else { return data }
+
+        let sourceRate = 16_000.0
+        let targetRate = 24_000.0
+        let outputCount = Int((Double(monoSamples.count) * targetRate / sourceRate).rounded(.down))
+        var output = Data(capacity: outputCount * MemoryLayout<Int16>.size)
+        for index in 0..<outputCount {
+            let sourcePosition = Double(index) * sourceRate / targetRate
+            let lower = min(Int(sourcePosition), monoSamples.count - 1)
+            let upper = min(lower + 1, monoSamples.count - 1)
+            let fraction = sourcePosition - Double(lower)
+            let interpolated = monoSamples[lower] + (monoSamples[upper] - monoSamples[lower]) * fraction
+            let clamped = max(Double(Int16.min), min(Double(Int16.max), interpolated.rounded()))
+            let sample = Int16(clamped).littleEndian
+            withUnsafeBytes(of: sample) { output.append(contentsOf: $0) }
+        }
+        return output
+    }
+
     func testingMakeElevenLabsAudioChunkMessage(
         data: Data,
         previousText: String? = nil,
@@ -440,6 +540,14 @@ public actor WebSocketManager {
             previousText: previousText,
             commit: commit
         )
+    }
+
+    func testingMakeOpenAIAudioAppendMessage(data: Data) -> String {
+        makeOpenAIAudioAppendMessage(data: data)
+    }
+
+    func testingSetSessionConfig(_ sessionConfig: RealtimeTranscriptionSessionConfig) {
+        transcriptionSession = sessionConfig
     }
 
     private func receiveMessages(forConnection expectedId: UInt64) async {
@@ -488,7 +596,74 @@ public actor WebSocketManager {
     }
 
     private func handleIncomingMessage(_ text: String) {
+        if transcriptionSession?.provider == "openai" {
+            handleOpenAIMessage(text)
+            return
+        }
         handleElevenLabsMessage(text)
+    }
+
+    private func handleOpenAIMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String
+        else { return }
+
+        switch type {
+        case "conversation.item.input_audio_transcription.delta":
+            let itemId = json["item_id"] as? String ?? "unknown"
+            let delta = json["delta"] as? String ?? ""
+            guard !delta.isEmpty else { return }
+            let current = (openAIInterimByItem[itemId] ?? "") + delta
+            openAIInterimByItem[itemId] = current
+            let lastEndMs = collectedSegments.last?.endMs ?? 0
+            eventContinuation?.yield(.transcript(LiveTranscriptSegment(
+                text: current,
+                speaker: nil,
+                isFinal: false,
+                startMs: lastEndMs,
+                endMs: lastEndMs,
+                confidence: 0.0
+            )))
+
+        case "conversation.item.input_audio_transcription.completed":
+            let itemId = json["item_id"] as? String ?? "unknown"
+            let transcript = (json["transcript"] as? String ?? openAIInterimByItem[itemId] ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            openAIInterimByItem[itemId] = nil
+            guard !transcript.isEmpty else { return }
+            lastTranscriptReceivedAt = reconnectClock.now
+            let lastEndMs = collectedSegments.last?.endMs ?? 0
+            let segment = LiveTranscriptSegment(
+                text: transcript,
+                speaker: nil,
+                isFinal: true,
+                startMs: lastEndMs,
+                endMs: lastEndMs,
+                confidence: 0.0
+            )
+            if let emittedSegment = collectCommittedSegment(segment, kind: .plain) {
+                eventContinuation?.yield(.transcript(emittedSegment))
+            }
+
+        case "error":
+            let message = (json["error"] as? [String: Any])?["message"] as? String
+                ?? "OpenAI realtime transcription error"
+            let error = WebSocketConnectionError.serverError(message)
+            if reconnectEnabled {
+                startReconnection(afterError: error)
+            } else {
+                closeConnection(
+                    forConnection: connectionId,
+                    error: error,
+                    emitDisconnected: true,
+                    finishEventStream: false
+                )
+            }
+
+        default:
+            break
+        }
     }
 
     private func handleElevenLabsMessage(_ text: String) {
@@ -707,7 +882,8 @@ public actor WebSocketManager {
             do {
                 let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
                     language: language,
-                    channels: channels
+                    channels: channels,
+                    purpose: purpose
                 )
                 transcriptionSession = sessionConfig
                 let request = try requestForRealtimeSession(sessionConfig)
@@ -726,6 +902,7 @@ public actor WebSocketManager {
                 receiveTask = Task { [weak self] in
                     await self?.receiveMessages(forConnection: thisConnection)
                 }
+                try await sendOpenAISessionUpdateIfNeeded(sessionConfig)
 
                 // Replay buffered audio
                 let bufferedChunks = audioBuffer
@@ -791,6 +968,15 @@ public actor WebSocketManager {
         guard endOfStreamRequested, !endOfStreamSent else { return }
         guard let webSocket else { return }
 
+        if transcriptionSession?.provider == "openai" {
+            try await webSocket.send(.string("{\"type\":\"input_audio_buffer.commit\"}"))
+            endOfStreamSent = true
+            reconnectEnabled = false
+            cancelReconnection(clearBufferedAudio: false)
+            wsLog.debug("Sent commit event to OpenAI")
+            return
+        }
+
         try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
             data: Data(repeating: 0, count: 640),
             previousText: nil,
@@ -851,6 +1037,17 @@ public actor WebSocketManager {
 
     func testingHandleElevenLabsMessage(_ text: String) {
         handleElevenLabsMessage(text)
+    }
+
+    func testingHandleOpenAIMessage(_ text: String) {
+        handleOpenAIMessage(text)
+    }
+
+    private func sendOpenAISessionUpdateIfNeeded(
+        _ sessionConfig: RealtimeTranscriptionSessionConfig
+    ) async throws {
+        guard sessionConfig.provider == "openai", let webSocket else { return }
+        try await webSocket.send(.string(makeOpenAISessionUpdateMessage(sessionConfig)))
     }
 
     private func closeConnection(

@@ -30,6 +30,7 @@ import type {
   SharedRecording,
   Summary,
   TokenResponse,
+  TranscriptionOptions,
   TranscriptSearchResponse,
   TranscriptStatsResponse,
   User,
@@ -337,6 +338,10 @@ export function changePassword(currentPassword: string, newPassword: string): Pr
 
 export function getSettings(): Promise<UserSettings> {
   return apiFetch<UserSettings>("/api/settings");
+}
+
+export function getTranscriptionOptions(): Promise<TranscriptionOptions> {
+  return apiFetch<TranscriptionOptions>("/api/settings/transcription-options");
 }
 
 export function updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {

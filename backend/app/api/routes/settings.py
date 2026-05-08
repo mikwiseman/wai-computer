@@ -1,10 +1,14 @@
 """User settings routes."""
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from app.api.deps import CurrentUser, Database
 from app.core.security import hash_password, verify_password
+from app.core.transcription_options import (
+    options_response,
+    validate_option,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -39,6 +43,15 @@ class SettingsResponse(BaseModel):
     summary_language: str
     summary_style: str
     summary_instructions: str | None
+    dictation_live_stt_provider: str
+    dictation_live_stt_model: str
+    recording_live_stt_provider: str
+    recording_live_stt_model: str
+    file_stt_provider: str
+    file_stt_model: str
+    dictation_post_filter_enabled: bool
+    dictation_post_filter_provider: str
+    dictation_post_filter_model: str
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -48,6 +61,15 @@ class UpdateSettingsRequest(BaseModel):
     summary_language: str | None = None
     summary_style: str | None = None
     summary_instructions: str | None = None
+    dictation_live_stt_provider: str | None = None
+    dictation_live_stt_model: str | None = None
+    recording_live_stt_provider: str | None = None
+    recording_live_stt_model: str | None = None
+    file_stt_provider: str | None = None
+    file_stt_model: str | None = None
+    dictation_post_filter_enabled: bool | None = None
+    dictation_post_filter_provider: str | None = None
+    dictation_post_filter_model: str | None = None
 
     @field_validator("default_language")
     @classmethod
@@ -80,18 +102,112 @@ class UpdateSettingsRequest(BaseModel):
             raise ValueError(f"summary_style must be one of: {valid}")
         return normalized
 
+    @field_validator(
+        "dictation_live_stt_provider",
+        "recording_live_stt_provider",
+        "file_stt_provider",
+        "dictation_post_filter_provider",
+    )
+    @classmethod
+    def normalize_provider(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("provider cannot be empty")
+        return normalized
+
+    @field_validator(
+        "dictation_live_stt_model",
+        "recording_live_stt_model",
+        "file_stt_model",
+        "dictation_post_filter_model",
+    )
+    @classmethod
+    def normalize_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("model cannot be empty")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_transcription_pairs(self) -> "UpdateSettingsRequest":
+        pairs = (
+            (
+                "dictation_live_stt",
+                self.dictation_live_stt_provider,
+                self.dictation_live_stt_model,
+            ),
+            (
+                "recording_live_stt",
+                self.recording_live_stt_provider,
+                self.recording_live_stt_model,
+            ),
+            ("file_stt", self.file_stt_provider, self.file_stt_model),
+            (
+                "dictation_post_filter",
+                self.dictation_post_filter_provider,
+                self.dictation_post_filter_model,
+            ),
+        )
+        for group, provider, model in pairs:
+            if (provider is None) != (model is None):
+                raise ValueError(f"{group} provider and model must be updated together")
+            if provider is not None and model is not None:
+                validate_option(group, provider, model)  # type: ignore[arg-type]
+        return self
+
+
+class TranscriptionOptionResponse(BaseModel):
+    """One curated provider/model option exposed to clients."""
+
+    provider: str
+    model: str
+    label: str
+    description: str
+
+
+class TranscriptionOptionsResponse(BaseModel):
+    """Curated transcription settings options."""
+
+    dictation_live_stt: list[TranscriptionOptionResponse]
+    recording_live_stt: list[TranscriptionOptionResponse]
+    file_stt: list[TranscriptionOptionResponse]
+    dictation_post_filter: list[TranscriptionOptionResponse]
+
+
+def _settings_response(user: CurrentUser) -> SettingsResponse:
+    return SettingsResponse(
+        default_language=user.default_language,
+        summary_language=user.summary_language,
+        summary_style=user.summary_style,
+        summary_instructions=user.summary_instructions,
+        dictation_live_stt_provider=user.dictation_live_stt_provider,
+        dictation_live_stt_model=user.dictation_live_stt_model,
+        recording_live_stt_provider=user.recording_live_stt_provider,
+        recording_live_stt_model=user.recording_live_stt_model,
+        file_stt_provider=user.file_stt_provider,
+        file_stt_model=user.file_stt_model,
+        dictation_post_filter_enabled=user.dictation_post_filter_enabled,
+        dictation_post_filter_provider=user.dictation_post_filter_provider,
+        dictation_post_filter_model=user.dictation_post_filter_model,
+    )
+
+
+@router.get("/transcription-options", response_model=TranscriptionOptionsResponse)
+async def get_transcription_options(user: CurrentUser) -> TranscriptionOptionsResponse:
+    """Get curated transcription provider/model options."""
+    return TranscriptionOptionsResponse(**options_response())
+
 
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
     user: CurrentUser,
 ) -> SettingsResponse:
     """Get user settings."""
-    return SettingsResponse(
-        default_language=user.default_language,
-        summary_language=user.summary_language,
-        summary_style=user.summary_style,
-        summary_instructions=user.summary_instructions,
-    )
+    return _settings_response(user)
 
 
 @router.patch("", response_model=SettingsResponse)
@@ -110,13 +226,31 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
+    if (
+        request.dictation_live_stt_provider is not None
+        and request.dictation_live_stt_model is not None
+    ):
+        user.dictation_live_stt_provider = request.dictation_live_stt_provider
+        user.dictation_live_stt_model = request.dictation_live_stt_model
+    if (
+        request.recording_live_stt_provider is not None
+        and request.recording_live_stt_model is not None
+    ):
+        user.recording_live_stt_provider = request.recording_live_stt_provider
+        user.recording_live_stt_model = request.recording_live_stt_model
+    if request.file_stt_provider is not None and request.file_stt_model is not None:
+        user.file_stt_provider = request.file_stt_provider
+        user.file_stt_model = request.file_stt_model
+    if request.dictation_post_filter_enabled is not None:
+        user.dictation_post_filter_enabled = request.dictation_post_filter_enabled
+    if (
+        request.dictation_post_filter_provider is not None
+        and request.dictation_post_filter_model is not None
+    ):
+        user.dictation_post_filter_provider = request.dictation_post_filter_provider
+        user.dictation_post_filter_model = request.dictation_post_filter_model
     await db.flush()
-    return SettingsResponse(
-        default_language=user.default_language,
-        summary_language=user.summary_language,
-        summary_style=user.summary_style,
-        summary_instructions=user.summary_instructions,
-    )
+    return _settings_response(user)
 
 
 @router.post("/change-password", response_model=MessageResponse)

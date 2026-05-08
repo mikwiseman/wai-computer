@@ -237,6 +237,7 @@ async def transcribe_audio_file(
     language: str = "en",
     content_type: str = "audio/wav",
     channels: int | None = None,
+    model: str | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an audio file with ElevenLabs Speech-to-Text."""
     settings = get_settings()
@@ -246,7 +247,7 @@ async def transcribe_audio_file(
         resolved_channels = detect_wav_channels(audio_data)
 
     form_data: dict[str, Any] = {
-        "model_id": settings.elevenlabs_speech_to_text_model,
+        "model_id": model or settings.elevenlabs_speech_to_text_model,
         "timestamps_granularity": "word",
         "diarize": "true" if (resolved_channels or 1) <= 1 else "false",
         "tag_audio_events": "true",

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser
 from app.config import get_settings
 from app.core.qa import _get_anthropic_client
+from app.core.transcription_options import validate_option
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)
@@ -72,6 +73,17 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     Removes filler words, fixes grammar, adds proper punctuation,
     and formats the text while preserving the original meaning.
     """
+    text = request.text.strip()
+    if not text:
+        return CleanupResponse(text="")
+
+    if not user.dictation_post_filter_enabled:
+        return CleanupResponse(text=text)
+
+    # Short texts (< 10 chars) don't need AI cleanup
+    if len(text) < 10:
+        return CleanupResponse(text=text)
+
     settings = get_settings()
     if not settings.anthropic_api_key:
         raise HTTPException(
@@ -79,13 +91,16 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             detail="AI cleanup is not configured (missing ANTHROPIC_API_KEY).",
         )
 
-    text = request.text.strip()
-    if not text:
-        return CleanupResponse(text="")
-
-    # Short texts (< 10 chars) don't need AI cleanup
-    if len(text) < 10:
-        return CleanupResponse(text=text)
+    provider, model = validate_option(
+        "dictation_post_filter",
+        user.dictation_post_filter_provider,
+        user.dictation_post_filter_model,
+    )
+    if provider != "anthropic":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unsupported dictation post-filter provider: {provider}",
+        )
 
     vocabulary_block = _build_vocabulary_block(request.vocabulary)
 
@@ -93,7 +108,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         client = _get_anthropic_client()
 
         message = await client.messages.create(
-            model=settings.anthropic_dictation_model,
+            model=model,
             max_tokens=4096,
             messages=[
                 {
