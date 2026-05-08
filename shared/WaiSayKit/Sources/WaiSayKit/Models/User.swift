@@ -149,6 +149,49 @@ public struct UserSettings: Codable, Sendable {
     public let dictationPostFilterProvider: String
     public let dictationPostFilterModel: String
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        defaultLanguage = try container.decode(String.self, forKey: .defaultLanguage)
+        summaryLanguage = try container.decode(String.self, forKey: .summaryLanguage)
+        summaryStyle = try container.decode(String.self, forKey: .summaryStyle)
+        summaryInstructions = try container.decodeIfPresent(String.self, forKey: .summaryInstructions)
+
+        // Compatibility for clients briefly ahead of the production API. If the
+        // server omits account-level transcription preferences, stay on the
+        // legacy provider that the old backend can actually service.
+        dictationLiveSTTProvider = try container.decodeIfPresent(
+            String.self,
+            forKey: .dictationLiveSTTProvider
+        ) ?? "elevenlabs"
+        dictationLiveSTTModel = try container.decodeIfPresent(
+            String.self,
+            forKey: .dictationLiveSTTModel
+        ) ?? "scribe_v2_realtime"
+        recordingLiveSTTProvider = try container.decodeIfPresent(
+            String.self,
+            forKey: .recordingLiveSTTProvider
+        ) ?? "elevenlabs"
+        recordingLiveSTTModel = try container.decodeIfPresent(
+            String.self,
+            forKey: .recordingLiveSTTModel
+        ) ?? "scribe_v2_realtime"
+        fileSTTProvider = try container.decodeIfPresent(String.self, forKey: .fileSTTProvider) ?? "elevenlabs"
+        fileSTTModel = try container.decodeIfPresent(String.self, forKey: .fileSTTModel) ?? "scribe_v2"
+        dictationPostFilterEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .dictationPostFilterEnabled
+        ) ?? true
+        dictationPostFilterProvider = try container.decodeIfPresent(
+            String.self,
+            forKey: .dictationPostFilterProvider
+        ) ?? "anthropic"
+        dictationPostFilterModel = try container.decodeIfPresent(
+            String.self,
+            forKey: .dictationPostFilterModel
+        ) ?? "claude-haiku-4-5"
+    }
+
     private enum CodingKeys: String, CodingKey {
         case defaultLanguage = "default_language"
         case summaryLanguage = "summary_language"

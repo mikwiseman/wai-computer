@@ -645,16 +645,22 @@ struct MacSettingsView: View {
 
     private func loadSummarySettings() async {
         guard !settingsLoaded else { return }
+        transcriptionOptions = nil
         do {
-            async let settingsRequest = appState.getAPIClient().getSettings()
-            async let optionsRequest = appState.getAPIClient().getTranscriptionOptions()
-            let (settings, options) = try await (settingsRequest, optionsRequest)
+            let settings = try await appState.getAPIClient().getSettings()
             applySettings(settings)
-            transcriptionOptions = options
             settingsError = nil
             settingsLoaded = true
         } catch {
             settingsError = "Couldn't load account settings: \(error.localizedDescription)"
+            return
+        }
+
+        do {
+            transcriptionOptions = try await appState.getAPIClient().getTranscriptionOptions()
+            settingsError = nil
+        } catch {
+            settingsError = "Couldn't load transcription model options: \(error.localizedDescription)"
         }
     }
 
