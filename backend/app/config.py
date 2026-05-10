@@ -68,13 +68,13 @@ class Settings(BaseSettings):
 
     # Claude/Anthropic
     anthropic_api_key: str = ""
-    # Production default — Sonnet 4.6 (Feb 2026). The previous default,
-    # `claude-sonnet-4-20250514`, retires June 15, 2026.
-    anthropic_model: str = "claude-sonnet-4-6"
+    # Production default for summaries. Keep this pinned to an official
+    # Anthropic model id instead of an alias so outputs remain stable.
+    anthropic_model: str = "claude-sonnet-4-20250514"
     # Latency-optimised model for dictation cleanup. Sonnet is overkill for
     # filler-word removal + light grammar fixes, and adds 600-1500ms of paste
     # latency; Haiku gives the same quality on this task in a fraction of the time.
-    anthropic_dictation_model: str = "claude-haiku-4-5-20251001"
+    anthropic_dictation_model: str = "claude-3-5-haiku-20241022"
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"

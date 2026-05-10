@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0087119C5646CFA35360CA78 /* StableTranscriptionModelPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD9FE3A7B2EA1CF2E1830BB6 /* StableTranscriptionModelPolicy.swift */; };
 		09E0081D8C6ABEF3930BBFE7 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6A02AFDEC781CCCA1D7BE5 /* MenuBarView.swift */; };
 		10C8D6DC7155864ED05CC2F7 /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD5661F4E178938FEC0546B /* TextInserter.swift */; };
 		11DCF5D033BC9617090284D3 /* OnboardingHotkeyPickerSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33902F1A668E65AD2558AD41 /* OnboardingHotkeyPickerSlide.swift */; };
@@ -117,6 +118,7 @@
 		BA22F820B56821A8A454ED42 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
 		BB64B41CEC7D9E9556A96D6A /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
 		BC6A02AFDEC781CCCA1D7BE5 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		BD9FE3A7B2EA1CF2E1830BB6 /* StableTranscriptionModelPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StableTranscriptionModelPolicy.swift; sourceTree = "<group>"; };
 		C25C1FF960D1804EA22B5C52 /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		C4E1968EF5728AB79EEFCA9A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CB50EADB74B2BD25B63684EC /* AuthFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowUITests.swift; sourceTree = "<group>"; };
@@ -177,6 +179,7 @@
 			children = (
 				B99F0C4CAA58E6AC5F8A4769 /* DeveloperSettingsStore.swift */,
 				371DF485826E3255C64AE94E /* MacSettingsView.swift */,
+				BD9FE3A7B2EA1CF2E1830BB6 /* StableTranscriptionModelPolicy.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -558,6 +561,7 @@
 				57AE7F63A2E4D9C0B26EDE61 /* OnboardingWelcomeSlide.swift in Sources */,
 				54BC0EC9AFBD4ABF4508B2EE /* PermissionBanner.swift in Sources */,
 				6792148BC35E4BB7E51EA8FA /* RecordingListView.swift in Sources */,
+				0087119C5646CFA35360CA78 /* StableTranscriptionModelPolicy.swift in Sources */,
 				10C8D6DC7155864ED05CC2F7 /* TextInserter.swift in Sources */,
 				E668861F4A0CF3BC7D1C4355 /* WaiSayMacApp.swift in Sources */,
 			);

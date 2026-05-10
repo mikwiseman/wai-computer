@@ -6,12 +6,12 @@ private enum StableTranscriptionModelSet {
     static let dictationLiveSelection = "elevenlabs:scribe_v2_realtime"
     static let recordingLiveSelection = "elevenlabs:scribe_v2_realtime"
     static let fileSelection = "elevenlabs:scribe_v2"
-    static let postFilterSelection = "anthropic:claude-haiku-4-5-20251001"
+    static let postFilterSelection = "anthropic:claude-3-5-haiku-20241022"
 
     static let dictationLiveLabel = "ElevenLabs Scribe v2 Realtime"
     static let recordingLiveLabel = "ElevenLabs Scribe v2 Realtime"
     static let fileLabel = "ElevenLabs Scribe v2"
-    static let postFilterLabel = "Claude Haiku 4.5"
+    static let postFilterLabel = "Claude 3.5 Haiku"
 
     static let dictationLiveDescription = "Default stable dictation path."
     static let recordingLiveDescription = "Default live recording transcription path."
@@ -432,7 +432,7 @@ struct TranscriptionSettingsView: View {
             settings.fileSTTModel == "scribe_v2" &&
             settings.dictationPostFilterEnabled &&
             settings.dictationPostFilterProvider == "anthropic" &&
-            settings.dictationPostFilterModel == "claude-haiku-4-5-20251001"
+            settings.dictationPostFilterModel == "claude-3-5-haiku-20241022"
 
         guard !alreadyStable else { return settings }
 
@@ -446,7 +446,7 @@ struct TranscriptionSettingsView: View {
                 fileSTTModel: "scribe_v2",
                 dictationPostFilterEnabled: true,
                 dictationPostFilterProvider: "anthropic",
-                dictationPostFilterModel: "claude-haiku-4-5-20251001"
+                dictationPostFilterModel: "claude-3-5-haiku-20241022"
             )
         )
     }

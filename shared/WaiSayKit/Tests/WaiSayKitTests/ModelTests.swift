@@ -62,7 +62,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
         XCTAssertTrue(settings.dictationPostFilterEnabled)
         XCTAssertEqual(settings.dictationPostFilterProvider, "anthropic")
-        XCTAssertEqual(settings.dictationPostFilterModel, "claude-haiku-4-5-20251001")
+        XCTAssertEqual(settings.dictationPostFilterModel, "claude-3-5-haiku-20241022")
     }
 
     func testUserSettingsDecodeFromCurrentJSONUsesServerTranscriptionValues() throws {
@@ -80,7 +80,7 @@ final class ModelTests: XCTestCase {
             "file_stt_model": "gpt-4o-transcribe",
             "dictation_post_filter_enabled": false,
             "dictation_post_filter_provider": "anthropic",
-            "dictation_post_filter_model": "claude-sonnet-4-6"
+            "dictation_post_filter_model": "claude-sonnet-4-20250514"
         }
         """.data(using: .utf8)!
 
@@ -97,7 +97,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.fileSTTProvider, "openai")
         XCTAssertEqual(settings.fileSTTModel, "gpt-4o-transcribe")
         XCTAssertFalse(settings.dictationPostFilterEnabled)
-        XCTAssertEqual(settings.dictationPostFilterModel, "claude-sonnet-4-6")
+        XCTAssertEqual(settings.dictationPostFilterModel, "claude-sonnet-4-20250514")
     }
 
     // MARK: - Recording Tests
