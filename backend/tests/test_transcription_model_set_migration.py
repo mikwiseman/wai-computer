@@ -57,11 +57,11 @@ def test_stable_transcription_model_set_migration_overwrites_existing_choices(mo
     assert defaults["file_stt_model"] == "scribe_v2"
     assert defaults["dictation_post_filter_enabled"] == "true"
     assert defaults["dictation_post_filter_provider"] == "anthropic"
-    assert defaults["dictation_post_filter_model"] == "claude-3-5-haiku-20241022"
+    assert defaults["dictation_post_filter_model"] == "claude-haiku-4-5"
 
 
-def test_anthropic_post_filter_model_migration_rewrites_invalid_ids(monkeypatch):
-    """Invalid Anthropic model ids should be rewritten to official pinned ids."""
+def test_anthropic_post_filter_model_migration_preserves_current_ids(monkeypatch):
+    """Current Anthropic model ids should remain the stable defaults."""
     migration = _load_migration("20260510_170000_fix_anthropic_post_filter_models.py")
     executed: list[TextClause] = []
     altered: list[dict[str, object]] = []
@@ -77,8 +77,34 @@ def test_anthropic_post_filter_model_migration_rewrites_invalid_ids(monkeypatch)
 
     assert executed
     statement = str(executed[0])
+    assert "claude-haiku-4-5" in statement
     assert "claude-haiku-4-5-20251001" in statement
     assert "claude-sonnet-4-6" in statement
     assert "claude-opus-4-7" in statement
     assert "dictation_post_filter_model = CASE" in statement
-    assert altered[0]["kwargs"]["server_default"] == "claude-3-5-haiku-20241022"
+    assert altered[0]["kwargs"]["server_default"] == "claude-haiku-4-5"
+
+
+def test_latest_anthropic_post_filter_model_migration_restores_current_ids(monkeypatch):
+    """Older conservative defaults should be rewritten to current Anthropic ids."""
+    migration = _load_migration("20260510_180000_restore_latest_anthropic_post_filter_models.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert executed
+    statement = str(executed[0])
+    assert "claude-3-5-haiku-20241022" in statement
+    assert "claude-haiku-4-5-20251001" in statement
+    assert "claude-sonnet-4-20250514" in statement
+    assert "claude-opus-4-1-20250805" in statement
+    assert "dictation_post_filter_model = CASE" in statement
+    assert altered[0]["kwargs"]["server_default"] == "claude-haiku-4-5"

@@ -25,7 +25,7 @@ STABLE_RECORDING_MODEL = "scribe_v2_realtime"
 STABLE_FILE_PROVIDER = "elevenlabs"
 STABLE_FILE_MODEL = "scribe_v2"
 STABLE_POST_FILTER_PROVIDER = "anthropic"
-STABLE_POST_FILTER_MODEL = "claude-3-5-haiku-20241022"
+STABLE_POST_FILTER_MODEL = "claude-haiku-4-5"
 
 PREVIOUS_DICTATION_PROVIDER = "openai"
 PREVIOUS_DICTATION_MODEL = "gpt-realtime-whisper"
