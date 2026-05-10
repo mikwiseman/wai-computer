@@ -1,0 +1,95 @@
+"""Regression tests for macOS Sparkle appcast publishing."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+
+
+def _load_merge_script() -> ModuleType:
+    path = Path(__file__).resolve().parents[2] / "scripts" / "merge-macos-appcast.py"
+    spec = importlib.util.spec_from_file_location("merge_macos_appcast", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _appcast(*items: str) -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>WaiSay</title>
+    {''.join(items)}
+  </channel>
+</rss>
+"""
+
+
+def _item(channel_xml: str, length: str, signature: str, url: str) -> str:
+    return f"""
+    <item>
+      <title>WaiSay 1.0.12</title>
+      {channel_xml}
+      <sparkle:version>89</sparkle:version>
+      <enclosure
+        url="{url}"
+        type="application/x-apple-diskimage"
+        sparkle:edSignature="{signature}"
+        length="{length}"
+      />
+    </item>
+"""
+
+
+def test_merge_rejects_same_enclosure_url_with_different_signature_metadata():
+    merge_script = _load_merge_script()
+    url = "https://say.waiwai.is/releases/macos/1.0.12-89/WaiSay-1.0.12-89.dmg"
+    local = _appcast(_item("<sparkle:channel>beta</sparkle:channel>", "200", "beta", url))
+    remote = _appcast(_item("", "100", "stable", url))
+
+    with pytest.raises(SystemExit) as exc:
+        merge_script.merge(local, remote)
+
+    assert exc.value.code == 4
+
+
+def test_merge_allows_same_build_channels_when_enclosure_urls_differ():
+    merge_script = _load_merge_script()
+    local = _appcast(
+        _item(
+            "<sparkle:channel>beta</sparkle:channel>",
+            "200",
+            "beta",
+            "https://say.waiwai.is/releases/macos/1.0.12-89-beta/WaiSay-1.0.12-89.dmg",
+        )
+    )
+    remote = _appcast(
+        _item(
+            "",
+            "100",
+            "stable",
+            "https://say.waiwai.is/releases/macos/1.0.12-89/WaiSay-1.0.12-89.dmg",
+        )
+    )
+
+    merged = merge_script.merge(local, remote)
+
+    assert "1.0.12-89-beta/WaiSay-1.0.12-89.dmg" in merged
+    assert "1.0.12-89/WaiSay-1.0.12-89.dmg" in merged
+
+
+def test_release_scripts_publish_channel_specific_release_slug():
+    root = Path(__file__).resolve().parents[2]
+    build_script = (root / "scripts" / "build-macos-dmg.sh").read_text(encoding="utf-8")
+    publish_script = (root / "scripts" / "publish-macos-dmg.sh").read_text(encoding="utf-8")
+
+    assert 'RELEASE_SLUG="${VERSION}-${BUILD}-${RELEASE_CHANNEL}"' in build_script
+    assert 'DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/' in build_script
+    assert "release_slug=${RELEASE_SLUG}" in build_script
+    assert 'RELEASE_SLUG=$(awk -F= \'$1 == "release_slug" {print $2}\'' in publish_script
+    assert 'RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"' in publish_script

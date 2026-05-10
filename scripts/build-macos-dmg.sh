@@ -35,6 +35,11 @@ CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
 REQUIRE_NOTARIZATION=${MACOS_REQUIRE_NOTARIZATION:-0}
 REQUIRE_GATEKEEPER=${MACOS_REQUIRE_GATEKEEPER:-0}
 REQUIRE_SPARKLE_SIGNATURE=${MACOS_REQUIRE_SPARKLE_SIGNATURE:-0}
+RELEASE_CHANNEL=${RELEASE_CHANNEL:-stable}
+case "$RELEASE_CHANNEL" in
+  stable|beta) ;;
+  *) echo "ERROR: RELEASE_CHANNEL must be 'stable' or 'beta', got '$RELEASE_CHANNEL'" >&2; exit 1 ;;
+esac
 
 if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
   REQUIRE_NOTARIZATION=1
@@ -360,7 +365,11 @@ fi
 APP_INFO="$APP_PATH/Contents/Info.plist"
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_INFO")
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO")
-RELEASE_DIR="$RELEASE_ROOT/${VERSION}-${BUILD}"
+RELEASE_SLUG="${VERSION}-${BUILD}"
+if [[ "$RELEASE_CHANNEL" != "stable" ]]; then
+  RELEASE_SLUG="${VERSION}-${BUILD}-${RELEASE_CHANNEL}"
+fi
+RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"
 mkdir -p "$RELEASE_DIR"
 
 APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
@@ -455,8 +464,8 @@ generate_release_notes() {
 }
 generate_release_notes > "$RELEASE_NOTES_PATH"
 
-DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/${APP_NAME}-${VERSION}-${BUILD}.dmg"
-RELEASE_NOTES_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${VERSION}-${BUILD}/release-notes.md"
+DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/${APP_NAME}-${VERSION}-${BUILD}.dmg"
+RELEASE_NOTES_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/release-notes.md"
 PUBLISHED_AT=$(date -u '+%a, %d %b %Y %H:%M:%S %z')
 SPARKLE_SIGNATURE=""
 if SIGN_UPDATE_BIN=$(find_sign_update_bin); then
@@ -475,11 +484,6 @@ fi
 
 DMG_BYTES=$(stat -f '%z' "$DMG_PATH")
 SPARKLE_ENCLOSURE_ATTRS=${SPARKLE_SIGNATURE:-"length=\"${DMG_BYTES}\""}
-RELEASE_CHANNEL=${RELEASE_CHANNEL:-stable}
-case "$RELEASE_CHANNEL" in
-  stable|beta) ;;
-  *) echo "ERROR: RELEASE_CHANNEL must be 'stable' or 'beta', got '$RELEASE_CHANNEL'" >&2; exit 1 ;;
-esac
 CHANNEL_XML=""
 if [[ "$RELEASE_CHANNEL" == "beta" ]]; then
   CHANNEL_XML=$'      <sparkle:channel>beta</sparkle:channel>\n'
@@ -511,6 +515,7 @@ cat > "$RELEASE_DIR/release-metadata.txt" <<META
 app=${APP_NAME}
 version=${VERSION}
 build=${BUILD}
+release_slug=${RELEASE_SLUG}
 release_channel=${RELEASE_CHANNEL}
 team_id=${TEAM_ID}
 signing_identity=${SIGNING_IDENTITY}

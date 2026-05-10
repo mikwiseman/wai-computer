@@ -28,6 +28,11 @@ SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 ET.register_namespace("sparkle", SPARKLE_NS)
 
 ITEMS_PER_CHANNEL = 10
+ENCLOSURE_CONFLICT_ATTRS = (
+    "length",
+    f"{{{SPARKLE_NS}}}edSignature",
+    f"{{{SPARKLE_NS}}}dsaSignature",
+)
 
 
 def fetch_remote(url: str, timeout: float = 15.0) -> str | None:
@@ -75,6 +80,39 @@ def item_build(item: ET.Element) -> int:
         return -1
 
 
+def enclosure_signature_key(item: ET.Element) -> tuple[str, str, str] | None:
+    enclosure = item.find("enclosure")
+    if enclosure is None:
+        return None
+    url = (enclosure.get("url") or "").strip()
+    if not url:
+        return None
+    return tuple(enclosure.get(attr) or "" for attr in ENCLOSURE_CONFLICT_ATTRS)
+
+
+def validate_enclosure_urls(items: list[ET.Element]) -> None:
+    by_url: dict[str, tuple[str, str, str]] = {}
+    for item in items:
+        enclosure = item.find("enclosure")
+        if enclosure is None:
+            continue
+        url = (enclosure.get("url") or "").strip()
+        if not url:
+            continue
+        signature_key = enclosure_signature_key(item)
+        if signature_key is None:
+            continue
+        existing = by_url.get(url)
+        if existing is not None and existing != signature_key:
+            print(
+                "merge-appcast: enclosure URL conflict: "
+                f"{url} is referenced with different signature metadata",
+                file=sys.stderr,
+            )
+            sys.exit(4)
+        by_url[url] = signature_key
+
+
 def merge(local_xml: str, remote_xml: str | None) -> str:
     local_root = parse_xml(local_xml, "local appcast")
     local_channel = local_root.find("channel")
@@ -116,6 +154,7 @@ def merge(local_xml: str, remote_xml: str | None) -> str:
         items.sort(key=item_build, reverse=True)
         merged_items.extend(items[:ITEMS_PER_CHANNEL])
     merged_items.sort(key=item_build, reverse=True)
+    validate_enclosure_urls(merged_items)
 
     for child in list(remote_channel):
         if child.tag == "item":

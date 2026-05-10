@@ -53,6 +53,11 @@ The script:
 8. signs the DMG update with Sparkle EdDSA and writes `appcast.xml`
 9. writes a SHA-256 checksum and release metadata file
 
+Stable releases are published under `VERSION-BUILD`; beta releases are published
+under `VERSION-BUILD-beta`. Do not make stable and beta appcast items share the
+same enclosure URL unless the referenced DMG and Sparkle signature metadata are
+identical.
+
 Artifacts are written under `artifacts/releases/macos/<version>-<build>/`. The latest appcast and convenience aliases are written under `artifacts/releases/macos/`.
 
 ### Custom DMG background
