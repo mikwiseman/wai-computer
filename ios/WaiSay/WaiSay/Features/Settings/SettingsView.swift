@@ -1,6 +1,24 @@
 import SwiftUI
 import WaiSayKit
 
+private enum StableTranscriptionModelSet {
+    static let locked = true
+    static let dictationLiveSelection = "elevenlabs:scribe_v2_realtime"
+    static let recordingLiveSelection = "elevenlabs:scribe_v2_realtime"
+    static let fileSelection = "elevenlabs:scribe_v2"
+    static let postFilterSelection = "anthropic:claude-haiku-4-5-20251001"
+
+    static let dictationLiveLabel = "ElevenLabs Scribe v2 Realtime"
+    static let recordingLiveLabel = "ElevenLabs Scribe v2 Realtime"
+    static let fileLabel = "ElevenLabs Scribe v2"
+    static let postFilterLabel = "Claude Haiku 4.5"
+
+    static let dictationLiveDescription = "Default stable dictation path."
+    static let recordingLiveDescription = "Default live recording transcription path."
+    static let fileDescription = "Default full-session and uploaded-file transcription path."
+    static let postFilterDescription = "Default low-latency cleanup for dictated text."
+}
+
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingLogoutConfirmation = false
@@ -203,11 +221,11 @@ struct TranscriptionSettingsView: View {
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var transcriptionOptions: TranscriptionOptions?
-    @State private var dictationLiveSTTSelection = "openai:gpt-realtime-whisper"
-    @State private var recordingLiveSTTSelection = "elevenlabs:scribe_v2_realtime"
-    @State private var fileSTTSelection = "elevenlabs:scribe_v2"
+    @State private var dictationLiveSTTSelection = StableTranscriptionModelSet.dictationLiveSelection
+    @State private var recordingLiveSTTSelection = StableTranscriptionModelSet.recordingLiveSelection
+    @State private var fileSTTSelection = StableTranscriptionModelSet.fileSelection
     @State private var dictationPostFilterEnabled = true
-    @State private var dictationPostFilterSelection = "anthropic:claude-haiku-4-5-20251001"
+    @State private var dictationPostFilterSelection = StableTranscriptionModelSet.postFilterSelection
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -235,7 +253,23 @@ struct TranscriptionSettingsView: View {
             }
 
             Section("Models") {
-                if let transcriptionOptions {
+                if StableTranscriptionModelSet.locked {
+                    stableTranscriptionModelRow(
+                        "Dictation live",
+                        label: StableTranscriptionModelSet.dictationLiveLabel,
+                        description: StableTranscriptionModelSet.dictationLiveDescription
+                    )
+                    stableTranscriptionModelRow(
+                        "Recording live",
+                        label: StableTranscriptionModelSet.recordingLiveLabel,
+                        description: StableTranscriptionModelSet.recordingLiveDescription
+                    )
+                    stableTranscriptionModelRow(
+                        "Full session",
+                        label: StableTranscriptionModelSet.fileLabel,
+                        description: StableTranscriptionModelSet.fileDescription
+                    )
+                } else if let transcriptionOptions {
                     transcriptionModelPicker(
                         "Dictation live",
                         selection: $dictationLiveSTTSelection,
@@ -263,19 +297,29 @@ struct TranscriptionSettingsView: View {
             }
 
             Section("Dictation post-filter") {
-                Toggle("Enabled", isOn: $dictationPostFilterEnabled)
-                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
-                        guard settingsLoaded else { return }
-                        Task { await saveDictationPostFilterEnabled(enabled) }
-                    }
-
-                if let transcriptionOptions, dictationPostFilterEnabled {
-                    transcriptionModelPicker(
+                if StableTranscriptionModelSet.locked {
+                    Toggle("Enabled", isOn: .constant(true))
+                        .disabled(true)
+                    stableTranscriptionModelRow(
                         "Model",
-                        selection: $dictationPostFilterSelection,
-                        options: transcriptionOptions.dictationPostFilter,
-                        save: { await saveDictationPostFilter(selection: $0) }
+                        label: StableTranscriptionModelSet.postFilterLabel,
+                        description: StableTranscriptionModelSet.postFilterDescription
                     )
+                } else {
+                    Toggle("Enabled", isOn: $dictationPostFilterEnabled)
+                        .onChange(of: dictationPostFilterEnabled) { _, enabled in
+                            guard settingsLoaded else { return }
+                            Task { await saveDictationPostFilterEnabled(enabled) }
+                        }
+
+                    if let transcriptionOptions, dictationPostFilterEnabled {
+                        transcriptionModelPicker(
+                            "Model",
+                            selection: $dictationPostFilterSelection,
+                            options: transcriptionOptions.dictationPostFilter,
+                            save: { await saveDictationPostFilter(selection: $0) }
+                        )
+                    }
                 }
 
                 if let settingsError, transcriptionOptions != nil {
@@ -288,6 +332,20 @@ struct TranscriptionSettingsView: View {
         .navigationTitle("Transcription")
         .task {
             await loadSettings()
+        }
+    }
+
+    @ViewBuilder
+    private func stableTranscriptionModelRow(
+        _ title: String,
+        label: String,
+        description: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent(title, value: label)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -323,18 +381,29 @@ struct TranscriptionSettingsView: View {
     }
 
     private func applySettings(_ settings: UserSettings) {
-        dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
-        recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
-        fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
-        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
-        dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
+        if StableTranscriptionModelSet.locked {
+            dictationLiveSTTSelection = StableTranscriptionModelSet.dictationLiveSelection
+            recordingLiveSTTSelection = StableTranscriptionModelSet.recordingLiveSelection
+            fileSTTSelection = StableTranscriptionModelSet.fileSelection
+            dictationPostFilterEnabled = true
+            dictationPostFilterSelection = StableTranscriptionModelSet.postFilterSelection
+        } else {
+            dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
+            recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
+            fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
+            dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+            dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
+        }
     }
 
     private func loadSettings() async {
         guard !settingsLoaded else { return }
         transcriptionOptions = nil
         do {
-            let settings = try await appState.getAPIClient().getSettings()
+            var settings = try await appState.getAPIClient().getSettings()
+            if StableTranscriptionModelSet.locked {
+                settings = try await enforceStableTranscriptionSettingsIfNeeded(settings)
+            }
             applySettings(settings)
             settingsError = nil
             settingsLoaded = true
@@ -343,12 +412,43 @@ struct TranscriptionSettingsView: View {
             return
         }
 
+        guard !StableTranscriptionModelSet.locked else { return }
+
         do {
             transcriptionOptions = try await appState.getAPIClient().getTranscriptionOptions()
             settingsError = nil
         } catch {
             settingsError = "Couldn't load transcription model options: \(error.localizedDescription)"
         }
+    }
+
+    private func enforceStableTranscriptionSettingsIfNeeded(_ settings: UserSettings) async throws -> UserSettings {
+        let alreadyStable =
+            settings.dictationLiveSTTProvider == "elevenlabs" &&
+            settings.dictationLiveSTTModel == "scribe_v2_realtime" &&
+            settings.recordingLiveSTTProvider == "elevenlabs" &&
+            settings.recordingLiveSTTModel == "scribe_v2_realtime" &&
+            settings.fileSTTProvider == "elevenlabs" &&
+            settings.fileSTTModel == "scribe_v2" &&
+            settings.dictationPostFilterEnabled &&
+            settings.dictationPostFilterProvider == "anthropic" &&
+            settings.dictationPostFilterModel == "claude-haiku-4-5-20251001"
+
+        guard !alreadyStable else { return settings }
+
+        return try await appState.getAPIClient().updateSettings(
+            UpdateSettingsRequest(
+                dictationLiveSTTProvider: "elevenlabs",
+                dictationLiveSTTModel: "scribe_v2_realtime",
+                recordingLiveSTTProvider: "elevenlabs",
+                recordingLiveSTTModel: "scribe_v2_realtime",
+                fileSTTProvider: "elevenlabs",
+                fileSTTModel: "scribe_v2",
+                dictationPostFilterEnabled: true,
+                dictationPostFilterProvider: "anthropic",
+                dictationPostFilterModel: "claude-haiku-4-5-20251001"
+            )
+        )
     }
 
     private func saveDictationLiveSTT(selection: String) async {
