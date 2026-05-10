@@ -13,8 +13,8 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "openai"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "gpt-realtime-whisper"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "elevenlabs"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_RECORDING_LIVE_STT_PROVIDER = "elevenlabs"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
@@ -42,16 +42,16 @@ class ModelOption:
 TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] = {
     "dictation_live_stt": (
         ModelOption(
-            provider="openai",
-            model="gpt-realtime-whisper",
-            label="OpenAI GPT Realtime Whisper",
-            description="Default. Latest OpenAI realtime speech-to-text for low-latency dictation.",
-        ),
-        ModelOption(
             provider="elevenlabs",
             model="scribe_v2_realtime",
             label="ElevenLabs Scribe v2 Realtime",
-            description="Previous stable dictation path.",
+            description="Default stable dictation path.",
+        ),
+        ModelOption(
+            provider="openai",
+            model="gpt-realtime-whisper",
+            label="OpenAI GPT Realtime Whisper",
+            description="Latest OpenAI realtime speech-to-text for low-latency dictation.",
         ),
         ModelOption(
             provider="inworld",

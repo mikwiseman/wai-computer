@@ -159,7 +159,7 @@ public struct UserSettings: Codable, Sendable {
 
         // Compatibility for clients briefly ahead of the production API. If the
         // server omits account-level transcription preferences, stay on the
-        // legacy provider that the old backend can actually service.
+        // stable provider that the old backend can actually service.
         dictationLiveSTTProvider = try container.decodeIfPresent(
             String.self,
             forKey: .dictationLiveSTTProvider
