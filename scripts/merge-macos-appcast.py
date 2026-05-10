@@ -90,27 +90,34 @@ def enclosure_signature_key(item: ET.Element) -> tuple[str, str, str] | None:
     return tuple(enclosure.get(attr) or "" for attr in ENCLOSURE_CONFLICT_ATTRS)
 
 
-def validate_enclosure_urls(items: list[ET.Element]) -> None:
-    by_url: dict[str, tuple[str, str, str]] = {}
-    for item in items:
-        enclosure = item.find("enclosure")
-        if enclosure is None:
-            continue
-        url = (enclosure.get("url") or "").strip()
-        if not url:
+def enclosure_url(item: ET.Element) -> str | None:
+    enclosure = item.find("enclosure")
+    if enclosure is None:
+        return None
+    url = (enclosure.get("url") or "").strip()
+    return url or None
+
+
+def validate_new_enclosure_url(new_item: ET.Element, existing_items: list[ET.Element]) -> None:
+    new_url = enclosure_url(new_item)
+    if new_url is None:
+        return
+    new_signature_key = enclosure_signature_key(new_item)
+    if new_signature_key is None:
+        return
+
+    for item in existing_items:
+        if enclosure_url(item) != new_url:
             continue
         signature_key = enclosure_signature_key(item)
-        if signature_key is None:
+        if signature_key is None or signature_key == new_signature_key:
             continue
-        existing = by_url.get(url)
-        if existing is not None and existing != signature_key:
-            print(
-                "merge-appcast: enclosure URL conflict: "
-                f"{url} is referenced with different signature metadata",
-                file=sys.stderr,
-            )
-            sys.exit(4)
-        by_url[url] = signature_key
+        print(
+            "merge-appcast: enclosure URL conflict: "
+            f"{new_url} is referenced with different signature metadata",
+            file=sys.stderr,
+        )
+        sys.exit(4)
 
 
 def merge(local_xml: str, remote_xml: str | None) -> str:
@@ -143,6 +150,7 @@ def merge(local_xml: str, remote_xml: str | None) -> str:
         item for item in remote_channel.findall("item")
         if not (item_build(item) == new_build and item_channel(item) == new_channel)
     ]
+    validate_new_enclosure_url(new_item, existing)
 
     by_channel: dict[str, list[ET.Element]] = {}
     by_channel.setdefault(new_channel, []).append(new_item)
@@ -154,7 +162,6 @@ def merge(local_xml: str, remote_xml: str | None) -> str:
         items.sort(key=item_build, reverse=True)
         merged_items.extend(items[:ITEMS_PER_CHANNEL])
     merged_items.sort(key=item_build, reverse=True)
-    validate_enclosure_urls(merged_items)
 
     for child in list(remote_channel):
         if child.tag == "item":
