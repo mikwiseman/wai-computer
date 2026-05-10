@@ -2,27 +2,10 @@ import SwiftUI
 import AVFoundation
 import WaiSayKit
 
-private enum StableTranscriptionModelSet {
-    static let locked = true
-    static let dictationLiveSelection = "elevenlabs:scribe_v2_realtime"
-    static let recordingLiveSelection = "elevenlabs:scribe_v2_realtime"
-    static let fileSelection = "elevenlabs:scribe_v2"
-    static let postFilterSelection = "anthropic:claude-haiku-4-5-20251001"
-
-    static let dictationLiveLabel = "ElevenLabs Scribe v2 Realtime"
-    static let recordingLiveLabel = "ElevenLabs Scribe v2 Realtime"
-    static let fileLabel = "ElevenLabs Scribe v2"
-    static let postFilterLabel = "Claude Haiku 4.5"
-
-    static let dictationLiveDescription = "Default stable dictation path."
-    static let recordingLiveDescription = "Default live recording transcription path."
-    static let fileDescription = "Default full-session and uploaded-file transcription path."
-    static let postFilterDescription = "Default low-latency cleanup for dictated text."
-}
-
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
+    @ObservedObject private var developerSettings = DeveloperSettingsStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var showDeleteAccountConfirmation = false
@@ -41,11 +24,15 @@ struct MacSettingsView: View {
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var transcriptionOptions: TranscriptionOptions?
-    @State private var dictationLiveSTTSelection = StableTranscriptionModelSet.dictationLiveSelection
-    @State private var recordingLiveSTTSelection = StableTranscriptionModelSet.recordingLiveSelection
-    @State private var fileSTTSelection = StableTranscriptionModelSet.fileSelection
+    @State private var dictationLiveSTTSelection = StableTranscriptionModelPolicy.dictationLiveSelection
+    @State private var recordingLiveSTTSelection = StableTranscriptionModelPolicy.recordingLiveSelection
+    @State private var fileSTTSelection = StableTranscriptionModelPolicy.fileSelection
     @State private var dictationPostFilterEnabled = true
-    @State private var dictationPostFilterSelection = StableTranscriptionModelSet.postFilterSelection
+    @State private var dictationPostFilterSelection = StableTranscriptionModelPolicy.postFilterSelection
+
+    private var transcriptionModelsLocked: Bool {
+        !developerSettings.developerModeEnabled
+    }
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -104,21 +91,21 @@ struct MacSettingsView: View {
             }
 
             Section {
-                if StableTranscriptionModelSet.locked {
+                if transcriptionModelsLocked {
                     stableTranscriptionModelRow(
                         "Dictation live",
-                        label: StableTranscriptionModelSet.dictationLiveLabel,
-                        description: StableTranscriptionModelSet.dictationLiveDescription
+                        label: StableTranscriptionModelPolicy.dictationLiveLabel,
+                        description: StableTranscriptionModelPolicy.dictationLiveDescription
                     )
                     stableTranscriptionModelRow(
                         "Recording live",
-                        label: StableTranscriptionModelSet.recordingLiveLabel,
-                        description: StableTranscriptionModelSet.recordingLiveDescription
+                        label: StableTranscriptionModelPolicy.recordingLiveLabel,
+                        description: StableTranscriptionModelPolicy.recordingLiveDescription
                     )
                     stableTranscriptionModelRow(
                         "Full session",
-                        label: StableTranscriptionModelSet.fileLabel,
-                        description: StableTranscriptionModelSet.fileDescription
+                        label: StableTranscriptionModelPolicy.fileLabel,
+                        description: StableTranscriptionModelPolicy.fileDescription
                     )
 
                     if let settingsError {
@@ -270,7 +257,7 @@ struct MacSettingsView: View {
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
-                if StableTranscriptionModelSet.locked {
+                if transcriptionModelsLocked {
                     Toggle("Post-filter dictated text", isOn: .constant(true))
                         .font(Typography.body)
                         .disabled(true)
@@ -278,8 +265,8 @@ struct MacSettingsView: View {
 
                     stableTranscriptionModelRow(
                         "Post-filter model",
-                        label: StableTranscriptionModelSet.postFilterLabel,
-                        description: StableTranscriptionModelSet.postFilterDescription
+                        label: StableTranscriptionModelPolicy.postFilterLabel,
+                        description: StableTranscriptionModelPolicy.postFilterDescription
                     )
                 } else {
                     Toggle("Post-filter dictated text", isOn: $dictationPostFilterEnabled)
@@ -373,6 +360,15 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-receive-beta-updates-toggle")
                 Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                Toggle("Developer Mode", isOn: $developerSettings.developerModeEnabled)
+                    .font(Typography.body)
+                    .accessibilityIdentifier("settings-developer-mode-toggle")
+                    .onChange(of: developerSettings.developerModeEnabled) { _, enabled in
+                        Task { await handleDeveloperModeChanged(enabled) }
+                    }
+                Text("Enables experimental transcription model selection. Turning it off resets transcription and dictation models to the default stable set.")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                 Button("Check for Updates…") {
@@ -635,12 +631,12 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
-        if StableTranscriptionModelSet.locked {
-            dictationLiveSTTSelection = StableTranscriptionModelSet.dictationLiveSelection
-            recordingLiveSTTSelection = StableTranscriptionModelSet.recordingLiveSelection
-            fileSTTSelection = StableTranscriptionModelSet.fileSelection
+        if transcriptionModelsLocked {
+            dictationLiveSTTSelection = StableTranscriptionModelPolicy.dictationLiveSelection
+            recordingLiveSTTSelection = StableTranscriptionModelPolicy.recordingLiveSelection
+            fileSTTSelection = StableTranscriptionModelPolicy.fileSelection
             dictationPostFilterEnabled = true
-            dictationPostFilterSelection = StableTranscriptionModelSet.postFilterSelection
+            dictationPostFilterSelection = StableTranscriptionModelPolicy.postFilterSelection
         } else {
             dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
             recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
@@ -726,8 +722,11 @@ struct MacSettingsView: View {
         transcriptionOptions = nil
         do {
             var settings = try await appState.getAPIClient().getSettings()
-            if StableTranscriptionModelSet.locked {
-                settings = try await enforceStableTranscriptionSettingsIfNeeded(settings)
+            if transcriptionModelsLocked {
+                settings = try await StableTranscriptionModelPolicy.enforceIfNeeded(
+                    apiClient: appState.getAPIClient(),
+                    settings: settings
+                )
             }
             applySettings(settings)
             settingsError = nil
@@ -737,8 +736,12 @@ struct MacSettingsView: View {
             return
         }
 
-        guard !StableTranscriptionModelSet.locked else { return }
+        guard !transcriptionModelsLocked else { return }
 
+        await loadTranscriptionOptions()
+    }
+
+    private func loadTranscriptionOptions() async {
         do {
             transcriptionOptions = try await appState.getAPIClient().getTranscriptionOptions()
             settingsError = nil
@@ -747,33 +750,27 @@ struct MacSettingsView: View {
         }
     }
 
-    private func enforceStableTranscriptionSettingsIfNeeded(_ settings: UserSettings) async throws -> UserSettings {
-        let alreadyStable =
-            settings.dictationLiveSTTProvider == "elevenlabs" &&
-            settings.dictationLiveSTTModel == "scribe_v2_realtime" &&
-            settings.recordingLiveSTTProvider == "elevenlabs" &&
-            settings.recordingLiveSTTModel == "scribe_v2_realtime" &&
-            settings.fileSTTProvider == "elevenlabs" &&
-            settings.fileSTTModel == "scribe_v2" &&
-            settings.dictationPostFilterEnabled &&
-            settings.dictationPostFilterProvider == "anthropic" &&
-            settings.dictationPostFilterModel == "claude-haiku-4-5-20251001"
+    private func handleDeveloperModeChanged(_ enabled: Bool) async {
+        settingsLoaded = false
 
-        guard !alreadyStable else { return settings }
+        if enabled {
+            await loadSummarySettings()
+            return
+        }
 
-        return try await appState.getAPIClient().updateSettings(
-            UpdateSettingsRequest(
-                dictationLiveSTTProvider: "elevenlabs",
-                dictationLiveSTTModel: "scribe_v2_realtime",
-                recordingLiveSTTProvider: "elevenlabs",
-                recordingLiveSTTModel: "scribe_v2_realtime",
-                fileSTTProvider: "elevenlabs",
-                fileSTTModel: "scribe_v2",
-                dictationPostFilterEnabled: true,
-                dictationPostFilterProvider: "anthropic",
-                dictationPostFilterModel: "claude-haiku-4-5-20251001"
+        developerSettings.reset()
+        transcriptionOptions = nil
+        do {
+            let settings = try await StableTranscriptionModelPolicy.enforceIfNeeded(
+                apiClient: appState.getAPIClient(),
+                settings: try await appState.getAPIClient().getSettings()
             )
-        )
+            applySettings(settings)
+            settingsError = nil
+            settingsLoaded = true
+        } catch {
+            settingsError = "Couldn't reset transcription models: \(error.localizedDescription)"
+        }
     }
 
     private func saveDictationLiveSTT(selection: String) async {

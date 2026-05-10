@@ -7,6 +7,7 @@ final class SettingsUITests: XCTestCase {
 
     private func launchToSettings(permissionMock: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
+        app.terminate()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
         app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
@@ -89,7 +90,7 @@ final class SettingsUITests: XCTestCase {
     }
 
     @MainActor
-    func testBetaUpdatesToggleIsGroupedWithUpdateControls() throws {
+    func testBetaAndDeveloperModeTogglesAreGroupedWithUpdateControls() throws {
         let app = launchToSettings()
 
         let checkForUpdatesButton = app.buttons
@@ -102,14 +103,28 @@ final class SettingsUITests: XCTestCase {
             .matching(identifier: "settings-receive-beta-updates-toggle")
             .firstMatch
         XCTAssertTrue(waitForElement(betaUpdatesToggle, in: app, timeout: 3))
+
+        let developerModeToggle = app.descendants(matching: .any)
+            .matching(identifier: "settings-developer-mode-toggle")
+            .firstMatch
+        XCTAssertTrue(waitForElement(developerModeToggle, in: app, timeout: 3))
+
         XCTAssertTrue(
             betaUpdatesToggle.frame.midY < checkForUpdatesButton.frame.midY,
-            "Receive beta updates should appear directly above Check for Updates."
+            "Receive beta updates should appear above Check for Updates."
+        )
+        XCTAssertTrue(
+            betaUpdatesToggle.frame.midY < developerModeToggle.frame.midY,
+            "Developer Mode should sit next to the beta update controls."
+        )
+        XCTAssertTrue(
+            developerModeToggle.frame.midY < checkForUpdatesButton.frame.midY,
+            "Developer Mode should appear above Check for Updates."
         )
         XCTAssertLessThan(
             abs(checkForUpdatesButton.frame.midY - betaUpdatesToggle.frame.midY),
-            120,
-            "Receive beta updates should be grouped with the version and update controls."
+            180,
+            "Receive beta updates and Developer Mode should be grouped with the version and update controls."
         )
     }
 

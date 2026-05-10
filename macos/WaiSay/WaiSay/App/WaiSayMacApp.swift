@@ -1007,6 +1007,22 @@ class MacAppState: ObservableObject {
             await dictationManager.cancelDictation()
         }
 
+        if !DeveloperSettingsStore.shared.developerModeEnabled {
+            do {
+                _ = try await StableTranscriptionModelPolicy.enforceIfNeeded(
+                    apiClient: apiClient,
+                    settings: try await apiClient.getSettings()
+                )
+            } catch {
+                recordingViewModel.error = "Couldn't reset transcription models: \(error.localizedDescription)"
+                SentryHelper.captureError(
+                    error,
+                    extras: ["action": "stableTranscriptionModelEnforce", "context": "recording"]
+                )
+                return
+            }
+        }
+
         await recordingViewModel.startRecording(
             apiClient: apiClient,
             type: type,

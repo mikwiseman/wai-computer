@@ -57,4 +57,28 @@ def test_stable_transcription_model_set_migration_overwrites_existing_choices(mo
     assert defaults["file_stt_model"] == "scribe_v2"
     assert defaults["dictation_post_filter_enabled"] == "true"
     assert defaults["dictation_post_filter_provider"] == "anthropic"
-    assert defaults["dictation_post_filter_model"] == "claude-haiku-4-5-20251001"
+    assert defaults["dictation_post_filter_model"] == "claude-3-5-haiku-20241022"
+
+
+def test_anthropic_post_filter_model_migration_rewrites_invalid_ids(monkeypatch):
+    """Invalid Anthropic model ids should be rewritten to official pinned ids."""
+    migration = _load_migration("20260510_170000_fix_anthropic_post_filter_models.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert executed
+    statement = str(executed[0])
+    assert "claude-haiku-4-5-20251001" in statement
+    assert "claude-sonnet-4-6" in statement
+    assert "claude-opus-4-7" in statement
+    assert "dictation_post_filter_model = CASE" in statement
+    assert altered[0]["kwargs"]["server_default"] == "claude-3-5-haiku-20241022"

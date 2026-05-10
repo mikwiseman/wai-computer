@@ -109,7 +109,7 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["file_stt_model"] == "scribe_v2"
     assert data["dictation_post_filter_enabled"] is True
     assert data["dictation_post_filter_provider"] == "anthropic"
-    assert data["dictation_post_filter_model"] == "claude-haiku-4-5-20251001"
+    assert data["dictation_post_filter_model"] == "claude-3-5-haiku-20241022"
 
 
 @pytest.mark.asyncio
@@ -345,7 +345,7 @@ async def test_get_transcription_options_returns_curated_choices(client: AsyncCl
     assert any(option["model"] == "gpt-4o-transcribe" for option in data["file_stt"])
     assert any(option["model"] == "gpt-4o-transcribe-diarize" for option in data["file_stt"])
     assert any(
-        option["model"] == "claude-haiku-4-5-20251001"
+        option["model"] == "claude-3-5-haiku-20241022"
         for option in data["dictation_post_filter"]
     )
 
@@ -367,7 +367,7 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
             "file_stt_model": "inworld/inworld-stt-1",
             "dictation_post_filter_enabled": False,
             "dictation_post_filter_provider": "anthropic",
-            "dictation_post_filter_model": "claude-sonnet-4-6",
+            "dictation_post_filter_model": "claude-sonnet-4-20250514",
         },
     )
 
@@ -379,7 +379,7 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
     assert data["file_stt_provider"] == "inworld"
     assert data["file_stt_model"] == "inworld/inworld-stt-1"
     assert data["dictation_post_filter_enabled"] is False
-    assert data["dictation_post_filter_model"] == "claude-sonnet-4-6"
+    assert data["dictation_post_filter_model"] == "claude-sonnet-4-20250514"
 
     get_response = await client.get("/api/settings", headers=headers)
     assert get_response.json()["file_stt_model"] == "inworld/inworld-stt-1"
