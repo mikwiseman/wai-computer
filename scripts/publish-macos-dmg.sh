@@ -26,12 +26,16 @@ fi
 
 VERSION=$(awk -F= '$1 == "version" {print $2}' "$METADATA_PATH")
 BUILD=$(awk -F= '$1 == "build" {print $2}' "$METADATA_PATH")
+RELEASE_SLUG=$(awk -F= '$1 == "release_slug" {print $2}' "$METADATA_PATH")
 if [[ -z "$VERSION" || -z "$BUILD" ]]; then
   echo "ERROR: release metadata is missing version or build" >&2
   exit 1
 fi
+if [[ -z "$RELEASE_SLUG" ]]; then
+  RELEASE_SLUG="${VERSION}-${BUILD}"
+fi
 
-RELEASE_DIR="$RELEASE_ROOT/${VERSION}-${BUILD}"
+RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"
 if [[ ! -d "$RELEASE_DIR" ]]; then
   echo "ERROR: release directory not found at $RELEASE_DIR" >&2
   exit 1
@@ -57,10 +61,10 @@ python3 "$MERGE_SCRIPT" \
 REMOTE="${VPS_USER}@${VPS_HOST}"
 SSH_OPTS=(-i "$SSH_KEY_PATH" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 
-ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT' '$REMOTE_RELEASE_ROOT/${VERSION}-${BUILD}'"
+ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT' '$REMOTE_RELEASE_ROOT/${RELEASE_SLUG}'"
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   "$RELEASE_DIR/" \
-  "$REMOTE:$REMOTE_RELEASE_ROOT/${VERSION}-${BUILD}/"
+  "$REMOTE:$REMOTE_RELEASE_ROOT/${RELEASE_SLUG}/"
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   "$RELEASE_ROOT/appcast.xml" \
   "$RELEASE_ROOT/release-notes.md" \

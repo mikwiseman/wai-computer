@@ -93,7 +93,7 @@ If `dev` does not exist locally yet, create it once: `git checkout -b dev && git
 
 ### Appcast merge invariant
 
-`scripts/build-macos-dmg.sh` writes a single-item local appcast. `scripts/publish-macos-dmg.sh` then runs `scripts/merge-macos-appcast.py` to fetch the live remote appcast, dedupe by `(sparkle:version, sparkle:channel)`, cap at 10 items per channel, and upload the merged file. Never bypass the merge — overwriting the remote with a single-item file would erase the other channel's history.
+`scripts/build-macos-dmg.sh` writes a single-item local appcast. `scripts/publish-macos-dmg.sh` then runs `scripts/merge-macos-appcast.py` to fetch the live remote appcast, dedupe by `(sparkle:version, sparkle:channel)`, cap at 10 items per channel, and upload the merged file. Never bypass the merge — overwriting the remote with a single-item file would erase the other channel's history. Stable and beta artifacts for the same build must have distinct enclosure URLs because their DMGs/signatures can differ; the merge script rejects reused URLs with conflicting `length` / `sparkle:edSignature` metadata.
 
 ### Local fallback (CI unavailable)
 
