@@ -33,7 +33,7 @@ async def test_generate_title_returns_stripped_title():
         patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
     ):
         mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
+        mock_settings.anthropic_model = "claude-sonnet-4-6"
 
         title = await generate_title("We discussed the Q1 roadmap...")
         assert title == "Team Standup Notes"
@@ -56,7 +56,7 @@ async def test_generate_title_truncates_long_titles():
         patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
     ):
         mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
+        mock_settings.anthropic_model = "claude-sonnet-4-6"
 
         title = await generate_title("Some transcript text")
         assert len(title) == 100
@@ -82,7 +82,7 @@ async def test_generate_title_uses_first_500_chars():
         patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
     ):
         mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
+        mock_settings.anthropic_model = "claude-sonnet-4-6"
 
         await generate_title(long_transcript)
 

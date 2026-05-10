@@ -18,9 +18,9 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-DEFAULT_MODEL = "claude-3-5-haiku-20241022"
-SONNET_MODEL = "claude-sonnet-4-20250514"
-OPUS_MODEL = "claude-opus-4-1-20250805"
+DEFAULT_MODEL = "claude-haiku-4-5"
+SONNET_MODEL = "claude-sonnet-4-6"
+OPUS_MODEL = "claude-opus-4-7"
 
 
 def upgrade() -> None:

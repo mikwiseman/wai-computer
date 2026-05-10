@@ -134,7 +134,7 @@ async def test_cleanup_dictation_uses_selected_post_filter_model(
         headers=auth_headers,
         json={
             "dictation_post_filter_provider": "anthropic",
-            "dictation_post_filter_model": "claude-sonnet-4-20250514",
+            "dictation_post_filter_model": "claude-sonnet-4-6",
         },
     )
     assert settings_response.status_code == 200
@@ -146,7 +146,7 @@ async def test_cleanup_dictation_uses_selected_post_filter_model(
     )
 
     assert response.status_code == 200
-    assert captured["model"] == "claude-sonnet-4-20250514"
+    assert captured["model"] == "claude-sonnet-4-6"
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ enum StableTranscriptionModelPolicy {
     static let fileProvider = "elevenlabs"
     static let fileModel = "scribe_v2"
     static let postFilterProvider = "anthropic"
-    static let postFilterModel = "claude-3-5-haiku-20241022"
+    static let postFilterModel = "claude-haiku-4-5"
 
     static let dictationLiveSelection = "\(dictationLiveProvider):\(dictationLiveModel)"
     static let recordingLiveSelection = "\(recordingLiveProvider):\(recordingLiveModel)"
@@ -19,7 +19,7 @@ enum StableTranscriptionModelPolicy {
     static let dictationLiveLabel = "ElevenLabs Scribe v2 Realtime"
     static let recordingLiveLabel = "ElevenLabs Scribe v2 Realtime"
     static let fileLabel = "ElevenLabs Scribe v2"
-    static let postFilterLabel = "Claude 3.5 Haiku"
+    static let postFilterLabel = "Claude Haiku 4.5"
 
     static let dictationLiveDescription = "Default stable dictation path."
     static let recordingLiveDescription = "Default live recording transcription path."

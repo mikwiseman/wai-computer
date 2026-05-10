@@ -20,7 +20,7 @@ DEFAULT_RECORDING_LIVE_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "anthropic"
-DEFAULT_DICTATION_POST_FILTER_MODEL = "claude-3-5-haiku-20241022"
+DEFAULT_DICTATION_POST_FILTER_MODEL = "claude-haiku-4-5"
 
 
 @dataclass(frozen=True)
@@ -181,20 +181,20 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
     "dictation_post_filter": (
         ModelOption(
             provider="anthropic",
-            model="claude-3-5-haiku-20241022",
-            label="Claude 3.5 Haiku",
+            model="claude-haiku-4-5",
+            label="Claude Haiku 4.5",
             description="Default low-latency cleanup for dictated text.",
         ),
         ModelOption(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
-            label="Claude Sonnet 4",
+            model="claude-sonnet-4-6",
+            label="Claude Sonnet 4.6",
             description="Higher-quality cleanup when latency is less important.",
         ),
         ModelOption(
             provider="anthropic",
-            model="claude-opus-4-1-20250805",
-            label="Claude Opus 4.1",
+            model="claude-opus-4-7",
+            label="Claude Opus 4.7",
             description="Highest-quality cleanup when latency and cost are less important.",
         ),
     ),

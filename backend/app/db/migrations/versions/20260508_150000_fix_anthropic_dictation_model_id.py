@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 OLD_MODEL = "claude-haiku-4-5"
-NEW_MODEL = "claude-3-5-haiku-20241022"
+NEW_MODEL = "claude-haiku-4-5"
 
 
 def upgrade() -> None:

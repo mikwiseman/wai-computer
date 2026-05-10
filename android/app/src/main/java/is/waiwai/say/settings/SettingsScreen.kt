@@ -74,7 +74,7 @@ private const val STABLE_RECORDING_MODEL = "scribe_v2_realtime"
 private const val STABLE_FILE_PROVIDER = "elevenlabs"
 private const val STABLE_FILE_MODEL = "scribe_v2"
 private const val STABLE_POST_FILTER_PROVIDER = "anthropic"
-private const val STABLE_POST_FILTER_MODEL = "claude-3-5-haiku-20241022"
+private const val STABLE_POST_FILTER_MODEL = "claude-haiku-4-5"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -310,7 +310,7 @@ fun SettingsScreen(
                     if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
                         LockedModelRow(
                             title = stringResource(R.string.settings_dictation_post_filter_model),
-                            value = "Claude 3.5 Haiku",
+                            value = "Claude Haiku 4.5",
                         )
                     } else if (currentSettings.dictationPostFilterEnabled && options != null) {
                         ModelChoiceRow(

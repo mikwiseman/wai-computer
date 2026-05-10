@@ -61,7 +61,7 @@ VALID_ENTITY_JSON = json.dumps({
 def mock_settings():
     """Patch settings attributes on the already-imported module."""
     with patch.object(summarizer_module.settings, "anthropic_api_key", "sk-ant-test-key"), \
-         patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-20250514"):
+         patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-6"):
         yield
 
 
@@ -139,7 +139,7 @@ class TestSummarizeTranscript:
 
         mock_client.messages.create.assert_called_once()
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert call_kwargs["model"] == "claude-sonnet-4-6"
         assert call_kwargs["max_tokens"] == 4096
         assert "My meeting notes" in call_kwargs["messages"][0]["content"]
 

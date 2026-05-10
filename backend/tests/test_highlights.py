@@ -88,7 +88,7 @@ def mock_settings():
     """Patch settings for summarizer tests."""
     with (
         patch.object(summarizer_module.settings, "anthropic_api_key", "sk-ant-test-key"),
-        patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-20250514"),
+        patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-6"),
     ):
         yield
 
