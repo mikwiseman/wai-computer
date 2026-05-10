@@ -30,12 +30,12 @@ def _appcast(*items: str) -> str:
 """
 
 
-def _item(channel_xml: str, length: str, signature: str, url: str) -> str:
+def _item(channel_xml: str, length: str, signature: str, url: str, version: str = "89") -> str:
     return f"""
     <item>
       <title>WaiSay 1.0.12</title>
       {channel_xml}
-      <sparkle:version>89</sparkle:version>
+      <sparkle:version>{version}</sparkle:version>
       <enclosure
         url="{url}"
         type="application/x-apple-diskimage"
@@ -81,6 +81,22 @@ def test_merge_allows_same_build_channels_when_enclosure_urls_differ():
 
     assert "1.0.12-89-beta/WaiSay-1.0.12-89.dmg" in merged
     assert "1.0.12-89/WaiSay-1.0.12-89.dmg" in merged
+
+
+def test_merge_ignores_preexisting_remote_enclosure_conflicts_for_other_urls():
+    merge_script = _load_merge_script()
+    old_url = "https://say.waiwai.is/releases/macos/1.0.12-85/WaiSay-1.0.12-85.dmg"
+    local_url = "https://say.waiwai.is/releases/macos/1.0.12-90/WaiSay-1.0.12-90.dmg"
+    local = _appcast(_item("", "300", "stable-90", local_url, version="90"))
+    remote = _appcast(
+        _item("", "100", "stable-85", old_url, version="85"),
+        _item("<sparkle:channel>beta</sparkle:channel>", "200", "beta-85", old_url, version="85"),
+    )
+
+    merged = merge_script.merge(local, remote)
+
+    assert local_url in merged
+    assert old_url in merged
 
 
 def test_release_scripts_publish_channel_specific_release_slug():
