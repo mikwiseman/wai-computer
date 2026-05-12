@@ -6,6 +6,7 @@ import Sentry
 import WaiSayKit
 
 private let audioLog = Logger(subsystem: "com.waisay.app", category: "audio")
+private let systemAudioUnavailableWarning = "System audio is not reaching WaiSay. Microphone audio is still being recorded."
 
 enum MacRecordingInputSource: String, CaseIterable, Equatable {
     case dual        // mic + system audio (default)
@@ -43,6 +44,10 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
         case .systemAudio:
             return "Preparing system audio..."
         }
+    }
+
+    var requestsSystemAudio: Bool {
+        self == .dual || self == .systemAudio
     }
 }
 
@@ -113,6 +118,14 @@ class MacRecordingViewModel: ObservableObject {
 
     var shouldPresentLiveView: Bool {
         phase != .idle
+    }
+
+    var visibleSystemAudioWarning: String? {
+        SystemAudioWarningPolicy.visibleBannerText(
+            recordingType: recordingType,
+            requestedSystemAudio: recordingInputSource.requestsSystemAudio,
+            warning: systemAudioWarning
+        )
     }
 
     var canStopRecording: Bool {
@@ -264,7 +277,7 @@ class MacRecordingViewModel: ObservableObject {
                 NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO (mic-only)")
 
                 if inputSource == .dual && !hasSystemAudio {
-                    error = "System audio unavailable — only your microphone will be recorded. Other participants in calls (Zoom, Meet, etc.) will NOT be transcribed.\n\nTo fix: System Settings → Privacy & Security → Audio Capture → enable WaiSay."
+                    error = "System audio unavailable. Microphone audio is still being recorded.\n\nTo fix: System Settings → Privacy & Security → Audio Capture → enable WaiSay."
                 }
             } else {
                 NSLog("[Recording] Starting audio capture...")
@@ -762,7 +775,7 @@ class MacRecordingViewModel: ObservableObject {
                 await MainActor.run {
                     guard let self, self.phase == .recording else { return }
                     if stalled || !receivedAny {
-                        self.systemAudioWarning = "System audio is not reaching WaiSay — other participants may not be recorded"
+                        self.systemAudioWarning = systemAudioUnavailableWarning
                     } else {
                         self.systemAudioWarning = nil
                     }

@@ -142,7 +142,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
                     if zeroSystemCount >= 2 {
                         self?.markSystemAudioStalled()
-                        dualLog.error("[Dual] ⚠️ System audio stalled — no samples received after \(zeroSystemCount * 3)s. Other participants will NOT be transcribed.")
+                        dualLog.error("[Dual] System audio stalled — no audible system samples received after \(zeroSystemCount * 3)s; microphone audio continues.")
                     }
                 }
             }
