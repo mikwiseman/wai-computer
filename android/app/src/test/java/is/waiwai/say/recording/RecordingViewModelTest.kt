@@ -6,6 +6,7 @@ import `is`.waiwai.say.MainDispatcherRule
 import `is`.waiwai.say.auth.AuthState
 import `is`.waiwai.say.auth.AuthStore
 import `is`.waiwai.say.data.AppSettings
+import `is`.waiwai.say.data.LiveTranscriptSegment
 import `is`.waiwai.say.data.Recording
 import `is`.waiwai.say.data.RecordingDetail
 import `is`.waiwai.say.data.RecordingStatus
@@ -143,6 +144,73 @@ class RecordingViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun `authenticated recording uploads audio even when realtime transcript finalized`() = runTest {
+        val tempRoot = createTempDirectory("waisay-recording-audio-canonical").toFile()
+        val authStore = mockk<AuthStore>()
+        val settingsStore = mockk<SettingsStore>()
+        val waiApi = mockk<WaiApi>()
+        val scheduler = mockk<PendingSyncWorkerScheduler>(relaxed = true)
+        val application = mockApplication(tempRoot)
+        val localStore = LocalRecordingStore(mockContext(tempRoot))
+        val authState = MutableStateFlow<AuthState>(
+            AuthState.Authenticated(
+                UserSummary("user-1", "mik@example.com", Instant.now().toString()),
+            ),
+        )
+        val liveSegments = listOf(
+            LiveTranscriptSegment(
+                text = "Realtime preview text",
+                speaker = null,
+                isFinal = true,
+                startMs = 0,
+                endMs = 1_000,
+                confidence = 0.8,
+            ),
+        )
+
+        every { authStore.state } returns authState
+        coEvery { settingsStore.snapshot() } returns appSettings()
+        coEvery {
+            waiApi.createRecording(
+                title = any(),
+                type = any(),
+                language = any(),
+                folderId = any(),
+            )
+        } returns Recording(
+            id = "remote-audio",
+            type = RecordingType.note,
+            status = RecordingStatus.PendingUpload,
+            createdAt = Instant.now().toString(),
+        )
+        coEvery { waiApi.uploadAudio("remote-audio", any()) } returns readyDetail("remote-audio")
+        mockForegroundService()
+
+        val viewModel = RecordingViewModel(
+            application = application,
+            authStore = authStore,
+            settingsStore = settingsStore,
+            waiApi = waiApi,
+            localRecordingStore = localStore,
+            syncScheduler = scheduler,
+            audioRecorderFactory = { FakeAudioRecorder() },
+            webSocketFactory = { FakeWebSocket(segments = liveSegments, didFinalize = true) },
+        )
+
+        viewModel.startRecording(permissionGranted = true)
+        advanceUntilIdle()
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        coVerify { waiApi.uploadAudio("remote-audio", any()) }
+        coVerify(exactly = 0) {
+            waiApi.saveLiveTranscript(any(), any(), any())
+        }
+        unmockkAll()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun `failed upload stores manifest and schedules retry`() = runTest {
         val tempRoot = createTempDirectory("waisay-recording-fail").toFile()
         val authStore = mockk<AuthStore>()
@@ -251,11 +319,13 @@ private class FakeAudioRecorder : AudioRecorder {
 
 private class FakeWebSocket(
     private val connectError: Throwable? = null,
+    private val segments: List<LiveTranscriptSegment> = emptyList(),
+    private val didFinalize: Boolean = false,
 ) : RealtimeWebSocketManager {
     private val mutableEvents = MutableSharedFlow<WsEvent>(extraBufferCapacity = 8)
 
     override val events: SharedFlow<WsEvent> = mutableEvents
-    override val collectedSegments: List<`is`.waiwai.say.data.LiveTranscriptSegment> = emptyList()
+    override val collectedSegments: List<LiveTranscriptSegment> = segments
 
     override suspend fun connect() {
         connectError?.let { throw it }
@@ -264,7 +334,7 @@ private class FakeWebSocket(
 
     override suspend fun sendAudio(data: ByteArray) = Unit
 
-    override suspend fun finishStreaming(timeoutMillis: Long): Boolean = false
+    override suspend fun finishStreaming(timeoutMillis: Long): Boolean = didFinalize
 
     override suspend fun disconnect() = Unit
 }

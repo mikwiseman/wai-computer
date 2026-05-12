@@ -198,10 +198,13 @@ class RecordingViewModel(
 
             val serverRecordingId = currentServerRecordingId ?: recordingId
             runCatching {
-                if (segments.isNotEmpty() && didFinalize) {
+                val audioFile = localRecordingStore.audioFile(recordingId)
+                if (audioFile.exists()) {
+                    waiApi.uploadAudio(serverRecordingId, audioFile)
+                } else if (segments.isNotEmpty() && didFinalize) {
                     waiApi.saveLiveTranscript(serverRecordingId, segments, duration.toInt())
                 } else {
-                    waiApi.uploadAudio(serverRecordingId, localRecordingStore.audioFile(recordingId))
+                    error("Recording audio file is missing")
                 }
             }.onSuccess {
                 localRecordingStore.remove(recordingId)

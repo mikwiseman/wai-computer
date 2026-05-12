@@ -848,6 +848,148 @@ async def test_upload_success_with_mocked_services(
 
 
 @pytest.mark.asyncio
+async def test_live_transcript_cannot_overwrite_uploaded_audio_transcript(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Once uploaded audio is processed, realtime transcript saves are not canonical."""
+    recording = await _create_recording(client, auth_headers, title=None)
+
+    audio_transcripts = [
+        TranscriptResult(
+            text="Audio transcript opening",
+            speaker="Speaker 0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.98,
+        ),
+        TranscriptResult(
+            text="Audio transcript ending",
+            speaker="Speaker 1",
+            is_final=True,
+            start_ms=5000,
+            end_ms=9000,
+            confidence=0.97,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(return_value=audio_transcripts),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Audio Canonical"),
+    )
+
+    upload_response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("recording.wav", b"fake-wav-data", "audio/wav")},
+    )
+    assert upload_response.status_code == 200
+    assert [segment["content"] for segment in upload_response.json()["segments"]] == [
+        "Audio transcript opening",
+        "Audio transcript ending",
+    ]
+
+    stale_live_response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 55 * 60,
+            "segments": [
+                {
+                    "text": "Realtime transcript with gaps",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 55 * 60 * 1000,
+                    "confidence": 0.42,
+                }
+            ],
+        },
+    )
+
+    assert stale_live_response.status_code == 200
+    data = stale_live_response.json()
+    assert data["status"] == "ready"
+    assert data["duration_seconds"] == 9
+    assert [segment["content"] for segment in data["segments"]] == [
+        "Audio transcript opening",
+        "Audio transcript ending",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_audio_upload_cannot_overwrite_ready_audio_transcript(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Background retries must not replace an already-ready audio transcript."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    first_transcripts = [
+        TranscriptResult(
+            text="Full canonical transcript",
+            speaker="Speaker 0",
+            is_final=True,
+            start_ms=0,
+            end_ms=55 * 60 * 1000,
+            confidence=0.98,
+        )
+    ]
+    second_transcripts = [
+        TranscriptResult(
+            text="Short stale retry transcript",
+            speaker="Speaker 0",
+            is_final=True,
+            start_ms=0,
+            end_ms=27 * 60 * 1000,
+            confidence=0.72,
+        )
+    ]
+    transcribe_mock = AsyncMock(side_effect=[first_transcripts, second_transcripts])
+
+    monkeypatch.setattr("app.api.routes.recordings.transcribe_audio_file", transcribe_mock)
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 384),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Full Canonical"),
+    )
+
+    first_upload = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("recording.wav", b"full-audio", "audio/wav")},
+    )
+    assert first_upload.status_code == 200
+    assert first_upload.json()["duration_seconds"] == 55 * 60
+
+    duplicate_upload = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("recording.wav", b"stale-partial-audio", "audio/wav")},
+    )
+
+    assert duplicate_upload.status_code == 200
+    data = duplicate_upload.json()
+    assert data["duration_seconds"] == 55 * 60
+    assert [segment["content"] for segment in data["segments"]] == [
+        "Full canonical transcript"
+    ]
+    assert transcribe_mock.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_upload_too_large_marks_recording_failed_and_keeps_it_visible(
     client: AsyncClient,
     auth_headers: dict,
