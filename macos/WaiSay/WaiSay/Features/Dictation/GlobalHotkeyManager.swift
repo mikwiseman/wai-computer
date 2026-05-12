@@ -200,7 +200,7 @@ enum MacInputPermission {
     }
 
     /// Reset TCC entries for this app's bundle id across the permissions we
-    /// use today (Accessibility, Microphone) plus the legacy ListenEvent
+    /// use today (Accessibility, Microphone, AudioCapture) plus the legacy ListenEvent
     /// service that earlier WaiSay versions required for `CGEventTap`.
     /// Cleaning ListenEvent here removes the orphaned WaiSay row from
     /// System Settings → Privacy & Security → Input Monitoring on machines
@@ -209,7 +209,7 @@ enum MacInputPermission {
     static func resetTCCEntries() -> Bool {
         guard let bundleId = Bundle.main.bundleIdentifier else { return false }
         var allOK = true
-        for service in ["ListenEvent", "Accessibility", "Microphone"] {
+        for service in ["ListenEvent", "Accessibility", "Microphone", "AudioCapture"] {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
             process.arguments = ["reset", service, bundleId]

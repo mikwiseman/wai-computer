@@ -762,7 +762,7 @@ class MacRecordingViewModel: ObservableObject {
                 await MainActor.run {
                     guard let self, self.phase == .recording else { return }
                     if stalled || !receivedAny {
-                        self.systemAudioWarning = "System audio not detected — other participants may not be recorded"
+                        self.systemAudioWarning = "System audio is not reaching WaiSay — other participants may not be recorded"
                     } else {
                         self.systemAudioWarning = nil
                     }

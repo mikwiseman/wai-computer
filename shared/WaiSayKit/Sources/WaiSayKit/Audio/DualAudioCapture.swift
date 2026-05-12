@@ -43,11 +43,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
-    /// Whether system audio has ever received any samples since recording started.
+    /// Whether system audio has ever received non-silent samples since recording started.
     public private(set) var systemAudioReceivedAny = false
 
-    /// Whether system audio has stalled (no samples received for >3 seconds)
+    private var lastAudibleSystemAudioAt: Date?
+
+    /// Whether system audio has stalled (no audible samples for multiple monitor intervals).
     public private(set) var systemAudioStalled = false
+
+    static let audioPresenceThreshold: Float = 0.000_001
 
     public init(config: AudioCaptureConfig = .default, mixToMono: Bool = true) {
         self.config = config
@@ -104,9 +108,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                 guard let floatData = buffer.floatChannelData else { continue }
                 let frames = Int(buffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData[0], count: frames))
-                self.lock.lock()
-                self.micBuffer.append(contentsOf: samples)
-                self.lock.unlock()
+                self.appendMicrophoneSamples(samples)
             }
         }
 
@@ -116,11 +118,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                 guard let floatData = buffer.floatChannelData else { continue }
                 let frames = Int(buffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData[0], count: frames))
-                self.lock.lock()
-                self.systemBuffer.append(contentsOf: samples)
-                self.systemAudioReceivedAny = true
-                self.systemAudioStalled = false
-                self.lock.unlock()
+                let hasRealSystemAudio = Self.bufferContainsAudibleSamples(buffer)
+                self.appendSystemSamples(samples, hasRealSystemAudio: hasRealSystemAudio)
             }
         }
 
@@ -135,19 +134,14 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
                 // Stall detection: check every ~3 seconds (18 flushes × 160ms)
                 if flushCount % 18 == 0 {
-                    self?.lock.lock()
-                    let sysEmpty = self?.systemBuffer.isEmpty ?? true
-                    let receivedAny = self?.systemAudioReceivedAny ?? false
-                    self?.lock.unlock()
-
-                    if sysEmpty && !receivedAny {
+                    if self?.hasRecentSystemAudio() == false {
                         zeroSystemCount += 1
                     } else {
                         zeroSystemCount = 0
                     }
 
                     if zeroSystemCount >= 2 {
-                        self?.systemAudioStalled = true
+                        self?.markSystemAudioStalled()
                         dualLog.error("[Dual] ⚠️ System audio stalled — no samples received after \(zeroSystemCount * 3)s. Other participants will NOT be transcribed.")
                     }
                 }
@@ -160,9 +154,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         micTask = Task { [weak self] in
             guard let self else { return }
             for await buffer in self.mic.audioBuffers {
-                os_unfair_lock_lock(self.continuationLock)
-                self.bufferContinuation?.yield(buffer)
-                os_unfair_lock_unlock(self.continuationLock)
+                self.yieldBuffer(buffer)
             }
         }
     }
@@ -184,15 +176,10 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             flushDualBuffers()
         }
 
-        lock.lock()
-        micBuffer.removeAll()
-        systemBuffer.removeAll()
-        lock.unlock()
+        resetBufferedState()
 
         hasSystemAudio = false
-        os_unfair_lock_lock(continuationLock)
-        bufferContinuation?.finish()
-        os_unfair_lock_unlock(continuationLock)
+        finishBufferStream()
         setupBufferStream()
     }
 
@@ -208,6 +195,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         lock.lock()
         let micCount = micBuffer.count
         let sysCount = systemBuffer.count
+        let systemAudioUsable = systemAudioReceivedAny && !systemAudioStalled
 
         // Minimum flush size: 80ms at target sample rate (prevents tiny flushes)
         let minFlushSize = Int(config.sampleRate * 0.08)
@@ -280,7 +268,11 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             let mono = outData[0]
 
             for i in 0..<frames {
-                mono[i] = (micSamples[i] + sysSamples[i]) * 0.5
+                mono[i] = Self.monoMixedSample(
+                    microphone: micSamples[i],
+                    system: sysSamples[i],
+                    hasSystemAudio: systemAudioUsable
+                )
             }
 
             os_unfair_lock_lock(continuationLock)
@@ -314,6 +306,81 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             continuation?.yield(outBuffer)
             os_unfair_lock_unlock(continuationLock)
         }
+    }
+
+    static func bufferContainsAudibleSamples(_ buffer: AVAudioPCMBuffer) -> Bool {
+        guard let floatData = buffer.floatChannelData else { return false }
+        let frames = Int(buffer.frameLength)
+        let channels = Int(buffer.format.channelCount)
+        guard frames > 0, channels > 0 else { return false }
+
+        for channel in 0..<channels {
+            let samples = floatData[channel]
+            for frame in 0..<frames where abs(samples[frame]) > audioPresenceThreshold {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    static func monoMixedSample(microphone: Float, system: Float, hasSystemAudio: Bool) -> Float {
+        guard hasSystemAudio else { return microphone }
+        return (microphone + system) * 0.5
+    }
+
+    private func appendMicrophoneSamples(_ samples: [Float]) {
+        lock.lock()
+        micBuffer.append(contentsOf: samples)
+        lock.unlock()
+    }
+
+    private func appendSystemSamples(_ samples: [Float], hasRealSystemAudio: Bool) {
+        lock.lock()
+        systemBuffer.append(contentsOf: samples)
+        if hasRealSystemAudio {
+            systemAudioReceivedAny = true
+            lastAudibleSystemAudioAt = Date()
+            systemAudioStalled = false
+        }
+        lock.unlock()
+    }
+
+    private func hasRecentSystemAudio() -> Bool {
+        lock.lock()
+        let lastAudibleAt = lastAudibleSystemAudioAt
+        lock.unlock()
+
+        guard let lastAudibleAt else { return false }
+        return Date().timeIntervalSince(lastAudibleAt) < 4.0
+    }
+
+    private func markSystemAudioStalled() {
+        lock.lock()
+        systemAudioStalled = true
+        lock.unlock()
+    }
+
+    private func resetBufferedState() {
+        lock.lock()
+        micBuffer.removeAll()
+        systemBuffer.removeAll()
+        systemAudioReceivedAny = false
+        systemAudioStalled = false
+        lastAudibleSystemAudioAt = nil
+        lock.unlock()
+    }
+
+    private func yieldBuffer(_ buffer: AVAudioPCMBuffer) {
+        os_unfair_lock_lock(continuationLock)
+        bufferContinuation?.yield(buffer)
+        os_unfair_lock_unlock(continuationLock)
+    }
+
+    private func finishBufferStream() {
+        os_unfair_lock_lock(continuationLock)
+        bufferContinuation?.finish()
+        os_unfair_lock_unlock(continuationLock)
     }
 }
 #endif
