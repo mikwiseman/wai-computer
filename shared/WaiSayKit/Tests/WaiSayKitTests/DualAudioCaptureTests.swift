@@ -219,6 +219,58 @@ final class DualAudioCaptureTests: XCTestCase {
             "systemAudioStalled should be false before recording starts")
     }
 
+    func testSilentSystemBufferDoesNotCountAsReceivedAudio() {
+        guard let buffer = MockAudioCapture.constantBuffer(
+            value: 0.0,
+            channelCount: 1,
+            frameCount: 160
+        ) else {
+            XCTFail("Failed to create silent system buffer")
+            return
+        }
+
+        XCTAssertFalse(
+            DualAudioCapture.bufferContainsAudibleSamples(buffer),
+            "All-zero system buffers must not mark system audio as detected"
+        )
+    }
+
+    func testNonZeroSystemBufferCountsAsReceivedAudio() {
+        guard let buffer = MockAudioCapture.constantBuffer(
+            value: 0.25,
+            channelCount: 1,
+            frameCount: 160
+        ) else {
+            XCTFail("Failed to create audible system buffer")
+            return
+        }
+
+        XCTAssertTrue(
+            DualAudioCapture.bufferContainsAudibleSamples(buffer),
+            "Non-zero system buffers should mark system audio as detected"
+        )
+    }
+
+    func testMonoMixDoesNotAttenuateMicrophoneBeforeSystemAudioArrives() {
+        let sample = DualAudioCapture.monoMixedSample(
+            microphone: 0.6,
+            system: 0.0,
+            hasSystemAudio: false
+        )
+
+        XCTAssertEqual(sample, 0.6, accuracy: 0.0001)
+    }
+
+    func testMonoMixAveragesAfterSystemAudioArrives() {
+        let sample = DualAudioCapture.monoMixedSample(
+            microphone: 0.6,
+            system: 0.2,
+            hasSystemAudio: true
+        )
+
+        XCTAssertEqual(sample, 0.4, accuracy: 0.0001)
+    }
+
     // MARK: - minFlushSize Calculation
 
     /// Verify config.sampleRate * 0.08 produces the expected minFlushSize at default 16kHz.

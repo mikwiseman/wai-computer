@@ -44,6 +44,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         OSAtomicAdd32(0, _audioReceivedFlag) != 0
     }
 
+    private static let audioPresenceThreshold: Float = 0.000_001
+
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
         self.continuationLock = .allocate(capacity: 1)
@@ -90,20 +92,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
         sysLog.warning("[SysAudio] Default output device ID: \(defaultOutputID)")
 
-        // Use a global tap here: the include-list initializer with an empty array captures nothing.
-        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
-        tapDescription.uuid = UUID()
-        tapDescription.muteBehavior = .unmuted
-
-        var newTapID = AudioObjectID.max
-        status = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
-        guard status == noErr else {
-            throw SystemAudioCaptureError.failedToCreateTap(status)
-        }
-        tapID = newTapID
-        sysLog.warning("[SysAudio] Created process tap ID: \(self.tapID)")
-
-        // 3. Get the output device UID
+        // 2. Get the output device UID before creating the tap. The tap should
+        // explicitly target the device currently receiving browser/meeting audio.
         var uid: CFString?
         var uidAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceUID,
@@ -118,6 +108,20 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             throw SystemAudioCaptureError.failedToGetDeviceUID(status)
         }
         sysLog.warning("[SysAudio] Output device UID: \(uid as String)")
+
+        // Use a global tap here: the include-list initializer with an empty array captures nothing.
+        let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        tapDescription.uuid = UUID()
+        tapDescription.muteBehavior = .unmuted
+        tapDescription.deviceUID = uid as String
+
+        var newTapID = AudioObjectID.max
+        status = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
+        guard status == noErr else {
+            throw SystemAudioCaptureError.failedToCreateTap(status)
+        }
+        tapID = newTapID
+        sysLog.warning("[SysAudio] Created process tap ID: \(self.tapID)")
 
         // 4. Create aggregate device containing the tap
         let aggregateDesc: [String: Any] = [
@@ -233,16 +237,40 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             guard let self = self else { return }
             tapCount += 1
 
-            let bufferList = inInputData.pointee
-            guard bufferList.mNumberBuffers > 0 else { return }
+            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
+            guard !buffers.isEmpty else { return }
 
-            let audioBuffer = bufferList.mBuffers
-            guard let dataPtr = audioBuffer.mData else { return }
+            let declaredChannels = Int(max(nativeCh, 1))
+            let sourceChannels = buffers.count > 1 ? buffers.count : declaredChannels
+            guard sourceChannels > 0 else { return }
 
-            let srcFrames = Int(audioBuffer.mDataByteSize) / MemoryLayout<Float>.size / Int(max(nativeCh, 1))
+            var srcFrames = 0
+            if buffers.count > 1 {
+                var minFrames = Int.max
+                for channelIndex in 0..<sourceChannels {
+                    guard channelIndex < buffers.count, buffers[channelIndex].mData != nil else { return }
+                    let framesInBuffer = Int(buffers[channelIndex].mDataByteSize) / MemoryLayout<Float>.size
+                    minFrames = min(minFrames, framesInBuffer)
+                }
+                srcFrames = minFrames == Int.max ? 0 : minFrames
+            } else {
+                guard buffers[0].mData != nil else { return }
+                let totalSamples = Int(buffers[0].mDataByteSize) / MemoryLayout<Float>.size
+                srcFrames = totalSamples / sourceChannels
+            }
             if srcFrames == 0 { return }
 
-            let srcSamples = dataPtr.assumingMemoryBound(to: Float.self)
+            func sourceSample(frame: Int, channel: Int) -> Float {
+                if buffers.count > 1 {
+                    let audioBuffer = buffers[min(channel, buffers.count - 1)]
+                    guard let dataPtr = audioBuffer.mData else { return 0 }
+                    return dataPtr.assumingMemoryBound(to: Float.self)[frame]
+                }
+
+                guard let dataPtr = buffers[0].mData else { return 0 }
+                let srcSamples = dataPtr.assumingMemoryBound(to: Float.self)
+                return srcSamples[frame * sourceChannels + min(channel, sourceChannels - 1)]
+            }
 
             // Downsample from native rate to target rate (16kHz), mix to mono
             let ratio = nativeSR / targetSR
@@ -261,25 +289,33 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             guard let outData = outBuffer.floatChannelData else { return }
             let dst = outData[0]
 
-            let channels = Int(max(nativeCh, 1))
+            let channels = sourceChannels
 
             if ratio <= 1.01 && channels == 1 {
                 // No resampling or mixing needed
                 for i in 0..<outFrames {
-                    dst[i] = srcSamples[i]
+                    dst[i] = sourceSample(frame: i, channel: 0)
                 }
             } else {
                 // Downsample with averaging + mono mixdown
-                let intRatio = Int(ratio.rounded())
+                let intRatio = max(1, Int(ratio.rounded()))
                 for i in 0..<outFrames {
                     let srcStart = Int(Double(i) * ratio)
+                    if srcStart >= srcFrames {
+                        dst[i] = 0
+                        continue
+                    }
                     var sum: Float = 0
                     let count = min(intRatio, srcFrames - srcStart)
+                    guard count > 0 else {
+                        dst[i] = 0
+                        continue
+                    }
                     for j in 0..<count {
                         // Average across channels for mono mixdown
                         var sampleSum: Float = 0
                         for ch in 0..<channels {
-                            sampleSum += srcSamples[(srcStart + j) * channels + ch]
+                            sampleSum += sourceSample(frame: srcStart + j, channel: ch)
                         }
                         sum += sampleSum / Float(channels)
                     }
@@ -288,14 +324,14 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             }
 
             if tapCount <= 5 || tapCount % 100 == 0 {
-                sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz -> \(outFrames)@\(targetSR)Hz")
+                sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz, buffers=\(buffers.count), channels=\(sourceChannels) -> \(outFrames)@\(targetSR)Hz")
             }
 
             // Mark audio as flowing once we see any non-zero sample (lock-free, real-time safe)
             if OSAtomicAdd32(0, self._audioReceivedFlag) == 0 {
                 var foundNonZero = false
                 for i in 0..<outFrames {
-                    if dst[i] != 0 {
+                    if abs(dst[i]) > Self.audioPresenceThreshold {
                         foundNonZero = true
                         break
                     }
