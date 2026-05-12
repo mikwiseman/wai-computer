@@ -39,13 +39,31 @@ rsync \
   --delete \
   --exclude '.git/' \
   --exclude '.github/' \
+  --exclude '.venv/' \
+  --exclude '.venv312/' \
+  --exclude '.pytest_cache/' \
+  --exclude '.ruff_cache/' \
+  --exclude '.coverage' \
+  --exclude '__pycache__/' \
   --exclude 'backend/.env' \
   --exclude 'backend/.venv/' \
+  --exclude 'backend/.venv312/' \
+  --exclude 'backend/.pytest_cache/' \
+  --exclude 'backend/.ruff_cache/' \
   --exclude 'backend/htmlcov/' \
   --exclude 'backend/coverage.xml' \
   --exclude 'web/node_modules/' \
   --exclude 'web/.next/' \
+  --exclude 'web/coverage/' \
+  --exclude 'web/test-results/' \
+  --exclude 'web/tsconfig.tsbuildinfo' \
   --exclude 'android/.gradle/' \
+  --exclude 'android/build/' \
+  --exclude 'android/app/build/' \
+  --exclude 'macos/WaiSay/build/' \
+  --exclude 'shared/WaiSayKit/.build/' \
+  --exclude 'scripts/nightly/.venv/' \
+  --exclude 'scripts/nightly/.artifacts/' \
   --exclude 'backups/' \
   --exclude 'releases/' \
   -e "ssh -i ${SSH_KEY_PATH} -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
