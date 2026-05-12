@@ -14,6 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -2326,6 +2327,13 @@ EXTENSION_TO_CONTENT_TYPE = {
 MAX_UPLOAD_SIZE = app_settings.upload_max_bytes
 
 
+def _upload_processing_failure_message(exc: Exception) -> str:
+    """Keep infrastructure errors out of user-visible recording state."""
+    if isinstance(exc, SQLAlchemyError):
+        return "Imported audio processing failed"
+    return _normalize_failure_message(exc, "Imported audio processing failed")
+
+
 @router.post("/{recording_id}/upload", response_model=RecordingDetailResponse)
 async def upload_audio_file(
     recording_id: UUID,
@@ -2346,6 +2354,8 @@ async def upload_audio_file(
     )
     # Validate recording exists and belongs to user
     user_id = user.id
+    file_stt_provider = user.file_stt_provider
+    file_stt_model = user.file_stt_model
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -2468,6 +2478,8 @@ async def upload_audio_file(
     recording.failure_message = None
     recording.audio_url = None
     recording.duration_seconds = None
+    recording_language = recording.language or "en"
+    should_generate_title = not recording.title
     await db.commit()
 
     transcript_results = []
@@ -2479,9 +2491,10 @@ async def upload_audio_file(
         with staged_path.open("rb") as staged_file:
             transcript_results = await transcribe_audio_file(
                 staged_file.read(),
-                language=recording.language or "en",
+                language=recording_language,
                 content_type=content_type,
-                user=user,
+                provider=file_stt_provider,
+                model=file_stt_model,
             )
 
         for tr in transcript_results:
@@ -2509,7 +2522,7 @@ async def upload_audio_file(
             recording.duration_seconds = max_end_ms // 1000
             transcript_text = " ".join(tr.text for tr in transcript_results if tr.text.strip())
 
-        if not recording.title and transcript_text.strip():
+        if should_generate_title and transcript_text.strip():
             try:
                 recording.title = await generate_title(transcript_text)
             except Exception as exc:
@@ -2528,10 +2541,7 @@ async def upload_audio_file(
             recording_id,
             db,
             "processing_failed",
-            _normalize_failure_message(
-                exc,
-                "Imported audio processing failed",
-            ),
+            _upload_processing_failure_message(exc),
         )
         _delete_staged_file(str(staged_path))
 

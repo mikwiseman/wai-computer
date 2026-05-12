@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
@@ -818,9 +819,10 @@ async def test_upload_success_with_mocked_services(
         ),
     ]
 
+    transcribe_audio = AsyncMock(return_value=fake_transcripts)
     monkeypatch.setattr(
         "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=fake_transcripts),
+        transcribe_audio,
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
@@ -845,6 +847,11 @@ async def test_upload_success_with_mocked_services(
     assert data["duration_seconds"] == 1
     assert len(data["segments"]) == 1
     assert data["segments"][0]["content"] == "Hello world"
+    transcribe_audio.assert_awaited_once()
+    _, transcribe_kwargs = transcribe_audio.await_args
+    assert transcribe_kwargs["provider"] == "elevenlabs"
+    assert transcribe_kwargs["model"] == "scribe_v2"
+    assert "user" not in transcribe_kwargs
 
 
 @pytest.mark.asyncio
@@ -1195,6 +1202,31 @@ async def test_upload_processing_failure_returns_failed_recording_with_audio_pre
     assert data["failure_code"] == "processing_failed"
     assert data["audio_url"] is None
     assert data["segments"] == []
+
+
+@pytest.mark.asyncio
+async def test_upload_processing_failure_hides_sqlalchemy_internal_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Async ORM infrastructure details should not be stored as user-facing failures."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(side_effect=MissingGreenlet("greenlet_spawn has not been called")),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert data["failure_code"] == "processing_failed"
+    assert data["failure_message"] == "Imported audio processing failed"
 
 
 @pytest.mark.asyncio

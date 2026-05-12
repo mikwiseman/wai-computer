@@ -15,14 +15,19 @@ from app.models.user import User
 async def transcribe_audio_file(
     audio_data: bytes,
     language: str = "en",
-    model: str = "nova-3",
+    model: str | None = None,
     content_type: str = "audio/wav",
     channels: int | None = None,
     user: User | None = None,
+    provider: str | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime."""
-    provider = user.file_stt_provider if user is not None else DEFAULT_FILE_STT_PROVIDER
-    selected_model = user.file_stt_model if user is not None else DEFAULT_FILE_STT_MODEL
+    provider = provider or (
+        user.file_stt_provider if user is not None else DEFAULT_FILE_STT_PROVIDER
+    )
+    selected_model = model or (
+        user.file_stt_model if user is not None else DEFAULT_FILE_STT_MODEL
+    )
     provider, selected_model = validate_option("file_stt", provider, selected_model)
 
     if provider == "openai":
