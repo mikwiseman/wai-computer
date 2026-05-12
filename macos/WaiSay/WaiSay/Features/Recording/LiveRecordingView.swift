@@ -50,7 +50,7 @@ struct LiveRecordingView: View {
             }
 
             // System audio stall warning
-            if let warning = recordingVM.systemAudioWarning {
+            if let warning = recordingVM.visibleSystemAudioWarning {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.yellow)
@@ -180,7 +180,7 @@ struct LiveRecordingView: View {
                     }
                     .help(systemOk
                         ? "Recording mic and system audio (2 channels)"
-                        : "System audio unavailable — only mic is recording")
+                        : "Only microphone audio is being recorded")
                 } else {
                     Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
                         .font(Typography.label)
