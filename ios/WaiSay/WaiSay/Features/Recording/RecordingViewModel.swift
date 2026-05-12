@@ -489,6 +489,10 @@ class RecordingViewModel: ObservableObject {
 
             // Try saving collected segments to server
             if let client = apiClient {
+                if await uploadRecoveredAudioIfAvailable(recordingId: recordingId, client: client) {
+                    return
+                }
+
                 do {
                     let detail = try await client.saveLiveTranscript(
                         recordingId: recordingId,
@@ -582,6 +586,10 @@ class RecordingViewModel: ObservableObject {
 
             // Try saving collected segments to server instead of deleting the recording
             if let client = apiClient {
+                if await uploadRecoveredAudioIfAvailable(recordingId: recordingId, client: client) {
+                    return
+                }
+
                 do {
                     let detail = try await client.saveLiveTranscript(
                         recordingId: recordingId,
@@ -646,6 +654,32 @@ class RecordingViewModel: ObservableObject {
         let fileWriter = audioFileWriter
         audioFileWriter = nil
         try? fileWriter?.finalize()
+    }
+
+    private func uploadRecoveredAudioIfAvailable(
+        recordingId: String,
+        client: APIClient
+    ) async -> Bool {
+        guard let audioFileURL = try? RecordingBackupStore.audioFileURL(recordingId: recordingId),
+              FileManager.default.fileExists(atPath: audioFileURL.path) else {
+            return false
+        }
+
+        do {
+            let detail = try await client.uploadAudio(recordingId: recordingId, fileURL: audioFileURL)
+            if detail.status != .failed {
+                try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                isServerComplete = true
+                postRecoveryNotice(transcriptRecoveredMessage())
+                error = nil
+                await cleanupAfterFailure(preserveServerCompletion: true)
+                return true
+            }
+        } catch {
+            NSLog("[Recording] Audio upload after streaming interruption failed")
+        }
+
+        return false
     }
 
     private func setPhase(_ newPhase: RecordingPhase) {

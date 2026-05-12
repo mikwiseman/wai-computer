@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -637,6 +637,61 @@ async def _load_active_recording(
     return result.scalar_one_or_none()
 
 
+def _has_canonical_audio_processing(recording: Recording) -> bool:
+    """Return true when uploaded audio owns canonical transcript generation."""
+    if recording.status in {
+        RecordingStatus.UPLOADING.value,
+        RecordingStatus.PROCESSING.value,
+    }:
+        return True
+    return (
+        recording.uploaded_at is not None
+        and recording.status == RecordingStatus.READY.value
+        and bool(recording.segments)
+    )
+
+
+async def _claim_audio_upload(
+    recording_id: UUID,
+    user_id: UUID,
+    db: Database,
+) -> bool:
+    canonical_segments_exist = (
+        select(Segment.id)
+        .where(Segment.recording_id == Recording.id)
+        .exists()
+    )
+    result = await db.execute(
+        update(Recording)
+        .where(
+            Recording.id == recording_id,
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+            Recording.status.notin_(
+                [
+                    RecordingStatus.UPLOADING.value,
+                    RecordingStatus.PROCESSING.value,
+                ]
+            ),
+            ~(
+                (Recording.uploaded_at.is_not(None))
+                & (Recording.status == RecordingStatus.READY.value)
+                & canonical_segments_exist
+            ),
+        )
+        .values(
+            status=RecordingStatus.UPLOADING.value,
+            failure_code=None,
+            failure_message=None,
+            uploaded_at=datetime.now(timezone.utc),
+            audio_url=None,
+            duration_seconds=None,
+        )
+    )
+    await db.commit()
+    return result.rowcount == 1
+
+
 async def _mark_recording_failed(
     recording: Recording,
     db: Database,
@@ -669,7 +724,7 @@ def _transcript_failure_details(error: HTTPException) -> tuple[str, str]:
 
 
 async def _reset_recording_processing_state(recording_id: UUID, db: Database) -> None:
-    """Replace transcript-derived data on re-upload instead of appending."""
+    """Replace transcript-derived data before canonical transcript generation."""
     await db.execute(
         delete(ActionItem).where(
             ActionItem.recording_id == recording_id,
@@ -1999,6 +2054,27 @@ async def save_transcript(
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
+    if _has_canonical_audio_processing(recording):
+        logger.warning(
+            "ignored live transcript save for audio-backed recording "
+            "status=%s incoming_segments=%s existing_segments=%s",
+            recording.status,
+            len(request.segments),
+            len(recording.segments),
+        )
+        add_sentry_breadcrumb(
+            category="recording",
+            message="Ignored live transcript save for audio-backed recording",
+            data={
+                "recording_id": str(recording_id),
+                "status": recording.status,
+                "incoming_segments": len(request.segments),
+                "existing_segments": len(recording.segments),
+            },
+            level="warning",
+        )
+        return _serialize_recording_detail(recording)
+
     try:
         await _persist_client_segments(
             recording,
@@ -2274,6 +2350,26 @@ async def upload_audio_file(
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
+    if _has_canonical_audio_processing(recording):
+        await file.close()
+        logger.warning(
+            "ignored duplicate audio upload for audio-backed recording "
+            "status=%s existing_segments=%s",
+            recording.status,
+            len(recording.segments),
+        )
+        add_sentry_breadcrumb(
+            category="recording",
+            message="Ignored duplicate audio upload for audio-backed recording",
+            data={
+                "recording_id": str(recording_id),
+                "status": recording.status,
+                "existing_segments": len(recording.segments),
+            },
+            level="warning",
+        )
+        return _serialize_recording_detail(recording)
+
     filename = file.filename or ""
     try:
         ext = _extension_from_upload(filename, file.content_type or "")
@@ -2299,6 +2395,40 @@ async def upload_audio_file(
         ext,
         file.content_type or "application/octet-stream",
     )
+
+    if not await _claim_audio_upload(recording_id, user_id, db):
+        await file.close()
+        db.expire_all()
+        existing_recording = await _load_recording_detail(
+            recording_id,
+            user_id,
+            db,
+            include_deleted=False,
+        )
+        if existing_recording is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+        logger.warning(
+            "ignored duplicate audio upload after claim race status=%s existing_segments=%s",
+            existing_recording.status,
+            len(existing_recording.segments),
+        )
+        add_sentry_breadcrumb(
+            category="recording",
+            message="Ignored duplicate audio upload after claim race",
+            data={
+                "recording_id": str(recording_id),
+                "status": existing_recording.status,
+                "existing_segments": len(existing_recording.segments),
+            },
+            level="warning",
+        )
+        return _serialize_recording_detail(existing_recording)
+
+    db.expire_all()
+    recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
+    if recording is None:
+        await file.close()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     try:
         staged_path, _ = await _stage_upload_to_disk(
@@ -2333,16 +2463,10 @@ async def upload_audio_file(
             ) from exc
         return _serialize_recording_detail(failed_recording)
 
-    recording.status = RecordingStatus.UPLOADING.value
-    recording.failure_code = None
-    recording.failure_message = None
-    await db.commit()
-
     recording.status = RecordingStatus.PROCESSING.value
     recording.failure_code = None
     recording.failure_message = None
     recording.audio_url = None
-    recording.uploaded_at = datetime.now(timezone.utc)
     recording.duration_seconds = None
     await db.commit()
 
