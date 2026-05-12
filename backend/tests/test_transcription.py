@@ -57,6 +57,31 @@ async def test_transcription_dispatches_to_openai_for_user_choice():
 
 
 @pytest.mark.asyncio
+async def test_transcription_dispatches_to_explicit_provider_and_model_without_user():
+    with patch(
+        "app.core.transcription.openai_transcribe_audio_file",
+        new=AsyncMock(return_value=["openai-ok"]),
+    ) as mock_openai:
+        from app.core.transcription import transcribe_audio_file
+
+        result = await transcribe_audio_file(
+            b"audio",
+            language="en",
+            content_type="audio/wav",
+            provider="openai",
+            model="gpt-4o-transcribe",
+        )
+
+    assert result == ["openai-ok"]
+    mock_openai.assert_awaited_once_with(
+        b"audio",
+        model="gpt-4o-transcribe",
+        language="en",
+        content_type="audio/wav",
+    )
+
+
+@pytest.mark.asyncio
 async def test_transcription_dispatches_to_inworld_for_user_choice():
     user = type(
         "User",
