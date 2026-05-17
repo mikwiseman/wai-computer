@@ -3,7 +3,7 @@ import Link from "next/link";
 import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
-const APP_STORE_URL = "https://apps.apple.com/app/waicomputer/id6761768729";
+const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
 
 export default function Home() {
@@ -50,11 +50,11 @@ export default function Home() {
           </a>
           <a
             className={styles.downloadGhost}
-            href={APP_STORE_URL}
+            href={TESTFLIGHT_URL}
             data-testid="download-ios"
           >
             <span className={styles.downloadTitle}>iPhone &amp; iPad</span>
-            <span className={styles.downloadMeta}>App Store</span>
+            <span className={styles.downloadMeta}>TestFlight</span>
           </a>
         </div>
       </section>

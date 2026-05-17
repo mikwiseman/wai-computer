@@ -164,8 +164,9 @@ describe("app pages", () => {
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
       "href",
-      "https://apps.apple.com/app/waicomputer/id6761768729",
+      "https://testflight.apple.com/join/rtnJQzwk",
     );
+    expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
     expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
