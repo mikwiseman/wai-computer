@@ -8,6 +8,7 @@ CONFIGURATION=${MACOS_CONFIGURATION:-Release}
 APP_NAME="WaiComputer"
 DMG_VOLUME_NAME=${MACOS_DMG_VOLUME_NAME:-"${APP_NAME} Installer"}
 APP_ICON_PATH="$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
+DEFAULT_DMG_BACKGROUND_BASE="$ROOT_DIR/macos/WaiComputer/Packaging/dmg-background-base.png"
 TEAM_ID=${MACOS_TEAM_ID:-R4A779QVVY}
 SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:-"Developer ID Application: WaiWai, LLC (R4A779QVVY)"}
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}
@@ -227,8 +228,39 @@ require_tool ditto
 require_tool shasum
 require_tool file
 require_tool xcrun
+require_tool SetFile
 
 load_notary_defaults_from_appstoreconnect_config
+
+find_dmg_dsstore_python() {
+  local candidates=()
+  if [[ -n "${MACOS_DMG_DSSTORE_PYTHON:-}" ]]; then
+    candidates+=("$MACOS_DMG_DSSTORE_PYTHON")
+  fi
+  candidates+=(python3.14 python3)
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+    if "$candidate" - <<'PY' >/dev/null 2>&1
+import ds_store
+import mac_alias
+PY
+    then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+
+  cat >&2 <<EOF
+Required Python modules for DMG Finder metadata are missing: ds_store and mac_alias.
+Install the current verified packages, then rerun:
+  python3.14 -m pip install ds-store==1.3.2 mac-alias==2.2.3
+EOF
+  return 1
+}
 
 find_sign_update_bin() {
   if [[ -n "$SPARKLE_SIGN_UPDATE_BIN" ]]; then
@@ -290,6 +322,18 @@ validate_dmg_contents() {
     echo "DMG validation failed: Applications symlink is missing from $dmg_path" >&2
     exit 1
   fi
+  if [[ ! -f "$mount_point/.background/background.png" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: Finder background image is missing from $dmg_path" >&2
+    exit 1
+  fi
+  if [[ ! -f "$mount_point/.DS_Store" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: Finder layout .DS_Store is missing from $dmg_path" >&2
+    exit 1
+  fi
   actual_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$mounted_info")
   actual_build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$mounted_info")
   if [[ "$actual_version" != "$expected_version" || "$actual_build" != "$expected_build" ]]; then
@@ -312,6 +356,8 @@ mkdir -p "$RELEASE_ROOT"
 
 if [[ -n "$CUSTOM_BACKGROUND_PATH" ]]; then
   "$ROOT_DIR/scripts/render-macos-dmg-background.sh" "$BACKGROUND_PATH" "$APP_ICON_PATH" "$CUSTOM_BACKGROUND_PATH"
+elif [[ -f "$DEFAULT_DMG_BACKGROUND_BASE" ]]; then
+  "$ROOT_DIR/scripts/render-macos-dmg-background.sh" "$BACKGROUND_PATH" "$APP_ICON_PATH" "$DEFAULT_DMG_BACKGROUND_BASE"
 else
   "$ROOT_DIR/scripts/render-macos-dmg-background.sh" "$BACKGROUND_PATH" "$APP_ICON_PATH"
 fi
@@ -407,6 +453,12 @@ mkdir -p "$DMG_MOUNT_POINT"
 hdiutil attach "$RW_DMG_PATH" -mountpoint "$DMG_MOUNT_POINT" -nobrowse -owners on >/dev/null
 ditto "$DMG_STAGING/${APP_NAME}.app" "$DMG_MOUNT_POINT/${APP_NAME}.app"
 ln -s /Applications "$DMG_MOUNT_POINT/Applications"
+mkdir -p "$DMG_MOUNT_POINT/.background"
+cp "$BACKGROUND_PATH" "$DMG_MOUNT_POINT/.background/background.png"
+SetFile -a V "$DMG_MOUNT_POINT/.background"
+echo "Writing DMG Finder layout metadata..."
+DMG_DSSTORE_PYTHON=$(find_dmg_dsstore_python)
+"$DMG_DSSTORE_PYTHON" "$ROOT_DIR/scripts/write-dmg-ds-store.py" "$DMG_MOUNT_POINT" --app-name "$APP_NAME"
 sync
 hdiutil detach "$DMG_MOUNT_POINT" >/dev/null
 DMG_MOUNT_POINT=""
