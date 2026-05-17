@@ -30,8 +30,8 @@ struct SettingsView: View {
         IOSTestingMode.current.isScreenshot
     }
 
-    private static let privacyPolicyURL = URL(string: "https://waiwai.is/say/privacy")!
-    private static let termsOfServiceURL = URL(string: "https://waiwai.is/say/terms")!
+    private static let privacyPolicyURL = URL(string: "https://wai.computer/privacy")!
+    private static let termsOfServiceURL = URL(string: "https://wai.computer/terms")!
 
     private var appVersionDisplay: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String

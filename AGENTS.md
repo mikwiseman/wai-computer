@@ -17,10 +17,10 @@ Keep aligned in env: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wa
 
 ## Deploy
 
-- CI deploys on push to `main` when `backend/**`, `web/**`, `shared/**`, `ios/**`, `macos/**`, `android/**`, `scripts/**`, `.github/workflows/deploy.yml`, or `.dockerignore` change.
-- Manual: `VPS_USER=<release-user> ./scripts/deploy-api.sh`
-- Deploy builds `api`, `web`, `celery-worker`, starts `caddy`, checks health for all three.
-- Verify GitHub Actions `Deploy` workflow is green after every push.
+- GitHub Actions are not used for production deploys. Do not add push-triggered Actions deploys back unless explicitly asked.
+- Production deploy: `VPS_USER=<release-user> ./scripts/deploy-server.sh`
+- Deploy syncs source to `<remote-root>`; the VPS builds `api`, `web`, `celery-worker`, starts `caddy`, and checks health for all four services.
+- Runtime env stays only on the server at `<remote-env-file>`; never rebuild it from GitHub secrets.
 
 ## Local Dev
 
@@ -75,30 +75,27 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
 | Trigger                                        | Channel  |
 |------------------------------------------------|----------|
-| Push to `main` (paths in `macos/`, `shared/WaiComputerKit/`, release scripts) | **stable** |
-| Push to `dev`  (same paths)                    | **beta** |
-| Tag push `waicomputer-macos-v*`                     | **stable** |
-| `gh workflow run "macOS Direct Release"`       | choose `stable` or `beta` via input |
+| `scripts/release-macos.sh stable`              | **stable** |
+| `scripts/release-macos.sh beta`                | **beta** |
 
-Day-to-day flow: do work on a feature branch → merge into `dev` (auto-publishes a beta the opt-in users will install) → after it bakes, merge `dev` into `main` (auto-publishes the stable build).
-
-If `dev` does not exist locally yet, create it once: `git checkout -b dev && git push -u origin dev`.
+Day-to-day flow: do work on a feature branch → merge to the desired branch → run the explicit local/server deploy or release command. Pushes do not auto-publish.
 
 ### Release flow (typical)
 
 1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
 2. `cd macos/WaiComputer && xcodegen generate` so `WaiComputer.xcodeproj/project.pbxproj` picks up the new build number.
-3. Commit + push to `dev` (beta) or `main` (stable). CI builds, signs, notarizes, and publishes automatically.
-4. Or skip the branch route and run `scripts/release-macos.sh stable|beta` to dispatch the workflow manually from any branch.
+3. Commit the version bump.
+4. Run `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle, and notarization credentials configured.
 5. After ~10-15 min, verify `https://wai.computer/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta).
 
 ### Appcast merge invariant
 
 `scripts/build-macos-dmg.sh` writes a single-item local appcast. `scripts/publish-macos-dmg.sh` then runs `scripts/merge-macos-appcast.py` to fetch the live remote appcast, dedupe by `(sparkle:version, sparkle:channel)`, cap at 10 items per channel, and upload the merged file. Never bypass the merge — overwriting the remote with a single-item file would erase the other channel's history. Stable and beta artifacts for the same build must have distinct enclosure URLs because their DMGs/signatures can differ; the merge script rejects reused URLs with conflicting `length` / `sparkle:edSignature` metadata.
 
-### Local fallback (CI unavailable)
+### macOS release constraints
 
-- `MACOS_RELEASE_STRICT=1 RELEASE_CHANNEL=stable scripts/build-macos-dmg.sh` then `VPS_USER=<release-user> scripts/publish-macos-dmg.sh`.
+- Hetzner production is Linux and cannot run `xcodebuild`; signed iOS/macOS artifacts require a Mac build host.
+- `scripts/release-macos.sh` builds locally on the Mac and publishes the DMG/appcast to the VPS.
 - `scripts/make-dmg.sh` is local smoke-only (unsigned, not notarized) and intentionally guarded. Never use it for release artifacts.
 - `MACOS_REMOTE_APPCAST_URL` env can override the merge script's source URL for staging or dry runs.
 

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Rotate the production ElevenLabs API key in both GitHub Actions secrets and the
-# root-owned runtime env file on the VPS without echoing the key.
+# Rotate the production ElevenLabs API key in the root-owned runtime env file on
+# the VPS without echoing the key.
 
 set -euo pipefail
 
-REPO="${REPO:-WaiWai-is/wai-computer}"
 VPS_HOST="${VPS_HOST:-<release-host>}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
@@ -27,8 +26,6 @@ if [[ -z "${ELEVENLABS_API_KEY}" ]]; then
   echo "ERROR: key cannot be empty" >&2
   exit 1
 fi
-
-gh secret set ELEVENLABS_API_KEY -R "${REPO}" < <(printf '%s' "${ELEVENLABS_API_KEY}")
 
 export ELEVENLABS_API_KEY
 if ! ssh \
@@ -82,4 +79,4 @@ content = "\n".join(lines).rstrip("\n") + "\n"
 print(content, end="")
 PY
 
-echo "Rotated ELEVENLABS_API_KEY in ${REPO} and ${VPS_HOST}:${REMOTE_ENV_FILE}"
+echo "Rotated ELEVENLABS_API_KEY in ${VPS_HOST}:${REMOTE_ENV_FILE}"
