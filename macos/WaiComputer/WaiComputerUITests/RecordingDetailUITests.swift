@@ -29,9 +29,7 @@ final class RecordingDetailUITests: XCTestCase {
         _ = waitForElement(liveView, in: app, timeout: 5)
 
         // Stop recording
-        let stopButton = app.descendants(matching: .any)
-            .matching(identifier: "stop-recording-button")
-            .firstMatch
+        let stopButton = app.buttons.matching(identifier: "stop-recording-button").firstMatch
         _ = waitForElement(stopButton, in: app, timeout: 5)
         app.activate()
         stopButton.tap()

@@ -102,33 +102,12 @@ struct LiveRecordingView: View {
             HStack {
                 Spacer()
 
-                Button {
-                    Task {
-                        await appState.stopRecording()
-                    }
-                } label: {
-                    HStack(spacing: Spacing.sm) {
-                        if recordingVM.canStopRecording {
-                            Image(systemName: "stop.fill")
-                            Text("Stop Recording")
-                        } else {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(recordingVM.statusText)
-                        }
-                    }
-                    .font(Typography.headingSmall)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, Spacing.xl)
-                    .padding(.vertical, Spacing.md)
-                    .background(recordingVM.canStopRecording ? Palette.recording : Palette.border)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-                .disabled(!recordingVM.canStopRecording)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText)
-                .accessibilityIdentifier("stop-recording-button")
+                StopRecordingButton(
+                    isEnabled: recordingVM.canStopRecording,
+                    title: recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText,
+                    action: stopRecording
+                )
+                .frame(width: 168, height: 34)
 
                 Spacer()
             }
@@ -195,6 +174,12 @@ struct LiveRecordingView: View {
         .padding(.horizontal, Spacing.xxl)
         .padding(.vertical, Spacing.xl)
     }
+
+    private func stopRecording() {
+        Task {
+            await appState.stopRecording()
+        }
+    }
 }
 
 struct PulseModifier: ViewModifier {
@@ -205,5 +190,50 @@ struct PulseModifier: ViewModifier {
             .opacity(isPulsing ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear { isPulsing = true }
+    }
+}
+
+private struct StopRecordingButton: NSViewRepresentable {
+    let isEnabled: Bool
+    let title: String
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: title, target: context.coordinator, action: #selector(Coordinator.stopButtonPressed(_:)))
+        button.bezelStyle = NSButton.BezelStyle.rounded
+        button.controlSize = NSControl.ControlSize.large
+        button.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        button.imagePosition = NSControl.ImagePosition.imageLeading
+        button.setAccessibilityIdentifier("stop-recording-button")
+        button.setAccessibilityLabel(title)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.stopButtonPressed(_:))
+        button.title = title
+        button.isEnabled = isEnabled
+        button.contentTintColor = isEnabled ? .systemRed : .secondaryLabelColor
+        button.image = isEnabled ? NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil) : nil
+        button.setAccessibilityIdentifier("stop-recording-button")
+        button.setAccessibilityLabel(title)
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+        }
+
+        @objc func stopButtonPressed(_ sender: NSButton) {
+            action()
+        }
     }
 }
