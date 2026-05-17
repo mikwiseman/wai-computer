@@ -279,8 +279,9 @@ test.describe("Auth flow", () => {
     const iosLink = page.getByTestId("download-ios");
     await expect(iosLink).toHaveAttribute(
       "href",
-      "https://apps.apple.com/app/waicomputer/id6761768729",
+      "https://testflight.apple.com/join/rtnJQzwk",
     );
+    await expect(iosLink).toContainText("TestFlight");
 
     await expect(page.getByRole("link", { name: /sign in/i })).toHaveAttribute(
       "href",
