@@ -6,6 +6,7 @@ enum MacUITestScenario: String {
     case recordingFlow = "recording_flow"
     case mainView = "main_view"
     case authFlow = "auth_flow"
+    case onboardingFlow = "onboarding_flow"
 }
 #endif
 
@@ -53,6 +54,16 @@ enum MacTestingMode: Equatable {
     var isAuthFlow: Bool {
         #if DEBUG
         if case .uiTest(.authFlow) = self {
+            return true
+        }
+        #endif
+
+        return false
+    }
+
+    var isOnboardingFlow: Bool {
+        #if DEBUG
+        if case .uiTest(.onboardingFlow) = self {
             return true
         }
         #endif

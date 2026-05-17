@@ -139,7 +139,7 @@ final class SettingsUITests: XCTestCase {
     }
 
     @MainActor
-    func testSignOutClearsLocalStateAndReturnsToOnboarding() throws {
+    func testSignOutClearsLocalStateAndReturnsToAuth() throws {
         let app = launchToSettings()
 
         let signOutButton = app.buttons.matching(identifier: "settings-sign-out-button").firstMatch
@@ -150,8 +150,8 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(waitForElement(confirmButton, in: app, timeout: 3))
         confirmButton.tap()
 
-        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
-        XCTAssertFalse(app.textFields["Email"].exists, "Sign out should clear onboarding/auth state before returning to the app")
+        XCTAssertTrue(waitForElement(app.textFields["Email"], in: app, timeout: 8))
+        XCTAssertFalse(app.staticTexts["Welcome to WaiComputer"].exists, "Sign out should require auth before returning to onboarding")
     }
 
     @MainActor

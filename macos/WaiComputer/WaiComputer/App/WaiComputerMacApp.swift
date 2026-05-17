@@ -553,6 +553,9 @@ class MacAppState: ObservableObject {
         let env = ProcessInfo.processInfo.environment
         if env["WAI_FORCE_ONBOARDING"] == "1" {
             UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
+            if !Self.hasExplicitOnboardingCurrentPageArgument {
+                UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+            }
             hasCompletedOnboarding = false
         } else if env["WAI_SKIP_ONBOARDING"] == "1" {
             UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
@@ -572,6 +575,15 @@ class MacAppState: ObservableObject {
         if testingMode.isAuthFlow {
             isCheckingAuth = false
             hasCompletedOnboarding = true
+            return
+        }
+        if testingMode.isOnboardingFlow {
+            currentUser = MacUITestFixtures.user
+            isAuthenticated = true
+            isCheckingAuth = false
+            dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
+                recordingViewModel?.phase == .idle
+            }
             return
         }
         #endif
@@ -606,11 +618,14 @@ class MacAppState: ObservableObject {
             }
         }
 
-        if hasCompletedOnboarding {
-            beginStoredSessionRestoreIfNeeded()
-        } else {
-            isCheckingAuth = false
-        }
+        // Auth/session restoration must happen before onboarding. The final
+        // onboarding sandbox performs real dictation, so showing it before the
+        // API client configures DictationManager creates a dead hotkey.
+        beginStoredSessionRestoreIfNeeded()
+    }
+
+    private static var hasExplicitOnboardingCurrentPageArgument: Bool {
+        ProcessInfo.processInfo.arguments.contains("-\(onboardingCurrentPageKey)")
     }
 
     /// Mark the current welcome and permission tour as seen.
@@ -633,8 +648,13 @@ class MacAppState: ObservableObject {
         hasAttemptedStoredSessionRestore = true
         isCheckingAuth = true
 
-        // Restore tokens only after onboarding. This avoids a first-launch
-        // Keychain prompt and prevents old installs from silently skipping the tour.
+        if ProcessInfo.processInfo.environment["WAI_DISABLE_STORED_SESSION_RESTORE"] == "1" {
+            isCheckingAuth = false
+            return
+        }
+
+        // Restore tokens before onboarding so authenticated users can complete
+        // the dictation sandbox with a configured API client.
         let envAccess = ProcessInfo.processInfo.environment["WAICOMPUTER_ACCESS_TOKEN"]
         let envRefresh = ProcessInfo.processInfo.environment["WAICOMPUTER_REFRESH_TOKEN"]
 

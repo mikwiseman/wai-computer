@@ -47,4 +47,17 @@ final class AuthFlowUITests: XCTestCase {
         XCTAssertTrue(submitButton.waitForExistence(timeout: 3), "Submit button should exist")
         XCTAssertFalse(submitButton.isEnabled, "Submit button should be disabled when form is empty")
     }
+
+    @MainActor
+    func testUnauthenticatedLaunchShowsAuthBeforeOnboarding() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["WAI_DISABLE_STORED_SESSION_RESTORE"] = "1"
+        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.launch()
+        app.activate()
+
+        XCTAssertTrue(app.textFields["Email"].waitForExistence(timeout: 8), "Unauthenticated users must sign in before the dictation onboarding tour")
+        XCTAssertFalse(app.staticTexts["Try it now"].exists, "The dictation sandbox requires an authenticated, configured DictationManager")
+    }
 }
