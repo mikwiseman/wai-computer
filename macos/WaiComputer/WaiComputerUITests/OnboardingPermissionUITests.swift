@@ -9,18 +9,14 @@ final class OnboardingPermissionUITests: XCTestCase {
     func testOnboardingPermissionSlideShowsGrantControlsForBothDictationPermissions() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
+        app.launchArguments = [
+            "-nativeOnboardingV3CurrentPage", "2",
+        ]
         app.launch()
         app.activate()
-
-        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
-
-        let continueButton = app.buttons.matching(identifier: "onboarding-continue-button").firstMatch
-        for _ in 0..<4 {
-            XCTAssertTrue(waitForElement(continueButton, in: app, timeout: 3))
-            continueButton.tap()
-        }
 
         let primaryActionButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
         XCTAssertTrue(waitForElement(primaryActionButton, in: app, timeout: 5))
@@ -42,15 +38,17 @@ final class OnboardingPermissionUITests: XCTestCase {
     func testLegacyCompletedOnboardingFlagDoesNotSkipUpdatedPermissionOnboarding() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
         app.launchArguments = [
+            "-nativeOnboardingV3CurrentPage", "0",
             "-nativeOnboardingV2Completed", "YES",
             "-nativeOnboardingV3Completed", "NO",
         ]
         app.launch()
         app.activate()
 
-        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
+        XCTAssertTrue(waitForElement(app.staticTexts["Welcome to WaiComputer"], in: app, timeout: 8))
         XCTAssertFalse(app.textFields["Email"].exists, "Legacy onboarding completion must not route first to auth")
     }
 
@@ -58,10 +56,11 @@ final class OnboardingPermissionUITests: XCTestCase {
     func testOnboardingResumesPersistedPermissionStepAfterRestart() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
         app.launchArguments = [
-            "-nativeOnboardingV3CurrentPage", "4",
+            "-nativeOnboardingV3CurrentPage", "2",
             "-nativeOnboardingV3Completed", "NO",
         ]
         app.launch()
@@ -70,25 +69,21 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertTrue(waitForElement(app.staticTexts["Give WaiComputer permissions"], in: app, timeout: 8))
         XCTAssertTrue(waitForElement(app.staticTexts["Accessibility"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-accessibility-restart-required").firstMatch, in: app, timeout: 3))
-        XCTAssertFalse(app.staticTexts["Your AI second brain for voice."].exists)
+        XCTAssertFalse(app.staticTexts["Welcome to WaiComputer"].exists)
     }
 
     @MainActor
     func testOnboardingShowsRestartRequiredForAccessibilityPermissionRefresh() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
+        app.launchArguments = [
+            "-nativeOnboardingV3CurrentPage", "2",
+        ]
         app.launch()
         app.activate()
-
-        XCTAssertTrue(waitForElement(app.staticTexts["Your AI second brain for voice."], in: app, timeout: 8))
-
-        let continueButton = app.buttons.matching(identifier: "onboarding-continue-button").firstMatch
-        for _ in 0..<4 {
-            XCTAssertTrue(waitForElement(continueButton, in: app, timeout: 3))
-            continueButton.tap()
-        }
 
         XCTAssertTrue(waitForElement(app.descendants(matching: .any).matching(identifier: "onboarding-permission-accessibility-restart-required").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-restart").firstMatch, in: app, timeout: 3))

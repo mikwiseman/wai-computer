@@ -10,15 +10,15 @@ struct MacContentView: View {
             if appState.isCheckingAuth {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !appState.isAuthenticated {
+                MacAuthView()
             } else if !appState.hasCompletedOnboarding {
                 OnboardingView()
-            } else if appState.isAuthenticated {
+            } else {
                 MacMainView()
                     .overlay(alignment: .bottom) {
                         permissionBannerLayer
                     }
-            } else {
-                MacAuthView()
             }
         }
         .onAppear { appState.refreshPermissionStatus(rearmDismissed: true) }
