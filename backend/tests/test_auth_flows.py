@@ -19,13 +19,13 @@ def test_auth_cookie_secure_defaults_follow_frontend_url_scheme():
     http_settings = Settings(jwt_secret="test-secret", frontend_url="http://localhost:3000")
     https_settings = Settings(
         jwt_secret="test-secret",
-        frontend_url="https://say.waiwai.is",
-        auth_cookie_domain="say.waiwai.is",
+        frontend_url="https://wai.computer",
+        auth_cookie_domain="wai.computer",
     )
     app_subdomain_settings = Settings(
         jwt_secret="test-secret",
-        frontend_url="https://panel.say.waiwai.is",
-        auth_cookie_domain="say.waiwai.is",
+        frontend_url="https://panel.wai.computer",
+        auth_cookie_domain="wai.computer",
     )
     override_settings = Settings(
         jwt_secret="test-secret",
@@ -36,8 +36,8 @@ def test_auth_cookie_secure_defaults_follow_frontend_url_scheme():
     assert http_settings.auth_cookie_secure_resolved is False
     assert https_settings.auth_cookie_secure_resolved is True
     assert http_settings.auth_cookie_domain_resolved is None
-    assert https_settings.auth_cookie_domain_resolved == "say.waiwai.is"
-    assert app_subdomain_settings.auth_cookie_domain_resolved == "say.waiwai.is"
+    assert https_settings.auth_cookie_domain_resolved == "wai.computer"
+    assert app_subdomain_settings.auth_cookie_domain_resolved == "wai.computer"
     assert override_settings.auth_cookie_secure_resolved is True
 
 

@@ -1,1 +1,1 @@
-"""Tests for WaiSay backend."""
+"""Tests for WaiComputer backend."""

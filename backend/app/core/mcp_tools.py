@@ -1,4 +1,4 @@
-"""Read-only WaiSay data access exposed through MCP tools."""
+"""Read-only WaiComputer data access exposed through MCP tools."""
 
 from __future__ import annotations
 

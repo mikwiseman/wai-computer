@@ -1,8 +1,8 @@
 # macOS Direct Distribution
 
-WaiSay's macOS app ships as a Developer ID-signed, notarized DMG with Sparkle auto-update — **a single Direct channel**. The Mac App Store / TestFlight path was retired for macOS (iOS continues to ship via TestFlight).
+WaiComputer's macOS app ships as a Developer ID-signed, notarized DMG with Sparkle auto-update — **a single Direct channel**. The Mac App Store / TestFlight path was retired for macOS (iOS continues to ship via TestFlight).
 
-The single target is `WaiSay` in `macos/WaiSay/project.yml`. It uses `WaiSay/Info.plist`, `WaiSay/WaiSay.entitlements`, App Sandbox is OFF, Hardened Runtime is ON, Sparkle is always built in, and the appcast lives at `https://say.waiwai.is/releases/macos/appcast.xml`.
+The single target is `WaiComputer` in `macos/WaiComputer/project.yml`. It uses `WaiComputer/Info.plist`, `WaiComputer/WaiComputer.entitlements`, App Sandbox is OFF, Hardened Runtime is ON, Sparkle is always built in, and the appcast lives at `https://wai.computer/releases/macos/appcast.xml`.
 
 ## Best-practice baseline
 
@@ -17,11 +17,11 @@ The single target is `WaiSay` in `macos/WaiSay/project.yml`. It uses `WaiSay/Inf
 
 ## Release flow checklist
 
-1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiSay/project.yml` (monotonic — Sparkle requires it).
-2. `cd macos/WaiSay && xcodegen generate` to refresh `WaiSay.xcodeproj/project.pbxproj`.
+1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
+2. `cd macos/WaiComputer && xcodegen generate` to refresh `WaiComputer.xcodeproj/project.pbxproj`.
 3. Commit + push.
 4. Trigger CI: `gh workflow run "macOS Direct Release" --ref main -f publish_web=true`.
-5. After ~10-15 min, `curl https://say.waiwai.is/releases/macos/appcast.xml` and verify the new `sparkle:version`.
+5. After ~10-15 min, `curl https://wai.computer/releases/macos/appcast.xml` and verify the new `sparkle:version`.
 
 ## Script
 
@@ -43,7 +43,7 @@ MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh
 
 The script:
 
-1. archives the macOS app with the `WaiSay` scheme in `Release`
+1. archives the macOS app with the `WaiComputer` scheme in `Release`
 2. signs it with the configured `Developer ID Application` identity
 3. enables the hardened runtime for the archive build
 4. re-signs Sparkle nested helper code for Developer ID distribution
@@ -120,16 +120,16 @@ export MACOS_REQUIRE_SPARKLE_SIGNATURE=1 # fail if the appcast cannot be signed
 Build controls:
 
 ```bash
-export MACOS_SCHEME=WaiSay             # the only macOS scheme
+export MACOS_SCHEME=WaiComputer             # the only macOS scheme
 export MACOS_CONFIGURATION=Release     # default build configuration
 ```
 
 Sparkle controls:
 
 ```bash
-export MACOS_SPARKLE_DOWNLOAD_BASE_URL=https://say.waiwai.is/releases/macos
-export MACOS_SPARKLE_FEED_URL=https://say.waiwai.is/releases/macos/appcast.xml
-export SPARKLE_KEYCHAIN_ACCOUNT=is.waiwai.say.sparkle
+export MACOS_SPARKLE_DOWNLOAD_BASE_URL=https://wai.computer/releases/macos
+export MACOS_SPARKLE_FEED_URL=https://wai.computer/releases/macos/appcast.xml
+export SPARKLE_KEYCHAIN_ACCOUNT=is.waiwai.computer.sparkle
 export SPARKLE_PRIVATE_KEY_FILE=/absolute/path/private-key # or SPARKLE_PRIVATE_KEY in CI
 ```
 
@@ -169,11 +169,11 @@ VPS_USER=<release-user> fastlane mac upload_all
 
 ## GitHub Actions release
 
-The `macOS Direct Release` workflow (`.github/workflows/macos-release.yml`) builds a strict notarized DMG, uploads the artifact, and can publish it to `say.waiwai.is`.
+The `macOS Direct Release` workflow (`.github/workflows/macos-release.yml`) builds a strict notarized DMG, uploads the artifact, and can publish it to `wai.computer`.
 
 **Triggers:**
 - `workflow_dispatch` (manual via `gh workflow run` or the Actions UI)
-- `push` of a tag matching `waisay-macos-v*`
+- `push` of a tag matching `waicomputer-macos-v*`
 
 **Push to `main` does NOT auto-publish a DMG.** The Deploy workflow handles backend / web / Apple build verification on push, but the DMG release is a deliberate, version-bumped action.
 
@@ -196,9 +196,9 @@ Required repository secrets:
 ## User Install Flow
 
 1. Open the DMG.
-2. Drag `WaiSay.app` into `Applications`.
+2. Drag `WaiComputer.app` into `Applications`.
 3. Eject the DMG.
-4. Launch `WaiSay` from `/Applications`.
+4. Launch `WaiComputer` from `/Applications`.
 
 Subsequent updates are delivered automatically by Sparkle from the appcast.
 

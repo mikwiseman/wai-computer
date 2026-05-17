@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WaiSay</string>
+    <string name="app_name">WaiComputer</string>
     <string name="tab_record">Запись</string>
     <string name="tab_library">Библиотека</string>
     <string name="tab_wai">Wai</string>
@@ -93,7 +93,7 @@
     <string name="detail_failed_message">Не удалось обработать эту запись.</string>
     <string name="detail_move_title">Переместить в папку</string>
     <string name="detail_delete_confirm_body">Запись будет удалена из библиотеки.</string>
-    <string name="detail_share_subject">Экспорт WaiSay</string>
+    <string name="detail_share_subject">Экспорт WaiComputer</string>
     <string name="detail_share_error">Пока нечем поделиться.</string>
     <string name="detail_processing_body">Сейчас генерируются расшифровка, саммари и action items.</string>
     <string name="wai_locked_title">Войди, чтобы задавать вопросы по своим записям</string>
@@ -134,12 +134,12 @@
     <string name="settings_delete_account_title">Удалить аккаунт?</string>
     <string name="settings_delete_account_message">Это навсегда удалит твой аккаунт, записи, транскрипты и саммари. Действие нельзя отменить.</string>
     <string name="settings_delete_account_confirm">Удалить</string>
-    <string name="settings_delete_account_footer">Навсегда удаляет аккаунт, записи, транскрипты и саммари из WaiSay. Отменить нельзя.</string>
+    <string name="settings_delete_account_footer">Навсегда удаляет аккаунт, записи, транскрипты и саммари из WaiComputer. Отменить нельзя.</string>
     <string name="settings_delete_account_error">Не удалось удалить аккаунт. Попробуй ещё раз.</string>
     <string name="settings_signed_in_as">Выполнен вход: %1$s</string>
     <string name="settings_save_base_url">Сохранить API URL</string>
     <string name="settings_save_access_token">Сохранить access token</string>
-    <string name="recording_in_progress_notification">Идёт запись — нажми, чтобы вернуться в WaiSay</string>
+    <string name="recording_in_progress_notification">Идёт запись — нажми, чтобы вернуться в WaiComputer</string>
     <string name="recording_notification_channel">Запись</string>
     <string name="detail_transcript">Транскрипт</string>
     <string name="detail_summary">Саммари</string>

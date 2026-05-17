@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const host = "127.0.0.1";
 const port = Number(process.env.E2E_WEB_SERVER_PORT || 3100);
 const localBaseUrl = `http://${host}:${port}`;
-const liveApiUrl = process.env.E2E_API_URL || "https://say.waiwai.is";
+const liveApiUrl = process.env.E2E_API_URL || "https://wai.computer";
 const liveWebUrl = process.env.E2E_WEB_URL || liveApiUrl;
 const isLiveApiRun = process.env.E2E_LIVE_API === "1";
 
@@ -36,7 +36,7 @@ export default defineConfig({
     : {
         command: `pnpm build && pnpm start --hostname ${host} --port ${port}`,
         env: buildWebServerEnv(),
-        name: "waisay-web-e2e",
+        name: "waicomputer-web-e2e",
         url: localBaseUrl,
         reuseExistingServer: false,
         stdout: "ignore",

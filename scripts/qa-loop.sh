@@ -7,7 +7,7 @@
 #
 # Common environment variables:
 #   DURATION_HOURS=8
-#   BASE_URL=https://say.waiwai.is
+#   BASE_URL=https://wai.computer
 #   STRICT_GATE=1
 #   SLEEP_ON_FAIL_SECONDS=180
 #   SLEEP_ON_SUCCESS_SECONDS=30
@@ -18,7 +18,7 @@
 #   NATIVE_CMD="xcodebuild ... && xcodebuild ..."
 #   ARTIFACT_ROOT=artifacts/qa-loop
 #   JWT_SECRET=test-secret
-#   TEST_DATABASE_URL=postgresql+asyncpg://$USER@localhost:5432/waisay_test
+#   TEST_DATABASE_URL=postgresql+asyncpg://$USER@localhost:5432/waicomputer_test
 
 set -uo pipefail
 
@@ -33,14 +33,14 @@ SLEEP_ON_FAIL_SECONDS="${SLEEP_ON_FAIL_SECONDS:-180}"
 SLEEP_ON_SUCCESS_SECONDS="${SLEEP_ON_SUCCESS_SECONDS:-30}"
 STRICT_GATE="${STRICT_GATE:-1}"
 
-BASE_URL="${BASE_URL:-https://say.waiwai.is}"
+BASE_URL="${BASE_URL:-https://wai.computer}"
 DEPLOY_ON_GREEN="${DEPLOY_ON_GREEN:-1}"
 DEPLOY_CMD="${DEPLOY_CMD:-}"
 REQUIRE_DEPLOY_CMD="${REQUIRE_DEPLOY_CMD:-0}"
 NATIVE_REQUIRED="${NATIVE_REQUIRED:-0}"
 NATIVE_CMD="${NATIVE_CMD:-}"
 
-TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waisay_test}"
+TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+asyncpg://${USER}@localhost:5432/waicomputer_test}"
 DATABASE_URL="${DATABASE_URL:-$TEST_DATABASE_URL}"
 JWT_SECRET="${JWT_SECRET:-test-secret}"
 
@@ -107,7 +107,7 @@ run_shared_tests() {
   local logfile="$1"
   run_step "shared_tests" "$logfile" bash -lc "
     set -euo pipefail
-    cd '$ROOT_DIR/shared/WaiSayKit'
+    cd '$ROOT_DIR/shared/WaiComputerKit'
     swift test -q
   "
 }
@@ -141,18 +141,18 @@ run_native_tests() {
     set -euo pipefail
     cd '$ROOT_DIR'
     if command -v xcodebuild >/dev/null 2>&1; then
-      if [[ -d '$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj' ]]; then
+      if [[ -d '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' ]]; then
         xcodebuild \
-          -project '$ROOT_DIR/macos/WaiSay/WaiSay.xcodeproj' \
-          -scheme WaiSay \
+          -project '$ROOT_DIR/macos/WaiComputer/WaiComputer.xcodeproj' \
+          -scheme WaiComputer \
           -destination 'platform=macOS' \
           CODE_SIGNING_ALLOWED=NO \
           build
       fi
-      if [[ -d '$ROOT_DIR/ios/WaiSay/WaiSayiOS.xcodeproj' ]]; then
+      if [[ -d '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' ]]; then
         xcodebuild \
-          -project '$ROOT_DIR/ios/WaiSay/WaiSayiOS.xcodeproj' \
-          -scheme WaiSay \
+          -project '$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj' \
+          -scheme WaiComputer \
           -destination 'generic/platform=iOS Simulator' \
           CODE_SIGNING_ALLOWED=NO \
           build

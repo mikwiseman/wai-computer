@@ -122,7 +122,7 @@ export function SharedRecordingClient({ token }: { token: string }) {
             <div className="brand-block shared-note__brand">
               <div className="brand-mark" aria-hidden="true" />
               <div>
-                <strong>WaiSay</strong>
+                <strong>WaiComputer</strong>
                 <span>Shared note</span>
               </div>
             </div>

@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA="${DERIVED_DATA:-$ROOT_DIR/build/screenshots}"
 RAW_DIR="$ROOT_DIR/build/screenshots/raw"
 APPSTORE_DIR="$ROOT_DIR/fastlane/screenshots/en-US"
-APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/WaiSay.app"
+APP_PATH="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/WaiComputer.app"
 BUNDLE_ID=""
 IPHONE_DEVICE="${IPHONE_DEVICE:-iPhone 17 Pro Max}"
 IPAD_DEVICE="${IPAD_DEVICE:-iPad Pro 13-inch (M5)}"
@@ -38,8 +38,8 @@ PY
 
 build_app() {
   xcodebuild \
-    -project "$ROOT_DIR/ios/WaiSay/WaiSayiOS.xcodeproj" \
-    -scheme WaiSay \
+    -project "$ROOT_DIR/ios/WaiComputer/WaiComputeriOS.xcodeproj" \
+    -scheme WaiComputer \
     -configuration Debug \
     -sdk iphonesimulator \
     -derivedDataPath "$DERIVED_DATA" \
@@ -84,13 +84,13 @@ launch_for_capture() {
   )
 
   if [[ -n "$tab" ]]; then
-    env_vars+=("SIMCTL_CHILD_WAISAY_TAB=$tab")
+    env_vars+=("SIMCTL_CHILD_WAICOMPUTER_TAB=$tab")
   fi
   if [[ -n "$recording_id" ]]; then
-    env_vars+=("SIMCTL_CHILD_WAISAY_RECORDING_ID=$recording_id")
+    env_vars+=("SIMCTL_CHILD_WAICOMPUTER_RECORDING_ID=$recording_id")
   fi
   if [[ -n "$detail_tab" ]]; then
-    env_vars+=("SIMCTL_CHILD_WAISAY_DETAIL_TAB=$detail_tab")
+    env_vars+=("SIMCTL_CHILD_WAICOMPUTER_DETAIL_TAB=$detail_tab")
   fi
 
   xcrun simctl terminate "$udid" "$BUNDLE_ID" >/dev/null 2>&1 || true

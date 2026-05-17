@@ -133,8 +133,8 @@ export function RecordingDetailPanel({
     try {
       const link = await createRecordingShareLink(recording.id);
       const shareData = {
-        title: recording.title ?? "WaiSay note",
-        text: "Shared WaiSay note",
+        title: recording.title ?? "WaiComputer note",
+        text: "Shared WaiComputer note",
         url: link.url,
       };
 

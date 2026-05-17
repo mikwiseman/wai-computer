@@ -1,4 +1,4 @@
-"""WaiSay nightly QA harness — Tier 1.
+"""WaiComputer nightly QA harness — Tier 1.
 
 Generates TTS audio from Inworld, streams it through Inworld STT, computes WER
 and latency vs ground-truth text, writes structured report.
@@ -192,10 +192,10 @@ def load_anthropic_key() -> str | None:
 
     Tier 1.5 is opt-in per scenario; if the key is missing we skip cleanup
     rather than fail the run. Fetch with:
-      ssh <release-user>@<release-host> 'grep ^ANTHROPIC_API_KEY= /etc/waisay/backend.env' \\
-        > ~/.config/waisay/anthropic.env && chmod 600 ~/.config/waisay/anthropic.env
+      ssh <release-user>@<release-host> 'grep ^ANTHROPIC_API_KEY= <remote-env-file>' \\
+        > ~/.config/waicomputer/anthropic.env && chmod 600 ~/.config/waicomputer/anthropic.env
     """
-    candidate = Path.home() / ".config" / "waisay" / "anthropic.env"
+    candidate = Path.home() / ".config" / "waicomputer" / "anthropic.env"
     if not candidate.exists():
         return None
     raw = candidate.read_text().strip()
@@ -246,12 +246,12 @@ def clean_with_anthropic(api_key: str, text: str) -> tuple[str, float]:
 
 
 def load_inworld_key() -> str:
-    candidate = Path.home() / ".config" / "waisay" / "inworld.env"
+    candidate = Path.home() / ".config" / "waicomputer" / "inworld.env"
     if not candidate.exists():
         raise RuntimeError(
             f"INWORLD_API_KEY missing. Expected at {candidate} (mode 0600).\n"
-            "Fetch with: ssh <release-user>@<release-host> 'grep ^INWORLD_API_KEY= /etc/waisay/backend.env' "
-            "> ~/.config/waisay/inworld.env && chmod 600 ~/.config/waisay/inworld.env"
+            "Fetch with: ssh <release-user>@<release-host> 'grep ^INWORLD_API_KEY= <remote-env-file>' "
+            "> ~/.config/waicomputer/inworld.env && chmod 600 ~/.config/waicomputer/inworld.env"
         )
     raw = candidate.read_text().strip()
     if "=" in raw:
@@ -323,7 +323,7 @@ async def stream_stt(api_key: str, wav_path: Path, language: str) -> tuple[str, 
     Returns (final_transcript, last_final_after_audio_ms, first_interim_after_start_ms,
     first_final_after_start_ms).
 
-    Protocol from shared/WaiSayKit/Sources/WaiSayKit/Network/InworldProviderSession.swift:
+    Protocol from shared/WaiComputerKit/Sources/WaiComputerKit/Network/InworldProviderSession.swift:
       send: transcribe_config -> N x audio_chunk -> end_turn -> close_stream
       recv: {transcription:{text, is_final, language}}, {usage:{...}}, {error:{...}}
     """
@@ -599,7 +599,7 @@ def render_report(results: list[ScenarioResult], metrics: dict[str, Any], starte
         return f"{v:.0f}{suffix}" if v is not None else "n/a"
 
     lines = [
-        "# WaiSay Nightly QA Report",
+        "# WaiComputer Nightly QA Report",
         "",
         f"- Started: {started_at}",
         f"- Total scenarios: {metrics['total']}",

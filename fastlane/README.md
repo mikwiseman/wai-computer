@@ -63,7 +63,7 @@ Build and upload macOS App Store build to TestFlight
 [bundle exec] fastlane mac publish_dmg
 ```
 
-Build strict notarized DMG and publish it to say.waiwai.is
+Build strict notarized DMG and publish it to wai.computer
 
 ### mac upload_all
 

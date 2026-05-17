@@ -81,7 +81,7 @@ def test_sanitize_sentry_value_handles_bytes_lists_and_urls():
     payload = {
         "attachment": b"abc",
         "items": ["alice@example.com", "eyJhbGciOiJIUzI1NiJ9.payload.sig"],
-        "url": "https://say.waiwai.is/api/search?q=secret",
+        "url": "https://wai.computer/api/search?q=secret",
     }
 
     sanitized = observability.sanitize_sentry_value(payload, key="payload")
@@ -89,13 +89,13 @@ def test_sanitize_sentry_value_handles_bytes_lists_and_urls():
     assert sanitized["attachment"] == "<bytes:3>"
     assert sanitized["items"][0].startswith("[redacted-email:")
     assert sanitized["items"][1] == "[redacted-token]"
-    assert sanitized["url"] == "https://say.waiwai.is/api/search"
+    assert sanitized["url"] == "https://wai.computer/api/search"
 
 
 def test_before_send_redacts_request_user_and_breadcrumb_data():
     event = {
         "request": {
-            "url": "https://say.waiwai.is/api/search?q=alice@example.com",
+            "url": "https://wai.computer/api/search?q=alice@example.com",
             "headers": {
                 "Authorization": "Bearer abc",
                 "Cookie": "session=123",
@@ -120,7 +120,7 @@ def test_before_send_redacts_request_user_and_breadcrumb_data():
 
     sanitized = observability._before_send(event, {})
 
-    assert sanitized["request"]["url"] == "https://say.waiwai.is/api/search"
+    assert sanitized["request"]["url"] == "https://wai.computer/api/search"
     assert sanitized["request"]["headers"]["Authorization"] == "[redacted-secret]"
     assert sanitized["request"]["headers"]["Cookie"] == "[redacted-secret]"
     assert sanitized["request"]["data"]["email"].startswith("[redacted-email:")
@@ -156,14 +156,14 @@ def test_initialize_sentry_registers_sanitizers(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(observability.sentry_sdk, "init", fake_init)
     monkeypatch.setattr(observability, "_sentry_initialized", False)
-    monkeypatch.setattr(observability, "get_release_version", lambda: "waisay@test")
+    monkeypatch.setattr(observability, "get_release_version", lambda: "waicomputer@test")
 
     observability.initialize_sentry(dsn="https://example", debug=False, include_fastapi=False)
 
     assert captured["send_default_pii"] is False
     assert captured["before_send"] is observability._before_send
     assert captured["before_breadcrumb"] is observability._before_breadcrumb
-    assert captured["release"] == "waisay@test"
+    assert captured["release"] == "waicomputer@test"
 
 
 def test_initialize_sentry_includes_optional_integrations(monkeypatch: pytest.MonkeyPatch):
@@ -184,7 +184,7 @@ def test_initialize_sentry_includes_optional_integrations(monkeypatch: pytest.Mo
     monkeypatch.setattr(
         observability,
         "get_release_version",
-        lambda: "waisay@test",
+        lambda: "waicomputer@test",
     )
     monkeypatch.setitem(
         __import__("sys").modules,
@@ -342,7 +342,7 @@ def test_get_release_version_handles_git_results(monkeypatch: pytest.MonkeyPatch
         "run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="abc123\n"),
     )
-    assert observability.get_release_version() == "waisay@abc123"
+    assert observability.get_release_version() == "waicomputer@abc123"
 
     monkeypatch.setattr(
         observability.subprocess,

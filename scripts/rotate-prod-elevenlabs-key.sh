@@ -4,11 +4,11 @@
 
 set -euo pipefail
 
-REPO="${REPO:-WaiWai-is/wai-say}"
+REPO="${REPO:-WaiWai-is/wai-computer}"
 VPS_HOST="${VPS_HOST:-<release-host>}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
-REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-/etc/waisay/backend.env}"
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-<remote-env-file>}"
 
 if [[ -z "${VPS_USER}" ]]; then
   echo "ERROR: VPS_USER is required" >&2

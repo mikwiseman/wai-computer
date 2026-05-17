@@ -150,7 +150,7 @@ describe("apiFetch", () => {
       new Response(
         JSON.stringify({
           detail:
-            "Connection lost after retrying. /Users/test/Library/Application Support/WaiSay/PendingTranscripts/example Failed to reconnect after 10 attempts.",
+            "Connection lost after retrying. /Users/test/Library/Application Support/WaiComputer/PendingTranscripts/example Failed to reconnect after 10 attempts.",
         }),
         {
           status: 500,
@@ -378,7 +378,7 @@ describe("apiFetch", () => {
     // Ensure not on localhost (default jsdom hostname is "localhost", override it)
     const originalHostname = window.location.hostname;
     Object.defineProperty(window, "location", {
-      value: { ...window.location, hostname: "say.waiwai.is" },
+      value: { ...window.location, hostname: "wai.computer" },
       writable: true,
     });
 
@@ -512,7 +512,7 @@ describe("syncLocalhostAuthCookie", () => {
   it("does nothing when not on localhost", () => {
     const originalHostname = window.location.hostname;
     Object.defineProperty(window, "location", {
-      value: { ...window.location, hostname: "say.waiwai.is" },
+      value: { ...window.location, hostname: "wai.computer" },
       writable: true,
     });
 

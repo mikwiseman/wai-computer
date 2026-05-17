@@ -8,7 +8,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "WaiSay — AI second brain for voice",
+  title: "WaiComputer — AI second brain for voice",
   description:
     "Record, transcribe, search, and ask anything across everything you've ever said.",
 };

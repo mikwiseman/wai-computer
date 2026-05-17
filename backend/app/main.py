@@ -166,7 +166,7 @@ app.include_router(realtime_voice.router, prefix="/api")
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "WaiSay API", "version": "0.1.0"}
+    return {"message": "WaiComputer API", "version": "0.1.0"}
 
 
 @app.get("/health")

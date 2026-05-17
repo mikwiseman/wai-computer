@@ -15,7 +15,7 @@ def strip_quarantine_attributes(*paths)
   end
 end
 
-def waisay_app_store_connect_api_key
+def waicomputer_app_store_connect_api_key
   config_path = File.expand_path("$APPSTORECONNECT_CONFIG")
   config = JSON.parse(File.read(config_path))
 
@@ -30,11 +30,11 @@ end
 platform :ios do
   desc "Upload iOS metadata and screenshots to App Store Connect"
   lane :upload_metadata do
-    api_key = waisay_app_store_connect_api_key
+    api_key = waicomputer_app_store_connect_api_key
 
     deliver(
       api_key: api_key,
-      app_identifier: "is.waiwai.say",
+      app_identifier: "is.waiwai.computer",
       skip_binary_upload: true,
       skip_app_version_update: true,
       force: true,
@@ -48,11 +48,11 @@ platform :ios do
 
   desc "Submit latest uploaded iOS build for App Review"
   lane :submit_for_review do |options|
-    api_key = waisay_app_store_connect_api_key
+    api_key = waicomputer_app_store_connect_api_key
 
     deliver(
       api_key: api_key,
-      app_identifier: "is.waiwai.say",
+      app_identifier: "is.waiwai.computer",
       build_number: options[:build_number],
       app_version: options[:app_version] || "1.0.3",
       skip_binary_upload: true,
@@ -74,7 +74,7 @@ platform :android do
   desc "Upload Android AAB to Google Play internal track"
   lane :upload_internal do
     upload_to_play_store(
-      package_name: "is.waiwai.say",
+      package_name: "is.waiwai.computer",
       track: "internal",
       aab: "android/app/build/outputs/bundle/release/app-release.aab",
       json_key: File.expand_path("$GOOGLE_PLAY_JSON_KEY"),
@@ -93,17 +93,17 @@ platform :mac do
   # Mac App Store / TestFlight was retired; iOS still uses TestFlight via the
   # ios platform above.
 
-  desc "Build strict notarized DMG and publish it to say.waiwai.is"
+  desc "Build strict notarized DMG and publish it to wai.computer"
   lane :publish_dmg do
     strip_quarantine_attributes(
-      File.join(repo_root, "macos/WaiSay/WaiSay/AppIcon.icon"),
-      File.join(repo_root, "macos/WaiSay/WaiSay/Assets.xcassets")
+      File.join(repo_root, "macos/WaiComputer/WaiComputer/AppIcon.icon"),
+      File.join(repo_root, "macos/WaiComputer/WaiComputer/Assets.xcassets")
     )
     sh("MACOS_RELEASE_STRICT=1 #{File.join(repo_root, "scripts/build-macos-dmg.sh")}")
     sh(File.join(repo_root, "scripts/publish-macos-dmg.sh"))
   end
 
-  desc "Build strict notarized DMG and publish it to say.waiwai.is (alias for publish_dmg)"
+  desc "Build strict notarized DMG and publish it to wai.computer (alias for publish_dmg)"
   lane :upload_all do
     publish_dmg
   end

@@ -64,7 +64,7 @@ export function AuthForm({ mode, onSuccess }: AuthFormProps) {
     <section className="auth-card">
       <div className="auth-card__brand">
         <div className="brand-mark" aria-hidden="true" />
-        <span>WaiSay</span>
+        <span>WaiComputer</span>
       </div>
 
       <header className="auth-card__header">

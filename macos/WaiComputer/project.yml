@@ -1,0 +1,84 @@
+name: WaiComputer
+options:
+  bundleIdPrefix: is.waiwai
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+packages:
+  WaiComputerKit:
+    path: ../../shared/WaiComputerKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
+
+targets:
+  WaiComputer:
+    type: application
+    platform: macOS
+    sources:
+      - path: WaiComputer
+        excludes:
+          - "*.entitlements"
+          - "*.requirements"
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: WaiComputer
+        PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer
+        DEVELOPMENT_TEAM: <apple-team-id>
+        MARKETING_VERSION: "1.0.12"
+        CURRENT_PROJECT_VERSION: "94"
+        INFOPLIST_FILE: WaiComputer/Info.plist
+        CODE_SIGN_ENTITLEMENTS: WaiComputer/WaiComputer.entitlements
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.dev
+    dependencies:
+      - package: WaiComputerKit
+      - package: Sparkle
+        product: Sparkle
+    scheme:
+      testTargets:
+        - WaiComputerTests
+        - WaiComputerUITests
+
+  WaiComputerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: WaiComputerTests
+      - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
+      - path: WaiComputer/Features/Updates/BetaChannelStore.swift
+      - path: WaiComputer/Features/Settings/DeveloperSettingsStore.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.tests
+        DEVELOPMENT_TEAM: <apple-team-id>
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+      - package: WaiComputerKit
+
+  WaiComputerUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: WaiComputerUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.uitests
+        DEVELOPMENT_TEAM: <apple-team-id>
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: WaiComputer
+    dependencies:
+      - target: WaiComputer

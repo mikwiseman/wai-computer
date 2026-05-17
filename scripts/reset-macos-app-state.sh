@@ -2,12 +2,12 @@
 set -euo pipefail
 
 APP_IDS=(
-  "is.waiwai.say"
-  "is.waiwai.say.dev"
+  "is.waiwai.computer"
+  "is.waiwai.computer.dev"
 )
 
 APP_NAMES=(
-  "WaiSay"
+  "WaiComputer"
 )
 
 remove_path() {
@@ -18,7 +18,7 @@ remove_path() {
   fi
 }
 
-pkill -x WaiSay || true
+pkill -x WaiComputer || true
 killall cfprefsd >/dev/null 2>&1 || true
 
 for app_id in "${APP_IDS[@]}"; do
@@ -37,4 +37,4 @@ done
 
 killall cfprefsd >/dev/null 2>&1 || true
 
-echo "macOS WaiSay local state reset complete."
+echo "macOS WaiComputer local state reset complete."

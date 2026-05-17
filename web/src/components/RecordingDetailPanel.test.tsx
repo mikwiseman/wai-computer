@@ -279,7 +279,7 @@ describe("RecordingDetailPanel", () => {
     mockCreateRecordingShareLink.mockResolvedValue({
       recording_id: "rec-1",
       token: "share-token",
-      url: "https://say.waiwai.is/share/share-token",
+      url: "https://wai.computer/share/share-token",
       created_at: "2026-05-04T12:00:00Z",
     });
 
@@ -293,7 +293,7 @@ describe("RecordingDetailPanel", () => {
     });
     await waitFor(() => {
       expect(clipboardWriteText).toHaveBeenCalledWith(
-        "https://say.waiwai.is/share/share-token",
+        "https://wai.computer/share/share-token",
       );
     });
     await waitFor(() => {

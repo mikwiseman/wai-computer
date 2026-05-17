@@ -409,7 +409,7 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
 
     async def _create(**kwargs: object) -> _FakeMessage:
         captured.update(kwargs)
-        return _FakeMessage("WaiSay is great with Anthropic.")
+        return _FakeMessage("WaiComputer is great with Anthropic.")
 
     mock_client = SimpleNamespace(messages=SimpleNamespace(create=_create))
     _patch_settings(monkeypatch)
@@ -419,8 +419,8 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
         "/api/dictation/cleanup",
         headers=auth_headers,
         json={
-            "text": "wai say is great with anthropic",
-            "vocabulary": ["WaiSay", "Anthropic", "  WaiSay  ", "", "WAISAY"],
+            "text": "wai computer is great with anthropic",
+            "vocabulary": ["WaiComputer", "Anthropic", "  WaiComputer  ", "", "WAICOMPUTER"],
         },
     )
 
@@ -428,14 +428,14 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
     prompt = captured["messages"][0]["content"]  # type: ignore[index]
     assert "<preserve_exact>" in prompt
     assert "</preserve_exact>" in prompt
-    assert "WaiSay" in prompt
+    assert "WaiComputer" in prompt
     assert "Anthropic" in prompt
-    # Dedup: WaiSay should appear once inside the preserve block, not three times.
+    # Dedup: WaiComputer should appear once inside the preserve block, not three times.
     block_start = prompt.index("<preserve_exact>")
     block_end = prompt.index("</preserve_exact>")
     block = prompt[block_start:block_end]
-    assert block.count("WaiSay") == 1
-    assert block.count("WAISAY") == 0  # Lowercased duplicate of WaiSay was dropped
+    assert block.count("WaiComputer") == 1
+    assert block.count("WAICOMPUTER") == 0  # Lowercased duplicate of WaiComputer was dropped
 
 
 @pytest.mark.asyncio

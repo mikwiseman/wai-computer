@@ -1,4 +1,4 @@
-"""OAuth 2.1 provider for the remote WaiSay MCP server."""
+"""OAuth 2.1 provider for the remote WaiComputer MCP server."""
 
 from __future__ import annotations
 
@@ -335,10 +335,10 @@ async def resolve_mcp_access_token_user_id(token: str) -> UUID | None:
         return db_token.user_id
 
 
-class WaiSayMcpOAuthProvider(
+class WaiComputerMcpOAuthProvider(
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
 ):
-    """FastMCP-compatible authorization server backed by WaiSay's database."""
+    """FastMCP-compatible authorization server backed by WaiComputer's database."""
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         async with _mcp_db_context() as db:
@@ -593,4 +593,4 @@ class WaiSayMcpOAuthProvider(
                 db_token.revoked_at = _now()
 
 
-mcp_oauth_provider = WaiSayMcpOAuthProvider()
+mcp_oauth_provider = WaiComputerMcpOAuthProvider()

@@ -1,7 +1,7 @@
 """Live API integration tests against the deployed server.
 
 Run with: pytest -q -m integration --no-cov
-Requires: LIVE_API_URL env var (default: https://say.waiwai.is)
+Requires: LIVE_API_URL env var (default: https://wai.computer)
 
 These tests hit the REAL deployed API. Each test creates unique users with
 timestamped emails and cleans up all resources it creates. Tests are fully
@@ -15,7 +15,7 @@ import time
 import httpx
 import pytest
 
-BASE_URL = os.getenv("LIVE_API_URL", "https://say.waiwai.is")
+BASE_URL = os.getenv("LIVE_API_URL", "https://wai.computer")
 REGISTER_INTERVAL_SECONDS = float(os.getenv("LIVE_REGISTER_INTERVAL_SECONDS", "21.5"))
 REGISTER_LIMIT_WINDOW_SECONDS = float(os.getenv("LIVE_REGISTER_LIMIT_WINDOW_SECONDS", "61.0"))
 
@@ -169,7 +169,7 @@ async def test_health_endpoints():
         resp = await client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
-        assert "WaiSay" in resp.text
+        assert "WaiComputer" in resp.text
 
         # Health
         resp = await client.get("/health")
@@ -644,7 +644,7 @@ async def test_cors_headers():
         resp = await client.options(
             "/api/auth/login",
             headers={
-                "Origin": "https://say.waiwai.is",
+                "Origin": "https://wai.computer",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "Authorization, Content-Type",
             },
@@ -652,6 +652,6 @@ async def test_cors_headers():
         # FastAPI CORS middleware returns 200 for preflight requests
         assert resp.status_code == 200
 
-        assert resp.headers.get("access-control-allow-origin") == "https://say.waiwai.is"
+        assert resp.headers.get("access-control-allow-origin") == "https://wai.computer"
         assert "POST" in resp.headers.get("access-control-allow-methods", "")
         assert "authorization" in resp.headers.get("access-control-allow-headers", "").lower()

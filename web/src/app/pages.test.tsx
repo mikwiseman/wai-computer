@@ -48,11 +48,11 @@ vi.mock("@/components/VerifyMagicLinkClient", () => ({
   },
 }));
 
-vi.mock("@/components/OpenWaiSayAppClient", () => ({
-  normalizeWaiSayAppClient: (client: string | null | undefined) => (
+vi.mock("@/components/OpenWaiComputerAppClient", () => ({
+  normalizeWaiComputerAppClient: (client: string | null | undefined) => (
     client === "android" || client === "ios" || client === "macos" ? client : null
   ),
-  OpenWaiSayAppClient: ({ token, client }: { token: string | null; client: string | null }) => {
+  OpenWaiComputerAppClient: ({ token, client }: { token: string | null; client: string | null }) => {
     appMagicLinkClientMock({ token, client });
     return <div data-testid="open-app-client-mock">{`${client}:${token ?? "null-token"}`}</div>;
   },
@@ -155,14 +155,14 @@ describe("app pages", () => {
     ).toBeInTheDocument();
 
     const macLink = screen.getByTestId("download-mac");
-    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiSay-latest.dmg");
+    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiComputer-latest.dmg");
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("macOS 14+");
 
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
       "href",
-      "https://apps.apple.com/app/waisay/id6761768729",
+      "https://apps.apple.com/app/waicomputer/id6761768729",
     );
     expect(iosLink).not.toHaveAttribute("target");
 
@@ -178,7 +178,7 @@ describe("app pages", () => {
 
 describe("layout", () => {
   it("exports metadata and renders html/body structure", () => {
-    expect(metadata.title).toBe("WaiSay — AI second brain for voice");
+    expect(metadata.title).toBe("WaiComputer — AI second brain for voice");
     expect(metadata.description).toBe(
       "Record, transcribe, search, and ask anything across everything you've ever said.",
     );

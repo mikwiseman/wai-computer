@@ -33,7 +33,7 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 # Pre-create writable runtime directories so Docker named volumes inherit
 # appuser ownership on first mount.
-RUN mkdir -p /var/lib/waisay/uploads
+RUN mkdir -p /var/lib/waicomputer/uploads
 
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
@@ -43,7 +43,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY app/ app/
 COPY alembic.ini .
 
-RUN chown -R appuser:appuser /app /var/lib/waisay
+RUN chown -R appuser:appuser /app /var/lib/waicomputer
 USER appuser
 
 EXPOSE 8000

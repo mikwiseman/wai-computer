@@ -2,17 +2,17 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "./page.module.css";
 
-const MAC_DMG_URL = "/releases/macos/WaiSay-latest.dmg";
-const APP_STORE_URL = "https://apps.apple.com/app/waisay/id6761768729";
+const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
+const APP_STORE_URL = "https://apps.apple.com/app/waicomputer/id6761768729";
 const PRIVACY_URL = "https://waiwai.is/say/privacy";
 
 export default function Home() {
   return (
     <main className={styles.landing}>
       <header className={styles.nav}>
-        <Link href="/" className={styles.brand} aria-label="WaiSay home">
+        <Link href="/" className={styles.brand} aria-label="WaiComputer home">
           <span className={styles.brandMark} aria-hidden="true" />
-          <span className={styles.brandWord}>WaiSay</span>
+          <span className={styles.brandWord}>WaiComputer</span>
         </Link>
         <Link href="/login" className={styles.signin}>
           Sign in →

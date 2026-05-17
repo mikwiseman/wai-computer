@@ -1,4 +1,4 @@
-# WaiSay - AI Second Brain
+# WaiComputer - AI Second Brain
 
 An ecosystem for task-centric dialogue, realtime voice, transcription, app generation, and deployment with AI. Native iOS + macOS apps with a Python cloud backend.
 
@@ -6,7 +6,7 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    WaiSay Architecture                      │
+│                    WaiComputer Architecture                      │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────────────┐      ┌──────────────────┐                 │
 │  │    iOS App       │      │   macOS App      │                 │
@@ -86,7 +86,7 @@ docker-compose up -d
 alembic upgrade head
 uvicorn app.main:app --reload
 
-# Run remote API smoke checks (default: https://say.waiwai.is)
+# Run remote API smoke checks (default: https://wai.computer)
 cd ..
 ./scripts/api-smoke.sh
 
@@ -107,15 +107,15 @@ VPS_USER=your-user DEPLOY_CMD="./scripts/deploy-api.sh" ./scripts/qa-loop.sh
 
 ```bash
 # Open the iOS project
-cd ios/WaiSay
-open WaiSay.xcodeproj
+cd ios/WaiComputer
+open WaiComputer.xcodeproj
 
 # Or macOS project
-cd macos/WaiSay
-open WaiSay.xcodeproj
+cd macos/WaiComputer
+open WaiComputer.xcodeproj
 ```
 
-The apps use the shared `WaiSayKit` Swift package for common code.
+The apps use the shared `WaiComputerKit` Swift package for common code.
 
 For a signed direct-download macOS installer, use `scripts/build-macos-dmg.sh`. The DMG builder generates a Finder-ready install window with drag-to-`Applications` guidance, signs the Sparkle appcast, and can also compose a custom background via `MACOS_DMG_BACKGROUND=/absolute/path/background.png`. For a strict production release, add `MACOS_RELEASE_STRICT=1` so the build fails unless Gatekeeper, notarization, and Sparkle signing pass. Distribution details, appcast publishing, and Fastlane upload-all usage are documented in `docs/macos-distribution.md`.
 
@@ -166,16 +166,16 @@ Web app default routes:
 
 ```env
 # Required
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waisay
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer
 JWT_SECRET=your-secure-secret
 ELEVENLABS_API_KEY=your-elevenlabs-key
 ANTHROPIC_API_KEY=your-anthropic-key
 
 # Optional - Email (magic links)
 RESEND_API_KEY=your-resend-api-key
-EMAIL_FROM=WaiSay <noreply@mail.waiwai.is>
-FRONTEND_URL=https://say.waiwai.is
-AUTH_COOKIE_DOMAIN=say.waiwai.is
+EMAIL_FROM=WaiComputer <noreply@mail.waiwai.is>
+FRONTEND_URL=https://wai.computer
+AUTH_COOKIE_DOMAIN=wai.computer
 ```
 
 ## API Endpoints
@@ -216,7 +216,7 @@ AUTH_COOKIE_DOMAIN=say.waiwai.is
 ## Project Structure
 
 ```
-wai-say/
+wai-computer/
 ├── backend/              # Python FastAPI
 │   ├── app/
 │   │   ├── api/          # Routes
@@ -225,11 +225,11 @@ wai-say/
 │   │   └── db/           # Database config
 │   └── tests/
 ├── ios/                  # iOS SwiftUI app
-│   └── WaiSay/
+│   └── WaiComputer/
 ├── macos/                # macOS SwiftUI app
-│   └── WaiSay/
+│   └── WaiComputer/
 └── shared/               # Shared Swift package
-    └── WaiSayKit/
+    └── WaiComputerKit/
 ```
 
 ## BlackHole Setup (macOS System Audio)
@@ -240,7 +240,7 @@ To capture audio from Zoom/Meet/etc:
 2. Open Audio MIDI Setup
 3. Create Multi-Output Device with your speakers + BlackHole
 4. Set Multi-Output as system output
-5. Select BlackHole as input in WaiSay
+5. Select BlackHole as input in WaiComputer
 
 ## Tech Stack
 

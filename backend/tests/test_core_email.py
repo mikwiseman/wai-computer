@@ -9,8 +9,8 @@ from fastapi import HTTPException
 def _mock_settings():
     mock = MagicMock()
     mock.resend_api_key = "re_test_key_123"
-    mock.frontend_url = "https://say.waiwai.is"
-    mock.email_from = "WaiSay <noreply@mail.waiwai.is>"
+    mock.frontend_url = "https://wai.computer"
+    mock.email_from = "WaiComputer <noreply@mail.waiwai.is>"
     return mock
 
 
@@ -29,10 +29,10 @@ class TestSendMagicLinkEmail:
             mock_resend.Emails.send.assert_called_once()
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert call_args["from"] == "WaiSay <noreply@mail.waiwai.is>"
+            assert call_args["from"] == "WaiComputer <noreply@mail.waiwai.is>"
             assert call_args["to"] == ["user@example.com"]
-            assert call_args["subject"] == "Sign in to WaiSay"
-            assert "https://say.waiwai.is/auth/verify?token=abc123token" in call_args["html"]
+            assert call_args["subject"] == "Sign in to WaiComputer"
+            assert "https://wai.computer/auth/verify?token=abc123token" in call_args["html"]
 
     async def test_resend_failure_raises_http_502(self):
         """When resend.Emails.send raises, an HTTPException with status 502 is raised."""
@@ -93,8 +93,8 @@ class TestSendMagicLinkEmail:
             await send_magic_link_email("user@example.com", "token123", client=None)
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "https://say.waiwai.is/auth/verify?token=token123" in call_args["html"]
-            assert "waisay://" not in call_args["html"]
+            assert "https://wai.computer/auth/verify?token=token123" in call_args["html"]
+            assert "waicomputer://" not in call_args["html"]
 
     async def test_client_macos_sends_app_link_with_web_fallback(self):
         """When client='macos', email links to an HTTPS app-open page and web fallback."""
@@ -108,11 +108,11 @@ class TestSendMagicLinkEmail:
 
             call_args = mock_resend.Emails.send.call_args[0][0]
             assert (
-                "https://say.waiwai.is/auth/app?token=token456&amp;client=macos"
+                "https://wai.computer/auth/app?token=token456&amp;client=macos"
                 in call_args["html"]
             )
-            assert "https://say.waiwai.is/auth/verify?token=token456" in call_args["html"]
-            assert "waisay://" not in call_args["html"]
+            assert "https://wai.computer/auth/verify?token=token456" in call_args["html"]
+            assert "waicomputer://" not in call_args["html"]
 
     async def test_client_android_sends_app_link_with_web_fallback(self):
         """When client='android', email links to an HTTPS app-open page and web fallback."""
@@ -126,11 +126,11 @@ class TestSendMagicLinkEmail:
 
             call_args = mock_resend.Emails.send.call_args[0][0]
             assert (
-                "https://say.waiwai.is/auth/app?token=token789&amp;client=android"
+                "https://wai.computer/auth/app?token=token789&amp;client=android"
                 in call_args["html"]
             )
-            assert "https://say.waiwai.is/auth/verify?token=token789" in call_args["html"]
-            assert "waisay://" not in call_args["html"]
+            assert "https://wai.computer/auth/verify?token=token789" in call_args["html"]
+            assert "waicomputer://" not in call_args["html"]
 
     async def test_unknown_client_sends_web_link_only(self):
         """When client is an unknown value, email contains only the web URL."""
@@ -143,5 +143,5 @@ class TestSendMagicLinkEmail:
             await send_magic_link_email("user@example.com", "token789", client="unknown")
 
             call_args = mock_resend.Emails.send.call_args[0][0]
-            assert "https://say.waiwai.is/auth/verify?token=token789" in call_args["html"]
-            assert "waisay://" not in call_args["html"]
+            assert "https://wai.computer/auth/verify?token=token789" in call_args["html"]
+            assert "waicomputer://" not in call_args["html"]
