@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Build and restart WaiComputer production services on the VPS.
+#
+# This script is intended to run on the production server after source has been
+# synced to /opt/waicomputer. It keeps all Docker image builds on the server and
+# uses /etc/waicomputer/backend.env as the only production runtime env file.
+set -euo pipefail
+
+PROD_ROOT="${PROD_ROOT:-/opt/waicomputer}"
+PROD_ENV_FILE="${PROD_ENV_FILE:-/etc/waicomputer/backend.env}"
+PROD_ENV_DIR=$(dirname "$PROD_ENV_FILE")
+LEGACY_ENV_FILE=""
+
+wait_for_service() {
+  local name="$1"
+  local command="$2"
+  local attempts="$3"
+  local delay="$4"
+  local failure_log_command="$5"
+  local attempt
+
+  for attempt in $(seq 1 "$attempts"); do
+    if eval "$command" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+
+  echo "$name did not become healthy after $((attempts * delay)) seconds." >&2
+  docker_compose ps >&2 || true
+  eval "$failure_log_command" >&2 || true
+  exit 1
+}
+
+require_env_key() {
+  local key="$1"
+  if ! grep -Eq "^${key}=.+" "$PROD_ENV_FILE"; then
+    echo "ERROR: $PROD_ENV_FILE is missing required key $key" >&2
+    exit 1
+  fi
+}
+
+docker_compose() {
+  docker compose --env-file "$PROD_ENV_FILE" "$@"
+}
+
+legacy_db_container=$(docker ps -aq --filter label=com.docker.compose.project=backend --filter label=com.docker.compose.service=db | head -n 1 || true)
+if [[ -n "$legacy_db_container" ]]; then
+  LEGACY_ENV_FILE=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}' "$legacy_db_container" 2>/dev/null || true)
+fi
+
+install -d -m 755 "$PROD_ROOT"
+install -d -m 755 "$PROD_ROOT/releases/macos"
+install -d -m 700 "$PROD_ENV_DIR"
+
+if [[ ! -f "$PROD_ENV_FILE" && -n "$LEGACY_ENV_FILE" && -f "$LEGACY_ENV_FILE" ]]; then
+  install -m 600 -o root -g root "$LEGACY_ENV_FILE" "$PROD_ENV_FILE"
+  sed -i 's|^FRONTEND_URL=.*|FRONTEND_URL=https://wai.computer|' "$PROD_ENV_FILE"
+  sed -i 's|^AUTH_COOKIE_DOMAIN=.*|AUTH_COOKIE_DOMAIN=wai.computer|' "$PROD_ENV_FILE"
+  sed -i 's|^CORS_ORIGINS=.*|CORS_ORIGINS=["https://wai.computer"]|' "$PROD_ENV_FILE"
+  sed -i 's|^EMAIL_FROM=.*<|EMAIL_FROM=WaiComputer <|' "$PROD_ENV_FILE"
+  grep -q '^FRONTEND_URL=' "$PROD_ENV_FILE" || printf '%s\n' 'FRONTEND_URL=https://wai.computer' >> "$PROD_ENV_FILE"
+  grep -q '^AUTH_COOKIE_DOMAIN=' "$PROD_ENV_FILE" || printf '%s\n' 'AUTH_COOKIE_DOMAIN=wai.computer' >> "$PROD_ENV_FILE"
+  grep -q '^CORS_ORIGINS=' "$PROD_ENV_FILE" || printf '%s\n' 'CORS_ORIGINS=["https://wai.computer"]' >> "$PROD_ENV_FILE"
+elif [[ ! -f "$PROD_ENV_FILE" ]]; then
+  echo "ERROR: Missing production env file at $PROD_ENV_FILE" >&2
+  echo "Provision it first or copy the current production env into place." >&2
+  exit 1
+fi
+
+chmod 600 "$PROD_ENV_FILE"
+chown root:root "$PROD_ENV_FILE"
+ln -sfn "$PROD_ENV_FILE" "$PROD_ROOT/backend/.env"
+
+require_env_key POSTGRES_USER
+require_env_key POSTGRES_PASSWORD
+require_env_key POSTGRES_DB
+require_env_key JWT_SECRET
+require_env_key FRONTEND_URL
+require_env_key CORS_ORIGINS
+require_env_key ELEVENLABS_API_KEY
+require_env_key AUTH_COOKIE_DOMAIN
+
+cd "$PROD_ROOT/backend"
+export WAICOMPUTER_ENV_FILE="$PROD_ENV_FILE"
+
+docker_compose config >/dev/null
+docker_compose build api web celery-worker
+docker_compose up -d --remove-orphans api web celery-worker caddy
+
+wait_for_service \
+  "API health check" \
+  "docker_compose exec -T api curl -fsS http://localhost:8000/health" \
+  24 \
+  5 \
+  "docker logs --tail 200 waicomputer-api"
+
+wait_for_service \
+  "Web health check" \
+  "docker_compose exec -T web node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"" \
+  24 \
+  5 \
+  "docker logs --tail 200 waicomputer-web"
+
+wait_for_service \
+  "Celery worker health check" \
+  "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waicomputer-celery-worker 2>/dev/null)\" == healthy ]]" \
+  24 \
+  5 \
+  "docker logs --tail 200 waicomputer-celery-worker"
+
+# Caddy bind-mounts Caddyfile by path. rsync replaces files by rename, giving
+# them a new inode; restart Caddy when the mounted file inside the container does
+# not match the host file.
+host_caddy_sum=$(md5sum "$PROD_ROOT/backend/Caddyfile" | awk '{print $1}')
+container_caddy_sum=$(docker exec waicomputer-caddy md5sum /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || echo none)
+if [[ "$host_caddy_sum" != "$container_caddy_sum" ]]; then
+  echo "Caddyfile changed on host ($host_caddy_sum vs $container_caddy_sum); restarting caddy"
+  docker_compose restart caddy
+  wait_for_service \
+    "Caddy post-restart" \
+    "[[ \"$(docker inspect --format '{{.State.Running}}' waicomputer-caddy 2>/dev/null)\" == true ]]" \
+    12 \
+    2 \
+    "docker logs --tail 200 waicomputer-caddy"
+  wait_for_service \
+    "Caddy HTTP health check" \
+    "docker exec waicomputer-caddy wget -qO- --header='Host: wai.computer' --tries=1 --timeout=5 http://localhost/health" \
+    18 \
+    2 \
+    "docker logs --tail 200 waicomputer-caddy"
+fi
+
+echo "Server build and deploy successful."

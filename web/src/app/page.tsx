@@ -4,7 +4,7 @@ import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
 const APP_STORE_URL = "https://apps.apple.com/app/waicomputer/id6761768729";
-const PRIVACY_URL = "https://waiwai.is/say/privacy";
+const PRIVACY_URL = "/privacy";
 
 export default function Home() {
   return (

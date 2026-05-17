@@ -360,14 +360,14 @@ fun SettingsScreen(
             Text("${stringResource(R.string.settings_about_version)}: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             TextButton(
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://waiwai.is/say/privacy")))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wai.computer/privacy")))
                 },
             ) {
                 Text(stringResource(R.string.settings_about_privacy))
             }
             TextButton(
                 onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://waiwai.is/say/terms")))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wai.computer/terms")))
                 },
             ) {
                 Text(stringResource(R.string.settings_about_terms))

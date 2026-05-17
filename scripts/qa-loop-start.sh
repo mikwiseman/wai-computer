@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./scripts/qa-loop-start.sh
-#   DURATION_HOURS=10 DEPLOY_CMD="./scripts/deploy-api.sh" VPS_USER=... ./scripts/qa-loop-start.sh
+#   DURATION_HOURS=10 DEPLOY_CMD="./scripts/deploy-server.sh" VPS_USER=... ./scripts/qa-loop-start.sh
 
 set -euo pipefail
 

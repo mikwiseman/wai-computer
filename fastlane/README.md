@@ -49,14 +49,6 @@ Upload Android AAB to Google Play internal track
 
 ## Mac
 
-### mac upload_testflight
-
-```sh
-[bundle exec] fastlane mac upload_testflight
-```
-
-Build and upload macOS App Store build to TestFlight
-
 ### mac publish_dmg
 
 ```sh
@@ -71,15 +63,7 @@ Build strict notarized DMG and publish it to wai.computer
 [bundle exec] fastlane mac upload_all
 ```
 
-Upload macOS App Store build to TestFlight and publish direct DMG to web
-
-### mac upload_metadata
-
-```sh
-[bundle exec] fastlane mac upload_metadata
-```
-
-Upload macOS metadata and screenshots to App Store Connect
+Build strict notarized DMG and publish it to wai.computer (alias for publish_dmg)
 
 ----
 

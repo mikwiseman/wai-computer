@@ -12,7 +12,7 @@
 #   SLEEP_ON_FAIL_SECONDS=180
 #   SLEEP_ON_SUCCESS_SECONDS=30
 #   DEPLOY_ON_GREEN=1
-#   DEPLOY_CMD="./scripts/deploy-api.sh"
+#   DEPLOY_CMD="./scripts/deploy-server.sh"
 #   REQUIRE_DEPLOY_CMD=0
 #   NATIVE_REQUIRED=0
 #   NATIVE_CMD="xcodebuild ... && xcodebuild ..."

@@ -94,8 +94,8 @@ cd ..
 # Iterates backend tests + shared tests + remote smoke repeatedly
 ./scripts/qa-loop.sh
 
-# Example with explicit deploy step after green P0/P1 loops
-VPS_USER=your-user DEPLOY_CMD="./scripts/deploy-api.sh" ./scripts/qa-loop.sh
+# Example with explicit server-build deploy step after green P0/P1 loops
+VPS_USER=your-user DEPLOY_CMD="./scripts/deploy-server.sh" ./scripts/qa-loop.sh
 
 # Recommended detached mode (keeps running in tmux/nohup)
 ./scripts/qa-loop-start.sh

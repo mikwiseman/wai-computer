@@ -9,6 +9,8 @@ import VerifyMagicLinkPage from "./auth/verify/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
 import RootLayout, { metadata } from "./layout";
+import PrivacyPage from "./privacy/page";
+import TermsPage from "./terms/page";
 
 const mockReplace = vi.fn();
 const authFormMock = vi.fn();
@@ -170,9 +172,23 @@ describe("app pages", () => {
       "href",
       "/login",
     );
+    expect(screen.getByRole("link", { name: /privacy/i })).toHaveAttribute(
+      "href",
+      "/privacy",
+    );
 
     const icon = document.querySelector("img[alt='']");
     expect(icon).not.toBeNull();
+  });
+
+  it("renders first-party privacy and terms pages", () => {
+    render(<PrivacyPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Privacy Policy" })).toBeInTheDocument();
+    expect(screen.getByText(/WaiComputer is operated by WaiWai/i)).toBeInTheDocument();
+
+    render(<TermsPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeInTheDocument();
+    expect(screen.getByText(/By using WaiComputer/i)).toBeInTheDocument();
   });
 });
 

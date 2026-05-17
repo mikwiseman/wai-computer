@@ -20,8 +20,8 @@ The single target is `WaiComputer` in `macos/WaiComputer/project.yml`. It uses `
 1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
 2. `cd macos/WaiComputer && xcodegen generate` to refresh `WaiComputer.xcodeproj/project.pbxproj`.
 3. Commit + push.
-4. Trigger CI: `gh workflow run "macOS Direct Release" --ref main -f publish_web=true`.
-5. After ~10-15 min, `curl https://wai.computer/releases/macos/appcast.xml` and verify the new `sparkle:version`.
+4. From a Mac build host, run `VPS_USER=root scripts/release-macos.sh stable` or `VPS_USER=root scripts/release-macos.sh beta`.
+5. After publish completes, `curl https://wai.computer/releases/macos/appcast.xml` and verify the new `sparkle:version`.
 
 ## Script
 
@@ -130,7 +130,7 @@ Sparkle controls:
 export MACOS_SPARKLE_DOWNLOAD_BASE_URL=https://wai.computer/releases/macos
 export MACOS_SPARKLE_FEED_URL=https://wai.computer/releases/macos/appcast.xml
 export SPARKLE_KEYCHAIN_ACCOUNT=is.waiwai.computer.sparkle
-export SPARKLE_PRIVATE_KEY_FILE=/absolute/path/private-key # or SPARKLE_PRIVATE_KEY in CI
+export SPARKLE_PRIVATE_KEY_FILE=/absolute/path/private-key # or SPARKLE_PRIVATE_KEY in env
 ```
 
 For clean developer-machine QA before validating a release build:
@@ -161,37 +161,18 @@ After building a strict release, publish the versioned DMG, checksum, release no
 VPS_USER=root scripts/publish-macos-dmg.sh
 ```
 
-Fastlane can run the complete macOS release sequence (build + publish):
+Fastlane can run the complete macOS release sequence on a Mac build host:
 
 ```bash
 VPS_USER=root fastlane mac upload_all
 ```
 
-## GitHub Actions release
+## Release automation
 
-The `macOS Direct Release` workflow (`.github/workflows/macos-release.yml`) builds a strict notarized DMG, uploads the artifact, and can publish it to `wai.computer`.
-
-**Triggers:**
-- `workflow_dispatch` (manual via `gh workflow run` or the Actions UI)
-- `push` of a tag matching `waicomputer-macos-v*`
-
-**Push to `main` does NOT auto-publish a DMG.** The Deploy workflow handles backend / web / Apple build verification on push, but the DMG release is a deliberate, version-bumped action.
-
-To trigger from the CLI:
-
-```bash
-gh workflow run "macOS Direct Release" --ref main -f publish_web=true
-```
-
-Required repository secrets:
-
-- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application `.p12`
-- `APPLE_CERTIFICATE_PASSWORD`: password for that `.p12`
-- `APPLE_API_PRIVATE_KEY`: App Store Connect `.p8` private key contents
-- `APPLE_API_KEY_ID`: App Store Connect API key ID
-- `APPLE_API_ISSUER_ID`: App Store Connect issuer ID
-- `SPARKLE_PRIVATE_KEY`: Sparkle EdDSA private key
-- `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`: publishing SSH credentials
+GitHub Actions are intentionally not used for WaiComputer releases. macOS
+artifacts require a Mac build host with local Developer ID signing, Sparkle
+signing, and App Store Connect notarization credentials. The Linux production
+VPS only serves the published DMG, checksum, release notes, and merged appcast.
 
 ## User Install Flow
 
