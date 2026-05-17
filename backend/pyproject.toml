@@ -1,7 +1,7 @@
 [project]
-name = "waisay-backend"
+name = "waicomputer-backend"
 version = "0.1.0"
-description = "WaiSay - AI Second Brain Backend"
+description = "WaiComputer - AI Second Brain Backend"
 requires-python = ">=3.12"
 
 dependencies = [

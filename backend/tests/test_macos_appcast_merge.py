@@ -23,7 +23,7 @@ def _appcast(*items: str) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>WaiSay</title>
+    <title>WaiComputer</title>
     {''.join(items)}
   </channel>
 </rss>
@@ -33,7 +33,7 @@ def _appcast(*items: str) -> str:
 def _item(channel_xml: str, length: str, signature: str, url: str, version: str = "89") -> str:
     return f"""
     <item>
-      <title>WaiSay 1.0.12</title>
+      <title>WaiComputer 1.0.12</title>
       {channel_xml}
       <sparkle:version>{version}</sparkle:version>
       <enclosure
@@ -48,7 +48,7 @@ def _item(channel_xml: str, length: str, signature: str, url: str, version: str 
 
 def test_merge_rejects_same_enclosure_url_with_different_signature_metadata():
     merge_script = _load_merge_script()
-    url = "https://say.waiwai.is/releases/macos/1.0.12-89/WaiSay-1.0.12-89.dmg"
+    url = "https://wai.computer/releases/macos/1.0.12-89/WaiComputer-1.0.12-89.dmg"
     local = _appcast(_item("<sparkle:channel>beta</sparkle:channel>", "200", "beta", url))
     remote = _appcast(_item("", "100", "stable", url))
 
@@ -65,7 +65,7 @@ def test_merge_allows_same_build_channels_when_enclosure_urls_differ():
             "<sparkle:channel>beta</sparkle:channel>",
             "200",
             "beta",
-            "https://say.waiwai.is/releases/macos/1.0.12-89-beta/WaiSay-1.0.12-89.dmg",
+            "https://wai.computer/releases/macos/1.0.12-89-beta/WaiComputer-1.0.12-89.dmg",
         )
     )
     remote = _appcast(
@@ -73,20 +73,20 @@ def test_merge_allows_same_build_channels_when_enclosure_urls_differ():
             "",
             "100",
             "stable",
-            "https://say.waiwai.is/releases/macos/1.0.12-89/WaiSay-1.0.12-89.dmg",
+            "https://wai.computer/releases/macos/1.0.12-89/WaiComputer-1.0.12-89.dmg",
         )
     )
 
     merged = merge_script.merge(local, remote)
 
-    assert "1.0.12-89-beta/WaiSay-1.0.12-89.dmg" in merged
-    assert "1.0.12-89/WaiSay-1.0.12-89.dmg" in merged
+    assert "1.0.12-89-beta/WaiComputer-1.0.12-89.dmg" in merged
+    assert "1.0.12-89/WaiComputer-1.0.12-89.dmg" in merged
 
 
 def test_merge_ignores_preexisting_remote_enclosure_conflicts_for_other_urls():
     merge_script = _load_merge_script()
-    old_url = "https://say.waiwai.is/releases/macos/1.0.12-85/WaiSay-1.0.12-85.dmg"
-    local_url = "https://say.waiwai.is/releases/macos/1.0.12-90/WaiSay-1.0.12-90.dmg"
+    old_url = "https://wai.computer/releases/macos/1.0.12-85/WaiComputer-1.0.12-85.dmg"
+    local_url = "https://wai.computer/releases/macos/1.0.12-90/WaiComputer-1.0.12-90.dmg"
     local = _appcast(_item("", "300", "stable-90", local_url, version="90"))
     remote = _appcast(
         _item("", "100", "stable-85", old_url, version="85"),

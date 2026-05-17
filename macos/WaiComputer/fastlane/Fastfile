@@ -1,0 +1,22 @@
+default_platform(:mac)
+require "shellwords"
+
+def waicomputer_repo_root
+  File.expand_path("../../..", __dir__)
+end
+
+platform :mac do
+  # macOS ships only via the Direct DMG channel (Developer ID + Sparkle).
+  # Mac App Store / TestFlight was retired.
+
+  desc "Build strict notarized DMG and publish it to wai.computer"
+  lane :publish_dmg do
+    sh("cd #{waicomputer_repo_root.shellescape} && MACOS_RELEASE_STRICT=1 scripts/build-macos-dmg.sh")
+    sh("cd #{waicomputer_repo_root.shellescape} && scripts/publish-macos-dmg.sh")
+  end
+
+  desc "Build strict notarized DMG and publish it to wai.computer (alias for publish_dmg)"
+  lane :upload_all do
+    publish_dmg
+  end
+end

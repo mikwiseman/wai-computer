@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # App
-    app_name: str = "WaiSay"
+    app_name: str = "WaiComputer"
     debug: bool = False
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waisay"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer"
 
     # Auth - JWT_SECRET is REQUIRED, no default for security
     jwt_secret: str  # Must be set via environment variable
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:8080",
-        "https://say.waiwai.is",
+        "https://wai.computer",
     ]
 
     # Voice providers
@@ -77,11 +77,11 @@ class Settings(BaseSettings):
     anthropic_dictation_model: str = "claude-haiku-4-5"
 
     upload_max_bytes: int = 200 * 1024 * 1024
-    upload_staging_dir: str = f"{gettempdir()}/waisay/uploads"
+    upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
 
     # Email (Resend)
     resend_api_key: str = ""
-    email_from: str = "WaiSay <noreply@mail.waiwai.is>"
+    email_from: str = "WaiComputer <noreply@mail.waiwai.is>"
 
     # Sentry
     sentry_dsn: str = ""

@@ -18,7 +18,7 @@ initialize_sentry(
 )
 
 celery_app = Celery(
-    "wai_say",
+    "waicomputer",
     broker=settings.redis_url,
     backend=settings.redis_url,
 )

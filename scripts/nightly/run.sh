@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WaiSay nightly QA harness — entry point for hourly cron iteration.
+# WaiComputer nightly QA harness — entry point for hourly cron iteration.
 # See scripts/nightly/README.md.
 set -euo pipefail
 
@@ -19,9 +19,9 @@ source "$VENV_DIR/bin/activate"
 python -c 'import websockets' 2>/dev/null || pip install --quiet --disable-pip-version-check 'websockets>=13'
 
 # Sanity check key file exists before any network call.
-if [[ ! -f "$HOME/.config/waisay/inworld.env" ]]; then
-  echo "ERROR: $HOME/.config/waisay/inworld.env missing." >&2
-  echo "Fetch with: ssh root@157.180.47.68 'grep ^INWORLD_API_KEY= /etc/waisay/backend.env' > $HOME/.config/waisay/inworld.env && chmod 600 $HOME/.config/waisay/inworld.env" >&2
+if [[ ! -f "$HOME/.config/waicomputer/inworld.env" ]]; then
+  echo "ERROR: $HOME/.config/waicomputer/inworld.env missing." >&2
+  echo "Fetch with: ssh root@157.180.47.68 'grep ^INWORLD_API_KEY= /etc/waicomputer/backend.env' > $HOME/.config/waicomputer/inworld.env && chmod 600 $HOME/.config/waicomputer/inworld.env" >&2
   exit 2
 fi
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Basic API smoke test for WaiSay.
-# Usage: BASE_URL=https://say.waiwai.is ./scripts/api-smoke.sh
+# Basic API smoke test for WaiComputer.
+# Usage: BASE_URL=https://wai.computer ./scripts/api-smoke.sh
 
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://say.waiwai.is}"
+BASE_URL="${BASE_URL:-https://wai.computer}"
 RUN_ID="$(date +%s)"
 EMAIL_PREFIX="${EMAIL_PREFIX:-qa.smoke}"
 EMAIL="${EMAIL_PREFIX}.${RUN_ID}@example.com"

@@ -1,5 +1,5 @@
-import { OpenWaiSayAppClient } from "@/components/OpenWaiSayAppClient";
-import { normalizeWaiSayAppClient } from "@/lib/app-client";
+import { OpenWaiComputerAppClient } from "@/components/OpenWaiComputerAppClient";
+import { normalizeWaiComputerAppClient } from "@/lib/app-client";
 
 export const metadata = {
   referrer: "no-referrer",
@@ -14,9 +14,9 @@ export default async function AppMagicLinkPage({ searchParams }: AppMagicLinkPag
 
   return (
     <main className="container auth-page">
-      <OpenWaiSayAppClient
+      <OpenWaiComputerAppClient
         token={params.token ?? null}
-        client={normalizeWaiSayAppClient(params.client)}
+        client={normalizeWaiComputerAppClient(params.client)}
       />
     </main>
   );

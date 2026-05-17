@@ -1,10 +1,10 @@
-WaiSay turns your voice into organized knowledge. Record meetings, conversations, and thoughts — get instant transcripts, AI summaries, and searchable notes.
+WaiComputer turns your voice into organized knowledge. Record meetings, conversations, and thoughts — get instant transcripts, AI summaries, and searchable notes.
 
 YOUR AI SECOND BRAIN
 Everything you say is captured, transcribed, and made searchable. Ask questions across all your recordings and get answers with sources.
 
 RECORD ANYTHING
-Tap to start recording. WaiSay captures audio and transcribes in real time with support for 100+ languages. Works for meetings, lectures, interviews, and personal notes.
+Tap to start recording. WaiComputer captures audio and transcribes in real time with support for 100+ languages. Works for meetings, lectures, interviews, and personal notes.
 
 AI-POWERED SUMMARIES
 After recording, get automatic summaries with key points, decisions, and action items. Customize the detail level and language.

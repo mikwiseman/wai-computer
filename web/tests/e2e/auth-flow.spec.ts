@@ -272,14 +272,14 @@ test.describe("Auth flow", () => {
     const macLink = page.getByTestId("download-mac");
     await expect(macLink).toHaveAttribute(
       "href",
-      "/releases/macos/WaiSay-latest.dmg",
+      "/releases/macos/WaiComputer-latest.dmg",
     );
     await expect(macLink).toHaveAttribute("download", "");
 
     const iosLink = page.getByTestId("download-ios");
     await expect(iosLink).toHaveAttribute(
       "href",
-      "https://apps.apple.com/app/waisay/id6761768729",
+      "https://apps.apple.com/app/waicomputer/id6761768729",
     );
 
     await expect(page.getByRole("link", { name: /sign in/i })).toHaveAttribute(

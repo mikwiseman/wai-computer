@@ -5,8 +5,8 @@
 #   scripts/release-macos.sh stable        # publish to everyone
 #   scripts/release-macos.sh beta          # publish only to opted-in users
 #
-# Pre-flight: bump CURRENT_PROJECT_VERSION in macos/WaiSay/project.yml,
-# regenerate the xcodeproj (cd macos/WaiSay && xcodegen generate),
+# Pre-flight: bump CURRENT_PROJECT_VERSION in macos/WaiComputer/project.yml,
+# regenerate the xcodeproj (cd macos/WaiComputer && xcodegen generate),
 # commit, and push BEFORE running this script. The CI build uses HEAD on
 # the main branch, so unpushed commits will not be included.
 set -euo pipefail

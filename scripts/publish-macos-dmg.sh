@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}
-REMOTE_RELEASE_ROOT=${MACOS_REMOTE_RELEASE_ROOT:-/opt/waisay/releases/macos}
+REMOTE_RELEASE_ROOT=${MACOS_REMOTE_RELEASE_ROOT:-/opt/waicomputer/releases/macos}
 VPS_HOST=${VPS_HOST:-157.180.47.68}
 VPS_USER=${VPS_USER:-}
 SSH_KEY_PATH=${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}
@@ -46,7 +46,7 @@ if [[ ! -f "$RELEASE_ROOT/appcast.xml" ]]; then
   exit 1
 fi
 
-REMOTE_APPCAST_URL=${MACOS_REMOTE_APPCAST_URL:-https://say.waiwai.is/releases/macos/appcast.xml}
+REMOTE_APPCAST_URL=${MACOS_REMOTE_APPCAST_URL:-https://wai.computer/releases/macos/appcast.xml}
 MERGE_SCRIPT="$ROOT_DIR/scripts/merge-macos-appcast.py"
 if [[ ! -x "$MERGE_SCRIPT" ]]; then
   echo "ERROR: merge script not executable at $MERGE_SCRIPT" >&2
@@ -68,9 +68,9 @@ rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=acc
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   "$RELEASE_ROOT/appcast.xml" \
   "$RELEASE_ROOT/release-notes.md" \
-  "$RELEASE_ROOT/WaiSay-latest.dmg" \
-  "$RELEASE_ROOT/WaiSay-latest.dmg.sha256" \
+  "$RELEASE_ROOT/WaiComputer-latest.dmg" \
+  "$RELEASE_ROOT/WaiComputer-latest.dmg.sha256" \
   "$RELEASE_ROOT/latest-release-metadata.txt" \
   "$REMOTE:$REMOTE_RELEASE_ROOT/"
 
-echo "Published WaiSay ${VERSION} (${BUILD}) to $REMOTE:$REMOTE_RELEASE_ROOT"
+echo "Published WaiComputer ${VERSION} (${BUILD}) to $REMOTE:$REMOTE_RELEASE_ROOT"

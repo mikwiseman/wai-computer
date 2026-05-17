@@ -14,9 +14,9 @@ from app.core.observability import add_sentry_breadcrumb, capture_sentry_excepti
 # Maps client identifiers to app URL schemes.
 # Using an enum-like mapping avoids open redirect vulnerabilities.
 APP_CLIENT_URLS = {
-    "android": "waisay://magic",
-    "macos": "waisay://auth/verify",
-    "ios": "waisay://auth/verify",
+    "android": "waicomputer://magic",
+    "macos": "waicomputer://auth/verify",
+    "ios": "waicomputer://auth/verify",
 }
 
 
@@ -37,9 +37,9 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         app_url = _build_frontend_url("/auth/app", token=token, client=client)
         app_url_html = escape(app_url, quote=True)
         html = f"""
-            <h2>Sign in to WaiSay</h2>
+            <h2>Sign in to WaiComputer</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{app_url_html}">Open WaiSay App</a></p>
+            <p><a href="{app_url_html}">Open WaiComputer App</a></p>
             <p style="color: #666; font-size: 14px;">
                 Link not working?
                 <a href="{web_url_html}">Use browser instead</a>
@@ -48,9 +48,9 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         """
     else:
         html = f"""
-            <h2>Sign in to WaiSay</h2>
+            <h2>Sign in to WaiComputer</h2>
             <p>Click the link below to sign in. This link expires in 15 minutes.</p>
-            <p><a href="{web_url_html}">Sign in to WaiSay</a></p>
+            <p><a href="{web_url_html}">Sign in to WaiComputer</a></p>
             <p>If you didn't request this, you can safely ignore this email.</p>
         """
 
@@ -58,7 +58,7 @@ def _send_email_sync(to_email: str, token: str, client: str | None = None) -> No
         {
             "from": settings.email_from,
             "to": [to_email],
-            "subject": "Sign in to WaiSay",
+            "subject": "Sign in to WaiComputer",
             "html": html,
         }
     )

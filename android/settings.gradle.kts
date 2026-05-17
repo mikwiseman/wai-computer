@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "WaiSayAndroid"
+rootProject.name = "WaiComputerAndroid"
 include(":app")

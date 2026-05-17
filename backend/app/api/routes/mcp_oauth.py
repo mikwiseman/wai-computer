@@ -65,7 +65,7 @@ def _consent_html(
     escaped_csrf = html.escape(csrf_token)
     scope_rows = "\n".join(
         (
-            f"<li>{html.escape(scope)}: read your WaiSay recordings, transcripts, "
+            f"<li>{html.escape(scope)}: read your WaiComputer recordings, transcripts, "
             "summaries, and action items.</li>"
         )
         for scope in scopes
@@ -80,7 +80,7 @@ def _consent_html(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Authorize WaiSay MCP</title>
+  <title>Authorize WaiComputer MCP</title>
   <style>
     body {{
       margin: 0;
@@ -158,7 +158,7 @@ def _consent_html(
   <main>
     <h1>Authorize {escaped_client}</h1>
     {uri_markup}
-    <p>This MCP client is requesting read-only access to your WaiSay library.</p>
+    <p>This MCP client is requesting read-only access to your WaiComputer library.</p>
     <ul>{scope_rows}</ul>
     <p class="redirect"><strong>Redirect URI</strong>{escaped_redirect_uri}</p>
     <form method="post" action="/api/mcp/oauth/consent">

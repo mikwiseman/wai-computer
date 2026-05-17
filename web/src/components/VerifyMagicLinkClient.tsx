@@ -36,7 +36,7 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
     <section className="auth-card auth-card--compact">
       <div className="auth-card__brand">
         <div className="brand-mark" aria-hidden="true" />
-        <span>WaiSay</span>
+        <span>WaiComputer</span>
       </div>
       <h1>Magic Link Verification</h1>
       <p data-testid="verify-message">{message}</p>

@@ -1,4 +1,4 @@
-# Wai Computer — Full Product Specification
+# WaiComputer — Full Product Specification
 
 **Version:** 2.1 | **Updated:** 2026-04-01
 
@@ -8,7 +8,7 @@
 
 ### One Brain, Many Hands
 
-Wai Computer is a **Personal AI Operating System**. Not an assistant. Not a chatbot. An operating system where AI is the kernel.
+WaiComputer is a **Personal AI Operating System**. Not an assistant. Not a chatbot. An operating system where AI is the kernel.
 
 The core insight: users don't need separate apps for recording meetings, tracking habits, building sites, managing commitments, and searching memories. They need **one brain** that knows everything and can do everything — and multiple ways to talk to it.
 
@@ -48,7 +48,7 @@ Lovable.dev       = only sites, isolated data
 ChatGPT           = no memory between sessions, no deploy
 Notion AI         = tied to Notion, no voice, no agents
 ────────────────────────────────────────────────────
-Wai Computer      = recordings + agents + deploy + memory
+WaiComputer      = recordings + agents + deploy + memory
                     + voice + all channels
                     + for EVERYONE, not just developers
 ```
@@ -234,7 +234,7 @@ Data lives in Wai DB → accessible from ALL channels:
 - Web: Apps tab → click → CRUD
 - macOS: Apps in sidebar → collection viewer
 - Telegram: "habits" → inline checklist
-- Deployed app: Full UI at habits.say.waiwai.is
+- Deployed app: Full UI at habits.wai.computer
 ```
 
 **Cross-app intelligence** (the killer feature):
@@ -409,7 +409,7 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16 + pgvector, Redis, Celery
 **Server:** Hetzner VPS (157.180.47.68), 4GB RAM, 75GB disk
-**Domain:** say.waiwai.is
+**Domain:** wai.computer
 **Proxy:** Caddy 2 (auto-TLS)
 
 **Docker services:** db (pgvector:pg16), redis (7-alpine), api (FastAPI), celery-worker, web (Next.js), caddy
@@ -435,9 +435,9 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 
 ### 4.3 macOS App
 
-**Stack:** SwiftUI, WaiSayKit (shared SPM package), ElevenLabs Swift SDK
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** macOS 14.2+
-**Bundle ID:** is.waiwai.waisay
+**Bundle ID:** is.waiwai.computer
 **Signing:** Developer ID Application: WaiWai, LLC
 
 **Architecture:**
@@ -472,11 +472,11 @@ Tools
 - MacAgentChatView: agent chat with tool calling
 - MacAgentsView: create, list, run, delete agents
 - MacAppsView: browse collections, view/add/delete items
-- API methods in WaiSayKit for all new endpoints
+- API methods in WaiComputerKit for all new endpoints
 
 ### 4.4 iOS App
 
-**Stack:** SwiftUI, WaiSayKit (shared SPM package), ElevenLabs Swift SDK
+**Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
 **Min OS:** iOS 17+
 
 **Tab bar:** Wai (chat), Library, Agents, Apps
@@ -487,7 +487,7 @@ Tools
 **P1 features:** Push notifications, digital agents, user apps
 **P2 features:** Offline recording + sync, WidgetKit
 
-Uses same WaiSayKit → same API methods, same models. WebView for deployed apps.
+Uses same WaiComputerKit → same API methods, same models. WebView for deployed apps.
 
 ### 4.5 Android App
 
@@ -509,7 +509,7 @@ P2: Push, offline sync.
 - Voice message transcription (provider abstraction, target ElevenLabs)
 - Agent chat (same loop as web/macOS)
 - Message sync (Telethon client)
-- Inline search (@waisay_bot in any chat)
+- Inline search (@waicomputer_bot in any chat)
 - Forward processing ("second brain")
 - Site/app building from chat
 - Digital agent delivery to Telegram
@@ -545,9 +545,9 @@ P2: Push, offline sync.
 
 - Access tokens: JWT HS256, 30-minute expiry
 - Refresh tokens: 180-day, SHA-256 hashed in DB, rotated on use
-- Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (`say.waiwai.is`)
+- Cookies: HTTP-only, secure, SameSite=Lax, domain-scoped (`wai.computer`)
 - Magic links: 15-minute expiry, email via Resend
-- Deep links: `waisay://auth/verify?token=...` for native apps
+- Deep links: `waicomputer://auth/verify?token=...` for native apps
 - Keychain storage on macOS/iOS (wai_access_token, wai_refresh_token)
 
 ---

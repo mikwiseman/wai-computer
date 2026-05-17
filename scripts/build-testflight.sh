@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Builds and uploads the iOS WaiSay app to TestFlight.
+# Builds and uploads the iOS WaiComputer app to TestFlight.
 # (macOS distribution moved to the single Direct DMG channel; see
 # scripts/build-macos-dmg.sh + scripts/publish-macos-dmg.sh.)
 
@@ -16,10 +16,10 @@ KEY_FILEPATH="${KEY_FILEPATH/#\~/$HOME}"
 
 echo "Building iOS Archive..."
 xcodebuild archive \
-    -project ios/WaiSay/WaiSayiOS.xcodeproj \
-    -scheme WaiSay \
+    -project ios/WaiComputer/WaiComputeriOS.xcodeproj \
+    -scheme WaiComputer \
     -configuration Release \
-    -archivePath /tmp/WaiSayiOS.xcarchive \
+    -archivePath /tmp/WaiComputeriOS.xcarchive \
     -allowProvisioningUpdates \
     -authenticationKeyPath "$KEY_FILEPATH" \
     -authenticationKeyID "$KEY_ID" \
@@ -30,7 +30,7 @@ sed 's/<string>export<\/string>/<string>upload<\/string>/g' scripts/export-optio
 
 echo "Uploading iOS to TestFlight..."
 xcodebuild -exportArchive \
-    -archivePath /tmp/WaiSayiOS.xcarchive \
+    -archivePath /tmp/WaiComputeriOS.xcarchive \
     -exportOptionsPlist /tmp/ios-upload.plist \
     -allowProvisioningUpdates \
     -authenticationKeyPath "$KEY_FILEPATH" \

@@ -406,11 +406,11 @@ export function DashboardClient() {
 
   return (
     <div className="web-app-shell">
-      <aside className="app-sidebar" aria-label="WaiSay navigation">
+      <aside className="app-sidebar" aria-label="WaiComputer navigation">
         <div className="brand-block">
           <div className="brand-mark" aria-hidden="true" />
           <div>
-            <h1>WaiSay</h1>
+            <h1>WaiComputer</h1>
             <p data-testid="user-email">{user?.email ?? "No user"}</p>
           </div>
         </div>
@@ -458,7 +458,7 @@ export function DashboardClient() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <h2>{navigation.find((item) => item.key === view)?.label ?? "WaiSay"}</h2>
+            <h2>{navigation.find((item) => item.key === view)?.label ?? "WaiComputer"}</h2>
           </div>
           {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
         </header>

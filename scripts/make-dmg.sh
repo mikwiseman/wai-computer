@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local-only unsigned DMG smoke build for WaiSay.
+# Local-only unsigned DMG smoke build for WaiComputer.
 # Production DMG releases must use scripts/build-macos-dmg.sh so the app is
 # Developer ID signed, notarized, stapled, Sparkle-signed, and publishable.
 #
@@ -25,12 +25,12 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-XCODE_PROJECT="$PROJECT_DIR/macos/WaiSay/WaiSay.xcodeproj"
-SCHEME="WaiSay"
-DMG_PATH="/tmp/WaiSay.dmg"
+XCODE_PROJECT="$PROJECT_DIR/macos/WaiComputer/WaiComputer.xcodeproj"
+SCHEME="WaiComputer"
+DMG_PATH="/tmp/WaiComputer.dmg"
 MOUNT_POINT="/tmp/wai_dmg_mount"
 STAGING="/tmp/wai_dmg_staging"
-SPARSE="/tmp/WaiSay_rw.sparseimage"
+SPARSE="/tmp/WaiComputer_rw.sparseimage"
 
 echo "==> Building Release..."
 set +e
@@ -46,21 +46,21 @@ if [[ "$BUILD_STATUS" -ne 0 ]]; then
     exit "$BUILD_STATUS"
 fi
 
-APP_SRC="$(xcodebuild -project "$XCODE_PROJECT" -scheme "$SCHEME" -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR =' | awk '{print $3}')/WaiSay.app"
+APP_SRC="$(xcodebuild -project "$XCODE_PROJECT" -scheme "$SCHEME" -configuration Release -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR =' | awk '{print $3}')/WaiComputer.app"
 
 echo "==> Staging app..."
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
-ditto "$APP_SRC" "$STAGING/WaiSay.app"
+ditto "$APP_SRC" "$STAGING/WaiComputer.app"
 
 echo "==> Creating DMG..."
 rm -f "$SPARSE" "$DMG_PATH"
-hdiutil create -size 300m -fs HFS+ -volname "WaiSay" -type SPARSE "${SPARSE%.sparseimage}"
+hdiutil create -size 300m -fs HFS+ -volname "WaiComputer" -type SPARSE "${SPARSE%.sparseimage}"
 
 rm -rf "$MOUNT_POINT" && mkdir -p "$MOUNT_POINT"
 hdiutil attach "$SPARSE" -mountpoint "$MOUNT_POINT"
 
-ditto --noextattr --noqtn "$STAGING/WaiSay.app" "$MOUNT_POINT/WaiSay.app"
+ditto --noextattr --noqtn "$STAGING/WaiComputer.app" "$MOUNT_POINT/WaiComputer.app"
 ln -s /Applications "$MOUNT_POINT/Applications"
 
 hdiutil detach "$MOUNT_POINT"

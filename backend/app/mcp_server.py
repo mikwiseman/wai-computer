@@ -1,4 +1,4 @@
-"""Remote MCP server mounted into the WaiSay API."""
+"""Remote MCP server mounted into the WaiComputer API."""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ def create_mcp_app(settings: Settings) -> Starlette:
     client_secret_seconds = settings.mcp_client_secret_expire_days * 24 * 60 * 60
 
     mcp = FastMCP(
-        name="WaiSay",
+        name="WaiComputer",
         instructions=(
-            "Search and fetch the authenticated user's WaiSay recordings, transcripts, "
+            "Search and fetch the authenticated user's WaiComputer recordings, transcripts, "
             "summaries, and action items. Tools are read-only."
         ),
         auth_server_provider=mcp_oauth_provider,
@@ -79,7 +79,7 @@ def create_mcp_app(settings: Settings) -> Starlette:
 
     @mcp.tool()
     async def search(query: str, limit: int = 10) -> str:
-        """Search the authenticated user's WaiSay recordings."""
+        """Search the authenticated user's WaiComputer recordings."""
         user_id = await _current_user_id()
         async with get_db_context() as db:
             result = await search_recordings_for_mcp(db, user_id, query, limit=limit)
@@ -87,7 +87,7 @@ def create_mcp_app(settings: Settings) -> Starlette:
 
     @mcp.tool()
     async def fetch(id: str) -> str:
-        """Fetch one authenticated-user WaiSay recording by id."""
+        """Fetch one authenticated-user WaiComputer recording by id."""
         user_id = await _current_user_id()
         async with get_db_context() as db:
             result = await fetch_recording_for_mcp(db, user_id, id)

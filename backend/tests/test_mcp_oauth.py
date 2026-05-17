@@ -1,4 +1,4 @@
-"""Tests for the WaiSay MCP OAuth surface."""
+"""Tests for the WaiComputer MCP OAuth surface."""
 
 import base64
 import hashlib

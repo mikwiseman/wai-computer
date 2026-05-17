@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "waisay": {
-      "url": "https://say.waiwai.is/mcp"
+    "waicomputer": {
+      "url": "https://wai.computer/mcp"
     }
   }
 }

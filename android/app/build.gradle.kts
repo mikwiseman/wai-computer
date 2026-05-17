@@ -13,7 +13,7 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "is.waiwai.say"
+    namespace = "is.waiwai.computer"
     compileSdk = 35
 
     signingConfigs {
@@ -28,7 +28,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "is.waiwai.say"
+        applicationId = "is.waiwai.computer"
         minSdk = 28
         targetSdk = 35
         versionCode = 8
@@ -36,7 +36,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://say.waiwai.is\"")
+        buildConfigField("String", "DEFAULT_BASE_URL", "\"https://wai.computer\"")
         buildConfigField(
             "String",
             "SENTRY_DSN",

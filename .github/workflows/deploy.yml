@@ -32,7 +32,7 @@ jobs:
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
-          POSTGRES_DB: waisay_test
+          POSTGRES_DB: waicomputer_test
         ports:
           - 5432:5432
         options: >-
@@ -70,8 +70,8 @@ jobs:
 
       - name: Test
         env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waisay_test
-          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waisay_test
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
+          TEST_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/waicomputer_test
           JWT_SECRET: test-secret-for-ci
           REDIS_URL: redis://localhost:6379/0
         run: pytest -x -q
@@ -145,12 +145,12 @@ jobs:
           path: |
             artifacts/ci-swiftpm-sourcepackages
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode16-spm-${{ hashFiles('shared/WaiSayKit/Package.resolved', 'ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode16-spm-${{ hashFiles('shared/WaiComputerKit/Package.resolved', 'ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-xcode16-spm-
 
       - name: Shared Swift package tests
-        working-directory: shared/WaiSayKit
+        working-directory: shared/WaiComputerKit
         run: |
           # Use Xcode 16.2 for SPM — avoids sentry-cocoa Swift 6.1 manifest bug
           sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
@@ -162,8 +162,8 @@ jobs:
       - name: Build iOS app
         run: >
           xcodebuild
-          -project ios/WaiSay/WaiSayiOS.xcodeproj
-          -scheme WaiSay
+          -project ios/WaiComputer/WaiComputeriOS.xcodeproj
+          -scheme WaiComputer
           -destination 'generic/platform=iOS Simulator'
           -clonedSourcePackagesDirPath "${GITHUB_WORKSPACE}/artifacts/ci-swiftpm-sourcepackages"
           -disableAutomaticPackageResolution
@@ -192,7 +192,7 @@ jobs:
       - name: Ensure remote application directory exists
         run: |
           set -euo pipefail
-          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "install -d -m 755 /opt/waisay"
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "install -d -m 755 /opt/waicomputer"
 
       - name: Prepare bootstrap env file
         env:
@@ -220,11 +220,11 @@ jobs:
             fi
           done
           umask 077
-          cat > /tmp/waisay-backend.env <<EOF
+          cat > /tmp/waicomputer-backend.env <<EOF
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-          POSTGRES_DB=waisay
-          DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waisay
+          POSTGRES_DB=waicomputer
+          DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@db:5432/waicomputer
           JWT_SECRET=${JWT_SECRET}
           CORS_ORIGINS=${CORS_ORIGINS}
           SPEECH_TO_TEXT_PROVIDER=elevenlabs
@@ -242,8 +242,8 @@ jobs:
           SENTRY_DSN=${SENTRY_DSN}
           AUTH_COOKIE_DOMAIN=${AUTH_COOKIE_DOMAIN}
           EOF
-          sed -i 's/^[[:space:]]*//' /tmp/waisay-backend.env
-          chmod 600 /tmp/waisay-backend.env
+          sed -i 's/^[[:space:]]*//' /tmp/waicomputer-backend.env
+          chmod 600 /tmp/waicomputer-backend.env
 
       - name: Sync repository to VPS
         run: |
@@ -262,21 +262,22 @@ jobs:
             --exclude 'android/.gradle/' \
             --exclude 'backups/' \
             --exclude 'releases/' \
-            ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/waisay/"
+            ./ "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/waicomputer/"
 
       - name: Copy bootstrap env file to VPS
         run: |
           set -euo pipefail
-          scp /tmp/waisay-backend.env "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waisay-backend.env"
+          scp /tmp/waicomputer-backend.env "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waicomputer-backend.env"
 
       - name: Prepare remote deploy script
         run: |
           set -euo pipefail
-          cat > /tmp/waisay-remote-deploy.sh <<'EOF'
+          cat > /tmp/waicomputer-remote-deploy.sh <<'EOF'
           set -euo pipefail
-          PROD_ROOT=/opt/waisay
-          PROD_ENV_DIR=/etc/waisay
-          PROD_ENV_FILE=/etc/waisay/backend.env
+          PROD_ROOT=/opt/waicomputer
+          PROD_ENV_DIR=/etc/waicomputer
+          PROD_ENV_FILE=/etc/waicomputer/backend.env
+          LEGACY_ENV_FILE=
 
           wait_for_service() {
             local name="$1"
@@ -309,14 +310,28 @@ jobs:
             docker compose --env-file "$PROD_ENV_FILE" "$@"
           }
 
+          legacy_db_container="$(docker ps -aq --filter label=com.docker.compose.project=backend --filter label=com.docker.compose.service=db | head -n 1 || true)"
+          if [[ -n "$legacy_db_container" ]]; then
+            LEGACY_ENV_FILE="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}' "$legacy_db_container" 2>/dev/null || true)"
+          fi
+
           install -d -m 755 "$PROD_ROOT"
           install -d -m 755 "$PROD_ROOT/releases/macos"
           install -d -m 700 "$PROD_ENV_DIR"
 
-          if [[ ! -f "$PROD_ENV_FILE" ]]; then
-            install -m 600 -o root -g root /tmp/waisay-backend.env "$PROD_ENV_FILE"
+          if [[ ! -f "$PROD_ENV_FILE" && -n "$LEGACY_ENV_FILE" && -f "$LEGACY_ENV_FILE" ]]; then
+            install -m 600 -o root -g root "$LEGACY_ENV_FILE" "$PROD_ENV_FILE"
+            sed -i 's|^FRONTEND_URL=.*|FRONTEND_URL=https://wai.computer|' "$PROD_ENV_FILE"
+            sed -i 's|^AUTH_COOKIE_DOMAIN=.*|AUTH_COOKIE_DOMAIN=wai.computer|' "$PROD_ENV_FILE"
+            sed -i 's|^CORS_ORIGINS=.*|CORS_ORIGINS=["https://wai.computer"]|' "$PROD_ENV_FILE"
+            sed -i 's|^EMAIL_FROM=.*<|EMAIL_FROM=WaiComputer <|' "$PROD_ENV_FILE"
+            grep -q '^FRONTEND_URL=' "$PROD_ENV_FILE" || printf '%s\n' 'FRONTEND_URL=https://wai.computer' >> "$PROD_ENV_FILE"
+            grep -q '^AUTH_COOKIE_DOMAIN=' "$PROD_ENV_FILE" || printf '%s\n' 'AUTH_COOKIE_DOMAIN=wai.computer' >> "$PROD_ENV_FILE"
+            grep -q '^CORS_ORIGINS=' "$PROD_ENV_FILE" || printf '%s\n' 'CORS_ORIGINS=["https://wai.computer"]' >> "$PROD_ENV_FILE"
+          elif [[ ! -f "$PROD_ENV_FILE" ]]; then
+            install -m 600 -o root -g root /tmp/waicomputer-backend.env "$PROD_ENV_FILE"
           fi
-          rm -f /tmp/waisay-backend.env
+          rm -f /tmp/waicomputer-backend.env
 
           chmod 600 "$PROD_ENV_FILE"
           chown root:root "$PROD_ENV_FILE"
@@ -331,62 +346,62 @@ jobs:
           require_env_key AUTH_COOKIE_DOMAIN
 
           cd "$PROD_ROOT/backend"
-          export WAISAY_ENV_FILE="$PROD_ENV_FILE"
+          export WAICOMPUTER_ENV_FILE="$PROD_ENV_FILE"
           docker_compose config >/dev/null
           docker_compose build api web celery-worker
-          docker_compose up -d api web celery-worker caddy
+          docker_compose up -d --remove-orphans api web celery-worker caddy
           wait_for_service \
             "API health check" \
             "docker_compose exec -T api curl -fsS http://localhost:8000/health" \
             24 \
             5 \
-            "docker logs --tail 200 waisay-api"
+            "docker logs --tail 200 waicomputer-api"
           wait_for_service \
             "Web health check" \
             "docker_compose exec -T web node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\"" \
             24 \
             5 \
-            "docker logs --tail 200 waisay-web"
+            "docker logs --tail 200 waicomputer-web"
           wait_for_service \
             "Celery worker health check" \
-            "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waisay-celery-worker 2>/dev/null)\" == healthy ]]" \
+            "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waicomputer-celery-worker 2>/dev/null)\" == healthy ]]" \
             24 \
             5 \
-            "docker logs --tail 200 waisay-celery-worker"
+            "docker logs --tail 200 waicomputer-celery-worker"
 
           # Caddy bind-mounts Caddyfile by path. rsync replaces files by rename,
           # giving them a new inode; the running container keeps reading the old
           # inode until it is restarted. If host and container checksums differ,
           # restart caddy so the new config takes effect.
           host_caddy_sum=$(md5sum "$PROD_ROOT/backend/Caddyfile" | awk '{print $1}')
-          container_caddy_sum=$(docker exec waisay-caddy md5sum /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || echo none)
+          container_caddy_sum=$(docker exec waicomputer-caddy md5sum /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || echo none)
           if [[ "$host_caddy_sum" != "$container_caddy_sum" ]]; then
             echo "Caddyfile changed on host ($host_caddy_sum vs $container_caddy_sum) — restarting caddy"
             docker_compose restart caddy
             wait_for_service \
               "Caddy post-restart" \
-              "[[ \"$(docker inspect --format '{{.State.Running}}' waisay-caddy 2>/dev/null)\" == true ]]" \
+              "[[ \"$(docker inspect --format '{{.State.Running}}' waicomputer-caddy 2>/dev/null)\" == true ]]" \
               12 \
               2 \
-              "docker logs --tail 200 waisay-caddy"
+              "docker logs --tail 200 waicomputer-caddy"
             wait_for_service \
               "Caddy HTTPS handshake" \
-              "docker exec waisay-caddy wget -qO- --header='Host: say.waiwai.is' --tries=1 --timeout=5 http://localhost/health" \
+              "docker exec waicomputer-caddy wget -qO- --header='Host: wai.computer' --tries=1 --timeout=5 http://localhost/health" \
               18 \
               2 \
-              "docker logs --tail 200 waisay-caddy"
+              "docker logs --tail 200 waicomputer-caddy"
           fi
           echo "Deploy successful (api + web + celery-worker)"
           EOF
-          sed -i 's/^[[:space:]]*//' /tmp/waisay-remote-deploy.sh
-          chmod 700 /tmp/waisay-remote-deploy.sh
+          sed -i 's/^[[:space:]]*//' /tmp/waicomputer-remote-deploy.sh
+          chmod 700 /tmp/waicomputer-remote-deploy.sh
 
       - name: Copy remote deploy script to VPS
         run: |
           set -euo pipefail
-          scp /tmp/waisay-remote-deploy.sh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waisay-remote-deploy.sh"
+          scp /tmp/waicomputer-remote-deploy.sh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/waicomputer-remote-deploy.sh"
 
       - name: Deploy on VPS
         run: |
           set -euo pipefail
-          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "bash /tmp/waisay-remote-deploy.sh && rm -f /tmp/waisay-remote-deploy.sh"
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "bash /tmp/waicomputer-remote-deploy.sh && rm -f /tmp/waicomputer-remote-deploy.sh"

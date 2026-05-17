@@ -87,7 +87,7 @@
       "category": "proper_nouns",
       "language": "en",
       "voice": "Sarah",
-      "text": "Schedule a meeting with Mikhail Wiseman and the WaiSay team in San Francisco next Tuesday.",
+      "text": "Schedule a meeting with Mikhail Wiseman and the WaiComputer team in San Francisco next Tuesday.",
       "max_wer": 0.30,
       "max_latency_ms": 1800
     },

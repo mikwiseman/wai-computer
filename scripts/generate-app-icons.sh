@@ -17,29 +17,29 @@ generate_png() {
 }
 
 echo "Generating iOS app icons from $SOURCE_ICON"
-generate_png 1024 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
-cp "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
-  "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
-cp "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
-  "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
+generate_png 1024 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
+  "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
+cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
+  "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
 
 echo "Generating macOS app icons"
-generate_png 16 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
-generate_png 32 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_16x16@2x.png"
-generate_png 32 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_32x32.png"
-generate_png 64 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_32x32@2x.png"
-generate_png 128 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_128x128.png"
-generate_png 256 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_128x128@2x.png"
-generate_png 256 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_256x256.png"
-generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_256x256@2x.png"
-generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512.png"
-generate_png 1024 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
+generate_png 16 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
+generate_png 32 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_16x16@2x.png"
+generate_png 32 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_32x32.png"
+generate_png 64 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_32x32@2x.png"
+generate_png 128 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_128x128.png"
+generate_png 256 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_128x128@2x.png"
+generate_png 256 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_256x256.png"
+generate_png 512 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_256x256@2x.png"
+generate_png 512 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_512x512.png"
+generate_png 1024 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_512x512@2x.png"
 
 echo "Generating onboarding and web icons"
-generate_png 256 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
-generate_png 512 "$ROOT_DIR/ios/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
-generate_png 256 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
-generate_png 512 "$ROOT_DIR/macos/WaiSay/WaiSay/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
+generate_png 256 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
+generate_png 512 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
+generate_png 256 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
+generate_png 512 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
 generate_png 1024 "$ROOT_DIR/web/public/app-icon.png"
 
 echo "Generating Android launcher icons"

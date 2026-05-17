@@ -1,4 +1,8 @@
-say.waiwai.is {
+www.wai.computer {
+    redir https://wai.computer{uri} permanent
+}
+
+wai.computer {
     handle_path /releases/macos/* {
         root * /srv/releases/macos
         file_server

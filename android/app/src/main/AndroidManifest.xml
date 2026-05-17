@@ -12,10 +12,10 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:name=".WaiApplication"
+        android:name=".WaiComputerApplication"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.WaiSay">
+        android:theme="@style/Theme.WaiComputer">
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -45,7 +45,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:host="magic"
-                    android:scheme="waisay" />
+                    android:scheme="waicomputer" />
             </intent-filter>
         </activity>
         <service

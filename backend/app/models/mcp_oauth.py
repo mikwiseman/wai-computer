@@ -1,4 +1,4 @@
-"""OAuth state for the remote WaiSay MCP connector."""
+"""OAuth state for the remote WaiComputer MCP connector."""
 
 import uuid
 from datetime import datetime

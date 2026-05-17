@@ -26,7 +26,7 @@ describe("resolveApiProxyTarget", () => {
     delete process.env.NEXT_PUBLIC_API_BASE_URL;
     process.env.NODE_ENV = "production";
 
-    expect(resolveApiProxyTarget()).toBe("https://say.waiwai.is");
+    expect(resolveApiProxyTarget()).toBe("https://wai.computer");
   });
 
   it("uses the local backend in development", () => {

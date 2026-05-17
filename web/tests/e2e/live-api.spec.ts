@@ -4,18 +4,18 @@ import { test, expect, type Page } from "@playwright/test";
 // These tests hit the REAL API server. They are skipped unless E2E_LIVE_API
 // is set in the environment (e.g. E2E_LIVE_API=1 npx playwright test).
 //
-// The API base URL defaults to https://say.waiwai.is but can be overridden
+// The API base URL defaults to https://wai.computer but can be overridden
 // with E2E_API_URL.
 // ---------------------------------------------------------------------------
 
 const LIVE = process.env.E2E_LIVE_API === "1";
-const API_URL = process.env.E2E_API_URL || "https://say.waiwai.is";
+const API_URL = process.env.E2E_API_URL || "https://wai.computer";
 
 /** Generate a unique email for each test run to avoid collisions. */
 function uniqueEmail(): string {
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 8);
-  return `e2e-${ts}-${rand}@test.say.waiwai.is`;
+  return `e2e-${ts}-${rand}@test.wai.computer`;
 }
 
 const describeOrSkip = LIVE ? test.describe : test.describe.skip;

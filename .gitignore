@@ -28,10 +28,10 @@ backend/*.sqlite3
 *~
 
 # Xcode
-ios/WaiSay/WaiSay.xcodeproj/xcuserdata/
-ios/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcuserdata/
-macos/WaiSay/WaiSay.xcodeproj/xcuserdata/
-macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcuserdata/
+ios/WaiComputer/WaiComputeriOS.xcodeproj/xcuserdata/
+ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcuserdata/
+macos/WaiComputer/WaiComputer.xcodeproj/xcuserdata/
+macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcuserstate
 DerivedData/
 *.moved-aside
@@ -48,7 +48,7 @@ DerivedData/
 .build/
 .swiftpm/
 Package.resolved
-!shared/WaiSayKit/Package.resolved
+!shared/WaiComputerKit/Package.resolved
 
 # CocoaPods
 Pods/
@@ -60,18 +60,18 @@ Pods/
 !*.xcworkspace/contents.xcworkspacedata
 
 # Xcode package lockfiles used by CI
-!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/
-ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/contents.xcworkspacedata
-!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/
-!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
-ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
-!ios/WaiSay/WaiSayiOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/
-macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/contents.xcworkspacedata
-!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/
-!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
-macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
-!macos/WaiSay/WaiSay.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+!ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/
+ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcshareddata/
+!ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
+!ios/WaiComputer/WaiComputeriOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+!macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/
+macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcshareddata/
+!macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/workspace-state.json
+!macos/WaiComputer/WaiComputer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 *.xccheckout
 
 # Logs

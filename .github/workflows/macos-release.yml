@@ -20,7 +20,7 @@ on:
           - "stable"
           - "beta"
       publish_web:
-        description: "Publish DMG and appcast to say.waiwai.is"
+        description: "Publish DMG and appcast to wai.computer"
         required: true
         default: "true"
         type: choice
@@ -33,13 +33,13 @@ on:
       - dev
     paths:
       - 'macos/**'
-      - 'shared/WaiSayKit/**'
+      - 'shared/WaiComputerKit/**'
       - 'scripts/build-macos-dmg.sh'
       - 'scripts/publish-macos-dmg.sh'
       - 'scripts/merge-macos-appcast.py'
       - '.github/workflows/macos-release.yml'
     tags:
-      - "waisay-macos-v*"
+      - "waicomputer-macos-v*"
 
 jobs:
   direct-dmg:
@@ -61,7 +61,7 @@ jobs:
             echo "ERROR: APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD secrets are required" >&2
             exit 1
           fi
-          KEYCHAIN_PATH="$RUNNER_TEMP/waisay-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/waicomputer-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -118,7 +118,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: waisay-macos-direct-release
+          name: waicomputer-macos-direct-release
           path: artifacts/releases/macos
 
       - name: Configure SSH
@@ -137,7 +137,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      - name: Publish to say.waiwai.is
+      - name: Publish to wai.computer
         if: github.event_name == 'push' || inputs.publish_web == 'true' || inputs.publish_web == ''
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
