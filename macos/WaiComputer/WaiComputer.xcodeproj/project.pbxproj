@@ -49,6 +49,7 @@
 		AD265F9DBEAF18F802B097A1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 947E65AE51B404454CCFC00A /* Sparkle */; };
 		AE273B9C32682BCF6CF7DEC7 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */; };
 		B1CF145D35CC71C46999E898 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */; };
+		B5DDE9F109AC3D9232120D55 /* RealAppSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */; };
 		B9E77E0AD2FAD83568107E0F /* DeveloperSettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC391F67772585B489AF990 /* DeveloperSettingsStoreTests.swift */; };
 		BC6AA2538B96B8493E9BF247 /* LanguagePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 168C1BFCC7BF45C935DAFEAA /* LanguagePickerView.swift */; };
 		BDAD47F58A5228D925DEEFFA /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */; };
@@ -122,6 +123,7 @@
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
 		B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		BB5835543DAC10BA51A41849 /* SystemAudioWarningPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicy.swift; sourceTree = "<group>"; };
+		BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealAppSmokeUITests.swift; sourceTree = "<group>"; };
 		C25F047C635F7E3D47154C29 /* OnboardingDictationSandboxSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDictationSandboxSlide.swift; sourceTree = "<group>"; };
 		D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -226,6 +228,7 @@
 				90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */,
 				44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */,
 				0360B0E138565421000ECA14 /* OnboardingPermissionUITests.swift */,
+				BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */,
 				E16756CD86835D8D0CF4FC8A /* RecordingDetailUITests.swift */,
 				D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */,
 				EBF23F17DA476E6DC9973406 /* SearchUITests.swift */,
@@ -562,6 +565,7 @@
 				F735FCBB49C960B6DD5F69EF /* LibraryUITests.swift in Sources */,
 				9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */,
 				30C158C831DBFEB065C4AEBF /* OnboardingPermissionUITests.swift in Sources */,
+				B5DDE9F109AC3D9232120D55 /* RealAppSmokeUITests.swift in Sources */,
 				FE4EE18A24E20E2999254168 /* RecordingDetailUITests.swift in Sources */,
 				7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */,
 				23BEF6B926C9E23459068D56 /* SearchUITests.swift in Sources */,
@@ -624,7 +628,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 98;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -787,7 +791,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 98;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;

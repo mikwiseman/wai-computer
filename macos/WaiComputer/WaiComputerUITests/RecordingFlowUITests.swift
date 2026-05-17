@@ -25,9 +25,7 @@ final class RecordingFlowUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(liveRecordingView, in: app, timeout: 5))
 
-        let stopButton = app.descendants(matching: .any)
-            .matching(identifier: "stop-recording-button")
-            .firstMatch
+        let stopButton = app.buttons.matching(identifier: "stop-recording-button").firstMatch
         XCTAssertTrue(waitForElement(stopButton, in: app, timeout: 5))
         XCTAssertTrue(stopButton.isHittable)
         app.activate()

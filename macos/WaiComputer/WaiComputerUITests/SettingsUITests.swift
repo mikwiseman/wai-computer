@@ -159,14 +159,13 @@ final class SettingsUITests: XCTestCase {
         let app = launchToSettings(permissionMock: "needs_restart_paste")
 
         let restartRequired = app.descendants(matching: .any)
-            .matching(identifier: "settings-permission-automatic-paste-restart-required")
+            .matching(identifier: "settings-permission-accessibility-restart-required")
             .firstMatch
         revealElementIfNeeded(restartRequired, in: app)
 
         XCTAssertTrue(waitForElement(restartRequired, in: app, timeout: 5))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-automatic-paste-settings").firstMatch, in: app, timeout: 3))
-        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-automatic-paste-restart").firstMatch, in: app, timeout: 3))
-        XCTAssertFalse(app.buttons.matching(identifier: "settings-permission-automatic-paste-recheck").firstMatch.exists)
-        XCTAssertFalse(app.buttons.matching(identifier: "settings-permission-automatic-paste-grant").firstMatch.exists)
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-accessibility-settings").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-accessibility-restart").firstMatch, in: app, timeout: 3))
+        XCTAssertFalse(app.buttons.matching(identifier: "settings-permission-accessibility-grant").firstMatch.exists)
     }
 }

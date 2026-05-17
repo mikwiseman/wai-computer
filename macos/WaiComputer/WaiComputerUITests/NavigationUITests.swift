@@ -55,12 +55,6 @@ final class NavigationUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(trash, in: app, timeout: 3))
 
-        // Verify Tools section items
-        let chat = app.descendants(matching: .any)
-            .matching(identifier: "sidebar-chat")
-            .firstMatch
-        XCTAssertTrue(waitForElement(chat, in: app, timeout: 3))
-
         let search = app.descendants(matching: .any)
             .matching(identifier: "sidebar-search")
             .firstMatch
@@ -90,15 +84,6 @@ final class NavigationUITests: XCTestCase {
 
         let searchField = app.textFields["Search recordings..."]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search text field should appear after navigating to Search")
-
-        // Navigate to Chat — chat input field should appear
-        let chatButton = app.buttons.matching(identifier: "sidebar-chat").firstMatch
-        XCTAssertTrue(waitForElement(chatButton, in: app, timeout: 3))
-        app.activate()
-        chatButton.tap()
-
-        let chatInput = app.textFields["Ask about your recordings..."]
-        XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "Chat input should appear after navigating to Chat")
 
         // Navigate back to All Recordings — list title should reappear
         let allRecordingsButton = app.buttons.matching(identifier: "sidebar-all-recordings").firstMatch

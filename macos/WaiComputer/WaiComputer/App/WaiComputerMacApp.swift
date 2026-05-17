@@ -112,6 +112,16 @@ struct WaiComputerMacApp: App {
         .commands {
             // Replace default Cmd+N (new window) with recording commands
             CommandGroup(replacing: .newItem) {
+                if recordingViewModel.shouldPresentLiveView {
+                    Button("Stop Recording") {
+                        Task { await appState.stopRecording() }
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!recordingViewModel.canStopRecording)
+
+                    Divider()
+                }
+
                 Button("New Recording") {
                     NotificationCenter.default.post(name: .showNewRecording, object: nil)
                 }
@@ -166,27 +176,44 @@ struct WaiComputerMacApp: App {
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
+                Button("Meetings") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "meetings")
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Button("Notes") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "notes")
+                }
+                .keyboardShortcut("3", modifiers: .command)
+
+                Button("Search") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "search")
+                }
+                .keyboardShortcut("f", modifiers: .command)
+
+                Divider()
+
                 Button("History") {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
                 }
-                .keyboardShortcut("2", modifiers: .command)
+                .keyboardShortcut("4", modifiers: .command)
 
                 Button("Dictionary") {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
                 }
-                .keyboardShortcut("3", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
 
                 Button("Settings") {
                     NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
-                .keyboardShortcut("4", modifiers: .command)
+                .keyboardShortcut("6", modifiers: .command)
 
                 Divider()
 
                 Button("Trash") {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
                 }
-                .keyboardShortcut("5", modifiers: .command)
+                .keyboardShortcut("7", modifiers: .command)
             }
 
             // Remove the default "New Window" from the Window menu
@@ -1027,7 +1054,7 @@ class MacAppState: ObservableObject {
             await dictationManager.cancelDictation()
         }
 
-        if !DeveloperSettingsStore.shared.developerModeEnabled {
+        if !testingMode.isRecordingFlow && !DeveloperSettingsStore.shared.developerModeEnabled {
             do {
                 _ = try await StableTranscriptionModelPolicy.enforceIfNeeded(
                     apiClient: apiClient,

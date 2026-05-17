@@ -3,6 +3,7 @@ import WaiComputerKit
 
 struct MacContentView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var recordingViewModel: MacRecordingViewModel
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -31,7 +32,8 @@ struct MacContentView: View {
 
     @ViewBuilder
     private var permissionBannerLayer: some View {
-        if let kind = appState.visiblePermissionBanner {
+        if let kind = appState.visiblePermissionBanner,
+           !isRecordingHandoffActive {
             PermissionBanner(
                 kind: kind == .microphone ? .microphone : .accessibility,
                 onPrimaryTap: {
@@ -46,6 +48,10 @@ struct MacContentView: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.25), value: kind)
         }
+    }
+
+    private var isRecordingHandoffActive: Bool {
+        recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 }
 
@@ -71,8 +77,12 @@ struct MacMainView: View {
 
     enum SidebarSection: Hashable {
         case allRecordings
+        case meetings
+        case notes
+        case reflections
         case folder(String)
         case trash
+        case search
         case history
         case dictionary
         case settings
@@ -80,10 +90,23 @@ struct MacMainView: View {
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .folder(_), .trash, .none:
+        case .allRecordings, .meetings, .notes, .reflections, .folder(_), .trash, .none:
             return true
-        case .history, .dictionary, .settings:
+        case .search, .history, .dictionary, .settings:
             return false
+        }
+    }
+
+    private var currentRecordingType: RecordingType? {
+        switch selectedSection {
+        case .meetings:
+            return .meeting
+        case .notes:
+            return .note
+        case .reflections:
+            return .reflection
+        default:
+            return nil
         }
     }
 
@@ -105,7 +128,7 @@ struct MacMainView: View {
 
     private var displayedRecordings: [Recording] {
         libraryViewModel.filteredRecordings(
-            type: nil,
+            type: currentRecordingType,
             folderId: currentFolderId,
             trashed: isTrashSection
         )
@@ -120,10 +143,18 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings:
             return "All Recordings"
+        case .meetings:
+            return "Meetings"
+        case .notes:
+            return "Notes"
+        case .reflections:
+            return "Reflections"
         case .folder(let folderId):
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
         case .trash:
             return "Trash"
+        case .search:
+            return "Search"
         case .history:
             return "History"
         case .dictionary:
@@ -344,8 +375,12 @@ struct MacMainView: View {
             guard let target = notification.object as? String else { return }
             switch target {
             case "allRecordings": selectedSection = .allRecordings
+            case "meetings": selectedSection = .meetings
+            case "notes": selectedSection = .notes
+            case "reflections": selectedSection = .reflections
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
+            case "search": selectedSection = .search
             case "trash": selectedSection = .trash
             default: break
             }
@@ -412,6 +447,10 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
+                sidebarRow("Meetings", icon: "person.2", section: .meetings)
+                sidebarRow("Notes", icon: "note.text", section: .notes)
+                sidebarRow("Reflections", icon: "sparkles", section: .reflections)
+                sidebarRow("Search", icon: "magnifyingglass", section: .search)
                 sidebarRow("Trash", icon: "trash", section: .trash)
             } header: {
                 Text("Library")
@@ -579,7 +618,7 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .allRecordings, .folder(_), .trash, .none:
+        case .allRecordings, .meetings, .notes, .reflections, .folder(_), .trash, .none:
             if selectedRecordingIds.count > 1 {
                 BulkSelectionDetailView(
                     selectionCount: selectedRecordingIds.count,
@@ -641,6 +680,8 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
+        case .search:
+            MacSearchView()
         case .history:
             DictationHistoryView()
         case .dictionary:
