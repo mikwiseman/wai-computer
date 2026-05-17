@@ -28,7 +28,7 @@ ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
-DMGBUILD_BIN="${DMGBUILD_BIN:-}"
+DMG_MOUNT_POINT=""
 NOTARIZATION_MODE="skipped"
 NOTARY_ARGS=()
 CUSTOM_BACKGROUND_PATH=${MACOS_DMG_BACKGROUND:-}
@@ -58,45 +58,12 @@ EOF
 fi
 
 cleanup() {
+  if [[ -n "${DMG_MOUNT_POINT:-}" && -d "$DMG_MOUNT_POINT" ]]; then
+    hdiutil detach "$DMG_MOUNT_POINT" >/dev/null 2>&1 || true
+  fi
   rm -rf "$TMP_DIR" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-
-ensure_dmgbuild() {
-  if [[ -n "${DMGBUILD_BIN:-}" && -x "$DMGBUILD_BIN" ]]; then
-    return 0
-  fi
-
-  local candidate
-  for candidate in "$HOME/Library/Python/3.14/bin/dmgbuild" "$HOME/Library/Python/3.13/bin/dmgbuild" "$HOME/Library/Python/3.12/bin/dmgbuild" "$HOME/Library/Python/3.11/bin/dmgbuild"; do
-    if [[ -x "$candidate" ]]; then
-      DMGBUILD_BIN="$candidate"
-      return 0
-    fi
-  done
-
-  if command -v dmgbuild >/dev/null 2>&1; then
-    DMGBUILD_BIN=$(command -v dmgbuild)
-    return 0
-  fi
-
-  echo "Installing dmgbuild via pip..."
-  python3 -m pip install --user --quiet --break-system-packages dmgbuild >&2
-  for candidate in "$HOME/Library/Python/3.14/bin/dmgbuild" "$HOME/Library/Python/3.13/bin/dmgbuild" "$HOME/Library/Python/3.12/bin/dmgbuild" "$HOME/Library/Python/3.11/bin/dmgbuild"; do
-    if [[ -x "$candidate" ]]; then
-      DMGBUILD_BIN="$candidate"
-      return 0
-    fi
-  done
-
-  if command -v dmgbuild >/dev/null 2>&1; then
-    DMGBUILD_BIN=$(command -v dmgbuild)
-    return 0
-  fi
-
-  echo "dmgbuild not found after pip install; install it manually." >&2
-  exit 1
-}
 
 require_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -260,7 +227,6 @@ require_tool ditto
 require_tool shasum
 require_tool file
 require_tool xcrun
-require_tool python3
 
 load_notary_defaults_from_appstoreconnect_config
 
@@ -302,35 +268,44 @@ sign_sparkle_update() {
   "$sign_update_bin" --account "$SPARKLE_KEYCHAIN_ACCOUNT" "$artifact_path"
 }
 
-render_dmgbuild_settings() {
-  cat <<'PY'
-import os
+validate_dmg_contents() {
+  local dmg_path=$1
+  local expected_version=$2
+  local expected_build=$3
+  local mount_point mounted_app mounted_info actual_version actual_build
 
-volume_name = os.environ["DMG_VOLUME_NAME"]
-app_path = os.environ["APP_PATH"]
-app_name = os.environ["APP_NAME"]
-background = os.environ["BACKGROUND_PATH"]
-
-format = "ULFO"
-size = "200M"
-files = [app_path]
-symlinks = {"Applications": "/Applications"}
-icon_locations = {
-    f"{app_name}.app": (190, 190),
-    "Applications": (480, 190),
-}
-window_rect = ((100, 100), (640, 320))
-default_view = "icon-view"
-show_status_bar = False
-show_tab_view = False
-show_toolbar = False
-show_pathbar = False
-show_sidebar = False
-icon_size = 96
-text_size = 12
-include_icon_view_settings = "auto"
-include_list_view_settings = "auto"
-PY
+  mount_point=$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}-dmg-validate.XXXXXX")
+  hdiutil attach "$dmg_path" -mountpoint "$mount_point" -nobrowse -readonly >/dev/null
+  mounted_app="$mount_point/${APP_NAME}.app"
+  mounted_info="$mounted_app/Contents/Info.plist"
+  if [[ ! -d "$mounted_app" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: ${APP_NAME}.app is missing from $dmg_path" >&2
+    exit 1
+  fi
+  if [[ ! -L "$mount_point/Applications" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: Applications symlink is missing from $dmg_path" >&2
+    exit 1
+  fi
+  actual_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$mounted_info")
+  actual_build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$mounted_info")
+  if [[ "$actual_version" != "$expected_version" || "$actual_build" != "$expected_build" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: expected ${expected_version} (${expected_build}), got ${actual_version} (${actual_build})" >&2
+    exit 1
+  fi
+  if [[ ! -x "$mounted_app/Contents/MacOS/${APP_NAME}" ]]; then
+    hdiutil detach "$mount_point" >/dev/null || true
+    rm -rf "$mount_point"
+    echo "DMG validation failed: app executable is missing or not executable" >&2
+    exit 1
+  fi
+  hdiutil detach "$mount_point" >/dev/null
+  rm -rf "$mount_point"
 }
 
 mkdir -p "$RELEASE_ROOT"
@@ -398,16 +373,46 @@ gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
 rm -f "$DMG_PATH"
 
-ensure_dmgbuild
-DMG_SETTINGS="$TMP_DIR/dmgbuild-settings.py"
-render_dmgbuild_settings > "$DMG_SETTINGS"
+DMG_STAGING="$TMP_DIR/dmg-staging"
+RW_DMG_PATH="$TMP_DIR/${APP_NAME}-rw.dmg"
+DMG_MOUNT_POINT="$TMP_DIR/dmg-mount"
+rm -rf "$DMG_STAGING"
+mkdir -p "$DMG_STAGING"
 
-echo "Building DMG with dmgbuild..."
-DMG_VOLUME_NAME="$DMG_VOLUME_NAME" \
-APP_PATH="$APP_PATH" \
-APP_NAME="$APP_NAME" \
-BACKGROUND_PATH="$BACKGROUND_PATH" \
-"$DMGBUILD_BIN" -s "$DMG_SETTINGS" "$DMG_VOLUME_NAME" "$DMG_PATH"
+echo "Staging app for DMG..."
+ditto "$APP_PATH" "$DMG_STAGING/${APP_NAME}.app"
+ln -s /Applications "$DMG_STAGING/Applications"
+if [[ ! -d "$DMG_STAGING/${APP_NAME}.app/Contents" ]]; then
+  echo "DMG staging failed: ${APP_NAME}.app was not copied into $DMG_STAGING" >&2
+  exit 1
+fi
+if [[ ! -L "$DMG_STAGING/Applications" ]]; then
+  echo "DMG staging failed: Applications symlink was not created in $DMG_STAGING" >&2
+  exit 1
+fi
+
+APP_SIZE_KB=$(du -sk "$APP_PATH" | awk '{print $1}')
+DMG_SIZE_MB=$((APP_SIZE_KB / 1024 + 512))
+if [[ "$DMG_SIZE_MB" -lt 512 ]]; then
+  DMG_SIZE_MB=512
+fi
+
+echo "Creating writable DMG..."
+hdiutil create \
+  -volname "$DMG_VOLUME_NAME" \
+  -size "${DMG_SIZE_MB}m" \
+  -fs HFS+ \
+  "$RW_DMG_PATH"
+mkdir -p "$DMG_MOUNT_POINT"
+hdiutil attach "$RW_DMG_PATH" -mountpoint "$DMG_MOUNT_POINT" -nobrowse -owners on >/dev/null
+ditto "$DMG_STAGING/${APP_NAME}.app" "$DMG_MOUNT_POINT/${APP_NAME}.app"
+ln -s /Applications "$DMG_MOUNT_POINT/Applications"
+sync
+hdiutil detach "$DMG_MOUNT_POINT" >/dev/null
+DMG_MOUNT_POINT=""
+
+echo "Compressing DMG..."
+hdiutil convert "$RW_DMG_PATH" -format ULFO -o "${DMG_PATH%.dmg}" >/dev/null
 
 echo "Signing DMG..."
 codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_PATH"
@@ -419,6 +424,7 @@ fi
 
 codesign --verify --verbose=2 "$DMG_PATH"
 hdiutil verify "$DMG_PATH"
+validate_dmg_contents "$DMG_PATH" "$VERSION" "$BUILD"
 
 if [[ "$NOTARIZATION_MODE" != "skipped" ]]; then
   notarize_file "$DMG_PATH" "disk image"
