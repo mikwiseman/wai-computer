@@ -6,21 +6,14 @@
     {
       "layers" : [
         {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "dark",
-              "value" : "normal"
-            }
-          ],
-          "fill" : "none",
-          "image-name" : "5262537e-4ce7-4776-a4c8-2956482919e6.png",
+          "image-name" : "72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png",
           "image-specializations" : [
             {
               "appearance" : "dark",
-              "image-name" : "5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"
+              "image-name" : "72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
             }
           ],
-          "name" : "5262537e-4ce7-4776-a4c8-2956482919e6"
+          "name" : "72eb7034-4bcb-4a4c-b842-bd0dac562f7e"
         }
       ],
       "shadow" : {

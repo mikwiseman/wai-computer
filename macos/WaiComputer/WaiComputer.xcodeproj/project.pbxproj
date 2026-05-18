@@ -30,6 +30,7 @@
 		51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */; };
 		533902D41F1E25EDAF94D6FC /* DeveloperSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EADA208BFF80A607A55E02 /* DeveloperSettingsStore.swift */; };
 		55F4103AEE9B5B70E8445D89 /* icon.json in Resources */ = {isa = PBXBuildFile; fileRef = 62F21A624A307F0E6468D964 /* icon.json */; };
+		66DCE948A735CD124B120846 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */; };
 		6BC44F13D8DEC60C6771BDE3 /* OnboardingHotkeyPickerSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3996AAFF9389472FC679B74E /* OnboardingHotkeyPickerSlide.swift */; };
 		6E344544C36E05B5FE529ED5 /* DictationDictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */; };
 		72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */; };
@@ -38,13 +39,13 @@
 		833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */; };
 		83CB01D05304F022D5A2188E /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9FED7AFDFB3BD38C93665B6 /* WaiComputerKit */; };
 		87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 864F5988EFF4C90C1885EAD1 /* Assets.xcassets */; };
+		88EA75E26AB36FF6CB77EE0A /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png in Resources */ = {isa = PBXBuildFile; fileRef = 96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */; };
 		8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299E722D1B0554D90131758 /* MacSettingsView.swift */; };
 		8EFA5306BA7BFE70BB94925B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2D8C691A99FD7DEA5AE7FA15 /* Sparkle */; };
 		9270DF3835C1779D8BE98818 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
 		A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */; };
 		A25CDE15B154421DCBBB27CB /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F560C57D16BE3A93BBAF6818 /* TextInserter.swift */; };
-		A8DBA94BF0C980FA296557CE /* 5262537e-4ce7-4776-a4c8-2956482919e6.png in Resources */ = {isa = PBXBuildFile; fileRef = 57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */; };
 		AB225DC0B593D9F0AB738B24 /* BetaChannelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D1B3EF81EEF7134E5BE0F2 /* BetaChannelStoreTests.swift */; };
 		AD265F9DBEAF18F802B097A1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 947E65AE51B404454CCFC00A /* Sparkle */; };
 		AE273B9C32682BCF6CF7DEC7 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */; };
@@ -63,7 +64,6 @@
 		E35B8D7C1FDB761C888E6A9E /* SystemAudioWarningPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5835543DAC10BA51A41849 /* SystemAudioWarningPolicy.swift */; };
 		E5ED0DB2D8A307AC1B9666BE /* OnboardingDictationSandboxSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25F047C635F7E3D47154C29 /* OnboardingDictationSandboxSlide.swift */; };
 		E87E1D23F23F40749D7D7C96 /* MacImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */; };
-		ECAE4D7877BA4F9ADFB66C60 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 4CB526C35B4CF1A7FAE33791 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */; };
 		EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */; };
 		F09C575E02BA3143640C9CC9 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */; };
 		F735FCBB49C960B6DD5F69EF /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */; };
@@ -99,9 +99,7 @@
 		45EADA208BFF80A607A55E02 /* DeveloperSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperSettingsStore.swift; sourceTree = "<group>"; };
 		49041A92859260A8AC12767C /* DictationLanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLanguageStore.swift; sourceTree = "<group>"; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
-		4CB526C35B4CF1A7FAE33791 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"; sourceTree = "<group>"; };
 		525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingViewModel.swift; sourceTree = "<group>"; };
-		57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "5262537e-4ce7-4776-a4c8-2956482919e6.png"; sourceTree = "<group>"; };
 		5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
 		5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		6299E722D1B0554D90131758 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
@@ -118,9 +116,11 @@
 		8720A51453F6A00129C44413 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerMacApp.swift; sourceTree = "<group>"; };
 		90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
+		96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png"; sourceTree = "<group>"; };
 		99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		9B3889A9A04FC3CA4A048F4D /* SystemAudioWarningPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicyTests.swift; sourceTree = "<group>"; };
 		9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStore.swift; sourceTree = "<group>"; };
+		9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"; sourceTree = "<group>"; };
 		A75D539F70136F36847122EB /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
@@ -353,8 +353,8 @@
 		DE2F2B22309DAA4D0BAC49B8 /* Assets */ = {
 			isa = PBXGroup;
 			children = (
-				4CB526C35B4CF1A7FAE33791 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */,
-				57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */,
+				9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */,
+				96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */,
 			);
 			path = Assets;
 			sourceTree = "<group>";
@@ -491,8 +491,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ECAE4D7877BA4F9ADFB66C60 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png in Resources */,
-				A8DBA94BF0C980FA296557CE /* 5262537e-4ce7-4776-a4c8-2956482919e6.png in Resources */,
+				66DCE948A735CD124B120846 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png in Resources */,
+				88EA75E26AB36FF6CB77EE0A /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png in Resources */,
 				87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */,
 				55F4103AEE9B5B70E8445D89 /* icon.json in Resources */,
 			);
@@ -632,7 +632,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 103;
+				CURRENT_PROJECT_VERSION = 104;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -795,7 +795,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 103;
+				CURRENT_PROJECT_VERSION = 104;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;

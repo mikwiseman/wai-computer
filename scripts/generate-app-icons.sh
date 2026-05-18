@@ -44,8 +44,8 @@ cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/ico
   "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
 
 echo "Refreshing AppIcon.icon dark layers"
-cp "$DARK_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"
-cp "$DARK_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"
+cp "$DARK_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
+cp "$DARK_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
 
 echo "Generating macOS app icons"
 generate_png 16 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
