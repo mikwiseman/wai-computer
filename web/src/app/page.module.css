@@ -70,8 +70,8 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: var(--accent-soft);
-  filter: blur(28px);
+  background: rgba(24, 26, 31, 0.08);
+  filter: blur(26px);
   z-index: 0;
 }
 
@@ -81,7 +81,7 @@
   width: 160px;
   height: 160px;
   border-radius: 36px;
-  box-shadow: 0 22px 48px rgba(24, 26, 31, 0.12);
+  box-shadow: 0 22px 48px rgba(24, 26, 31, 0.16);
 }
 
 .headline {
