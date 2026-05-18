@@ -28,6 +28,7 @@ from app.core.observability import (
 )
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
 from app.core.transcription import transcribe_audio_file
+from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.recording import (
     ActionItem,
@@ -806,6 +807,7 @@ async def _persist_client_segments(
             Segment(
                 recording_id=recording.id,
                 speaker=segment.speaker,
+                raw_label=segment.speaker,
                 content=text,
                 start_ms=segment.start_ms,
                 end_ms=segment.end_ms,
@@ -2497,6 +2499,19 @@ async def upload_audio_file(
                 model=file_stt_model,
             )
 
+        speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
+        try:
+            speaker_assignments = await identify_speakers_for_recording(
+                db=db,
+                user_id=user.id,
+                staged_audio_path=staged_path,
+                transcript_results=transcript_results,
+            )
+        except Exception:
+            logger.exception(
+                "Voice identification failed; segments will keep person_id=NULL"
+            )
+
         for tr in transcript_results:
             embedding = None
             if tr.text.strip():
@@ -2505,10 +2520,18 @@ async def upload_audio_file(
                 except Exception as exc:
                     logger.warning("Failed to generate embedding: %s", exc)
 
+            assignment = speaker_assignments.get(tr.speaker) if tr.speaker else None
+            assigned_person_id, match_confidence = (
+                assignment if assignment is not None else (None, None)
+            )
             db.add(
                 Segment(
                     recording_id=recording_id,
                     speaker=tr.speaker,
+                    raw_label=tr.speaker,
+                    person_id=assigned_person_id,
+                    auto_assigned=assigned_person_id is not None,
+                    match_confidence=match_confidence,
                     content=tr.text,
                     start_ms=tr.start_ms,
                     end_ms=tr.end_ms,
