@@ -95,6 +95,12 @@ export interface Person {
   updated_at: string;
 }
 
+export interface VoiceEnrollmentResponse {
+  person: Person;
+  voiceprint_id: string;
+  duration_s: number;
+}
+
 export interface Summary {
   summary: string | null;
   key_points: string[] | null;

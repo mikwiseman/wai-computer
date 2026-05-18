@@ -333,6 +333,31 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertEqual(person.voiceprintCount, 3)
     }
 
+    // MARK: - VoiceEnrollmentResponse
+
+    func testVoiceEnrollmentResponseDecodes() throws {
+        let json = """
+        {
+            "person": {
+                "id": "person-1",
+                "display_name": "You",
+                "color": null,
+                "aliases": null,
+                "voiceprint_count": 1,
+                "created_at": "2026-05-19T12:00:00Z",
+                "updated_at": "2026-05-19T12:00:00Z"
+            },
+            "voiceprint_id": "vp-1",
+            "duration_s": 21.5
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(VoiceEnrollmentResponse.self, from: json)
+        XCTAssertEqual(response.person.displayName, "You")
+        XCTAssertEqual(response.voiceprintId, "vp-1")
+        XCTAssertEqual(response.durationS, 21.5, accuracy: 0.001)
+    }
+
     func testRecordingDetailWithHighlightsRoundTrip() throws {
         let encoder = makeEncoder()
         let decoder = makeDecoder()

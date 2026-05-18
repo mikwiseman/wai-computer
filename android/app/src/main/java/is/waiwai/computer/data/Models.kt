@@ -168,6 +168,13 @@ data class AssignSpeakerRequest(
 )
 
 @Serializable
+data class VoiceEnrollmentResponse(
+    val person: Person,
+    @SerialName("voiceprint_id") val voiceprintId: String,
+    @SerialName("duration_s") val durationS: Double,
+)
+
+@Serializable
 data class Summary(
     val summary: String? = null,
     @SerialName("key_points") val keyPoints: List<String>? = null,
