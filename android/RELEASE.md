@@ -1,6 +1,6 @@
 # WaiComputer Android — Release runbook
 
-> Last updated: 2026-05-18. App version `1.1.2`, versionCode `11`. Play Console package `is.waiwai.computer`.
+> Last updated: 2026-05-18. App version `1.1.3`, versionCode `12`. Play Console package `is.waiwai.computer`.
 
 ## TL;DR
 
@@ -12,15 +12,7 @@ cd android
 ./gradlew --no-daemon :app:assembleRelease   # → app/build/outputs/apk/release/app-release.apk
 ```
 
-Or push a tag and let CI build it for you:
-
-```bash
-git tag android-v1.0.0
-git push origin android-v1.0.0
-# → GitHub Actions → android-release workflow → AAB / APK / mapping.txt artifacts
-```
-
-CI **never publishes** to Play Console — you download the AAB from the workflow run and upload it by hand to the right track. This is intentional: one human reads release notes and toggles staged rollout.
+GitHub Actions are intentionally not used for Android release builds in this repo. Release artifacts are built locally from a checked-out, reviewed commit and then uploaded explicitly.
 
 ## One-time setup
 
@@ -45,18 +37,6 @@ CI **never publishes** to Play Console — you download the AAB from the workflo
 
 3. Opt in to **Play App Signing** when you upload the first AAB. Google holds the app-signing key; we only ever ship the upload key.
 
-### GitHub Actions secrets
-
-The `android-release` workflow needs four repo secrets:
-
-| Secret | How to fill it |
-|---|---|
-| `ANDROID_KEYSTORE_BASE64` | `base64 -i android/keystore/upload.jks \| pbcopy` and paste |
-| `ANDROID_STORE_PASSWORD` | same as `storePassword` in `keystore.properties` |
-| `ANDROID_KEY_ALIAS` | `upload` (or whatever `keyAlias` you used) |
-| `ANDROID_KEY_PASSWORD` | same as `keyPassword` in `keystore.properties` |
-| `ANDROID_SENTRY_DSN` | optional — embeds the production Sentry DSN into the AAB |
-
 ### Play Console listing
 
 1. Create the app in Play Console at `is.waiwai.computer`.
@@ -73,12 +53,16 @@ The `android-release` workflow needs four repo secrets:
 
 1. Bump `versionCode` (must be monotonic) and `versionName` in `android/app/build.gradle.kts`.
 2. Commit the bump in its own commit so it shows up cleanly in `git log`.
-3. Tag and push: `git tag android-vX.Y.Z && git push origin android-vX.Y.Z`.
-4. Wait for `android-release` to finish; download `app-release-aab` artifact.
-5. Upload AAB to **Internal testing** track first. Smoke-test on a real Pixel.
-6. Promote to **Closed testing** (~20 testers) for 1-2 weeks.
-7. Promote to **Production** with **staged rollout**: 5% → 25% → 100% over a week. Monitor Sentry crash-free rate (>99.5% target).
-8. Add the corresponding `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` and `ru-RU/changelogs/<versionCode>.txt` so Play Console picks up the "What's new" copy on next upload.
+3. Build locally:
+   ```bash
+   cd android
+   ./gradlew --no-daemon testDebugUnitTest lint
+   ./gradlew --no-daemon :app:bundleRelease :app:assembleRelease
+   ```
+4. Upload `android/app/build/outputs/bundle/release/app-release.aab` to **Internal testing** first. Smoke-test on a real Pixel.
+5. Promote to **Closed testing** (~20 testers) for 1-2 weeks.
+6. Promote to **Production** with **staged rollout**: 5% → 25% → 100% over a week. Monitor Sentry crash-free rate (>99.5% target).
+7. Add the corresponding `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` and `ru-RU/changelogs/<versionCode>.txt` so Play Console picks up the "What's new" copy on next upload.
 
 ## Data safety answers (Play Console form)
 
