@@ -588,8 +588,9 @@ class TestRunTurn:
         assert "list_recordings" in prompt
         assert "<answer_format>" in prompt
         assert "Match the language" in prompt
-        # No <memory> block until Phase 3 populates one
-        assert "<memory>" not in prompt
+        # The <memory> SECTION (not the word "<memory>" in tool guidance)
+        # only appears once user_memory blocks render content.
+        assert "<memory>\n##" not in prompt
 
     async def test_list_recordings_returns_summary_topics_folder(
         self, db_session, setup_user_and_recording, fake_embedding
@@ -829,7 +830,83 @@ class TestRunTurn:
             "get_action_items",
             "get_highlights",
             "search_people",
+            "remember",
         } <= names
+
+    async def test_remember_tool_writes_to_memory_and_emits_event(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """Calling the `remember` tool writes to the user's memory block
+        and surfaces a typed MemoryUpdatedEvent on the SSE stream."""
+        from app.core.companion import MemoryUpdatedEvent
+        from app.core.user_memory import get_or_seed_blocks
+
+        s = setup_user_and_recording
+        fake = FakeOpenAI(
+            _tool_call_response(
+                "c1",
+                "remember",
+                {
+                    "block": "human",
+                    "operation": "append",
+                    "content": "Lives in Reykjavik",
+                },
+            ),
+            _text_response("done"),
+            _structured_response("Saved.", []),
+        )
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "запомни что я живу в Рейкьявике",
+                openai_client=fake,
+            )
+        )
+        # The typed memory-updated event is present in the stream.
+        mems = [e for e in events if isinstance(e, MemoryUpdatedEvent)]
+        assert len(mems) == 1
+        assert mems[0].block == "human"
+        assert mems[0].operation == "append"
+
+        # And the underlying block was persisted.
+        blocks = await get_or_seed_blocks(db_session, s["user"].id)
+        assert "Reykjavik" in blocks["human"].body
+
+    async def test_memory_blocks_render_into_instructions(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """Once a memory block has content, subsequent turns ship it in
+        the cacheable `instructions` prefix so the model knows it."""
+        from app.core.user_memory import write_block
+
+        s = setup_user_and_recording
+        await write_block(
+            db_session,
+            s["user"].id,
+            "human",
+            "append",
+            "Lives in Reykjavik",
+            source="system",
+        )
+        fake = FakeOpenAI(
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "where do I live?",
+                openai_client=fake,
+            )
+        )
+        instructions = fake.calls[0]["instructions"]
+        assert "<memory>" in instructions
+        assert "## human" in instructions
+        assert "Reykjavik" in instructions
 
     async def test_instructions_stay_stable_across_turns_for_same_user(
         self, db_session, setup_user_and_recording, fake_embedding

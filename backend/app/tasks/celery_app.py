@@ -5,6 +5,7 @@ in the worker process (-B flag) for single-node deployment.
 """
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_process_init
 
 from app.config import get_settings
@@ -37,7 +38,18 @@ celery_app.conf.update(
     worker_max_tasks_per_child=100,
 )
 
-celery_app.conf.beat_schedule = {}
+celery_app.conf.beat_schedule = {
+    "consolidate-user-memory-nightly": {
+        # Sleep-time consolidation of Wai's long-term memory blocks.
+        # Per-user-local-time scheduling is a Phase 4 nicety; daily 03:00
+        # UTC covers most of Europe/Africa overnight.
+        "task": "app.tasks.consolidate_user_memory.run",
+        "schedule": crontab(hour=3, minute=0),
+    },
+}
+
+# Ensure the consolidator module is registered with Celery on worker start.
+celery_app.autodiscover_tasks(["app.tasks"])
 
 
 @worker_process_init.connect
