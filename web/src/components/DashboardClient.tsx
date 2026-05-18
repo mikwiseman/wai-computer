@@ -24,7 +24,7 @@ import {
   updateActionItem,
   updateSettings,
 } from "@/lib/api";
-import { GlobalQAPanel } from "@/components/GlobalQAPanel";
+import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
@@ -888,7 +888,7 @@ export function DashboardClient() {
 function WaiView({ recordings }: { recordings: Recording[] }) {
   return (
     <div className="wai-panel">
-      <GlobalQAPanel recordings={recordings} />
+      <CompanionPanel recordings={recordings} />
     </div>
   );
 }
