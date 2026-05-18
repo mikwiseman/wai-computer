@@ -9,6 +9,7 @@ AI second brain for recordings, transcription, search, and summaries.
 ## Production
 
 - Canonical host: `https://wai.computer` (API at `/api/*`, health at `/health`). No separate API hostname.
+- In-app MCP connect instructions live in Settings → MCP on every platform; the displayed URL is the hardcoded prod canonical `https://wai.computer/mcp`.
 - Server: `root@157.180.47.68`, deploy root `/opt/waicomputer`.
 - Runtime env: `/etc/waicomputer/backend.env` is the source of truth; `/opt/waicomputer/backend/.env` is a symlink to it.
 - Keep aligned: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` on the current project.

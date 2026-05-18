@@ -3,6 +3,39 @@
 As of May 5, 2026, the interoperable path for hosted MCP clients is OAuth over
 Streamable HTTP, not a direct redirect from JSON-RPC requests.
 
+## Quick Connect
+
+End-users get the same instructions in-app at **Settings → MCP** on every
+WaiComputer client (Web, macOS, iOS, Android). The canonical URL is always
+`https://wai.computer/mcp` regardless of which client you copy from.
+
+- **Claude.ai**: Settings → Connectors → Add custom connector → paste URL → approve on `wai.computer`.
+- **Cursor**: drop into `.cursor/mcp.json` (project) or global Cursor MCP settings:
+  ```json
+  { "mcpServers": { "waicomputer": { "url": "https://wai.computer/mcp" } } }
+  ```
+- **ChatGPT Apps & Connectors**: Settings → Connectors → Developer mode → Add MCP server → paste URL.
+- **Claude Code**: `claude mcp add waicomputer https://wai.computer/mcp` or `.mcp.json` with `"type": "http"`.
+- **Codex CLI**: `codex mcp add waicomputer --url https://wai.computer/mcp` then `codex mcp login waicomputer`.
+
+## Implementation Audit (2026-05-18)
+
+Spec compliance verified against May 2026 best practices and live prod responses:
+- SDK: `mcp` 1.27.0 on disk (pin `>=1.27.0,<2`); ships RFC 8707 + STDIO CVE patches.
+- Transport: Streamable HTTP only (`mcp_server.py:66`); no deprecated HTTP+SSE.
+- `/mcp` 401 returns `WWW-Authenticate: Bearer` with `resource_metadata=` discovery pointer ✓
+- `/.well-known/oauth-protected-resource/mcp` advertises `bearer_methods_supported: ["header"]` (no query-param tokens) ✓
+- `/.well-known/oauth-authorization-server` advertises `code_challenge_methods_supported: ["S256"]` only (plaintext PKCE rejected) ✓
+- RFC 8707 resource indicators enforced in `core/mcp_oauth.py:136-150` (called at lines 333, 391, 576).
+- DCR redirect URIs restricted to HTTPS or loopback at `mcp_oauth.py:177-188`.
+- Tokens SHA-256-hashed at rest, audience-bound, one-use codes, refresh rotation, revocation endpoint exposed.
+- Strict security headers: HSTS, X-Frame-Options DENY, X-Content-Type-Options nosniff.
+- `tests/test_mcp_oauth.py` — 3/3 passing; ruff clean.
+
+Operational notes: `stateless_http=True` + `json_response=True` (`mcp_server.py:67-68`) disable SSE
+streaming and session resumability. Acceptable for current small read-only tool payloads;
+revisit if streaming tools are added.
+
 ## Public Endpoints
 
 - MCP endpoint: `https://wai.computer/mcp`
