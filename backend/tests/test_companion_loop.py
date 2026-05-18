@@ -591,6 +591,246 @@ class TestRunTurn:
         # No <memory> block until Phase 3 populates one
         assert "<memory>" not in prompt
 
+    async def test_list_recordings_returns_summary_topics_folder(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """Granola-style enrichment: list_recordings carries enough metadata
+        for the model to pick the right recording without a second call."""
+        from app.models.recording import Folder, Summary
+
+        s = setup_user_and_recording
+        folder = Folder(user_id=s["user"].id, name="MFC")
+        db_session.add(folder)
+        await db_session.flush()
+        s["recording"].folder_id = folder.id
+        summary = Summary(
+            recording_id=s["recording"].id,
+            summary="Sprint planning for v1.0. Decided to gate launch on Phase 13.",
+            topics=["v1.0", "release"],
+        )
+        db_session.add(summary)
+        await db_session.flush()
+
+        # Drive the model: just have it call list_recordings, no other tools.
+        fake = FakeOpenAI(
+            _tool_call_response("c1", "list_recordings", {}),
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "What recordings do I have?",
+                openai_client=fake,
+            )
+        )
+
+        # Inspect what the model received as the function_call_output for c1.
+        # That is appended to the input of subsequent calls.
+        second_input = fake.calls[1]["input"]
+        outputs = [
+            json.loads(item["output"])
+            for item in second_input
+            if item.get("type") == "function_call_output"
+        ]
+        assert outputs, "no function_call_output was passed back to model"
+        recordings = outputs[0]["recordings"]
+        assert len(recordings) == 1
+        r = recordings[0]
+        assert r["title"] == "Standup"
+        assert r["folder"] == "MFC"
+        assert r["type"] == "meeting"
+        assert r["topics"] == ["v1.0", "release"]
+        assert r["summary_one_line"].startswith("Sprint planning")
+
+    async def test_get_action_items_default_filters_to_pending(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        from app.models.recording import ActionItem
+
+        s = setup_user_and_recording
+        item_open = ActionItem(
+            recording_id=s["recording"].id,
+            task="ship the auth refactor",
+            owner="Anna",
+            priority="high",
+            status="pending",
+        )
+        item_done = ActionItem(
+            recording_id=s["recording"].id,
+            task="old work",
+            status="completed",
+        )
+        db_session.add_all([item_open, item_done])
+        await db_session.flush()
+
+        fake = FakeOpenAI(
+            _tool_call_response("c1", "get_action_items", {}),
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "что я должен",
+                openai_client=fake,
+            )
+        )
+
+        outputs = [
+            json.loads(item["output"])
+            for item in fake.calls[1]["input"]
+            if item.get("type") == "function_call_output"
+        ]
+        items = outputs[0]["action_items"]
+        assert len(items) == 1
+        assert items[0]["task"] == "ship the auth refactor"
+        assert items[0]["status"] == "pending"
+        assert items[0]["recording_title"] == "Standup"
+
+    async def test_get_highlights_filters_by_min_importance(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        from app.models.highlight import Highlight
+
+        s = setup_user_and_recording
+        db_session.add_all(
+            [
+                Highlight(
+                    recording_id=s["recording"].id,
+                    category="decision",
+                    title="Block Tuesday",
+                    importance="high",
+                ),
+                Highlight(
+                    recording_id=s["recording"].id,
+                    category="aside",
+                    title="Coffee was good",
+                    importance="low",
+                ),
+            ]
+        )
+        await db_session.flush()
+
+        fake = FakeOpenAI(
+            _tool_call_response(
+                "c1", "get_highlights", {"min_importance": "high"}
+            ),
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "что важного на этой неделе",
+                openai_client=fake,
+            )
+        )
+        outputs = [
+            json.loads(item["output"])
+            for item in fake.calls[1]["input"]
+            if item.get("type") == "function_call_output"
+        ]
+        highlights = outputs[0]["highlights"]
+        assert len(highlights) == 1
+        assert highlights[0]["importance"] == "high"
+
+    async def test_search_people_finds_via_entity_relations(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        from app.models.entity import Entity, EntityRelation
+
+        s = setup_user_and_recording
+        alice = Entity(
+            user_id=s["user"].id,
+            type="person",
+            name="Alice Chen",
+        )
+        bob = Entity(
+            user_id=s["user"].id,
+            type="person",
+            name="Bob",
+        )
+        db_session.add_all([alice, bob])
+        await db_session.flush()
+        db_session.add(
+            EntityRelation(
+                source_id=alice.id,
+                target_id=bob.id,
+                relation_type="mentioned_in",
+                recording_id=s["recording"].id,
+            )
+        )
+        await db_session.flush()
+
+        fake = FakeOpenAI(
+            _tool_call_response("c1", "search_people", {"name": "Alice"}),
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what did Alice say?",
+                openai_client=fake,
+            )
+        )
+
+        outputs = [
+            json.loads(item["output"])
+            for item in fake.calls[1]["input"]
+            if item.get("type") == "function_call_output"
+        ]
+        recordings = outputs[0]["recordings"]
+        assert len(recordings) == 1
+        assert recordings[0]["title"] == "Standup"
+
+    async def test_search_people_returns_empty_when_no_match(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        fake = FakeOpenAI(
+            _tool_call_response("c1", "search_people", {"name": "Nobody"}),
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        s = setup_user_and_recording
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "kid foo",
+                openai_client=fake,
+            )
+        )
+        outputs = [
+            json.loads(item["output"])
+            for item in fake.calls[1]["input"]
+            if item.get("type") == "function_call_output"
+        ]
+        assert outputs[0]["recordings"] == []
+
+    async def test_new_tools_are_advertised_to_model(self, fake_embedding):
+        from app.core.companion import tool_definitions
+
+        names = {t["name"] for t in tool_definitions()}
+        assert {
+            "search_transcripts",
+            "get_recording_summary",
+            "list_recordings",
+            "get_action_items",
+            "get_highlights",
+            "search_people",
+        } <= names
+
     async def test_instructions_stay_stable_across_turns_for_same_user(
         self, db_session, setup_user_and_recording, fake_embedding
     ):
