@@ -31,13 +31,14 @@ class SearchInstrumentedTest {
     @Test
     fun guest_sees_locked_state() {
         fixture = createTestAppFixture()
+        val searchViewModel = SearchViewModel(fixture.container.waiApi)
         composeRule.setContent {
             WaiTheme {
                 SearchScreen(
                     container = fixture.container,
                     isGuest = true,
                     onOpenRecording = {},
-                    viewModel = SearchViewModel(fixture.container.waiApi),
+                    viewModel = searchViewModel,
                 )
             }
         }
@@ -67,13 +68,14 @@ class SearchInstrumentedTest {
             fixture.secureTokenStore.writeAccessToken("access-token")
             fixture.secureTokenStore.writeRefreshToken("refresh-token")
         }
+        val searchViewModel = SearchViewModel(fixture.container.waiApi)
         composeRule.setContent {
             WaiTheme {
                 SearchScreen(
                     container = fixture.container,
                     isGuest = false,
                     onOpenRecording = {},
-                    viewModel = SearchViewModel(fixture.container.waiApi),
+                    viewModel = searchViewModel,
                 )
             }
         }
@@ -97,13 +99,14 @@ class SearchInstrumentedTest {
             fixture.secureTokenStore.writeAccessToken("access-token")
             fixture.secureTokenStore.writeRefreshToken("refresh-token")
         }
+        val searchViewModel = SearchViewModel(fixture.container.waiApi)
         composeRule.setContent {
             WaiTheme {
                 SearchScreen(
                     container = fixture.container,
                     isGuest = false,
                     onOpenRecording = {},
-                    viewModel = SearchViewModel(fixture.container.waiApi),
+                    viewModel = searchViewModel,
                 )
             }
         }
@@ -133,13 +136,14 @@ class SearchInstrumentedTest {
             fixture.secureTokenStore.writeAccessToken("access-token")
             fixture.secureTokenStore.writeRefreshToken("refresh-token")
         }
+        val searchViewModel = SearchViewModel(fixture.container.waiApi)
         composeRule.setContent {
             WaiTheme {
                 SearchScreen(
                     container = fixture.container,
                     isGuest = false,
                     onOpenRecording = {},
-                    viewModel = SearchViewModel(fixture.container.waiApi),
+                    viewModel = searchViewModel,
                 )
             }
         }

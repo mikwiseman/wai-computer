@@ -28,4 +28,11 @@ object TestTags {
     const val ImportSheet = "import_sheet"
     const val ImportPickFileButton = "import_pick_file_button"
     const val ImportDoneButton = "import_done_button"
+    const val LibraryFilterAll = "library_filter_all"
+    const val LibraryFilterStarred = "library_filter_starred"
+    const val LibraryFilterTrash = "library_filter_trash"
+
+    fun libraryStarButton(recordingId: String): String = "library_star_$recordingId"
+    fun libraryRestoreButton(recordingId: String): String = "library_restore_$recordingId"
+    fun libraryDeleteForeverButton(recordingId: String): String = "library_delete_forever_$recordingId"
 }

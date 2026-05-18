@@ -13,18 +13,24 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -92,6 +98,7 @@ fun LibraryScreen(
         )
     }
     var pendingDelete by remember { mutableStateOf<LibraryItemUiModel?>(null) }
+    var pendingDeleteForever by remember { mutableStateOf<LibraryItemUiModel?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
     var showImportSheet by remember { mutableStateOf(false) }
 
@@ -127,10 +134,22 @@ fun LibraryScreen(
                     }
                     uiState.items.isEmpty() -> {
                         EmptyState(
-                            title = stringResource(R.string.library_empty_title),
-                            body = stringResource(R.string.library_empty_body),
-                            actionLabel = stringResource(R.string.library_record_cta),
-                            onAction = onSwitchToRecord,
+                            title = when (uiState.filter) {
+                                LibraryFilter.All -> stringResource(R.string.library_empty_title)
+                                LibraryFilter.Starred -> stringResource(R.string.library_starred_empty_title)
+                                LibraryFilter.Trash -> stringResource(R.string.library_trash_empty_title)
+                            },
+                            body = when (uiState.filter) {
+                                LibraryFilter.All -> stringResource(R.string.library_empty_body)
+                                LibraryFilter.Starred -> stringResource(R.string.library_starred_empty_body)
+                                LibraryFilter.Trash -> stringResource(R.string.library_trash_empty_body)
+                            },
+                            actionLabel = if (uiState.filter == LibraryFilter.All) {
+                                stringResource(R.string.library_record_cta)
+                            } else {
+                                null
+                            },
+                            onAction = if (uiState.filter == LibraryFilter.All) onSwitchToRecord else null,
                             modifier = Modifier.padding(top = 64.dp),
                         )
                     }
@@ -149,6 +168,12 @@ fun LibraryScreen(
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.Bold,
                                     )
+                                    if (!isGuest) {
+                                        FilterChipRow(
+                                            selected = uiState.filter,
+                                            onSelect = viewModel::setFilter,
+                                        )
+                                    }
                                     Text(
                                         text = stringResource(R.string.library_pull_to_refresh),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -164,28 +189,38 @@ fun LibraryScreen(
                                 }
                             }
                             items(uiState.items, key = { it.id }) { item ->
-                                val dismissState = rememberSwipeToDismissBoxState(
-                                    confirmValueChange = { value ->
-                                        if (value == SwipeToDismissBoxValue.EndToStart) {
-                                            pendingDelete = item
-                                            false
-                                        } else {
-                                            true
-                                        }
-                                    },
-                                )
-                                SwipeToDismissBox(
-                                    state = dismissState,
-                                    backgroundContent = {
-                                        DeleteBackground()
-                                    },
-                                    enableDismissFromStartToEnd = false,
-                                    enableDismissFromEndToStart = true,
-                                ) {
-                                    LibraryItemCard(
+                                if (uiState.filter == LibraryFilter.Trash) {
+                                    TrashItemCard(
                                         item = item,
                                         onClick = { onOpenRecording(item.id, item.localOnly) },
+                                        onRestore = { viewModel.restore(item.id) },
+                                        onDeleteForever = { pendingDeleteForever = item },
                                     )
+                                } else {
+                                    val dismissState = rememberSwipeToDismissBoxState(
+                                        confirmValueChange = { value ->
+                                            if (value == SwipeToDismissBoxValue.EndToStart) {
+                                                pendingDelete = item
+                                                false
+                                            } else {
+                                                true
+                                            }
+                                        },
+                                    )
+                                    SwipeToDismissBox(
+                                        state = dismissState,
+                                        backgroundContent = {
+                                            DeleteBackground()
+                                        },
+                                        enableDismissFromStartToEnd = false,
+                                        enableDismissFromEndToStart = true,
+                                    ) {
+                                        LibraryItemCard(
+                                            item = item,
+                                            onClick = { onOpenRecording(item.id, item.localOnly) },
+                                            onToggleStar = { viewModel.toggleStar(item.id) },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -288,12 +323,38 @@ fun LibraryScreen(
             },
         )
     }
+
+    if (pendingDeleteForever != null) {
+        AlertDialog(
+            onDismissRequest = { pendingDeleteForever = null },
+            title = { Text(stringResource(R.string.library_delete_forever)) },
+            text = { Text(stringResource(R.string.library_delete_forever_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val item = pendingDeleteForever ?: return@TextButton
+                    viewModel.deleteForever(item.id)
+                    pendingDeleteForever = null
+                }) {
+                    Text(
+                        stringResource(R.string.library_delete_forever),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteForever = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
 private fun LibraryItemCard(
     item: LibraryItemUiModel,
     onClick: () -> Unit,
+    onToggleStar: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
@@ -324,6 +385,24 @@ private fun LibraryItemCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (onToggleStar != null && !item.localOnly) {
+                    IconButton(
+                        onClick = onToggleStar,
+                        modifier = Modifier.testTag(TestTags.libraryStarButton(item.id)),
+                    ) {
+                        Icon(
+                            imageVector = if (item.isStarred) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = stringResource(
+                                if (item.isStarred) R.string.library_unstar else R.string.library_star,
+                            ),
+                            tint = if (item.isStarred) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
                 Text(
                     text = item.durationLabel,
@@ -357,6 +436,95 @@ private fun LibraryItemCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TrashItemCard(
+    item: LibraryItemUiModel,
+    onClick: () -> Unit,
+    onRestore: () -> Unit,
+    onDeleteForever: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(TestTags.libraryItem(item.id))
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = item.title ?: stringResource(R.string.detail_untitled),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = item.relativeTimeLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onRestore,
+                    modifier = Modifier.testTag(TestTags.libraryRestoreButton(item.id)),
+                ) {
+                    Icon(Icons.Outlined.Restore, contentDescription = null)
+                    Text(
+                        text = stringResource(R.string.library_restore),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+                TextButton(
+                    onClick = onDeleteForever,
+                    modifier = Modifier.testTag(TestTags.libraryDeleteForeverButton(item.id)),
+                ) {
+                    Icon(
+                        Icons.Outlined.DeleteForever,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = stringResource(R.string.library_delete_forever),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipRow(
+    selected: LibraryFilter,
+    onSelect: (LibraryFilter) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LibraryFilter.entries.forEach { filter ->
+            FilterChip(
+                selected = selected == filter,
+                onClick = { onSelect(filter) },
+                label = {
+                    Text(
+                        when (filter) {
+                            LibraryFilter.All -> stringResource(R.string.library_filter_all)
+                            LibraryFilter.Starred -> stringResource(R.string.library_filter_starred)
+                            LibraryFilter.Trash -> stringResource(R.string.library_filter_trash)
+                        },
+                    )
+                },
+                modifier = Modifier.testTag(
+                    when (filter) {
+                        LibraryFilter.All -> TestTags.LibraryFilterAll
+                        LibraryFilter.Starred -> TestTags.LibraryFilterStarred
+                        LibraryFilter.Trash -> TestTags.LibraryFilterTrash
+                    },
+                ),
+            )
         }
     }
 }
