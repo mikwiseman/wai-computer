@@ -5,6 +5,7 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "../page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
+const ANDROID_APK_URL = "/releases/android/WaiComputer-latest.apk";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
 
@@ -55,8 +56,8 @@ export default function RuHome() {
           AI second brain для всего, что ты говоришь.
         </h1>
         <p className={styles.subhead}>
-          Запись на Mac, Windows или iPhone. Транскрипция в реальном времени.
-          Поиск по всему. Спроси Wai что угодно.
+          Запись на Mac, Windows, iPhone или Android. Транскрипция в реальном
+          времени. Поиск по всему. Спроси Wai что угодно.
         </p>
 
         <div className={styles.downloads}>
@@ -85,6 +86,15 @@ export default function RuHome() {
           >
             <span className={styles.downloadTitle}>iPhone и iPad</span>
             <span className={styles.downloadMeta}>TestFlight</span>
+          </a>
+          <a
+            className={styles.downloadGhost}
+            href={ANDROID_APK_URL}
+            download
+            data-testid="download-android-ru"
+          >
+            <span className={styles.downloadTitle}>Android</span>
+            <span className={styles.downloadMeta}>APK · sideload</span>
           </a>
         </div>
       </section>
