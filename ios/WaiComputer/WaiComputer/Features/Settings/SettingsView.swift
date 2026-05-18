@@ -82,6 +82,13 @@ struct SettingsView: View {
                     }
                 }
 
+                // Integrations section
+                Section("Integrations") {
+                    NavigationLink(destination: McpConnectView()) {
+                        Label("MCP", systemImage: "link.circle")
+                    }
+                }
+
                 if !isScreenshotMode {
                     // About section
                     Section("About") {
