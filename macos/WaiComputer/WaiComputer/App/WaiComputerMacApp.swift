@@ -658,6 +658,9 @@ class MacAppState: ObservableObject {
             guard let self else { return }
             Task { @MainActor in
                 await self.resumePendingRecordingSyncIfNeeded()
+                guard self.isAuthenticated else { return }
+                await self.dictationManager.historyStore?.hydrate()
+                await self.dictationManager.dictionaryStore?.hydrate()
             }
         }
 
@@ -914,8 +917,8 @@ class MacAppState: ObservableObject {
     }
 
     private func clearLocalUserData() throws {
-        dictationManager.historyStore?.clearAll()
-        dictationManager.dictionaryStore?.clearAll()
+        dictationManager.historyStore?.clearLocalCache()
+        dictationManager.dictionaryStore?.clearLocalCache()
         try RecordingBackupStore.removeAllRecordings()
         try MacLocalUserDataStore.removeWaiComputerSupportDirectories()
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
@@ -945,6 +948,12 @@ class MacAppState: ObservableObject {
             await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
             dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
                 recordingViewModel?.phase == .idle
+            }
+            dictationManager.historyStore?.attach(apiClient: apiClient)
+            dictationManager.dictionaryStore?.attach(apiClient: apiClient)
+            Task { [dictationManager] in
+                await dictationManager.historyStore?.hydrate()
+                await dictationManager.dictionaryStore?.hydrate()
             }
         } catch {
             isAuthenticated = false
