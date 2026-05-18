@@ -112,9 +112,24 @@ object WaiTheme {
 @Composable
 fun WaiTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colors: ColorScheme = if (darkTheme) DarkColors else LightColors
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val colors: ColorScheme = when {
+        // Material You dynamic colors on Android 12+ — opt-in only because
+        // a strong Wai brand identity beats device-themed accents for an
+        // app that should feel consistent across phones.
+        dynamicColor && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S -> {
+            if (darkTheme) {
+                androidx.compose.material3.dynamicDarkColorScheme(context)
+            } else {
+                androidx.compose.material3.dynamicLightColorScheme(context)
+            }
+        }
+        darkTheme -> DarkColors
+        else -> LightColors
+    }
     MaterialTheme(
         colorScheme = colors,
         typography = WaiTypography,
