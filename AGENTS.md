@@ -91,9 +91,33 @@ Day-to-day flow: do work on a feature branch → merge to the desired branch →
 
 1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
 2. `cd macos/WaiComputer && xcodegen generate` so `WaiComputer.xcodeproj/project.pbxproj` picks up the new build number.
-3. Commit the version bump.
-4. Run `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle, and notarization credentials configured.
-5. After ~10-15 min, verify `https://wai.computer/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta).
+3. Write `artifacts/releases/macos/<version>-<build>/release-notes.md` BEFORE the bump commit if you want explicit notes, or — more commonly — make sure the commits in this release window are written as user-facing bullets (see "Release notes" below).
+4. Commit the version bump. Use the bump commit subject as a marketing summary of the release, not a mechanical "Bump to X.Y.Z" line — it's the fallback shown to every user when no other notes are picked up.
+5. Run `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle, and notarization credentials configured.
+6. After ~10-15 min, verify `https://wai.computer/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta), and open the release notes URL from the appcast in a browser to sanity-check the popup text.
+
+### Release notes
+
+The "What's New" dialog Sparkle shows users comes from `release-notes.md`, published next to the DMG as `https://wai.computer/releases/macos/<version>-<build>/release-notes.md` and linked from the appcast via `<sparkle:releaseNotesLink>`. `scripts/build-macos-dmg.sh` builds that file automatically by harvesting commit subjects since the previous build number bump:
+
+- It locates the previous build's bump commit via `git log -S "CURRENT_PROJECT_VERSION: \"<prev>\""`. **Gotcha:** that match also fires on commits that REMOVE the previous build number, so the heuristic can collapse the window to just the new bump commit when a single PR both edits the version and ships behavior. To avoid this, keep the version bump in its own commit, made AFTER the substantive work has already landed on `main`.
+- Within that range it filters `git log --no-merges -- macos/ shared/ scripts/build-macos-dmg.sh` to subjects that do NOT match `^(chore|docs|test|refactor|wip)[(:]`. Anything that survives becomes a `- ...` bullet, capped at 25.
+- If the window is empty, it falls back to the single most recent commit subject. That fallback is what users see when the gotcha above bites — write the bump commit accordingly.
+
+Style rules for commit subjects that will surface as release notes:
+
+- **Write for the user, not the reviewer.** "Fix Wai Companion streaming on Russian/emoji text" beats "Refactor CompanionStream byte buffer" — both describe the same change, only one tells the user what's better.
+- **Lead with the user-visible verb**: "Add", "Fix", "Improve", "Speed up", "Reduce", "Stop". Avoid "Refactor", "Cleanup", "Bump" unless the change is genuinely internal.
+- **One concern per commit.** A commit titled "Fix transcription + add Companion" hides one or both stories in the dialog.
+- **Skip the codebase noun.** Users don't know what `APIClient` or `summarizer.py` is. Talk about features (Companion, dictation, recordings).
+- **Keep it under ~80 chars** so the line doesn't wrap awkwardly in the popup.
+- **Prefix internal-only commits** with `chore:`, `docs:`, `test:`, `refactor:`, or `wip:` so they're filtered out automatically. Use this freely — those filters are the only way to keep noise out of the popup.
+
+If a release genuinely has nothing user-visible to announce (rare for a build worth shipping), at minimum say so: e.g. `Improve background reliability and tighten Sparkle update flow` is honest and useful; `Bump CURRENT_PROJECT_VERSION` is not.
+
+Manual override: edit `artifacts/releases/macos/<version>-<build>/release-notes.md` and rerun only `scripts/publish-macos-dmg.sh <version> <build> stable|beta` — that re-uploads the DMG and notes without rebuilding the app. `scripts/build-macos-dmg.sh` will clobber the file, so always overwrite AFTER the build step or directly edit and publish.
+
+iOS TestFlight notes come from App Store Connect, not the repo — set them in App Store Connect → TestFlight → Test Information after `scripts/build-testflight.sh` finishes the upload, or via `fastlane pilot upload --changelog "..."` if you wire it.
 
 ### Appcast merge invariant
 
