@@ -22,6 +22,7 @@ from app.api.routes import (
     realtime_voice,
     recordings,
     search,
+    voice_enrollment,
 )
 from app.api.routes import settings as settings_routes
 from app.config import get_settings
@@ -135,6 +136,7 @@ app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
+app.include_router(voice_enrollment.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")

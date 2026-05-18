@@ -106,27 +106,25 @@ async def _best_voiceprint_match(
     return person_id, float(similarity)
 
 
-async def store_voiceprint(
+async def store_voiceprint_from_path(
     *,
     db: AsyncSession,
     user_id: uuid.UUID,
     person_id: uuid.UUID,
-    staged_audio_path: Path | str,
-    transcript_results: list["TranscriptResult"],
-    raw_label: str,
+    audio_path: Path | str,
+    start_ms: int,
+    end_ms: int,
     source_recording_id: uuid.UUID | None,
-) -> uuid.UUID | None:
-    """Extract a voiceprint for ``raw_label`` and persist it against ``person_id``.
+) -> uuid.UUID:
+    """Extract an ECAPA embedding from ``audio_path[start_ms:end_ms]`` and persist it
+    as a voiceprint attached to ``person_id``.
 
-    Returns the new voiceprint id, or ``None`` if no clean snippet was available.
+    Used by both the diarization-side recorder (snippet extracted via
+    ``pick_clean_snippet``) and the onboarding voice-enrollment endpoint
+    (full uploaded sample, ``start_ms=0`` through total duration).
     """
-    span = pick_clean_snippet(transcript_results, raw_label)
-    if span is None:
-        return None
-
-    start_ms, end_ms = span
     embedding = await asyncio.to_thread(
-        compute_voice_embedding, staged_audio_path, start_ms, end_ms
+        compute_voice_embedding, audio_path, start_ms, end_ms
     )
 
     voiceprint_id = uuid.uuid4()
@@ -152,3 +150,33 @@ async def store_voiceprint(
         )
     )
     return voiceprint_id
+
+
+async def store_voiceprint(
+    *,
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    person_id: uuid.UUID,
+    staged_audio_path: Path | str,
+    transcript_results: list["TranscriptResult"],
+    raw_label: str,
+    source_recording_id: uuid.UUID | None,
+) -> uuid.UUID | None:
+    """Extract a voiceprint for ``raw_label`` and persist it against ``person_id``.
+
+    Returns the new voiceprint id, or ``None`` if no clean snippet was available.
+    """
+    span = pick_clean_snippet(transcript_results, raw_label)
+    if span is None:
+        return None
+
+    start_ms, end_ms = span
+    return await store_voiceprint_from_path(
+        db=db,
+        user_id=user_id,
+        person_id=person_id,
+        audio_path=staged_audio_path,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        source_recording_id=source_recording_id,
+    )
