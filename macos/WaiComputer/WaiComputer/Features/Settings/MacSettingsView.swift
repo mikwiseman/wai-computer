@@ -148,6 +148,16 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-account-header")
             }
 
+            BillingSection()
+
+            Section {
+                AppLanguagePicker()
+            } header: {
+                Text("settings.language.title", bundle: .main)
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-app-language-header")
+            }
+
             Section {
                 LanguagePickerView(store: languageStore)
                     .padding(.vertical, 4)
