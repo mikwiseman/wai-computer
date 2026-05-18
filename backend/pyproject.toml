@@ -27,6 +27,9 @@ dependencies = [
     "redis>=5.2.0",
     "croniter>=2.0.0",
     "mcp>=1.27.0,<2",
+    "speechbrain>=1.0.2",
+    "torchaudio",
+    "pydub>=0.25",
 ]
 
 [project.optional-dependencies]
