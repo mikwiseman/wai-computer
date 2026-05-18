@@ -31,6 +31,7 @@ dependencies = [
     "torchaudio",
     "pydub>=0.25",
     "audioop-lts>=0.2.2; python_version >= '3.13'",
+    "stripe>=15.0.0,<16.0.0",
 ]
 
 [project.optional-dependencies]

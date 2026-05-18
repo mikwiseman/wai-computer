@@ -85,6 +85,21 @@ class Settings(BaseSettings):
     # URLs
     frontend_url: str = "http://localhost:3000"
 
+    # Billing — Stripe (global rail)
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_publishable_key: str = ""
+
+    # Billing — T-Bank acquiring (RU rail)
+    tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2/"
+    tinkoff_terminal_key: str = ""
+    tinkoff_password: str = ""
+
+    # Billing — generic
+    billing_trial_days: int = 14
+    billing_refund_window_days: int = 7
+    billing_default_region: str = "global"
+
     # MCP remote connector OAuth
     mcp_issuer_url: str | None = None
     mcp_resource_url: str | None = None
