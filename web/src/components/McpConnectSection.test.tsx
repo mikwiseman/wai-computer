@@ -32,8 +32,8 @@ describe("McpConnectSection", () => {
   it("defaults to the Claude.ai guide and exposes the external link", () => {
     render(<McpConnectSection />);
     expect(screen.getByTestId("mcp-guide-claudeai")).toBeTruthy();
-    const link = screen.getByRole("link", { name: /Open Claude\.ai Connectors/i }) as HTMLAnchorElement;
-    expect(link.href).toBe("https://claude.ai/settings/connectors");
+    const link = screen.getByRole("link", { name: /Open Connectors in Claude\.ai/i }) as HTMLAnchorElement;
+    expect(link.href).toBe("https://claude.ai/customize/connectors");
     expect(link.target).toBe("_blank");
   });
 

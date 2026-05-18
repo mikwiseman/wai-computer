@@ -9,7 +9,7 @@ End-users get the same instructions in-app at **Settings → MCP** on every
 WaiComputer client (Web, macOS, iOS, Android). The canonical URL is always
 `https://wai.computer/mcp` regardless of which client you copy from.
 
-- **Claude.ai**: Settings → Connectors → Add custom connector → paste URL → approve on `wai.computer`.
+- **Claude.ai**: <https://claude.ai/customize/connectors> → click the "+" button → paste URL → approve on `wai.computer`.
 - **Cursor**: drop into `.cursor/mcp.json` (project) or global Cursor MCP settings:
   ```json
   { "mcpServers": { "waicomputer": { "url": "https://wai.computer/mcp" } } }

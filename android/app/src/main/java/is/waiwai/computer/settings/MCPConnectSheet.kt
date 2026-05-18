@@ -43,7 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal const val MCP_ENDPOINT_URL = "https://wai.computer/mcp"
-private const val CLAUDE_AI_CONNECTORS_URL = "https://claude.ai/settings/connectors"
+private const val CLAUDE_AI_CONNECTORS_URL = "https://claude.ai/customize/connectors"
 
 private enum class McpClient(val labelRes: Int, val stepsRes: Int) {
     ClaudeAI(R.string.settings_mcp_client_claudeai, R.string.settings_mcp_steps_claudeai),
