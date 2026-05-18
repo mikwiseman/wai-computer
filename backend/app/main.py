@@ -25,6 +25,8 @@ from app.api.routes import (
     voice_enrollment,
 )
 from app.api.routes import settings as settings_routes
+from app.billing.router import router as billing_router
+from app.billing.webhooks import router as billing_webhooks_router
 from app.config import get_settings
 from app.core.observability import (
     begin_request_context,
@@ -142,6 +144,8 @@ app.include_router(companion.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
+app.include_router(billing_router, prefix="/api")
+app.include_router(billing_webhooks_router, prefix="/api")
 
 
 @app.get("/")

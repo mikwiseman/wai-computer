@@ -1,8 +1,10 @@
 """User model."""
 
+import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.transcription_options import (
@@ -77,6 +79,18 @@ class User(Base, UUIDMixin, TimestampMixin):
         String(100),
         default=DEFAULT_DICTATION_POST_FILTER_MODEL,
         server_default=DEFAULT_DICTATION_POST_FILTER_MODEL,
+    )
+
+    # Billing region — seeded from WAIDownloadRegion at signup (global|ru).
+    # Drives default payment provider; user can override in Settings.
+    region: Mapped[str] = mapped_column(
+        String(10), default="global", server_default="global", nullable=False
+    )
+    # Convenience pointer to the active subscription. NULL = free tier.
+    current_subscription_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("billing_subscriptions.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
     )
 
     # Relationships
