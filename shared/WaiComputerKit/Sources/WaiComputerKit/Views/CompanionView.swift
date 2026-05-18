@@ -227,14 +227,24 @@ public struct CompanionView: View {
                 .padding(8)
                 .background(Color.secondary.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            Button {
-                Task { await send() }
-            } label: {
-                Text(isStreaming ? "…" : "Ask")
-                    .frame(minWidth: 60)
+            if isStreaming {
+                Button {
+                    cancelTurn()
+                } label: {
+                    Text("Stop")
+                        .frame(minWidth: 60)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Button {
+                    Task { await send() }
+                } label: {
+                    Text("Ask")
+                        .frame(minWidth: 60)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isStreaming || input.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding()
     }
@@ -289,6 +299,16 @@ public struct CompanionView: View {
         input = ""
         errorMessage = nil
 
+        // Cancel any in-flight turn first so two streams never interleave.
+        turnTask?.cancel()
+        turnTask = nil
+
+        // Flip stage synchronously so the disabled button covers the gap.
+        stage = .searching
+        streamingText = ""
+        streamingCitations = []
+        streamingToolNotes = []
+
         var chatId = activeChatId
         if chatId == nil {
             do {
@@ -296,12 +316,14 @@ public struct CompanionView: View {
                 chats.insert(chat, at: 0)
                 chatId = chat.id
                 activeChatId = chat.id
+                messages = []
             } catch {
                 errorMessage = error.localizedDescription
+                stage = .idle
                 return
             }
         }
-        guard let chatId else { return }
+        guard let chatId else { stage = .idle; return }
 
         let optimistic = CompanionMessage(
             id: "local-\(UUID().uuidString)",
@@ -317,30 +339,49 @@ public struct CompanionView: View {
             createdAt: Date()
         )
         messages.append(optimistic)
-        stage = .searching
-        streamingText = ""
-        streamingCitations = []
-        streamingToolNotes = []
 
         turnTask = Task { @MainActor in
+            var hadError = false
             do {
                 let stream = try await apiClient.streamCompanionMessage(
                     chatId: chatId,
                     content: trimmed
                 )
                 for await event in stream {
+                    if Task.isCancelled { break }
                     handle(event)
+                    if case .done = event { break }
+                }
+                if Task.isCancelled {
+                    return
                 }
                 let detail = try await apiClient.getCompanionChat(chatId: chatId)
                 messages = detail.messages
+            } catch is CancellationError {
+                return
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                return
             } catch {
+                hadError = true
                 errorMessage = error.localizedDescription
             }
-            streamingText = ""
-            streamingCitations = []
-            streamingToolNotes = []
+            if !hadError {
+                streamingText = ""
+                streamingCitations = []
+                streamingToolNotes = []
+            }
             stage = .idle
         }
+    }
+
+    @MainActor
+    private func cancelTurn() {
+        turnTask?.cancel()
+        turnTask = nil
+        streamingText = ""
+        streamingCitations = []
+        streamingToolNotes = []
+        stage = .idle
     }
 
     @MainActor
@@ -358,9 +399,15 @@ public struct CompanionView: View {
             streamingText += text
             if !streamingText.isEmpty { stage = .composing }
         case .citation(let citation):
-            streamingCitations.append(citation)
+            if !streamingCitations.contains(where: {
+                $0.index == citation.index
+                    && $0.segmentId == citation.segmentId
+                    && $0.spanStart == citation.spanStart
+            }) {
+                streamingCitations.append(citation)
+            }
         case .done:
-            break
+            stage = .idle
         case .error(_, let message):
             errorMessage = message
         }

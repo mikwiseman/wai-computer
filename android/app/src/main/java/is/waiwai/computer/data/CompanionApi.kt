@@ -1,15 +1,16 @@
 package `is`.waiwai.computer.data
 
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
@@ -98,7 +99,8 @@ class CompanionApi(
         )
     }
 
-    /// Open the SSE stream for a new turn and yield typed events.
+    /// Open the SSE stream for a new turn and yield typed events. Cancelling
+    /// the consuming collector cancels the underlying HTTP call.
     fun streamMessage(chatId: String, content: String): Flow<CompanionStreamEvent> = flow {
         val response = transport.streamAuthorized(
             method = HttpMethod.Post,
@@ -108,71 +110,129 @@ class CompanionApi(
             refresh = { authStore.refresh() },
         )
 
-        val channel = response.bodyAsChannel()
-        val buffer = StringBuilder()
-        while (true) {
-            val line = channel.readUTF8Line() ?: break
-            if (line.isEmpty()) {
-                val frame = buffer.toString()
-                buffer.clear()
-                val parsed = parseFrame(frame)
-                if (parsed != null) emit(parsed)
-                continue
+        try {
+            val channel = response.bodyAsChannel()
+            val dataLines = mutableListOf<String>()
+            var eventType: String? = null
+            var sawContentLine = false
+            while (true) {
+                val rawLine = channel.readUTF8Line() ?: break
+                val line = rawLine.trimEnd('\r')
+                if (line.isEmpty()) {
+                    if (sawContentLine) {
+                        parseFrame(eventType, dataLines)?.let { emit(it) }
+                    }
+                    dataLines.clear()
+                    eventType = null
+                    sawContentLine = false
+                    continue
+                }
+                if (line.startsWith(":")) {
+                    // SSE comment / heartbeat — skip without resetting state.
+                    continue
+                }
+                sawContentLine = true
+                when {
+                    line.startsWith("event:") -> {
+                        eventType = stripOptionalLeadingSpace(line.substring("event:".length)).trim()
+                    }
+                    line.startsWith("data:") -> {
+                        dataLines.add(stripOptionalLeadingSpace(line.substring("data:".length)))
+                    }
+                    line.startsWith("id:") || line.startsWith("retry:") -> {
+                        // Recognized but unused fields.
+                    }
+                    else -> {
+                        emit(
+                            CompanionStreamEvent.Error(
+                                code = "parse_error",
+                                message = "Unrecognized SSE line: $line",
+                            ),
+                        )
+                    }
+                }
             }
-            if (buffer.isNotEmpty()) buffer.append('\n')
-            buffer.append(line)
+            // Flush any final unterminated frame.
+            if (sawContentLine) {
+                parseFrame(eventType, dataLines)?.let { emit(it) }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } finally {
+            // Always tear down the underlying HTTP call so cancellation closes
+            // the socket and doesn't keep counting tokens on the server. The
+            // response coroutine context owns the connection lifetime.
+            runCatching { response.cancel() }
         }
-        if (buffer.isNotEmpty()) {
-            parseFrame(buffer.toString())?.let { emit(it) }
-        }
-    }
+    }.flowOn(Dispatchers.IO)
 
-    private fun parseFrame(frame: String): CompanionStreamEvent? {
-        var eventType: String? = null
-        var dataLine: String? = null
-        for (rawLine in frame.split('\n')) {
-            val line = rawLine.trimEnd()
-            when {
-                line.startsWith("event: ") -> eventType = line.substring("event: ".length).trim()
-                line.startsWith("data: ") -> dataLine = line.substring("data: ".length)
-            }
+    private fun parseFrame(
+        eventType: String?,
+        dataLines: List<String>,
+    ): CompanionStreamEvent? {
+        if (eventType == null) {
+            return CompanionStreamEvent.Error(
+                code = "parse_error",
+                message = "SSE frame missing event: field",
+            )
         }
-        if (eventType == null || dataLine == null) return null
-        val data = runCatching { json.parseToJsonElement(dataLine).jsonObject }
-            .getOrNull() ?: return null
-        return when (eventType) {
-            "turn_start" -> CompanionStreamEvent.TurnStart(
-                messageId = data.string("message_id"),
-                conversationId = data.string("conversation_id"),
+        if (dataLines.isEmpty()) {
+            return CompanionStreamEvent.Error(
+                code = "parse_error",
+                message = "SSE frame for '$eventType' has no data: line",
             )
-            "tool_call" -> CompanionStreamEvent.ToolCall(
-                callId = data.string("call_id"),
-                tool = data.string("tool"),
+        }
+        val payload = dataLines.joinToString(separator = "\n")
+        val data = runCatching { json.parseToJsonElement(payload).jsonObject }
+            .getOrElse { error ->
+                return CompanionStreamEvent.Error(
+                    code = "parse_error",
+                    message = "Invalid JSON in '$eventType' frame: ${error.message}",
+                )
+            }
+        return try {
+            when (eventType) {
+                "turn_start" -> CompanionStreamEvent.TurnStart(
+                    messageId = data.requiredString("message_id"),
+                    conversationId = data.requiredString("conversation_id"),
+                )
+                "tool_call" -> CompanionStreamEvent.ToolCall(
+                    callId = data.requiredString("call_id"),
+                    tool = data.requiredString("tool"),
+                )
+                "tool_result" -> CompanionStreamEvent.ToolResult(
+                    callId = data.requiredString("call_id"),
+                    summary = data.requiredString("summary"),
+                )
+                "token" -> CompanionStreamEvent.Token(text = data.requiredString("text"))
+                "citation" -> CompanionStreamEvent.Citation(
+                    index = data.requiredInt("index"),
+                    segmentId = data.requiredString("segment_id"),
+                    recordingId = data.requiredString("recording_id"),
+                    startMs = data.optionalInt("start_ms"),
+                    endMs = data.optionalInt("end_ms"),
+                    spanStart = data.requiredInt("span_start"),
+                    spanEnd = data.requiredInt("span_end"),
+                )
+                "done" -> CompanionStreamEvent.Done(
+                    messageId = data.requiredString("message_id"),
+                    model = data.requiredString("model"),
+                    latencyMs = data.requiredInt("latency_ms"),
+                )
+                "error" -> CompanionStreamEvent.Error(
+                    code = data.requiredString("code"),
+                    message = data.requiredString("message"),
+                )
+                else -> CompanionStreamEvent.Error(
+                    code = "parse_error",
+                    message = "Unknown SSE event type: $eventType",
+                )
+            }
+        } catch (err: IllegalStateException) {
+            CompanionStreamEvent.Error(
+                code = "parse_error",
+                message = err.message ?: "Missing field in '$eventType' frame",
             )
-            "tool_result" -> CompanionStreamEvent.ToolResult(
-                callId = data.string("call_id"),
-                summary = data.string("summary"),
-            )
-            "token" -> CompanionStreamEvent.Token(text = data.string("text"))
-            "citation" -> CompanionStreamEvent.Citation(
-                index = data.int("index"),
-                segmentId = data.string("segment_id"),
-                recordingId = data.string("recording_id"),
-                startMs = data.intOrNull("start_ms"),
-                endMs = data.intOrNull("end_ms"),
-                spanStart = data.int("span_start"),
-                spanEnd = data.int("span_end"),
-            )
-            "done" -> CompanionStreamEvent.Done(
-                messageId = data.string("message_id"),
-                model = data.string("model"),
-                latencyMs = data.int("latency_ms"),
-            )
-            "error" -> CompanionStreamEvent.Error(
-                code = data.string("code"),
-                message = data.string("message"),
-            )
-            else -> null
         }
     }
 
@@ -198,11 +258,16 @@ class CompanionApi(
     }
 }
 
-private fun JsonObject.string(key: String): String =
-    this[key]?.jsonPrimitive?.contentOrNull ?: ""
+private fun stripOptionalLeadingSpace(value: String): String =
+    if (value.startsWith(" ")) value.substring(1) else value
 
-private fun JsonObject.int(key: String): Int =
-    this[key]?.jsonPrimitive?.intOrNull ?: 0
+private fun JsonObject.requiredString(key: String): String =
+    this[key]?.jsonPrimitive?.contentOrNull
+        ?: error("Required field '$key' missing")
 
-private fun JsonObject.intOrNull(key: String): Int? =
+private fun JsonObject.requiredInt(key: String): Int =
+    this[key]?.jsonPrimitive?.intOrNull
+        ?: error("Required field '$key' missing or not an int")
+
+private fun JsonObject.optionalInt(key: String): Int? =
     this[key]?.jsonPrimitive?.intOrNull

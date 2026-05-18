@@ -317,9 +317,9 @@ class ApiTransport(
         client.close()
     }
 
-    /// Execute a streaming request with bearer-token refresh-on-401. Returns
-    /// the raw HttpResponse so callers can consume `bodyAsChannel()` as bytes
-    /// arrive — used by the Companion SSE consumer.
+    /// Execute a streaming request with bearer-token refresh-on-401. Throws
+    /// `ApiError.Http` (or `Unauthorized`) on non-2xx so the caller never
+    /// iterates a JSON error body as an event stream.
     suspend fun streamAuthorized(
         method: HttpMethod,
         path: String,
@@ -329,17 +329,37 @@ class ApiTransport(
         refresh: suspend () -> Boolean,
     ): HttpResponse {
         val first = streamRequest(method, path, query, body, accessTokenProvider())
-        if (first.status.value != 401) {
-            return first
+        if (first.status.value == 401) {
+            runCatching { first.bodyAsText() }
+            if (!refresh()) {
+                throw ApiError.Unauthorized
+            }
+            val second = streamRequest(method, path, query, body, accessTokenProvider())
+            if (second.status.value == 401) {
+                throw ApiError.Unauthorized
+            }
+            return ensureSuccessOrThrow(second, path)
         }
-        if (!refresh()) {
-            throw ApiError.Unauthorized
+        return ensureSuccessOrThrow(first, path)
+    }
+
+    private suspend fun ensureSuccessOrThrow(
+        response: HttpResponse,
+        path: String,
+    ): HttpResponse {
+        if (response.status.value in 200..299) {
+            return response
         }
-        val second = streamRequest(method, path, query, body, accessTokenProvider())
-        if (second.status.value == 401) {
-            throw ApiError.Unauthorized
-        }
-        return second
+        SentryHelper.addBreadcrumb(
+            category = "http.stream",
+            message = "${response.status.value} $path",
+            data = mapOf("path" to path, "status" to response.status.value),
+        )
+        val detail = runCatching { response.bodyAsText() }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        throw ApiError.Http(response.status.value, detail)
     }
 
     private suspend fun streamRequest(
@@ -352,8 +372,8 @@ class ApiTransport(
         val url = resolveUrl(path, query)
         return client.request(url) {
             this.method = method
-            applyCommonHeaders(bearerToken)
-            header(HttpHeaders.Accept, "text/event-stream")
+            applyCommonHeaders(bearerToken, accept = "text/event-stream")
+            header(HttpHeaders.CacheControl, "no-cache")
             if (body != null) {
                 contentType(ContentType.Application.Json)
                 setBody(body)
@@ -361,11 +381,15 @@ class ApiTransport(
         }
     }
 
-    private fun HttpRequestBuilder.applyCommonHeaders(bearerToken: String?) {
+    private fun HttpRequestBuilder.applyCommonHeaders(
+        bearerToken: String?,
+        accept: String = ContentType.Application.Json.toString(),
+    ) {
         if (!bearerToken.isNullOrBlank()) {
             header(HttpHeaders.Authorization, "Bearer $bearerToken")
         }
-        header(HttpHeaders.Accept, ContentType.Application.Json)
+        headers.remove(HttpHeaders.Accept)
+        header(HttpHeaders.Accept, accept)
     }
 
     private suspend fun resolveUrl(path: String, query: List<Pair<String, String>>): String {

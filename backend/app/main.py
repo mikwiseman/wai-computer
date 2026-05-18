@@ -89,17 +89,7 @@ async def lifespan(app: FastAPI):
         logger.warning("REDIS_URL is not configured — agent scheduling will not work")
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(mcp_asgi_app.router.lifespan_context(mcp_asgi_app))
-
-        # Startup: pre-load sentence-transformers model
-        logger.info("Pre-loading sentence-transformers embedding model...")
-        from app.core.embeddings import get_embedding_generator
-
-        generator = get_embedding_generator()
-        generator._load_model()
-        logger.info("Embedding model loaded successfully.")
-
         yield
-    # Shutdown
     logger.info("Application shutting down.")
 
 

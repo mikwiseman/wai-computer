@@ -1,5 +1,6 @@
 """Wai Companion REST routes — CRUD plus SSE message streaming."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -25,17 +26,19 @@ CONVERSATIONS_DEFAULT_LIMIT = 50
 CONVERSATIONS_MAX_LIMIT = 200
 MESSAGES_DEFAULT_LIMIT = 50
 MESSAGES_MAX_LIMIT = 500
+# Heartbeat must be shorter than the shortest reverse-proxy idle timeout in
+# front of this service (Caddy default is 30s).
+SSE_HEARTBEAT_SECONDS = 15.0
 
 
 class ConversationScope(BaseModel):
-    """Filter applied to retrieval for every turn of this conversation."""
+    """Filter applied to retrieval for every turn of this conversation.
+
+    Only `recording_ids` is enforced server-side; accepting more fields here
+    would silently fail at retrieval time, violating no-fallbacks.
+    """
 
     recording_ids: list[str] | None = None
-    folder_ids: list[str] | None = None
-    types: list[str] | None = None
-    speakers: list[str] | None = None
-    date_from: datetime | None = None
-    date_to: datetime | None = None
 
 
 class CreateConversationRequest(BaseModel):
@@ -110,7 +113,11 @@ def _to_summary(c: Conversation) -> ConversationSummary:
     )
 
 
-def _to_message(m: ChatMessage) -> MessageResponse:
+def _to_message(
+    m: ChatMessage,
+    citations: list[MessageCitation] | None = None,
+) -> MessageResponse:
+    cits = citations if citations is not None else []
     return MessageResponse(
         id=str(m.id),
         role=m.role,
@@ -125,7 +132,7 @@ def _to_message(m: ChatMessage) -> MessageResponse:
                 span_end=cit.span_end,
                 citation_index=cit.citation_index,
             )
-            for cit in m.citations
+            for cit in cits
         ],
         model=m.model,
         input_tokens=m.input_tokens,
@@ -284,6 +291,7 @@ async def get_chat(
     messages_desc = list(msg_result.scalars().all())
 
     # Preload citations for each message to avoid N+1.
+    citations_by_msg: dict[uuid.UUID, list[MessageCitation]] = {}
     if messages_desc:
         cit_stmt = (
             select(MessageCitation)
@@ -293,19 +301,18 @@ async def get_chat(
             .order_by(MessageCitation.citation_index)
         )
         cit_result = await db.execute(cit_stmt)
-        citations = list(cit_result.scalars().all())
-        citations_by_msg: dict[uuid.UUID, list[MessageCitation]] = {}
-        for cit in citations:
+        for cit in cit_result.scalars().all():
             citations_by_msg.setdefault(cit.message_id, []).append(cit)
-        for m in messages_desc:
-            m.citations = citations_by_msg.get(m.id, [])
 
     # Return messages oldest-first within the page so clients can append top.
     messages_asc = list(reversed(messages_desc))
 
     return ConversationDetail(
         **_to_summary(chat).model_dump(),
-        messages=[_to_message(m) for m in messages_asc],
+        messages=[
+            _to_message(m, citations_by_msg.get(m.id, []))
+            for m in messages_asc
+        ],
     )
 
 
@@ -354,6 +361,9 @@ def _sse_format(event_obj: Any) -> bytes:
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
 
 
+_SSE_HEARTBEAT = b": keep-alive\n\n"
+
+
 @router.post("/chats/{chat_id}/messages")
 async def post_message(
     chat_id: uuid.UUID,
@@ -365,19 +375,51 @@ async def post_message(
     await _load_user_chat(db, user.id, chat_id)
 
     async def event_stream():
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        async def producer() -> None:
+            try:
+                async for evt in run_turn(db, user.id, chat_id, request.content):
+                    await queue.put(_sse_format(evt))
+            except CompanionError as exc:
+                logger.warning(
+                    "companion turn error code=%s chat_id=%s", exc.code, chat_id
+                )
+                await queue.put(
+                    _sse_format(ErrorEvent(code=exc.code, message=exc.message))
+                )
+            except Exception:
+                logger.exception(
+                    "companion turn unhandled error chat_id=%s", chat_id
+                )
+                await queue.put(
+                    _sse_format(
+                        ErrorEvent(code="internal_error", message="Turn failed")
+                    )
+                )
+            finally:
+                await queue.put(None)
+
+        producer_task = asyncio.create_task(producer())
         try:
-            async for evt in run_turn(db, user.id, chat_id, request.content):
-                yield _sse_format(evt)
-        except CompanionError as exc:
-            logger.warning(
-                "companion turn error code=%s chat_id=%s", exc.code, chat_id
-            )
-            yield _sse_format(ErrorEvent(code=exc.code, message=exc.message))
-        except Exception:
-            logger.exception("companion turn unhandled error chat_id=%s", chat_id)
-            yield _sse_format(
-                ErrorEvent(code="internal_error", message="Turn failed")
-            )
+            while True:
+                try:
+                    frame = await asyncio.wait_for(
+                        queue.get(), timeout=SSE_HEARTBEAT_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    yield _SSE_HEARTBEAT
+                    continue
+                if frame is None:
+                    break
+                yield frame
+        finally:
+            if not producer_task.done():
+                producer_task.cancel()
+                try:
+                    await producer_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     return StreamingResponse(
         event_stream(),
@@ -385,6 +427,7 @@ async def post_message(
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
         },
     )
 
