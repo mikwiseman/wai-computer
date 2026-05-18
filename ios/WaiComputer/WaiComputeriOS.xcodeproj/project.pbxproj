@@ -83,7 +83,6 @@
 				B7E17F95FDF3186142E34982 /* AppIcon.icon */,
 				61218F6D38CD03677BA3F634 /* Core */,
 				6A9ECFD356CFCA5FEDCD8A18 /* Features */,
-				C2B690098E088D0DE62C8522 /* Resources */,
 			);
 			path = WaiComputer;
 			sourceTree = "<group>";
@@ -98,13 +97,6 @@
 			path = Onboarding;
 			sourceTree = "<group>";
 		};
-		576C17BFABE419AC3E3A8113 /* Storage */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Storage;
-			sourceTree = "<group>";
-		};
 		5F9E1EB0EFC21037E649A2D0 /* Search */ = {
 			isa = PBXGroup;
 			children = (
@@ -117,9 +109,6 @@
 			isa = PBXGroup;
 			children = (
 				804113B280E47C43FBED2F85 /* DesignSystem.swift */,
-				FEC5ABC79A466FFCA8395FD0 /* Audio */,
-				972161C5CE3622A3428C2049 /* Network */,
-				576C17BFABE419AC3E3A8113 /* Storage */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -171,13 +160,6 @@
 			path = Recording;
 			sourceTree = "<group>";
 		};
-		972161C5CE3622A3428C2049 /* Network */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Network;
-			sourceTree = "<group>";
-		};
 		B7E17F95FDF3186142E34982 /* AppIcon.icon */ = {
 			isa = PBXGroup;
 			children = (
@@ -185,13 +167,6 @@
 				6661EC87F3309F0BB1B3354F /* Assets */,
 			);
 			path = AppIcon.icon;
-			sourceTree = "<group>";
-		};
-		C2B690098E088D0DE62C8522 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 		C49AB20F9C75D86A5BC0BA1F /* Library */ = {
@@ -230,13 +205,6 @@
 				4BC2FDA1192C1827C0219FB4 /* WaiComputer */,
 				711C1B822C5DEDB1FE22252D /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		FEC5ABC79A466FFCA8395FD0 /* Audio */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Audio;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -346,7 +314,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -354,7 +322,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -368,7 +336,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -376,7 +344,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.6;
+				MARKETING_VERSION = 1.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.dev;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
