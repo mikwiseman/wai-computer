@@ -1,0 +1,77 @@
+name: macOS CI
+
+# Validates that every push to main (and every PR targeting main) still
+# produces a working macOS build and that the Swift unit + integration tests
+# stay green. Runs on a self-hosted Mac so we don't pay for cloud macOS
+# minutes and credentials never leave the dev box. Does NOT sign, notarize
+# or publish — that lives in `macos-release.yml`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'macos/**'
+      - 'shared/WaiComputerKit/**'
+      - 'scripts/build-macos-dmg.sh'
+      - 'scripts/publish-macos-dmg.sh'
+      - 'scripts/release-macos.sh'
+      - 'scripts/merge-macos-appcast.py'
+      - '.github/workflows/macos-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'macos/**'
+      - 'shared/WaiComputerKit/**'
+      - '.github/workflows/macos-ci.yml'
+  workflow_dispatch: {}
+
+# Cancel an older in-flight run on the same branch when a new push lands.
+# Saves runner time and means the last commit is always the one validated.
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show runner info
+        run: |
+          sw_vers
+          xcodebuild -version
+          which swift && swift --version
+          which xcodegen && xcodegen --version
+
+      - name: WaiComputerKit unit tests
+        working-directory: shared/WaiComputerKit
+        run: swift test
+
+      - name: Generate Xcode project
+        working-directory: macos/WaiComputer
+        run: xcodegen generate
+
+      - name: macOS build (no signing)
+        working-directory: macos/WaiComputer
+        run: |
+          xcodebuild \
+            -project WaiComputer.xcodeproj \
+            -scheme WaiComputer \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: macOS unit tests
+        working-directory: macos/WaiComputer
+        run: |
+          xcodebuild \
+            -project WaiComputer.xcodeproj \
+            -scheme WaiComputer \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            test \
+            -only-testing:WaiComputerTests
