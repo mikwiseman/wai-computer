@@ -25,10 +25,16 @@ fun BannerCard(
     body: String?,
     variant: BannerVariant,
 ) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val background = when (variant) {
-        BannerVariant.Warning -> Color(0xFFFFF4D6)
-        BannerVariant.Error -> Color(0xFFFDE8E8)
+        BannerVariant.Warning -> if (isDark) Color(0xFF3F2D00) else Color(0xFFFFF4D6)
+        BannerVariant.Error -> if (isDark) Color(0xFF3F1414) else Color(0xFFFDE8E8)
         BannerVariant.Info -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val titleColor = when (variant) {
+        BannerVariant.Warning -> if (isDark) Color(0xFFFFE6A8) else Color(0xFF7A5500)
+        BannerVariant.Error -> if (isDark) Color(0xFFFFC1C1) else Color(0xFFB91C1C)
+        BannerVariant.Info -> MaterialTheme.colorScheme.onPrimaryContainer
     }
     Column(
         modifier = Modifier
@@ -36,13 +42,16 @@ fun BannerCard(
             .background(background, RoundedCornerShape(16.dp))
             .padding(16.dp),
     ) {
-        Text(text = title, fontWeight = FontWeight.SemiBold)
+        Text(text = title, fontWeight = FontWeight.SemiBold, color = titleColor)
         if (!body.isNullOrBlank()) {
             Text(
                 text = body,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = titleColor.copy(alpha = 0.8f),
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
 }
+
+private fun Color.luminance(): Float =
+    0.2126f * red + 0.7152f * green + 0.0722f * blue
