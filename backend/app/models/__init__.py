@@ -17,6 +17,7 @@ from app.models.person import Person, Voiceprint
 from app.models.recording import ActionItem, Folder, Recording, RecordingShare, Segment, Summary
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 
 __all__ = [
     "Base",
@@ -46,4 +47,6 @@ __all__ = [
     "McpOAuthAuthorizationCode",
     "McpOAuthToken",
     "McpOAuthConsent",
+    "UserMemoryBlock",
+    "UserMemoryLogEntry",
 ]
