@@ -21,10 +21,11 @@ Keep aligned in env: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wa
 
 ## Deploy
 
-- GitHub Actions are not used for production deploys. Do not add push-triggered Actions deploys back unless explicitly asked.
-- Production deploy: `VPS_USER=root ./scripts/deploy-server.sh`
+- GitHub Actions are not used for **backend** production deploys. Do not add push-triggered Actions deploys for `backend/` or `web/` unless explicitly asked.
+- Production deploy (backend + web): `VPS_USER=root ./scripts/deploy-server.sh`.
 - Deploy syncs source to `/opt/waicomputer`; the VPS builds `api`, `web`, `celery-worker`, starts `caddy`, and checks health for all four services.
 - Runtime env stays only on the server at `/etc/waicomputer/backend.env`; never rebuild it from GitHub secrets.
+- **macOS builds** run on a self-hosted GitHub Actions runner (see `docs/macos-runner-setup.md`). Pushes to `main` that touch macOS-relevant paths trigger `macos-ci.yml` (build + test, no publish). Releases are workflow_dispatch only via `macos-release.yml` — credentials stay in the runner's keychain, nothing uploaded as GitHub Secrets.
 
 ## Local Dev
 
