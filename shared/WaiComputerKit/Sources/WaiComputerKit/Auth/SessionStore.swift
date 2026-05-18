@@ -7,8 +7,8 @@ private let log = Logger(subsystem: "is.waiwai.computer.auth", category: "sessio
 ///
 /// macOS Keychain ACLs invalidate when an app's cdhash drifts (every Sparkle
 /// update, every re-sign), forcing the user to re-login on every release. The
-/// industry workaround that ships in Wispr Flow, TokenEater, Claude Code, and
-/// other 2026 macOS apps is to persist OAuth tokens in a JSON file under
+/// industry workaround that ships in several 2026 macOS apps is to persist
+/// OAuth tokens in a JSON file under
 /// Application Support and rely on filesystem permissions + FileVault for
 /// at-rest protection.
 ///

@@ -117,11 +117,11 @@ async def test_transcription_dispatches_to_explicit_provider_and_model_without_u
 
 @pytest.mark.asyncio
 async def test_transcription_rejects_dropped_openai_models():
-    """gpt-4o-transcribe was retired Feb 2026 and is no longer a valid choice."""
+    """OpenAI file transcription is no longer a valid file STT choice."""
     user = type(
         "User",
         (),
-        {"file_stt_provider": "openai", "file_stt_model": "gpt-4o-transcribe"},
+        {"file_stt_provider": "openai", "file_stt_model": "retired-batch-stt"},
     )()
     from app.core.transcription import transcribe_audio_file
 

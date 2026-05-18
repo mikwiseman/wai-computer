@@ -90,19 +90,19 @@ def _dummy_request(cookie_token: str | None = None) -> SimpleNamespace:
 
 
 def _vector(index: int) -> list[float]:
-    values = [0.0] * 384
+    values = [0.0] * 3072
     values[index] = 1.0
     return values
 
 
 def _vector_literal(index: int) -> str:
-    values = ["0"] * 384
+    values = ["0"] * 3072
     values[index] = "1"
     return "[" + ",".join(values) + "]"
 
 
 def _vector_list(index: int) -> list[float]:
-    values = [0.0] * 384
+    values = [0.0] * 3072
     values[index] = 1.0
     return values
 
@@ -868,15 +868,5 @@ async def test_main_root_health_and_lifespan_paths(monkeypatch: pytest.MonkeyPat
     assert health == {"status": "healthy", "database": "connected"}
     assert session.called
 
-    class DummyGenerator:
-        def __init__(self) -> None:
-            self.loaded = False
-
-        def _load_model(self) -> None:
-            self.loaded = True
-
-    generator = DummyGenerator()
-    monkeypatch.setattr("app.core.embeddings.get_embedding_generator", lambda: generator)
-
     async with main.lifespan(main.app):
-        assert generator.loaded
+        pass

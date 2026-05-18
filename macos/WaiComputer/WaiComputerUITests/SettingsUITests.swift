@@ -90,7 +90,7 @@ final class SettingsUITests: XCTestCase {
     }
 
     @MainActor
-    func testBetaAndDeveloperModeTogglesAreGroupedWithUpdateControls() throws {
+    func testBetaToggleIsGroupedWithUpdateControls() throws {
         let app = launchToSettings()
 
         let checkForUpdatesButton = app.buttons
@@ -104,27 +104,14 @@ final class SettingsUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(betaUpdatesToggle, in: app, timeout: 3))
 
-        let developerModeToggle = app.descendants(matching: .any)
-            .matching(identifier: "settings-developer-mode-toggle")
-            .firstMatch
-        XCTAssertTrue(waitForElement(developerModeToggle, in: app, timeout: 3))
-
         XCTAssertTrue(
             betaUpdatesToggle.frame.midY < checkForUpdatesButton.frame.midY,
             "Receive beta updates should appear above Check for Updates."
         )
-        XCTAssertTrue(
-            betaUpdatesToggle.frame.midY < developerModeToggle.frame.midY,
-            "Developer Mode should sit next to the beta update controls."
-        )
-        XCTAssertTrue(
-            developerModeToggle.frame.midY < checkForUpdatesButton.frame.midY,
-            "Developer Mode should appear above Check for Updates."
-        )
         XCTAssertLessThan(
             abs(checkForUpdatesButton.frame.midY - betaUpdatesToggle.frame.midY),
             180,
-            "Receive beta updates and Developer Mode should be grouped with the version and update controls."
+            "Receive beta updates should be grouped with the version and update controls."
         )
     }
 

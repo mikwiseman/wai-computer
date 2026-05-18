@@ -23,7 +23,7 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 │  │              (Self-hosted VPS)            │                  │
 │  ├───────────────────────────────────────────┤                  │
 │  │  ┌─────────────┐  ┌─────────────────────┐ │                  │
-│  │  │ ElevenLabs  │  │   Claude API        │ │                  │
+│  │  │ ElevenLabs  │  │   OpenAI Responses  │ │                  │
 │  │  │ Realtime    │  │   Summarization     │ │                  │
 │  │  │ Voice + STT │  │   App Generation    │ │                  │
 │  │  │             │  │   Tool Execution    │ │                  │
@@ -57,7 +57,7 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 ### Backend
 - Real-time audio streaming via WebSocket
 - ElevenLabs realtime voice + speech-to-text
-- Claude API for summarization and entity extraction
+- OpenAI Responses API for summarization, entity extraction, Companion, and dictation cleanup
 - PostgreSQL with pgvector for hybrid search
 - Redis for agent scheduling and deploy/runtime coordination
 
@@ -169,7 +169,7 @@ Web app default routes:
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer
 JWT_SECRET=your-secure-secret
 ELEVENLABS_API_KEY=your-elevenlabs-key
-ANTHROPIC_API_KEY=your-anthropic-key
+OPENAI_API_KEY=your-openai-key
 
 # Optional - Email (magic links)
 RESEND_API_KEY=your-resend-api-key
@@ -220,7 +220,7 @@ wai-computer/
 ├── backend/              # Python FastAPI
 │   ├── app/
 │   │   ├── api/          # Routes
-│   │   ├── core/         # ElevenLabs, Claude, auth
+│   │   ├── core/         # ElevenLabs, OpenAI, auth
 │   │   ├── models/       # SQLAlchemy models
 │   │   └── db/           # Database config
 │   └── tests/
@@ -248,7 +248,7 @@ To capture audio from Zoom/Meet/etc:
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
 - **Transcription**: ElevenLabs realtime + upload speech-to-text
-- **AI**: Claude API (Anthropic)
+- **AI**: OpenAI Responses API
 - **Audio Codec**: Opus (16kHz, mono)
 - **Deploy**: Cloudflare Pages + Workers
 

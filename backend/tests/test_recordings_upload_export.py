@@ -84,7 +84,7 @@ async def test_upload_wav_file_with_correct_mime(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -142,7 +142,7 @@ async def test_export_txt_format(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -187,7 +187,7 @@ async def test_export_srt_format_includes_timestamps(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -234,7 +234,7 @@ async def test_export_markdown_format_returns_structured_content(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -354,7 +354,7 @@ async def test_upload_transcribes_single_channel(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -424,7 +424,7 @@ async def test_upload_transcribes_multichannel(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -493,7 +493,7 @@ async def test_save_transcript_with_very_long_text(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -633,7 +633,7 @@ async def test_save_transcript_sets_duration_from_end_times(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -705,7 +705,7 @@ async def test_export_content_disposition_header(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",

@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.core.observability import (
@@ -20,6 +20,11 @@ from app.core.observability import (
     capture_sentry_exception,
 )
 from app.core.openai_client import get_openai_client
+from app.core.openai_responses import (
+    OpenAIResponseError,
+    ensure_response_completed,
+    response_output_text,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -59,14 +64,14 @@ class _Highlight(BaseModel):
 class _SummarySchema(BaseModel):
     title: str
     summary: str
-    key_points: list[str]
-    decisions: list[_Decision]
-    action_items: list[_ActionItem]
-    topics: list[str]
-    people_mentioned: list[str]
-    follow_up_questions: list[str]
+    key_points: list[str] = Field(max_length=15)
+    decisions: list[_Decision] = Field(max_length=20)
+    action_items: list[_ActionItem] = Field(max_length=30)
+    topics: list[str] = Field(max_length=20)
+    people_mentioned: list[str] = Field(max_length=30)
+    follow_up_questions: list[str] = Field(max_length=10)
     sentiment: Literal["positive", "neutral", "negative", "mixed"]
-    highlights: list[_Highlight]
+    highlights: list[_Highlight] = Field(max_length=10)
 
 
 class _EntityRelation(BaseModel):
@@ -78,11 +83,11 @@ class _Entity(BaseModel):
     name: str
     type: Literal["person", "topic", "project", "organization"]
     context: str
-    relations: list[_EntityRelation]
+    relations: list[_EntityRelation] = Field(max_length=5)
 
 
 class _EntityExtractionSchema(BaseModel):
-    entities: list[_Entity]
+    entities: list[_Entity] = Field(max_length=50)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +104,8 @@ Rules:
 - Do not invent facts. Only include information that is actually present in the
   transcript. If a field is unknown, return null for nullable fields or an empty
   array for lists. Do not pad lists to look complete.
+- Hard caps: key_points <= 15, decisions <= 20, action_items <= 30, topics <=
+  20, people_mentioned <= 30, follow_up_questions <= 10, highlights <= 10.
 - Keep descriptions specific: include names, dates, numbers, and quoted phrases
   when the transcript provides them.
 - Identify speakers when possible; leave the speaker null when it is unclear.
@@ -211,6 +218,7 @@ async def summarize_transcript(
             reasoning={"effort": "medium"},
             max_output_tokens=4096,
         )
+        ensure_response_completed(response, operation="Summarization")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Summarization failed: {exc}") from exc
@@ -255,7 +263,12 @@ async def generate_title(transcript: str) -> str:
         reasoning={"effort": "low"},
         max_output_tokens=50,
     )
-    return response.output_text.strip()
+    try:
+        ensure_response_completed(response, operation="Title generation")
+        return response_output_text(response)
+    except OpenAIResponseError as exc:
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"Title generation failed: {exc}") from exc
 
 
 def resolve_highlight_timestamps(
@@ -303,6 +316,7 @@ Extract entities from this transcript. Focus on:
 
 Do not invent entities not present in the transcript. If there are none of a
 given type, return an empty array — do not pad.
+Return at most 50 entities and at most 5 relations per entity.
 
 Transcript:
 """
@@ -338,6 +352,7 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
             reasoning={"effort": "low"},
             max_output_tokens=4096,
         )
+        ensure_response_completed(response, operation="Entity extraction")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Entity extraction failed: {exc}") from exc

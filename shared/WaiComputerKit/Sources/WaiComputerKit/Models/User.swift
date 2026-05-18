@@ -157,39 +157,15 @@ public struct UserSettings: Codable, Sendable {
         summaryStyle = try container.decode(String.self, forKey: .summaryStyle)
         summaryInstructions = try container.decodeIfPresent(String.self, forKey: .summaryInstructions)
 
-        // Compatibility for clients briefly ahead of the production API. If the
-        // server omits account-level transcription preferences, stay on the
-        // stable provider that the old backend can actually service.
-        dictationLiveSTTProvider = try container.decodeIfPresent(
-            String.self,
-            forKey: .dictationLiveSTTProvider
-        ) ?? "elevenlabs"
-        dictationLiveSTTModel = try container.decodeIfPresent(
-            String.self,
-            forKey: .dictationLiveSTTModel
-        ) ?? "scribe_v2_realtime"
-        recordingLiveSTTProvider = try container.decodeIfPresent(
-            String.self,
-            forKey: .recordingLiveSTTProvider
-        ) ?? "elevenlabs"
-        recordingLiveSTTModel = try container.decodeIfPresent(
-            String.self,
-            forKey: .recordingLiveSTTModel
-        ) ?? "scribe_v2_realtime"
-        fileSTTProvider = try container.decodeIfPresent(String.self, forKey: .fileSTTProvider) ?? "elevenlabs"
-        fileSTTModel = try container.decodeIfPresent(String.self, forKey: .fileSTTModel) ?? "scribe_v2"
-        dictationPostFilterEnabled = try container.decodeIfPresent(
-            Bool.self,
-            forKey: .dictationPostFilterEnabled
-        ) ?? true
-        dictationPostFilterProvider = try container.decodeIfPresent(
-            String.self,
-            forKey: .dictationPostFilterProvider
-        ) ?? "anthropic"
-        dictationPostFilterModel = try container.decodeIfPresent(
-            String.self,
-            forKey: .dictationPostFilterModel
-        ) ?? "claude-haiku-4-5"
+        dictationLiveSTTProvider = try container.decode(String.self, forKey: .dictationLiveSTTProvider)
+        dictationLiveSTTModel = try container.decode(String.self, forKey: .dictationLiveSTTModel)
+        recordingLiveSTTProvider = try container.decode(String.self, forKey: .recordingLiveSTTProvider)
+        recordingLiveSTTModel = try container.decode(String.self, forKey: .recordingLiveSTTModel)
+        fileSTTProvider = try container.decode(String.self, forKey: .fileSTTProvider)
+        fileSTTModel = try container.decode(String.self, forKey: .fileSTTModel)
+        dictationPostFilterEnabled = try container.decode(Bool.self, forKey: .dictationPostFilterEnabled)
+        dictationPostFilterProvider = try container.decode(String.self, forKey: .dictationPostFilterProvider)
+        dictationPostFilterModel = try container.decode(String.self, forKey: .dictationPostFilterModel)
     }
 
     private enum CodingKeys: String, CodingKey {

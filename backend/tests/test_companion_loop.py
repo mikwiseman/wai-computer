@@ -37,6 +37,9 @@ class _FakeResponse:
     output: list[dict[str, Any]] = field(default_factory=list)
     output_text: str = ""
     usage: _Usage = field(default_factory=_Usage)
+    status: str = "completed"
+    error: Any = None
+    incomplete_details: Any = None
 
 
 @dataclass

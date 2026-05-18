@@ -108,8 +108,8 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["file_stt_provider"] == "elevenlabs"
     assert data["file_stt_model"] == "scribe_v2"
     assert data["dictation_post_filter_enabled"] is True
-    assert data["dictation_post_filter_provider"] == "anthropic"
-    assert data["dictation_post_filter_model"] == "claude-haiku-4-5"
+    assert data["dictation_post_filter_provider"] == "openai"
+    assert data["dictation_post_filter_model"] == "gpt-5.5"
 
 
 @pytest.mark.asyncio
@@ -349,13 +349,11 @@ async def test_get_transcription_options_returns_curated_choices(client: AsyncCl
         option["provider"] == "soniox" and option["model"] == "stt-async-v4"
         for option in data["file_stt"]
     )
-    # Deprecated/dropped models must no longer appear in the curated choices.
-    assert not any(option["model"] == "gpt-4o-transcribe" for option in data["file_stt"])
-    assert not any(option["model"] == "gpt-4o-transcribe-diarize" for option in data["file_stt"])
-    assert not any(
-        option["model"] == "assemblyai/universal-streaming-english"
-        for option in data["dictation_live_stt"]
-    )
+    assert {option["provider"] for option in data["file_stt"]} == {
+        "deepgram",
+        "elevenlabs",
+        "soniox",
+    }
     assert any(
         option["model"] == "gpt-5.5"
         for option in data["dictation_post_filter"]

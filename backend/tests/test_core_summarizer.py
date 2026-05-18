@@ -74,6 +74,10 @@ def _entity_schema_payload() -> _EntityExtractionSchema:
 def _parsed_response(parsed) -> MagicMock:
     response = MagicMock()
     response.output_parsed = parsed
+    response.status = "completed"
+    response.error = None
+    response.incomplete_details = None
+    response.output = []
     return response
 
 
