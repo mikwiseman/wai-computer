@@ -4,11 +4,9 @@ not exercised by the existing test_companion_crud.py."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient
-
 
 # ---------------------------------------------------------------------------
 # list_chats: before cursor

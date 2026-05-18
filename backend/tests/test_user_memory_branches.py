@@ -7,7 +7,6 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import user_memory as um
 from app.core.user_memory import (
     BLOCK_SPECS,
     MemoryError,

@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # ---------------------------------------------------------------------------
 # Lifespan warnings — combined into a single invocation per test to avoid
 # cross-test state pollution from the module-level mcp_asgi_app.

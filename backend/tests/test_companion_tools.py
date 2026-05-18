@@ -14,7 +14,6 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import companion as comp
 from app.core.companion import (
     CompanionError,
     _tool_get_action_items,
@@ -24,11 +23,9 @@ from app.core.companion import (
     _tool_search_people,
     _tool_search_transcripts,
 )
-from app.models.entity import Entity, EntityRelation
 from app.models.highlight import Highlight
-from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
+from app.models.recording import ActionItem, Folder, Recording, Summary
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # _tool_search_transcripts
@@ -238,7 +235,7 @@ async def test_list_recordings_filters_by_date_range(
     db_session: AsyncSession,
 ) -> None:
     user = await _create_user(db_session, "list-date-filter@example.com")
-    rec = await _create_recording(db_session, user.id, title="Recent")
+    await _create_recording(db_session, user.id, title="Recent")
     await db_session.commit()
 
     # date_from in the future excludes everything
@@ -253,7 +250,7 @@ async def test_list_recordings_filters_by_date_range(
 async def test_list_recordings_with_scope(db_session: AsyncSession) -> None:
     user = await _create_user(db_session, "list-scoped@example.com")
     rec1 = await _create_recording(db_session, user.id, title="In scope")
-    rec2 = await _create_recording(db_session, user.id, title="Out of scope")
+    await _create_recording(db_session, user.id, title="Out of scope")
     await db_session.commit()
 
     scope = {"recording_ids": [str(rec1.id)]}

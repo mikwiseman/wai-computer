@@ -2267,7 +2267,7 @@ async def rematch_speakers(
     transiently — voice ID can only run during the initial transcription).
     """
     raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail=(
             "Source audio is not retained after transcription; rematch is not yet "
             "supported. Reupload the recording to retrigger voice ID."

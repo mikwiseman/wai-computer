@@ -8,14 +8,12 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import companion as comp
 from app.core.companion import (
     CompanionError,
     _execute_tool,
     _MarkdownDeltaExtractor,
 )
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # _MarkdownDeltaExtractor

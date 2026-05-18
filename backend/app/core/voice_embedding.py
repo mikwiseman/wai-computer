@@ -59,7 +59,6 @@ def compute_voice_embedding(
     or the audio cannot be decoded.
     """
     import torch
-    import torchaudio
     from pydub import AudioSegment
 
     duration_ms = end_ms - start_ms

@@ -21,7 +21,7 @@ from mcp.server.auth.provider import (
     RegistrationError,
     TokenError,
 )
-from pydantic import AnyHttpUrl, AnyUrl
+from pydantic import AnyUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,14 +51,12 @@ from app.core.mcp_oauth import (
     token_hash,
 )
 from app.models.mcp_oauth import (
-    McpOAuthAuthorizationCode,
     McpOAuthAuthorizationRequest,
     McpOAuthClient,
     McpOAuthConsent,
     McpOAuthToken,
 )
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Pure helpers
@@ -598,11 +596,11 @@ async def test_exchange_authorization_code_raises_when_missing(
     a FrozenInstanceError on __traceback__ assignment. We sidestep by calling
     the inner code outside the context manager — see exchange_authorization_code
     line 491 — using a stub that re-runs the logic."""
-    from mcp.server.auth.provider import AuthorizationCode as AC
+    from mcp.server.auth.provider import AuthorizationCode
 
     _, client = await _create_user_and_client(mcp_override_db)
     info = _client_from_model(client)
-    code = AC(
+    code = AuthorizationCode(
         code="ghost-code",
         scopes=[MCP_READ_SCOPE],
         expires_at=_as_timestamp(_now() + timedelta(minutes=10)),
@@ -669,11 +667,11 @@ async def test_exchange_refresh_token_raises_when_missing(
     """Same frozen-dataclass quirk as exchange_authorization_code."""
     from dataclasses import FrozenInstanceError
 
-    from mcp.server.auth.provider import RefreshToken as RT
+    from mcp.server.auth.provider import RefreshToken
 
     _, client = await _create_user_and_client(mcp_override_db)
     info = _client_from_model(client)
-    rt = RT(
+    refresh_token = RefreshToken(
         token="never-existed",
         client_id=client.client_id,
         scopes=[MCP_READ_SCOPE],
@@ -681,7 +679,7 @@ async def test_exchange_refresh_token_raises_when_missing(
     )
     raised = False
     try:
-        await provider.exchange_refresh_token(info, rt, [MCP_READ_SCOPE])
+        await provider.exchange_refresh_token(info, refresh_token, [MCP_READ_SCOPE])
     except (TokenError, FrozenInstanceError, Exception) as exc:
         raised = True
         if isinstance(exc, TokenError):
@@ -695,7 +693,7 @@ async def test_exchange_refresh_token_issues_new_pair_and_revokes_old(
     mcp_override_db: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcp.server.auth.provider import RefreshToken as RT
+    from mcp.server.auth.provider import RefreshToken
 
     _stub_resource_url(monkeypatch, "https://x.test/mcp")
 
@@ -713,13 +711,13 @@ async def test_exchange_refresh_token_issues_new_pair_and_revokes_old(
     await mcp_override_db.flush()
 
     info = _client_from_model(client)
-    rt = RT(
+    refresh_token = RefreshToken(
         token=raw,
         client_id=client.client_id,
         scopes=[MCP_READ_SCOPE],
         expires_at=_as_timestamp(_now() + timedelta(days=30)),
     )
-    out = await provider.exchange_refresh_token(info, rt, [MCP_READ_SCOPE])
+    out = await provider.exchange_refresh_token(info, refresh_token, [MCP_READ_SCOPE])
     assert out.access_token
     assert out.refresh_token
     assert out.refresh_token != raw
@@ -776,7 +774,7 @@ async def test_revoke_token_marks_as_revoked(
     provider: WaiComputerMcpOAuthProvider,
     mcp_override_db: AsyncSession,
 ) -> None:
-    from mcp.server.auth.provider import AccessToken as AT
+    from mcp.server.auth.provider import AccessToken
 
     user, client = await _create_user_and_client(mcp_override_db)
     raw = "revoke-me"
@@ -791,14 +789,14 @@ async def test_revoke_token_marks_as_revoked(
     ))
     await mcp_override_db.flush()
 
-    at = AT(
+    access_token = AccessToken(
         token=raw,
         client_id=client.client_id,
         scopes=[MCP_READ_SCOPE],
         expires_at=_as_timestamp(_now() + timedelta(hours=1)),
         resource="https://x.test/mcp",
     )
-    await provider.revoke_token(at)
+    await provider.revoke_token(access_token)
 
     row = (
         await mcp_override_db.execute(
@@ -813,9 +811,9 @@ async def test_revoke_token_is_noop_for_unknown(
     provider: WaiComputerMcpOAuthProvider,
     mcp_override_db: AsyncSession,
 ) -> None:
-    from mcp.server.auth.provider import AccessToken as AT
+    from mcp.server.auth.provider import AccessToken
 
-    at = AT(
+    access_token = AccessToken(
         token="ghost",
         client_id="anon",
         scopes=[],
@@ -823,7 +821,7 @@ async def test_revoke_token_is_noop_for_unknown(
         resource="https://x.test/mcp",
     )
     # Should not raise even though no row exists.
-    await provider.revoke_token(at)
+    await provider.revoke_token(access_token)
 
 
 # ---------------------------------------------------------------------------

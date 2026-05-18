@@ -3,6 +3,7 @@
 import enum
 import uuid
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, false
@@ -10,6 +11,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.person import Person
 
 
 class RecordingStatus(str, enum.Enum):

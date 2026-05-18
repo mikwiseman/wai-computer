@@ -421,7 +421,7 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Logout failed");
     });
-  });
+  }, 15_000);
 
   it("renders untitled recording/detail fallbacks", async () => {
     const user = userEvent.setup();

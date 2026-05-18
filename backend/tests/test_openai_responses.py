@@ -13,7 +13,6 @@ from app.core.openai_responses import (
     response_output_text,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -63,12 +62,18 @@ def test_incomplete_with_reason_includes_reason_suffix() -> None:
         "status": "incomplete",
         "incomplete_details": {"reason": "max_output_tokens"},
     }
-    with pytest.raises(OpenAIResponseError, match=r"did not complete: incomplete \(max_output_tokens\)"):
+    with pytest.raises(
+        OpenAIResponseError,
+        match=r"did not complete: incomplete \(max_output_tokens\)",
+    ):
         ensure_response_completed(payload, operation="op")
 
 
 def test_incomplete_with_attr_details() -> None:
-    obj = _AttrObject(status="incomplete", incomplete_details=_IncompleteDetails(reason="content_filter"))
+    obj = _AttrObject(
+        status="incomplete",
+        incomplete_details=_IncompleteDetails(reason="content_filter"),
+    )
     with pytest.raises(OpenAIResponseError, match=r"\(content_filter\)"):
         ensure_response_completed(obj, operation="op")
 

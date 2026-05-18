@@ -13,7 +13,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 # ---------------------------------------------------------------------------
 # auth.py refresh — missing token + invalid + expired (lines 391-408)
 # ---------------------------------------------------------------------------
