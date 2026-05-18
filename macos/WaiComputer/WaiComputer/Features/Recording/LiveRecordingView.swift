@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WaiComputerKit
 
@@ -58,6 +59,15 @@ struct LiveRecordingView: View {
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
                     Spacer()
+                    Button("Fix in Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .font(Typography.label)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.yellow)
+                    .accessibilityIdentifier("system-audio-warning-fix")
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.sm)

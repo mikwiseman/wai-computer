@@ -5,6 +5,7 @@ import CoreAudio
 import AudioToolbox
 import os
 import Darwin.os
+import Sentry
 
 private let sysLog = Logger(subsystem: "is.waiwai.computer.kit", category: "system-audio")
 
@@ -365,13 +366,69 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         _isCapturing = true
         sysLog.warning("[SysAudio] System audio capture started")
 
+        let transport = Self.transportName(for: defaultOutputID)
+        SentryHelper.addBreadcrumb(
+            category: "audio.system",
+            message: "system audio capture started",
+            data: [
+                "deviceUID": uid as String,
+                "transport": transport,
+                "nativeSR": nativeSR,
+                "nativeCh": Int(nativeCh),
+            ]
+        )
+
         // Schedule a verification check — warn if no real audio arrives within 3 seconds
         let flag = _audioReceivedFlag
+        let capturedDeviceUID = uid as String
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self, self._isCapturing else { return }
             if OSAtomicAdd32(0, flag) == 0 {
                 sysLog.error("[SysAudio] WARNING: No non-zero audio received within 3 seconds of starting capture. The tap may have silently failed or permission was denied.")
+                SentryHelper.addBreadcrumb(
+                    category: "audio.system",
+                    message: "system audio tap produced no audible samples in 3s",
+                    level: .warning,
+                    data: [
+                        "deviceUID": capturedDeviceUID,
+                        "transport": transport,
+                    ]
+                )
             }
+        }
+    }
+
+    /// Best-effort identification of the output device's transport (built-in,
+    /// usb, bluetooth, airplay, virtual, etc.). Used purely as diagnostic
+    /// breadcrumb data so Sentry can correlate "silent tap" reports with
+    /// device classes that are known to break CATap (Bluetooth, AirPlay).
+    private static func transportName(for deviceID: AudioObjectID) -> String {
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &transport)
+        guard status == noErr else { return "unknown" }
+        switch transport {
+        case kAudioDeviceTransportTypeBuiltIn: return "built-in"
+        case kAudioDeviceTransportTypeAggregate: return "aggregate"
+        case kAudioDeviceTransportTypeVirtual: return "virtual"
+        case kAudioDeviceTransportTypePCI: return "pci"
+        case kAudioDeviceTransportTypeUSB: return "usb"
+        case kAudioDeviceTransportTypeFireWire: return "firewire"
+        case kAudioDeviceTransportTypeBluetooth: return "bluetooth"
+        case kAudioDeviceTransportTypeBluetoothLE: return "bluetooth-le"
+        case kAudioDeviceTransportTypeHDMI: return "hdmi"
+        case kAudioDeviceTransportTypeDisplayPort: return "displayport"
+        case kAudioDeviceTransportTypeAirPlay: return "airplay"
+        case kAudioDeviceTransportTypeAVB: return "avb"
+        case kAudioDeviceTransportTypeThunderbolt: return "thunderbolt"
+        case kAudioDeviceTransportTypeContinuityCaptureWired: return "continuity-wired"
+        case kAudioDeviceTransportTypeContinuityCaptureWireless: return "continuity-wireless"
+        default: return "transport_\(transport)"
         }
     }
 
@@ -379,6 +436,29 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     /// since capture started. Use this to verify the tap is actually producing audio.
     public func verifyAudioFlowing() -> Bool {
         return OSAtomicAdd32(0, _audioReceivedFlag) != 0
+    }
+
+    /// Wait up to `timeout` seconds for the tap to start producing non-silent audio.
+    ///
+    /// CATap silently returns silence in several scenarios:
+    /// - The user denied the System Audio TCC prompt (the tap still gets a valid ID
+    ///   but receives only zero samples — there is no error return from CoreAudio).
+    /// - Permission was granted but the running process has a stale TCC cache.
+    /// - The default output device is a Bluetooth/AirPlay sink whose audio path
+    ///   bypasses the kernel layer the tap monitors.
+    /// - The user is on macOS 14.2+ but has nothing actually playing — in that
+    ///   case the result is genuinely "no audio yet", which is benign.
+    ///
+    /// Callers use the result to decide whether to keep the tap or fall back to
+    /// microphone-only. Returns `true` as soon as any non-zero sample is seen, or
+    /// `false` if the timeout elapses with only silence.
+    public func waitForAudibleAudio(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if hasReceivedAudio { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)  // 100 ms
+        }
+        return hasReceivedAudio
     }
 
     /// Stop capturing system audio and release all Core Audio resources.

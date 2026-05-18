@@ -4,23 +4,26 @@ import WaiComputerKit
 final class SystemAudioWarningPolicyTests: XCTestCase {
     private let warning = "System audio is not reaching WaiComputer. Microphone audio is still being recorded."
 
-    func testHidesSystemAudioBannerForSoloNote() {
-        XCTAssertNil(
+    func testShowsSystemAudioBannerForNoteWhenSystemAudioWasRequested() {
+        XCTAssertEqual(
             SystemAudioWarningPolicy.visibleBannerText(
                 recordingType: .note,
                 requestedSystemAudio: true,
                 warning: warning
-            )
+            ),
+            warning,
+            "If the user opted into dual capture, the warning must fire even for note recordings."
         )
     }
 
-    func testHidesSystemAudioBannerForReflection() {
-        XCTAssertNil(
+    func testShowsSystemAudioBannerForReflectionWhenSystemAudioWasRequested() {
+        XCTAssertEqual(
             SystemAudioWarningPolicy.visibleBannerText(
                 recordingType: .reflection,
                 requestedSystemAudio: true,
                 warning: warning
-            )
+            ),
+            warning
         )
     }
 

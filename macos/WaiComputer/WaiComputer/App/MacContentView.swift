@@ -309,7 +309,16 @@ struct MacMainView: View {
                 set: { if !$0 { recordingViewModel.clearError() } }
             )
         ) {
-            if recordingViewModel.error?.contains("System Settings") == true {
+            let message = recordingViewModel.error ?? ""
+            if message.contains("Microphone permission") {
+                Button("Open Microphone Settings") {
+                    MacPrivacySettings.openMicrophone()
+                    recordingViewModel.clearError()
+                }
+                Button("Cancel", role: .cancel) {
+                    recordingViewModel.clearError()
+                }
+            } else if message.contains("Audio Capture") || message.contains("System audio") {
                 Button("Open System Settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
                         NSWorkspace.shared.open(url)
@@ -674,7 +683,7 @@ struct MacMainView: View {
                 )
             } else {
                 NewRecordingView(
-                    onStartDual: { startRecording(type: .note, inputSource: .dual) },
+                    onStartDual: { startRecording(type: .meeting, inputSource: .dual) },
                     onStartMicOnly: { startRecording(type: .note, inputSource: .microphone) },
                     onImportFile: { importAudioFile() },
                     isImporting: importViewModel.isImporting

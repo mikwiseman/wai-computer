@@ -38,6 +38,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private var micTask: Task<Void, Never>?
     private var systemTask: Task<Void, Never>?
     private var flushTask: Task<Void, Never>?
+    private var earlySystemAudioCheckTask: Task<Void, Never>?
 
     private let lock = NSLock()
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
@@ -123,6 +124,20 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             }
         }
 
+        // Fast-path stall detection: if the CATap was created but is producing
+        // pure silence (e.g. permission was denied, the running process has a
+        // stale TCC cache, or the user's output device is a Bluetooth sink the
+        // tap can't observe), surface the warning at 3 seconds instead of
+        // waiting the usual ~6 seconds for the periodic flush-task detector.
+        earlySystemAudioCheckTask = Task { [weak self] in
+            guard let self else { return }
+            let received = await self.system.waitForAudibleAudio(timeout: 3.0)
+            if !received {
+                dualLog.error("[Dual] System audio tap produced no audible samples within 3s — marking stalled. Likely causes: TCC denied, stale permission cache after grant, or output device (e.g. Bluetooth headphones) is not observable by CATap.")
+                self.markSystemAudioStalled()
+            }
+        }
+
         flushTask = Task { [weak self] in
             var flushCount = 0
             var zeroSystemCount = 0
@@ -140,9 +155,14 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                         zeroSystemCount = 0
                     }
 
-                    if zeroSystemCount >= 2 {
+                    // Only surface a stall warning when system audio NEVER
+                    // arrived. A mid-recording silence (meeting pause, user
+                    // hits mute on the other end, etc.) is normal — surfacing
+                    // "system audio not reaching" in that case would be a
+                    // false positive that erodes trust in the warning.
+                    if zeroSystemCount >= 2, self?.systemAudioReceivedAny == false {
                         self?.markSystemAudioStalled()
-                        dualLog.error("[Dual] System audio stalled — no audible system samples received after \(zeroSystemCount * 3)s; microphone audio continues.")
+                        dualLog.error("[Dual] System audio never produced audible samples after \(zeroSystemCount * 3)s; microphone audio continues.")
                     }
                 }
             }
@@ -165,6 +185,8 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         flushTask?.cancel()
         await flushTask?.value
         flushTask = nil
+        earlySystemAudioCheckTask?.cancel()
+        earlySystemAudioCheckTask = nil
         micTask?.cancel()
         micTask = nil
         systemTask?.cancel()

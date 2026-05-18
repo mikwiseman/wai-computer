@@ -299,10 +299,23 @@ final class DictationManager: ObservableObject {
         // Remember the target app so we can re-focus it before pasting
         targetApp = NSWorkspace.shared.frontmostApplication
 
-        // Check microphone permission
-        let micGranted = await AVAudioApplication.requestRecordPermission()
+        // Check microphone permission — use the canonical macOS API.
+        // `AVAudioApplication.requestRecordPermission` silently fails on
+        // macOS 26 (Tahoe), which used to leave dictation in a permanently
+        // failed state without prompting the user.
+        let micGranted: Bool
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            micGranted = true
+        case .notDetermined:
+            micGranted = await AVCaptureDevice.requestAccess(for: .audio)
+        case .denied, .restricted:
+            micGranted = false
+        @unknown default:
+            micGranted = false
+        }
         guard micGranted else {
-            error = "Microphone permission denied."
+            error = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer."
             session.failure(
                 DictationInstrumentationError.microphoneDenied,
                 extras: ["stage": "permission"]
