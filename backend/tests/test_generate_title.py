@@ -17,10 +17,10 @@ async def test_generate_title_no_api_key():
 
 
 @pytest.mark.asyncio
-async def test_generate_title_returns_stripped_title():
-    """Should strip quotes and whitespace from title."""
+async def test_generate_title_returns_whitespace_stripped_text():
+    """Returns Claude's title verbatim, with surrounding whitespace stripped."""
     mock_content = MagicMock()
-    mock_content.text = '  "Team Standup Notes"  '
+    mock_content.text = "  Team Standup Notes  "
 
     mock_message = MagicMock()
     mock_message.content = [mock_content]
@@ -37,30 +37,6 @@ async def test_generate_title_returns_stripped_title():
 
         title = await generate_title("We discussed the Q1 roadmap...")
         assert title == "Team Standup Notes"
-
-
-@pytest.mark.asyncio
-async def test_generate_title_truncates_long_titles():
-    """Should truncate titles longer than 100 characters."""
-    mock_content = MagicMock()
-    mock_content.text = "A" * 200
-
-    mock_message = MagicMock()
-    mock_message.content = [mock_content]
-
-    mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(return_value=mock_message)
-
-    with (
-        patch("app.core.summarizer.settings") as mock_settings,
-        patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
-    ):
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-6"
-
-        title = await generate_title("Some transcript text")
-        assert len(title) == 100
-        assert title.endswith("...")
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,7 @@ class SummarizationError(Exception):
 
 
 SUMMARY_JSON_SCHEMA = """{
-  "title": "Brief meeting title (5-10 words)",
+  "title": "Brief meeting title (5-10 words, plain text only)",
   "summary": "2-3 sentence summary of the meeting",
   "key_points": ["Point 1", "Point 2", "Point 3"],
   "decisions": [
@@ -40,7 +40,7 @@ SUMMARY_JSON_SCHEMA = """{
   "highlights": [
     {
       "category": "decision|insight|question|concern|topic_shift|quote",
-      "title": "Short title of the key moment (5-15 words)",
+      "title": "Short title of the key moment (5-15 words, plain text only)",
       "description": "Brief description with context, or null",
       "speaker": "Speaker name or null",
       "importance": "high|medium|low"
@@ -56,7 +56,11 @@ SUMMARY_INSTRUCTIONS = """
 - For highlights, extract the most important moments: decisions made, key insights,
   important questions raised, concerns flagged, major topic shifts, and notable quotes
 - Each highlight should be a distinct, meaningful moment from the conversation
-- Limit highlights to the 5-10 most important moments"""
+- Limit highlights to the 5-10 most important moments
+- Titles (the top-level `title` and each highlight `title`) MUST be plain text:
+  no markdown formatting (no **bold**, no *italics*, no _underscores_,
+  no `code`, no # headings), no surrounding quotes. Just the words."""
+
 
 STYLE_INSTRUCTIONS = {
     "brief": (
@@ -200,16 +204,17 @@ async def summarize_transcript(
         raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
 
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
+
     return SummaryResult(
-        title=data.get("title", "Untitled"),
-        summary=data.get("summary", ""),
+        title=data["title"],
+        summary=data["summary"],
         key_points=data.get("key_points", []),
         decisions=data.get("decisions", []),
         action_items=data.get("action_items", []),
         topics=data.get("topics", []),
         people_mentioned=data.get("people_mentioned", []),
         follow_up_questions=data.get("follow_up_questions", []),
-        sentiment=data.get("sentiment", "neutral"),
+        sentiment=data["sentiment"],
         highlights=data.get("highlights", []),
     )
 
@@ -232,17 +237,15 @@ async def generate_title(transcript: str) -> str:
                 "role": "user",
                 "content": (
                     "Generate a short title (3-7 words) for this audio recording based on "
-                    "its transcript. Return ONLY the title text, nothing else.\n\n"
+                    "its transcript. Return ONLY the plain title text — no markdown "
+                    "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
+                    "nothing else.\n\n"
                     f"Transcript:\n{snippet}"
                 ),
             }
         ],
     )
-    title = message.content[0].text.strip().strip('"').strip("'")
-    # Truncate if model returned something too long
-    if len(title) > 100:
-        title = title[:97] + "..."
-    return title
+    return message.content[0].text.strip()
 
 
 def resolve_highlight_timestamps(

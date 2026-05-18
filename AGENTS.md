@@ -2,6 +2,10 @@
 
 AI second brain for recordings, transcription, search, and summaries.
 
+## Code style
+
+- No fallbacks. Trust the prompt and the schema; fix the source, not the response.
+
 ## Production
 
 - Canonical host: `https://wai.computer`
