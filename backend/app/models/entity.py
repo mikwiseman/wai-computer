@@ -21,7 +21,7 @@ class Entity(Base, UUIDMixin, TimestampMixin):
     type: Mapped[str] = mapped_column(String(50), nullable=False)  # person, topic, project
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(3072))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="entities")

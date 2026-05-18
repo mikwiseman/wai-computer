@@ -28,7 +28,7 @@ def mock_openai_client(monkeypatch):
 
 
 async def test_generate_embedding_calls_openai_with_model_and_dims(mock_openai_client):
-    fake_embedding = [0.0] * 3072
+    fake_embedding = [0.0] * 1536
     mock_openai_client.embeddings.create.return_value = MagicMock(
         data=[MagicMock(embedding=fake_embedding)]
     )
@@ -38,14 +38,14 @@ async def test_generate_embedding_calls_openai_with_model_and_dims(mock_openai_c
     mock_openai_client.embeddings.create.assert_awaited_once_with(
         model="text-embedding-3-large",
         input="hello world",
-        dimensions=3072,
+        dimensions=1536,
     )
     assert result == fake_embedding
-    assert len(result) == 3072
+    assert len(result) == 1536
 
 
 async def test_generate_embeddings_batches_multiple_texts(mock_openai_client):
-    fake = [[0.1] * 3072, [0.2] * 3072]
+    fake = [[0.1] * 1536, [0.2] * 1536]
     mock_openai_client.embeddings.create.return_value = MagicMock(
         data=[MagicMock(embedding=fake[0]), MagicMock(embedding=fake[1])]
     )
@@ -55,7 +55,7 @@ async def test_generate_embeddings_batches_multiple_texts(mock_openai_client):
     mock_openai_client.embeddings.create.assert_awaited_once_with(
         model="text-embedding-3-large",
         input=["a", "b"],
-        dimensions=3072,
+        dimensions=1536,
     )
     assert result == fake
 

@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
-    embedding_dimensions: int = 3072
+    embedding_dimensions: int = 1536
 
     # Inworld AI (provides unified STT WebSocket to multiple engines; realtime only)
     inworld_api_key: str = ""

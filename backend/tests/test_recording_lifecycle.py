@@ -41,7 +41,7 @@ async def test_full_recording_lifecycle(
     # ------------------------------------------------------------------ #
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",

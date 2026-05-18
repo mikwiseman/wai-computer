@@ -10,10 +10,10 @@ from app.models.recording import Segment, Summary
 
 
 def _vector_near(base_index: int, noise_offset: float = 0.0) -> list[float]:
-    """Create a 3072-d unit vector pointing mostly at base_index with optional noise."""
-    values = [0.0] * 3072
+    """Create a 1536-d unit vector pointing mostly at base_index with optional noise."""
+    values = [0.0] * 1536
     values[base_index] = 1.0
-    if noise_offset and base_index + 1 < 3072:
+    if noise_offset and base_index + 1 < 1536:
         values[base_index + 1] = noise_offset
     # Normalize
     magnitude = sum(v * v for v in values) ** 0.5

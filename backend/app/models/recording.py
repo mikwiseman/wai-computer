@@ -141,7 +141,7 @@ class Segment(Base, UUIDMixin):
     start_ms: Mapped[int | None] = mapped_column(Integer)
     end_ms: Mapped[int | None] = mapped_column(Integer)
     confidence: Mapped[float | None] = mapped_column(Float)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(3072))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
 
     # Relationships
     recording: Mapped["Recording"] = relationship("Recording", back_populates="segments")

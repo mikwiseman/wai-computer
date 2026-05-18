@@ -283,7 +283,7 @@ async def test_upload_audio_with_m4a_extension(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -366,7 +366,7 @@ async def test_save_transcript_multiple_segments(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
