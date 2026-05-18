@@ -54,6 +54,7 @@
 		CC3DD86A54875FE2C9B60418 /* DictationOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803E7E8D86E717C36B809FE4 /* DictationOverlayPanel.swift */; };
 		CDEFA7621310F11B57F75165 /* NewRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63599FDEBFCAB293C25C3CA5 /* NewRecordingView.swift */; };
 		D07E5859051F05165917CAEC /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49041A92859260A8AC12767C /* DictationLanguageStore.swift */; };
+		D211B66746531BDB3E178B5B /* SpeakerChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */; };
 		D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */; };
 		D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA555164F098038E385713E6 /* RecordingListView.swift */; };
 		D8222E1FDD02E1E2DA6194C9 /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C260FBE849217F693758CC99 /* WaiComputerKit */; };
@@ -80,6 +81,7 @@
 
 /* Begin PBXFileReference section */
 		0360B0E138565421000ECA14 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
+		03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerChipView.swift; sourceTree = "<group>"; };
 		07D1B3EF81EEF7134E5BE0F2 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
 		106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowUITests.swift; sourceTree = "<group>"; };
 		10E4E623F7FC6EEBED7495A6 /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
@@ -305,6 +307,7 @@
 				99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */,
 				7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */,
 				AA555164F098038E385713E6 /* RecordingListView.swift */,
+				03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -529,6 +532,7 @@
 				063CEA1A90D4FC6E524DE28C /* OnboardingWelcomeSlide.swift in Sources */,
 				A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */,
 				D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */,
+				D211B66746531BDB3E178B5B /* SpeakerChipView.swift in Sources */,
 				51B644191FE104273179EF02 /* SystemAudioWarningPolicy.swift in Sources */,
 				A25CDE15B154421DCBBB27CB /* TextInserter.swift in Sources */,
 				3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */,

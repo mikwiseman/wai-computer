@@ -84,7 +84,13 @@ struct MacRecordingDetailView: View {
 
                     switch viewModel.selectedTab {
                     case .transcript:
-                        MacTranscriptView(segments: detail.segments)
+                        MacTranscriptView(
+                            segments: detail.segments,
+                            recordingId: detail.id,
+                            onAssigned: { updated in
+                                viewModel.recordingDetail = updated
+                            }
+                        )
                     case .summary:
                         summaryTab(detail)
                     case .actions:
