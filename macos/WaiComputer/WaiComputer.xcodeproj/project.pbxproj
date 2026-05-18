@@ -19,7 +19,6 @@
 		29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */; };
 		2CF2E6BA3A89B60B4483DA82 /* MacAppsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796E59C8FB3A0B024AFBDECD /* MacAppsView.swift */; };
 		30C158C831DBFEB065C4AEBF /* OnboardingPermissionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0360B0E138565421000ECA14 /* OnboardingPermissionUITests.swift */; };
-		30CF5A70AC350B103A138012 /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png in Resources */ = {isa = PBXBuildFile; fileRef = F39D8EBF2E49C74EF699E9F3 /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png */; };
 		35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */; };
 		3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */; };
 		43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A467DA7396A262853AB8271 /* MacContentView.swift */; };
@@ -45,6 +44,7 @@
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
 		A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */; };
 		A25CDE15B154421DCBBB27CB /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F560C57D16BE3A93BBAF6818 /* TextInserter.swift */; };
+		A8DBA94BF0C980FA296557CE /* 5262537e-4ce7-4776-a4c8-2956482919e6.png in Resources */ = {isa = PBXBuildFile; fileRef = 57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */; };
 		AB225DC0B593D9F0AB738B24 /* BetaChannelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D1B3EF81EEF7134E5BE0F2 /* BetaChannelStoreTests.swift */; };
 		AD265F9DBEAF18F802B097A1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 947E65AE51B404454CCFC00A /* Sparkle */; };
 		AE273B9C32682BCF6CF7DEC7 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */; };
@@ -99,6 +99,7 @@
 		49041A92859260A8AC12767C /* DictationLanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLanguageStore.swift; sourceTree = "<group>"; };
 		4A467DA7396A262853AB8271 /* MacContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentView.swift; sourceTree = "<group>"; };
 		525CAAA96AC7B0E2746BD460 /* MacRecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingViewModel.swift; sourceTree = "<group>"; };
+		57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "5262537e-4ce7-4776-a4c8-2956482919e6.png"; sourceTree = "<group>"; };
 		5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
 		5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		6299E722D1B0554D90131758 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
@@ -138,7 +139,6 @@
 		EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITests.swift; sourceTree = "<group>"; };
 		EBF23F17DA476E6DC9973406 /* SearchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchUITests.swift; sourceTree = "<group>"; };
 		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
-		F39D8EBF2E49C74EF699E9F3 /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png"; sourceTree = "<group>"; };
 		F560C57D16BE3A93BBAF6818 /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -351,7 +351,7 @@
 		DE2F2B22309DAA4D0BAC49B8 /* Assets */ = {
 			isa = PBXGroup;
 			children = (
-				F39D8EBF2E49C74EF699E9F3 /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png */,
+				57D7A5534D505F5E132FD6D9 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */,
 			);
 			path = Assets;
 			sourceTree = "<group>";
@@ -488,8 +488,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A8DBA94BF0C980FA296557CE /* 5262537e-4ce7-4776-a4c8-2956482919e6.png in Resources */,
 				87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */,
-				30CF5A70AC350B103A138012 /* d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png in Resources */,
 				55F4103AEE9B5B70E8445D89 /* icon.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
