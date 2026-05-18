@@ -35,11 +35,28 @@ class WaiApi(
 ) {
     suspend fun me(): UserSummary = authorizedRequest(HttpMethod.Get, "/api/auth/me")
 
-    suspend fun listRecordings(limit: Int = 50): List<Recording> = authorizedRequest(
-        method = HttpMethod.Get,
-        path = "/api/recordings",
-        query = listOf("limit" to limit.toString()),
-    )
+    suspend fun listRecordings(
+        limit: Int = 50,
+        skip: Int = 0,
+        starred: Boolean = false,
+        trashed: Boolean = false,
+        type: RecordingType? = null,
+        folderId: String? = null,
+    ): List<Recording> {
+        val params = mutableListOf<Pair<String, String>>(
+            "limit" to limit.toString(),
+            "skip" to skip.toString(),
+        )
+        if (starred) params += "starred" to "true"
+        if (trashed) params += "trashed" to "true"
+        if (type != null) params += "type" to type.name
+        if (folderId != null) params += "folder_id" to folderId
+        return authorizedRequest(
+            method = HttpMethod.Get,
+            path = "/api/recordings",
+            query = params,
+        )
+    }
 
     suspend fun listFolders(): List<Folder> = authorizedRequest(HttpMethod.Get, "/api/folders")
 

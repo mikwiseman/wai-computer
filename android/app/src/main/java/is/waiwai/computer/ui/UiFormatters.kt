@@ -53,12 +53,17 @@ fun formatDuration(durationSeconds: Long): String {
 
 fun formatRelativeTime(isoInstant: String?): String {
     val instant = runCatching { isoInstant?.let(Instant::parse) }.getOrNull() ?: return isoInstant.orEmpty()
-    return DateUtils.getRelativeTimeSpanString(
-        instant.toEpochMilli(),
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-        DateUtils.FORMAT_ABBREV_RELATIVE,
-    ).toString()
+    // DateUtils.getRelativeTimeSpanString returns null in JVM unit tests
+    // (Android stub). Fall back to an ISO date to keep ViewModels test-friendly.
+    val span = runCatching {
+        DateUtils.getRelativeTimeSpanString(
+            instant.toEpochMilli(),
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS,
+            DateUtils.FORMAT_ABBREV_RELATIVE,
+        )?.toString()
+    }.getOrNull()
+    return span ?: isoInstant.orEmpty()
 }
 
 fun formatDateTime(isoInstant: String?): String {
