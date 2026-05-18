@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "../page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
@@ -32,6 +33,7 @@ export default function RuHome() {
           <Link href="/ru/pricing" className={styles.navLink}>
             Цены
           </Link>
+          <LocaleSwitcher current="ru" />
           <Link href="/login" className={styles.signin}>
             Войти →
           </Link>

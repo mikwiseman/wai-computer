@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { PricingCards } from "@/components/PricingCards";
+import styles from "../../page.module.css";
 
 export const metadata: Metadata = {
   title: "Цены — WaiComputer",
@@ -17,6 +20,18 @@ export const metadata: Metadata = {
 export default function RuPricingPage() {
   return (
     <main className="container pricing-page">
+      <header className={styles.nav}>
+        <Link href="/ru" className={styles.brand} aria-label="WaiComputer">
+          <span className={styles.brandMark} aria-hidden="true" />
+          <span className={styles.brandWord}>WaiComputer</span>
+        </Link>
+        <nav className={styles.navLinks}>
+          <LocaleSwitcher current="ru" />
+          <Link href="/login" className={styles.signin}>
+            Войти →
+          </Link>
+        </nav>
+      </header>
       <PricingCards locale="ru" currency="rub" />
     </main>
   );
