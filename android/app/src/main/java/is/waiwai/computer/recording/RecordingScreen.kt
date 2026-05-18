@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -74,6 +75,12 @@ fun RecordingScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         resolvedViewModel.startRecording(granted, selectedFolderId)
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        // We start recording regardless — the notification is only a
+        // visibility nicety, not a gate. The foreground service still runs.
     }
     val latestPhase by rememberUpdatedState(uiState.phase)
     val folders by produceState(initialValue = emptyList<Folder>(), container, isGuest) {
@@ -185,6 +192,7 @@ fun RecordingScreen(
                         Manifest.permission.RECORD_AUDIO,
                     ) == PackageManager.PERMISSION_GRANTED
                     if (granted) {
+                        maybeRequestNotificationPermission(context, notificationPermissionLauncher)
                         resolvedViewModel.startRecording(true, selectedFolderId)
                     } else {
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -267,4 +275,18 @@ private fun formatDuration(durationSeconds: Long): String {
     val minutes = durationSeconds / 60
     val seconds = durationSeconds % 60
     return "%02d:%02d".format(minutes, seconds)
+}
+
+private fun maybeRequestNotificationPermission(
+    context: android.content.Context,
+    launcher: androidx.activity.result.ActivityResultLauncher<String>,
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val granted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+    ) == PackageManager.PERMISSION_GRANTED
+    if (!granted) {
+        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
 }
