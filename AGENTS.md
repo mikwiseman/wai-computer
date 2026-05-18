@@ -77,6 +77,7 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 - One target `WaiComputer` in `macos/WaiComputer/project.yml`. Files: `WaiComputer/Info.plist`, `WaiComputer/WaiComputer.entitlements`. App Sandbox is OFF; Hardened Runtime is ON. Sparkle is always built in (no `#if SPARKLE`).
 - Sparkle appcast: `https://wai.computer/releases/macos/appcast.xml`.
 - Auth/session persistence on macOS uses file-based storage (`Application Support/WaiComputer/session.json`, mode 0600) via `SessionStore` in `shared/WaiComputerKit` — NOT Keychain. This survives cdhash drift across Sparkle updates.
+- Sparkle "What's New" auto-bullets commit subjects since the previous build bump (filters out `chore:|docs:|test:|refactor:|wip:`); keep the version bump in its own commit AFTER the work, or override `artifacts/releases/macos/<version>-<build>/release-notes.md` and rerun `scripts/publish-macos-dmg.sh`.
 
 ### Branching → channel mapping
 
@@ -94,10 +95,6 @@ Day-to-day flow: do work on a feature branch → merge to the desired branch →
 3. Commit the version bump.
 4. Run `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle, and notarization credentials configured.
 5. After ~10-15 min, verify `https://wai.computer/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta).
-
-### Release notes
-
-Sparkle's "What's New" popup pulls bullets from commit subjects between the previous build's bump and HEAD (filtered on path `macos/|shared/|scripts/build-macos-dmg.sh` and skipping `chore:|docs:|test:|refactor:|wip:` prefixes). Keep the version bump as its own separate commit, AFTER the work it ships, so the window isn't collapsed by `git log -S`. Write commit subjects users can read: feature noun + user-visible verb, no codebase identifiers. Override by editing `artifacts/releases/macos/<version>-<build>/release-notes.md` and re-running only `scripts/publish-macos-dmg.sh`. iOS TestFlight notes live in App Store Connect, not the repo.
 
 ### Appcast merge invariant
 
