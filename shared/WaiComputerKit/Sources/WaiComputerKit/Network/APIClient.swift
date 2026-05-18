@@ -770,6 +770,42 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/action-items/\(id)")
     }
 
+    // MARK: - Dictation Persistence Endpoints
+
+    public func listDictationEntries() async throws -> [DictationEntryDTO] {
+        return try await request(.GET, path: "/api/dictation/entries")
+    }
+
+    public func createDictationEntry(
+        _ request: CreateDictationEntryRequest
+    ) async throws -> DictationEntryDTO {
+        return try await self.request(.POST, path: "/api/dictation/entries", body: request)
+    }
+
+    public func deleteDictationEntry(clientEntryID: UUID) async throws {
+        try await requestNoContent(
+            .DELETE,
+            path: "/api/dictation/entries/\(clientEntryID.uuidString.lowercased())"
+        )
+    }
+
+    public func listDictationDictionary() async throws -> [DictionaryWordDTO] {
+        return try await request(.GET, path: "/api/dictation/dictionary")
+    }
+
+    public func createDictionaryWord(
+        _ request: CreateDictionaryWordRequest
+    ) async throws -> DictionaryWordDTO {
+        return try await self.request(.POST, path: "/api/dictation/dictionary", body: request)
+    }
+
+    public func deleteDictionaryWord(clientWordID: UUID) async throws {
+        try await requestNoContent(
+            .DELETE,
+            path: "/api/dictation/dictionary/\(clientWordID.uuidString.lowercased())"
+        )
+    }
+
     // MARK: - Chat Endpoints
 
     // MARK: - Companion Endpoints
