@@ -13,6 +13,7 @@ struct OnboardingView: View {
     private var currentPageEnum: OnboardingPage { pages[currentPage] }
     private var isLastPage: Bool { currentPage == pages.count - 1 }
     private var isPermissionPage: Bool { currentPageEnum == .permission }
+    private var isVoiceSetupPage: Bool { currentPageEnum == .voiceSetup }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,8 +38,17 @@ struct OnboardingView: View {
     private var slideArea: some View {
         TabView(selection: $currentPage) {
             ForEach(pages.indices, id: \.self) { index in
-                OnboardingSlide(page: pages[index], isActive: index == currentPage)
-                    .tag(index)
+                Group {
+                    if pages[index] == .voiceSetup {
+                        OnboardingVoiceSetupSlide(
+                            isActive: index == currentPage,
+                            onAdvance: advanceToNextPage
+                        )
+                    } else {
+                        OnboardingSlide(page: pages[index], isActive: index == currentPage)
+                    }
+                }
+                .tag(index)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
@@ -47,6 +57,12 @@ struct OnboardingView: View {
             // Reset permission state when leaving the permission page so the
             // user can revisit it cleanly via swipe back.
             if !isPermissionPage { permissionRequested = false }
+        }
+    }
+
+    private func advanceToNextPage() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentPage = min(currentPage + 1, pages.count - 1)
         }
     }
 
@@ -68,22 +84,28 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var footerControls: some View {
-        HStack {
-            if !isLastPage {
-                Button("Skip") {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentPage = pages.count - 1
+        // Voice setup screen ships its own primary/skip controls (record, re-record,
+        // submit, skip). Hiding this footer prevents two competing CTAs.
+        if isVoiceSetupPage {
+            EmptyView()
+        } else {
+            HStack {
+                if !isLastPage {
+                    Button("Skip") {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            currentPage = pages.count - 1
+                        }
                     }
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .accessibilityIdentifier("onboarding-skip-button")
+                } else {
+                    Spacer().frame(width: 1)
                 }
-                .buttonStyle(WaiGhostButtonStyle())
-                .accessibilityIdentifier("onboarding-skip-button")
-            } else {
-                Spacer().frame(width: 1)
+
+                Spacer()
+
+                primaryButton
             }
-
-            Spacer()
-
-            primaryButton
         }
     }
 

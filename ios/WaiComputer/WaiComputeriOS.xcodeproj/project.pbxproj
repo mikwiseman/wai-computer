@@ -19,6 +19,7 @@
 		678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C7BE633E65D2EB872797E /* AudioManager.swift */; };
 		6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */; };
 		75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */; };
+		7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */; };
 		920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FEDD9815CBEFD0332FE393 /* SearchView.swift */; };
 		9C9ACA6D6BC96D94879BE554 /* icon.json in Resources */ = {isa = PBXBuildFile; fileRef = 30A305CE22DC3C10E2E3E28F /* icon.json */; };
 		A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */; };
@@ -49,6 +50,7 @@
 		804113B280E47C43FBED2F85 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		82B055BB2A3A8819F870F4A3 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		97968DE3F1803173874F4E13 /* McpConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpConnectView.swift; sourceTree = "<group>"; };
+		9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingVoiceSetupSlide.swift; sourceTree = "<group>"; };
 		A530B1CC229C71FC31649323 /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		A85E11C35CBE283D2101267D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
@@ -100,6 +102,7 @@
 				A530B1CC229C71FC31649323 /* OnboardingPage.swift */,
 				FC1AD9426E8AD31AD09735D0 /* OnboardingSlide.swift */,
 				6DA5B50328D0A9CA110FA5D5 /* OnboardingView.swift */,
+				9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -305,6 +308,7 @@
 				38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */,
 				E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */,
 				B2D9ABA7135D805FC44861CB /* OnboardingView.swift in Sources */,
+				7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */,
 				62241C028CE52A11AABA64DD /* RecordingDetailView.swift in Sources */,
 				6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */,
 				2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */,
@@ -326,7 +330,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -348,7 +352,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 34;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
