@@ -24,7 +24,6 @@ class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -30,6 +30,17 @@ Image.fromarray(arr, "RGBA").save(sys.argv[2], "PNG")
 PY
 fi
 
+LAYER_ICON="${SOURCE_ICON%.*}-layer.${SOURCE_ICON##*.}"
+DARK_LAYER_ICON="${SOURCE_ICON%.*}-layer-dark.${SOURCE_ICON##*.}"
+
+if [[ ! -f "$LAYER_ICON" ]]; then
+  LAYER_ICON="$SOURCE_ICON"
+fi
+
+if [[ ! -f "$DARK_LAYER_ICON" ]]; then
+  DARK_LAYER_ICON="$DARK_ICON"
+fi
+
 generate_dark_png() {
   local size="$1"
   local destination="$2"
@@ -43,9 +54,11 @@ generate_dark_png 1024 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/Ap
 cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
   "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
 
-echo "Refreshing AppIcon.icon dark layers"
-cp "$DARK_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
-cp "$DARK_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
+echo "Refreshing AppIcon.icon layers"
+cp "$LAYER_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png"
+cp "$DARK_LAYER_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
+cp "$LAYER_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png"
+cp "$DARK_LAYER_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"
 
 echo "Generating macOS app icons"
 generate_png 16 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
@@ -65,6 +78,13 @@ generate_png 512 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/BrandIco
 generate_png 256 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon.png"
 generate_png 512 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/BrandIcon.imageset/brand-icon@2x.png"
 generate_png 1024 "$ROOT_DIR/web/public/app-icon.png"
+python3 - "$SOURCE_ICON" "$ROOT_DIR/web/src/app/favicon.ico" <<'PY'
+import sys
+from PIL import Image
+
+source = Image.open(sys.argv[1]).convert("RGBA")
+source.save(sys.argv[2], format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+PY
 
 echo "Generating Android launcher icons"
 generate_png 48 "$ROOT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png"

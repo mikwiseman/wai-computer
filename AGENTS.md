@@ -87,6 +87,30 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 - Guest recordings are local-first under `filesDir/recordings/`; successful auth must enqueue guest migration sync.
 - Before shipping Android work, run unit, lint, release assembly, and connected instrumentation tests.
 
+## Windows
+
+- Tech: `.NET 9` + `WinUI 3` (Windows App SDK 1.6+); targets Win10 1809+ and Win11; x64-only in v1.0.
+- Layout: `windows/WaiComputer.Core/` (portable `net9.0` business logic — builds on any OS) and `windows/WaiComputer/` (the WinUI 3 app — Win-only). Tests under `windows/WaiComputer.{Core,Native,UI}.Tests/`.
+- Local dev: macOS users run a Parallels Win 11 VM with VS 2022 + Windows App SDK workload; mount `windows/` via Parallels Shared Folders. See `windows/PARALLELS.md`.
+- Audio: `NAudio.Wasapi` for mic + `WasapiLoopbackCapture` for system audio; 16 kHz mono int16, frame size 1600 samples.
+- Hotkey: `SetWindowsHookEx WH_KEYBOARD_LL` for global push-to-talk (default RightAlt). No Accessibility-equivalent privacy permission required on Windows.
+- Text insertion: clipboard + `SendInput Ctrl+V`. Fallback message identical to macOS: "Text is on your clipboard — press Ctrl+V to paste manually."
+- Session storage: `%APPDATA%\WaiComputer\session.json`, encrypted via DPAPI (`CurrentUser` scope); file ACL trimmed to current user only.
+- Magic link: `waicomputer://auth/verify?token=...` registered in `HKCU\Software\Classes`; single-instance redirect via `AppInstance`.
+- Auto-update: Velopack, separate `releases.win.json` (stable) + `releases.win.beta.json` (beta) feeds at `https://wai.computer/releases/windows/`.
+- Code signing: Azure Trusted Signing — `vpk pack --azureTrustedSigning ...`. Sign `.exe`, `Setup.exe`, and `.nupkg`.
+- Release: `scripts/release-windows.ps1 stable|beta` (PowerShell, run inside the Win VM with Az credentials + SSH key to VPS).
+- Sentry: separate `waicomputer-windows` project; DSN in `windows/WaiComputer/appsettings.json`. Same PII sanitisation rules as Mac+Android (`Sanitizer.cs`).
+- Tests: TDD-first. `WaiComputer.Core.Tests` is portable and can run on macOS via `dotnet test`; `WaiComputer.Native.Tests` and `WaiComputer.UITests` need a Win host. Coverage gate ≥85% on `Core/`.
+
+Native builds:
+```powershell
+cd windows && dotnet restore && dotnet build -c Release
+cd windows && dotnet test WaiComputer.Core.Tests
+cd windows && dotnet test WaiComputer.Native.Tests
+cd windows && dotnet test WaiComputer.UITests
+```
+
 ## Debugging Production
 
 ```bash

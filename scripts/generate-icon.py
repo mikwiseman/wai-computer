@@ -1,250 +1,203 @@
 #!/usr/bin/env python3
-"""Generate WaiComputer macOS app icon.
+"""Generate deterministic WaiComputer app icon source assets."""
 
-Black rounded triangle pointing up with a white retro computer icon inside.
-"""
+from __future__ import annotations
 
 import math
-from PIL import Image, ImageDraw
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFilter
 
 
-def draw_rounded_triangle(draw, cx, cy, size, corner_radius, fill):
-    """Draw an equilateral triangle pointing up with rounded corners."""
-    # Equilateral triangle vertices (pointing up)
-    h = size * math.sqrt(3) / 2
-    # Shift center down slightly so it looks visually centered
-    offset_y = size * 0.05
-    top = (cx, cy - h * 2 / 3 + offset_y)
-    bottom_left = (cx - size / 2, cy + h / 3 + offset_y)
-    bottom_right = (cx + size / 2, cy + h / 3 + offset_y)
-
-    vertices = [top, bottom_right, bottom_left]
-
-    # For rounded corners, we draw circles at corners and a polygon body
-    # Use a simpler approach: draw the triangle as a polygon and overlay circles
-    # at each vertex for rounding effect
-
-    # Actually, let's use a proper rounded polygon approach
-    # For each corner, we offset inward along both edges and draw an arc
-
-    rounded_points = []
-    n = len(vertices)
-
-    for i in range(n):
-        p_prev = vertices[(i - 1) % n]
-        p_curr = vertices[i]
-        p_next = vertices[(i + 1) % n]
-
-        # Vectors from current to prev and next
-        dx1 = p_prev[0] - p_curr[0]
-        dy1 = p_prev[1] - p_curr[1]
-        dx2 = p_next[0] - p_curr[0]
-        dy2 = p_next[1] - p_curr[1]
-
-        len1 = math.sqrt(dx1 * dx1 + dy1 * dy1)
-        len2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
-
-        # Normalize
-        dx1 /= len1
-        dy1 /= len1
-        dx2 /= len2
-        dy2 /= len2
-
-        # Offset points along edges
-        r = corner_radius
-        p1 = (p_curr[0] + dx1 * r, p_curr[1] + dy1 * r)
-        p2 = (p_curr[0] + dx2 * r, p_curr[1] + dy2 * r)
-
-        # Generate arc points between p1 and p2 around corner
-        # Find center of arc
-        # Bisector direction
-        bx = dx1 + dx2
-        by = dy1 + dy2
-        blen = math.sqrt(bx * bx + by * by)
-        if blen > 0:
-            bx /= blen
-            by /= blen
-
-        # Half angle between edges
-        dot = dx1 * dx2 + dy1 * dy2
-        dot = max(-1, min(1, dot))
-        half_angle = math.acos(dot) / 2
-
-        # Distance from corner to arc center
-        d = r / math.sin(half_angle)
-        arc_center = (p_curr[0] + bx * d, p_curr[1] + by * d)
-
-        # Start and end angles for the arc
-        angle1 = math.atan2(p1[1] - arc_center[1], p1[0] - arc_center[0])
-        angle2 = math.atan2(p2[1] - arc_center[1], p2[0] - arc_center[0])
-
-        # Generate arc points (going from angle1 to angle2)
-        # Determine direction
-        cross = dx1 * dy2 - dy1 * dx2
-        if cross > 0:
-            # Go counterclockwise
-            if angle2 > angle1:
-                angle2 -= 2 * math.pi
-            steps = 20
-            for s in range(steps + 1):
-                t = s / steps
-                a = angle1 + t * (angle2 - angle1)
-                px = arc_center[0] + r * math.cos(a)
-                py = arc_center[1] + r * math.sin(a)
-                rounded_points.append((px, py))
-        else:
-            # Go clockwise
-            if angle2 < angle1:
-                angle2 += 2 * math.pi
-            steps = 20
-            for s in range(steps + 1):
-                t = s / steps
-                a = angle1 + t * (angle2 - angle1)
-                px = arc_center[0] + r * math.cos(a)
-                py = arc_center[1] + r * math.sin(a)
-                rounded_points.append((px, py))
-
-    draw.polygon(rounded_points, fill=fill)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SOURCE_LIGHT = ROOT_DIR / "assets/app-icon-1024.png"
+SOURCE_DARK = ROOT_DIR / "assets/app-icon-1024-dark.png"
+LAYER_LIGHT = ROOT_DIR / "assets/app-icon-1024-layer.png"
+LAYER_DARK = ROOT_DIR / "assets/app-icon-1024-layer-dark.png"
 
 
-def draw_retro_computer(draw, cx, cy, size, fill):
-    """Draw a simple retro computer icon (monitor + stand)."""
-    # Monitor body (wider than tall)
-    monitor_w = size * 0.60
-    monitor_h = size * 0.42
-    monitor_top = cy - size * 0.28
-    monitor_left = cx - monitor_w / 2
-    monitor_right = cx + monitor_w / 2
-    monitor_bottom = monitor_top + monitor_h
-
-    # Monitor outer frame with rounded corners
-    frame_radius = size * 0.04
-    draw.rounded_rectangle(
-        [monitor_left, monitor_top, monitor_right, monitor_bottom],
-        radius=frame_radius,
-        fill=fill,
-    )
-
-    # Screen bezel (inner dark area to simulate screen)
-    bezel = size * 0.045
-    screen_left = monitor_left + bezel
-    screen_top = monitor_top + bezel
-    screen_right = monitor_right - bezel
-    screen_bottom = monitor_bottom - bezel * 1.8  # More bezel at bottom (chin)
-    screen_radius = size * 0.02
-
-    # Draw screen as a dark rectangle inside the white monitor
-    draw.rounded_rectangle(
-        [screen_left, screen_top, screen_right, screen_bottom],
-        radius=screen_radius,
-        fill=(0, 0, 0),  # Black screen
-    )
-
-    # Neck/stand column
-    neck_w = size * 0.10
-    neck_h = size * 0.10
-    neck_left = cx - neck_w / 2
-    neck_top = monitor_bottom
-    neck_bottom = neck_top + neck_h
-
-    draw.rectangle(
-        [neck_left, neck_top, neck_left + neck_w, neck_bottom],
-        fill=fill,
-    )
-
-    # Base (wider, flat)
-    base_w = size * 0.35
-    base_h = size * 0.045
-    base_left = cx - base_w / 2
-    base_top = neck_bottom
-    base_bottom = base_top + base_h
-    base_radius = size * 0.02
-
-    draw.rounded_rectangle(
-        [base_left, base_top, base_left + base_w, base_bottom],
-        radius=base_radius,
-        fill=fill,
-    )
+def lerp(a: int, b: int, t: float) -> int:
+    return round(a + (b - a) * t)
 
 
-def generate_icon(size):
-    """Generate icon at specified size."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    cx, cy = size / 2, size / 2
-    padding = size * 0.10
-    triangle_size = size - padding * 2
-    corner_radius = triangle_size * 0.06
-
-    # Draw black rounded triangle
-    draw_rounded_triangle(draw, cx, cy, triangle_size, corner_radius, fill=(0, 0, 0))
-
-    # Draw white retro computer inside the triangle
-    computer_size = triangle_size * 0.50
-    # Shift computer down slightly since triangle top is pointy
-    computer_cy = cy + triangle_size * 0.06
-    draw_retro_computer(draw, cx, computer_cy, computer_size, fill=(255, 255, 255))
-
-    return img
+def vertical_gradient(size: int, top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
+    image = Image.new("RGB", (size, size), top)
+    draw = ImageDraw.Draw(image)
+    for y in range(size):
+        t = y / (size - 1)
+        color = tuple(lerp(top[index], bottom[index], t) for index in range(3))
+        draw.line([(0, y), (size, y)], fill=color)
+    return image
 
 
-def main():
-    output_dir = "/Users/mikwiseman/Documents/Code/wai-computer/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset"
-
-    # macOS icon sizes: (points, scale, pixel_size)
-    sizes = [
-        (16, 1, 16),
-        (16, 2, 32),
-        (32, 1, 32),
-        (32, 2, 64),
-        (128, 1, 128),
-        (128, 2, 256),
-        (256, 1, 256),
-        (256, 2, 512),
-        (512, 1, 512),
-        (512, 2, 1024),
+def rounded_triangle_points(cx: float, cy: float, size: float, radius: float) -> list[tuple[float, float]]:
+    height = size * math.sqrt(3) / 2
+    offset_y = size * 0.035
+    vertices = [
+        (cx, cy - height * 2 / 3 + offset_y),
+        (cx + size / 2, cy + height / 3 + offset_y),
+        (cx - size / 2, cy + height / 3 + offset_y),
     ]
 
-    # Generate master at 1024 and resize down for quality
-    master = generate_icon(1024)
+    points: list[tuple[float, float]] = []
+    for index, current in enumerate(vertices):
+        previous = vertices[(index - 1) % len(vertices)]
+        next_point = vertices[(index + 1) % len(vertices)]
 
-    for points, scale, pixels in sizes:
-        if pixels == 1024:
-            icon = master.copy()
-        else:
-            icon = master.resize((pixels, pixels), Image.LANCZOS)
+        v1x = previous[0] - current[0]
+        v1y = previous[1] - current[1]
+        v2x = next_point[0] - current[0]
+        v2y = next_point[1] - current[1]
+        len1 = math.hypot(v1x, v1y)
+        len2 = math.hypot(v2x, v2y)
+        v1x, v1y = v1x / len1, v1y / len1
+        v2x, v2y = v2x / len2, v2y / len2
 
-        suffix = f"_{points}x{points}" if scale == 1 else f"_{points}x{points}@2x"
-        filename = f"app_icon{suffix}.png"
-        filepath = f"{output_dir}/{filename}"
-        icon.save(filepath, "PNG")
-        print(f"Generated {filename} ({pixels}x{pixels})")
+        start = (current[0] + v1x * radius, current[1] + v1y * radius)
+        end = (current[0] + v2x * radius, current[1] + v2y * radius)
 
-    # Generate Contents.json
-    import json
+        bisector_x = v1x + v2x
+        bisector_y = v1y + v2y
+        bisector_length = math.hypot(bisector_x, bisector_y)
+        if bisector_length == 0:
+            points.append(current)
+            continue
+        bisector_x /= bisector_length
+        bisector_y /= bisector_length
 
-    contents = {
-        "images": [],
-        "info": {"author": "xcode", "version": 1},
-    }
-
-    for points, scale, pixels in sizes:
-        suffix = f"_{points}x{points}" if scale == 1 else f"_{points}x{points}@2x"
-        filename = f"app_icon{suffix}.png"
-        contents["images"].append(
-            {
-                "filename": filename,
-                "idiom": "mac",
-                "scale": f"{scale}x",
-                "size": f"{points}x{points}",
-            }
+        dot = max(-1.0, min(1.0, v1x * v2x + v1y * v2y))
+        half_angle = math.acos(dot) / 2
+        center_distance = radius / math.sin(half_angle)
+        arc_center = (
+            current[0] + bisector_x * center_distance,
+            current[1] + bisector_y * center_distance,
         )
 
-    contents_path = f"{output_dir}/Contents.json"
-    with open(contents_path, "w") as f:
-        json.dump(contents, f, indent=2)
-    print(f"Generated Contents.json")
+        angle1 = math.atan2(start[1] - arc_center[1], start[0] - arc_center[0])
+        angle2 = math.atan2(end[1] - arc_center[1], end[0] - arc_center[0])
+        cross = v1x * v2y - v1y * v2x
+        if cross > 0 and angle2 > angle1:
+            angle2 -= math.tau
+        elif cross <= 0 and angle2 < angle1:
+            angle2 += math.tau
+
+        for step in range(18):
+            t = step / 17
+            angle = angle1 + (angle2 - angle1) * t
+            points.append(
+                (
+                    arc_center[0] + radius * math.cos(angle),
+                    arc_center[1] + radius * math.sin(angle),
+                )
+            )
+    return points
+
+
+def paste_gradient_shape(
+    base: Image.Image,
+    mask: Image.Image,
+    top: tuple[int, int, int],
+    bottom: tuple[int, int, int],
+) -> None:
+    gradient = vertical_gradient(base.size[0], top, bottom).convert("RGBA")
+    base.alpha_composite(Image.composite(gradient, Image.new("RGBA", base.size, (0, 0, 0, 0)), mask))
+
+
+def draw_foreground(size: int, dark: bool) -> Image.Image:
+    scale = size / 1024
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    cx, cy = size / 2, size / 2 + 8 * scale
+
+    triangle_size = size * 0.68
+    triangle_points = rounded_triangle_points(cx, cy, triangle_size, triangle_size * 0.055)
+    triangle_mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(triangle_mask).polygon(triangle_points, fill=255)
+
+    shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    shadow_mask = triangle_mask.filter(ImageFilter.GaussianBlur(18 * scale))
+    shadow.alpha_composite(
+        Image.composite(
+            Image.new("RGBA", (size, size), (0, 0, 0, 70 if dark else 54)),
+            Image.new("RGBA", (size, size), (0, 0, 0, 0)),
+            shadow_mask,
+        ),
+        (0, round(16 * scale)),
+    )
+    layer.alpha_composite(shadow)
+
+    paste_gradient_shape(
+        layer,
+        triangle_mask,
+        (242, 164, 62) if not dark else (255, 186, 77),
+        (179, 87, 41) if not dark else (209, 103, 45),
+    )
+
+    highlight = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    highlight_mask = triangle_mask.filter(ImageFilter.GaussianBlur(2 * scale))
+    ImageDraw.Draw(highlight).line(
+        [(cx - triangle_size * 0.28, cy + triangle_size * 0.28), (cx, cy - triangle_size * 0.42)],
+        fill=(255, 232, 166, 74),
+        width=round(10 * scale),
+    )
+    layer.alpha_composite(Image.composite(highlight, Image.new("RGBA", (size, size), (0, 0, 0, 0)), highlight_mask))
+
+    draw = ImageDraw.Draw(layer)
+    bar_fill = (250, 255, 249, 245) if not dark else (255, 252, 232, 245)
+    bar_shadow = (48, 74, 64, 85)
+    heights = [54, 84, 116, 156, 205, 262, 336, 278, 214, 154, 104, 68]
+    bar_width = 26 * scale
+    gap = 14 * scale
+    total_width = len(heights) * bar_width + (len(heights) - 1) * gap
+    baseline = cy + triangle_size * 0.24
+    start_x = cx - total_width / 2
+
+    for index, height in enumerate(heights):
+        x0 = start_x + index * (bar_width + gap)
+        x1 = x0 + bar_width
+        y1 = baseline
+        y0 = baseline - height * scale
+        radius = bar_width * 0.48
+        draw.rounded_rectangle(
+            [x0 + 3 * scale, y0 + 5 * scale, x1 + 3 * scale, y1 + 5 * scale],
+            radius=radius,
+            fill=bar_shadow,
+        )
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=bar_fill)
+
+    return layer
+
+
+def draw_full_icon(size: int, dark: bool) -> Image.Image:
+    background = vertical_gradient(
+        size,
+        (18, 84, 78) if not dark else (9, 37, 39),
+        (37, 99, 235) if not dark else (18, 52, 126),
+    ).convert("RGBA")
+
+    draw = ImageDraw.Draw(background, "RGBA")
+    draw.ellipse(
+        [size * -0.20, size * -0.14, size * 0.74, size * 0.80],
+        fill=(94, 218, 189, 48 if not dark else 34),
+    )
+    draw.ellipse(
+        [size * 0.46, size * 0.58, size * 1.18, size * 1.24],
+        fill=(46, 114, 232, 42 if not dark else 32),
+    )
+    background.alpha_composite(draw_foreground(size, dark))
+    return background.convert("RGB")
+
+
+def save_icon(path: Path, image: Image.Image) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, "PNG", optimize=True)
+    print(f"Generated {path.relative_to(ROOT_DIR)}")
+
+
+def main() -> None:
+    save_icon(SOURCE_LIGHT, draw_full_icon(1024, dark=False))
+    save_icon(SOURCE_DARK, draw_full_icon(1024, dark=True))
+    save_icon(LAYER_LIGHT, draw_foreground(1024, dark=False))
+    save_icon(LAYER_DARK, draw_foreground(1024, dark=True))
 
 
 if __name__ == "__main__":

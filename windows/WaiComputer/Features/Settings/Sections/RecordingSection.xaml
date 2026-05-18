@@ -1,0 +1,16 @@
+<UserControl
+    x:Class="WaiComputer.Features.Settings.Sections.RecordingSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12">
+        <TextBlock Text="RECORDING" Style="{StaticResource WaiSectionHeader}" />
+        <ComboBox Header="Default type" SelectedIndex="0">
+            <ComboBoxItem Content="Meeting" /><ComboBoxItem Content="Note" /><ComboBoxItem Content="Reflection" />
+        </ComboBox>
+        <ComboBox Header="Default input source" SelectedIndex="0">
+            <ComboBoxItem Content="Microphone + system audio" /><ComboBoxItem Content="Microphone only" />
+        </ComboBox>
+        <ToggleSwitch Header="Mix mic and system audio to mono" IsOn="True" />
+        <ToggleSwitch Header="Capture system audio per process (experimental)" IsOn="False" />
+    </StackPanel>
+</UserControl>

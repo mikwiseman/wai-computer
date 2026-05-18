@@ -20,17 +20,17 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
     void (async () => {
       try {
         await verifyMagicLink(token);
-        setMessage("Magic link verified. Redirecting...");
-        const onboarded = typeof window !== "undefined" &&
-          window.localStorage.getItem("voice_onboarding_complete") === "true";
-        router.replace(onboarded ? "/dashboard" : "/onboarding");
       } catch (error: unknown) {
         if (error instanceof ApiError) {
           setMessage(error.message);
           return;
         }
         setMessage("Verification failed.");
+        return;
       }
+
+      setMessage("Magic link verified. Redirecting...");
+      router.replace(hasCompletedVoiceOnboarding() ? "/dashboard" : "/onboarding");
     })();
   }, [router, token]);
 
@@ -45,4 +45,13 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
       <Link href="/login">Back to login</Link>
     </section>
   );
+}
+
+function hasCompletedVoiceOnboarding(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem("voice_onboarding_complete") === "true";
+  } catch {
+    return false;
+  }
 }

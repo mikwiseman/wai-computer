@@ -30,6 +30,7 @@ dependencies = [
     "speechbrain>=1.0.2",
     "torchaudio",
     "pydub>=0.25",
+    "audioop-lts>=0.2.2; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]

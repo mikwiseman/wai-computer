@@ -1,0 +1,25 @@
+<UserControl
+    x:Class="WaiComputer.Features.Settings.Sections.McpConnectSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12">
+        <TextBlock Text="MCP CONNECT" Style="{StaticResource WaiSectionHeader}" />
+        <TextBlock TextWrapping="Wrap">
+            Connect WaiComputer to Claude, Cursor, ChatGPT, Claude Code, or Codex CLI so they can
+            read your recordings via MCP.
+        </TextBlock>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Grid.Column="0" Text="https://wai.computer/mcp" IsReadOnly="True" />
+            <Button Grid.Column="1" Content="Copy URL" Click="OnCopyUrl" />
+        </Grid>
+        <Expander Header="Per-client instructions">
+            <StackPanel Spacing="12" Padding="0,8">
+                <Button Content="Copy Claude.ai config" Click="OnCopyClaudeAi" />
+                <Button Content="Copy Cursor config" Click="OnCopyCursor" />
+                <Button Content="Copy ChatGPT config" Click="OnCopyChatGpt" />
+                <Button Content="Copy Claude Code config" Click="OnCopyClaudeCode" />
+                <Button Content="Copy Codex CLI config" Click="OnCopyCodex" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

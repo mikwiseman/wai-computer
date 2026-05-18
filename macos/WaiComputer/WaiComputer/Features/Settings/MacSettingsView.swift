@@ -394,6 +394,7 @@ struct MacSettingsView: View {
                     Text("\(version) (\(build))")
                         .font(Typography.mono)
                 }
+                #if !DEBUG
                 Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-receive-beta-updates-toggle")
@@ -405,6 +406,7 @@ struct MacSettingsView: View {
                 }
                 .font(Typography.body)
                 .accessibilityIdentifier("settings-check-for-updates-button")
+                #endif
             } header: {
                 Text("About")
                     .waiSectionHeader()

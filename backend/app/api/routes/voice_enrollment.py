@@ -1,9 +1,8 @@
-"""Voice enrollment endpoint — capture a user's voice for cross-recording speaker ID."""
+"""Voice enrollment endpoint for cross-recording speaker identification."""
 
 import logging
 import uuid
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
@@ -39,7 +38,7 @@ async def enroll_voice(
     user: CurrentUser,
     db: Database,
     audio: UploadFile = File(...),
-    display_name: str | None = Form(default=None),
+    display_name: str | None = Form(default=None, max_length=200),
     person_id: UUID | None = Form(default=None),
 ) -> VoiceEnrollmentResponse:
     """Enroll a voice sample for the calling user.
@@ -67,7 +66,7 @@ async def enroll_voice(
                 total_bytes += len(chunk)
                 if total_bytes > MAX_BYTES:
                     raise HTTPException(
-                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=f"Voice sample exceeds {MAX_BYTES // (1024 * 1024)} MB.",
                     )
                 staged_file.write(chunk)
@@ -75,7 +74,7 @@ async def enroll_voice(
         duration_s = _measure_duration_seconds(staged_path)
         if duration_s < MIN_DURATION_S:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     f"Voice sample is too short ({duration_s:.1f}s). "
                     f"Record at least {int(MIN_DURATION_S)} seconds."
@@ -83,7 +82,7 @@ async def enroll_voice(
             )
         if duration_s > MAX_DURATION_S:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     f"Voice sample is too long ({duration_s:.1f}s). "
                     f"Keep it under {int(MAX_DURATION_S)} seconds."
@@ -135,7 +134,7 @@ def _measure_duration_seconds(path: Path) -> float:
     except Exception as exc:  # noqa: BLE001
         logger.info("Voice enrollment decode failed for %s: %s", path.name, exc)
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Could not decode the audio file. Try WAV, MP3, M4A, or OGG.",
         ) from exc
     return len(segment) / 1000.0
@@ -160,6 +159,11 @@ async def _resolve_person(
         return person
 
     normalized = (display_name or "You").strip() or "You"
+    if len(normalized) > 200:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="display_name must be 200 characters or fewer",
+        )
 
     existing = await db.execute(
         select(Person).where(
@@ -167,9 +171,14 @@ async def _resolve_person(
             func.lower(Person.display_name) == normalized.lower(),
         )
     )
-    person = existing.scalar_one_or_none()
-    if person is not None:
-        return person
+    people = existing.scalars().all()
+    if len(people) == 1:
+        return people[0]
+    if len(people) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Multiple people match display_name; provide person_id",
+        )
 
     person = Person(user_id=user_id, display_name=normalized)
     db.add(person)

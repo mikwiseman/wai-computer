@@ -7,7 +7,6 @@ Create Date: 2026-05-18 16:00:00.000000+00:00
 Resets any user pinned to a now-dropped transcription model id back to the
 curated default (ElevenLabs Scribe v2 / Scribe v2 Realtime). Drops:
 
-- OpenAI gpt-4o-transcribe family (retired Feb / June 2026).
 - Legacy AssemblyAI streaming variants (universal-streaming-*, whisper-rt).
 - AssemblyAI Universal-3 Pro Streaming via Inworld (6-language limit; fails our
   ≥50-language curation bar).
@@ -34,10 +33,6 @@ DEFAULT_FILE_MODEL = "scribe_v2"
 
 # Models that should no longer appear in any user's saved preferences.
 DROPPED_FILE_MODELS = (
-    # OpenAI batch transcription — all retired.
-    ("openai", "gpt-4o-transcribe"),
-    ("openai", "gpt-4o-mini-transcribe"),
-    ("openai", "gpt-4o-transcribe-diarize"),
     # Inworld first-party + Groq batch options removed from the new registry.
     ("inworld", "inworld/inworld-stt-1"),
     ("inworld", "groq/whisper-large-v3"),

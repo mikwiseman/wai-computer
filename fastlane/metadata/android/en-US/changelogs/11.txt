@@ -1,0 +1,10 @@
+First Play Store release.
+
+- Live recording with real-time transcription
+- AI summaries, action items, highlights
+- Hybrid / semantic / full-text search
+- Wai Companion chat with cited answers
+- Speaker identification + management
+- Folders, starring, trash + restore
+- Audio file import
+- Guest mode with auto-migration to your account
