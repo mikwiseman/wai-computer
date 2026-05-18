@@ -40,6 +40,7 @@ targets:
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.dev
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     dependencies:
       - package: WaiComputerKit
       - package: Sparkle
