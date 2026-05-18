@@ -14,7 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
+from app.billing.providers.base import ProviderUnavailableError
+from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.quota import WordQuota
+from app.config import get_settings
 from app.models.billing import (
     BillingPeriod,
     BillingProvider,
@@ -142,24 +145,98 @@ async def get_subscription(user: CurrentUser, db: Database) -> SubscriptionRespo
     )
 
 
-@router.post("/checkout", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+def _pick_provider(user_region: str, override: str | None) -> str:
+    """Resolve which payment rail to use. Override > user.region > default."""
+    if override:
+        return override
+    if user_region == "ru":
+        return BillingProvider.TINKOFF.value
+    return BillingProvider.STRIPE.value
+
+
+class CheckoutResponse(BaseModel):
+    provider: str
+    checkout_url: str
+
+
+@router.post("/checkout", response_model=CheckoutResponse)
 async def create_checkout(
     payload: CheckoutRequest,
     user: CurrentUser,
     db: Database,
-) -> dict:
-    """Create a checkout session — implemented by Stripe + T-Bank providers."""
-    # Phase 2/3 fill this in. Validate inputs so callers get a useful 4xx.
+) -> CheckoutResponse:
+    """Create a hosted checkout session and return its URL."""
     if payload.plan not in {"pro"}:
         raise HTTPException(status_code=400, detail="Unknown plan")
     if payload.period not in {p.value for p in BillingPeriod}:
         raise HTTPException(status_code=400, detail="Unknown period")
     if payload.provider is not None and payload.provider not in {p.value for p in BillingProvider}:
         raise HTTPException(status_code=400, detail="Unknown provider")
-    raise HTTPException(status_code=501, detail="Checkout not yet wired")
+
+    settings = get_settings()
+    provider_code = _pick_provider(user.region, payload.provider)
+    frontend = settings.frontend_url.rstrip("/")
+    success_url = f"{frontend}/billing/success"
+    cancel_url = f"{frontend}/billing/cancel"
+
+    if provider_code == BillingProvider.STRIPE.value:
+        provider = StripeProvider()
+        try:
+            result = await provider.create_checkout(
+                plan_code=payload.plan,
+                period=payload.period,
+                user_email=user.email,
+                user_id=str(user.id),
+                success_url=success_url,
+                cancel_url=cancel_url,
+                trial_days=settings.billing_trial_days,
+            )
+        except ProviderUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Stripe not configured: {exc}",
+            ) from exc
+        return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
+
+    if provider_code == BillingProvider.TINKOFF.value:
+        # Phase 3 wires this in.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="T-Bank checkout pending"
+        )
+
+    raise HTTPException(status_code=400, detail="Unknown provider")
 
 
-@router.post("/cancel", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+@router.post("/cancel")
 async def cancel_subscription(user: CurrentUser, db: Database) -> dict:
-    """Cancel at period end — implemented by Stripe + T-Bank providers."""
-    raise HTTPException(status_code=501, detail="Cancel not yet wired")
+    """Cancel the user's active subscription at period end."""
+    if user.current_subscription_id is None:
+        raise HTTPException(status_code=400, detail="No active subscription")
+    sub = (
+        await db.execute(
+            select(Subscription).where(Subscription.id == user.current_subscription_id)
+        )
+    ).scalar_one_or_none()
+    if sub is None:
+        raise HTTPException(status_code=400, detail="No active subscription")
+
+    if sub.provider == BillingProvider.STRIPE.value and sub.stripe_subscription_id:
+        provider = StripeProvider()
+        try:
+            await provider.cancel_subscription(sub.stripe_subscription_id)
+        except ProviderUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Stripe not configured: {exc}",
+            ) from exc
+        sub.cancel_at_period_end = True
+        await db.flush()
+        return {"cancel_at_period_end": True}
+
+    if sub.provider == BillingProvider.TINKOFF.value:
+        # Phase 3 wires this in.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="T-Bank cancel pending"
+        )
+
+    raise HTTPException(status_code=400, detail="Unknown provider on subscription")
