@@ -55,6 +55,7 @@
 		C9E5627567722FF9925C20BF /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */; };
 		CC3DD86A54875FE2C9B60418 /* DictationOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803E7E8D86E717C36B809FE4 /* DictationOverlayPanel.swift */; };
 		CDEFA7621310F11B57F75165 /* NewRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63599FDEBFCAB293C25C3CA5 /* NewRecordingView.swift */; };
+		CFF683B098EDB113EA4A0AE3 /* PaymentModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 010A1CB6C20DE6517AA54CD3 /* PaymentModeToggle.swift */; };
 		D07E5859051F05165917CAEC /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49041A92859260A8AC12767C /* DictationLanguageStore.swift */; };
 		D211B66746531BDB3E178B5B /* SpeakerChipView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */; };
 		D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */; };
@@ -84,6 +85,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		010A1CB6C20DE6517AA54CD3 /* PaymentModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentModeToggle.swift; sourceTree = "<group>"; };
 		0360B0E138565421000ECA14 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
 		03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerChipView.swift; sourceTree = "<group>"; };
 		07D1B3EF81EEF7134E5BE0F2 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
@@ -368,6 +370,7 @@
 			children = (
 				F64605678EEFC8F7DE615F3F /* AppLanguagePicker.swift */,
 				6299E722D1B0554D90131758 /* MacSettingsView.swift */,
+				010A1CB6C20DE6517AA54CD3 /* PaymentModeToggle.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -563,6 +566,7 @@
 				C9E5627567722FF9925C20BF /* OnboardingView.swift in Sources */,
 				FE34B99935E63E078DF03FED /* OnboardingVoiceSetupSlide.swift in Sources */,
 				063CEA1A90D4FC6E524DE28C /* OnboardingWelcomeSlide.swift in Sources */,
+				CFF683B098EDB113EA4A0AE3 /* PaymentModeToggle.swift in Sources */,
 				A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */,
 				D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */,
 				D211B66746531BDB3E178B5B /* SpeakerChipView.swift in Sources */,

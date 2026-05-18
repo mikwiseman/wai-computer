@@ -59,6 +59,10 @@ class SubscriptionResponse(BaseModel):
     current_period_end: datetime | None
     cancel_at_period_end: bool
     trial_end: datetime | None
+    # When false, clients SHOULD hide the entire billing UI: word gauges,
+    # upgrade buttons, plan badges. The backend will not return 402 in this
+    # mode either, so quota checks become advisory.
+    enforcement_enabled: bool
 
 
 class CheckoutRequest(BaseModel):
@@ -135,6 +139,7 @@ async def get_subscription(user: CurrentUser, db: Database) -> SubscriptionRespo
         memory_retention_days=plan.memory_retention_days,
         features=plan.features or {},
     )
+    settings = get_settings()
     return SubscriptionResponse(
         plan=plan_payload,
         status=sub.status if sub is not None else "free",
@@ -143,6 +148,7 @@ async def get_subscription(user: CurrentUser, db: Database) -> SubscriptionRespo
         current_period_end=sub.current_period_end if sub is not None else None,
         cancel_at_period_end=bool(sub and sub.cancel_at_period_end),
         trial_end=sub.trial_end if sub is not None else None,
+        enforcement_enabled=settings.billing_enforcement_enabled,
     )
 
 

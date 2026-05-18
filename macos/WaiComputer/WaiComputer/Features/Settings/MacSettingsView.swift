@@ -104,6 +104,7 @@ struct MacSettingsView: View {
     @State private var fileSTTSelection = ""
     @State private var dictationPostFilterEnabled = true
     @State private var dictationPostFilterSelection = ""
+    @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -148,7 +149,17 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-account-header")
             }
 
-            BillingSection()
+            Section {
+                PaymentModeToggle()
+            } header: {
+                Text("Payments")
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-payment-mode-header")
+            }
+
+            if paymentModeEnabled {
+                BillingSection()
+            }
 
             Section {
                 AppLanguagePicker()

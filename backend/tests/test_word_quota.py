@@ -94,6 +94,16 @@ async def _make_user(db_session, email: str) -> User:
     return user
 
 
+@pytest.fixture(autouse=True)
+def enforce_billing_for_tests(monkeypatch):
+    """Most quota tests want the enforcement path. Per-test overrides flip it
+    back off via the same monkeypatch handle."""
+    monkeypatch.setattr(
+        "app.billing.quota.get_settings",
+        lambda: type("S", (), {"billing_enforcement_enabled": True})(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_free_user_with_no_usage_is_allowed(db_session):
     await _seed_free_plan(db_session)
@@ -103,6 +113,25 @@ async def test_free_user_with_no_usage_is_allowed(db_session):
     assert result.allowed is True
     assert result.words_used == 0
     assert result.words_cap == 10000
+
+
+@pytest.mark.asyncio
+async def test_payment_mode_off_makes_everyone_unlimited(db_session, monkeypatch):
+    """When billing_enforcement_enabled is false (the v1.0 default), free
+    users are treated as unlimited and never blocked."""
+    monkeypatch.setattr(
+        "app.billing.quota.get_settings",
+        lambda: type("S", (), {"billing_enforcement_enabled": False})(),
+    )
+    await _seed_free_plan(db_session)
+    user = await _make_user(db_session, "paymentoff@example.test")
+    await WordQuota.record(db_session, user, words=9_999)
+
+    # Even though usage exceeds the configured 10k cap, no cap is enforced.
+    check = await WordQuota.check(db_session, user, estimated_words=10_000)
+    assert check.allowed is True
+    assert check.words_cap is None
+    assert check.words_used == 9_999
 
 
 @pytest.mark.asyncio
