@@ -16,6 +16,7 @@ from app.core.companion import (
     TOOL_CALL_CAP,
     CitationEvent,
     DoneEvent,
+    TokenEvent,
     ToolCallEvent,
     run_turn,
 )
@@ -38,10 +39,47 @@ class _FakeResponse:
     usage: _Usage = field(default_factory=_Usage)
 
 
-class FakeOpenAI:
-    """Replays a scripted list of Responses-API responses, in order."""
+@dataclass
+class _DeltaEvent:
+    """Mimics `response.output_text.delta` SSE event from Responses streaming."""
 
-    def __init__(self, *scripted: _FakeResponse):
+    delta: str
+    type: str = "response.output_text.delta"
+
+
+@dataclass
+class _CompletedEvent:
+    """Mimics `response.completed` event with a usage-bearing response."""
+
+    response: _FakeResponse
+    type: str = "response.completed"
+
+
+class _AsyncEventStream:
+    """Async iterator over a pre-built list of streaming events."""
+
+    def __init__(self, events: list[Any]):
+        self._events = list(events)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self._events:
+            raise StopAsyncIteration
+        return self._events.pop(0)
+
+
+class FakeOpenAI:
+    """Replays a scripted list of Responses-API responses, in order.
+
+    Each scripted entry is either:
+    - a `_FakeResponse` (non-streaming Phase A turn, or a Phase B response
+      that is auto-chunked into delta events when stream=True);
+    - a list of streaming events (consumed verbatim when stream=True).
+    """
+
+    def __init__(self, *scripted: Any):
         self._scripted = list(scripted)
         self.calls: list[dict[str, Any]] = []
         self.responses = self
@@ -50,7 +88,31 @@ class FakeOpenAI:
         self.calls.append(kwargs)
         if not self._scripted:
             raise AssertionError("FakeOpenAI ran out of scripted responses")
-        return self._scripted.pop(0)
+        nxt = self._scripted.pop(0)
+        if kwargs.get("stream"):
+            if isinstance(nxt, list):
+                return _AsyncEventStream(nxt)
+            return _AsyncEventStream(_response_to_streaming_events(nxt))
+        return nxt
+
+
+def _response_to_streaming_events(resp: _FakeResponse) -> list[Any]:
+    """Convert a buffered Phase-B response into delta + completed events."""
+    text = resp.output_text or _join_output_text(resp.output)
+    chunk_size = max(1, len(text) // 8) if text else 1
+    chunks = [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)] or [text]
+    events: list[Any] = [_DeltaEvent(delta=chunk) for chunk in chunks]
+    events.append(_CompletedEvent(response=resp))
+    return events
+
+
+def _join_output_text(items: list[dict[str, Any]]) -> str:
+    out: list[str] = []
+    for item in items:
+        for c in item.get("content", []) or []:
+            if c.get("type") == "output_text":
+                out.append(c.get("text", ""))
+    return "".join(out)
 
 
 def _tool_call_response(call_id: str, name: str, args: dict[str, Any]) -> _FakeResponse:
@@ -337,11 +399,12 @@ class TestRunTurn:
             )
         )
 
-        assert [type(e).__name__ for e in events] == [
-            "TurnStartEvent",
-            "TokenEvent",
-            "DoneEvent",
-        ]
+        # First event is the turn_start, last is done; in between the model's
+        # markdown is streamed as one or more TokenEvents (chunking varies).
+        assert isinstance(events[0], companion_module.TurnStartEvent)
+        assert isinstance(events[-1], DoneEvent)
+        token_texts = [e.text for e in events if isinstance(e, TokenEvent)]
+        assert "".join(token_texts) == "Nothing in your recordings touches that."
 
     async def test_other_user_cannot_post_to_chat(
         self, db_session, setup_user_and_recording, fake_embedding

@@ -1,18 +1,15 @@
-"""Wai Companion service: agentic tool loop + structured synthesis.
+"""Wai Companion service: agentic tool loop + streaming structured synthesis.
 
 Phase A: the model is given `search_transcripts`, `get_recording_summary`,
 and `list_recordings` tools. It drives retrieval freely (up to TOOL_CALL_CAP
 calls) and then emits a text-only response signalling the search is done.
 
-Phase B: a single follow-up Responses API call with `response_format` set to
-a strict JSON schema asks the model to write the final answer, with citations
-as a typed list. The server validates every citation's `segment_id` against
-the allowlist (the union of segment_ids returned by every `search_transcripts`
-call in Phase A) and drops any that don't match — no retry, no fallback.
-
-The service is an async iterator that yields `CompanionEvent` objects so the
-SSE route is a thin adapter and tests can drive the service synchronously
-with a mocked OpenAI client.
+Phase B: a single streaming Responses API call with `response_format` set to
+a strict JSON schema asks the model to write the final answer plus citations.
+The server emits markdown deltas as `TokenEvent`s, validates every citation's
+`segment_id` against the allowlist (the union of segment_ids returned by every
+`search_transcripts` call in Phase A) and drops any that don't match — no
+retry, no fallback.
 """
 
 from __future__ import annotations
@@ -153,7 +150,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "query": {"type": "string"},
+                    "query": {"type": "string", "minLength": 1},
                     "k": {"type": "integer", "minimum": 1, "maximum": 30},
                     "recording_ids": {
                         "type": "array",
@@ -248,21 +245,58 @@ class ToolExecutionResult:
     citable_segments: dict[str, SourceSegment]  # keyed by segment_id (str)
 
 
+def _scope_recording_uuids(scope: dict[str, Any] | None) -> list[uuid.UUID] | None:
+    if not scope:
+        return None
+    raw = scope.get("recording_ids")
+    if not raw:
+        return None
+    try:
+        return [uuid.UUID(r) for r in raw]
+    except (TypeError, ValueError) as exc:
+        raise CompanionError(
+            "invalid_scope",
+            f"Conversation scope has malformed recording_ids: {exc}",
+        ) from exc
+
+
+def _intersect_recording_ids(
+    explicit: list[uuid.UUID] | None,
+    scope: list[uuid.UUID] | None,
+) -> list[uuid.UUID] | None:
+    if scope is None:
+        return explicit
+    if explicit is None:
+        return scope
+    scope_set = set(scope)
+    return [r for r in explicit if r in scope_set]
+
+
 async def _tool_search_transcripts(
     db: AsyncSession,
     user_id: uuid.UUID,
     args: dict[str, Any],
     scope: dict[str, Any] | None,
 ) -> ToolExecutionResult:
-    query = args["query"]
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip():
+        raise CompanionError(
+            "invalid_tool_args", "search_transcripts.query must be non-empty"
+        )
     k = args.get("k", 15)
-    explicit_recording_ids = args.get("recording_ids")
+    explicit_raw = args.get("recording_ids")
+    explicit: list[uuid.UUID] | None = None
+    if explicit_raw:
+        try:
+            explicit = [uuid.UUID(r) for r in explicit_raw]
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"search_transcripts.recording_ids has malformed id: {exc}",
+            ) from exc
 
-    recording_ids: list[uuid.UUID] | None = None
-    if explicit_recording_ids:
-        recording_ids = [uuid.UUID(r) for r in explicit_recording_ids]
-    elif scope and scope.get("recording_ids"):
-        recording_ids = [uuid.UUID(r) for r in scope["recording_ids"]]
+    scope_ids = _scope_recording_uuids(scope)
+    recording_ids = _intersect_recording_ids(explicit, scope_ids)
 
     rows = await retrieve_context(
         db, user_id, query, recording_ids=recording_ids, limit=k
@@ -301,9 +335,32 @@ async def _tool_search_transcripts(
 
 
 async def _tool_get_recording_summary(
-    db: AsyncSession, user_id: uuid.UUID, args: dict[str, Any]
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
 ) -> ToolExecutionResult:
-    recording_id = uuid.UUID(args["recording_id"])
+    raw = args.get("recording_id")
+    try:
+        recording_id = uuid.UUID(raw)
+    except (TypeError, ValueError) as exc:
+        raise CompanionError(
+            "invalid_tool_args",
+            f"get_recording_summary.recording_id is missing or malformed: {exc}",
+        ) from exc
+
+    scope_ids = _scope_recording_uuids(scope)
+    if scope_ids is not None and recording_id not in scope_ids:
+        return ToolExecutionResult(
+            summary_for_event="out of scope",
+            payload_for_model={
+                "ok": False,
+                "reason": "out_of_scope",
+                "detail": "The requested recording is not part of this chat's scope.",
+            },
+            citable_segments={},
+        )
+
     stmt = (
         select(Summary, Recording)
         .join(Recording, Summary.recording_id == Recording.id)
@@ -320,13 +377,18 @@ async def _tool_get_recording_summary(
     if row is None:
         return ToolExecutionResult(
             summary_for_event="no summary",
-            payload_for_model={"error": "summary_not_found"},
+            payload_for_model={
+                "ok": False,
+                "reason": "summary_not_found",
+                "detail": "No summary exists for that recording yet.",
+            },
             citable_segments={},
         )
     summary, recording = row
     return ToolExecutionResult(
         summary_for_event=f"summary for {recording.title or 'untitled'}",
         payload_for_model={
+            "ok": True,
             "recording_title": recording.title,
             "summary": summary.summary,
             "key_points": summary.key_points,
@@ -340,7 +402,10 @@ async def _tool_get_recording_summary(
 
 
 async def _tool_list_recordings(
-    db: AsyncSession, user_id: uuid.UUID, args: dict[str, Any]
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
 ) -> ToolExecutionResult:
     limit = args.get("limit", 25)
     stmt = (
@@ -355,13 +420,29 @@ async def _tool_list_recordings(
         .limit(limit)
     )
     if args.get("date_from"):
-        stmt = stmt.where(
-            Recording.created_at >= datetime.fromisoformat(args["date_from"])
-        )
+        try:
+            stmt = stmt.where(
+                Recording.created_at >= datetime.fromisoformat(args["date_from"])
+            )
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"list_recordings.date_from is not ISO-8601: {exc}",
+            ) from exc
     if args.get("date_to"):
-        stmt = stmt.where(
-            Recording.created_at <= datetime.fromisoformat(args["date_to"])
-        )
+        try:
+            stmt = stmt.where(
+                Recording.created_at <= datetime.fromisoformat(args["date_to"])
+            )
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"list_recordings.date_to is not ISO-8601: {exc}",
+            ) from exc
+
+    scope_ids = _scope_recording_uuids(scope)
+    if scope_ids is not None:
+        stmt = stmt.where(Recording.id.in_(scope_ids))
 
     result = await db.execute(stmt)
     rows = list(result.scalars().all())
@@ -383,6 +464,13 @@ async def _tool_list_recordings(
     )
 
 
+_TOOL_DISPATCH = {
+    "search_transcripts": _tool_search_transcripts,
+    "get_recording_summary": _tool_get_recording_summary,
+    "list_recordings": _tool_list_recordings,
+}
+
+
 async def _execute_tool(
     name: str,
     args: dict[str, Any],
@@ -390,29 +478,115 @@ async def _execute_tool(
     user_id: uuid.UUID,
     scope: dict[str, Any] | None,
 ) -> ToolExecutionResult:
-    if name == "search_transcripts":
-        return await _tool_search_transcripts(db, user_id, args, scope)
-    if name == "get_recording_summary":
-        return await _tool_get_recording_summary(db, user_id, args)
-    if name == "list_recordings":
-        return await _tool_list_recordings(db, user_id, args)
-    raise CompanionError("unknown_tool", f"Unknown tool: {name}")
+    handler = _TOOL_DISPATCH.get(name)
+    if handler is None:
+        raise CompanionError("unknown_tool", f"Unknown tool: {name}")
+    return await handler(db, user_id, args, scope)
+
+
+# ---------- Streaming JSON markdown extractor ----------
+
+
+class _MarkdownDeltaExtractor:
+    """Extract the value of the JSON field `markdown` as it streams in.
+
+    The Phase-B model output is a strict JSON object of the form
+    `{"markdown": "...", "citations": [...]}`. While streaming we only want to
+    surface the markdown value to the client. This is a minimal state machine
+    that scans the incremental buffer, decodes the value's escape sequences,
+    and returns whatever new characters have become certain so far.
+    """
+
+    _STATE_BEFORE = 0
+    _STATE_INSIDE = 1
+    _STATE_DONE = 2
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._state = self._STATE_BEFORE
+        self._scan_pos = 0
+
+    @property
+    def is_done(self) -> bool:
+        return self._state == self._STATE_DONE
+
+    def feed(self, delta: str) -> str:
+        if not delta:
+            return ""
+        self._buffer += delta
+        if self._state == self._STATE_DONE:
+            return ""
+        if self._state == self._STATE_BEFORE:
+            if not self._locate_markdown_value():
+                return ""
+        return self._consume_string()
+
+    def _locate_markdown_value(self) -> bool:
+        idx = self._buffer.find('"markdown"')
+        if idx < 0:
+            return False
+        i = idx + len('"markdown"')
+        while i < len(self._buffer) and self._buffer[i] in " \t\n\r":
+            i += 1
+        if i >= len(self._buffer) or self._buffer[i] != ":":
+            return False
+        i += 1
+        while i < len(self._buffer) and self._buffer[i] in " \t\n\r":
+            i += 1
+        if i >= len(self._buffer) or self._buffer[i] != '"':
+            return False
+        self._scan_pos = i + 1
+        self._state = self._STATE_INSIDE
+        return True
+
+    def _consume_string(self) -> str:
+        buf = self._buffer
+        out: list[str] = []
+        i = self._scan_pos
+        n = len(buf)
+        while i < n:
+            c = buf[i]
+            if c == "\\":
+                if i + 1 >= n:
+                    break
+                nc = buf[i + 1]
+                if nc == "u":
+                    if i + 5 >= n:
+                        break
+                    hex_str = buf[i + 2 : i + 6]
+                    try:
+                        out.append(chr(int(hex_str, 16)))
+                    except ValueError:
+                        out.append(buf[i : i + 6])
+                    i += 6
+                    continue
+                simple = {
+                    '"': '"',
+                    "\\": "\\",
+                    "/": "/",
+                    "n": "\n",
+                    "t": "\t",
+                    "r": "\r",
+                    "b": "\b",
+                    "f": "\f",
+                }.get(nc)
+                if simple is None:
+                    out.append(buf[i : i + 2])
+                else:
+                    out.append(simple)
+                i += 2
+            elif c == '"':
+                self._state = self._STATE_DONE
+                self._scan_pos = i + 1
+                return "".join(out)
+            else:
+                out.append(c)
+                i += 1
+        self._scan_pos = i
+        return "".join(out)
 
 
 # ---------- The main turn loop ----------
-
-
-@dataclass
-class _CompletedTurn:
-    assistant_content: list[dict[str, Any]]
-    tool_calls: list[dict[str, Any]]
-    markdown: str
-    citations: list[dict[str, Any]]
-    input_tokens: int | None
-    output_tokens: int | None
-    cached_tokens: int | None
-    latency_ms: int
-    model: str
 
 
 async def _load_history(
@@ -431,7 +605,6 @@ async def _load_history(
 
 
 def _history_to_responses_input(messages: list[ChatMessage]) -> list[dict[str, Any]]:
-    """Convert persisted messages to the OpenAI Responses input format."""
     out: list[dict[str, Any]] = []
     for m in messages:
         if m.role == "user":
@@ -440,8 +613,6 @@ def _history_to_responses_input(messages: list[ChatMessage]) -> list[dict[str, A
         elif m.role == "assistant":
             text = m.content if isinstance(m.content, str) else json.dumps(m.content)
             out.append({"role": "assistant", "content": text})
-        # 'tool' role messages from old turns are not replayed; only their
-        # final assistant text matters for downstream context.
     return out
 
 
@@ -453,15 +624,11 @@ async def run_turn(
     *,
     openai_client=None,
 ) -> AsyncIterator[CompanionEvent]:
-    """Execute one turn end-to-end, persisting messages and yielding events.
-
-    `openai_client` may be injected for testing; otherwise the singleton is used.
-    """
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
     started = time.monotonic()
 
-    conv = await _load_conversation(db, user_id, conversation_id)
+    conv = await _load_conversation_locked(db, user_id, conversation_id)
 
     user_msg = ChatMessage(
         conversation_id=conv.id,
@@ -477,7 +644,6 @@ async def run_turn(
         conversation_id=str(conv.id),
     )
 
-    # Phase A — agentic tool loop.
     history = await _load_history(db, conv.id)
     base_input = _history_to_responses_input(history)
     tool_definitions_payload = tool_definitions()
@@ -542,7 +708,7 @@ async def run_turn(
                 }
             )
 
-    # Phase B — structured synthesis with response_format.
+    # Phase B — streaming structured synthesis.
     allowlist_note = (
         "Allowed citation segment_ids (others will be rejected): "
         + ", ".join(sorted(citable_allowlist.keys()))
@@ -561,7 +727,11 @@ async def run_turn(
         }
     ]
 
-    b_response = await client.responses.create(
+    extractor = _MarkdownDeltaExtractor()
+    raw_b_text = ""
+    b_usage: Any = None
+
+    stream = await client.responses.create(
         model=settings.openai_llm_model,
         instructions=SYSTEM_PROMPT,
         input=b_input,
@@ -572,22 +742,70 @@ async def run_turn(
             }
         },
         prompt_cache_key=f"wai-companion-{user_id}",
+        stream=True,
     )
-    final_text = _extract_text(b_response)
+
+    async for event in stream:
+        event_type = getattr(event, "type", None) or (
+            event.get("type") if isinstance(event, dict) else None
+        )
+        if event_type == "response.output_text.delta":
+            delta = getattr(event, "delta", None)
+            if delta is None and isinstance(event, dict):
+                delta = event.get("delta", "")
+            delta = delta or ""
+            raw_b_text += delta
+            new_md = extractor.feed(delta)
+            if new_md:
+                yield TokenEvent(text=new_md)
+        elif event_type in ("response.completed", "response.done"):
+            response_obj = getattr(event, "response", None)
+            if response_obj is None and isinstance(event, dict):
+                response_obj = event.get("response")
+            if response_obj is not None:
+                b_usage = getattr(response_obj, "usage", None)
+                if b_usage is None and isinstance(response_obj, dict):
+                    b_usage = response_obj.get("usage")
+                if not raw_b_text:
+                    raw_b_text = _extract_text(response_obj)
+        elif event_type == "response.error" or event_type == "error":
+            err = getattr(event, "error", None)
+            if err is None and isinstance(event, dict):
+                err = event.get("error")
+            err_msg = (
+                getattr(err, "message", None)
+                or (err.get("message") if isinstance(err, dict) else None)
+                or "Phase-B stream failed"
+            )
+            raise CompanionError("phase_b_stream_error", str(err_msg))
+
+    if not raw_b_text:
+        raise CompanionError(
+            "invalid_structured_output",
+            "Phase-B stream completed without emitting any output text.",
+        )
+
     try:
-        parsed = json.loads(final_text)
+        parsed = json.loads(raw_b_text)
     except json.JSONDecodeError as exc:
         raise CompanionError(
             "invalid_structured_output",
             f"Model returned non-JSON final answer: {exc}",
         ) from exc
 
-    markdown = parsed["markdown"]
-    raw_citations = parsed["citations"]
+    try:
+        markdown = parsed["markdown"]
+        raw_citations = parsed["citations"]
+    except (KeyError, TypeError) as exc:
+        raise CompanionError(
+            "invalid_structured_output",
+            f"Phase-B JSON missing required fields: {exc}",
+        ) from exc
+
     valid_citations: list[dict[str, Any]] = []
     dropped = 0
     for cit in raw_citations:
-        seg = citable_allowlist.get(cit["segment_id"])
+        seg = citable_allowlist.get(cit.get("segment_id", ""))
         if seg is None:
             dropped += 1
             continue
@@ -603,10 +821,6 @@ async def run_turn(
             }
         )
 
-    # Stream the markdown to the caller as token events. (Real OpenAI streaming
-    # would emit deltas mid-call; with the create() pattern we emit the final
-    # text as a single token so the SSE wire shape is unchanged.)
-    yield TokenEvent(text=markdown)
     for cit in valid_citations:
         yield CitationEvent(
             index=cit["index"],
@@ -618,10 +832,8 @@ async def run_turn(
             span_end=cit["span_end"],
         )
 
-    # Combine Phase-A + Phase-B usage.
     a_usage = getattr(response, "usage", None) if response is not None else None
-    b_usage = getattr(b_response, "usage", None)
-    input_tokens = (_get_usage(a_usage, "input_tokens")) + _get_usage(
+    input_tokens = _get_usage(a_usage, "input_tokens") + _get_usage(
         b_usage, "input_tokens"
     )
     output_tokens = _get_usage(a_usage, "output_tokens") + _get_usage(
@@ -680,18 +892,22 @@ async def run_turn(
     )
 
 
-async def _load_conversation(
+async def _load_conversation_locked(
     db: AsyncSession, user_id: uuid.UUID, conversation_id: uuid.UUID
 ) -> Conversation:
-    result = await db.execute(
-        select(Conversation).where(
-            and_(
-                Conversation.id == conversation_id,
-                Conversation.user_id == user_id,
-                Conversation.deleted_at.is_(None),
-            )
+    """Load the conversation row, locking it on Postgres so concurrent turns serialize."""
+    bind = db.get_bind()
+    dialect_name = getattr(getattr(bind, "dialect", None), "name", "")
+    stmt = select(Conversation).where(
+        and_(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id,
+            Conversation.deleted_at.is_(None),
         )
     )
+    if dialect_name == "postgresql":
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     conv = result.scalar_one_or_none()
     if conv is None:
         raise HTTPException(
@@ -701,8 +917,10 @@ async def _load_conversation(
 
 
 def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
-    """Pull function_call items out of the Responses API output."""
-    output = getattr(response, "output", None) or []
+    output = getattr(response, "output", None)
+    if output is None and isinstance(response, dict):
+        output = response.get("output")
+    output = output or []
     calls: list[dict[str, Any]] = []
     for item in output:
         item_type = getattr(item, "type", None) or (
@@ -712,31 +930,49 @@ def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
             continue
         if isinstance(item, dict):
             raw_args = item.get("arguments") or "{}"
+            try:
+                parsed_args = json.loads(raw_args)
+            except json.JSONDecodeError as exc:
+                raise CompanionError(
+                    "invalid_tool_args",
+                    f"Tool call arguments are not valid JSON: {exc}",
+                ) from exc
             calls.append(
                 {
                     "id": item.get("call_id") or item.get("id"),
                     "name": item.get("name"),
-                    "arguments": json.loads(raw_args),
+                    "arguments": parsed_args,
                 }
             )
         else:
             raw_args = getattr(item, "arguments", None) or "{}"
+            try:
+                parsed_args = json.loads(raw_args)
+            except json.JSONDecodeError as exc:
+                raise CompanionError(
+                    "invalid_tool_args",
+                    f"Tool call arguments are not valid JSON: {exc}",
+                ) from exc
             calls.append(
                 {
                     "id": getattr(item, "call_id", None) or getattr(item, "id", None),
                     "name": getattr(item, "name", None),
-                    "arguments": json.loads(raw_args),
+                    "arguments": parsed_args,
                 }
             )
     return calls
 
 
 def _extract_text(response: Any) -> str:
-    """Pull the assistant text from a Responses API response."""
     output_text = getattr(response, "output_text", None)
+    if output_text is None and isinstance(response, dict):
+        output_text = response.get("output_text")
     if output_text:
         return output_text
-    output = getattr(response, "output", None) or []
+    output = getattr(response, "output", None)
+    if output is None and isinstance(response, dict):
+        output = response.get("output")
+    output = output or []
     parts: list[str] = []
     for item in output:
         if isinstance(item, dict):
@@ -754,7 +990,12 @@ def _get_usage(usage: Any, field_name: str) -> int:
     if usage is None:
         return 0
     if isinstance(usage, dict):
-        return int(usage.get(field_name) or 0)
+        raw = usage.get(field_name)
+        if raw is None and field_name == "cached_tokens":
+            details = usage.get("input_tokens_details")
+            if isinstance(details, dict):
+                raw = details.get("cached_tokens")
+        return int(raw) if raw is not None else 0
     raw = getattr(usage, field_name, None)
     if raw is None and field_name == "cached_tokens":
         details = getattr(usage, "input_tokens_details", None)
@@ -764,4 +1005,4 @@ def _get_usage(usage: Any, field_name: str) -> int:
                 if isinstance(details, dict)
                 else getattr(details, "cached_tokens", None)
             )
-    return int(raw or 0)
+    return int(raw) if raw is not None else 0

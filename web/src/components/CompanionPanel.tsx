@@ -49,6 +49,15 @@ function formatError(error: unknown): string {
   return "Something went wrong";
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError"
+  );
+}
+
 function chatLabel(chat: CompanionConversation): string {
   if (chat.title && chat.title.trim()) return chat.title;
   const t = chat.last_message_at ?? chat.created_at;
@@ -144,6 +153,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
   }
 
   async function handleDeleteChat(chatId: string) {
+    if (!window.confirm("Delete this chat permanently?")) return;
     setError(null);
     try {
       await deleteChat(chatId);
@@ -172,6 +182,9 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
     const question = input.trim();
     if (!question || loading) return;
 
+    // Abort any prior turn so two streams never overlap.
+    abortRef.current?.abort();
+
     setError(null);
     setInput("");
     setLoading(true);
@@ -183,6 +196,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         const chat = await createChat();
         setChats((prev) => [chat, ...prev]);
         setActiveChatId(chat.id);
+        setMessages([]);
         chatId = chat.id;
       } catch (e) {
         setError(formatError(e));
@@ -213,31 +227,55 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let receivedError = false;
 
     try {
       for await (const evt of streamMessage(chatId, question, controller.signal)) {
+        if (controller.signal.aborted) break;
+        if (evt.type === "error") {
+          receivedError = true;
+          setError(evt.message);
+          break;
+        }
         handleEvent(evt, streaming);
+        if (evt.type === "done") break;
       }
-      // After the stream finishes, refetch the chat to swap optimistic rows
-      // for persisted ones (and pick up authoritative IDs).
-      const refreshed = await getChat(chatId);
-      setMessages(refreshed.messages);
+      if (controller.signal.aborted) return;
+      // Reconcile optimistic rows with the persisted state (success OR error).
+      try {
+        const refreshed = await getChat(chatId);
+        setMessages(refreshed.messages);
+      } catch (refetchErr) {
+        if (!receivedError) setError(formatError(refetchErr));
+      }
       setStreamingAssistant(null);
-      // Move the active chat to the top of the list.
-      setChats((prev) => {
-        const idx = prev.findIndex((c) => c.id === chatId);
-        if (idx < 0) return prev;
-        const next = [...prev];
-        const [moved] = next.splice(idx, 1);
-        return [moved, ...next];
-      });
+      if (!receivedError) {
+        setChats((prev) => {
+          const idx = prev.findIndex((c) => c.id === chatId);
+          if (idx < 0) return prev;
+          const next = [...prev];
+          const [moved] = next.splice(idx, 1);
+          return [moved, ...next];
+        });
+      }
     } catch (e) {
+      if (controller.signal.aborted || isAbortError(e)) {
+        return;
+      }
       setError(formatError(e));
       setStreamingAssistant(null);
+      try {
+        const refreshed = await getChat(chatId);
+        setMessages(refreshed.messages);
+      } catch {
+        /* keep optimistic row visible */
+      }
     } finally {
       setLoading(false);
       setStage("idle");
-      abortRef.current = null;
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
     }
   }
 
@@ -265,21 +303,37 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         setStreamingAssistant({ ...streaming });
         return;
       case "citation":
-        streaming.citations.push({
-          index: evt.index,
-          segment_id: evt.segment_id,
-          recording_id: evt.recording_id,
-          start_ms: evt.start_ms,
-          end_ms: evt.end_ms,
-        });
-        setStreamingAssistant({ ...streaming });
+        if (
+          !streaming.citations.some(
+            (c) => c.index === evt.index && c.segment_id === evt.segment_id,
+          )
+        ) {
+          streaming.citations.push({
+            index: evt.index,
+            segment_id: evt.segment_id,
+            recording_id: evt.recording_id,
+            start_ms: evt.start_ms,
+            end_ms: evt.end_ms,
+          });
+          setStreamingAssistant({ ...streaming });
+        }
         return;
       case "done":
+        setStage("idle");
         return;
       case "error":
+        // Handled in the outer loop, but defensive.
         setError(evt.message);
         return;
     }
+  }
+
+  function handleStop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreamingAssistant(null);
+    setLoading(false);
+    setStage("idle");
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -470,10 +524,17 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
           rows={3}
           disabled={loading}
           data-testid="companion-composer"
+          aria-label="Ask Wai a question"
         />
-        <button type="submit" disabled={loading || input.trim().length === 0}>
-          {loading ? "Sending…" : "Ask"}
-        </button>
+        {loading ? (
+          <button type="button" onClick={handleStop} data-testid="companion-stop">
+            Stop
+          </button>
+        ) : (
+          <button type="submit" disabled={input.trim().length === 0}>
+            Ask
+          </button>
+        )}
       </form>
     </section>
   );

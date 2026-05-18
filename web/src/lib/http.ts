@@ -145,7 +145,7 @@ async function doFetch(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-async function tryRefreshAuthSession(): Promise<boolean> {
+export async function tryRefreshAuthSession(): Promise<boolean> {
   const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
     method: "POST",
     credentials: "include",

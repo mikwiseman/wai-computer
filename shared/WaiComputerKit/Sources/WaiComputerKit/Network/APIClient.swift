@@ -826,29 +826,115 @@ public actor APIClient {
     }
 
     /// Open an SSE stream for a new turn. Yields typed events until the server
-    /// emits `done` or `error`.
+    /// emits `done` or `error`. Refreshes the access token once on 401 before
+    /// surfacing the failure to the caller.
     public func streamCompanionMessage(
         chatId: String,
         content: String
     ) async throws -> AsyncStream<CompanionStreamEvent> {
         struct Body: Encodable { let content: String }
-        var request = try buildJSONRequest(
-            method: .POST,
-            path: "/api/companion/chats/\(chatId)/messages",
-            body: Body(content: content),
-            queryItems: nil,
-            timeoutInterval: nil
-        )
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let path = "/api/companion/chats/\(chatId)/messages"
 
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.networkError(URLError(.badServerResponse))
+        func buildRequest() throws -> URLRequest {
+            var request = try buildJSONRequest(
+                method: .POST,
+                path: path,
+                body: Body(content: content),
+                queryItems: nil,
+                timeoutInterval: nil
+            )
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            return request
         }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, message: nil)
+
+        func openStream(with request: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+            Log.api.info("→ POST \(path)")
+            let bytes: URLSession.AsyncBytes
+            let response: URLResponse
+            do {
+                (bytes, response) = try await session.bytes(for: request)
+            } catch {
+                SentryHelper.captureRequestFailure(
+                    APIError.networkError(error),
+                    method: "POST",
+                    path: path
+                )
+                Log.api.error("✗ POST \(path) failed")
+                throw APIError.networkError(error)
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            Log.api.info("← POST \(path) (\(httpResponse.statusCode))")
+            SentryHelper.addBreadcrumb(
+                category: "api",
+                message: "POST \(path)",
+                data: ["statusCode": httpResponse.statusCode]
+            )
+            return (bytes, httpResponse)
+        }
+
+        let initialRequest = try buildRequest()
+        var (bytes, response) = try await openStream(with: initialRequest)
+
+        if response.statusCode == 401 {
+            SentryHelper.addBreadcrumb(
+                category: "auth",
+                message: "token refresh triggered",
+                data: ["path": path]
+            )
+            // Drain the error body so the underlying connection closes cleanly
+            // before we try to refresh.
+            for try await _ in bytes {}
+            let newToken: String
+            do {
+                newToken = try await handleUnauthorized(path: path)
+                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
+            } catch {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
+                throw error
+            }
+            var retryRequest = try buildRequest()
+            retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            let retried = try await openStream(with: retryRequest)
+            if retried.1.statusCode == 401 {
+                SentryHelper.addBreadcrumb(
+                    category: "auth",
+                    message: "auth failed after refresh",
+                    level: .error
+                )
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            bytes = retried.0
+            response = retried.1
+        }
+
+        guard (200..<300).contains(response.statusCode) else {
+            let bodyData = await Self.collectBody(bytes)
+            let error = apiError(from: bodyData, response: response)
+            SentryHelper.captureRequestFailure(error, method: "POST", path: path)
+            throw error
         }
         return companionEvents(bytes: bytes)
+    }
+
+    /// Drain an `AsyncBytes` stream into a `Data` blob so we can surface the
+    /// server's `detail` on non-2xx. Capped at 64 KB — error bodies should
+    /// always be much smaller.
+    private static func collectBody(_ bytes: URLSession.AsyncBytes) async -> Data {
+        var data = Data()
+        let cap = 64 * 1024
+        do {
+            for try await byte in bytes {
+                if data.count >= cap { break }
+                data.append(byte)
+            }
+        } catch {
+            // Discard — error path is best-effort.
+        }
+        return data
     }
 
     // MARK: - Dictation Endpoints

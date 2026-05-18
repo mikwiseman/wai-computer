@@ -5,30 +5,30 @@ final class CompanionStreamTests: XCTestCase {
 
     private let parser = CompanionStreamParser()
 
-    func testParsesTurnStartFrame() {
+    func testParsesTurnStartFrame() throws {
         let frame = """
         event: turn_start
         data: {"message_id":"m1","conversation_id":"c1"}
         """
-        let event = parser.parse(frame)
+        let event = try parser.parse(frame)
         XCTAssertEqual(event, .turnStart(messageId: "m1", conversationId: "c1"))
     }
 
-    func testParsesToolCallAndResultFrames() {
-        let call = parser.parse("event: tool_call\ndata: {\"call_id\":\"t1\",\"tool\":\"search_transcripts\",\"args\":{\"query\":\"x\"}}")
+    func testParsesToolCallAndResultFrames() throws {
+        let call = try parser.parse("event: tool_call\ndata: {\"call_id\":\"t1\",\"tool\":\"search_transcripts\",\"args\":{\"query\":\"x\"}}")
         XCTAssertEqual(call, .toolCall(callId: "t1", tool: "search_transcripts"))
 
-        let result = parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"3 segments\"}")
+        let result = try parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"3 segments\"}")
         XCTAssertEqual(result, .toolResult(callId: "t1", summary: "3 segments"))
     }
 
-    func testParsesTokenFrame() {
-        let event = parser.parse("event: token\ndata: {\"text\":\"hello\"}")
+    func testParsesTokenFrame() throws {
+        let event = try parser.parse("event: token\ndata: {\"text\":\"hello\"}")
         XCTAssertEqual(event, .token(text: "hello"))
     }
 
-    func testParsesCitationFrame() {
-        let event = parser.parse("""
+    func testParsesCitationFrame() throws {
+        let event = try parser.parse("""
         event: citation
         data: {"index":1,"segment_id":"s1","recording_id":"r1","start_ms":1000,"end_ms":2000,"span_start":0,"span_end":5}
         """)
@@ -43,18 +43,28 @@ final class CompanionStreamTests: XCTestCase {
         XCTAssertEqual(cit.endMs, 2000)
     }
 
-    func testParsesDoneAndErrorFrames() {
-        let done = parser.parse("event: done\ndata: {\"message_id\":\"a1\",\"model\":\"gpt-5.5\",\"latency_ms\":1234}")
+    func testParsesDoneAndErrorFrames() throws {
+        let done = try parser.parse("event: done\ndata: {\"message_id\":\"a1\",\"model\":\"gpt-5.5\",\"latency_ms\":1234}")
         XCTAssertEqual(done, .done(messageId: "a1", model: "gpt-5.5", latencyMs: 1234))
 
-        let err = parser.parse("event: error\ndata: {\"code\":\"boom\",\"message\":\"bad\"}")
+        let err = try parser.parse("event: error\ndata: {\"code\":\"boom\",\"message\":\"bad\"}")
         XCTAssertEqual(err, .error(code: "boom", message: "bad"))
     }
 
-    func testReturnsNilForMalformedFrame() {
-        XCTAssertNil(parser.parse("no event line at all"))
-        XCTAssertNil(parser.parse("event: token\nno data line"))
-        XCTAssertNil(parser.parse("event: token\ndata: not valid json"))
+    func testCommentOnlyFrameYieldsNil() throws {
+        XCTAssertNil(try parser.parse(": keep-alive"))
+    }
+
+    func testThrowsOnMalformedFrames() {
+        XCTAssertThrowsError(try parser.parse("event: token\nno data line"))
+        XCTAssertThrowsError(try parser.parse("event: token\ndata: not valid json"))
+        XCTAssertThrowsError(try parser.parse("data: orphan"))
+    }
+
+    func testOptionalLeadingSpaceAfterColon() throws {
+        let frame = "event:token\ndata:{\"text\":\"compact\"}"
+        let event = try parser.parse(frame)
+        XCTAssertEqual(event, .token(text: "compact"))
     }
 
     func testStreamingByteSequenceYieldsEventsInOrder() async {
@@ -80,6 +90,82 @@ final class CompanionStreamTests: XCTestCase {
         XCTAssertEqual(collected[1], .token(text: "hi"))
         XCTAssertEqual(collected[2], .done(messageId: "a1", model: "gpt-5.5", latencyMs: 42))
     }
+
+    func testStreamingPreservesMultiByteUTF8() async {
+        let payload = "Привет 🌊 мир"
+        let raw = """
+        event: token
+        data: {"text":"\(payload)"}
+
+
+        """
+        let bytes = AsyncByteSequence(string: raw)
+        var collected: [CompanionStreamEvent] = []
+        for await event in companionEvents(bytes: bytes) {
+            collected.append(event)
+        }
+        XCTAssertEqual(collected, [.token(text: payload)])
+    }
+
+    func testStreamingReassemblesFramesSplitAcrossChunks() async {
+        let raw = """
+        event: token
+        data: {"text":"Привет"}
+
+        event: done
+        data: {"message_id":"a1","model":"gpt-5.5","latency_ms":1}
+
+
+        """
+        let allBytes = Array(raw.utf8)
+        let chunked = AsyncByteSequence(bytes: allBytes)
+        var collected: [CompanionStreamEvent] = []
+        for await event in companionEvents(bytes: chunked) {
+            collected.append(event)
+        }
+        XCTAssertEqual(collected.count, 2)
+        XCTAssertEqual(collected[0], .token(text: "Привет"))
+        XCTAssertEqual(collected[1], .done(messageId: "a1", model: "gpt-5.5", latencyMs: 1))
+    }
+
+    func testStreamingSkipsHeartbeatComments() async {
+        let raw = """
+        : keep-alive
+
+        event: token
+        data: {"text":"hi"}
+
+        : another heartbeat
+
+
+        """
+        let bytes = AsyncByteSequence(string: raw)
+        var collected: [CompanionStreamEvent] = []
+        for await event in companionEvents(bytes: bytes) {
+            collected.append(event)
+        }
+        XCTAssertEqual(collected, [.token(text: "hi")])
+    }
+
+    func testStreamingYieldsParseErrorOnMalformedPayload() async {
+        let raw = """
+        event: token
+        data: not-json
+
+
+        """
+        let bytes = AsyncByteSequence(string: raw)
+        var collected: [CompanionStreamEvent] = []
+        for await event in companionEvents(bytes: bytes) {
+            collected.append(event)
+        }
+        XCTAssertEqual(collected.count, 1)
+        guard case .error(let code, _) = collected[0] else {
+            XCTFail("Expected error event, got \(collected[0])")
+            return
+        }
+        XCTAssertEqual(code, "parse_error")
+    }
 }
 
 /// Minimal byte-emitting async sequence used to drive companionEvents().
@@ -89,6 +175,10 @@ private struct AsyncByteSequence: AsyncSequence {
 
     init(string: String) {
         self.bytes = Array(string.utf8)
+    }
+
+    init(bytes: [UInt8]) {
+        self.bytes = bytes
     }
 
     func makeAsyncIterator() -> Iterator {

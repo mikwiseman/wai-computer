@@ -1,5 +1,10 @@
-import { ApiError, apiFetchResponse, getApiBaseUrl } from "./http";
-import { apiFetch } from "./http";
+import {
+  ApiError,
+  apiFetch,
+  apiFetchResponse,
+  getApiBaseUrl,
+  tryRefreshAuthSession,
+} from "./http";
 import type {
   CompanionConversation,
   CompanionConversationDetail,
@@ -57,18 +62,12 @@ export async function deleteChat(chatId: string): Promise<void> {
   await apiFetchResponse(`${COMPANION}/chats/${chatId}`, { method: "DELETE" });
 }
 
-/**
- * POST a message and consume the SSE stream as an async iterator of typed events.
- * Throws ApiError if the request itself fails (auth, 404). Stream errors are
- * surfaced as `{type: "error"}` events.
- */
-export async function* streamMessage(
-  chatId: string,
-  content: string,
+async function openStream(
+  url: string,
+  body: string,
   signal?: AbortSignal,
-): AsyncGenerator<CompanionEvent, void, unknown> {
-  const url = `${getApiBaseUrl()}${COMPANION}/chats/${chatId}/messages`;
-  const response = await fetch(url, {
+): Promise<Response> {
+  return fetch(url, {
     method: "POST",
     credentials: "include",
     cache: "no-store",
@@ -76,16 +75,55 @@ export async function* streamMessage(
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({ content }),
+    body,
     signal,
   });
+}
+
+/**
+ * POST a message and consume the SSE stream as an async iterator of typed
+ * events. Refreshes the access token once on 401 before failing. Throws
+ * `ApiError` if the request itself fails (auth, 404, malformed body).
+ * `error` SSE events are yielded inline; consumers must handle them.
+ */
+export async function* streamMessage(
+  chatId: string,
+  content: string,
+  signal?: AbortSignal,
+): AsyncGenerator<CompanionEvent, void, unknown> {
+  const url = `${getApiBaseUrl()}${COMPANION}/chats/${chatId}/messages`;
+  const body = JSON.stringify({ content });
+
+  let response = await openStream(url, body, signal);
+
+  if (response.status === 401) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      /* ignore */
+    }
+    let refreshed = false;
+    try {
+      refreshed = await tryRefreshAuthSession();
+    } catch {
+      refreshed = false;
+    }
+    if (refreshed) {
+      response = await openStream(url, body, signal);
+    }
+  }
 
   if (!response.ok) {
     let payload: unknown = null;
     try {
       payload = await response.json();
     } catch {
-      /* ignore */
+      try {
+        const text = await response.text();
+        payload = text.length > 0 ? { detail: text } : null;
+      } catch {
+        payload = null;
+      }
     }
     const detail =
       (payload && typeof payload === "object" && "detail" in payload
@@ -97,9 +135,14 @@ export async function* streamMessage(
     throw new ApiError(0, "No stream body in response");
   }
 
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8");
   const reader = response.body.getReader();
   let buffer = "";
+
+  const abortHandler = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener("abort", abortHandler, { once: true });
 
   try {
     while (true) {
@@ -115,35 +158,67 @@ export async function* streamMessage(
         if (event) yield event;
       }
     }
-    // Flush any trailing frame after the stream closes.
     const trailing = buffer.trim();
     if (trailing.length > 0) {
       const event = parseFrame(trailing);
       if (event) yield event;
     }
   } finally {
-    reader.releaseLock();
+    signal?.removeEventListener("abort", abortHandler);
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 function parseFrame(frame: string): CompanionEvent | null {
   let eventType: string | null = null;
-  let dataLine: string | null = null;
+  const dataLines: string[] = [];
+  let sawContentLine = false;
   for (const rawLine of frame.split("\n")) {
-    const line = rawLine.trimEnd();
-    if (line.startsWith("event: ")) {
-      eventType = line.slice(7).trim();
-    } else if (line.startsWith("data: ")) {
-      dataLine = line.slice(6);
+    const line = rawLine.replace(/\r$/, "");
+    if (line.length === 0) {
+      continue;
+    }
+    if (line.startsWith(":")) {
+      // SSE comment / heartbeat — skip.
+      continue;
+    }
+    sawContentLine = true;
+    if (line.startsWith("event:")) {
+      eventType = stripOptionalLeadingSpace(line.slice("event:".length)).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(stripOptionalLeadingSpace(line.slice("data:".length)));
+    } else if (line.startsWith("id:") || line.startsWith("retry:")) {
+      continue;
+    } else {
+      throw new ApiError(0, `Malformed SSE frame line: ${line}`);
     }
   }
-  if (!eventType || dataLine === null) {
+  if (!sawContentLine) {
     return null;
   }
+  if (!eventType) {
+    throw new ApiError(0, "SSE frame missing event: field");
+  }
+  if (dataLines.length === 0) {
+    throw new ApiError(0, `SSE frame for '${eventType}' has no data: line`);
+  }
+  const dataString = dataLines.join("\n");
+  let data: Record<string, unknown>;
   try {
-    const data = JSON.parse(dataLine) as Record<string, unknown>;
-    return { type: eventType, ...data } as CompanionEvent;
-  } catch {
-    return null;
+    data = JSON.parse(dataString) as Record<string, unknown>;
+  } catch (err) {
+    throw new ApiError(
+      0,
+      `SSE frame for '${eventType}' is not valid JSON: ${(err as Error).message}`,
+    );
   }
+  return { type: eventType, ...data } as CompanionEvent;
+}
+
+function stripOptionalLeadingSpace(value: string): string {
+  return value.startsWith(" ") ? value.slice(1) : value;
 }

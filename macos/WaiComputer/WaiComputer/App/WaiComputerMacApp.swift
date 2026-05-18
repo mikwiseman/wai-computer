@@ -579,7 +579,15 @@ class MacAppState: ObservableObject {
         self.dictationManager = dictationManager
         self.testingMode = testingMode
 
-        let baseURL = URL(string: "https://wai.computer")!
+        // Allow dev/test overrides via env var so we can point the app at a
+        // local backend during E2E testing without touching the binary.
+        let baseURL: URL
+        if let override = ProcessInfo.processInfo.environment["WAI_API_BASE_URL"],
+           let overrideURL = URL(string: override) {
+            baseURL = overrideURL
+        } else {
+            baseURL = URL(string: "https://wai.computer")!
+        }
         apiClient = APIClient(baseURL: baseURL)
 
         // Resolve onboarding flag honoring env-var overrides used by tests/dev.
