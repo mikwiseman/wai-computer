@@ -108,3 +108,36 @@ def test_latest_anthropic_post_filter_model_migration_restores_current_ids(monke
     assert "claude-opus-4-1-20250805" in statement
     assert "dictation_post_filter_model = CASE" in statement
     assert altered[0]["kwargs"]["server_default"] == "claude-haiku-4-5"
+
+
+def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
+    """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
+    migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")
+    executed: list[TextClause] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+
+    migration.upgrade()
+
+    # Three UPDATE statements: file_stt, dictation_live_stt, recording_live_stt.
+    assert len(executed) == 3
+
+    statements = [str(stmt) for stmt in executed]
+    file_sql = next(s for s in statements if "file_stt_provider" in s and "file_stt_model" in s)
+    assert "gpt-4o-transcribe" in file_sql
+    assert "gpt-4o-mini-transcribe" in file_sql
+    assert "gpt-4o-transcribe-diarize" in file_sql
+    assert "inworld/inworld-stt-1" in file_sql
+    assert "groq/whisper-large-v3" in file_sql
+    assert "groq/whisper-large-v3-turbo" in file_sql
+
+    dictation_sql = next(s for s in statements if "dictation_live_stt_provider" in s)
+    assert "inworld/inworld-stt-1" in dictation_sql
+    assert "assemblyai/u3-rt-pro" in dictation_sql
+    assert "assemblyai/universal-streaming-multilingual" in dictation_sql
+    assert "assemblyai/universal-streaming-english" in dictation_sql
+    assert "assemblyai/whisper-rt" in dictation_sql
+
+    recording_sql = next(s for s in statements if "recording_live_stt_provider" in s)
+    assert "inworld/inworld-stt-1" in recording_sql
+    assert "assemblyai/u3-rt-pro" in recording_sql

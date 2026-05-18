@@ -1,8 +1,10 @@
 """Provider-dispatched file transcription."""
 
+from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
 from app.core.inworld import transcribe_audio_file as inworld_transcribe_audio_file
 from app.core.openai_transcription import transcribe_audio_file as openai_transcribe_audio_file
+from app.core.soniox import transcribe_audio_file as soniox_transcribe_audio_file
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription_options import (
     DEFAULT_FILE_STT_MODEL,
@@ -39,6 +41,22 @@ async def transcribe_audio_file(
         )
     if provider == "inworld":
         return await inworld_transcribe_audio_file(
+            audio_data,
+            model=selected_model,
+            language=language,
+            content_type=content_type,
+            channels=channels,
+        )
+    if provider == "deepgram":
+        return await deepgram_transcribe_audio_file(
+            audio_data,
+            model=selected_model,
+            language=language,
+            content_type=content_type,
+            channels=channels,
+        )
+    if provider == "soniox":
+        return await soniox_transcribe_audio_file(
             audio_data,
             model=selected_model,
             language=language,

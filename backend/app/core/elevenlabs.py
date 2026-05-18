@@ -293,5 +293,6 @@ async def transcribe_audio_file(
     if isinstance(payload, dict):
         return _results_from_transcript(payload)
 
-    logger.warning("Unexpected ElevenLabs STT payload type=%s", type(payload).__name__)
-    return []
+    raise RuntimeError(
+        f"ElevenLabs STT returned unexpected payload type={type(payload).__name__}"
+    )

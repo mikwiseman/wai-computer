@@ -1,15 +1,23 @@
-"""OpenAI Responses API summarization, title generation, and entity extraction."""
+"""OpenAI Responses API summarization, title generation, and entity extraction.
 
-import json
+Uses gpt-5.5 structured outputs via ``client.responses.parse(text_format=...)`` so
+the model is guaranteed to emit a JSON shape that matches our Pydantic schemas.
+That removes the defensive ``json.loads`` + ``SummarizationError`` path the
+previous implementation needed, and makes downstream code free to trust the
+shape it receives.
+"""
+
 import logging
 import re
 from dataclasses import dataclass
+from typing import Literal
+
+from pydantic import BaseModel
 
 from app.config import get_settings
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_exception,
-    safe_text_digest,
 )
 from app.core.openai_client import get_openai_client
 
@@ -23,44 +31,84 @@ class SummarizationError(Exception):
     pass
 
 
-SUMMARY_JSON_SCHEMA = """{
-  "title": "Brief meeting title (5-10 words, plain text only)",
-  "summary": "2-3 sentence summary of the meeting",
-  "key_points": ["Point 1", "Point 2", "Point 3"],
-  "decisions": [
-    {"decision": "...", "context": "..."}
-  ],
-  "action_items": [
-    {"task": "...", "owner": "name or null",
-     "due": "YYYY-MM-DD or null", "priority": "high|medium|low"}
-  ],
-  "topics": ["Topic 1", "Topic 2"],
-  "people_mentioned": ["Name 1", "Name 2"],
-  "follow_up_questions": ["Question 1"],
-  "sentiment": "positive|neutral|negative|mixed",
-  "highlights": [
-    {
-      "category": "decision|insight|question|concern|topic_shift|quote",
-      "title": "Short title of the key moment (5-15 words, plain text only)",
-      "description": "Brief description with context, or null",
-      "speaker": "Speaker name or null",
-      "importance": "high|medium|low"
-    }
-  ]
-}"""
+# ---------------------------------------------------------------------------
+# Pydantic schemas (drive the model's structured output contract).
+# ---------------------------------------------------------------------------
 
-SUMMARY_INSTRUCTIONS = """
-- Extract ALL action items with assigned owners if mentioned
-- If information is missing, use null rather than assumptions
-- Keep descriptions specific: include names, dates, numbers
-- Identify speakers when possible
-- For highlights, extract the most important moments: decisions made, key insights,
-  important questions raised, concerns flagged, major topic shifts, and notable quotes
-- Each highlight should be a distinct, meaningful moment from the conversation
-- Limit highlights to the 5-10 most important moments
-- Titles (the top-level `title` and each highlight `title`) MUST be plain text:
-  no markdown formatting (no **bold**, no *italics*, no _underscores_,
-  no `code`, no # headings), no surrounding quotes. Just the words."""
+
+class _Decision(BaseModel):
+    decision: str
+    context: str
+
+
+class _ActionItem(BaseModel):
+    task: str
+    owner: str | None
+    due: str | None
+    priority: Literal["high", "medium", "low"]
+
+
+class _Highlight(BaseModel):
+    category: Literal["decision", "insight", "question", "concern", "topic_shift", "quote"]
+    title: str
+    description: str | None
+    speaker: str | None
+    importance: Literal["high", "medium", "low"]
+
+
+class _SummarySchema(BaseModel):
+    title: str
+    summary: str
+    key_points: list[str]
+    decisions: list[_Decision]
+    action_items: list[_ActionItem]
+    topics: list[str]
+    people_mentioned: list[str]
+    follow_up_questions: list[str]
+    sentiment: Literal["positive", "neutral", "negative", "mixed"]
+    highlights: list[_Highlight]
+
+
+class _EntityRelation(BaseModel):
+    related_to: str
+    relation_type: Literal["works_on", "mentioned_with", "related_to"]
+
+
+class _Entity(BaseModel):
+    name: str
+    type: Literal["person", "topic", "project", "organization"]
+    context: str
+    relations: list[_EntityRelation]
+
+
+class _EntityExtractionSchema(BaseModel):
+    entities: list[_Entity]
+
+
+# ---------------------------------------------------------------------------
+# Prompts. The structured-output schema is enforced by ``text_format``, so the
+# prompt itself only carries instructions (no JSON shape to repeat).
+# ---------------------------------------------------------------------------
+
+
+SUMMARY_INSTRUCTIONS = """\
+You summarize a meeting transcript. Output one structured object that follows the
+provided schema.
+
+Rules:
+- Do not invent facts. Only include information that is actually present in the
+  transcript. If a field is unknown, return null for nullable fields or an empty
+  array for lists. Do not pad lists to look complete.
+- Keep descriptions specific: include names, dates, numbers, and quoted phrases
+  when the transcript provides them.
+- Identify speakers when possible; leave the speaker null when it is unclear.
+- The top-level title and each highlight title MUST be plain text: no markdown
+  formatting (no **bold**, no *italics*, no _underscores_, no `code`, no #
+  headings), and no surrounding quotes. Just the words.
+- Limit highlights to the 5-10 most important moments (decisions made, key
+  insights, important questions raised, concerns flagged, major topic shifts,
+  and notable direct quotes). Each highlight should be a distinct moment.
+"""
 
 
 STYLE_INSTRUCTIONS = {
@@ -89,11 +137,8 @@ def build_summary_prompt(
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> str:
-    """Build the summarization prompt with user preferences."""
-    parts = ["Analyze this meeting transcript. Output ONLY valid JSON:\n"]
-    parts.append(SUMMARY_JSON_SCHEMA)
-    parts.append("\nINSTRUCTIONS:")
-    parts.append(SUMMARY_INSTRUCTIONS)
+    """Build the summarization prompt body (instructions only — schema is enforced separately)."""
+    parts = [SUMMARY_INSTRUCTIONS]
 
     style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
     parts.append(f"\nSTYLE: {style_text}")
@@ -116,6 +161,11 @@ def build_summary_prompt(
 
     parts.append("\nTranscript:\n")
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Public API (call-site contracts).
+# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -141,7 +191,7 @@ async def summarize_transcript(
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> SummaryResult:
-    """Summarize a transcript via the OpenAI Responses API."""
+    """Summarize a transcript via the OpenAI Responses API with structured outputs."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
@@ -153,37 +203,35 @@ async def summarize_transcript(
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
     client = get_openai_client()
 
-    response = await client.responses.create(
-        model=settings.openai_llm_model,
-        input=prompt + transcript,
-        max_output_tokens=4096,
-    )
-    response_text = response.output_text
-
     try:
-        data = json.loads(response_text.strip())
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse model response as JSON: {e}")
-        logger.debug(
-            "Model response digest=%s",
-            safe_text_digest(response_text, label="openai_response"),
+        response = await client.responses.parse(
+            model=settings.openai_llm_model,
+            input=prompt + transcript,
+            text_format=_SummarySchema,
+            reasoning={"effort": "medium"},
+            max_output_tokens=4096,
         )
-        capture_sentry_exception(e, extras={"response_text": response_text})
-        raise SummarizationError(f"Invalid JSON response from model: {e}") from e
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"Summarization failed: {exc}") from exc
+
+    parsed = response.output_parsed
+    if parsed is None:
+        raise SummarizationError("OpenAI returned no parsed summary payload")
 
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
 
     return SummaryResult(
-        title=data["title"],
-        summary=data["summary"],
-        key_points=data.get("key_points", []),
-        decisions=data.get("decisions", []),
-        action_items=data.get("action_items", []),
-        topics=data.get("topics", []),
-        people_mentioned=data.get("people_mentioned", []),
-        follow_up_questions=data.get("follow_up_questions", []),
-        sentiment=data["sentiment"],
-        highlights=data.get("highlights", []),
+        title=parsed.title,
+        summary=parsed.summary,
+        key_points=parsed.key_points,
+        decisions=[d.model_dump() for d in parsed.decisions],
+        action_items=[a.model_dump() for a in parsed.action_items],
+        topics=parsed.topics,
+        people_mentioned=parsed.people_mentioned,
+        follow_up_questions=parsed.follow_up_questions,
+        sentiment=parsed.sentiment,
+        highlights=[h.model_dump() for h in parsed.highlights],
     )
 
 
@@ -204,6 +252,7 @@ async def generate_title(transcript: str) -> str:
             "nothing else.\n\n"
             f"Transcript:\n{snippet}"
         ),
+        reasoning={"effort": "low"},
         max_output_tokens=50,
     )
     return response.output_text.strip()
@@ -245,27 +294,15 @@ def resolve_highlight_timestamps(
     return resolved
 
 
-ENTITY_EXTRACTION_PROMPT = """
-Extract entities from this transcript. Output ONLY valid JSON:
-
-{
-  "entities": [
-    {
-      "name": "Entity Name",
-      "type": "person|topic|project|organization",
-      "context": "Brief context of how they were mentioned",
-      "relations": [
-        {"related_to": "Other Entity", "relation_type": "works_on|mentioned_with|related_to"}
-      ]
-    }
-  ]
-}
-
-Focus on:
+ENTITY_EXTRACTION_PROMPT = """\
+Extract entities from this transcript. Focus on:
 - People mentioned by name
 - Projects or products discussed
 - Topics and themes
 - Organizations or companies
+
+Do not invent entities not present in the transcript. If there are none of a
+given type, return an empty array — do not pad.
 
 Transcript:
 """
@@ -282,7 +319,7 @@ class EntityResult:
 
 
 async def extract_entities(transcript: str) -> list[EntityResult]:
-    """Extract entities from a transcript via OpenAI."""
+    """Extract entities from a transcript via OpenAI with structured outputs."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Extracting entities",
@@ -293,30 +330,28 @@ async def extract_entities(transcript: str) -> list[EntityResult]:
 
     client = get_openai_client()
 
-    response = await client.responses.create(
-        model=settings.openai_llm_model,
-        input=ENTITY_EXTRACTION_PROMPT + transcript,
-        max_output_tokens=4096,
-    )
-    response_text = response.output_text
-
     try:
-        data = json.loads(response_text.strip())
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse model entity response as JSON: {e}")
-        logger.debug(
-            "Model entity response digest=%s",
-            safe_text_digest(response_text, label="openai_entities"),
+        response = await client.responses.parse(
+            model=settings.openai_llm_model,
+            input=ENTITY_EXTRACTION_PROMPT + transcript,
+            text_format=_EntityExtractionSchema,
+            reasoning={"effort": "low"},
+            max_output_tokens=4096,
         )
-        capture_sentry_exception(e, extras={"response_text": response_text})
-        raise SummarizationError(f"Invalid JSON response from model: {e}") from e
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"Entity extraction failed: {exc}") from exc
+
+    parsed = response.output_parsed
+    if parsed is None:
+        raise SummarizationError("OpenAI returned no parsed entity payload")
 
     return [
         EntityResult(
-            name=e["name"],
-            type=e["type"],
-            context=e["context"],
-            relations=e.get("relations", []),
+            name=entity.name,
+            type=entity.type,
+            context=entity.context,
+            relations=[relation.model_dump() for relation in entity.relations],
         )
-        for e in data.get("entities", [])
+        for entity in parsed.entities
     ]

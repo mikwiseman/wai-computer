@@ -246,4 +246,4 @@ async def transcribe_audio_file(
             if result is not None
         ]
 
-    return []
+    raise RuntimeError("Inworld STT response missing transcription payload")

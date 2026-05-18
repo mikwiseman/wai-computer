@@ -148,7 +148,7 @@ async def transcribe_audio_file(
 
     text = str(payload.get("text", "")).strip()
     if not text:
-        return []
+        raise RuntimeError("OpenAI transcribe returned empty text and no segments")
     return [
         TranscriptResult(
             text=text,

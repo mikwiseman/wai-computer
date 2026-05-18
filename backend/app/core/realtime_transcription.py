@@ -18,6 +18,12 @@ from typing import Literal
 import httpx
 
 from app.config import get_settings
+from app.core.deepgram import (
+    DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS,
+)
+from app.core.deepgram import (
+    mint_realtime_session as mint_deepgram_realtime_session,
+)
 from app.core.elevenlabs import ELEVENLABS_API_BASE
 from app.core.inworld import build_session as build_inworld_session
 from app.core.openai_transcription import (
@@ -44,7 +50,7 @@ INWORLD_TOKEN_TTL_SECONDS = 15 * 60  # Inworld credentials don't expire, but
 # the Swift client treats the session as short-lived to mirror ElevenLabs.
 DEFAULT_SAMPLE_RATE = 16_000
 
-DictationProvider = Literal["elevenlabs", "inworld", "openai"]
+DictationProvider = Literal["elevenlabs", "inworld", "openai", "deepgram"]
 
 
 @dataclass(frozen=True)
@@ -107,6 +113,34 @@ async def _build_openai_realtime_session(
         no_verbatim=False,
         websocket_url=openai_realtime_websocket_url(model),
         auth_scheme="bearer",
+    )
+
+
+def _build_deepgram_realtime_session(
+    *,
+    model: str,
+    language: str,
+    channels: int,
+) -> RealtimeTranscriptionSession:
+    session = mint_deepgram_realtime_session(
+        model=model,
+        language=language,
+        channels=channels,
+    )
+    return RealtimeTranscriptionSession(
+        provider="deepgram",
+        token=session.api_key,
+        expires_in_seconds=DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS,
+        sample_rate=session.sample_rate,
+        audio_format=f"linear16_{session.sample_rate}",
+        language=session.language,
+        channels=session.channels,
+        model=session.model,
+        keep_alive_interval_seconds=8,
+        commit_strategy="vad",
+        no_verbatim=False,
+        websocket_url=session.websocket_url,
+        auth_scheme="token",
     )
 
 
@@ -179,6 +213,12 @@ async def create_realtime_transcription_session(
                 language=resolved_language,
                 channels=resolved_channels,
             )
+        if provider == "deepgram":
+            return _build_deepgram_realtime_session(
+                model=model,
+                language=resolved_language,
+                channels=resolved_channels,
+            )
         if provider == "elevenlabs":
             token, expires_in_seconds = await _create_elevenlabs_realtime_token()
             return RealtimeTranscriptionSession(
@@ -215,6 +255,12 @@ async def create_realtime_transcription_session(
     provider, model = validate_option("recording_live_stt", provider, model)
     if provider == "openai":
         return await _build_openai_realtime_session(
+            model=model,
+            language=resolved_language,
+            channels=resolved_channels,
+        )
+    if provider == "deepgram":
+        return _build_deepgram_realtime_session(
             model=model,
             language=resolved_language,
             channels=resolved_channels,
