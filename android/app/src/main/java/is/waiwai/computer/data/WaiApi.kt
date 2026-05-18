@@ -137,6 +137,31 @@ class WaiApi(
         ),
     )
 
+    suspend fun listPeople(): List<Person> =
+        authorizedRequest(HttpMethod.Get, "/api/people")
+
+    suspend fun createPerson(displayName: String, color: String? = null): Person =
+        authorizedRequest(
+            method = HttpMethod.Post,
+            path = "/api/people",
+            body = CreatePersonRequest(displayName = displayName, color = color),
+        )
+
+    suspend fun assignSpeaker(
+        recordingId: String,
+        rawLabel: String,
+        personId: String? = null,
+        newDisplayName: String? = null,
+    ): RecordingDetail = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/recordings/$recordingId/assign-speaker",
+        body = AssignSpeakerRequest(
+            rawLabel = rawLabel,
+            personId = personId,
+            newDisplayName = newDisplayName,
+        ),
+    )
+
     suspend fun uploadAudio(recordingId: String, file: File): RecordingDetail {
         return transport.authorizedUpload(
             path = "/api/recordings/$recordingId/upload",

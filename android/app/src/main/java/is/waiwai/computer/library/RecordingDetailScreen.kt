@@ -9,10 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,17 +32,21 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -224,6 +232,10 @@ fun RecordingDetailScreen(
                     onSaveTitle = { viewModel.updateTitle(editableTitle) },
                     onToggleActionItem = viewModel::toggleActionItem,
                     onRetryUpload = viewModel::retryUpload,
+                    onAssignSpeaker = { rawLabel, personId, newName ->
+                        viewModel.assignSpeaker(rawLabel, personId, newName)
+                    },
+                    loadPeople = { viewModel.listPeople() },
                 )
             }
         }
@@ -351,6 +363,8 @@ private fun AuthenticatedRecordingDetailContent(
     onSaveTitle: () -> Unit,
     onToggleActionItem: (String, `is`.waiwai.computer.data.ActionItemStatus) -> Unit,
     onRetryUpload: () -> Unit,
+    onAssignSpeaker: (rawLabel: String, personId: String?, newName: String?) -> Unit,
+    loadPeople: suspend () -> List<`is`.waiwai.computer.data.Person>,
 ) {
     LazyColumn(
         modifier = modifier.widthIn(max = 560.dp),
@@ -415,7 +429,11 @@ private fun AuthenticatedRecordingDetailContent(
         }
         item {
             ExpandableSectionCard(title = stringResource(R.string.detail_transcript), initiallyExpanded = true) {
-                TranscriptSection(detail.segments)
+                TranscriptSection(
+                    segments = detail.segments,
+                    onAssign = onAssignSpeaker,
+                    loadPeople = loadPeople,
+                )
             }
         }
         item {
@@ -473,23 +491,151 @@ private fun ExpandableSectionCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TranscriptSection(segments: List<Segment>) {
+private fun TranscriptSection(
+    segments: List<Segment>,
+    onAssign: (rawLabel: String, personId: String?, newName: String?) -> Unit,
+    loadPeople: suspend () -> List<`is`.waiwai.computer.data.Person>,
+) {
     if (segments.isEmpty()) {
         Text(stringResource(R.string.detail_no_transcript))
         return
     }
+    val defaultLabel = stringResource(R.string.detail_speaker)
+    var pendingRawLabel by remember { mutableStateOf<String?>(null) }
+    var people by remember { mutableStateOf<List<`is`.waiwai.computer.data.Person>>(emptyList()) }
+    var loadingPeople by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf("") }
+    val sheetState = rememberModalBottomSheetState()
+
+    LaunchedEffect(pendingRawLabel) {
+        if (pendingRawLabel != null && !loadingPeople) {
+            loadingPeople = true
+            people = loadPeople()
+            loadingPeople = false
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         segments.forEach { segment ->
             Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = segment.speaker ?: stringResource(R.string.detail_speaker),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    SpeakerChip(
+                        segment = segment,
+                        defaultLabel = defaultLabel,
+                        onClick = { rawLabel ->
+                            pendingRawLabel = rawLabel
+                            filter = ""
+                        },
                     )
                     Text(text = segment.content)
                 }
+            }
+        }
+    }
+
+    val currentRawLabel = pendingRawLabel
+    if (currentRawLabel != null) {
+        ModalBottomSheet(
+            onDismissRequest = { pendingRawLabel = null },
+            sheetState = sheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "Assign \"$currentRawLabel\"",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                OutlinedTextField(
+                    value = filter,
+                    onValueChange = { filter = it },
+                    placeholder = { Text("Search or create…") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                if (loadingPeople) {
+                    Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    val trimmed = filter.trim()
+                    val filtered = if (trimmed.isEmpty()) {
+                        people
+                    } else {
+                        people.filter { it.displayName.contains(trimmed, ignoreCase = true) }
+                    }
+                    val exactMatch = trimmed.isNotEmpty() &&
+                        people.any { it.displayName.equals(trimmed, ignoreCase = true) }
+
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(filtered) { person ->
+                            TextButton(
+                                onClick = {
+                                    onAssign(currentRawLabel, person.id, null)
+                                    pendingRawLabel = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(person.displayName, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                        if (trimmed.isNotEmpty() && !exactMatch) {
+                            item {
+                                TextButton(
+                                    onClick = {
+                                        onAssign(currentRawLabel, null, trimmed)
+                                        pendingRawLabel = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        "+ Create \"$trimmed\"",
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeakerChip(
+    segment: Segment,
+    defaultLabel: String,
+    onClick: (rawLabel: String) -> Unit,
+) {
+    val rawLabel = segment.rawLabel ?: segment.speaker
+    val displayLabel = segment.displayName ?: rawLabel ?: defaultLabel
+    val confidencePct = segment.matchConfidence?.let { (it * 100).toInt() }
+    val canAssign = !rawLabel.isNullOrEmpty()
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            onClick = { if (canAssign) onClick(rawLabel!!) },
+            enabled = canAssign,
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        ) {
+            Text(
+                text = displayLabel,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (segment.autoAssigned && confidencePct != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "✨${confidencePct}%",
+                    style = MaterialTheme.typography.labelSmall,
+                )
             }
         }
     }
@@ -606,7 +752,11 @@ private fun shareRecording(
                 appendLine()
             }
             detail.segments.forEach { segment ->
-                appendLine("${segment.speaker ?: context.getString(R.string.detail_speaker)}: ${segment.content}")
+                val speakerLabel = segment.displayName
+                    ?: segment.rawLabel
+                    ?: segment.speaker
+                    ?: context.getString(R.string.detail_speaker)
+                appendLine("$speakerLabel: ${segment.content}")
             }
         } else if (localManifest != null) {
             appendLine(localManifest.title ?: context.getString(R.string.app_name))

@@ -132,10 +132,39 @@ data class RecordingDetail(
 data class Segment(
     val id: String,
     val speaker: String? = null,
+    @SerialName("raw_label") val rawLabel: String? = null,
+    @SerialName("person_id") val personId: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("auto_assigned") val autoAssigned: Boolean = false,
+    @SerialName("match_confidence") val matchConfidence: Double? = null,
     val content: String,
     @SerialName("start_ms") val startMs: Int? = null,
     @SerialName("end_ms") val endMs: Int? = null,
     val confidence: Double? = null,
+)
+
+@Serializable
+data class Person(
+    val id: String,
+    @SerialName("display_name") val displayName: String,
+    val color: String? = null,
+    val aliases: List<String>? = null,
+    @SerialName("voiceprint_count") val voiceprintCount: Int = 0,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class CreatePersonRequest(
+    @SerialName("display_name") val displayName: String,
+    val color: String? = null,
+)
+
+@Serializable
+data class AssignSpeakerRequest(
+    @SerialName("raw_label") val rawLabel: String,
+    @SerialName("person_id") val personId: String? = null,
+    @SerialName("new_display_name") val newDisplayName: String? = null,
 )
 
 @Serializable
