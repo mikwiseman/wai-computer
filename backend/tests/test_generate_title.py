@@ -7,33 +7,35 @@ import pytest
 from app.core.summarizer import generate_title
 
 
+def _make_response(text: str):
+    response = MagicMock()
+    response.output_text = text
+    return response
+
+
 @pytest.mark.asyncio
 async def test_generate_title_no_api_key():
-    """Should raise ValueError when ANTHROPIC_API_KEY is not set."""
+    """Should raise ValueError when OPENAI_API_KEY is not set."""
     with patch("app.core.summarizer.settings") as mock_settings:
-        mock_settings.anthropic_api_key = ""
-        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY not configured"):
+        mock_settings.openai_api_key = ""
+        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
             await generate_title("Hello world")
 
 
 @pytest.mark.asyncio
 async def test_generate_title_returns_whitespace_stripped_text():
-    """Returns Claude's title verbatim, with surrounding whitespace stripped."""
-    mock_content = MagicMock()
-    mock_content.text = "  Team Standup Notes  "
-
-    mock_message = MagicMock()
-    mock_message.content = [mock_content]
-
-    mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    """Returns the model's title verbatim, with surrounding whitespace stripped."""
+    mock_client = MagicMock()
+    mock_client.responses.create = AsyncMock(
+        return_value=_make_response("  Team Standup Notes  ")
+    )
 
     with (
         patch("app.core.summarizer.settings") as mock_settings,
-        patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
+        patch("app.core.summarizer.get_openai_client", return_value=mock_client),
     ):
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-6"
+        mock_settings.openai_api_key = "test-key"
+        mock_settings.openai_llm_model = "gpt-5.5"
 
         title = await generate_title("We discussed the Q1 roadmap...")
         assert title == "Team Standup Notes"
@@ -44,26 +46,20 @@ async def test_generate_title_uses_first_500_chars():
     """Should use only the first 500 characters of transcript."""
     long_transcript = "x" * 1000
 
-    mock_content = MagicMock()
-    mock_content.text = "Short Title"
-
-    mock_message = MagicMock()
-    mock_message.content = [mock_content]
-
-    mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(return_value=mock_message)
+    mock_client = MagicMock()
+    mock_client.responses.create = AsyncMock(
+        return_value=_make_response("Short Title")
+    )
 
     with (
         patch("app.core.summarizer.settings") as mock_settings,
-        patch("app.core.summarizer._get_anthropic_client", return_value=mock_client),
+        patch("app.core.summarizer.get_openai_client", return_value=mock_client),
     ):
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-6"
+        mock_settings.openai_api_key = "test-key"
+        mock_settings.openai_llm_model = "gpt-5.5"
 
         await generate_title(long_transcript)
 
-        call_args = mock_client.messages.create.call_args
-        content = call_args.kwargs["messages"][0]["content"]
-        # The transcript snippet in the prompt should be at most 500 chars
+        content = mock_client.responses.create.await_args.kwargs["input"]
         assert long_transcript[:500] in content
         assert long_transcript[:501] not in content
