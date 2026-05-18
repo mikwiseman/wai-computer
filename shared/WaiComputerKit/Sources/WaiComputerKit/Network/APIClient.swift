@@ -779,6 +779,85 @@ public actor APIClient {
         return try await request(.POST, path: "/api/qa", body: body)
     }
 
+    // MARK: - Companion Endpoints
+
+    public func createCompanionChat(scope: CompanionScope? = nil) async throws -> CompanionConversation {
+        struct Body: Encodable { let scope: CompanionScope? }
+        return try await request(.POST, path: "/api/companion/chats", body: Body(scope: scope))
+    }
+
+    public func listCompanionChats(limit: Int? = nil, before: String? = nil) async throws -> CompanionConversationList {
+        var query: [URLQueryItem] = []
+        if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        return try await request(.GET, path: "/api/companion/chats", queryItems: query.isEmpty ? nil : query)
+    }
+
+    public func getCompanionChat(
+        chatId: String,
+        messagesLimit: Int? = nil,
+        beforeMessageId: String? = nil
+    ) async throws -> CompanionConversationDetail {
+        var query: [URLQueryItem] = []
+        if let messagesLimit { query.append(URLQueryItem(name: "messages_limit", value: String(messagesLimit))) }
+        if let beforeMessageId { query.append(URLQueryItem(name: "before_message_id", value: beforeMessageId)) }
+        return try await request(
+            .GET,
+            path: "/api/companion/chats/\(chatId)",
+            queryItems: query.isEmpty ? nil : query
+        )
+    }
+
+    public func patchCompanionChat(
+        chatId: String,
+        title: String? = nil,
+        scope: CompanionScope? = nil,
+        pinned: Bool? = nil,
+        archived: Bool? = nil
+    ) async throws -> CompanionConversation {
+        struct Body: Encodable {
+            let title: String?
+            let scope: CompanionScope?
+            let pinned: Bool?
+            let archived: Bool?
+        }
+        return try await request(
+            .PATCH,
+            path: "/api/companion/chats/\(chatId)",
+            body: Body(title: title, scope: scope, pinned: pinned, archived: archived)
+        )
+    }
+
+    public func deleteCompanionChat(chatId: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/companion/chats/\(chatId)")
+    }
+
+    /// Open an SSE stream for a new turn. Yields typed events until the server
+    /// emits `done` or `error`.
+    public func streamCompanionMessage(
+        chatId: String,
+        content: String
+    ) async throws -> AsyncStream<CompanionStreamEvent> {
+        struct Body: Encodable { let content: String }
+        var request = try buildJSONRequest(
+            method: .POST,
+            path: "/api/companion/chats/\(chatId)/messages",
+            body: Body(content: content),
+            queryItems: nil,
+            timeoutInterval: nil
+        )
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.networkError(URLError(.badServerResponse))
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: nil)
+        }
+        return companionEvents(bytes: bytes)
+    }
+
     // MARK: - Dictation Endpoints
 
     public func cleanupDictation(text: String, vocabulary: [String] = []) async throws -> String {
