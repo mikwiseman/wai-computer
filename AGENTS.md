@@ -8,26 +8,18 @@ AI second brain for recordings, transcription, search, and summaries.
 
 ## Production
 
-- Canonical host: `https://wai.computer`
-- API under `/api/*`; health: `GET /health`
-- Previous production host retired after the WaiComputer rebrand
-- Do not use a separate API hostname; API stays under `/api/*` on `wai.computer`
-- Server: `<release-user>@<release-host>`
-- Deploy root: `<remote-root>`
-- Runtime env source of truth: `<remote-env-file>`
-- `<remote-root>/backend/.env` must be a symlink to `<remote-env-file>`
-
-Keep aligned in env: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` points at current project.
+- Canonical host: `https://wai.computer` (API at `/api/*`, health at `/health`). No separate API hostname.
+- Server: `<release-user>@<release-host>`, deploy root `<remote-root>`.
+- Runtime env: `<remote-env-file>` is the source of truth; `<remote-root>/backend/.env` is a symlink to it.
+- Keep aligned: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` on the current project.
 
 ## Deploy
 
-- GitHub Actions are not used for production deploys or release builds. Do not add push-triggered Actions deploys unless explicitly asked.
-- Production deploy (backend + web): `VPS_USER=<release-user> ./scripts/deploy-server.sh`.
-- Deploy syncs source to `<remote-root>`; the VPS builds `api`, `web`, `celery-worker`, starts `caddy`, and checks health for all four services.
-- Runtime env stays only on the server at `<remote-env-file>`; never rebuild it from GitHub secrets.
-- **macOS validation before push**: `.git-hooks/pre-push` runs `swift test` + an unsigned `xcodebuild build` automatically on pushes that touch `macos/`, `shared/WaiComputerKit/`, or the macOS release scripts. Install once per clone with `git config core.hooksPath .git-hooks`. Bypass in an emergency with `git push --no-verify`.
-- **Continuous validation**: `scripts/qa-loop.sh` is the canonical long-running gate covering backend, web, shared Swift, and native (macOS/iOS/Android) builds. See `README.md` for usage.
-- **macOS release**: `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization credentials configured. Explicit, manual — no CI button, on purpose. Matches the backend deploy pattern.
+- No CI deploys. Backend + web: `VPS_USER=<release-user> ./scripts/deploy-server.sh` (builds `api`/`web`/`celery-worker` on the VPS, waits for health).
+- Runtime env stays only on the server at `<remote-env-file>`; never rebuild it from secrets.
+- Pre-push hook: `git config core.hooksPath .git-hooks` once; runs `swift test` + unsigned macOS `xcodebuild build` on Apple-touching pushes. `--no-verify` to bypass.
+- Long-running gate: `scripts/qa-loop.sh` (backend + web + Swift + native). See `README.md`.
+- macOS release: `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization configured.
 
 ## Local Dev
 
@@ -70,44 +62,14 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
 ## macOS Distribution
 
-- **Two release channels via single appcast (Sparkle native channels):**
-  - **stable** — default. Reaches every macOS user. Items have no `<sparkle:channel>` element.
-  - **beta** — opt-in. Items carry `<sparkle:channel>beta</sparkle:channel>`. Only users who toggled "Receive beta updates" in Settings → Updates see them. Implemented via `BetaChannelUpdaterDelegate` returning `Set(["beta"])` from `allowedChannelsForUpdater:` when the `receiveBetaUpdates` UserDefaults key is on.
-- Developer ID-signed, notarized DMGs published to `https://wai.computer/releases/macos/`. App Store / TestFlight retired for macOS (iOS still ships via TestFlight).
-- One target `WaiComputer` in `macos/WaiComputer/project.yml`. Files: `WaiComputer/Info.plist`, `WaiComputer/WaiComputer.entitlements`. App Sandbox is OFF; Hardened Runtime is ON. Sparkle is always built in (no `#if SPARKLE`).
-- Sparkle appcast: `https://wai.computer/releases/macos/appcast.xml`.
-- Auth/session persistence on macOS uses file-based storage (`Application Support/WaiComputer/session.json`, mode 0600) via `SessionStore` in `shared/WaiComputerKit` — NOT Keychain. This survives cdhash drift across Sparkle updates.
-- Sparkle "What's New" auto-bullets commit subjects since the previous build bump (filters out `chore:|docs:|test:|refactor:|wip:`); keep the version bump in its own commit AFTER the work, or override `artifacts/releases/macos/<version>-<build>/release-notes.md` and rerun `scripts/publish-macos-dmg.sh`.
-
-### Branching → channel mapping
-
-| Trigger                                        | Channel  |
-|------------------------------------------------|----------|
-| `scripts/release-macos.sh stable`              | **stable** |
-| `scripts/release-macos.sh beta`                | **beta** |
-
-Day-to-day flow: do work on a feature branch → merge to the desired branch → run the explicit local/server deploy or release command. Pushes do not auto-publish.
-
-### Release flow (typical)
-
-1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
-2. `cd macos/WaiComputer && xcodegen generate` so `WaiComputer.xcodeproj/project.pbxproj` picks up the new build number.
-3. Commit the version bump.
-4. Run `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle, and notarization credentials configured.
-5. After ~10-15 min, verify `https://wai.computer/releases/macos/appcast.xml` shows the new `sparkle:version` (and `sparkle:channel` for beta).
-
-### Appcast merge invariant
-
-`scripts/build-macos-dmg.sh` writes a single-item local appcast. `scripts/publish-macos-dmg.sh` then runs `scripts/merge-macos-appcast.py` to fetch the live remote appcast, dedupe by `(sparkle:version, sparkle:channel)`, cap at 10 items per channel, and upload the merged file. Never bypass the merge — overwriting the remote with a single-item file would erase the other channel's history. Stable and beta artifacts for the same build must have distinct enclosure URLs because their DMGs/signatures can differ; the merge script rejects reused URLs with conflicting `length` / `sparkle:edSignature` metadata.
-
-### macOS release constraints
-
-- Hetzner production is Linux and cannot run `xcodebuild`; signed iOS/macOS artifacts require a Mac build host.
-- `scripts/release-macos.sh` builds locally on the Mac and publishes the DMG/appcast to the VPS.
-- `scripts/make-dmg.sh` is local smoke-only (unsigned, not notarized) and intentionally guarded. Never use it for release artifacts.
-- `MACOS_REMOTE_APPCAST_URL` env can override the merge script's source URL for staging or dry runs.
-
-iOS distribution still goes through TestFlight via `scripts/build-testflight.sh`.
+- Two channels via one appcast: **stable** (no `<sparkle:channel>` element, reaches everyone) and **beta** (`<sparkle:channel>beta</sparkle:channel>`, opt-in via Settings → Updates).
+- Developer ID-signed, notarized DMGs at `https://wai.computer/releases/macos/`; appcast at `appcast.xml` next to them. iOS still ships via TestFlight (`scripts/build-testflight.sh`).
+- One target `WaiComputer` in `macos/WaiComputer/project.yml`. App Sandbox OFF, Hardened Runtime ON, Sparkle always built in.
+- Auth/session uses file storage (`Application Support/WaiComputer/session.json`, mode 0600) via `SessionStore`, NOT Keychain — survives cdhash drift across updates.
+- "What's New" auto-bullets commit subjects since the previous build bump (skips `chore:|docs:|test:|refactor:|wip:`); keep the bump in its own commit AFTER the work, or override `artifacts/releases/macos/<version>-<build>/release-notes.md` and rerun `scripts/publish-macos-dmg.sh`.
+- Release: bump `CURRENT_PROJECT_VERSION` in `project.yml` (monotonic) → `cd macos/WaiComputer && xcodegen generate` → commit → `scripts/release-macos.sh stable|beta` → verify `appcast.xml` after ~10–15 min.
+- Appcast merge: `publish-macos-dmg.sh` runs `merge-macos-appcast.py` to dedupe by `(sparkle:version, sparkle:channel)` and cap 10 items per channel; never overwrite the remote with a single-item file. Stable + beta of the same build need distinct enclosure URLs.
+- Releases need a Mac host (Linux VPS can't `xcodebuild`). `scripts/make-dmg.sh` is unsigned smoke only — never use for releases. `MACOS_REMOTE_APPCAST_URL` overrides the merge source for staging.
 
 ## Observability
 
