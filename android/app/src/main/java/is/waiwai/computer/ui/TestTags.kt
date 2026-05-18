@@ -35,4 +35,15 @@ object TestTags {
     fun libraryStarButton(recordingId: String): String = "library_star_$recordingId"
     fun libraryRestoreButton(recordingId: String): String = "library_restore_$recordingId"
     fun libraryDeleteForeverButton(recordingId: String): String = "library_delete_forever_$recordingId"
+
+    const val FoldersSheet = "folders_sheet"
+    const val FoldersAddButton = "folders_add_button"
+    const val FoldersNameField = "folders_name_field"
+    const val SpeakersSheet = "speakers_sheet"
+    const val SettingsManageFolders = "settings_manage_folders"
+    const val SettingsManageSpeakers = "settings_manage_speakers"
+
+    fun folderItem(folderId: String): String = "folder_item_$folderId"
+    fun folderDeleteButton(folderId: String): String = "folder_delete_$folderId"
+    fun speakerItem(personId: String): String = "speaker_item_$personId"
 }
