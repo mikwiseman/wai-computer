@@ -192,3 +192,125 @@ async def _handle_invoice_failed(db: AsyncSession, obj: dict) -> None:
         return
     sub.status = SubscriptionStatus.PAST_DUE.value
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# T-Bank rail
+# ---------------------------------------------------------------------------
+
+
+async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
+    """Apply a normalized T-Bank webhook event to the local state.
+
+    We key subscriptions by ``OrderId`` (which we set during Init); the first
+    CONFIRMED notification carries a ``RebillId`` which becomes the long-term
+    key for recurring charges.
+    """
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+
+    from app.models.billing import Invoice, Plan, Subscription
+
+    raw = event.raw  # dict shape from TinkoffProvider.parse_webhook
+    order_id = raw.get("order_id")
+    rebill_id = raw.get("rebill_id")
+    customer_key = event.customer_id_provider
+    amount = raw.get("amount")
+    raw_payload = raw.get("payload", {})
+
+    # Persist audit row regardless of dispatch outcome.
+    db.add(
+        BillingEvent(
+            subscription_id=None,
+            type=f"tinkoff.{(raw.get('status') or 'unknown').lower()}",
+            payload=raw_payload if isinstance(raw_payload, dict) else {"payload": raw_payload},
+        )
+    )
+    await db.flush()
+
+    if not order_id and not rebill_id:
+        logger.info("Tinkoff event without OrderId/RebillId — skipping dispatch")
+        return
+
+    # Locate subscription: prefer matching RebillId, then user via CustomerKey.
+    sub: Subscription | None = None
+    if rebill_id:
+        sub = (
+            await db.execute(
+                select(Subscription).where(Subscription.tinkoff_rebill_id == rebill_id)
+            )
+        ).scalar_one_or_none()
+    if sub is None and customer_key:
+        sub = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.tinkoff_customer_key == customer_key,
+                    Subscription.provider == "tinkoff",
+                )
+            )
+        ).scalar_one_or_none()
+
+    pro_plan = (
+        await db.execute(select(Plan).where(Plan.code == "pro"))
+    ).scalar_one_or_none()
+
+    if sub is None:
+        # First notification — create a Subscription tied to the user.
+        if not customer_key:
+            logger.warning("Tinkoff CONFIRMED event without CustomerKey, cannot create sub")
+            return
+        if pro_plan is None:
+            logger.warning("Pro plan missing; cannot create Tinkoff subscription")
+            return
+        from app.models.user import User
+
+        user = (
+            await db.execute(select(User).where(User.id == customer_key))
+        ).scalar_one_or_none()
+        if user is None:
+            logger.warning("Tinkoff event references unknown user_id=%s", customer_key)
+            return
+        sub = Subscription(
+            user_id=user.id,
+            plan_id=pro_plan.id,
+            status=event.status or SubscriptionStatus.INCOMPLETE.value,
+            provider="tinkoff",
+            billing_period="month",  # T-Bank doesn't carry period in webhook; default month.
+            tinkoff_customer_key=customer_key,
+            tinkoff_rebill_id=rebill_id,
+        )
+        db.add(sub)
+        await db.flush()
+        user.current_subscription_id = sub.id
+
+    # Update sub state.
+    if event.status:
+        sub.status = event.status
+    if rebill_id and not sub.tinkoff_rebill_id:
+        sub.tinkoff_rebill_id = rebill_id
+
+    if event.status == "active":
+        now = datetime.now(timezone.utc)
+        sub.current_period_start = sub.current_period_start or now
+        # Default monthly cadence — adjust to billing_period when stored.
+        if sub.billing_period == "year":
+            sub.current_period_end = now + timedelta(days=365)
+            sub.tinkoff_next_charge_at = now + timedelta(days=365)
+        else:
+            sub.current_period_end = now + timedelta(days=30)
+            sub.tinkoff_next_charge_at = now + timedelta(days=30)
+
+        if amount:
+            db.add(
+                Invoice(
+                    subscription_id=sub.id,
+                    amount=Decimal(int(amount)) / Decimal(100),
+                    currency="RUB",
+                    status="paid",
+                    provider_payment_id=raw.get("payment_id"),
+                    paid_at=now,
+                    receipt_url=None,
+                )
+            )
+
+    await db.flush()

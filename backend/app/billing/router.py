@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, Database
 from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
+from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.billing.quota import WordQuota
 from app.config import get_settings
 from app.models.billing import (
@@ -199,10 +200,23 @@ async def create_checkout(
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
     if provider_code == BillingProvider.TINKOFF.value:
-        # Phase 3 wires this in.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="T-Bank checkout pending"
-        )
+        provider = TinkoffProvider()
+        try:
+            result = await provider.create_checkout(
+                plan_code=payload.plan,
+                period=payload.period,
+                user_email=user.email,
+                user_id=str(user.id),
+                success_url=success_url,
+                cancel_url=cancel_url,
+                trial_days=None,  # T-Bank Init has no native trial; first charge is real.
+            )
+        except ProviderUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"T-Bank not configured: {exc}",
+            ) from exc
+        return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
     raise HTTPException(status_code=400, detail="Unknown provider")
 
@@ -234,9 +248,10 @@ async def cancel_subscription(user: CurrentUser, db: Database) -> dict:
         return {"cancel_at_period_end": True}
 
     if sub.provider == BillingProvider.TINKOFF.value:
-        # Phase 3 wires this in.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="T-Bank cancel pending"
-        )
+        # T-Bank has no native subscription-cancel API. Flip the local flag and
+        # the rebill scheduler will stop charging on the next cycle.
+        sub.cancel_at_period_end = True
+        await db.flush()
+        return {"cancel_at_period_end": True}
 
     raise HTTPException(status_code=400, detail="Unknown provider on subscription")
