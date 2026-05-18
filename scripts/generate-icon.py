@@ -15,6 +15,11 @@ SOURCE_DARK = ROOT_DIR / "assets/app-icon-1024-dark.png"
 LAYER_LIGHT = ROOT_DIR / "assets/app-icon-1024-layer.png"
 LAYER_DARK = ROOT_DIR / "assets/app-icon-1024-layer-dark.png"
 
+BG_TOP = (31, 33, 38)
+BG_BOTTOM = (8, 10, 13)
+TRIANGLE_LIGHT = (246, 245, 240)
+TRIANGLE_DARK = (16, 18, 22)
+
 
 def lerp(a: int, b: int, t: float) -> int:
     return round(a + (b - a) * t)
@@ -93,16 +98,6 @@ def rounded_triangle_points(cx: float, cy: float, size: float, radius: float) ->
     return points
 
 
-def paste_gradient_shape(
-    base: Image.Image,
-    mask: Image.Image,
-    top: tuple[int, int, int],
-    bottom: tuple[int, int, int],
-) -> None:
-    gradient = vertical_gradient(base.size[0], top, bottom).convert("RGBA")
-    base.alpha_composite(Image.composite(gradient, Image.new("RGBA", base.size, (0, 0, 0, 0)), mask))
-
-
 def draw_foreground(size: int, dark: bool) -> Image.Image:
     scale = size / 1024
     layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -113,37 +108,28 @@ def draw_foreground(size: int, dark: bool) -> Image.Image:
     triangle_mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(triangle_mask).polygon(triangle_points, fill=255)
 
-    shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    shadow_mask = triangle_mask.filter(ImageFilter.GaussianBlur(18 * scale))
-    shadow.alpha_composite(
+    shadow_mask = triangle_mask.filter(ImageFilter.GaussianBlur(16 * scale))
+    layer.alpha_composite(
         Image.composite(
-            Image.new("RGBA", (size, size), (0, 0, 0, 70 if dark else 54)),
+            Image.new("RGBA", (size, size), (0, 0, 0, 88 if dark else 76)),
             Image.new("RGBA", (size, size), (0, 0, 0, 0)),
             shadow_mask,
         ),
-        (0, round(16 * scale)),
-    )
-    layer.alpha_composite(shadow)
-
-    paste_gradient_shape(
-        layer,
-        triangle_mask,
-        (242, 164, 62) if not dark else (255, 186, 77),
-        (179, 87, 41) if not dark else (209, 103, 45),
+        (0, round(14 * scale)),
     )
 
-    highlight = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    highlight_mask = triangle_mask.filter(ImageFilter.GaussianBlur(2 * scale))
-    ImageDraw.Draw(highlight).line(
-        [(cx - triangle_size * 0.28, cy + triangle_size * 0.28), (cx, cy - triangle_size * 0.42)],
-        fill=(255, 232, 166, 74),
-        width=round(10 * scale),
+    triangle_fill = TRIANGLE_LIGHT if not dark else (255, 255, 250)
+    layer.alpha_composite(
+        Image.composite(
+            Image.new("RGBA", (size, size), (*triangle_fill, 255)),
+            Image.new("RGBA", (size, size), (0, 0, 0, 0)),
+            triangle_mask,
+        )
     )
-    layer.alpha_composite(Image.composite(highlight, Image.new("RGBA", (size, size), (0, 0, 0, 0)), highlight_mask))
 
     draw = ImageDraw.Draw(layer)
-    bar_fill = (250, 255, 249, 245) if not dark else (255, 252, 232, 245)
-    bar_shadow = (48, 74, 64, 85)
+    bar_fill = TRIANGLE_DARK
+    bar_shadow = (255, 255, 255, 24)
     heights = [54, 84, 116, 156, 205, 262, 336, 278, 214, 154, 104, 68]
     bar_width = 26 * scale
     gap = 14 * scale
@@ -162,7 +148,7 @@ def draw_foreground(size: int, dark: bool) -> Image.Image:
             radius=radius,
             fill=bar_shadow,
         )
-        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=bar_fill)
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=(*bar_fill, 246))
 
     return layer
 
@@ -170,19 +156,18 @@ def draw_foreground(size: int, dark: bool) -> Image.Image:
 def draw_full_icon(size: int, dark: bool) -> Image.Image:
     background = vertical_gradient(
         size,
-        (18, 84, 78) if not dark else (9, 37, 39),
-        (37, 99, 235) if not dark else (18, 52, 126),
+        (24, 26, 31) if not dark else (12, 14, 18),
+        (7, 8, 11) if not dark else (2, 3, 5),
     ).convert("RGBA")
 
     draw = ImageDraw.Draw(background, "RGBA")
-    draw.ellipse(
-        [size * -0.20, size * -0.14, size * 0.74, size * 0.80],
-        fill=(94, 218, 189, 48 if not dark else 34),
-    )
-    draw.ellipse(
-        [size * 0.46, size * 0.58, size * 1.18, size * 1.24],
-        fill=(46, 114, 232, 42 if not dark else 32),
-    )
+    for inset, alpha in ((0.04, 22), (0.08, 12)):
+        draw.rounded_rectangle(
+            [size * inset, size * inset, size * (1 - inset), size * (1 - inset)],
+            radius=size * 0.18,
+            outline=(255, 255, 255, alpha),
+            width=max(1, round(size * 0.006)),
+        )
     background.alpha_composite(draw_foreground(size, dark))
     return background.convert("RGB")
 
