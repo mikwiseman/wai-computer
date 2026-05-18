@@ -81,7 +81,19 @@ def test_build_receipt_truncates_long_description():
     assert len(receipt["Items"][0]["Name"]) == 64
 
 
-def test_provider_requires_credentials():
+def test_provider_requires_credentials(monkeypatch):
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.get_settings",
+        lambda: type(
+            "S",
+            (),
+            {
+                "tinkoff_terminal_key": "",
+                "tinkoff_password": "",
+                "tinkoff_api_url": "https://test/",
+            },
+        )(),
+    )
     provider = TinkoffProvider(terminal_key="", password="")
     with pytest.raises(ProviderUnavailableError):
         provider._require_creds()

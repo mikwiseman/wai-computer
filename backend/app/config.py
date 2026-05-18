@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_publishable_key: str = ""
+    # Enable once a head-office address is configured in Stripe Tax settings.
+    stripe_automatic_tax: bool = False
 
     # Billing — T-Bank acquiring (RU rail)
     tinkoff_api_url: str = "https://securepay.tinkoff.ru/v2/"

@@ -43,7 +43,11 @@ async def _seed_plans(db_session) -> tuple[Plan, Plan]:
 # ----- provider configuration ---------------------------------------------
 
 
-def test_stripe_provider_raises_when_secret_missing():
+def test_stripe_provider_raises_when_secret_missing(monkeypatch):
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.get_settings",
+        lambda: type("S", (), {"stripe_secret_key": "", "stripe_webhook_secret": ""})(),
+    )
     p = StripeProvider(secret_key="", webhook_secret="")
     with pytest.raises(ProviderUnavailableError):
         p._client_or_raise()

@@ -43,5 +43,7 @@
 	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>3600</integer>
+	<key>WAIDownloadRegion</key>
+	<string>$(WAI_DOWNLOAD_REGION)</string>
 </dict>
 </plist>
