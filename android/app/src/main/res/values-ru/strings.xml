@@ -143,7 +143,7 @@
     <string name="settings_mcp_client_chatgpt">ChatGPT</string>
     <string name="settings_mcp_client_claudecode">Claude Code</string>
     <string name="settings_mcp_client_codex">Codex CLI</string>
-    <string name="settings_mcp_steps_claudeai">Откройте Settings → Connectors → Add custom connector, вставьте URL и подтвердите запрос на wai.computer, когда появится промпт.</string>
+    <string name="settings_mcp_steps_claudeai">Откройте Customize → Connectors и нажмите кнопку «+», вставьте URL и подтвердите запрос на wai.computer, когда появится промпт.</string>
     <string name="settings_mcp_steps_cursor">Добавьте сервер в .cursor/mcp.json в корне вашего проекта (или в глобальные настройки Cursor MCP). Cursor запустит OAuth-флоу при первом использовании.</string>
     <string name="settings_mcp_steps_chatgpt">Откройте ChatGPT → Settings → Connectors. Включите Developer Mode, добавьте MCP-сервер и вставьте URL.</string>
     <string name="settings_mcp_steps_claudecode">Запустите CLI-команду либо положите сниппет в .mcp.json в корне проекта.</string>

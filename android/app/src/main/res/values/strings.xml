@@ -137,13 +137,13 @@
     <string name="settings_mcp_copied">Copied</string>
     <string name="settings_mcp_share">Share URL</string>
     <string name="settings_mcp_share_chooser">Share MCP endpoint</string>
-    <string name="settings_mcp_open_claude">Open Claude.ai Connectors</string>
+    <string name="settings_mcp_open_claude">Open Connectors in Claude.ai</string>
     <string name="settings_mcp_client_claudeai">Claude.ai</string>
     <string name="settings_mcp_client_cursor">Cursor</string>
     <string name="settings_mcp_client_chatgpt">ChatGPT</string>
     <string name="settings_mcp_client_claudecode">Claude Code</string>
     <string name="settings_mcp_client_codex">Codex CLI</string>
-    <string name="settings_mcp_steps_claudeai">Open Settings → Connectors → Add custom connector, paste the URL, then approve the request on wai.computer when prompted.</string>
+    <string name="settings_mcp_steps_claudeai">Open Customize → Connectors and tap the “+” button, paste the URL, then approve the request on wai.computer when prompted.</string>
     <string name="settings_mcp_steps_cursor">Add this server to .cursor/mcp.json in your project root (or to your global Cursor MCP settings). Cursor starts the OAuth flow on first use.</string>
     <string name="settings_mcp_steps_chatgpt">Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.</string>
     <string name="settings_mcp_steps_claudecode">Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.</string>

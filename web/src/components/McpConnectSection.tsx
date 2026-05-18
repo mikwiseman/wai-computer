@@ -19,8 +19,8 @@ const CLIENT_GUIDES: McpClientGuide[] = [
     id: "claudeai",
     label: "Claude.ai",
     steps:
-      "Open Settings → Connectors → Add custom connector. Paste the URL, then approve the request on wai.computer when prompted.",
-    externalLink: { label: "Open Claude.ai Connectors", url: "https://claude.ai/settings/connectors" },
+      "Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.",
+    externalLink: { label: "Open Connectors in Claude.ai", url: "https://claude.ai/customize/connectors" },
   },
   {
     id: "cursor",

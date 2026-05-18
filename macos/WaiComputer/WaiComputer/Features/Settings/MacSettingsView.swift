@@ -23,11 +23,11 @@ private let mcpEndpointURL = "https://wai.computer/mcp"
 
 private let mcpClientGuides: [McpClient: McpClientGuide] = [
     .claudeAI: McpClientGuide(
-        steps: "Open Settings → Connectors → Add custom connector, paste the URL, then approve the request on wai.computer when prompted.",
+        steps: "Open Customize → Connectors and click the “+” button, paste the URL, then approve the request on wai.computer when prompted.",
         snippet: nil,
         externalLink: (
-            label: "Open Claude.ai Connectors",
-            url: URL(string: "https://claude.ai/settings/connectors")!
+            label: "Open Connectors in Claude.ai",
+            url: URL(string: "https://claude.ai/customize/connectors")!
         )
     ),
     .cursor: McpClientGuide(
