@@ -31,7 +31,7 @@ from app.core.openai_client import get_openai_client
 from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 from app.core.qa import SourceSegment, retrieve_context
 from app.models.companion import ChatMessage, Conversation, MessageCitation
-from app.models.recording import Recording, Summary
+from app.models.recording import ActionItem, Folder, Recording, Summary
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -50,16 +50,25 @@ _IDENTITY_SECTION = (
 
 _TOOL_GUIDANCE_SECTION = (
     "<tool_guidance>\n"
-    "- list_recordings — call FIRST when the user uses any relative time "
-    "word (today, yesterday, last week, this morning, вчера, сегодня, на "
-    "прошлой неделе) or asks about a recording they did not name. Pass "
-    "date_from/date_to in the user's local timezone from <session>. "
-    "Returns titles + dates; navigation only.\n"
-    "- get_recording_summary — drill into one recording from the list. "
-    "Dense and structured; NOT citable.\n"
+    "Navigation pattern: shortlist via metadata tools first, then drill "
+    "into transcripts. Never jump straight to search_transcripts for a "
+    "date-range / person / 'what's important' question.\n"
+    "- list_recordings — call FIRST for relative time words (today, "
+    "yesterday, last week, вчера, сегодня, на прошлой неделе) or when "
+    "the user didn't name a recording. Pass date_from/date_to using "
+    "<session>.date. Returns title + folder + one-line summary + topics; "
+    "lets you pick the right recording without a second call.\n"
+    "- get_recording_summary — dense view of ONE recording. Use after "
+    "list_recordings narrowed things down.\n"
+    "- get_action_items — for 'what do I owe', 'что я должен', "
+    "'commitments'.\n"
+    "- get_highlights — for 'key moments', 'что важного', filterable "
+    "by category and importance.\n"
+    "- search_people — find recordings featuring a person; follow up "
+    "with search_transcripts(recording_ids=...) for quotes.\n"
     "- search_transcripts — verbatim quotes. The ONLY tool that returns "
-    "citable segment_ids. Use AFTER you know which recording(s) to search; "
-    "do not use it for date-range or person-name lookups.\n"
+    "citable segment_ids. Use AFTER you know which recording(s) to "
+    "search; do not use it for date-range or person-name lookups.\n"
     "</tool_guidance>"
 )
 
@@ -241,15 +250,24 @@ class TurnContext:
 
 
 def tool_definitions() -> list[dict[str, Any]]:
-    """OpenAI Responses-API tool schemas."""
+    """OpenAI Responses-API tool schemas. Descriptions follow the Anthropic
+    "right altitude" pattern: when to use, when NOT to use, output shape.
+    They are duplicated in compact form inside <tool_guidance> in the
+    cacheable system prefix; the long-form here lives next to the schema.
+    """
     return [
         {
             "type": "function",
             "name": "search_transcripts",
             "description": (
-                "Search the user's recorded conversation transcripts. The "
-                "only retrieval primitive that returns segment_ids; you may "
-                "ONLY cite segment_ids returned by this tool."
+                "Search verbatim transcript content. The ONLY tool that "
+                "returns citable segment_ids — you may ONLY emit citations "
+                "for segment_ids returned by this call. Use AFTER you "
+                "know which recording(s) to search (from list_recordings, "
+                "search_people, or the user naming one). Do NOT use this "
+                "for date-range or person-name lookups — that's "
+                "list_recordings / search_people. Returns 1-30 segments "
+                "with snippet, speaker, start_ms, end_ms."
             ),
             "parameters": {
                 "type": "object",
@@ -269,9 +287,12 @@ def tool_definitions() -> list[dict[str, Any]]:
             "type": "function",
             "name": "get_recording_summary",
             "description": (
-                "Fetch the pre-extracted summary (key points, decisions, "
-                "action items, topics) for a specific recording. Output is "
-                "context-only — segment_ids in it cannot be cited."
+                "Dense pre-extracted view of ONE recording: summary, key "
+                "points, decisions, topics, people mentioned, sentiment. "
+                "Use after list_recordings narrowed things down and you "
+                "want context on a single recording before quoting it. "
+                "Output is NOT citable — call search_transcripts on the "
+                "same recording_id for citations."
             ),
             "parameters": {
                 "type": "object",
@@ -286,9 +307,15 @@ def tool_definitions() -> list[dict[str, Any]]:
             "type": "function",
             "name": "list_recordings",
             "description": (
-                "List recordings created within a date range. Use to find "
-                "the right recording before searching it; output is "
-                "context-only and cannot be cited."
+                "Navigation tool — call FIRST when the user uses any "
+                "relative time word (today, yesterday, last week, this "
+                "morning, вчера, сегодня, на прошлой неделе) or asks "
+                "about a recording they did not name. Pass date_from / "
+                "date_to in the user's local timezone (see <session> in "
+                "the developer message above). Returns title + type + "
+                "folder + one-line summary + topics per recording so you "
+                "can pick the right one without a second call. Context-"
+                "only — NOT citable. Cap 50."
             ),
             "parameters": {
                 "type": "object",
@@ -298,6 +325,85 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "date_to": {"type": "string", "format": "date-time"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
+            },
+        },
+        {
+            "type": "function",
+            "name": "get_action_items",
+            "description": (
+                "List the user's commitments / TODOs extracted from "
+                "recordings. Use when the user asks 'what do I owe', "
+                "'what's on my plate', 'что я должен', 'мои задачи'. "
+                "Filter by status (default pending), priority, owner, or "
+                "due_before. NOT citable."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "pending",
+                            "in_progress",
+                            "completed",
+                            "cancelled",
+                        ],
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                    },
+                    "owner": {"type": "string"},
+                    "due_before": {"type": "string", "format": "date"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "name": "get_highlights",
+            "description": (
+                "Key moments pre-extracted from recordings (decisions, "
+                "insights, surprises). Use when the user asks 'what was "
+                "important', 'key moments', 'что важного', 'highlights'. "
+                "Filter by category, minimum importance (high|medium|low), "
+                "and date range. NOT citable — drill into the underlying "
+                "recording with search_transcripts if you want quotes."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "category": {"type": "string"},
+                    "min_importance": {
+                        "type": "string",
+                        "enum": ["high", "medium", "low"],
+                    },
+                    "date_from": {"type": "string", "format": "date-time"},
+                    "date_to": {"type": "string", "format": "date-time"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "name": "search_people",
+            "description": (
+                "Find recordings featuring a person. Use when the user "
+                "asks 'what did Alice say about X', 'когда я говорил с "
+                "Mik', 'кто упоминал X'. Returns recordings only — "
+                "follow up with search_transcripts(query=..., "
+                "recording_ids=[...]) for citable quotes. NOT citable."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["name"],
             },
         },
     ]
@@ -506,6 +612,21 @@ async def _tool_get_recording_summary(
     )
 
 
+def _summary_one_line(summary: Summary | None) -> str | None:
+    """First sentence of the recording's summary, capped — gives the
+    model enough to pick the right recording without a follow-up tool
+    call (Granola "navigate, don't lookup" pattern)."""
+    if summary is None or not summary.summary:
+        return None
+    text = summary.summary.strip()
+    # First sentence boundary; collapse trailing whitespace.
+    for terminator in (". ", "! ", "? ", "\n"):
+        idx = text.find(terminator)
+        if idx != -1 and idx < 200:
+            return text[: idx + 1].strip()
+    return text[:200].rstrip()
+
+
 async def _tool_list_recordings(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -514,7 +635,9 @@ async def _tool_list_recordings(
 ) -> ToolExecutionResult:
     limit = args.get("limit", 25)
     stmt = (
-        select(Recording)
+        select(Recording, Summary, Folder)
+        .outerjoin(Summary, Summary.recording_id == Recording.id)
+        .outerjoin(Folder, Folder.id == Recording.folder_id)
         .where(
             and_(
                 Recording.user_id == user_id,
@@ -550,20 +673,286 @@ async def _tool_list_recordings(
         stmt = stmt.where(Recording.id.in_(scope_ids))
 
     result = await db.execute(stmt)
-    rows = list(result.scalars().all())
+    rows = list(result.all())
     return ToolExecutionResult(
         summary_for_event=f"{len(rows)} recordings",
+        payload_for_model={
+            "recordings": [
+                {
+                    "id": str(rec.id),
+                    "title": rec.title,
+                    "type": rec.type,
+                    "folder": folder.name if folder is not None else None,
+                    "created_at": (
+                        rec.created_at.isoformat() if rec.created_at else None
+                    ),
+                    "duration_seconds": rec.duration_seconds,
+                    "summary_one_line": _summary_one_line(summary),
+                    "topics": (summary.topics if summary is not None else None),
+                }
+                for (rec, summary, folder) in rows
+            ]
+        },
+        citable_segments={},
+    )
+
+
+async def _tool_get_action_items(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
+) -> ToolExecutionResult:
+    limit = args.get("limit", 25)
+    stmt = (
+        select(ActionItem, Recording)
+        .join(Recording, ActionItem.recording_id == Recording.id)
+        .where(
+            and_(
+                Recording.user_id == user_id,
+                Recording.deleted_at.is_(None),
+            )
+        )
+        .order_by(
+            ActionItem.due_date.asc().nulls_last(),
+            ActionItem.created_at.desc(),
+        )
+        .limit(limit)
+    )
+    if args.get("status"):
+        stmt = stmt.where(ActionItem.status == args["status"])
+    else:
+        # Default: only "pending" — users asking "what do I owe" almost
+        # always mean open items, not done ones.
+        stmt = stmt.where(ActionItem.status == "pending")
+    if args.get("priority"):
+        stmt = stmt.where(ActionItem.priority == args["priority"])
+    if args.get("owner"):
+        stmt = stmt.where(ActionItem.owner == args["owner"])
+    if args.get("due_before"):
+        try:
+            from datetime import date as _date_cls
+
+            due = _date_cls.fromisoformat(args["due_before"])
+            stmt = stmt.where(ActionItem.due_date <= due)
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"get_action_items.due_before is not ISO date: {exc}",
+            ) from exc
+    scope_ids = _scope_recording_uuids(scope)
+    if scope_ids is not None:
+        stmt = stmt.where(Recording.id.in_(scope_ids))
+
+    result = await db.execute(stmt)
+    rows = list(result.all())
+    return ToolExecutionResult(
+        summary_for_event=f"{len(rows)} action items",
+        payload_for_model={
+            "action_items": [
+                {
+                    "id": str(item.id),
+                    "task": item.task,
+                    "owner": item.owner,
+                    "due_date": (
+                        item.due_date.isoformat() if item.due_date else None
+                    ),
+                    "priority": item.priority,
+                    "status": item.status,
+                    "recording_id": str(rec.id),
+                    "recording_title": rec.title,
+                }
+                for (item, rec) in rows
+            ]
+        },
+        citable_segments={},
+    )
+
+
+_IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+async def _tool_get_highlights(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
+) -> ToolExecutionResult:
+    from app.models.highlight import Highlight
+
+    limit = args.get("limit", 25)
+    stmt = (
+        select(Highlight, Recording)
+        .join(Recording, Highlight.recording_id == Recording.id)
+        .where(
+            and_(
+                Recording.user_id == user_id,
+                Recording.deleted_at.is_(None),
+            )
+        )
+        .order_by(Recording.created_at.desc())
+        .limit(limit)
+    )
+    if args.get("category"):
+        stmt = stmt.where(Highlight.category == args["category"])
+    if args.get("min_importance"):
+        threshold = _IMPORTANCE_ORDER.get(args["min_importance"])
+        if threshold is None:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"get_highlights.min_importance must be one of "
+                f"{list(_IMPORTANCE_ORDER)}",
+            )
+        allowed = [
+            level for level, rank in _IMPORTANCE_ORDER.items() if rank <= threshold
+        ]
+        stmt = stmt.where(Highlight.importance.in_(allowed))
+    if args.get("date_from"):
+        try:
+            stmt = stmt.where(
+                Recording.created_at >= datetime.fromisoformat(args["date_from"])
+            )
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"get_highlights.date_from is not ISO-8601: {exc}",
+            ) from exc
+    if args.get("date_to"):
+        try:
+            stmt = stmt.where(
+                Recording.created_at <= datetime.fromisoformat(args["date_to"])
+            )
+        except (TypeError, ValueError) as exc:
+            raise CompanionError(
+                "invalid_tool_args",
+                f"get_highlights.date_to is not ISO-8601: {exc}",
+            ) from exc
+    scope_ids = _scope_recording_uuids(scope)
+    if scope_ids is not None:
+        stmt = stmt.where(Recording.id.in_(scope_ids))
+
+    result = await db.execute(stmt)
+    rows = list(result.all())
+    return ToolExecutionResult(
+        summary_for_event=f"{len(rows)} highlights",
+        payload_for_model={
+            "highlights": [
+                {
+                    "id": str(h.id),
+                    "category": h.category,
+                    "title": h.title,
+                    "description": h.description,
+                    "speaker": h.speaker,
+                    "importance": h.importance,
+                    "start_ms": h.start_ms,
+                    "end_ms": h.end_ms,
+                    "recording_id": str(rec.id),
+                    "recording_title": rec.title,
+                    "recording_created_at": (
+                        rec.created_at.isoformat() if rec.created_at else None
+                    ),
+                }
+                for (h, rec) in rows
+            ]
+        },
+        citable_segments={},
+    )
+
+
+async def _tool_search_people(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
+) -> ToolExecutionResult:
+    name = args.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise CompanionError(
+            "invalid_tool_args", "search_people.name must be non-empty"
+        )
+    limit = args.get("limit", 10)
+
+    from app.models.entity import Entity, EntityRelation
+
+    # 1. Find person entities matching the requested name (case-insensitive).
+    entity_stmt = select(Entity.id).where(
+        and_(
+            Entity.user_id == user_id,
+            Entity.type == "person",
+            Entity.name.ilike(f"%{name.strip()}%"),
+        )
+    )
+    entity_ids = list((await db.execute(entity_stmt)).scalars().all())
+    if not entity_ids:
+        return ToolExecutionResult(
+            summary_for_event="no people found",
+            payload_for_model={"recordings": [], "matched_entities": []},
+            citable_segments={},
+        )
+
+    # 2. Recordings linked to those entities via EntityRelation. There is no
+    #    EntityMention table — the relation table is the only link.
+    from sqlalchemy import or_ as sa_or
+
+    rel_stmt = (
+        select(EntityRelation.recording_id)
+        .where(
+            and_(
+                EntityRelation.recording_id.is_not(None),
+                sa_or(
+                    EntityRelation.source_id.in_(entity_ids),
+                    EntityRelation.target_id.in_(entity_ids),
+                ),
+            )
+        )
+        .distinct()
+    )
+    recording_ids = list(
+        (await db.execute(rel_stmt)).scalars().all()
+    )
+    if not recording_ids:
+        return ToolExecutionResult(
+            summary_for_event="0 recordings",
+            payload_for_model={
+                "recordings": [],
+                "matched_entities": [str(e) for e in entity_ids],
+            },
+            citable_segments={},
+        )
+
+    scope_ids = _scope_recording_uuids(scope)
+    if scope_ids is not None:
+        allowed = set(scope_ids)
+        recording_ids = [r for r in recording_ids if r in allowed]
+
+    rec_stmt = (
+        select(Recording)
+        .where(
+            and_(
+                Recording.id.in_(recording_ids),
+                Recording.user_id == user_id,
+                Recording.deleted_at.is_(None),
+            )
+        )
+        .order_by(Recording.created_at.desc())
+        .limit(limit)
+    )
+    recs = list((await db.execute(rec_stmt)).scalars().all())
+    return ToolExecutionResult(
+        summary_for_event=f"{len(recs)} recordings",
         payload_for_model={
             "recordings": [
                 {
                     "id": str(r.id),
                     "title": r.title,
                     "type": r.type,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
-                    "duration_seconds": r.duration_seconds,
+                    "created_at": (
+                        r.created_at.isoformat() if r.created_at else None
+                    ),
                 }
-                for r in rows
-            ]
+                for r in recs
+            ],
+            "matched_entities": [str(e) for e in entity_ids],
         },
         citable_segments={},
     )
@@ -573,6 +962,9 @@ _TOOL_DISPATCH = {
     "search_transcripts": _tool_search_transcripts,
     "get_recording_summary": _tool_get_recording_summary,
     "list_recordings": _tool_list_recordings,
+    "get_action_items": _tool_get_action_items,
+    "get_highlights": _tool_get_highlights,
+    "search_people": _tool_search_people,
 }
 
 
