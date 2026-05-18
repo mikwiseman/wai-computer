@@ -1552,3 +1552,33 @@ h4 {
 .billing-error {
   color: #c0392b;
 }
+
+.locale-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.locale-switcher__item {
+  color: var(--ink);
+  opacity: 0.5;
+  text-decoration: none;
+  transition: opacity 0.12s ease;
+  padding: 0.1rem 0.25rem;
+  border-radius: 6px;
+}
+
+.locale-switcher__item:hover {
+  opacity: 0.9;
+}
+
+.locale-switcher__item.is-active {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.locale-switcher__sep {
+  opacity: 0.3;
+}
