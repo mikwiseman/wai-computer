@@ -269,6 +269,70 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertNil(decoded.starredAt)
     }
 
+    // MARK: - Segment editable-speaker fields
+
+    func testSegmentDecodesPersonAssignmentFields() throws {
+        let json = """
+        {
+            "id": "seg-1",
+            "speaker": "Speaker 0",
+            "raw_label": "Speaker 0",
+            "person_id": "person-uuid-1",
+            "display_name": "Vasya",
+            "auto_assigned": true,
+            "match_confidence": 0.87,
+            "content": "Hello world",
+            "start_ms": 1000,
+            "end_ms": 2000,
+            "confidence": 0.95
+        }
+        """.data(using: .utf8)!
+
+        let segment = try JSONDecoder().decode(Segment.self, from: json)
+        XCTAssertEqual(segment.rawLabel, "Speaker 0")
+        XCTAssertEqual(segment.personId, "person-uuid-1")
+        XCTAssertEqual(segment.displayName, "Vasya")
+        XCTAssertTrue(segment.autoAssigned)
+        XCTAssertEqual(segment.matchConfidence ?? 0, 0.87, accuracy: 0.001)
+    }
+
+    func testSegmentDefaultsAutoAssignedToFalseWhenAbsent() throws {
+        let json = """
+        {
+            "id": "seg-legacy",
+            "speaker": "Speaker 0",
+            "content": "hi"
+        }
+        """.data(using: .utf8)!
+
+        let segment = try JSONDecoder().decode(Segment.self, from: json)
+        XCTAssertFalse(segment.autoAssigned)
+        XCTAssertNil(segment.rawLabel)
+        XCTAssertNil(segment.personId)
+        XCTAssertNil(segment.displayName)
+        XCTAssertNil(segment.matchConfidence)
+    }
+
+    func testPersonDecodes() throws {
+        let json = """
+        {
+            "id": "person-1",
+            "display_name": "Vasya",
+            "color": "#4f46e5",
+            "aliases": ["Vasily"],
+            "voiceprint_count": 3,
+            "created_at": "2026-05-18T10:00:00Z",
+            "updated_at": "2026-05-18T10:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let person = try JSONDecoder().decode(Person.self, from: json)
+        XCTAssertEqual(person.displayName, "Vasya")
+        XCTAssertEqual(person.color, "#4f46e5")
+        XCTAssertEqual(person.aliases ?? [], ["Vasily"])
+        XCTAssertEqual(person.voiceprintCount, 3)
+    }
+
     func testRecordingDetailWithHighlightsRoundTrip() throws {
         let encoder = makeEncoder()
         let decoder = makeDecoder()

@@ -4,6 +4,11 @@ import Foundation
 public struct Segment: Codable, Identifiable, Sendable {
     public let id: String
     public let speaker: String?
+    public let rawLabel: String?
+    public let personId: String?
+    public let displayName: String?
+    public let autoAssigned: Bool
+    public let matchConfidence: Double?
     public let content: String
     public let startMs: Int?
     public let endMs: Int?
@@ -12,6 +17,11 @@ public struct Segment: Codable, Identifiable, Sendable {
     public init(
         id: String,
         speaker: String? = nil,
+        rawLabel: String? = nil,
+        personId: String? = nil,
+        displayName: String? = nil,
+        autoAssigned: Bool = false,
+        matchConfidence: Double? = nil,
         content: String,
         startMs: Int? = nil,
         endMs: Int? = nil,
@@ -19,15 +29,40 @@ public struct Segment: Codable, Identifiable, Sendable {
     ) {
         self.id = id
         self.speaker = speaker
+        self.rawLabel = rawLabel
+        self.personId = personId
+        self.displayName = displayName
+        self.autoAssigned = autoAssigned
+        self.matchConfidence = matchConfidence
         self.content = content
         self.startMs = startMs
         self.endMs = endMs
         self.confidence = confidence
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        speaker = try container.decodeIfPresent(String.self, forKey: .speaker)
+        rawLabel = try container.decodeIfPresent(String.self, forKey: .rawLabel)
+        personId = try container.decodeIfPresent(String.self, forKey: .personId)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        autoAssigned = try container.decodeIfPresent(Bool.self, forKey: .autoAssigned) ?? false
+        matchConfidence = try container.decodeIfPresent(Double.self, forKey: .matchConfidence)
+        content = try container.decode(String.self, forKey: .content)
+        startMs = try container.decodeIfPresent(Int.self, forKey: .startMs)
+        endMs = try container.decodeIfPresent(Int.self, forKey: .endMs)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case speaker
+        case rawLabel = "raw_label"
+        case personId = "person_id"
+        case displayName = "display_name"
+        case autoAssigned = "auto_assigned"
+        case matchConfidence = "match_confidence"
         case content
         case startMs = "start_ms"
         case endMs = "end_ms"
