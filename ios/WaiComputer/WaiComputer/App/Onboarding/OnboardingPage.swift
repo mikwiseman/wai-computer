@@ -5,6 +5,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
     case record
     case transcribe
     case permission
+    case voiceSetup
 
     var id: Int { rawValue }
 
@@ -48,6 +49,14 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
                 title: "We need your microphone.",
                 body: "WaiComputer only records when you press record. We never listen in the background.",
                 symbol: "lock.shield",
+                useAppIcon: false
+            )
+        case .voiceSetup:
+            return Content(
+                eyebrow: "Voice",
+                title: "Teach Wai your voice.",
+                body: "Read the prompt for ~20 seconds. Wai will recognise you automatically in future meetings.",
+                symbol: "waveform.circle",
                 useAppIcon: false
             )
         }
