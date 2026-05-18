@@ -177,6 +177,13 @@ describe("app pages", () => {
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("macOS 14+");
 
+    // Windows is live as of 0.1.0-beta (unsigned). Flip WINDOWS_AVAILABLE
+    // back to false in page.tsx if the file is ever taken down.
+    const winLink = screen.getByTestId("download-windows");
+    expect(winLink).toHaveAttribute("href", "/releases/windows/WaiComputer-Setup.exe");
+    expect(winLink).toHaveAttribute("download");
+    expect(winLink).toHaveTextContent("Windows 10/11");
+
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
       "href",
@@ -184,6 +191,14 @@ describe("app pages", () => {
     );
     expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
+
+    const androidLink = screen.getByTestId("download-android");
+    expect(androidLink).toHaveAttribute(
+      "href",
+      "/releases/android/WaiComputer-latest.apk",
+    );
+    expect(androidLink).toHaveAttribute("download");
+    expect(androidLink).toHaveTextContent("APK");
 
     expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
       "href",
