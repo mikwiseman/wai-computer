@@ -1,5 +1,6 @@
 import Foundation
 import os
+import WaiComputerKit
 
 private let log = Logger(subsystem: "is.waiwai.computer.app", category: "dictation-dictionary")
 
@@ -16,6 +17,13 @@ struct DictionaryWord: Identifiable, Codable, Hashable {
         self.createdAt = Date()
     }
 
+    init(id: UUID, word: String, replacement: String?, createdAt: Date) {
+        self.id = id
+        self.word = word
+        self.replacement = replacement
+        self.createdAt = createdAt
+    }
+
     /// Words without replacement are vocabulary boosters (improve recognition).
     /// Words with replacement are auto-corrections applied after transcription.
     var isReplacement: Bool {
@@ -28,13 +36,24 @@ final class DictationDictionaryStore: ObservableObject {
     @Published private(set) var words: [DictionaryWord] = []
 
     private let fileURL: URL
+    private let tombstonesURL: URL
+    private var tombstones: Set<UUID> = []
+    private var apiClient: APIClient?
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("WaiComputer", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.fileURL = dir.appendingPathComponent("dictation_dictionary.json")
+        self.tombstonesURL = dir.appendingPathComponent("dictation_dictionary_tombstones.json")
         load()
+        loadTombstones()
+    }
+
+    // MARK: - Sync wiring
+
+    func attach(apiClient: APIClient) {
+        self.apiClient = apiClient
     }
 
     func add(word: String, replacement: String? = nil) {
@@ -47,16 +66,74 @@ final class DictationDictionaryStore: ObservableObject {
         words.sort { $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending }
         save()
         log.info("Added dictionary word: \(trimmed)")
+
+        if apiClient != nil {
+            Task { await self.pushWord(entry) }
+        }
     }
 
     func delete(_ word: DictionaryWord) {
         words.removeAll { $0.id == word.id }
         save()
+
+        guard apiClient != nil else { return }
+        tombstones.insert(word.id)
+        saveTombstones()
+        Task { await self.deleteWordOnServer(word.id) }
     }
 
-    func clearAll() {
+    func clearLocalCache() {
         words.removeAll()
+        tombstones.removeAll()
         save()
+        saveTombstones()
+    }
+
+    /// Pull server state, merge, push local-only words, retry tombstoned deletes.
+    func hydrate() async {
+        guard let apiClient else { return }
+
+        let serverWords: [DictionaryWordDTO]
+        do {
+            serverWords = try await apiClient.listDictationDictionary()
+        } catch {
+            log.error("Hydrate dictionary fetch failed: \(error.localizedDescription)")
+            return
+        }
+
+        for serverWord in serverWords where tombstones.contains(serverWord.clientWordID) {
+            do {
+                try await apiClient.deleteDictionaryWord(clientWordID: serverWord.clientWordID)
+                tombstones.remove(serverWord.clientWordID)
+            } catch {
+                log.error("Hydrate dictionary tombstone replay failed: \(error.localizedDescription)")
+            }
+        }
+        saveTombstones()
+
+        let localIDs = Set(words.map(\.id))
+        let serverByID = Dictionary(uniqueKeysWithValues: serverWords.map { ($0.clientWordID, $0) })
+        var additions: [DictionaryWord] = []
+        for (id, dto) in serverByID where !localIDs.contains(id) && !tombstones.contains(id) {
+            additions.append(
+                DictionaryWord(
+                    id: dto.clientWordID,
+                    word: dto.word,
+                    replacement: dto.replacement,
+                    createdAt: dto.occurredAt
+                )
+            )
+        }
+        if !additions.isEmpty {
+            words.append(contentsOf: additions)
+            words.sort { $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending }
+            save()
+        }
+
+        let serverIDs = Set(serverByID.keys)
+        for entry in words where !serverIDs.contains(entry.id) {
+            await pushWord(entry)
+        }
     }
 
     /// Vocabulary list for prompt conditioning — sent to transcription provider
@@ -76,6 +153,40 @@ final class DictationDictionaryStore: ObservableObject {
             )
         }
         return result
+    }
+
+    // MARK: - Sync helpers
+
+    private static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private func pushWord(_ word: DictionaryWord) async {
+        guard let apiClient else { return }
+        let request = CreateDictionaryWordRequest(
+            clientWordID: word.id,
+            word: word.word,
+            replacement: word.replacement,
+            occurredAt: Self.iso8601.string(from: word.createdAt)
+        )
+        do {
+            _ = try await apiClient.createDictionaryWord(request)
+        } catch {
+            log.error("Push word failed (will retry on next hydrate): \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteWordOnServer(_ id: UUID) async {
+        guard let apiClient else { return }
+        do {
+            try await apiClient.deleteDictionaryWord(clientWordID: id)
+            tombstones.remove(id)
+            saveTombstones()
+        } catch {
+            log.error("Delete word on server failed (tombstone remains): \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Persistence
@@ -101,6 +212,29 @@ final class DictationDictionaryStore: ObservableObject {
             try data.write(to: fileURL, options: .atomic)
         } catch {
             log.error("Failed to save dictionary: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadTombstones() {
+        guard FileManager.default.fileExists(atPath: tombstonesURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: tombstonesURL)
+            tombstones = Set(try JSONDecoder().decode([UUID].self, from: data))
+        } catch {
+            log.error("Failed to load dictionary tombstones: \(error.localizedDescription)")
+        }
+    }
+
+    private func saveTombstones() {
+        do {
+            try FileManager.default.createDirectory(
+                at: tombstonesURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(Array(tombstones))
+            try data.write(to: tombstonesURL, options: .atomic)
+        } catch {
+            log.error("Failed to save dictionary tombstones: \(error.localizedDescription)")
         }
     }
 }

@@ -88,7 +88,7 @@ struct DictationHistoryView: View {
             ToolbarItem(placement: .primaryAction) {
                 if !historyStore.entries.isEmpty {
                     Button("Clear All") {
-                        historyStore.clearAll()
+                        Task { await historyStore.deleteAll() }
                     }
                     .foregroundStyle(.red)
                 }
