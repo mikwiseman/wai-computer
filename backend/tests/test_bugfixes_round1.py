@@ -41,14 +41,14 @@ class TestFormatEmbedding:
         result = format_embedding([-0.1, 0.2, -0.3])
         assert result == "[-0.1,0.2,-0.3]"
 
-    def test_3072_dimensional_embedding(self):
-        """format_embedding() should handle a full 3072-dim embedding."""
-        embedding = [float(i) / 3072 for i in range(3072)]
+    def test_1536_dimensional_embedding(self):
+        """format_embedding() should handle a full 1536-dim embedding."""
+        embedding = [float(i) / 1536 for i in range(1536)]
         result = format_embedding(embedding)
         assert result.startswith("[")
         assert result.endswith("]")
         parts = result[1:-1].split(",")
-        assert len(parts) == 3072
+        assert len(parts) == 1536
 
     def test_result_differs_from_str_repr(self):
         """format_embedding() should produce different output than str() for multi-element lists."""

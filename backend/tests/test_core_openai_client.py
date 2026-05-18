@@ -38,4 +38,4 @@ def test_settings_expose_openai_llm_model():
 def test_settings_expose_openai_embedding_model():
     settings = Settings()
     assert settings.openai_embedding_model == "text-embedding-3-large"
-    assert settings.embedding_dimensions == 3072
+    assert settings.embedding_dimensions == 1536

@@ -1,4 +1,4 @@
-"""resize entities.embedding to 3072 for text-embedding-3-large
+"""resize entities.embedding to 1536 for text-embedding-3-large
 
 Revision ID: 20260518_170000
 Revises: 20260518_160000
@@ -20,11 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Existing 384-dim entity vectors are incompatible with the OpenAI
-    # text-embedding-3-large default. We have no users yet, so drop stale
-    # vectors rather than keeping a lossy conversion path.
+    # text-embedding-3-large path. We intentionally request 1536 dimensions so
+    # pgvector can keep an ivfflat cosine index.
     op.drop_index("idx_entities_embedding", table_name="entities")
     op.drop_column("entities", "embedding")
-    op.add_column("entities", sa.Column("embedding", Vector(3072), nullable=True))
+    op.add_column("entities", sa.Column("embedding", Vector(1536), nullable=True))
     op.create_index(
         "idx_entities_embedding",
         "entities",

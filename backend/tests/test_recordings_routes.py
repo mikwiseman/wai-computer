@@ -826,7 +826,7 @@ async def test_upload_success_with_mocked_services(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -888,7 +888,7 @@ async def test_live_transcript_cannot_overwrite_uploaded_audio_transcript(
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -966,7 +966,7 @@ async def test_duplicate_audio_upload_cannot_overwrite_ready_audio_transcript(
     monkeypatch.setattr("app.api.routes.recordings.transcribe_audio_file", transcribe_mock)
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1038,7 +1038,7 @@ async def test_save_transcript_persists_segments_before_audio_upload(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1080,7 +1080,7 @@ async def test_save_transcript_accepts_empty_payload_without_erasing_existing_se
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
 
     first_response = await client.post(
@@ -1335,7 +1335,7 @@ async def test_resaving_transcript_replaces_segments_summary_and_generated_actio
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",

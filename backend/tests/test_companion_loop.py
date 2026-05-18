@@ -184,7 +184,7 @@ async def setup_user_and_recording(db_session):
         content="ship the auth refactor by Friday",
         start_ms=1000,
         end_ms=4000,
-        embedding=[0.0] * 3072,
+        embedding=[0.0] * 1536,
     )
     seg2 = Segment(
         recording_id=recording.id,
@@ -192,7 +192,7 @@ async def setup_user_and_recording(db_session):
         content="block off Tuesday for the migration",
         start_ms=5000,
         end_ms=8000,
-        embedding=[0.0] * 3072,
+        embedding=[0.0] * 1536,
     )
     db_session.add_all([seg1, seg2])
     await db_session.flush()
@@ -214,7 +214,7 @@ def fake_embedding(monkeypatch):
     """Avoid hitting OpenAI's embedding endpoint inside retrieve_context."""
 
     async def fake_generate(text: str) -> list[float]:
-        return [0.0] * 3072
+        return [0.0] * 1536
 
     monkeypatch.setattr(
         "app.core.qa.generate_embedding", fake_generate, raising=True
@@ -561,7 +561,7 @@ class TestPostMessageSSE:
             content="ship by Friday",
             start_ms=0,
             end_ms=1000,
-            embedding=[0.0] * 3072,
+            embedding=[0.0] * 1536,
         )
         session.add(seg)
         await session.flush()
@@ -569,7 +569,7 @@ class TestPostMessageSSE:
         installer(str(seg.id))
 
         async def fake_generate(text: str) -> list[float]:
-            return [0.0] * 3072
+            return [0.0] * 1536
 
         monkeypatch.setattr(
             "app.core.qa.generate_embedding", fake_generate, raising=True

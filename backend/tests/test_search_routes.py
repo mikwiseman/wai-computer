@@ -10,13 +10,13 @@ from app.models.recording import Segment
 
 
 def _vector_list(index: int) -> list[float]:
-    values = [0.0] * 3072
+    values = [0.0] * 1536
     values[index] = 1.0
     return values
 
 
 def _vector_literal(index: int) -> str:
-    values = ["0"] * 3072
+    values = ["0"] * 1536
     values[index] = "1"
     return "[" + ",".join(values) + "]"
 

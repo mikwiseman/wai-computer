@@ -445,7 +445,7 @@ async def test_save_transcript_uses_duration_seconds_when_no_end_times(
 
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 3072),
+        AsyncMock(return_value=[0.1] * 1536),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
