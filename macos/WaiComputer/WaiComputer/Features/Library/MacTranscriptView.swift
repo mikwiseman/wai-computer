@@ -4,6 +4,8 @@ import WaiComputerKit
 
 struct MacTranscriptView: View {
     let segments: [Segment]
+    var recordingId: String?
+    var onAssigned: ((RecordingDetail) -> Void)?
     @State private var copied = false
 
     var body: some View {
@@ -25,7 +27,11 @@ struct MacTranscriptView: View {
                     }
 
                     ForEach(segments) { segment in
-                        SegmentRowView(segment: segment)
+                        SegmentRowView(
+                            segment: segment,
+                            recordingId: recordingId,
+                            onAssigned: onAssigned
+                        )
                     }
                 }
                 .padding(.horizontal, Spacing.xxl)
@@ -37,7 +43,7 @@ struct MacTranscriptView: View {
 
     private var transcriptText: String {
         segments.map { seg in
-            let speaker = seg.speaker ?? "Speaker"
+            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? "Speaker"
             let timestamp = seg.formattedTimestamp
             return "[\(speaker), \(timestamp)] \(seg.content)"
         }
@@ -63,11 +69,19 @@ struct MacTranscriptView: View {
 
 struct SegmentRowView: View {
     let segment: Segment
+    let recordingId: String?
+    let onAssigned: ((RecordingDetail) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
-                if let speaker = segment.speaker {
+                if let recordingId, let rawLabel = effectiveRawLabel, !rawLabel.isEmpty {
+                    SpeakerChipView(
+                        segment: segment,
+                        recordingId: recordingId,
+                        onAssigned: { detail in onAssigned?(detail) }
+                    )
+                } else if let speaker = effectiveDisplayLabel {
                     Text(speaker)
                         .font(Typography.label)
                         .foregroundStyle(Palette.accent)
@@ -84,5 +98,13 @@ struct SegmentRowView: View {
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var effectiveRawLabel: String? {
+        segment.rawLabel ?? segment.speaker
+    }
+
+    private var effectiveDisplayLabel: String? {
+        segment.displayName ?? segment.rawLabel ?? segment.speaker
     }
 }
