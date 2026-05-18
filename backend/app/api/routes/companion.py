@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
-from app.core.companion import CompanionError, ErrorEvent, run_turn
+from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.recording import Folder, Recording
 
 logger = logging.getLogger(__name__)
 
@@ -352,6 +353,17 @@ async def delete_chat(
 
 class PostMessageRequest(BaseModel):
     content: str = Field(min_length=1)
+    # Per-turn working memory the client knows and the server cannot guess:
+    # local calendar date (the server only knows UTC), IANA timezone, and
+    # the recording/folder the user has open in the UI right now. These let
+    # the agent resolve "yesterday" / "вчера" / "this week" correctly and
+    # answer questions about the recording the user is staring at without
+    # naming it. Missing fields are surfaced to the model verbatim (no
+    # silent UTC default) per AGENTS.md "no fallbacks".
+    client_local_date: str | None = Field(default=None, max_length=10)
+    client_timezone: str | None = Field(default=None, max_length=64)
+    viewing_recording_id: uuid.UUID | None = None
+    viewing_folder_id: uuid.UUID | None = None
 
 
 def _sse_format(event_obj: Any) -> bytes:
@@ -364,6 +376,38 @@ def _sse_format(event_obj: Any) -> bytes:
 _SSE_HEARTBEAT = b": keep-alive\n\n"
 
 
+async def _resolve_viewing_titles(
+    db: Database,
+    user_id: uuid.UUID,
+    recording_id: uuid.UUID | None,
+    folder_id: uuid.UUID | None,
+) -> tuple[str | None, str | None]:
+    """Look up the title of the recording and the name of the folder the
+    client says the user is currently viewing. Both lookups are owner-scoped
+    so a stale/forged id from another user cannot leak a title.
+    """
+    recording_title: str | None = None
+    folder_name: str | None = None
+    if recording_id is not None:
+        result = await db.execute(
+            select(Recording.title).where(
+                Recording.id == recording_id,
+                Recording.user_id == user_id,
+                Recording.deleted_at.is_(None),
+            )
+        )
+        recording_title = result.scalar_one_or_none()
+    if folder_id is not None:
+        result = await db.execute(
+            select(Folder.name).where(
+                Folder.id == folder_id,
+                Folder.user_id == user_id,
+            )
+        )
+        folder_name = result.scalar_one_or_none()
+    return recording_title, folder_name
+
+
 @router.post("/chats/{chat_id}/messages")
 async def post_message(
     chat_id: uuid.UUID,
@@ -374,12 +418,31 @@ async def post_message(
     # Load + ownership check up front so 404 / 401 are not buried inside SSE.
     await _load_user_chat(db, user.id, chat_id)
 
+    viewing_recording_title, viewing_folder_name = await _resolve_viewing_titles(
+        db,
+        user.id,
+        request.viewing_recording_id,
+        request.viewing_folder_id,
+    )
+    turn_context = TurnContext(
+        client_local_date=request.client_local_date,
+        client_timezone=request.client_timezone,
+        viewing_recording_title=viewing_recording_title,
+        viewing_folder_name=viewing_folder_name,
+    )
+
     async def event_stream():
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         async def producer() -> None:
             try:
-                async for evt in run_turn(db, user.id, chat_id, request.content):
+                async for evt in run_turn(
+                    db,
+                    user.id,
+                    chat_id,
+                    request.content,
+                    turn_context=turn_context,
+                ):
                     await queue.put(_sse_format(evt))
             except CompanionError as exc:
                 logger.warning(

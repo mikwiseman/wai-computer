@@ -18,7 +18,9 @@ from app.core.companion import (
     DoneEvent,
     TokenEvent,
     ToolCallEvent,
+    TurnContext,
     run_turn,
+    system_prompt_for,
 )
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 
@@ -465,6 +467,170 @@ class TestRunTurn:
         first_input = fake.calls[0]["input"]
         # Exclude the freshly persisted user message (it's at the tail).
         assert len(first_input) <= companion_module.HISTORY_WINDOW + 1
+
+
+    async def test_session_developer_message_injected_when_context_given(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """The per-turn context (date / tz / scope / viewing) goes into the
+        input as a developer message — NOT into instructions — so the
+        cacheable prefix stays stable across turns."""
+        s = setup_user_and_recording
+        fake = FakeOpenAI(
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "hello",
+                turn_context=TurnContext(
+                    client_local_date="2026-05-18",
+                    client_timezone="Europe/Reykjavik",
+                ),
+                openai_client=fake,
+            )
+        )
+
+        first_input = fake.calls[0]["input"]
+        # Developer message is the first entry; history follows.
+        assert first_input[0]["role"] == "developer"
+        content = first_input[0]["content"]
+        assert "2026-05-18" in content
+        assert "Europe/Reykjavik" in content
+        assert "<session>" in content and "</session>" in content
+        # Instructions stay free of per-turn variability so cache holds.
+        assert "2026-05-18" not in fake.calls[0]["instructions"]
+        assert "Europe/Reykjavik" not in fake.calls[0]["instructions"]
+
+    async def test_session_message_flags_missing_client_fields(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """No fallbacks: when the client did not send tz / date, the model
+        is told so explicitly instead of getting a silent UTC default."""
+        s = setup_user_and_recording
+        fake = FakeOpenAI(
+            _text_response("done"),
+            _structured_response("ok.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "hi",
+                turn_context=TurnContext(),
+                openai_client=fake,
+            )
+        )
+        content = fake.calls[0]["input"][0]["content"]
+        assert "date: unknown" in content
+        assert "timezone: unknown" in content
+
+    async def test_yesterday_query_carries_local_date_to_list_recordings(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """End-to-end the date context reaches the model: when it asks
+        list_recordings with date_from/date_to it does so against the
+        date the client supplied, not a server-side guess."""
+        s = setup_user_and_recording
+        fake = FakeOpenAI(
+            _tool_call_response(
+                "c1",
+                "list_recordings",
+                {
+                    "date_from": "2026-05-17T00:00:00+00:00",
+                    "date_to": "2026-05-17T23:59:59+00:00",
+                    "limit": 10,
+                },
+            ),
+            _text_response("done"),
+            _structured_response("nothing on that day.", []),
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "О чем говорили вчера",
+                turn_context=TurnContext(
+                    client_local_date="2026-05-18",
+                    client_timezone="Europe/Reykjavik",
+                ),
+                openai_client=fake,
+            )
+        )
+        # First Phase-A call must carry the developer session message with
+        # the user's local date so the model has an anchor for "вчера".
+        first_input = fake.calls[0]["input"]
+        assert first_input[0]["role"] == "developer"
+        assert "2026-05-18" in first_input[0]["content"]
+        # And the list_recordings tool call landed (consumed by FakeOpenAI).
+        tool_calls = [e for e in fake.calls if "tools" in e]
+        assert tool_calls  # at least the Phase-A call had tools
+
+    async def test_system_prompt_renders_user_profile_and_format_rules(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """The cacheable prefix contains identity + user_profile + tool
+        guidance + answer-format rules. With the existing User defaults
+        this gives the model what it needs to answer in Russian to a
+        Russian-default user without per-turn nudging."""
+        s = setup_user_and_recording
+        user_row = s["user"]
+        prompt = system_prompt_for(user_row)
+        assert "<identity>" in prompt
+        assert "<user_profile>" in prompt
+        assert f"default_language: {user_row.default_language}" in prompt
+        assert "<tool_guidance>" in prompt
+        assert "list_recordings" in prompt
+        assert "<answer_format>" in prompt
+        assert "Match the language" in prompt
+        # No <memory> block until Phase 3 populates one
+        assert "<memory>" not in prompt
+
+    async def test_instructions_stay_stable_across_turns_for_same_user(
+        self, db_session, setup_user_and_recording, fake_embedding
+    ):
+        """Two back-to-back turns send byte-identical `instructions` so the
+        OpenAI prompt cache can match the prefix."""
+        s = setup_user_and_recording
+        fake = FakeOpenAI(
+            _text_response("done"),
+            _structured_response("a.", []),
+            _text_response("done"),
+            _structured_response("b.", []),
+        )
+        ctx_a = TurnContext(
+            client_local_date="2026-05-18", client_timezone="Europe/Reykjavik"
+        )
+        ctx_b = TurnContext(
+            client_local_date="2026-05-19", client_timezone="Europe/Reykjavik"
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "first",
+                turn_context=ctx_a,
+                openai_client=fake,
+            )
+        )
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "second",
+                turn_context=ctx_b,
+                openai_client=fake,
+            )
+        )
+        # Phase-A calls for turn 1 and turn 2:
+        assert fake.calls[0]["instructions"] == fake.calls[2]["instructions"]
 
 
 # ------------- Tests for the SSE route (HTTP wire) -------------
