@@ -48,8 +48,8 @@ export default function Home() {
           An AI second brain for everything you say.
         </h1>
         <p className={styles.subhead}>
-          Record on Mac, Windows, or iPhone. Transcribed in real time. Search
-          across everything. Ask Wai anything.
+          Record on Mac, Windows, iPhone, or Android. Transcribed in real time.
+          Search across everything. Ask Wai anything.
         </p>
 
         <div className={styles.downloads}>

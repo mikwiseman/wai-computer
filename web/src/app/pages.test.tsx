@@ -9,6 +9,7 @@ import VerifyMagicLinkPage from "./auth/verify/page";
 import OnboardingPage from "./onboarding/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
+import RuHome from "./ru/page";
 import RootLayout, { metadata } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
@@ -25,6 +26,7 @@ let mockSearchParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
   useSearchParams: () => mockSearchParams,
+  usePathname: () => "/",
 }));
 
 vi.mock("next/font/google", () => ({
@@ -199,18 +201,45 @@ describe("app pages", () => {
     );
     expect(androidLink).toHaveAttribute("download");
     expect(androidLink).toHaveTextContent("APK");
+  });
 
-    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute(
+  it("renders Russian landing with download links including Android", () => {
+    render(<RuHome />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /AI second brain для всего/i,
+      }),
+    ).toBeInTheDocument();
+
+    const macLink = screen.getByTestId("download-mac-ru");
+    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiComputer-ru-latest.dmg");
+    expect(macLink).toHaveAttribute("download");
+    expect(macLink).toHaveTextContent("Скачать для Mac");
+
+    const iosLink = screen.getByTestId("download-ios-ru");
+    expect(iosLink).toHaveAttribute(
+      "href",
+      "https://testflight.apple.com/join/rtnJQzwk",
+    );
+    expect(iosLink).toHaveTextContent("TestFlight");
+
+    const androidLink = screen.getByTestId("download-android-ru");
+    expect(androidLink).toHaveAttribute(
+      "href",
+      "/releases/android/WaiComputer-latest.apk",
+    );
+    expect(androidLink).toHaveAttribute("download");
+    expect(androidLink).toHaveTextContent("APK");
+
+    expect(screen.getByRole("link", { name: /войти/i })).toHaveAttribute(
       "href",
       "/login",
     );
-    expect(screen.getByRole("link", { name: /privacy/i })).toHaveAttribute(
-      "href",
-      "/privacy",
-    );
-
-    const icon = document.querySelector("img[alt='']");
-    expect(icon).not.toBeNull();
+    expect(
+      screen.getByRole("link", { name: /конфиденциальность/i }),
+    ).toHaveAttribute("href", "/privacy");
   });
 
   it("renders first-party privacy and terms pages", () => {
