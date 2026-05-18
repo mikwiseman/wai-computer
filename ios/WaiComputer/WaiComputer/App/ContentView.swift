@@ -56,11 +56,17 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
+            WaiHomeView()
+                .tabItem {
+                    Label("Wai", systemImage: "sparkles")
+                }
+                .tag(2)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
-                .tag(2)
+                .tag(3)
         }
         .environmentObject(recordingViewModel)
         .overlay(alignment: .top) {
@@ -73,8 +79,8 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // Migrate stored tab index after removing Apps tab (was tag 4/5)
-            if selectedTab > 2 { selectedTab = 0 }
+            // Clamp into valid range (0 Record / 1 Library / 2 Wai / 3 Settings)
+            if !(0...3).contains(selectedTab) { selectedTab = 0 }
             // Allow env override for screenshots
             if let tab = ProcessInfo.processInfo.environment["WAICOMPUTER_TAB"],
                let n = Int(tab) { selectedTab = n }

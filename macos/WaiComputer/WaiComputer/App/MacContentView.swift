@@ -85,6 +85,7 @@ struct MacMainView: View {
         case search
         case history
         case dictionary
+        case wai
         case settings
     }
 
@@ -92,7 +93,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .meetings, .notes, .reflections, .folder(_), .trash, .none:
             return true
-        case .search, .history, .dictionary, .settings:
+        case .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -159,6 +160,8 @@ struct MacMainView: View {
             return "History"
         case .dictionary:
             return "Dictionary"
+        case .wai:
+            return "Wai"
         case .settings:
             return "Settings"
         case .none:
@@ -391,6 +394,7 @@ struct MacMainView: View {
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
+            case "wai": selectedSection = .wai
             default: break
             }
         }
@@ -493,6 +497,7 @@ struct MacMainView: View {
             }
 
             Section {
+                sidebarRow("Wai", icon: "sparkles", section: .wai)
                 sidebarRow("Settings", icon: "gear", section: .settings)
             } header: {
                 Text("Wai")
@@ -695,6 +700,11 @@ struct MacMainView: View {
             DictationHistoryView()
         case .dictionary:
             DictationDictionaryView()
+        case .wai:
+            CompanionView(
+                apiClient: appState.getAPIClient(),
+                recordings: libraryViewModel.recordings
+            )
         case .settings:
             MacSettingsView()
         }
