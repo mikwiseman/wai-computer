@@ -51,7 +51,13 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     )
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Schema is freshly created above, so every table is new. Skip the
+        # has_table() pre-check — under the test engine's search_path it can
+        # falsely report existence and silently skip tables (observed: users,
+        # recordings, segments, etc.), leaving the schema half-built.
+        await conn.run_sync(
+            lambda c: Base.metadata.create_all(c, checkfirst=False)
+        )
 
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
