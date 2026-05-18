@@ -74,10 +74,25 @@ export interface Recording {
 export interface Segment {
   id: string;
   speaker: string | null;
+  raw_label: string | null;
+  person_id: string | null;
+  display_name: string | null;
+  auto_assigned: boolean;
+  match_confidence: number | null;
   content: string;
   start_ms: number | null;
   end_ms: number | null;
   confidence: number | null;
+}
+
+export interface Person {
+  id: string;
+  display_name: string;
+  color: string | null;
+  aliases: string[] | null;
+  voiceprint_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Summary {
