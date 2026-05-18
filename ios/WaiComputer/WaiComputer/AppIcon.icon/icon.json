@@ -6,8 +6,15 @@
     {
       "layers" : [
         {
-          "image-name" : "d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb.png",
-          "name" : "d621520a-ad63-4cc2-8ad2-9dfffc5b3bdb"
+          "blend-mode-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : "normal"
+            }
+          ],
+          "fill" : "none",
+          "image-name" : "5262537e-4ce7-4776-a4c8-2956482919e6.png",
+          "name" : "5262537e-4ce7-4776-a4c8-2956482919e6"
         }
       ],
       "shadow" : {
