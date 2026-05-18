@@ -28,6 +28,7 @@ import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
+import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
@@ -880,6 +881,8 @@ export function DashboardClient() {
             {accountHasPassword ? "Change password" : "Set password"}
           </button>
         </form>
+
+        <McpConnectSection />
       </section>
     );
   }
