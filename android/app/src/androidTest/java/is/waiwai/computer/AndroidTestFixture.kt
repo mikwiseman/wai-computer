@@ -8,6 +8,7 @@ import `is`.waiwai.computer.data.ApiTransport
 import `is`.waiwai.computer.data.AppContainer
 import `is`.waiwai.computer.data.AuthTokenPair
 import `is`.waiwai.computer.data.CreateRecordingRequest
+import `is`.waiwai.computer.data.CreateFolderRequest
 import `is`.waiwai.computer.data.Folder
 import `is`.waiwai.computer.data.LiveTranscriptSegment
 import `is`.waiwai.computer.data.MessageResponse
@@ -16,9 +17,15 @@ import `is`.waiwai.computer.data.RecordingDetail
 import `is`.waiwai.computer.data.RecordingStatus
 import `is`.waiwai.computer.data.RecordingType
 import `is`.waiwai.computer.data.SaveTranscriptRequest
+import `is`.waiwai.computer.data.SearchResponse
+import `is`.waiwai.computer.data.SearchResult
 import `is`.waiwai.computer.data.SecureTokenStore
 import `is`.waiwai.computer.data.SettingsStore
+import `is`.waiwai.computer.data.Summary
+import `is`.waiwai.computer.data.UpdateFolderRequest
+import `is`.waiwai.computer.data.UpdatePersonRequest
 import `is`.waiwai.computer.data.UpdateRecordingRequest
+import `is`.waiwai.computer.data.Person
 import `is`.waiwai.computer.data.UserSummary
 import `is`.waiwai.computer.data.WaiApi
 import `is`.waiwai.computer.recording.AudioRecorder
@@ -59,7 +66,11 @@ data class TestBackendState(
     ),
     val folders: MutableList<Folder> = mutableListOf(),
     val recordings: MutableList<Recording> = mutableListOf(),
+    val people: MutableList<Person> = mutableListOf(),
+    val searchResults: MutableList<SearchResult> = mutableListOf(),
     var nextRecordingIndex: Int = 1,
+    var nextFolderIndex: Int = 1,
+    var nextPersonIndex: Int = 1,
 )
 
 data class TestAppFixture(
@@ -83,6 +94,8 @@ data class TestAppFixture(
 fun createTestAppFixture(
     initialRecordings: List<Recording> = emptyList(),
     initialFolders: List<Folder> = emptyList(),
+    initialPeople: List<Person> = emptyList(),
+    initialSearchResults: List<SearchResult> = emptyList(),
 ): TestAppFixture {
     val application = ApplicationProvider.getApplicationContext<Application>()
     val dataStoreFile = File(
@@ -95,7 +108,11 @@ fun createTestAppFixture(
     val backend = TestBackendState(
         folders = initialFolders.toMutableList(),
         recordings = initialRecordings.toMutableList(),
+        people = initialPeople.toMutableList(),
+        searchResults = initialSearchResults.toMutableList(),
         nextRecordingIndex = initialRecordings.size + 1,
+        nextFolderIndex = initialFolders.size + 1,
+        nextPersonIndex = initialPeople.size + 1,
     )
     val client = testHttpClient(backend)
     val transport = ApiTransport(settingsStore, client)
@@ -252,6 +269,97 @@ private fun testHttpClient(backend: TestBackendState): HttpClient {
                 val ready = backend.recordings.first { it.id == recordingId }.copy(status = RecordingStatus.Ready)
                 backend.replaceRecording(ready)
                 jsonResponse(json, backend.recordingDetail(recordingId))
+            }
+            path == "/api/search" && request.method == HttpMethod.Get && isAuthorized -> {
+                val q = request.url.parameters["q"].orEmpty()
+                val matching = backend.searchResults.filter {
+                    q.isEmpty() ||
+                        it.content.contains(q, ignoreCase = true) ||
+                        it.recordingTitle?.contains(q, ignoreCase = true) == true
+                }
+                jsonResponse(json, SearchResponse(results = matching, total = matching.size))
+            }
+            (path == "/api/search/semantic" || path == "/api/search/fts") &&
+                request.method == HttpMethod.Get && isAuthorized -> {
+                jsonResponse(
+                    json,
+                    SearchResponse(results = backend.searchResults, total = backend.searchResults.size),
+                )
+            }
+            path.matches(Regex("/api/recordings/[^/]+/star")) && request.method == HttpMethod.Post && isAuthorized -> {
+                val recordingId = path.split("/")[3]
+                val updated = backend.recordings.first { it.id == recordingId }
+                    .copy(starredAt = Instant.now().toString())
+                backend.replaceRecording(updated)
+                jsonResponse(json, updated)
+            }
+            path.matches(Regex("/api/recordings/[^/]+/star")) && request.method == HttpMethod.Delete && isAuthorized -> {
+                val recordingId = path.split("/")[3]
+                val updated = backend.recordings.first { it.id == recordingId }.copy(starredAt = null)
+                backend.replaceRecording(updated)
+                jsonResponse(json, updated)
+            }
+            path.matches(Regex("/api/recordings/[^/]+/restore")) && request.method == HttpMethod.Post && isAuthorized -> {
+                val recordingId = path.split("/")[3]
+                val updated = backend.recordings.first { it.id == recordingId }.copy(deletedAt = null)
+                backend.replaceRecording(updated)
+                jsonResponse(json, updated)
+            }
+            path.matches(Regex("/api/recordings/[^/]+/generate-summary")) &&
+                request.method == HttpMethod.Post && isAuthorized -> {
+                jsonResponse(
+                    json,
+                    Summary(
+                        summary = "Generated summary",
+                        keyPoints = listOf("first", "second"),
+                        topics = listOf("android"),
+                        sentiment = "positive",
+                    ),
+                )
+            }
+            path == "/api/folders" && request.method == HttpMethod.Post && isAuthorized -> {
+                val payload = json.decodeFromString<CreateFolderRequest>(requestBodyText(request.body))
+                val folder = Folder(
+                    id = "folder-${backend.nextFolderIndex++}",
+                    name = payload.name,
+                    createdAt = Instant.now().toString(),
+                )
+                backend.folders.add(folder)
+                jsonResponse(json, folder)
+            }
+            path.matches(Regex("/api/folders/[^/]+")) && request.method == HttpMethod.Patch && isAuthorized -> {
+                val folderId = path.substringAfterLast("/")
+                val payload = json.decodeFromString<UpdateFolderRequest>(requestBodyText(request.body))
+                val index = backend.folders.indexOfFirst { it.id == folderId }
+                val updated = backend.folders[index].copy(name = payload.name)
+                backend.folders[index] = updated
+                jsonResponse(json, updated)
+            }
+            path.matches(Regex("/api/folders/[^/]+")) && request.method == HttpMethod.Delete && isAuthorized -> {
+                val folderId = path.substringAfterLast("/")
+                backend.folders.removeAll { it.id == folderId }
+                respond("", HttpStatusCode.NoContent)
+            }
+            path == "/api/people" && request.method == HttpMethod.Get && isAuthorized ->
+                jsonResponse(json, backend.people.toList())
+            path.matches(Regex("/api/people/[^/]+")) && request.method == HttpMethod.Patch && isAuthorized -> {
+                val personId = path.substringAfterLast("/")
+                val payload = json.decodeFromString<UpdatePersonRequest>(requestBodyText(request.body))
+                val index = backend.people.indexOfFirst { it.id == personId }
+                val current = backend.people[index]
+                val updated = current.copy(
+                    displayName = payload.displayName ?: current.displayName,
+                    color = payload.color ?: current.color,
+                    aliases = payload.aliases ?: current.aliases,
+                    updatedAt = Instant.now().toString(),
+                )
+                backend.people[index] = updated
+                jsonResponse(json, updated)
+            }
+            path.matches(Regex("/api/people/[^/]+")) && request.method == HttpMethod.Delete && isAuthorized -> {
+                val personId = path.substringAfterLast("/")
+                backend.people.removeAll { it.id == personId }
+                respond("", HttpStatusCode.NoContent)
             }
             !isAuthorized && path.startsWith("/api/") ->
                 respond("", HttpStatusCode.Unauthorized)

@@ -171,6 +171,82 @@ class WaiApi(
         )
     }
 
+    suspend fun search(
+        query: String,
+        mode: SearchMode = SearchMode.Hybrid,
+        limit: Int = 20,
+        offset: Int = 0,
+    ): SearchResponse = authorizedRequest(
+        method = HttpMethod.Get,
+        path = "/api/search${mode.pathSuffix}",
+        query = listOf(
+            "q" to query,
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+        ),
+    )
+
+    suspend fun starRecording(id: String): Recording = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/recordings/$id/star",
+    )
+
+    suspend fun unstarRecording(id: String): Recording = authorizedRequest(
+        method = HttpMethod.Delete,
+        path = "/api/recordings/$id/star",
+    )
+
+    suspend fun restoreRecording(id: String): Recording = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/recordings/$id/restore",
+    )
+
+    suspend fun generateSummary(id: String): Summary = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/recordings/$id/generate-summary",
+    )
+
+    suspend fun createFolder(name: String): Folder = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/folders",
+        body = CreateFolderRequest(name = name),
+    )
+
+    suspend fun renameFolder(id: String, name: String): Folder = authorizedRequest(
+        method = HttpMethod.Patch,
+        path = "/api/folders/$id",
+        body = UpdateFolderRequest(name = name),
+    )
+
+    suspend fun deleteFolder(id: String) {
+        authorizedRequest<Unit>(
+            method = HttpMethod.Delete,
+            path = "/api/folders/$id",
+        )
+    }
+
+    suspend fun updatePerson(
+        id: String,
+        displayName: String? = null,
+        color: String? = null,
+        aliases: List<String>? = null,
+    ): Person = authorizedRequest(
+        method = HttpMethod.Patch,
+        path = "/api/people/$id",
+        body = UpdatePersonRequest(
+            displayName = displayName,
+            color = color,
+            aliases = aliases,
+        ),
+    )
+
+    suspend fun deletePerson(id: String) {
+        authorizedRequest<Unit>(
+            method = HttpMethod.Delete,
+            path = "/api/people/$id",
+        )
+    }
+
     /// Submit a voice sample for cross-recording speaker identification.
     /// Audio must be 5-60 seconds. If [personId] is null, backend creates or
     /// reuses a Person by [displayName] (default "You").

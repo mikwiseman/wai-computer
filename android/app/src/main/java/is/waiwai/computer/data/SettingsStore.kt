@@ -20,6 +20,7 @@ class SettingsStore(
             authMode = StoredAuthMode.fromStorage(prefs[Keys.AuthMode]),
             authUserId = prefs[Keys.AuthUserId],
             onboardingSeen = prefs[Keys.OnboardingSeen] == true,
+            voiceEnrollmentSeen = prefs[Keys.VoiceEnrollmentSeen] == true,
             guestSinceEpochMillis = prefs[Keys.GuestSince],
             legacyAccessToken = prefs[Keys.LegacyAccessToken]?.takeIf { it.isNotBlank() },
         )
@@ -65,6 +66,12 @@ class SettingsStore(
         }
     }
 
+    suspend fun markVoiceEnrollmentSeen() {
+        dataStore.edit { prefs ->
+            prefs[Keys.VoiceEnrollmentSeen] = true
+        }
+    }
+
     suspend fun resetOnboarding() {
         dataStore.edit { prefs ->
             prefs[Keys.OnboardingSeen] = false
@@ -94,6 +101,7 @@ class SettingsStore(
         val AuthMode = stringPreferencesKey("auth_mode")
         val AuthUserId = stringPreferencesKey("auth_user_id")
         val OnboardingSeen = androidx.datastore.preferences.core.booleanPreferencesKey("onboarding_seen")
+        val VoiceEnrollmentSeen = androidx.datastore.preferences.core.booleanPreferencesKey("voice_enrollment_seen")
         val GuestSince = longPreferencesKey("guest_since_epoch_millis")
         val LegacyAccessToken = stringPreferencesKey("legacy_access_token")
     }
@@ -109,6 +117,7 @@ data class AppSettings(
     val authMode: StoredAuthMode,
     val authUserId: String?,
     val onboardingSeen: Boolean,
+    val voiceEnrollmentSeen: Boolean = false,
     val guestSinceEpochMillis: Long?,
     val legacyAccessToken: String?,
 )
