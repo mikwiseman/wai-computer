@@ -635,6 +635,59 @@ public actor APIClient {
         return try await request(.GET, path: "/api/recordings/\(recordingId)/transcript")
     }
 
+    // MARK: - People (known speakers)
+
+    public func listPeople() async throws -> [Person] {
+        return try await request(.GET, path: "/api/people")
+    }
+
+    public func createPerson(displayName: String, color: String? = nil) async throws -> Person {
+        let body = CreatePersonRequestBody(displayName: displayName, color: color)
+        return try await request(.POST, path: "/api/people", body: body)
+    }
+
+    public func updatePerson(
+        id: String,
+        displayName: String? = nil,
+        color: String? = nil
+    ) async throws -> Person {
+        let body = UpdatePersonRequestBody(displayName: displayName, color: color)
+        return try await request(.PATCH, path: "/api/people/\(id)", body: body)
+    }
+
+    public func deletePerson(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/people/\(id)")
+    }
+
+    public func mergePeople(sourceId: String, intoPersonId: String) async throws -> Person {
+        let body = MergePersonRequestBody(intoPersonId: intoPersonId)
+        return try await request(.POST, path: "/api/people/\(sourceId)/merge", body: body)
+    }
+
+    /// Map every segment in the recording matching ``rawLabel`` to the given person,
+    /// or create a new Person if ``newDisplayName`` is provided. Exactly one must be set.
+    public func assignSpeaker(
+        recordingId: String,
+        rawLabel: String,
+        personId: String? = nil,
+        newDisplayName: String? = nil
+    ) async throws -> RecordingDetail {
+        let body = AssignSpeakerRequestBody(
+            rawLabel: rawLabel,
+            personId: personId,
+            newDisplayName: newDisplayName
+        )
+        return try await request(
+            .POST,
+            path: "/api/recordings/\(recordingId)/assign-speaker",
+            body: body
+        )
+    }
+
+    public func rematchSpeakers(recordingId: String) async throws {
+        try await requestNoContent(.POST, path: "/api/recordings/\(recordingId)/rematch")
+    }
+
     public func getSummary(recordingId: String) async throws -> Summary {
         return try await request(.GET, path: "/api/recordings/\(recordingId)/summary")
     }
@@ -1366,6 +1419,67 @@ private struct UpdateRecordingRequestBody: Encodable {
 
 private struct FolderNameRequest: Encodable {
     let name: String
+}
+
+private struct CreatePersonRequestBody: Encodable {
+    let displayName: String
+    let color: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case color
+    }
+}
+
+private struct UpdatePersonRequestBody: Encodable {
+    let displayName: String?
+    let color: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case color
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let displayName {
+            try container.encode(displayName, forKey: .displayName)
+        }
+        if let color {
+            try container.encode(color, forKey: .color)
+        }
+    }
+}
+
+private struct MergePersonRequestBody: Encodable {
+    let intoPersonId: String
+
+    private enum CodingKeys: String, CodingKey {
+        case intoPersonId = "into_person_id"
+    }
+}
+
+private struct AssignSpeakerRequestBody: Encodable {
+    let rawLabel: String
+    let personId: String?
+    let newDisplayName: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case rawLabel = "raw_label"
+        case personId = "person_id"
+        case newDisplayName = "new_display_name"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(rawLabel, forKey: .rawLabel)
+        if let personId {
+            try container.encode(personId, forKey: .personId)
+        }
+        if let newDisplayName {
+            try container.encode(newDisplayName, forKey: .newDisplayName)
+        }
+    }
 }
 
 private struct TranscriptSegmentRequest: Encodable {
