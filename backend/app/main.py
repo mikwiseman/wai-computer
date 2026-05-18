@@ -12,6 +12,7 @@ from starlette.routing import Route
 from app.api.routes import (
     action_items,
     auth,
+    companion,
     dictation,
     entities,
     folders,
@@ -158,6 +159,7 @@ app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(qa.router, prefix="/api")
+app.include_router(companion.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
