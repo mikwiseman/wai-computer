@@ -6,6 +6,7 @@ import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 import AppMagicLinkPage from "./auth/app/page";
 import VerifyMagicLinkPage from "./auth/verify/page";
+import OnboardingPage from "./onboarding/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
 import RootLayout, { metadata } from "./layout";
@@ -16,6 +17,7 @@ const mockReplace = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
+const onboardingClientMock = vi.fn();
 const appMagicLinkClientMock = vi.fn();
 const sharedRecordingClientMock = vi.fn();
 let mockSearchParams = new URLSearchParams();
@@ -50,6 +52,13 @@ vi.mock("@/components/VerifyMagicLinkClient", () => ({
   },
 }));
 
+vi.mock("@/components/OnboardingClient", () => ({
+  OnboardingClient: () => {
+    onboardingClientMock();
+    return <div data-testid="onboarding-client-mock">Onboarding Client</div>;
+  },
+}));
+
 vi.mock("@/components/OpenWaiComputerAppClient", () => ({
   normalizeWaiComputerAppClient: (client: string | null | undefined) => (
     client === "android" || client === "ios" || client === "macos" ? client : null
@@ -73,6 +82,7 @@ describe("app pages", () => {
     authFormMock.mockClear();
     dashboardClientMock.mockClear();
     verifyClientMock.mockClear();
+    onboardingClientMock.mockClear();
     appMagicLinkClientMock.mockClear();
     sharedRecordingClientMock.mockClear();
     mockSearchParams = new URLSearchParams();
@@ -122,6 +132,12 @@ describe("app pages", () => {
     render(<DashboardPage />);
     expect(screen.getByTestId("dashboard-client-mock")).toBeInTheDocument();
     expect(dashboardClientMock).toHaveBeenCalled();
+  });
+
+  it("renders onboarding wrapper", () => {
+    render(<OnboardingPage />);
+    expect(screen.getByTestId("onboarding-client-mock")).toBeInTheDocument();
+    expect(onboardingClientMock).toHaveBeenCalled();
   });
 
   it("resolves verify token from searchParams", async () => {

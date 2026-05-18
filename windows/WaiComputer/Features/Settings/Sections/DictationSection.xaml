@@ -1,0 +1,19 @@
+<UserControl
+    x:Class="WaiComputer.Features.Settings.Sections.DictationSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12">
+        <TextBlock Text="DICTATION" Style="{StaticResource WaiSectionHeader}" />
+        <ToggleSwitch Header="Dictation enabled" IsOn="True" />
+        <ComboBox Header="Push-to-talk hotkey" SelectedIndex="0">
+            <ComboBoxItem Content="Right Alt" /><ComboBoxItem Content="Left Alt" />
+            <ComboBoxItem Content="Right Ctrl" /><ComboBoxItem Content="Right Win" />
+            <ComboBoxItem Content="Caps Lock" /><ComboBoxItem Content="Ctrl + Alt" />
+        </ComboBox>
+        <ComboBox Header="Provider" SelectedIndex="0">
+            <ComboBoxItem Content="ElevenLabs" /><ComboBoxItem Content="OpenAI" />
+            <ComboBoxItem Content="Inworld" /><ComboBoxItem Content="Deepgram" />
+        </ComboBox>
+        <ToggleSwitch Header="Post-filter dictated text" IsOn="False" />
+    </StackPanel>
+</UserControl>

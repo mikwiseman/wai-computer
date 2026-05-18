@@ -6,6 +6,7 @@ import { VerifyMagicLinkClient } from "./VerifyMagicLinkClient";
 
 const mockVerifyMagicLink = vi.fn();
 const mockReplace = vi.fn();
+let localStorageValues: Record<string, string>;
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -25,6 +26,19 @@ describe("VerifyMagicLinkClient", () => {
   beforeEach(() => {
     mockVerifyMagicLink.mockReset();
     mockReplace.mockReset();
+    localStorageValues = {};
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => localStorageValues[key] ?? null),
+        setItem: vi.fn((key: string, value: string) => {
+          localStorageValues[key] = value;
+        }),
+        clear: vi.fn(() => {
+          localStorageValues = {};
+        }),
+      },
+    });
   });
 
   it("shows missing token state and does not verify", () => {
@@ -33,7 +47,20 @@ describe("VerifyMagicLinkClient", () => {
     expect(mockVerifyMagicLink).not.toHaveBeenCalled();
   });
 
-  it("verifies token and redirects on success", async () => {
+  it("verifies token and redirects new users to onboarding", async () => {
+    mockVerifyMagicLink.mockResolvedValue({ access_token: "token", token_type: "bearer" });
+    render(<VerifyMagicLinkClient token="token-123" />);
+
+    await waitFor(() => {
+      expect(mockVerifyMagicLink).toHaveBeenCalledWith("token-123");
+      expect(mockReplace).toHaveBeenCalledWith("/onboarding");
+    });
+
+    expect(screen.getByTestId("verify-message")).toHaveTextContent("Magic link verified. Redirecting...");
+  });
+
+  it("redirects onboarded users to dashboard", async () => {
+    window.localStorage.setItem("voice_onboarding_complete", "true");
     mockVerifyMagicLink.mockResolvedValue({ access_token: "token", token_type: "bearer" });
     render(<VerifyMagicLinkClient token="token-123" />);
 

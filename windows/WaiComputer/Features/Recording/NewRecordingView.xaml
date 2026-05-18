@@ -1,0 +1,22 @@
+<Page
+    x:Class="WaiComputer.Features.Recording.NewRecordingView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Padding="24" Spacing="16" MaxWidth="540">
+        <TextBlock Text="New recording" Style="{ThemeResource WaiPageTitle}" />
+        <TextBox x:Name="TitleBox" Header="Title (optional)" PlaceholderText="Standup, Q1 plan, …" />
+        <ComboBox x:Name="TypeCombo" Header="Type" SelectedIndex="0">
+            <ComboBoxItem Content="Meeting" Tag="meeting" />
+            <ComboBoxItem Content="Note" Tag="note" />
+            <ComboBoxItem Content="Reflection" Tag="reflection" />
+        </ComboBox>
+        <ComboBox x:Name="SourceCombo" Header="Audio source" SelectedIndex="0">
+            <ComboBoxItem Content="Microphone + system audio" Tag="dual" />
+            <ComboBoxItem Content="Microphone only" Tag="microphone" />
+        </ComboBox>
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Content="Start recording" Style="{ThemeResource AccentButtonStyle}" Click="OnStart" />
+            <Button Content="Cancel" Click="OnCancel" />
+        </StackPanel>
+    </StackPanel>
+</Page>

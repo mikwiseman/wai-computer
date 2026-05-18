@@ -1,4 +1,4 @@
-"""Tests for /api/voice-enrollment — voice sample → Person + voiceprint."""
+"""Tests for /api/voice-enrollment voice samples."""
 
 from __future__ import annotations
 
@@ -35,6 +35,37 @@ async def _register(client) -> dict[str, str]:
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
+@pytest.fixture
+def fake_voiceprint_store(monkeypatch):
+    async def _store_voiceprint(
+        *,
+        db,
+        user_id,
+        person_id,
+        audio_path,
+        start_ms,
+        end_ms,
+        source_recording_id,
+    ):
+        voiceprint = Voiceprint(
+            user_id=user_id,
+            person_id=person_id,
+            embedding=[0.0] * 192,
+            model="test-ecapa",
+            source_recording_id=source_recording_id,
+            duration_s=(end_ms - start_ms) / 1000.0,
+            quality_score=None,
+        )
+        db.add(voiceprint)
+        await db.flush()
+        return voiceprint.id
+
+    monkeypatch.setattr(
+        "app.api.routes.voice_enrollment.store_voiceprint_from_path",
+        _store_voiceprint,
+    )
+
+
 async def test_enroll_too_short_returns_422(client):
     auth = await _register(client)
     resp = await client.post(
@@ -57,8 +88,9 @@ async def test_enroll_malformed_returns_422(client):
     assert "decode" in resp.json()["detail"].lower()
 
 
-@pytest.mark.slow
-async def test_enroll_creates_person_and_voiceprint(client, db_session):
+async def test_enroll_creates_person_and_voiceprint(
+    client, db_session, fake_voiceprint_store
+):
     """Happy path: 6s WAV → Person "You" created + 1 voiceprint row in DB."""
     auth = await _register(client)
 
@@ -83,8 +115,7 @@ async def test_enroll_creates_person_and_voiceprint(client, db_session):
     assert voiceprints[0].duration_s == pytest.approx(6.0, abs=0.05)
 
 
-@pytest.mark.slow
-async def test_enroll_default_display_name_is_you(client, db_session):
+async def test_enroll_default_display_name_is_you(client, fake_voiceprint_store):
     auth = await _register(client)
     resp = await client.post(
         "/api/voice-enrollment",
@@ -95,8 +126,9 @@ async def test_enroll_default_display_name_is_you(client, db_session):
     assert resp.json()["person"]["display_name"] == "You"
 
 
-@pytest.mark.slow
-async def test_enroll_reuses_existing_person_by_name(client, db_session):
+async def test_enroll_reuses_existing_person_by_name(
+    client, db_session, fake_voiceprint_store
+):
     """Second enrollment with the same display_name attaches a voiceprint to the same Person."""
     auth = await _register(client)
 
@@ -109,7 +141,13 @@ async def test_enroll_reuses_existing_person_by_name(client, db_session):
     second = await client.post(
         "/api/voice-enrollment",
         headers=auth,
-        files={"audio": ("voice2.wav", _wav_bytes(duration_s=6.0, freq_hz=440.0), "audio/wav")},
+        files={
+            "audio": (
+                "voice2.wav",
+                _wav_bytes(duration_s=6.0, freq_hz=440.0),
+                "audio/wav",
+            )
+        },
         data={"display_name": "Mik"},
     )
     assert first.status_code == 200
@@ -123,8 +161,9 @@ async def test_enroll_reuses_existing_person_by_name(client, db_session):
     assert len(persons) == 1
 
 
-@pytest.mark.slow
-async def test_enroll_with_person_id_attaches_to_specified_person(client, db_session):
+async def test_enroll_with_person_id_attaches_to_specified_person(
+    client, fake_voiceprint_store
+):
     auth = await _register(client)
 
     create = await client.post(
@@ -150,4 +189,4 @@ async def test_enroll_with_unknown_person_id_returns_404(client):
         files={"audio": ("voice.wav", _wav_bytes(duration_s=6.0), "audio/wav")},
         data={"person_id": str(uuid4())},
     )
-    assert resp.status_code in (404, 422)
+    assert resp.status_code == 404

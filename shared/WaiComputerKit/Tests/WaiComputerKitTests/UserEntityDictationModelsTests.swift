@@ -148,7 +148,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "file_stt_model":"whisper-1",
           "dictation_post_filter_enabled":true,
           "dictation_post_filter_provider":"openai",
-          "dictation_post_filter_model":"gpt-4o-mini"
+          "dictation_post_filter_model":"gpt-5.5"
         }
         """.data(using: .utf8)!
         let s = try decoder.decode(UserSettings.self, from: json)

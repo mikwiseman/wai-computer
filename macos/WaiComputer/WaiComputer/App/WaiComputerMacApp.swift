@@ -22,14 +22,18 @@ struct WaiComputerMacApp: App {
     @StateObject private var languageStore: DictationLanguageStore
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     // Sparkle weakly references delegates, so keep this instance alive for the app lifetime.
-    private let updaterDelegate: BetaChannelUpdaterDelegate
-    private let updaterController: SPUStandardUpdaterController
+    private let updaterDelegate: BetaChannelUpdaterDelegate?
+    private let updaterController: SPUStandardUpdaterController?
 
     init() {
         #if !DEBUG
         SentryHelper.start(dsn: "<SENTRY_DSN>")
         #endif
 
+        #if DEBUG
+        updaterDelegate = nil
+        updaterController = nil
+        #else
         let updaterDelegate = BetaChannelUpdaterDelegate()
         self.updaterDelegate = updaterDelegate
         updaterController = SPUStandardUpdaterController(
@@ -37,6 +41,7 @@ struct WaiComputerMacApp: App {
             updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
+        #endif
 
         let testingMode = MacTestingMode.current
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
@@ -75,7 +80,7 @@ struct WaiComputerMacApp: App {
                     MacPresentationCoordinator.shared.mainWindowDidAppear()
                 }
                 .onChange(of: receiveBetaUpdates) { _, _ in
-                    updaterController.updater.resetUpdateCycle()
+                    updaterController?.updater.resetUpdateCycle()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
@@ -102,7 +107,7 @@ struct WaiComputerMacApp: App {
                 .onReceive(
                     NotificationCenter.default.publisher(for: .waicomputerCheckForUpdates)
                 ) { _ in
-                    updaterController.checkForUpdates(nil)
+                    updaterController?.checkForUpdates(nil)
                 }
                 .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
         }
@@ -164,9 +169,11 @@ struct WaiComputerMacApp: App {
                 .disabled(isRecordingActivityVisible)
 
                 Divider()
+                #if !DEBUG
                 Button("Check for Updates…") {
-                    updaterController.checkForUpdates(nil)
+                    updaterController?.checkForUpdates(nil)
                 }
+                #endif
             }
 
             // View menu — sidebar navigation

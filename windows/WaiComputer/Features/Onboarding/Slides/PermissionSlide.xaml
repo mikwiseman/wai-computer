@@ -1,0 +1,16 @@
+<Page
+    x:Class="WaiComputer.Features.Onboarding.Slides.PermissionSlide"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="16" VerticalAlignment="Center" MaxWidth="540">
+        <TextBlock Text="Microphone access" Style="{ThemeResource TitleTextBlockStyle}" />
+        <TextBlock TextWrapping="Wrap">
+            WaiComputer needs your microphone to record meetings, notes, and dictation. Windows uses
+            a system-level toggle for this — click the button to open the right settings page if
+            you see a warning below.
+        </TextBlock>
+        <InfoBar x:Name="StatusBar" Severity="Informational" IsClosable="False" IsOpen="True"
+                 Title="Checking microphone access…" />
+        <Button Content="Open privacy settings" Click="OnOpenSettings" />
+    </StackPanel>
+</Page>

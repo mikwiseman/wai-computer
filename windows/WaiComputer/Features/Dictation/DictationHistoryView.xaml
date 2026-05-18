@@ -1,0 +1,10 @@
+<Page
+    x:Class="WaiComputer.Features.Dictation.DictationHistoryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Padding="24" Spacing="12">
+        <TextBlock Text="Dictation history" Style="{ThemeResource WaiPageTitle}" />
+        <TextBlock Text="Recent dictations across all apps." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <ListView x:Name="History" />
+    </StackPanel>
+</Page>
