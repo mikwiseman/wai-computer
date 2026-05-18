@@ -1,3 +1,5 @@
-- Fixed recording completion handling for App Review devices.
+- Speaker chips in transcripts: tap a segment to assign or rename a speaker.
+- Automatic voice identification recognises recurring speakers across your recordings.
+- Recording completion is now reliable for App Review test devices.
 - Improved macOS dictation insertion reliability.
-- Dictated text is now also kept on the clipboard after insertion.
+- Dictated text is also kept on the clipboard after insertion.
