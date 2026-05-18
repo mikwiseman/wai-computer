@@ -1636,7 +1636,7 @@ async def get_transcript(
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments))
+        .options(selectinload(Recording.segments).selectinload(Segment.person))
     )
     recording = result.scalar_one_or_none()
 
@@ -1661,7 +1661,7 @@ async def search_transcript(
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments))
+        .options(selectinload(Recording.segments).selectinload(Segment.person))
     )
     recording = result.scalar_one_or_none()
 
@@ -1722,7 +1722,7 @@ async def get_recording_keywords(
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments))
+        .options(selectinload(Recording.segments).selectinload(Segment.person))
     )
     recording = result.scalar_one_or_none()
 
@@ -1777,7 +1777,7 @@ async def get_transcript_stats(
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments))
+        .options(selectinload(Recording.segments).selectinload(Segment.person))
     )
     recording = result.scalar_one_or_none()
 
@@ -1791,8 +1791,12 @@ async def get_transcript_stats(
     word_count = sum(len(s.content.split()) for s in segments)
     speakers_seen: list[str] = []
     for s in segments:
-        if s.speaker and s.speaker not in speakers_seen:
-            speakers_seen.append(s.speaker)
+        if s.person is not None and s.person.display_name:
+            name = s.person.display_name
+        else:
+            name = s.raw_label or s.speaker
+        if name and name not in speakers_seen:
+            speakers_seen.append(name)
 
     durations: list[int] = []
     for s in segments:
@@ -1823,7 +1827,7 @@ async def get_speaker_stats(
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(selectinload(Recording.segments))
+        .options(selectinload(Recording.segments).selectinload(Segment.person))
     )
     recording = result.scalar_one_or_none()
 
@@ -1841,10 +1845,13 @@ async def get_speaker_stats(
             timeline=[],
         )
 
-    # Group segments by speaker
+    # Group segments by effective speaker name (assigned Person → raw label → "Unknown")
     speaker_segments: dict[str, list[Segment]] = defaultdict(list)
     for seg in segments:
-        name = seg.speaker or "Unknown"
+        if seg.person is not None and seg.person.display_name:
+            name = seg.person.display_name
+        else:
+            name = seg.raw_label or seg.speaker or "Unknown"
         speaker_segments[name].append(seg)
 
     # Compute total duration from segment spans
