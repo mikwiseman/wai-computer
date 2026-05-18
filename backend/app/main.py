@@ -17,6 +17,7 @@ from app.api.routes import (
     entities,
     folders,
     mcp_oauth,
+    people,
     realtime_transcription,
     realtime_voice,
     recordings,
@@ -133,6 +134,7 @@ app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
+app.include_router(people.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
