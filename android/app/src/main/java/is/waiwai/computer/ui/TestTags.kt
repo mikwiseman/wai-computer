@@ -21,4 +21,11 @@ object TestTags {
 
     fun searchResultItem(recordingId: String, segmentId: String): String =
         "search_result_${recordingId}_$segmentId"
+
+    const val LibraryFab = "library_fab"
+    const val LibraryFabRecord = "library_fab_record"
+    const val LibraryFabImport = "library_fab_import"
+    const val ImportSheet = "import_sheet"
+    const val ImportPickFileButton = "import_pick_file_button"
+    const val ImportDoneButton = "import_done_button"
 }

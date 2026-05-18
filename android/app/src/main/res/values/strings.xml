@@ -18,6 +18,17 @@
     <string name="search_guest_title">Sign in to search</string>
     <string name="search_guest_body">Search needs an account to know which recordings to look through.</string>
     <string name="search_score_format">%1$d%%</string>
+    <string name="import_audio">Import audio</string>
+    <string name="import_audio_short">Import</string>
+    <string name="import_button_label">Import audio file</string>
+    <string name="import_subtitle">Pick a recording from your phone storage. We will upload and transcribe it.</string>
+    <string name="import_uploading">Uploading %1$s…</string>
+    <string name="import_failure_prefix">Couldn\'t import that file</string>
+    <string name="import_pick_file">Pick audio file</string>
+    <string name="import_done">Done</string>
+    <string name="library_actions_record">New recording</string>
+    <string name="library_actions_import">Import audio</string>
+    <string name="library_more_actions">More actions</string>
     <string name="onboarding_title_1">Record, Wai transcribes</string>
     <string name="onboarding_title_2">Everything stays on your device</string>
     <string name="onboarding_title_3">Ask Wai — get answers from your recordings</string>

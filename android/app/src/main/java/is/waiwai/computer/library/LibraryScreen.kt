@@ -13,15 +13,20 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -44,12 +49,15 @@ import androidx.compose.ui.unit.dp
 import `is`.waiwai.computer.R
 import `is`.waiwai.computer.data.AppContainer
 import `is`.waiwai.computer.data.RecordingStatus
+import `is`.waiwai.computer.recording.ImportSheet
+import `is`.waiwai.computer.recording.ImportViewModel
 import `is`.waiwai.computer.ui.recordingStatusLabel
 import `is`.waiwai.computer.ui.recordingTypeLabel
 import `is`.waiwai.computer.ui.TestTags
 import `is`.waiwai.computer.ui.components.BannerCard
 import `is`.waiwai.computer.ui.components.BannerVariant
 import `is`.waiwai.computer.ui.components.EmptyState
+import androidx.compose.material3.rememberModalBottomSheetState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,9 +72,42 @@ fun LibraryScreen(
         LibraryViewModel(container.waiApi, container.localRecordingStore, isGuest)
     }
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val transcriptionLanguage by container.settingsStore.settings.collectAsState(
+        initial = `is`.waiwai.computer.data.AppSettings(
+            baseUrl = `is`.waiwai.computer.BuildConfig.DEFAULT_BASE_URL,
+            transcriptionLanguage = `is`.waiwai.computer.data.SettingsStore.DEFAULT_TRANSCRIPTION_LANGUAGE,
+            authMode = `is`.waiwai.computer.data.StoredAuthMode.Onboarding,
+            authUserId = null,
+            onboardingSeen = false,
+            guestSinceEpochMillis = null,
+            legacyAccessToken = null,
+        ),
+    )
+    val importViewModel = remember(container, transcriptionLanguage.transcriptionLanguage) {
+        ImportViewModel(
+            waiApi = container.waiApi,
+            cacheDirProvider = { context.applicationContext.cacheDir },
+            language = transcriptionLanguage.transcriptionLanguage,
+        )
+    }
     var pendingDelete by remember { mutableStateOf<LibraryItemUiModel?>(null) }
+    var showAddSheet by remember { mutableStateOf(false) }
+    var showImportSheet by remember { mutableStateOf(false) }
 
-    Scaffold(modifier = modifier) { padding ->
+    Scaffold(
+        modifier = modifier,
+        floatingActionButton = {
+            if (!isGuest) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddSheet = true },
+                    icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.library_record_cta)) },
+                    modifier = Modifier.testTag(TestTags.LibraryFab),
+                )
+            }
+        },
+    ) { padding ->
         PullToRefreshBox(
             modifier = Modifier
                 .fillMaxSize()
@@ -152,6 +193,75 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+
+    if (showAddSheet) {
+        val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showAddSheet = false },
+            sheetState = addSheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.library_more_actions),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(
+                    onClick = {
+                        showAddSheet = false
+                        onSwitchToRecord()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(TestTags.LibraryFabRecord),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Mic,
+                        contentDescription = null,
+                    )
+                    Text(
+                        text = stringResource(R.string.library_actions_record),
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        showAddSheet = false
+                        showImportSheet = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(TestTags.LibraryFabImport),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.FileUpload,
+                        contentDescription = null,
+                    )
+                    Text(
+                        text = stringResource(R.string.library_actions_import),
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    if (showImportSheet) {
+        ImportSheet(
+            viewModel = importViewModel,
+            onDismiss = { showImportSheet = false },
+            onImported = { recordingId ->
+                showImportSheet = false
+                viewModel.refresh()
+                onOpenRecording(recordingId, false)
+            },
+        )
     }
 
     if (pendingDelete != null) {
