@@ -228,10 +228,12 @@ fun RecordingDetailScreen(
                     localManifest = localManifest,
                     editableTitle = editableTitle,
                     isRetryingUpload = uiState.isRetryingUpload,
+                    isGeneratingSummary = uiState.isGeneratingSummary,
                     onTitleChange = { editableTitle = it },
                     onSaveTitle = { viewModel.updateTitle(editableTitle) },
                     onToggleActionItem = viewModel::toggleActionItem,
                     onRetryUpload = viewModel::retryUpload,
+                    onGenerateSummary = viewModel::regenerateSummary,
                     onAssignSpeaker = { rawLabel, personId, newName ->
                         viewModel.assignSpeaker(rawLabel, personId, newName)
                     },
@@ -359,10 +361,12 @@ private fun AuthenticatedRecordingDetailContent(
     localManifest: LocalRecordingManifest?,
     editableTitle: String,
     isRetryingUpload: Boolean,
+    isGeneratingSummary: Boolean,
     onTitleChange: (String) -> Unit,
     onSaveTitle: () -> Unit,
     onToggleActionItem: (String, `is`.waiwai.computer.data.ActionItemStatus) -> Unit,
     onRetryUpload: () -> Unit,
+    onGenerateSummary: () -> Unit,
     onAssignSpeaker: (rawLabel: String, personId: String?, newName: String?) -> Unit,
     loadPeople: suspend () -> List<`is`.waiwai.computer.data.Person>,
 ) {
@@ -438,7 +442,11 @@ private fun AuthenticatedRecordingDetailContent(
         }
         item {
             ExpandableSectionCard(title = stringResource(R.string.detail_summary), initiallyExpanded = true) {
-                SummarySection(detail)
+                SummarySection(
+                    detail = detail,
+                    isGenerating = isGeneratingSummary,
+                    onGenerate = onGenerateSummary,
+                )
             }
         }
         item {
@@ -643,14 +651,39 @@ private fun SpeakerChip(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SummarySection(detail: RecordingDetail) {
+private fun SummarySection(
+    detail: RecordingDetail,
+    isGenerating: Boolean,
+    onGenerate: () -> Unit,
+) {
     val summary = detail.summary
     if (summary == null) {
         Text(stringResource(R.string.detail_no_summary))
+        Button(onClick = onGenerate, enabled = !isGenerating) {
+            Text(
+                if (isGenerating) {
+                    stringResource(R.string.detail_summary_generating)
+                } else {
+                    stringResource(R.string.detail_generate_summary)
+                },
+            )
+        }
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(summary.summary ?: stringResource(R.string.detail_no_summary))
+        androidx.compose.material3.TextButton(
+            onClick = onGenerate,
+            enabled = !isGenerating,
+        ) {
+            Text(
+                if (isGenerating) {
+                    stringResource(R.string.detail_summary_generating)
+                } else {
+                    stringResource(R.string.detail_regenerate_summary)
+                },
+            )
+        }
         summary.keyPoints.orEmpty().forEach { point ->
             Text("• $point")
         }
