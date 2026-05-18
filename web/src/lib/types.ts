@@ -136,6 +136,85 @@ export interface RecordingShareLink {
   created_at: string;
 }
 
+export type CompanionMessageRole = "user" | "assistant" | "tool";
+
+export interface CompanionScope {
+  recording_ids?: string[];
+  folder_ids?: string[];
+  types?: string[];
+  speakers?: string[];
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface CompanionConversation {
+  id: string;
+  title: string | null;
+  scope: CompanionScope | null;
+  pinned_at: string | null;
+  last_message_at: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanionCitation {
+  id: string;
+  segment_id: string | null;
+  recording_id: string | null;
+  span_start: number;
+  span_end: number;
+  citation_index: number;
+}
+
+export interface CompanionMessage {
+  id: string;
+  role: CompanionMessageRole;
+  content: unknown;
+  tool_calls: unknown[] | null;
+  citations: CompanionCitation[];
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  latency_ms: number | null;
+  created_at: string;
+}
+
+export interface CompanionConversationDetail extends CompanionConversation {
+  messages: CompanionMessage[];
+}
+
+export interface CompanionConversationList {
+  chats: CompanionConversation[];
+}
+
+export type CompanionEvent =
+  | { type: "turn_start"; message_id: string; conversation_id: string }
+  | { type: "tool_call"; call_id: string; tool: string; args: Record<string, unknown> }
+  | { type: "tool_result"; call_id: string; summary: string }
+  | { type: "token"; text: string }
+  | {
+      type: "citation";
+      index: number;
+      segment_id: string;
+      recording_id: string;
+      start_ms: number | null;
+      end_ms: number | null;
+      span_start: number;
+      span_end: number;
+    }
+  | {
+      type: "done";
+      message_id: string;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cached_tokens: number | null;
+      model: string;
+      latency_ms: number;
+    }
+  | { type: "error"; code: string; message: string };
+
 export interface SharedRecording {
   id: string;
   title: string | null;
