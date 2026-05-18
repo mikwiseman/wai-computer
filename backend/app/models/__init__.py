@@ -3,6 +3,7 @@
 from app.models.base import Base
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.mcp_oauth import (
@@ -35,6 +36,8 @@ __all__ = [
     "Conversation",
     "ChatMessage",
     "MessageCitation",
+    "DictationEntry",
+    "DictationDictionaryWord",
     "McpOAuthClient",
     "McpOAuthAuthorizationRequest",
     "McpOAuthAuthorizationCode",
