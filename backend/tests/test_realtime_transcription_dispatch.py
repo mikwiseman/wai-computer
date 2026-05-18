@@ -5,7 +5,7 @@ and the helper builders. Targets app/core/realtime_transcription.py lines
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -14,7 +14,6 @@ from app.core.realtime_transcription import (
     _build_inworld_realtime_session,
     create_realtime_transcription_session,
 )
-
 
 # ---------------------------------------------------------------------------
 # _build_deepgram_realtime_session
