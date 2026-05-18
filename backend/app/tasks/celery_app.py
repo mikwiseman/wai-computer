@@ -36,6 +36,9 @@ celery_app.conf.update(
     task_acks_late=True,
     result_expires=3600,
     worker_max_tasks_per_child=100,
+    # Explicit imports: autodiscover_tasks only finds modules literally
+    # named `tasks.py`; our task modules live under `app.tasks.<name>`.
+    imports=["app.tasks.consolidate_user_memory"],
 )
 
 celery_app.conf.beat_schedule = {
@@ -47,9 +50,6 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=3, minute=0),
     },
 }
-
-# Ensure the consolidator module is registered with Celery on worker start.
-celery_app.autodiscover_tasks(["app.tasks"])
 
 
 @worker_process_init.connect
