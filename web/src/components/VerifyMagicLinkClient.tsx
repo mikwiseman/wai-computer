@@ -21,7 +21,9 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
       try {
         await verifyMagicLink(token);
         setMessage("Magic link verified. Redirecting...");
-        router.replace("/dashboard");
+        const onboarded = typeof window !== "undefined" &&
+          window.localStorage.getItem("voice_onboarding_complete") === "true";
+        router.replace(onboarded ? "/dashboard" : "/onboarding");
       } catch (error: unknown) {
         if (error instanceof ApiError) {
           setMessage(error.message);
