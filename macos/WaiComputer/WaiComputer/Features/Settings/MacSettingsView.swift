@@ -1,6 +1,80 @@
-import SwiftUI
+import AppKit
 import AVFoundation
+import SwiftUI
 import WaiComputerKit
+
+private enum McpClient: String, CaseIterable, Identifiable {
+    case claudeAI = "Claude.ai"
+    case cursor = "Cursor"
+    case chatGPT = "ChatGPT"
+    case claudeCode = "Claude Code"
+    case codex = "Codex CLI"
+
+    var id: String { rawValue }
+}
+
+private struct McpClientGuide {
+    let steps: String
+    let snippet: String?
+    let externalLink: (label: String, url: URL)?
+}
+
+private let mcpEndpointURL = "https://wai.computer/mcp"
+
+private let mcpClientGuides: [McpClient: McpClientGuide] = [
+    .claudeAI: McpClientGuide(
+        steps: "Open Settings → Connectors → Add custom connector, paste the URL, then approve the request on wai.computer when prompted.",
+        snippet: nil,
+        externalLink: (
+            label: "Open Claude.ai Connectors",
+            url: URL(string: "https://claude.ai/settings/connectors")!
+        )
+    ),
+    .cursor: McpClientGuide(
+        steps: "Add this server to .cursor/mcp.json in your project root (or to your global Cursor MCP settings). Cursor starts the OAuth flow on first use.",
+        snippet: """
+        {
+          "mcpServers": {
+            "waicomputer": {
+              "url": "\(mcpEndpointURL)"
+            }
+          }
+        }
+        """,
+        externalLink: nil
+    ),
+    .chatGPT: McpClientGuide(
+        steps: "Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+        snippet: nil,
+        externalLink: nil
+    ),
+    .claudeCode: McpClientGuide(
+        steps: "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
+        snippet: """
+        # CLI
+        claude mcp add waicomputer \(mcpEndpointURL)
+
+        # Or .mcp.json:
+        {
+          "mcpServers": {
+            "waicomputer": {
+              "type": "http",
+              "url": "\(mcpEndpointURL)"
+            }
+          }
+        }
+        """,
+        externalLink: nil
+    ),
+    .codex: McpClientGuide(
+        steps: "Add the server, then complete the OAuth login from the browser when prompted.",
+        snippet: """
+        codex mcp add waicomputer --url \(mcpEndpointURL)
+        codex mcp login waicomputer
+        """,
+        externalLink: nil
+    ),
+]
 
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
@@ -20,6 +94,8 @@ struct MacSettingsView: View {
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
+    @State private var mcpClient: McpClient = .claudeAI
+    @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var transcriptionOptions: TranscriptionOptions?
@@ -309,6 +385,8 @@ struct MacSettingsView: View {
                     .waiSectionHeader()
             }
 
+            mcpConnectSection
+
             Section {
                 LabeledContent("Version") {
                     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
@@ -412,6 +490,80 @@ struct MacSettingsView: View {
             Button("OK", role: .cancel) { deleteAccountError = nil }
         } message: {
             Text(deleteAccountError ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var mcpConnectSection: some View {
+        Section {
+            HStack {
+                Text(mcpEndpointURL)
+                    .font(Typography.mono)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button(mcpCopiedField == "endpoint" ? "Copied" : "Copy URL") {
+                    copyMcpValue(mcpEndpointURL, field: "endpoint")
+                }
+                .font(Typography.body)
+                .accessibilityIdentifier("settings-mcp-copy-endpoint")
+            }
+
+            Text("WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.")
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+
+            Picker("Client", selection: $mcpClient) {
+                ForEach(McpClient.allCases) { client in
+                    Text(client.rawValue).tag(client)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings-mcp-client-picker")
+
+            if let guide = mcpClientGuides[mcpClient] {
+                Text(guide.steps)
+                    .font(Typography.body)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let snippet = guide.snippet {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            Text(snippet)
+                                .font(Typography.mono)
+                                .textSelection(.enabled)
+                                .padding(.vertical, 2)
+                        }
+                        Button(mcpCopiedField == "snippet" ? "Copied" : "Copy snippet") {
+                            copyMcpValue(snippet, field: "snippet")
+                        }
+                        .font(Typography.body)
+                        .accessibilityIdentifier("settings-mcp-copy-snippet")
+                    }
+                }
+
+                if let link = guide.externalLink {
+                    Link(link.label, destination: link.url)
+                        .font(Typography.body)
+                }
+            }
+        } header: {
+            Text("MCP")
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-mcp-header")
+        }
+    }
+
+    private func copyMcpValue(_ value: String, field: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        mcpCopiedField = field
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if mcpCopiedField == field {
+                mcpCopiedField = nil
+            }
         }
     }
 
