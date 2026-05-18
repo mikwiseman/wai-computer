@@ -38,11 +38,6 @@ class MacImportViewModel: ObservableObject {
 
         var recordingId: String?
         do {
-            _ = try await StableTranscriptionModelPolicy.enforceIfNeeded(
-                apiClient: apiClient,
-                settings: try await apiClient.getSettings()
-            )
-
             let filename = fileURL.deletingPathExtension().lastPathComponent
             let recording = try await apiClient.createRecording(title: filename, type: .note)
             recordingId = recording.id

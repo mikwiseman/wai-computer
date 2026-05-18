@@ -5,7 +5,6 @@ import WaiComputerKit
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
-    @ObservedObject private var developerSettings = DeveloperSettingsStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var showDeleteAccountConfirmation = false
@@ -24,15 +23,11 @@ struct MacSettingsView: View {
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var transcriptionOptions: TranscriptionOptions?
-    @State private var dictationLiveSTTSelection = StableTranscriptionModelPolicy.dictationLiveSelection
-    @State private var recordingLiveSTTSelection = StableTranscriptionModelPolicy.recordingLiveSelection
-    @State private var fileSTTSelection = StableTranscriptionModelPolicy.fileSelection
+    @State private var dictationLiveSTTSelection = ""
+    @State private var recordingLiveSTTSelection = ""
+    @State private var fileSTTSelection = ""
     @State private var dictationPostFilterEnabled = true
-    @State private var dictationPostFilterSelection = StableTranscriptionModelPolicy.postFilterSelection
-
-    private var transcriptionModelsLocked: Bool {
-        !developerSettings.developerModeEnabled
-    }
+    @State private var dictationPostFilterSelection = ""
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -91,29 +86,7 @@ struct MacSettingsView: View {
             }
 
             Section {
-                if transcriptionModelsLocked {
-                    stableTranscriptionModelRow(
-                        "Dictation live",
-                        label: StableTranscriptionModelPolicy.dictationLiveLabel,
-                        description: StableTranscriptionModelPolicy.dictationLiveDescription
-                    )
-                    stableTranscriptionModelRow(
-                        "Recording live",
-                        label: StableTranscriptionModelPolicy.recordingLiveLabel,
-                        description: StableTranscriptionModelPolicy.recordingLiveDescription
-                    )
-                    stableTranscriptionModelRow(
-                        "Full session",
-                        label: StableTranscriptionModelPolicy.fileLabel,
-                        description: StableTranscriptionModelPolicy.fileDescription
-                    )
-
-                    if let settingsError {
-                        Text(settingsError)
-                            .font(Typography.caption)
-                            .foregroundStyle(.red)
-                    }
-                } else if let transcriptionOptions {
+                if let transcriptionOptions {
                     transcriptionModelPicker(
                         "Dictation live",
                         selection: $dictationLiveSTTSelection,
@@ -257,37 +230,24 @@ struct MacSettingsView: View {
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
-                if transcriptionModelsLocked {
-                    Toggle("Post-filter dictated text", isOn: .constant(true))
-                        .font(Typography.body)
-                        .disabled(true)
-                        .accessibilityIdentifier("settings-dictation-post-filter-toggle")
-
-                    stableTranscriptionModelRow(
-                        "Post-filter model",
-                        label: StableTranscriptionModelPolicy.postFilterLabel,
-                        description: StableTranscriptionModelPolicy.postFilterDescription
-                    )
-                } else {
-                    Toggle("Post-filter dictated text", isOn: $dictationPostFilterEnabled)
-                        .font(Typography.body)
-                        .disabled(!dictationManager.isFeatureEnabled)
-                        .accessibilityIdentifier("settings-dictation-post-filter-toggle")
-                        .onChange(of: dictationPostFilterEnabled) { _, enabled in
-                            guard settingsLoaded else { return }
-                            Task { await saveDictationPostFilterEnabled(enabled) }
-                        }
-
-                    if let transcriptionOptions, dictationPostFilterEnabled {
-                        transcriptionModelPicker(
-                            "Post-filter model",
-                            selection: $dictationPostFilterSelection,
-                            options: transcriptionOptions.dictationPostFilter,
-                            identifier: "settings-dictation-post-filter-model-picker",
-                            save: { await saveDictationPostFilter(selection: $0) }
-                        )
-                        .disabled(!dictationManager.isFeatureEnabled)
+                Toggle("Post-filter dictated text", isOn: $dictationPostFilterEnabled)
+                    .font(Typography.body)
+                    .disabled(!dictationManager.isFeatureEnabled)
+                    .accessibilityIdentifier("settings-dictation-post-filter-toggle")
+                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
+                        guard settingsLoaded else { return }
+                        Task { await saveDictationPostFilterEnabled(enabled) }
                     }
+
+                if let transcriptionOptions, dictationPostFilterEnabled {
+                    transcriptionModelPicker(
+                        "Post-filter model",
+                        selection: $dictationPostFilterSelection,
+                        options: transcriptionOptions.dictationPostFilter,
+                        identifier: "settings-dictation-post-filter-model-picker",
+                        save: { await saveDictationPostFilter(selection: $0) }
+                    )
+                    .disabled(!dictationManager.isFeatureEnabled)
                 }
 
                 permissionRow(
@@ -360,15 +320,6 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-receive-beta-updates-toggle")
                 Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                Toggle("Developer Mode", isOn: $developerSettings.developerModeEnabled)
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-developer-mode-toggle")
-                    .onChange(of: developerSettings.developerModeEnabled) { _, enabled in
-                        Task { await handleDeveloperModeChanged(enabled) }
-                    }
-                Text("Enables experimental transcription model selection. Turning it off resets transcription and dictation models to the default stable set.")
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                 Button("Check for Updates…") {
@@ -570,23 +521,6 @@ struct MacSettingsView: View {
     }
 
     @ViewBuilder
-    private func stableTranscriptionModelRow(
-        _ title: String,
-        label: String,
-        description: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            LabeledContent(title, value: label)
-                .font(Typography.body)
-
-            Text(description)
-                .font(Typography.caption)
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
     private func transcriptionModelPicker(
         _ title: String,
         selection: Binding<String>,
@@ -631,19 +565,11 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
-        if transcriptionModelsLocked {
-            dictationLiveSTTSelection = StableTranscriptionModelPolicy.dictationLiveSelection
-            recordingLiveSTTSelection = StableTranscriptionModelPolicy.recordingLiveSelection
-            fileSTTSelection = StableTranscriptionModelPolicy.fileSelection
-            dictationPostFilterEnabled = true
-            dictationPostFilterSelection = StableTranscriptionModelPolicy.postFilterSelection
-        } else {
-            dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
-            recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
-            fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
-            dictationPostFilterEnabled = settings.dictationPostFilterEnabled
-            dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
-        }
+        dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
+        recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
+        fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
+        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
     }
 
     private func refreshPermissions() {
@@ -721,13 +647,7 @@ struct MacSettingsView: View {
         guard !settingsLoaded else { return }
         transcriptionOptions = nil
         do {
-            var settings = try await appState.getAPIClient().getSettings()
-            if transcriptionModelsLocked {
-                settings = try await StableTranscriptionModelPolicy.enforceIfNeeded(
-                    apiClient: appState.getAPIClient(),
-                    settings: settings
-                )
-            }
+            let settings = try await appState.getAPIClient().getSettings()
             applySettings(settings)
             settingsError = nil
             settingsLoaded = true
@@ -735,8 +655,6 @@ struct MacSettingsView: View {
             settingsError = "Couldn't load account settings: \(error.localizedDescription)"
             return
         }
-
-        guard !transcriptionModelsLocked else { return }
 
         await loadTranscriptionOptions()
     }
@@ -747,29 +665,6 @@ struct MacSettingsView: View {
             settingsError = nil
         } catch {
             settingsError = "Couldn't load transcription model options: \(error.localizedDescription)"
-        }
-    }
-
-    private func handleDeveloperModeChanged(_ enabled: Bool) async {
-        settingsLoaded = false
-
-        if enabled {
-            await loadSummarySettings()
-            return
-        }
-
-        developerSettings.reset()
-        transcriptionOptions = nil
-        do {
-            let settings = try await StableTranscriptionModelPolicy.enforceIfNeeded(
-                apiClient: appState.getAPIClient(),
-                settings: try await appState.getAPIClient().getSettings()
-            )
-            applySettings(settings)
-            settingsError = nil
-            settingsLoaded = true
-        } catch {
-            settingsError = "Couldn't reset transcription models: \(error.localizedDescription)"
         }
     }
 

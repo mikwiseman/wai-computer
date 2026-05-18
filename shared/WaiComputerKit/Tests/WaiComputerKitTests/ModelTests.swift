@@ -39,7 +39,7 @@ final class ModelTests: XCTestCase {
 
     // MARK: - Settings Tests
 
-    func testUserSettingsDecodeFromLegacyJSONUsesCompatibleTranscriptionDefaults() throws {
+    func testUserSettingsDecodeRequiresServerTranscriptionValues() throws {
         let json = """
         {
             "default_language": "multi",
@@ -49,20 +49,7 @@ final class ModelTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let settings = try makeDecoder().decode(UserSettings.self, from: json)
-
-        XCTAssertEqual(settings.defaultLanguage, "multi")
-        XCTAssertEqual(settings.summaryLanguage, "auto")
-        XCTAssertEqual(settings.summaryStyle, "medium")
-        XCTAssertEqual(settings.dictationLiveSTTProvider, "elevenlabs")
-        XCTAssertEqual(settings.dictationLiveSTTModel, "scribe_v2_realtime")
-        XCTAssertEqual(settings.recordingLiveSTTProvider, "elevenlabs")
-        XCTAssertEqual(settings.recordingLiveSTTModel, "scribe_v2_realtime")
-        XCTAssertEqual(settings.fileSTTProvider, "elevenlabs")
-        XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
-        XCTAssertTrue(settings.dictationPostFilterEnabled)
-        XCTAssertEqual(settings.dictationPostFilterProvider, "anthropic")
-        XCTAssertEqual(settings.dictationPostFilterModel, "claude-haiku-4-5")
+        XCTAssertThrowsError(try makeDecoder().decode(UserSettings.self, from: json))
     }
 
     func testUserSettingsDecodeFromCurrentJSONUsesServerTranscriptionValues() throws {
@@ -76,11 +63,11 @@ final class ModelTests: XCTestCase {
             "dictation_live_stt_model": "gpt-realtime-whisper",
             "recording_live_stt_provider": "openai",
             "recording_live_stt_model": "gpt-realtime-whisper",
-            "file_stt_provider": "openai",
-            "file_stt_model": "gpt-4o-transcribe",
+            "file_stt_provider": "deepgram",
+            "file_stt_model": "nova-3",
             "dictation_post_filter_enabled": false,
-            "dictation_post_filter_provider": "anthropic",
-            "dictation_post_filter_model": "claude-sonnet-4-6"
+            "dictation_post_filter_provider": "openai",
+            "dictation_post_filter_model": "gpt-5.5"
         }
         """.data(using: .utf8)!
 
@@ -94,10 +81,11 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.dictationLiveSTTModel, "gpt-realtime-whisper")
         XCTAssertEqual(settings.recordingLiveSTTProvider, "openai")
         XCTAssertEqual(settings.recordingLiveSTTModel, "gpt-realtime-whisper")
-        XCTAssertEqual(settings.fileSTTProvider, "openai")
-        XCTAssertEqual(settings.fileSTTModel, "gpt-4o-transcribe")
+        XCTAssertEqual(settings.fileSTTProvider, "deepgram")
+        XCTAssertEqual(settings.fileSTTModel, "nova-3")
         XCTAssertFalse(settings.dictationPostFilterEnabled)
-        XCTAssertEqual(settings.dictationPostFilterModel, "claude-sonnet-4-6")
+        XCTAssertEqual(settings.dictationPostFilterProvider, "openai")
+        XCTAssertEqual(settings.dictationPostFilterModel, "gpt-5.5")
     }
 
     // MARK: - Recording Tests

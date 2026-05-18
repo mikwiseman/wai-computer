@@ -1,6 +1,5 @@
 """Tests for recording highlights / key moments feature."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -9,15 +8,19 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.core.summarizer as summarizer_module
-from app.core.summarizer import SummaryResult, summarize_transcript
+from app.core.summarizer import SummaryResult, _SummarySchema, summarize_transcript
 from app.models.highlight import Highlight
 from app.models.recording import Segment
 
 
-def _make_claude_response(text: str):
-    """Create a mock Responses API result with the given output_text."""
+def _make_model_response(parsed: _SummarySchema):
+    """Create a mock Responses API result with the given parsed payload."""
     response = MagicMock()
-    response.output_text = text
+    response.output_parsed = parsed
+    response.status = "completed"
+    response.error = None
+    response.incomplete_details = None
+    response.output = []
     return response
 
 
@@ -77,7 +80,7 @@ async def _create_recording(
 
 
 # ---------------------------------------------------------------------------
-# 1. Summarizer parses highlights from Claude's JSON response
+# 1. Summarizer parses highlights from the model's JSON response
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +96,7 @@ def mock_settings():
 
 @pytest.mark.asyncio
 async def test_highlight_extraction_from_summary():
-    """summarize_transcript() should parse highlights from the Claude response."""
+    """summarize_transcript() should parse highlights from the model response."""
     response_data = {
         "title": "Budget Review",
         "summary": "The team reviewed the Q2 budget.",
@@ -107,9 +110,9 @@ async def test_highlight_extraction_from_summary():
         "highlights": SAMPLE_HIGHLIGHTS,
     }
 
-    mock_response = _make_claude_response(json.dumps(response_data))
+    mock_response = _make_model_response(_SummarySchema(**response_data))
     mock_client = MagicMock()
-    mock_client.responses.create = AsyncMock(return_value=mock_response)
+    mock_client.responses.parse = AsyncMock(return_value=mock_response)
 
     with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
         result = await summarize_transcript("Some transcript")
@@ -295,7 +298,7 @@ async def test_empty_highlights_handled(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Claude returning an empty highlights array should not crash."""
+    """A model response with an empty highlights array should not crash."""
     recording = await _create_recording(client, auth_headers, title="No Highlights")
     recording_id = UUID(recording["id"])
 

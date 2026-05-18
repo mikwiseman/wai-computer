@@ -143,10 +143,10 @@
       "category": "url_email",
       "language": "en",
       "voice": "Alex",
-      "text": "Go to github dot com slash anthropic slash claude code.",
+      "text": "Go to github dot com slash openai slash codex.",
       "max_wer": 0.65,
       "max_latency_ms": 2500,
-      "note": "Inworld returns spoken-form URLs verbatim ('github dot com slash anthropic') instead of normalising to 'github.com/anthropic'. Naive token WER counts each word as substitution. Observed 0.300-0.600 across iterations. Threshold 0.65 catches catastrophic failure (transcript drops to empty -> WER 1.0). TODO: pair with a cleanup-tier scenario whose cleaned_expected uses the URL form to test that the Anthropic cleanup prompt or a future spoken-URL normaliser handles it."
+      "note": "Inworld returns spoken-form URLs verbatim instead of normalising to URL form. Naive token WER counts each word as substitution. Observed 0.300-0.600 across iterations. Threshold 0.65 catches catastrophic failure (transcript drops to empty -> WER 1.0)."
     },
     {
       "id": "apostrophe_contraction_en",

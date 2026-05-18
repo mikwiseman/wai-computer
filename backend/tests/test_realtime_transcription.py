@@ -64,7 +64,6 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
             new=AsyncMock(return_value=("el-token", 900)),
         ),
     ):
-        mock_settings.return_value.speech_to_text_provider = "elevenlabs"
         mock_settings.return_value.elevenlabs_realtime_speech_to_text_model = "scribe_v2_realtime"
         mock_settings.return_value.elevenlabs_no_verbatim = True
 

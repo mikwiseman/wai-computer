@@ -13,6 +13,10 @@ def _make_response(text: str):
     """Build a mock Responses API result."""
     response = MagicMock()
     response.output_text = text
+    response.status = "completed"
+    response.error = None
+    response.incomplete_details = None
+    response.output = []
     return response
 
 
@@ -130,6 +134,9 @@ async def test_cleanup_dictation_uses_selected_post_filter_model(
 
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
+    assert "max_output_tokens" not in captured
+    assert captured["reasoning"] == {"effort": "none"}
+    assert captured["text"] == {"verbosity": "low"}
 
 
 @pytest.mark.asyncio
@@ -155,11 +162,12 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     )
 
     assert response.status_code == 200
-    prompt = captured["input"]
-    assert "э-э-э" in prompt
-    assert "а-а-а" in prompt
-    assert "мы х-- мы предлагаем" in prompt
-    assert "Do not summarize" in prompt
+    instructions = captured["instructions"]
+    assert "э-э-э" in instructions
+    assert "а-а-а" in instructions
+    assert "мы х-- мы предлагаем" in instructions
+    assert "Do not summarize" in instructions
+    assert "<dictated_text>" in captured["input"]
 
 
 @pytest.mark.asyncio
@@ -192,7 +200,7 @@ async def test_cleanup_dictation_rejects_oversized_payload(
     response = await client.post(
         "/api/dictation/cleanup",
         headers=auth_headers,
-        json={"text": "x" * 8001},
+        json={"text": "x" * 100_001},
     )
 
     assert response.status_code == 422
@@ -269,7 +277,7 @@ async def test_cleanup_empty_output_text_returns_502(
     )
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Empty response from AI service"
+    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
 
 
 @pytest.mark.asyncio
@@ -289,7 +297,7 @@ async def test_cleanup_blank_output_text_returns_502(
     )
 
     assert response.status_code == 502
-    assert response.json()["detail"] == "Empty response from AI service"
+    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
 
 
 @pytest.mark.asyncio
@@ -397,7 +405,7 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
     )
 
     assert response.status_code == 200
-    prompt = captured["input"]
+    prompt = captured["instructions"]
     assert "<preserve_exact>" in prompt
     assert "</preserve_exact>" in prompt
     assert "WaiComputer" in prompt
@@ -438,4 +446,4 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
         )
 
         assert response.status_code == 200
-        assert "<preserve_exact>" not in captured["input"]
+        assert "<preserve_exact>" not in captured["instructions"]

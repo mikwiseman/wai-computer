@@ -10,6 +10,10 @@ from app.core.summarizer import generate_title
 def _make_response(text: str):
     response = MagicMock()
     response.output_text = text
+    response.status = "completed"
+    response.error = None
+    response.incomplete_details = None
+    response.output = []
     return response
 
 

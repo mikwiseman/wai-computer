@@ -60,28 +60,15 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "ELEVENLABS_API_KEY is not configured — realtime voice sessions will not work"
         )
-    if app_settings.speech_to_text_provider == "elevenlabs" and not app_settings.elevenlabs_api_key:
-        logger.warning(
-            "speech_to_text_provider is elevenlabs but ELEVENLABS_API_KEY is not configured"
-        )
     if not app_settings.openai_api_key:
         logger.warning(
-            "OPENAI_API_KEY is not configured — OpenAI transcription settings will not work"
+            "OPENAI_API_KEY is not configured — Companion, summarization, dictation "
+            "cleanup, and embeddings will not work"
         )
     if app_settings.realtime_voice_provider != "elevenlabs":
         logger.warning(
             "realtime_voice_provider=%s is unsupported — only elevenlabs is supported",
             app_settings.realtime_voice_provider,
-        )
-    if app_settings.speech_to_text_provider != "elevenlabs":
-        logger.warning(
-            "speech_to_text_provider=%s is unsupported — only elevenlabs is supported",
-            app_settings.speech_to_text_provider,
-        )
-    if not app_settings.openai_api_key:
-        logger.warning(
-            "OPENAI_API_KEY is not configured — Companion, summarization, dictation "
-            "cleanup, and embeddings will not work"
         )
     if not app_settings.resend_api_key:
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")

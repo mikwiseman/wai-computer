@@ -340,11 +340,7 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
-            var settings = try await apiClient.getSettings()
-            settings = try await StableTranscriptionModelPolicy.enforceIfNeeded(
-                apiClient: apiClient,
-                settings: settings
-            )
+            let settings = try await apiClient.getSettings()
             SentryHelper.addBreadcrumb(
                 category: "dictation.session",
                 message: "dictation provider selected",

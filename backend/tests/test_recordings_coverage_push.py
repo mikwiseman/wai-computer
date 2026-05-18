@@ -100,7 +100,7 @@ async def test_save_transcript_persists_segments_with_embeddings_and_generates_t
     """Save transcript should persist segments, generate embeddings, and auto-title."""
     rec = await _create_recording(client, auth_headers, title=None)
 
-    mock_embedding = AsyncMock(return_value=[0.1] * 384)
+    mock_embedding = AsyncMock(return_value=[0.1] * 3072)
     monkeypatch.setattr("app.api.routes.recordings.generate_embedding", mock_embedding)
 
     mock_title = AsyncMock(return_value="Auto Generated Title")
@@ -152,7 +152,7 @@ async def test_save_transcript_title_generation_failure_nonfatal(
     """If title generation raises, the transcript should still be saved."""
     rec = await _create_recording(client, auth_headers, title=None)
 
-    mock_embedding = AsyncMock(return_value=[0.1] * 384)
+    mock_embedding = AsyncMock(return_value=[0.1] * 3072)
     monkeypatch.setattr("app.api.routes.recordings.generate_embedding", mock_embedding)
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -185,7 +185,7 @@ async def test_save_transcript_uses_duration_seconds_fallback(
     """When segments have end_ms=0, duration_seconds from request should be used."""
     rec = await _create_recording(client, auth_headers, title="Duration Test")
 
-    mock_embedding = AsyncMock(return_value=[0.1] * 384)
+    mock_embedding = AsyncMock(return_value=[0.1] * 3072)
     monkeypatch.setattr("app.api.routes.recordings.generate_embedding", mock_embedding)
 
     response = await client.post(

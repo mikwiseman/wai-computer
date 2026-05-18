@@ -148,7 +148,7 @@ def _build_inworld_realtime_session(
     language: str,
     channels: int,
     *,
-    model: str | None = None,
+    model: str,
 ) -> RealtimeTranscriptionSession:
     settings = get_settings()
     if not settings.inworld_api_key:
@@ -156,7 +156,7 @@ def _build_inworld_realtime_session(
 
     inworld = build_inworld_session(
         api_key=settings.inworld_api_key,
-        model_id=model or settings.dictation_stt_model,
+        model_id=model,
         language=language,
         sample_rate=DEFAULT_SAMPLE_RATE,
         channels=channels,

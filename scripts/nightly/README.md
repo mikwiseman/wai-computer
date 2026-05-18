@@ -1,6 +1,6 @@
 # WaiComputer Nightly QA Harness
 
-Hourly end-to-end QA loop. Runs as a cron-fired Claude Code iteration. Complementary to `scripts/qa-loop.sh` (which covers backend/shared/remote/native gates).
+Hourly end-to-end QA loop. Runs as a cron-fired agent iteration. Complementary to `scripts/qa-loop.sh` (which covers backend/shared/remote/native gates).
 
 ## What this harness does
 
@@ -24,7 +24,7 @@ scripts/nightly/.artifacts/
     log.txt
 ```
 
-## Iteration prompt (what the cron tells Claude to do)
+## Iteration prompt
 
 1. `cd /Users/mikwiseman/Documents/Code/wai-computer && git pull --ff-only origin main`
 2. `./scripts/nightly/run.sh`

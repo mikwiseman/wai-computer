@@ -41,7 +41,7 @@ async def test_full_recording_lifecycle(
     # ------------------------------------------------------------------ #
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 384),
+        AsyncMock(return_value=[0.1] * 3072),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -98,7 +98,7 @@ async def test_full_recording_lifecycle(
     assert len(detail["segments"]) == 3
 
     # ------------------------------------------------------------------ #
-    # Step 3: Generate AI summary (with mocked Claude)
+    # Step 3: Generate AI summary (with mocked model)
     # ------------------------------------------------------------------ #
     async def fake_summarize_transcript(_transcript: str, **kwargs) -> SummaryResult:
         return SummaryResult(

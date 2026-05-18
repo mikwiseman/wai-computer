@@ -66,16 +66,6 @@ private enum class ModelPreference {
     DictationPostFilter,
 }
 
-private const val STABLE_TRANSCRIPTION_MODELS_LOCKED = true
-private const val STABLE_DICTATION_PROVIDER = "elevenlabs"
-private const val STABLE_DICTATION_MODEL = "scribe_v2_realtime"
-private const val STABLE_RECORDING_PROVIDER = "elevenlabs"
-private const val STABLE_RECORDING_MODEL = "scribe_v2_realtime"
-private const val STABLE_FILE_PROVIDER = "elevenlabs"
-private const val STABLE_FILE_MODEL = "scribe_v2"
-private const val STABLE_POST_FILTER_PROVIDER = "anthropic"
-private const val STABLE_POST_FILTER_MODEL = "claude-haiku-4-5"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -136,20 +126,9 @@ fun SettingsScreen(
             transcriptionOptions = null
             try {
                 accountSettings = container.waiApi.getSettings()
-                if (
-                    STABLE_TRANSCRIPTION_MODELS_LOCKED &&
-                    accountSettings?.requiresStableTranscriptionReset() == true
-                ) {
-                    accountSettings = container.waiApi.updateSettings(stableTranscriptionUpdateRequest())
-                }
                 settingsError = null
             } catch (error: Throwable) {
                 settingsError = error.localizedMessage ?: "Couldn't load account settings."
-                transcriptionOptions = null
-                return@LaunchedEffect
-            }
-
-            if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
                 transcriptionOptions = null
                 return@LaunchedEffect
             }
@@ -237,51 +216,36 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                accountSettings != null && (STABLE_TRANSCRIPTION_MODELS_LOCKED || transcriptionOptions != null) -> {
+                accountSettings != null && transcriptionOptions != null -> {
                     val currentSettings = accountSettings!!
-                    val options = transcriptionOptions
-                    if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
-                        LockedModelRow(
-                            title = stringResource(R.string.settings_dictation_live_model),
-                            value = "ElevenLabs Scribe v2 Realtime",
-                        )
-                        LockedModelRow(
-                            title = stringResource(R.string.settings_recording_live_model),
-                            value = "ElevenLabs Scribe v2 Realtime",
-                        )
-                        LockedModelRow(
-                            title = stringResource(R.string.settings_file_model),
-                            value = "ElevenLabs Scribe v2",
-                        )
-                    } else if (options != null) {
-                        ModelChoiceRow(
-                            title = stringResource(R.string.settings_dictation_live_model),
-                            value = optionLabel(
-                                options.dictationLiveStt,
-                                currentSettings.dictationLiveSttProvider,
-                                currentSettings.dictationLiveSttModel,
-                            ),
-                            onClick = { activeModelPreference = ModelPreference.DictationLive },
-                        )
-                        ModelChoiceRow(
-                            title = stringResource(R.string.settings_recording_live_model),
-                            value = optionLabel(
-                                options.recordingLiveStt,
-                                currentSettings.recordingLiveSttProvider,
-                                currentSettings.recordingLiveSttModel,
-                            ),
-                            onClick = { activeModelPreference = ModelPreference.RecordingLive },
-                        )
-                        ModelChoiceRow(
-                            title = stringResource(R.string.settings_file_model),
-                            value = optionLabel(
-                                options.fileStt,
-                                currentSettings.fileSttProvider,
-                                currentSettings.fileSttModel,
-                            ),
-                            onClick = { activeModelPreference = ModelPreference.File },
-                        )
-                    }
+                    val options = transcriptionOptions!!
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_dictation_live_model),
+                        value = optionLabel(
+                            options.dictationLiveStt,
+                            currentSettings.dictationLiveSttProvider,
+                            currentSettings.dictationLiveSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.DictationLive },
+                    )
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_recording_live_model),
+                        value = optionLabel(
+                            options.recordingLiveStt,
+                            currentSettings.recordingLiveSttProvider,
+                            currentSettings.recordingLiveSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.RecordingLive },
+                    )
+                    ModelChoiceRow(
+                        title = stringResource(R.string.settings_file_model),
+                        value = optionLabel(
+                            options.fileStt,
+                            currentSettings.fileSttProvider,
+                            currentSettings.fileSttModel,
+                        ),
+                        onClick = { activeModelPreference = ModelPreference.File },
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -291,28 +255,15 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f),
                         )
                         Switch(
-                            checked = if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
-                                true
-                            } else {
-                                currentSettings.dictationPostFilterEnabled
-                            },
-                            onCheckedChange = if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
-                                null
-                            } else {
-                                { enabled ->
-                                    saveAccountSettings(
-                                        UpdateSettingsRequest(dictationPostFilterEnabled = enabled),
-                                    )
-                                }
+                            checked = currentSettings.dictationPostFilterEnabled,
+                            onCheckedChange = { enabled ->
+                                saveAccountSettings(
+                                    UpdateSettingsRequest(dictationPostFilterEnabled = enabled),
+                                )
                             },
                         )
                     }
-                    if (STABLE_TRANSCRIPTION_MODELS_LOCKED) {
-                        LockedModelRow(
-                            title = stringResource(R.string.settings_dictation_post_filter_model),
-                            value = "Claude Haiku 4.5",
-                        )
-                    } else if (currentSettings.dictationPostFilterEnabled && options != null) {
+                    if (currentSettings.dictationPostFilterEnabled) {
                         ModelChoiceRow(
                             title = stringResource(R.string.settings_dictation_post_filter_model),
                             value = optionLabel(
@@ -466,7 +417,6 @@ fun SettingsScreen(
     }
 
     if (
-        !STABLE_TRANSCRIPTION_MODELS_LOCKED &&
         activeModelPreference != null &&
         accountSettings != null &&
         transcriptionOptions != null
@@ -593,26 +543,6 @@ private fun SettingsSectionCard(
 }
 
 @Composable
-private fun LockedModelRow(
-    title: String,
-    value: String,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title)
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
 private fun ModelChoiceRow(
     title: String,
     value: String,
@@ -674,32 +604,6 @@ private fun updateRequestFor(
     ModelPreference.DictationPostFilter -> UpdateSettingsRequest(
         dictationPostFilterProvider = option.provider,
         dictationPostFilterModel = option.model,
-    )
-}
-
-private fun UserSettings.requiresStableTranscriptionReset(): Boolean {
-    return dictationLiveSttProvider != STABLE_DICTATION_PROVIDER ||
-        dictationLiveSttModel != STABLE_DICTATION_MODEL ||
-        recordingLiveSttProvider != STABLE_RECORDING_PROVIDER ||
-        recordingLiveSttModel != STABLE_RECORDING_MODEL ||
-        fileSttProvider != STABLE_FILE_PROVIDER ||
-        fileSttModel != STABLE_FILE_MODEL ||
-        !dictationPostFilterEnabled ||
-        dictationPostFilterProvider != STABLE_POST_FILTER_PROVIDER ||
-        dictationPostFilterModel != STABLE_POST_FILTER_MODEL
-}
-
-private fun stableTranscriptionUpdateRequest(): UpdateSettingsRequest {
-    return UpdateSettingsRequest(
-        dictationLiveSttProvider = STABLE_DICTATION_PROVIDER,
-        dictationLiveSttModel = STABLE_DICTATION_MODEL,
-        recordingLiveSttProvider = STABLE_RECORDING_PROVIDER,
-        recordingLiveSttModel = STABLE_RECORDING_MODEL,
-        fileSttProvider = STABLE_FILE_PROVIDER,
-        fileSttModel = STABLE_FILE_MODEL,
-        dictationPostFilterEnabled = true,
-        dictationPostFilterProvider = STABLE_POST_FILTER_PROVIDER,
-        dictationPostFilterModel = STABLE_POST_FILTER_MODEL,
     )
 }
 

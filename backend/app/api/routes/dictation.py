@@ -9,13 +9,36 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser
 from app.config import get_settings
 from app.core.openai_client import get_openai_client
+from app.core.openai_responses import (
+    OpenAIResponseError,
+    ensure_response_completed,
+    response_output_text,
+)
 from app.core.transcription_options import validate_option
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)
-MAX_CLEANUP_TEXT_LENGTH = 8_000
+MAX_CLEANUP_TEXT_LENGTH = 100_000
 MAX_CLEANUP_VOCABULARY_ENTRIES = 200
 MAX_CLEANUP_VOCABULARY_ENTRY_CHARS = 60
+
+DICTATION_CLEANUP_INSTRUCTIONS = """\
+Lightly clean up dictated text.
+
+Rules:
+- Remove filler sounds and filler words in Russian and English, including э,
+  эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, um, uh, like,
+  you know, I mean, basically, actually, so, and well.
+- Remove repeated filler-only loops such as "и, э-э-э, и, э-э-э".
+- Remove false starts and self-corrections while keeping the final intended
+  version, for example "мы х-- мы предлагаем" becomes "мы предлагаем".
+- Fix only obvious grammar, capitalization, punctuation, and paragraph breaks.
+- Preserve the original language, meaning, tone, style, terminology, names,
+  claims, and sentence order.
+- Do not summarize, add information, change the meaning, or make the text more
+  formal unless it is clearly formal already.
+- Output only the cleaned text.
+"""
 
 
 class CleanupRequest(BaseModel):
@@ -107,32 +130,18 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         client = get_openai_client()
         response = await client.responses.create(
             model=model,
+            instructions=DICTATION_CLEANUP_INSTRUCTIONS + vocabulary_block,
             input=(
-                "Lightly clean up this dictated text. "
-                "Remove filler sounds and filler words in Russian and English, including "
-                "э, эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, "
-                "um, uh, like, you know, I mean, basically, actually, so, well. "
-                "Remove repeated filler-only loops such as 'и, э-э-э, и, э-э-э'. "
-                "Remove false starts and self-corrections, keeping only the final intended "
-                "version, for example 'мы х-- мы предлагаем' becomes 'мы предлагаем'. "
-                "Fix only obvious grammar, capitalization, and punctuation issues. "
-                "Preserve the original language, meaning, tone, style, terminology, names, "
-                "claims, and sentence order. "
-                "Do not summarize, add information, change the meaning, or make it more "
-                "formal unless the text is clearly formal already. "
-                "Output ONLY the cleaned text, nothing else."
-                f"{vocabulary_block}\n\n"
-                f"Dictated text: {text}"
+                "<dictated_text>\n"
+                f"{text}\n"
+                "</dictated_text>"
             ),
-            max_output_tokens=4096,
+            reasoning={"effort": "none"},
+            text={"verbosity": "low"},
         )
 
-        cleaned = response.output_text.strip()
-        if not cleaned:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Empty response from AI service",
-            )
+        ensure_response_completed(response, operation="Dictation cleanup")
+        cleaned = response_output_text(response)
 
         logger.info(
             "Dictation cleanup: %d chars → %d chars for user %s",
@@ -159,6 +168,12 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service error. Please try again later.",
+        ) from exc
+    except OpenAIResponseError as exc:
+        logger.warning("Dictation cleanup incomplete response: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service returned an incomplete cleanup response.",
         ) from exc
     except Exception:
         logger.exception("Dictation cleanup failed")

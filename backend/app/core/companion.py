@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.openai_client import get_openai_client
+from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 from app.core.qa import SourceSegment, retrieve_context
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.recording import Recording, Summary
@@ -666,6 +667,10 @@ async def run_turn(
             parallel_tool_calls=False,
             prompt_cache_key=f"wai-companion-{user_id}",
         )
+        try:
+            ensure_response_completed(response, operation="Companion tool planning")
+        except OpenAIResponseError as exc:
+            raise CompanionError("phase_a_model_incomplete", str(exc)) from exc
 
         tool_calls = _extract_tool_calls(response)
         if not tool_calls:
@@ -763,6 +768,10 @@ async def run_turn(
             if response_obj is None and isinstance(event, dict):
                 response_obj = event.get("response")
             if response_obj is not None:
+                try:
+                    ensure_response_completed(response_obj, operation="Companion final answer")
+                except OpenAIResponseError as exc:
+                    raise CompanionError("phase_b_model_incomplete", str(exc)) from exc
                 b_usage = getattr(response_obj, "usage", None)
                 if b_usage is None and isinstance(response_obj, dict):
                     b_usage = response_obj.get("usage")

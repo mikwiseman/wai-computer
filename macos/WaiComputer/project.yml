@@ -56,7 +56,6 @@ targets:
       - path: WaiComputerTests
       - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
       - path: WaiComputer/Features/Updates/BetaChannelStore.swift
-      - path: WaiComputer/Features/Settings/DeveloperSettingsStore.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.tests

@@ -1,12 +1,9 @@
 """Inworld AI realtime STT integration.
 
-Inworld exposes a unified WebSocket endpoint that fans out to multiple
-underlying STT engines (`inworld/inworld-stt-1`, `soniox/stt-rt-v4`,
-`assemblyai/u3-rt-pro`, etc.) selected via the `transcribe_config.model_id`
-field of the first WebSocket message. We use `soniox/stt-rt-v4` for
-dictation — best-in-class on Russian per Soniox's published multilingual
-benchmarks (human-parity across 60+ languages, semantic endpoint detection,
-backward-compatible with v3).
+Inworld exposes a unified WebSocket endpoint that can route to curated
+realtime STT engines via the `transcribe_config.model_id` field of the first
+WebSocket message. We keep this path only for realtime Soniox sessions; file
+transcription uses direct batch providers.
 
 Authentication is HTTP Basic over a base64-encoded `<id>:<secret>` pair
 held in a single `INWORLD_API_KEY` env var. Per Inworld docs the WebSocket
@@ -25,15 +22,8 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urlencode
 
-import httpx
-
-from app.config import get_settings
-from app.core.transcript_utils import TranscriptResult
-
-INWORLD_API_BASE = "https://api.inworld.ai"
 INWORLD_STT_WS_URL = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional"
 
 
@@ -119,131 +109,3 @@ def inline_query_url(session: InworldSttSession) -> str:
         "key": session.auth_header,
     }
     return f"{session.websocket_url}?{urlencode(params)}"
-
-
-def _audio_encoding_for_content_type(content_type: str) -> str:
-    normalized = content_type.lower().split(";", 1)[0].strip()
-    if normalized in {"audio/raw", "application/octet-stream"}:
-        return "LINEAR16"
-    if normalized in {"audio/mpeg", "audio/mp3", "audio/mpga"}:
-        return "MP3"
-    if normalized in {"audio/ogg", "audio/opus"}:
-        return "OGG_OPUS"
-    if normalized == "audio/flac":
-        return "FLAC"
-    return "AUTO_DETECT"
-
-
-def _timestamp_ms(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        return None
-    # Inworld examples use millisecond fields for word timestamps. Some
-    # upstream models use seconds; treat small decimal values as seconds.
-    if 0 <= numeric < 10_000 and not float(numeric).is_integer():
-        numeric *= 1000
-    return int(numeric)
-
-
-def _result_from_transcription(payload: dict[str, Any]) -> TranscriptResult | None:
-    text = (
-        str(payload.get("transcript") or payload.get("text") or "")
-        .strip()
-    )
-    if not text:
-        return None
-
-    words = payload.get("word_timestamps") or payload.get("wordTimestamps") or payload.get("words")
-    start_ms = 0
-    end_ms = 0
-    speaker = None
-    if isinstance(words, list) and words:
-        typed_words = [word for word in words if isinstance(word, dict)]
-        if typed_words:
-            first = typed_words[0]
-            last = typed_words[-1]
-            start_ms = (
-                _timestamp_ms(first.get("start_time_ms"))
-                or _timestamp_ms(first.get("startMs"))
-                or _timestamp_ms(first.get("start_ms"))
-                or _timestamp_ms(first.get("start"))
-                or 0
-            )
-            end_ms = (
-                _timestamp_ms(last.get("end_time_ms"))
-                or _timestamp_ms(last.get("endMs"))
-                or _timestamp_ms(last.get("end_ms"))
-                or _timestamp_ms(last.get("end"))
-                or start_ms
-            )
-            raw_speaker = first.get("speaker") or first.get("speaker_id")
-            speaker = str(raw_speaker) if raw_speaker else None
-
-    return TranscriptResult(
-        text=text,
-        speaker=speaker,
-        is_final=bool(payload.get("is_final", payload.get("isFinal", True))),
-        start_ms=start_ms,
-        end_ms=end_ms,
-        confidence=float(payload.get("confidence") or 0.0),
-    )
-
-
-async def transcribe_audio_file(
-    audio_data: bytes,
-    *,
-    model: str,
-    language: str = "en",
-    content_type: str = "audio/wav",
-    channels: int | None = None,
-) -> list[TranscriptResult]:
-    """Transcribe an audio file with Inworld's synchronous STT API."""
-    settings = get_settings()
-    if not settings.inworld_api_key:
-        raise ValueError("INWORLD_API_KEY not configured")
-
-    config: dict[str, Any] = {
-        "model_id": model,
-        "audio_encoding": _audio_encoding_for_content_type(content_type),
-        "number_of_channels": max(1, channels or 1),
-    }
-    if language and language != "multi":
-        config["language"] = language
-
-    payload = {
-        "transcribe_config": config,
-        "audio_data": {"content": base64.b64encode(audio_data).decode("ascii")},
-    }
-
-    auth_header = f"Basic {normalise_inworld_credential(settings.inworld_api_key)}"
-    async with httpx.AsyncClient(base_url=INWORLD_API_BASE, timeout=300.0) as client:
-        response = await client.post(
-            "/stt/v1/transcribe",
-            headers={"Authorization": auth_header, "Content-Type": "application/json"},
-            json=payload,
-        )
-        response.raise_for_status()
-        body = response.json()
-
-    if not isinstance(body, dict):
-        raise RuntimeError("Inworld returned an invalid transcription payload")
-
-    transcription = body.get("transcription")
-    if isinstance(transcription, dict):
-        result = _result_from_transcription(transcription)
-        return [result] if result else []
-
-    results = body.get("transcriptions")
-    if isinstance(results, list):
-        return [
-            result
-            for item in results
-            if isinstance(item, dict)
-            for result in [_result_from_transcription(item)]
-            if result is not None
-        ]
-
-    raise RuntimeError("Inworld STT response missing transcription payload")

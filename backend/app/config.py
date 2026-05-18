@@ -39,24 +39,14 @@ class Settings(BaseSettings):
         "https://wai.computer",
     ]
 
-    # Voice providers
-    # Account-level STT provider/model settings are curated in
-    # app.core.transcription_options; these env defaults remain for legacy
-    # direct-provider helpers and runtime credentials.
-    speech_to_text_provider: str = "elevenlabs"
+    # Voice provider
     realtime_voice_provider: str = "elevenlabs"
-    dictation_stt_provider: str = "inworld"
-    dictation_stt_model: str = "soniox/stt-rt-v4"
-    dictation_stt_language: str = "multi"
 
     # OpenAI — LLM (Companion + summarization + dictation cleanup) and embeddings.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
-    # OpenAI realtime STT survives the May 2026 STT cleanup;
-    # the gpt-4o-transcribe family was retired by OpenAI and is no longer wired.
-    openai_realtime_transcription_model: str = "gpt-realtime-whisper"
 
     # Inworld AI (provides unified STT WebSocket to multiple engines; realtime only)
     inworld_api_key: str = ""

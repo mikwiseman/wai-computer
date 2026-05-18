@@ -321,9 +321,8 @@ async def test_transcribe_audio_file_handles_unexpected_payload_type():
     ):
         mock_settings.return_value.elevenlabs_api_key = "key"
         mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
-        results = await transcribe_audio_file(b"wav-data", content_type="audio/wav")
-
-    assert results == []
+        with pytest.raises(RuntimeError, match="unexpected payload type"):
+            await transcribe_audio_file(b"wav-data", content_type="audio/wav")
 
 
 @pytest.mark.asyncio

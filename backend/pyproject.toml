@@ -26,7 +26,6 @@ dependencies = [
     "celery[redis]>=5.4.0",
     "redis>=5.2.0",
     "croniter>=2.0.0",
-    "claude-agent-sdk>=0.1.54",
     "mcp>=1.27.0,<2",
 ]
 
