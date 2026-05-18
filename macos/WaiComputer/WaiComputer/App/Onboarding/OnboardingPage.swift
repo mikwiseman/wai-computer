@@ -4,6 +4,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
     case welcome
     case valueProps
     case permission
+    case voiceSetup
     case languages
     case hotkey
     case sandbox
@@ -15,6 +16,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         case .welcome: return "Welcome"
         case .valueProps: return "What"
         case .permission: return "Allow"
+        case .voiceSetup: return "Voice"
         case .languages: return "Languages"
         case .hotkey: return "Hotkey"
         case .sandbox: return "Try"
