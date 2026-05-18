@@ -436,3 +436,45 @@ data class SaveTranscriptRequest(
     val segments: List<TranscriptSegmentPayload>,
     @SerialName("duration_seconds") val durationSeconds: Int? = null,
 )
+
+@Serializable
+data class SearchResult(
+    @SerialName("recording_id") val recordingId: String,
+    @SerialName("recording_title") val recordingTitle: String? = null,
+    @SerialName("recording_type") val recordingType: String,
+    @SerialName("segment_id") val segmentId: String,
+    val speaker: String? = null,
+    val content: String,
+    @SerialName("start_ms") val startMs: Int? = null,
+    @SerialName("end_ms") val endMs: Int? = null,
+    val score: Double,
+)
+
+@Serializable
+data class SearchResponse(
+    val results: List<SearchResult> = emptyList(),
+    val total: Int = 0,
+)
+
+enum class SearchMode(val pathSuffix: String) {
+    Hybrid(""),
+    Semantic("/semantic"),
+    Fulltext("/fts"),
+}
+
+@Serializable
+data class UpdatePersonRequest(
+    @SerialName("display_name") val displayName: String? = null,
+    val color: String? = null,
+    val aliases: List<String>? = null,
+)
+
+@Serializable
+data class CreateFolderRequest(
+    val name: String,
+)
+
+@Serializable
+data class UpdateFolderRequest(
+    val name: String,
+)

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
@@ -26,9 +27,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +50,7 @@ import `is`.waiwai.computer.onboarding.OnboardingCarousel
 import `is`.waiwai.computer.qa.WaiScreen
 import `is`.waiwai.computer.recording.RecordingScreen
 import `is`.waiwai.computer.recording.RecordingViewModel
+import `is`.waiwai.computer.search.SearchScreen
 import `is`.waiwai.computer.settings.SettingsScreen
 import `is`.waiwai.computer.ui.components.BannerCard
 import `is`.waiwai.computer.ui.components.BannerVariant
@@ -62,6 +66,7 @@ private enum class AuthFlowScreen {
 private enum class MainTab {
     Record,
     Library,
+    Search,
     Wai,
     Settings,
 }
@@ -154,28 +159,39 @@ fun WaiAndroidApp(
         is AuthState.Authenticated,
         is AuthState.Guest,
         -> {
-            MainTabsScaffold(
-                selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
-                isGuest = state is AuthState.Guest,
-                container = container,
-                authViewModel = authViewModel,
-                snackbarHostState = snackbarHostState,
-                recordingViewModel = recordingViewModel,
-                onRequestAuth = {
-                    showAuthOverlay = true
-                    authFlowScreen = AuthFlowScreen.Choice
-                },
-            )
-            if (state is AuthState.Guest && showAuthOverlay) {
-                AuthFlowSheet(
-                    authFlowScreen = authFlowScreen,
-                    authViewModel = authViewModel,
-                    showGuestInfo = showGuestInfo,
-                    onDismiss = { showAuthOverlay = false },
-                    onFlowScreenChange = { authFlowScreen = it },
-                    onGuestInfoChange = { showGuestInfo = it },
+            val needsVoiceEnrollment = state is AuthState.Authenticated && !settings.voiceEnrollmentSeen
+            val coroutineScope = rememberCoroutineScope()
+            if (needsVoiceEnrollment) {
+                `is`.waiwai.computer.onboarding.PostAuthOnboardingScreen(
+                    waiApi = container.waiApi,
+                    onDone = {
+                        coroutineScope.launch { container.settingsStore.markVoiceEnrollmentSeen() }
+                    },
                 )
+            } else {
+                MainTabsScaffold(
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    isGuest = state is AuthState.Guest,
+                    container = container,
+                    authViewModel = authViewModel,
+                    snackbarHostState = snackbarHostState,
+                    recordingViewModel = recordingViewModel,
+                    onRequestAuth = {
+                        showAuthOverlay = true
+                        authFlowScreen = AuthFlowScreen.Choice
+                    },
+                )
+                if (state is AuthState.Guest && showAuthOverlay) {
+                    AuthFlowSheet(
+                        authFlowScreen = authFlowScreen,
+                        authViewModel = authViewModel,
+                        showGuestInfo = showGuestInfo,
+                        onDismiss = { showAuthOverlay = false },
+                        onFlowScreenChange = { authFlowScreen = it },
+                        onGuestInfoChange = { showGuestInfo = it },
+                    )
+                }
             }
         }
         AuthState.Onboarding,
@@ -215,12 +231,14 @@ private fun MainTabsScaffold(
                         val label = when (tab) {
                             MainTab.Record -> stringResource(R.string.tab_record)
                             MainTab.Library -> stringResource(R.string.tab_library)
+                            MainTab.Search -> stringResource(R.string.tab_search)
                             MainTab.Wai -> stringResource(R.string.tab_wai)
                             MainTab.Settings -> stringResource(R.string.tab_settings)
                         }
                         val icon = when (tab) {
                             MainTab.Record -> Icons.Outlined.Mic
                             MainTab.Library -> Icons.Outlined.Folder
+                            MainTab.Search -> Icons.Outlined.Search
                             MainTab.Wai -> Icons.Outlined.AutoAwesome
                             MainTab.Settings -> Icons.Outlined.Settings
                         }
@@ -271,6 +289,15 @@ private fun MainTabsScaffold(
                 onOpenRecording = { recordingId, localOnly ->
                     selectedRecordingId = recordingId
                     selectedRecordingLocalOnly = localOnly
+                },
+            )
+            MainTab.Search -> SearchScreen(
+                modifier = Modifier.padding(padding),
+                container = container,
+                isGuest = isGuest,
+                onOpenRecording = { recordingId ->
+                    selectedRecordingId = recordingId
+                    selectedRecordingLocalOnly = false
                 },
             )
             MainTab.Wai -> WaiScreen(

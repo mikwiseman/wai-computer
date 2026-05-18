@@ -11,6 +11,14 @@ object TestTags {
     const val AuthPasswordField = "auth_password_field"
     const val AuthSubmitButton = "auth_submit_button"
     const val LibraryDeleteConfirmButton = "library_delete_confirm_button"
+    const val SearchQueryField = "search_query_field"
+    const val SearchClearButton = "search_clear_button"
+    const val SearchModeHybrid = "search_mode_hybrid"
+    const val SearchModeSemantic = "search_mode_semantic"
+    const val SearchModeFulltext = "search_mode_fulltext"
 
     fun libraryItem(recordingId: String): String = "library_item_$recordingId"
+
+    fun searchResultItem(recordingId: String, segmentId: String): String =
+        "search_result_${recordingId}_$segmentId"
 }

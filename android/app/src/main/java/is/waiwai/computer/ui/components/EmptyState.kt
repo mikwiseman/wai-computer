@@ -20,8 +20,8 @@ import androidx.compose.ui.unit.dp
 fun EmptyState(
     title: String,
     body: String,
-    actionLabel: String,
-    onAction: () -> Unit,
+    actionLabel: String?,
+    onAction: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -46,8 +46,10 @@ fun EmptyState(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = onAction) {
-            Text(actionLabel)
+        if (actionLabel != null && onAction != null) {
+            Button(onClick = onAction) {
+                Text(actionLabel)
+            }
         }
     }
 }
