@@ -10,6 +10,7 @@
 		06EBD901FBB05649999083AC /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png in Resources */ = {isa = PBXBuildFile; fileRef = 555E6B7AE5A8DD0DF5DD5E33 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */; };
 		2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */; };
 		38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A530B1CC229C71FC31649323 /* OnboardingPage.swift */; };
+		386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97968DE3F1803173874F4E13 /* McpConnectView.swift */; };
 		3D7F2033226F703D235266F6 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B263A0D64683E2F9852B6 /* AuthView.swift */; };
 		3DA78C2D779EB4FA151ECFAA /* WaiHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */; };
 		4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */; };
@@ -46,6 +47,7 @@
 		7F6B263A0D64683E2F9852B6 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		804113B280E47C43FBED2F85 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		82B055BB2A3A8819F870F4A3 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		97968DE3F1803173874F4E13 /* McpConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpConnectView.swift; sourceTree = "<group>"; };
 		A530B1CC229C71FC31649323 /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		A85E11C35CBE283D2101267D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
@@ -72,6 +74,7 @@
 		264DE5A927EBB291BE260D14 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				97968DE3F1803173874F4E13 /* McpConnectView.swift */,
 				1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */,
 			);
 			path = Settings;
@@ -295,6 +298,7 @@
 				A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
+				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
 				38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */,
 				E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */,
 				B2D9ABA7135D805FC44861CB /* OnboardingView.swift in Sources */,
