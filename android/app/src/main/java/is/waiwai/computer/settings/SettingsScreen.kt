@@ -92,6 +92,8 @@ fun SettingsScreen(
     var storageRefreshKey by rememberSaveable { mutableIntStateOf(0) }
     var showLanguageSheet by rememberSaveable { mutableStateOf(false) }
     var showMcpSheet by rememberSaveable { mutableStateOf(false) }
+    var showFoldersSheet by rememberSaveable { mutableStateOf(false) }
+    var showSpeakersSheet by rememberSaveable { mutableStateOf(false) }
     var activeModelPreference by remember { mutableStateOf<ModelPreference?>(null) }
     var accountSettings by remember { mutableStateOf<UserSettings?>(null) }
     var transcriptionOptions by remember { mutableStateOf<TranscriptionOptions?>(null) }
@@ -300,6 +302,37 @@ fun SettingsScreen(
             }
         }
 
+        if (authState is AuthState.Authenticated) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_data)) {
+                Text(
+                    text = stringResource(R.string.settings_folders_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { showFoldersSheet = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(`is`.waiwai.computer.ui.TestTags.SettingsManageFolders),
+                ) {
+                    Text(stringResource(R.string.settings_folders_open))
+                }
+                Text(
+                    text = stringResource(R.string.settings_speakers_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { showSpeakersSheet = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(`is`.waiwai.computer.ui.TestTags.SettingsManageSpeakers),
+                ) {
+                    Text(stringResource(R.string.settings_speakers_open))
+                }
+            }
+        }
+
         SettingsSectionCard(title = stringResource(R.string.settings_mcp)) {
             Text(
                 text = stringResource(R.string.settings_mcp_subtitle),
@@ -408,6 +441,26 @@ fun SettingsScreen(
 
     if (showMcpSheet) {
         MCPConnectSheet(onDismiss = { showMcpSheet = false })
+    }
+
+    if (showFoldersSheet) {
+        val folderViewModel = remember(container) {
+            `is`.waiwai.computer.library.FolderManagerViewModel(container.waiApi)
+        }
+        `is`.waiwai.computer.library.FolderManagerSheet(
+            viewModel = folderViewModel,
+            onDismiss = { showFoldersSheet = false },
+        )
+    }
+
+    if (showSpeakersSheet) {
+        val speakerViewModel = remember(container) {
+            `is`.waiwai.computer.people.PeopleManagerViewModel(container.waiApi)
+        }
+        `is`.waiwai.computer.people.PeopleManagerSheet(
+            viewModel = speakerViewModel,
+            onDismiss = { showSpeakersSheet = false },
+        )
     }
 
     if (showLanguageSheet) {
