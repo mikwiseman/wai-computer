@@ -247,8 +247,8 @@ data class UserSettings(
     @SerialName("file_stt_provider") val fileSttProvider: String = "elevenlabs",
     @SerialName("file_stt_model") val fileSttModel: String = "scribe_v2",
     @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean = true,
-    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "anthropic",
-    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "claude-haiku-4-5",
+    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "openai",
+    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "gpt-5.5",
 )
 
 @Serializable
@@ -296,6 +296,85 @@ data class QASource(
     @SerialName("start_ms") val startMs: Int? = null,
     @SerialName("end_ms") val endMs: Int? = null,
 )
+
+@Serializable
+data class CompanionScope(
+    @SerialName("recording_ids") val recordingIds: List<String>? = null,
+    @SerialName("folder_ids") val folderIds: List<String>? = null,
+    val types: List<String>? = null,
+    val speakers: List<String>? = null,
+    @SerialName("date_from") val dateFrom: String? = null,
+    @SerialName("date_to") val dateTo: String? = null,
+)
+
+@Serializable
+data class CompanionConversation(
+    val id: String,
+    val title: String? = null,
+    val scope: CompanionScope? = null,
+    @SerialName("pinned_at") val pinnedAt: String? = null,
+    @SerialName("last_message_at") val lastMessageAt: String? = null,
+    @SerialName("archived_at") val archivedAt: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class CompanionConversationList(
+    val chats: List<CompanionConversation> = emptyList(),
+)
+
+@Serializable
+data class CompanionCitation(
+    val id: String,
+    @SerialName("segment_id") val segmentId: String? = null,
+    @SerialName("recording_id") val recordingId: String? = null,
+    @SerialName("span_start") val spanStart: Int,
+    @SerialName("span_end") val spanEnd: Int,
+    @SerialName("citation_index") val citationIndex: Int,
+)
+
+@Serializable
+data class CompanionMessage(
+    val id: String,
+    val role: String,
+    val content: kotlinx.serialization.json.JsonElement,
+    @SerialName("tool_calls") val toolCalls: kotlinx.serialization.json.JsonElement? = null,
+    val citations: List<CompanionCitation> = emptyList(),
+    val model: String? = null,
+    @SerialName("input_tokens") val inputTokens: Int? = null,
+    @SerialName("output_tokens") val outputTokens: Int? = null,
+    @SerialName("cached_tokens") val cachedTokens: Int? = null,
+    @SerialName("latency_ms") val latencyMs: Int? = null,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class CompanionConversationDetail(
+    val id: String,
+    val title: String? = null,
+    val scope: CompanionScope? = null,
+    @SerialName("pinned_at") val pinnedAt: String? = null,
+    @SerialName("last_message_at") val lastMessageAt: String? = null,
+    @SerialName("archived_at") val archivedAt: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    val messages: List<CompanionMessage> = emptyList(),
+)
+
+@Serializable
+data class CreateCompanionChatRequest(val scope: CompanionScope? = null)
+
+@Serializable
+data class PatchCompanionChatRequest(
+    val title: String? = null,
+    val scope: CompanionScope? = null,
+    val pinned: Boolean? = null,
+    val archived: Boolean? = null,
+)
+
+@Serializable
+data class PostCompanionMessageRequest(val content: String)
 
 @Serializable
 data class CreateRealtimeTranscriptionSessionRequest(

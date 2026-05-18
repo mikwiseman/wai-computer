@@ -324,6 +324,50 @@ class ApiTransport(
         client.close()
     }
 
+    /// Execute a streaming request with bearer-token refresh-on-401. Returns
+    /// the raw HttpResponse so callers can consume `bodyAsChannel()` as bytes
+    /// arrive — used by the Companion SSE consumer.
+    suspend fun streamAuthorized(
+        method: HttpMethod,
+        path: String,
+        body: Any? = null,
+        query: List<Pair<String, String>> = emptyList(),
+        accessTokenProvider: suspend () -> String?,
+        refresh: suspend () -> Boolean,
+    ): HttpResponse {
+        val first = streamRequest(method, path, query, body, accessTokenProvider())
+        if (first.status.value != 401) {
+            return first
+        }
+        if (!refresh()) {
+            throw ApiError.Unauthorized
+        }
+        val second = streamRequest(method, path, query, body, accessTokenProvider())
+        if (second.status.value == 401) {
+            throw ApiError.Unauthorized
+        }
+        return second
+    }
+
+    private suspend fun streamRequest(
+        method: HttpMethod,
+        path: String,
+        query: List<Pair<String, String>>,
+        body: Any?,
+        bearerToken: String?,
+    ): HttpResponse {
+        val url = resolveUrl(path, query)
+        return client.request(url) {
+            this.method = method
+            applyCommonHeaders(bearerToken)
+            header(HttpHeaders.Accept, "text/event-stream")
+            if (body != null) {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }
+        }
+    }
+
     private fun HttpRequestBuilder.applyCommonHeaders(bearerToken: String?) {
         if (!bearerToken.isNullOrBlank()) {
             header(HttpHeaders.Authorization, "Bearer $bearerToken")
