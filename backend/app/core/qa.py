@@ -1,10 +1,14 @@
-"""Stateless RAG QA pipeline against recordings."""
+"""Stateless RAG QA pipeline against recordings (legacy /api/qa route).
+
+Retained until the web client migrates from GlobalQAPanel to the streaming
+Companion endpoint, then deleted in phase 9.
+"""
 
 import logging
 import uuid
 from dataclasses import dataclass, field
 
-import anthropic
+import openai
 from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,19 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
 from app.core.observability import safe_text_digest
+from app.core.openai_client import get_openai_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-_anthropic_client: anthropic.AsyncAnthropic | None = None
-
-
-def _get_anthropic_client() -> anthropic.AsyncAnthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    return _anthropic_client
-
 
 SYSTEM_PROMPT = (
     "You are a helpful meeting assistant. Answer questions based on "
@@ -157,7 +152,7 @@ async def retrieve_context(
 
 
 def build_context_text(rows: list) -> str:
-    """Format retrieved segments into a context block for Claude."""
+    """Format retrieved segments into a context block for the model."""
     if not rows:
         return "No relevant transcript segments found."
 
@@ -176,19 +171,18 @@ async def ask_database(
     question: str,
     recording_ids: list[uuid.UUID] | None = None,
 ) -> QAResult:
+    """Stateless single-shot QA pipeline.
+
+    1. Hybrid retrieval over the user's segments.
+    2. OpenAI Responses API call with the retrieved context.
+    3. Return the answer plus the source segments.
     """
-    Stateless QA pipeline.
-    1. Retrieves context via hybrid search
-    2. Sends question + context to Claude
-    3. Returns the response with source info
-    """
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="QA service not configured",
         )
 
-    # Retrieve context
     logger.info(
         "ask_database question=%s",
         safe_text_digest(question, label="question"),
@@ -196,43 +190,42 @@ async def ask_database(
     context_rows = await retrieve_context(db, user_id, question, recording_ids=recording_ids)
     context_text = build_context_text(context_rows)
 
-    # Build Claude message
     user_content = f"Context from meeting transcripts:\n\n{context_text}\n\nQuestion: {question}"
 
-    client = _get_anthropic_client()
+    client = get_openai_client()
     try:
-        response = await client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
+        response = await client.responses.create(
+            model=settings.openai_llm_model,
+            instructions=SYSTEM_PROMPT,
+            input=user_content,
+            max_output_tokens=4096,
         )
-        if not response.content:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Empty response from AI service",
-            )
-        answer = response.content[0].text
-    except anthropic.APIConnectionError:
-        logger.error("qa Claude API connection error")
+    except openai.APIConnectionError:
+        logger.error("qa OpenAI API connection error")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
         ) from None
-    except anthropic.RateLimitError:
-        logger.warning("qa Claude API rate limited")
+    except openai.RateLimitError:
+        logger.warning("qa OpenAI API rate limited")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
         ) from None
-    except anthropic.APIStatusError as exc:
-        logger.error("qa Claude API error: %s", exc.message)
+    except openai.APIStatusError as exc:
+        logger.error("qa OpenAI API error: %s", exc.message)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI service error: {exc.message}",
         ) from exc
 
-    # Build source segments
+    answer = response.output_text
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Empty response from AI service",
+        )
+
     source_segments = [
         SourceSegment(
             segment_id=str(row.id),

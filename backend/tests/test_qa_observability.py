@@ -7,7 +7,7 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import anthropic
+import openai
 import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient, Request, Response
@@ -96,16 +96,14 @@ async def test_ask_database_returns_answer_and_logs_safe_digest(
     ]
 
     mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(
-        return_value=SimpleNamespace(
-            content=[SimpleNamespace(text="Budget was approved for hiring.")]
-        )
+    mock_client.responses.create = AsyncMock(
+        return_value=SimpleNamespace(output_text="Budget was approved for hiring.")
     )
 
-    monkeypatch.setattr(qa_core.settings, "anthropic_api_key", "sk-ant-test")
-    monkeypatch.setattr(qa_core.settings, "anthropic_model", "claude-sonnet-4")
+    monkeypatch.setattr(qa_core.settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(qa_core.settings, "openai_llm_model", "gpt-5.5")
     monkeypatch.setattr(qa_core, "retrieve_context", AsyncMock(return_value=source_rows))
-    monkeypatch.setattr(qa_core, "_get_anthropic_client", lambda: mock_client)
+    monkeypatch.setattr(qa_core, "get_openai_client", lambda: mock_client)
 
     question = "Did alice@example.com mention compensation?"
     caplog.set_level(logging.INFO)
@@ -125,15 +123,15 @@ async def test_ask_database_returns_answer_and_logs_safe_digest(
 @pytest.mark.asyncio
 async def test_ask_database_maps_rate_limit_to_429(monkeypatch: pytest.MonkeyPatch):
     mock_client = AsyncMock()
-    response = Response(429, request=Request("POST", "https://api.anthropic.com/v1/messages"))
-    mock_client.messages.create = AsyncMock(
-        side_effect=anthropic.RateLimitError("rate limited", response=response, body={})
+    response = Response(429, request=Request("POST", "https://api.openai.com/v1/responses"))
+    mock_client.responses.create = AsyncMock(
+        side_effect=openai.RateLimitError("rate limited", response=response, body={})
     )
 
-    monkeypatch.setattr(qa_core.settings, "anthropic_api_key", "sk-ant-test")
-    monkeypatch.setattr(qa_core.settings, "anthropic_model", "claude-sonnet-4")
+    monkeypatch.setattr(qa_core.settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(qa_core.settings, "openai_llm_model", "gpt-5.5")
     monkeypatch.setattr(qa_core, "retrieve_context", AsyncMock(return_value=[]))
-    monkeypatch.setattr(qa_core, "_get_anthropic_client", lambda: mock_client)
+    monkeypatch.setattr(qa_core, "get_openai_client", lambda: mock_client)
 
     with pytest.raises(HTTPException) as exc_info:
         await qa_core.ask_database(

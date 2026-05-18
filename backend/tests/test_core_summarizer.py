@@ -1,4 +1,4 @@
-"""Tests for app/core/summarizer.py - Claude API summarization and entity extraction."""
+"""Tests for app/core/summarizer.py — OpenAI Responses API summarization."""
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,13 +16,11 @@ from app.core.summarizer import (
 )
 
 
-def _make_claude_response(text: str):
-    """Create a mock Claude API response with the given text content."""
-    mock_content_block = MagicMock()
-    mock_content_block.text = text
-    mock_message = MagicMock()
-    mock_message.content = [mock_content_block]
-    return mock_message
+def _make_response(text: str):
+    """Create a mock Responses API result with the given output_text."""
+    response = MagicMock()
+    response.output_text = text
+    return response
 
 
 VALID_SUMMARY_JSON = json.dumps({
@@ -60,19 +58,18 @@ VALID_ENTITY_JSON = json.dumps({
 @pytest.fixture(autouse=True)
 def mock_settings():
     """Patch settings attributes on the already-imported module."""
-    with patch.object(summarizer_module.settings, "anthropic_api_key", "sk-ant-test-key"), \
-         patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-6"):
+    with patch.object(summarizer_module.settings, "openai_api_key", "sk-test"), \
+         patch.object(summarizer_module.settings, "openai_llm_model", "gpt-5.5"):
         yield
 
 
 class TestSummarizeTranscript:
     async def test_plain_json_response(self):
-        """summarize_transcript() parses plain JSON response correctly."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             result = await summarize_transcript("Some transcript text")
 
         assert isinstance(result, SummaryResult)
@@ -83,121 +80,84 @@ class TestSummarizeTranscript:
         assert len(result.action_items) == 1
         assert result.action_items[0]["owner"] == "Alice"
 
-    async def test_json_in_json_code_block(self):
-        """summarize_transcript() extracts JSON from ```json code blocks."""
-        wrapped = f"Here is the analysis:\n```json\n{VALID_SUMMARY_JSON}\n```\nDone."
-        mock_response = _make_claude_response(wrapped)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
-            result = await summarize_transcript("Transcript here")
-
-        assert isinstance(result, SummaryResult)
-        assert result.title == "Q1 Planning Meeting"
-
-    async def test_json_in_plain_code_block(self):
-        """summarize_transcript() extracts JSON from plain ``` code blocks."""
-        wrapped = f"Result:\n```\n{VALID_SUMMARY_JSON}\n```"
-        mock_response = _make_claude_response(wrapped)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
-            result = await summarize_transcript("Transcript here")
-
-        assert isinstance(result, SummaryResult)
-        assert result.title == "Q1 Planning Meeting"
-
     async def test_missing_api_key_raises_value_error(self):
-        """summarize_transcript() raises ValueError when API key is empty."""
-        with patch.object(summarizer_module.settings, "anthropic_api_key", ""):
-            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "openai_api_key", ""):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
                 await summarize_transcript("Some transcript")
 
     async def test_invalid_json_raises_summarization_error(self):
-        """summarize_transcript() raises SummarizationError when Claude returns invalid JSON."""
-        mock_response = _make_claude_response("This is not valid JSON at all {{{")
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response("This is not valid JSON at all {{{")
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
-            with pytest.raises(SummarizationError, match="Invalid JSON response from Claude"):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="Invalid JSON response from model"):
                 await summarize_transcript("Transcript")
 
-    async def test_calls_claude_api_with_correct_params(self):
-        """summarize_transcript() calls Claude API with correct model and prompt."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+    async def test_calls_openai_with_correct_params(self):
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch(
-            "app.core.summarizer._get_anthropic_client",
-            return_value=mock_client,
-        ):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             await summarize_transcript("My meeting notes")
 
-        mock_client.messages.create.assert_called_once()
-        call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-6"
-        assert call_kwargs["max_tokens"] == 4096
-        assert "My meeting notes" in call_kwargs["messages"][0]["content"]
+        mock_client.responses.create.assert_awaited_once()
+        kwargs = mock_client.responses.create.await_args.kwargs
+        assert kwargs["model"] == "gpt-5.5"
+        assert kwargs["max_output_tokens"] == 4096
+        assert "My meeting notes" in kwargs["input"]
 
     async def test_language_param_injected_into_prompt(self):
-        """summarize_transcript() injects language into the Claude prompt."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             await summarize_transcript("Notes", language="ru")
 
-        content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        content = mock_client.responses.create.await_args.kwargs["input"]
         assert "ru" in content
         assert "OUTPUT LANGUAGE" in content
 
     async def test_style_param_injected_into_prompt(self):
-        """summarize_transcript() injects style into the Claude prompt."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             await summarize_transcript("Notes", style="brief")
 
-        content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        content = mock_client.responses.create.await_args.kwargs["input"]
         assert "1-2 sentences" in content
 
     async def test_custom_instructions_injected_into_prompt(self):
-        """summarize_transcript() injects custom instructions into the Claude prompt."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             await summarize_transcript("Notes", instructions="Focus on deadlines")
 
-        content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        content = mock_client.responses.create.await_args.kwargs["input"]
         assert "Focus on deadlines" in content
         assert "ADDITIONAL INSTRUCTIONS" in content
 
     async def test_auto_language_follows_transcript_language(self):
-        """summarize_transcript() with language='auto' follows the transcript language."""
-        mock_response = _make_claude_response(VALID_SUMMARY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_SUMMARY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             await summarize_transcript("Notes", language="auto")
 
-        content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+        content = mock_client.responses.create.await_args.kwargs["input"]
         assert "OUTPUT LANGUAGE" in content
         assert "dominant language of the transcript" in content
 
 
 class TestBuildSummaryPrompt:
     def test_default_prompt_has_medium_style(self):
-        """build_summary_prompt() includes medium style by default."""
         prompt = build_summary_prompt()
         assert "2-3 sentence" in prompt
         assert "OUTPUT LANGUAGE" in prompt
@@ -205,29 +165,24 @@ class TestBuildSummaryPrompt:
         assert "ADDITIONAL INSTRUCTIONS" not in prompt
 
     def test_brief_style(self):
-        """build_summary_prompt(style='brief') includes brief instructions."""
         prompt = build_summary_prompt(style="brief")
         assert "1-2 sentences" in prompt
 
     def test_detailed_style(self):
-        """build_summary_prompt(style='detailed') includes detailed instructions."""
         prompt = build_summary_prompt(style="detailed")
         assert "4-6 sentence" in prompt
 
     def test_language_directive(self):
-        """build_summary_prompt(language='ru') adds OUTPUT LANGUAGE directive."""
         prompt = build_summary_prompt(language="ru")
         assert "OUTPUT LANGUAGE" in prompt
         assert "ru" in prompt
 
     def test_custom_instructions(self):
-        """build_summary_prompt(instructions=...) adds ADDITIONAL INSTRUCTIONS."""
         prompt = build_summary_prompt(instructions="Emphasize risks")
         assert "ADDITIONAL INSTRUCTIONS" in prompt
         assert "Emphasize risks" in prompt
 
     def test_all_params_combined(self):
-        """build_summary_prompt() combines all parameters correctly."""
         prompt = build_summary_prompt(language="en", style="detailed", instructions="Be formal")
         assert "OUTPUT LANGUAGE" in prompt
         assert "4-6 sentence" in prompt
@@ -237,12 +192,11 @@ class TestBuildSummaryPrompt:
 
 class TestExtractEntities:
     async def test_returns_entity_results_correctly(self):
-        """extract_entities() returns a list of EntityResult dataclasses."""
-        mock_response = _make_claude_response(VALID_ENTITY_JSON)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response(VALID_ENTITY_JSON)
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
             results = await extract_entities("Transcript with entities")
 
         assert len(results) == 2
@@ -258,30 +212,15 @@ class TestExtractEntities:
         assert results[1].type == "project"
 
     async def test_invalid_json_raises_summarization_error(self):
-        """extract_entities() raises SummarizationError when Claude returns invalid JSON."""
-        mock_response = _make_claude_response("not json!!")
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response = _make_response("not json!!")
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
-            with pytest.raises(SummarizationError, match="Invalid JSON response from Claude"):
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="Invalid JSON response from model"):
                 await extract_entities("Transcript")
 
     async def test_missing_api_key_raises_value_error(self):
-        """extract_entities() raises ValueError when API key is empty."""
-        with patch.object(summarizer_module.settings, "anthropic_api_key", ""):
-            with pytest.raises(ValueError, match="ANTHROPIC_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "openai_api_key", ""):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
                 await extract_entities("Some transcript")
-
-    async def test_extracts_from_json_code_block(self):
-        """extract_entities() handles JSON wrapped in ```json code blocks."""
-        wrapped = f"```json\n{VALID_ENTITY_JSON}\n```"
-        mock_response = _make_claude_response(wrapped)
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
-
-        with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
-            results = await extract_entities("Transcript")
-
-        assert len(results) == 2
-        assert results[0].name == "Alice"

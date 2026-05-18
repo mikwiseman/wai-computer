@@ -15,12 +15,10 @@ from app.models.recording import Segment
 
 
 def _make_claude_response(text: str):
-    """Create a mock Claude API response with the given text content."""
-    mock_content_block = MagicMock()
-    mock_content_block.text = text
-    mock_message = MagicMock()
-    mock_message.content = [mock_content_block]
-    return mock_message
+    """Create a mock Responses API result with the given output_text."""
+    response = MagicMock()
+    response.output_text = text
+    return response
 
 
 def _summary_result_with_highlights(highlights: list[dict]) -> SummaryResult:
@@ -87,8 +85,8 @@ async def _create_recording(
 def mock_settings():
     """Patch settings for summarizer tests."""
     with (
-        patch.object(summarizer_module.settings, "anthropic_api_key", "sk-ant-test-key"),
-        patch.object(summarizer_module.settings, "anthropic_model", "claude-sonnet-4-6"),
+        patch.object(summarizer_module.settings, "openai_api_key", "sk-test"),
+        patch.object(summarizer_module.settings, "openai_llm_model", "gpt-5.5"),
     ):
         yield
 
@@ -110,10 +108,10 @@ async def test_highlight_extraction_from_summary():
     }
 
     mock_response = _make_claude_response(json.dumps(response_data))
-    mock_client = AsyncMock()
-    mock_client.messages.create = AsyncMock(return_value=mock_response)
+    mock_client = MagicMock()
+    mock_client.responses.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.core.summarizer._get_anthropic_client", return_value=mock_client):
+    with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
         result = await summarize_transcript("Some transcript")
 
     assert hasattr(result, "highlights")

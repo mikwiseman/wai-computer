@@ -1,4 +1,4 @@
-"""Claude API integration for summarization and entity extraction."""
+"""OpenAI Responses API summarization, title generation, and entity extraction."""
 
 import json
 import logging
@@ -11,7 +11,7 @@ from app.core.observability import (
     capture_sentry_exception,
     safe_text_digest,
 )
-from app.core.qa import _get_anthropic_client
+from app.core.openai_client import get_openai_client
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -19,6 +19,7 @@ settings = get_settings()
 
 class SummarizationError(Exception):
     """Error during summarization."""
+
     pass
 
 
@@ -94,11 +95,9 @@ def build_summary_prompt(
     parts.append("\nINSTRUCTIONS:")
     parts.append(SUMMARY_INSTRUCTIONS)
 
-    # Style
     style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
     parts.append(f"\nSTYLE: {style_text}")
 
-    # Language
     if language and language != DEFAULT_SUMMARY_LANGUAGE:
         parts.append(
             f"\nOUTPUT LANGUAGE: Write ALL text fields "
@@ -112,7 +111,6 @@ def build_summary_prompt(
             "If the transcript is primarily in English, output English."
         )
 
-    # Custom instructions
     if instructions and instructions.strip():
         parts.append(f"\nADDITIONAL INSTRUCTIONS: {instructions.strip()}")
 
@@ -143,65 +141,35 @@ async def summarize_transcript(
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> SummaryResult:
-    """
-    Summarize a transcript using Claude API.
-
-    Args:
-        transcript: The full transcript text with speaker labels
-        language: Output language code (e.g. "ru", "en") or "auto"
-        style: Summary detail level — "brief", "medium", or "detailed"
-        instructions: Optional custom instructions from user
-
-    Returns:
-        SummaryResult with extracted information
-    """
+    """Summarize a transcript via the OpenAI Responses API."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
         data={"transcript_length": len(transcript), "language": language, "style": style},
     )
-    if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured")
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
-    client = _get_anthropic_client()
+    client = get_openai_client()
 
-    message = await client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=4096,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt + transcript,
-            }
-        ],
+    response = await client.responses.create(
+        model=settings.openai_llm_model,
+        input=prompt + transcript,
+        max_output_tokens=4096,
     )
-
-    # Extract JSON from response
-    response_text = message.content[0].text
-
-    # Find JSON in response (handle markdown code blocks)
-    if "```json" in response_text:
-        start = response_text.find("```json") + 7
-        end = response_text.find("```", start)
-        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
-    elif "```" in response_text:
-        start = response_text.find("```") + 3
-        end = response_text.find("```", start)
-        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
-    else:
-        json_str = response_text.strip()
+    response_text = response.output_text
 
     try:
-        data = json.loads(json_str)
+        data = json.loads(response_text.strip())
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Claude response as JSON: {e}")
+        logger.error(f"Failed to parse model response as JSON: {e}")
         logger.debug(
-            "Claude response digest=%s",
-            safe_text_digest(response_text, label="claude_response"),
+            "Model response digest=%s",
+            safe_text_digest(response_text, label="openai_response"),
         )
         capture_sentry_exception(e, extras={"response_text": response_text})
-        raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
+        raise SummarizationError(f"Invalid JSON response from model: {e}") from e
 
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
 
@@ -220,52 +188,32 @@ async def summarize_transcript(
 
 
 async def generate_title(transcript: str) -> str:
-    """Generate a short descriptive title from transcript text using Claude."""
+    """Generate a short descriptive title from transcript text via OpenAI."""
     add_sentry_breadcrumb(category="summarizer", message="Generating title")
-    if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured")
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
 
-    # Use first ~500 chars of transcript for speed
     snippet = transcript[:500]
-
-    client = _get_anthropic_client()
-    message = await client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=50,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Generate a short title (3-7 words) for this audio recording based on "
-                    "its transcript. Return ONLY the plain title text — no markdown "
-                    "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
-                    "nothing else.\n\n"
-                    f"Transcript:\n{snippet}"
-                ),
-            }
-        ],
+    client = get_openai_client()
+    response = await client.responses.create(
+        model=settings.openai_llm_model,
+        input=(
+            "Generate a short title (3-7 words) for this audio recording based on "
+            "its transcript. Return ONLY the plain title text — no markdown "
+            "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
+            "nothing else.\n\n"
+            f"Transcript:\n{snippet}"
+        ),
+        max_output_tokens=50,
     )
-    return message.content[0].text.strip()
+    return response.output_text.strip()
 
 
 def resolve_highlight_timestamps(
     highlights: list[dict],
     segments: list[dict],
 ) -> list[dict]:
-    """Map each highlight to the best-matching segment's time range.
-
-    Uses simple word-overlap scoring between the highlight text (title +
-    description) and each segment's content.  The highlight dict is
-    returned with ``start_ms`` and ``end_ms`` populated from the
-    best-matching segment.
-
-    Args:
-        highlights: List of highlight dicts from Claude.
-        segments: List of dicts with ``content``, ``start_ms``, ``end_ms``.
-
-    Returns:
-        A new list of highlight dicts with timestamps resolved.
-    """
+    """Map each highlight to the best-matching segment's time range."""
     if not segments:
         return highlights
 
@@ -278,7 +226,6 @@ def resolve_highlight_timestamps(
     resolved: list[dict] = []
     for highlight in highlights:
         hl = dict(highlight)
-        # Build a bag of words from the highlight's title and description
         hl_words = _words(hl.get("title")) | _words(hl.get("description"))
 
         best_score = -1
@@ -335,66 +282,40 @@ class EntityResult:
 
 
 async def extract_entities(transcript: str) -> list[EntityResult]:
-    """
-    Extract entities from a transcript using Claude API.
-
-    Args:
-        transcript: The full transcript text
-
-    Returns:
-        List of extracted entities
-    """
+    """Extract entities from a transcript via OpenAI."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Extracting entities",
         data={"transcript_length": len(transcript)},
     )
-    if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured")
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
 
-    client = _get_anthropic_client()
+    client = get_openai_client()
 
-    message = await client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=4096,
-        messages=[
-            {
-                "role": "user",
-                "content": ENTITY_EXTRACTION_PROMPT + transcript,
-            }
-        ],
+    response = await client.responses.create(
+        model=settings.openai_llm_model,
+        input=ENTITY_EXTRACTION_PROMPT + transcript,
+        max_output_tokens=4096,
     )
-
-    response_text = message.content[0].text
-
-    # Find JSON in response
-    if "```json" in response_text:
-        start = response_text.find("```json") + 7
-        end = response_text.find("```", start)
-        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
-    elif "```" in response_text:
-        start = response_text.find("```") + 3
-        end = response_text.find("```", start)
-        json_str = response_text[start:end if end != -1 else len(response_text)].strip()
-    else:
-        json_str = response_text.strip()
+    response_text = response.output_text
 
     try:
-        data = json.loads(json_str)
+        data = json.loads(response_text.strip())
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Claude entity response as JSON: {e}")
+        logger.error(f"Failed to parse model entity response as JSON: {e}")
         logger.debug(
-            "Claude entity response digest=%s",
-            safe_text_digest(response_text, label="claude_entities"),
+            "Model entity response digest=%s",
+            safe_text_digest(response_text, label="openai_entities"),
         )
         capture_sentry_exception(e, extras={"response_text": response_text})
-        raise SummarizationError(f"Invalid JSON response from Claude: {e}") from e
+        raise SummarizationError(f"Invalid JSON response from model: {e}") from e
 
     return [
         EntityResult(
-            name=e.get("name", ""),
-            type=e.get("type", "topic"),
-            context=e.get("context", ""),
+            name=e["name"],
+            type=e["type"],
+            context=e["context"],
             relations=e.get("relations", []),
         )
         for e in data.get("entities", [])
