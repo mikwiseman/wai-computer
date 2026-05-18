@@ -49,8 +49,13 @@ class Settings(BaseSettings):
     dictation_stt_model: str = "soniox/stt-rt-v4"
     dictation_stt_language: str = "multi"
 
-    # OpenAI speech-to-text
+    # OpenAI — LLM (Companion + summarization + dictation cleanup) and embeddings.
+    # STT models below are independent and unchanged.
     openai_api_key: str = ""
+    openai_llm_model: str = "gpt-5.5"
+    openai_embedding_model: str = "text-embedding-3-large"
+    embedding_dimensions: int = 3072
+    # OpenAI speech-to-text (untouched by the May 2026 LLM swap)
     openai_realtime_transcription_model: str = "gpt-realtime-whisper"
     openai_file_transcription_model: str = "gpt-4o-transcribe"
 
