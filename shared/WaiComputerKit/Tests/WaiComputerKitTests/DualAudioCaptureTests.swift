@@ -5,39 +5,25 @@ import AVFoundation
 @available(macOS 14.2, *)
 final class DualAudioCaptureTests: XCTestCase {
 
-    // MARK: - Initialization & Default State
+    // MARK: - Initial state
 
-    func testInitDoesNotCrash() {
+    /// All `false` flags on a freshly-created capture. Single regression test
+    /// (replaces six prior `XCTAssertNotNil(capture)`-only smoke tests).
+    func testFreshCaptureHasNoActiveAudioFlags() {
         let capture = DualAudioCapture()
-        XCTAssertNotNil(capture, "DualAudioCapture should initialize without crashing")
+        XCTAssertFalse(capture.isRecording)
+        XCTAssertFalse(capture.hasSystemAudio)
+        XCTAssertFalse(capture.systemAudioStalled)
+        XCTAssertFalse(capture.systemAudioReceivedAny)
     }
 
-    func testInitWithCustomConfig() {
+    /// A custom-config capture starts in the same idle state — verifies the
+    /// custom-config init path doesn't accidentally flip a flag.
+    func testCustomConfigCaptureStartsIdle() {
         let config = AudioCaptureConfig(sampleRate: 48000, channelCount: 2, bufferSize: 4096)
         let capture = DualAudioCapture(config: config)
-        XCTAssertNotNil(capture, "DualAudioCapture should initialize with custom config")
-    }
-
-    func testIsRecordingDefaultsFalse() {
-        let capture = DualAudioCapture()
-        XCTAssertFalse(capture.isRecording, "isRecording should default to false")
-    }
-
-    func testHasSystemAudioDefaultsFalse() {
-        let capture = DualAudioCapture()
-        XCTAssertFalse(capture.hasSystemAudio, "hasSystemAudio should default to false")
-    }
-
-    func testSystemAudioStalledDefaultsFalse() {
-        let capture = DualAudioCapture()
-        XCTAssertFalse(capture.systemAudioStalled, "systemAudioStalled should default to false")
-    }
-
-    func testAudioBuffersStreamExists() {
-        let capture = DualAudioCapture()
-        // audioBuffers is a non-optional AsyncStream — just verify we can reference it
-        let stream = capture.audioBuffers
-        XCTAssertNotNil(stream, "audioBuffers stream should be available after init")
+        XCTAssertFalse(capture.isRecording)
+        XCTAssertFalse(capture.hasSystemAudio)
     }
 
     // MARK: - 2-Channel PCM Buffer Format (mirrors flushDualBuffers output)
