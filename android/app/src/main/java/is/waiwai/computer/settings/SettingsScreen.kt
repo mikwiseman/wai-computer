@@ -91,6 +91,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var storageRefreshKey by rememberSaveable { mutableIntStateOf(0) }
     var showLanguageSheet by rememberSaveable { mutableStateOf(false) }
+    var showMcpSheet by rememberSaveable { mutableStateOf(false) }
     var activeModelPreference by remember { mutableStateOf<ModelPreference?>(null) }
     var accountSettings by remember { mutableStateOf<UserSettings?>(null) }
     var transcriptionOptions by remember { mutableStateOf<TranscriptionOptions?>(null) }
@@ -299,6 +300,27 @@ fun SettingsScreen(
             }
         }
 
+        SettingsSectionCard(title = stringResource(R.string.settings_mcp)) {
+            Text(
+                text = stringResource(R.string.settings_mcp_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = MCP_ENDPOINT_URL,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = { showMcpSheet = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings-mcp-open"),
+            ) {
+                Text(stringResource(R.string.settings_mcp_open))
+            }
+        }
+
         SettingsSectionCard(title = stringResource(R.string.settings_storage)) {
             Text(stringResource(R.string.settings_storage_count, storageSummary.count))
             Text(stringResource(R.string.settings_storage_size, storageSummary.sizeMb))
@@ -382,6 +404,10 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showMcpSheet) {
+        MCPConnectSheet(onDismiss = { showMcpSheet = false })
     }
 
     if (showLanguageSheet) {
