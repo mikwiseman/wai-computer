@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, false
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -137,6 +137,17 @@ class Segment(Base, UUIDMixin):
         index=True,
     )
     speaker: Mapped[str | None] = mapped_column(String(100))
+    raw_label: Mapped[str | None] = mapped_column(String(100))
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("people.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    auto_assigned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    match_confidence: Mapped[float | None] = mapped_column(Float)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     start_ms: Mapped[int | None] = mapped_column(Integer)
     end_ms: Mapped[int | None] = mapped_column(Integer)
@@ -145,6 +156,7 @@ class Segment(Base, UUIDMixin):
 
     # Relationships
     recording: Mapped["Recording"] = relationship("Recording", back_populates="segments")
+    person: Mapped["Person | None"] = relationship("Person")
 
 
 class Summary(Base, UUIDMixin, TimestampMixin):

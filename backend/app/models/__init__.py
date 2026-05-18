@@ -13,6 +13,7 @@ from app.models.mcp_oauth import (
     McpOAuthConsent,
     McpOAuthToken,
 )
+from app.models.person import Person, Voiceprint
 from app.models.recording import ActionItem, Folder, Recording, RecordingShare, Segment, Summary
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -27,6 +28,8 @@ __all__ = [
     "Summary",
     "ActionItem",
     "Highlight",
+    "Person",
+    "Voiceprint",
     "Entity",
     "EntityRelation",
     "Tag",

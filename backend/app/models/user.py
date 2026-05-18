@@ -98,9 +98,13 @@ class User(Base, UUIDMixin, TimestampMixin):
     dictation_dictionary_words: Mapped[list["DictationDictionaryWord"]] = relationship(
         "DictationDictionaryWord", back_populates="user", cascade="all, delete-orphan"
     )
+    people: Mapped[list["Person"]] = relationship(
+        "Person", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 # Import at bottom to avoid circular imports
 from app.models.dictation import DictationDictionaryWord, DictationEntry  # noqa: E402
 from app.models.entity import Entity, Tag  # noqa: E402
+from app.models.person import Person  # noqa: E402
 from app.models.recording import Folder, Recording  # noqa: E402
