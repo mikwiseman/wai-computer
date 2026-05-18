@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
+from app.billing.quota import WordQuota, count_words
 from app.config import get_settings
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import (
@@ -283,6 +284,24 @@ async def create_dictation_entry(
         response.status_code = status.HTTP_200_OK
         return _serialize_entry(found)
 
+    # Trust the client's word_count when present; otherwise derive from the
+    # text we actually persist (cleaned > raw).
+    words = request.word_count
+    if words <= 0:
+        words = count_words(request.cleaned_text or request.raw_text)
+
+    quota = await WordQuota.check(db, user, estimated_words=words)
+    if not quota.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "code": "free_tier_word_cap_exceeded",
+                "words_used": quota.words_used,
+                "words_cap": quota.words_cap,
+                "reset_at": quota.reset_at.isoformat(),
+            },
+        )
+
     entry = DictationEntry(
         user_id=user.id,
         client_entry_id=request.client_entry_id,
@@ -294,6 +313,12 @@ async def create_dictation_entry(
     )
     db.add(entry)
     await db.flush()
+
+    recorded = await WordQuota.record(db, user, words=words)
+    response.headers["X-WaiComputer-Words-Used"] = str(recorded.words_used)
+    if recorded.words_cap is not None:
+        response.headers["X-WaiComputer-Words-Cap"] = str(recorded.words_cap)
+
     logger.info(
         "Dictation entry stored: user=%s raw_len=%d cleaned_len=%s duration=%.2fs words=%d",
         user.id,

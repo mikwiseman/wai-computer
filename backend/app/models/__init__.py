@@ -1,6 +1,17 @@
 """SQLAlchemy models."""
 
 from app.models.base import Base
+from app.models.billing import (
+    BillingEvent,
+    BillingPeriod,
+    BillingProvider,
+    Invoice,
+    Plan,
+    PlanCode,
+    Subscription,
+    SubscriptionStatus,
+    UsageWeek,
+)
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.dictation import DictationDictionaryWord, DictationEntry
@@ -21,6 +32,15 @@ from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 
 __all__ = [
     "Base",
+    "BillingEvent",
+    "BillingPeriod",
+    "BillingProvider",
+    "Invoice",
+    "Plan",
+    "PlanCode",
+    "Subscription",
+    "SubscriptionStatus",
+    "UsageWeek",
     "User",
     "Recording",
     "RecordingShare",

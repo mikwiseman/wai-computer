@@ -1,0 +1,197 @@
+"""Word quota enforcement for free-tier weekly cap.
+
+Week boundary: Sunday 00:00 UTC (matches Whispr Flow's reset cadence).
+Quota record + check are atomic via PostgreSQL UPSERT on
+``(user_id, week_start_utc)``.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Final
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.billing import Plan, Subscription, UsageWeek
+from app.models.user import User
+
+# Whitespace tokenizer — close enough to "words" for billing purposes.
+_WORD_TOKEN_RE: Final = re.compile(r"\S+")
+
+
+def count_words(text: str | None) -> int:
+    """Count whitespace-delimited tokens. Empty/None returns 0."""
+    if not text:
+        return 0
+    return sum(1 for _ in _WORD_TOKEN_RE.finditer(text))
+
+
+def current_week_start(now: datetime | None = None) -> date:
+    """Return the Sunday 00:00 UTC anchor for the week containing ``now``.
+
+    Python's ``weekday()`` returns Monday=0..Sunday=6; we want Sunday as the
+    week start.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    days_since_sunday = (now.weekday() + 1) % 7  # Mon=1, Sun=0
+    return (now.date() - timedelta(days=days_since_sunday))
+
+
+def next_week_start(now: datetime | None = None) -> datetime:
+    """Return the next Sunday 00:00 UTC (the reset moment)."""
+    sunday = current_week_start(now)
+    return datetime.combine(sunday + timedelta(days=7), time.min, tzinfo=timezone.utc)
+
+
+@dataclass(frozen=True)
+class QuotaCheckResult:
+    """Result of a pre-flight quota check."""
+
+    allowed: bool
+    words_used: int
+    words_cap: int | None  # None == unlimited (Pro)
+    reset_at: datetime
+
+    @property
+    def cap_exceeded(self) -> bool:
+        return not self.allowed
+
+
+class QuotaExceededError(Exception):
+    """Raised by ``WordQuota.record`` when the post-write total breaches the cap."""
+
+    def __init__(self, result: QuotaCheckResult) -> None:
+        self.result = result
+        super().__init__(
+            f"Word quota exceeded: {result.words_used}/{result.words_cap}"
+        )
+
+
+# Backwards-compatible alias for any external importers.
+QuotaExceeded = QuotaExceededError
+
+
+class WordQuota:
+    """Per-user weekly transcribed-words quota.
+
+    Usage:
+        # Pre-flight check (advisory — caller decides):
+        check = await WordQuota.check(db, user, estimated_words=600)
+        if not check.allowed:
+            raise HTTPException(402, ...)
+
+        # Post-transcription recording (authoritative):
+        await WordQuota.record(db, user, words=actual_word_count)
+    """
+
+    @staticmethod
+    async def _resolve_plan(db: AsyncSession, user: User) -> Plan:
+        """Resolve the user's effective plan (active subscription or free)."""
+        if user.current_subscription_id is not None:
+            sub = (
+                await db.execute(
+                    select(Subscription).where(Subscription.id == user.current_subscription_id)
+                )
+            ).scalar_one_or_none()
+            if sub is not None and sub.status in {"active", "trialing", "past_due"}:
+                plan = (
+                    await db.execute(select(Plan).where(Plan.id == sub.plan_id))
+                ).scalar_one_or_none()
+                if plan is not None:
+                    return plan
+        # Fallback to the free plan row.
+        plan = (
+            await db.execute(select(Plan).where(Plan.code == "free"))
+        ).scalar_one_or_none()
+        if plan is None:
+            raise RuntimeError("Free plan row missing — seed migration not applied?")
+        return plan
+
+    @staticmethod
+    async def _current_usage(db: AsyncSession, user_id, week_start: date) -> int:
+        row = (
+            await db.execute(
+                select(UsageWeek.words_used).where(
+                    UsageWeek.user_id == user_id,
+                    UsageWeek.week_start_utc == week_start,
+                )
+            )
+        ).scalar_one_or_none()
+        return int(row or 0)
+
+    @classmethod
+    async def check(
+        cls,
+        db: AsyncSession,
+        user: User,
+        estimated_words: int = 0,
+        *,
+        now: datetime | None = None,
+    ) -> QuotaCheckResult:
+        """Pre-flight check — does ``user`` have headroom for ``estimated_words``?
+
+        Returns a QuotaCheckResult; caller decides what to do on a miss.
+        """
+        plan = await cls._resolve_plan(db, user)
+        week_start = current_week_start(now)
+        reset_at = next_week_start(now)
+
+        if plan.word_cap_per_week is None:
+            return QuotaCheckResult(
+                allowed=True, words_used=0, words_cap=None, reset_at=reset_at
+            )
+
+        used = await cls._current_usage(db, user.id, week_start)
+        cap = plan.word_cap_per_week
+        allowed = (used + max(estimated_words, 0)) <= cap
+        return QuotaCheckResult(
+            allowed=allowed, words_used=used, words_cap=cap, reset_at=reset_at
+        )
+
+    @classmethod
+    async def record(
+        cls,
+        db: AsyncSession,
+        user: User,
+        words: int,
+        *,
+        now: datetime | None = None,
+    ) -> QuotaCheckResult:
+        """Atomically increment the user's weekly counter and return the new state.
+
+        Always records — quota enforcement happens via ``check`` before the
+        work starts; this method's job is to keep the ledger honest. The
+        returned result reflects the *post-increment* total, which the caller
+        can surface to the client.
+        """
+        if words < 0:
+            words = 0
+        plan = await cls._resolve_plan(db, user)
+        week_start = current_week_start(now)
+        reset_at = next_week_start(now)
+
+        stmt = (
+            pg_insert(UsageWeek)
+            .values(user_id=user.id, week_start_utc=week_start, words_used=words)
+            .on_conflict_do_update(
+                constraint="uq_billing_usage_user_week",
+                set_={"words_used": UsageWeek.words_used + words},
+            )
+            .returning(UsageWeek.words_used)
+        )
+        result = await db.execute(stmt)
+        new_total = int(result.scalar_one())
+        await db.flush()
+
+        cap = plan.word_cap_per_week
+        allowed = cap is None or new_total <= cap
+        return QuotaCheckResult(
+            allowed=allowed, words_used=new_total, words_cap=cap, reset_at=reset_at
+        )
