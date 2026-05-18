@@ -946,6 +946,71 @@ h4 {
   max-width: 520px;
 }
 
+.mcp-endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.mcp-endpoint-url {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.mcp-client-tabs {
+  margin-top: 0.2rem;
+  padding: 0;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.mcp-client-guide {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.mcp-client-guide p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.mcp-snippet {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.mcp-snippet pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.mcp-snippet code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mcp-external-link {
+  text-decoration: none;
+  text-align: center;
+  justify-self: start;
+}
+
 .shared-page {
   min-height: 100vh;
   background: var(--bg);
