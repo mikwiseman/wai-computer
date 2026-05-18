@@ -12,11 +12,11 @@ from datetime import datetime, timezone
 import pytest
 
 from app.core.companion import (
+    SYSTEM_PROMPT,
     CitationEvent,
     CompanionError,
     DoneEvent,
     ErrorEvent,
-    SYSTEM_PROMPT,
     TokenEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -120,7 +120,8 @@ def test_system_prompt_for_no_user_returns_static_sections() -> None:
     prompt = system_prompt_for()
     assert "<identity>" in prompt
     assert "<user_profile>" not in prompt
-    assert "<memory>" not in prompt
+    # No <memory> SECTION; the word may still appear inside <tool_guidance>.
+    assert "<memory>\n##" not in prompt
 
 
 def test_system_prompt_for_with_user_appends_profile() -> None:

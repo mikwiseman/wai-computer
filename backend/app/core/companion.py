@@ -27,12 +27,14 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core import user_memory as user_memory_module
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 from app.core.qa import SourceSegment, retrieve_context
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.recording import ActionItem, Folder, Recording, Summary
 from app.models.user import User
+from app.models.user_memory import UserMemoryBlock
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,10 @@ _TOOL_GUIDANCE_SECTION = (
     "- search_transcripts — verbatim quotes. The ONLY tool that returns "
     "citable segment_ids. Use AFTER you know which recording(s) to "
     "search; do not use it for date-range or person-name lookups.\n"
+    "- remember — write a durable fact about the user to <memory>. Use "
+    "sparingly; not for single-turn context. Preferred operation is "
+    "append (a new bullet). replace_line when correcting one prior "
+    "claim; rewrite only for a full block reset.\n"
     "</tool_guidance>"
 )
 
@@ -103,25 +109,30 @@ def _render_user_profile(user: User | None) -> str:
     return "\n".join(lines)
 
 
-def _render_memory_section(memory_blocks: dict[str, str] | None) -> str:
-    """<memory> block — empty in Phase 1; populated in Phase 3."""
-    if not memory_blocks:
+def _render_memory_section(memory_strings: dict[str, str] | None) -> str:
+    """Render a <memory> section from a plain {label: body-string} dict.
+
+    Used internally by `system_prompt_for` when the caller has already
+    serialised blocks; mirrors `user_memory.render_for_prompt` but takes
+    strings instead of ORM rows. Kept on this module for callers (tests,
+    consolidator pre-renders) that have nothing but strings on hand.
+    """
+    if not memory_strings:
         return ""
-    parts: list[str] = ["<memory>"]
-    for label, body in memory_blocks.items():
+    sections: list[str] = []
+    for label, body in memory_strings.items():
         body = (body or "").strip()
         if not body:
             continue
-        parts.append(f"## {label}\n{body}")
-    parts.append("</memory>")
-    if len(parts) == 2:  # only opening + closing, no real content
+        sections.append(f"## {label}\n{body}")
+    if not sections:
         return ""
-    return "\n".join(parts)
+    return "<memory>\n" + "\n\n".join(sections) + "\n</memory>"
 
 
 def system_prompt_for(
     user: User | None = None,
-    memory_blocks: dict[str, str] | None = None,
+    memory_blocks: dict[str, UserMemoryBlock] | dict[str, str] | None = None,
 ) -> str:
     """Assemble the cacheable system prompt for a turn.
 
@@ -135,9 +146,14 @@ def system_prompt_for(
     profile = _render_user_profile(user)
     if profile:
         sections.append(profile)
-    memory = _render_memory_section(memory_blocks)
-    if memory:
-        sections.append(memory)
+    if memory_blocks:
+        first = next(iter(memory_blocks.values()))
+        if isinstance(first, str):
+            memory = _render_memory_section(memory_blocks)  # type: ignore[arg-type]
+        else:
+            memory = user_memory_module.render_for_prompt(memory_blocks)
+        if memory:
+            sections.append(memory)
     sections.append(_TOOL_GUIDANCE_SECTION)
     sections.append(_ANSWER_FORMAT_SECTION)
     return "\n\n".join(sections)
@@ -210,12 +226,24 @@ class ErrorEvent:
     message: str = ""
 
 
+@dataclass(frozen=True)
+class MemoryUpdatedEvent:
+    """Emitted whenever the `remember` tool successfully writes to a memory
+    block, so the client can surface a subtle "Wai remembered X" toast.
+    Parallel to ToolCallEvent — clients that don't know about it ignore it."""
+
+    type: Literal["memory_updated"] = "memory_updated"
+    block: str = ""
+    operation: str = ""
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
     | ToolResultEvent
     | TokenEvent
     | CitationEvent
+    | MemoryUpdatedEvent
     | DoneEvent
     | ErrorEvent
 )
@@ -404,6 +432,44 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
                 "required": ["name"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "remember",
+            "description": (
+                "Write a durable fact about the user to long-term memory. "
+                "Use SPARINGLY — only when the fact is durable (preferences, "
+                "relationships, ongoing projects, goals, where they live, "
+                "what they're building, recurring topics). Do NOT use for "
+                "single-conversation context, momentary tasks, or things "
+                "the user can easily look up. The block 'human' holds "
+                "facts about the user; 'topics' holds recurring "
+                "subjects; 'preferences' holds answer-style notes. "
+                "Operations: append (default), replace_line (needs "
+                "target_line), rewrite (replaces the whole block). "
+                "Server enforces a char_limit per block."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "block": {
+                        "type": "string",
+                        "enum": ["human", "topics", "preferences"],
+                    },
+                    "operation": {
+                        "type": "string",
+                        "enum": ["append", "replace_line", "rewrite"],
+                    },
+                    "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                    },
+                    "target_line": {"type": "string"},
+                },
+                "required": ["block", "content"],
             },
         },
     ]
@@ -958,6 +1024,56 @@ async def _tool_search_people(
     )
 
 
+async def _tool_remember(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    args: dict[str, Any],
+    scope: dict[str, Any] | None,
+    *,
+    conversation_id: uuid.UUID | None = None,
+) -> ToolExecutionResult:
+    """Write a durable fact to long-term memory. Single source of truth
+    for memory writes is app.core.user_memory.write_block — both this
+    tool and the nightly consolidator go through it."""
+    label = args.get("block")
+    operation = args.get("operation", "append")
+    content = args.get("content", "")
+    target_line = args.get("target_line")
+
+    try:
+        result = await user_memory_module.write_block(
+            db,
+            user_id,
+            label=label,
+            operation=operation,
+            content=content,
+            target_line=target_line,
+            source="agent",
+            conversation_id=conversation_id,
+        )
+    except user_memory_module.MemoryError as exc:
+        return ToolExecutionResult(
+            summary_for_event="memory write rejected",
+            payload_for_model={
+                "ok": False,
+                "reason": "memory_write_rejected",
+                "detail": str(exc),
+            },
+            citable_segments={},
+        )
+
+    return ToolExecutionResult(
+        summary_for_event=f"updated memory block: {label}",
+        payload_for_model={
+            "ok": True,
+            "block": label,
+            "operation": operation,
+            "new_length_chars": len(result.after),
+        },
+        citable_segments={},
+    )
+
+
 _TOOL_DISPATCH = {
     "search_transcripts": _tool_search_transcripts,
     "get_recording_summary": _tool_get_recording_summary,
@@ -965,6 +1081,7 @@ _TOOL_DISPATCH = {
     "get_action_items": _tool_get_action_items,
     "get_highlights": _tool_get_highlights,
     "search_people": _tool_search_people,
+    "remember": _tool_remember,
 }
 
 
@@ -974,10 +1091,16 @@ async def _execute_tool(
     db: AsyncSession,
     user_id: uuid.UUID,
     scope: dict[str, Any] | None,
+    *,
+    conversation_id: uuid.UUID | None = None,
 ) -> ToolExecutionResult:
     handler = _TOOL_DISPATCH.get(name)
     if handler is None:
         raise CompanionError("unknown_tool", f"Unknown tool: {name}")
+    if name == "remember":
+        return await handler(
+            db, user_id, args, scope, conversation_id=conversation_id
+        )
     return await handler(db, user_id, args, scope)
 
 
@@ -1191,7 +1314,8 @@ async def run_turn(
 
     conv = await _load_conversation_locked(db, user_id, conversation_id)
     user_row = await db.get(User, user_id)
-    instructions = system_prompt_for(user_row, memory_blocks=None)
+    memory_blocks = await user_memory_module.get_or_seed_blocks(db, user_id)
+    instructions = system_prompt_for(user_row, memory_blocks=memory_blocks)
 
     user_msg = ChatMessage(
         conversation_id=conv.id,
@@ -1259,12 +1383,29 @@ async def run_turn(
                 call_id=call["id"], tool=call["name"], args=call["arguments"]
             )
             result = await _execute_tool(
-                call["name"], call["arguments"], db, user_id, conv.scope
+                call["name"],
+                call["arguments"],
+                db,
+                user_id,
+                conv.scope,
+                conversation_id=conv.id,
             )
             citable_allowlist.update(result.citable_segments)
             yield ToolResultEvent(
                 call_id=call["id"], summary=result.summary_for_event
             )
+            # Surface successful memory writes as a typed event so the
+            # client can render "Wai remembered X" without inspecting
+            # tool names.
+            if call["name"] == "remember" and result.payload_for_model.get(
+                "ok"
+            ):
+                yield MemoryUpdatedEvent(
+                    block=str(result.payload_for_model.get("block", "")),
+                    operation=str(
+                        result.payload_for_model.get("operation", "")
+                    ),
+                )
             a_input.append(
                 {
                     "type": "function_call",
