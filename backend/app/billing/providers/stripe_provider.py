@@ -73,6 +73,7 @@ class StripeProvider(PaymentProvider):
         trial_days: int | None = None,
     ) -> CheckoutResult:
         client = self._client_or_raise()
+        settings = get_settings()
         price_id = await self._resolve_price_id(plan_code=plan_code, period=period)
         params: dict[str, Any] = {
             "mode": "subscription",
@@ -81,16 +82,17 @@ class StripeProvider(PaymentProvider):
             "cancel_url": cancel_url,
             "customer_email": user_email,
             "client_reference_id": user_id,
-            "automatic_tax": {"enabled": True},
             "metadata": {"user_id": user_id, "plan_code": plan_code, "period": period},
             "subscription_data": {
                 "metadata": {"user_id": user_id, "plan_code": plan_code, "period": period},
             },
         }
+        if settings.stripe_automatic_tax:
+            params["automatic_tax"] = {"enabled": True}
         if trial_days and trial_days > 0:
             params["subscription_data"]["trial_period_days"] = trial_days
 
-        session = await client.checkout.sessions.create_async(params=params)
+        session = await client.v1.checkout.sessions.create_async(params=params)
         return CheckoutResult(
             checkout_url=session.url,  # type: ignore[arg-type]
             provider=self.name,
@@ -99,7 +101,7 @@ class StripeProvider(PaymentProvider):
 
     async def cancel_subscription(self, provider_subscription_id: str) -> None:
         client = self._client_or_raise()
-        await client.subscriptions.update_async(
+        await client.v1.subscriptions.update_async(
             provider_subscription_id,
             params={"cancel_at_period_end": True},
         )
