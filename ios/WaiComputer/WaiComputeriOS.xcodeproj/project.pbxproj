@@ -28,9 +28,11 @@
 		DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2CE7B7688E7FF5BFAB1E8A4 /* LibraryView.swift */; };
 		E31F1A407611387C583951C4 /* WaiComputerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */; };
 		E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AD9426E8AD31AD09735D0 /* OnboardingSlide.swift */; };
+		EC643560EF6BC0A010EF1F11 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 00A85C12EDF41F64CFA30057 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		00A85C12EDF41F64CFA30057 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"; sourceTree = "<group>"; };
 		04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiHomeView.swift; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 		6661EC87F3309F0BB1B3354F /* Assets */ = {
 			isa = PBXGroup;
 			children = (
+				00A85C12EDF41F64CFA30057 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png */,
 				7292915574E602DAEE35442B /* 5262537e-4ce7-4776-a4c8-2956482919e6.png */,
 			);
 			path = Assets;
@@ -272,6 +275,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EC643560EF6BC0A010EF1F11 /* 5262537e-4ce7-4776-a4c8-2956482919e6-dark.png in Resources */,
 				5153CAF3B6F6B599860FA788 /* 5262537e-4ce7-4776-a4c8-2956482919e6.png in Resources */,
 				63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */,
 				9C9ACA6D6BC96D94879BE554 /* icon.json in Resources */,

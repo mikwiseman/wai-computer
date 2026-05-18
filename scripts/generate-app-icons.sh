@@ -16,12 +16,36 @@ generate_png() {
   sips -z "$size" "$size" "$SOURCE_ICON" --out "$destination" >/dev/null
 }
 
+DARK_ICON="${SOURCE_ICON%.*}-dark.${SOURCE_ICON##*.}"
+if [[ ! -f "$DARK_ICON" ]]; then
+  echo "Generating dark variant from $SOURCE_ICON"
+  python3 - "$SOURCE_ICON" "$DARK_ICON" <<'PY'
+import sys
+from PIL import Image
+import numpy as np
+src = Image.open(sys.argv[1]).convert("RGBA")
+arr = np.array(src)
+arr[:, :, :3] = 255 - arr[:, :, :3]
+Image.fromarray(arr, "RGBA").save(sys.argv[2], "PNG")
+PY
+fi
+
+generate_dark_png() {
+  local size="$1"
+  local destination="$2"
+  mkdir -p "$(dirname "$destination")"
+  sips -z "$size" "$size" "$DARK_ICON" --out "$destination" >/dev/null
+}
+
 echo "Generating iOS app icons from $SOURCE_ICON"
 generate_png 1024 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
-cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
-  "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
+generate_dark_png 1024 "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-dark.png"
 cp "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024.png" \
   "$ROOT_DIR/ios/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/icon-1024-tinted.png"
+
+echo "Refreshing AppIcon.icon dark layers"
+cp "$DARK_ICON" "$ROOT_DIR/macos/WaiComputer/WaiComputer/AppIcon.icon/Assets/5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"
+cp "$DARK_ICON" "$ROOT_DIR/ios/WaiComputer/WaiComputer/AppIcon.icon/Assets/5262537e-4ce7-4776-a4c8-2956482919e6-dark.png"
 
 echo "Generating macOS app icons"
 generate_png 16 "$ROOT_DIR/macos/WaiComputer/WaiComputer/Assets.xcassets/AppIcon.appiconset/app_icon_16x16.png"
