@@ -1,6 +1,6 @@
 # WaiComputer Android — Release runbook
 
-> Last updated: 2026-05-18. App version `1.1.3`, versionCode `12`. Play Console package `is.waiwai.computer`.
+> Last updated: 2026-05-18. App version `1.1.4`, versionCode `13`. Play Console package `is.waiwai.computer`.
 
 ## TL;DR
 
