@@ -227,6 +227,49 @@ enum MacInputPermission {
         }
         return allOK
     }
+
+    /// One-time cleanup of orphaned TCC entries that survived the
+    /// `is.waiwai.say` → `is.waiwai.computer` rebrand. Sparkle replaces the
+    /// .app at the existing install location, but TCC entries are keyed by
+    /// bundle ID — so users who installed under the WaiSay name keep ghost
+    /// "WaiSay.app" rows in System Settings → Privacy & Security long after
+    /// the app is renamed. Those rows can't be granted to the new bundle
+    /// (different bundle ID, different csreq), they only confuse the user.
+    ///
+    /// `tccutil reset <service> <bundle-id>` clears the entries for the
+    /// supplied bundle ID without sudo. Runs at most once; safe to call
+    /// repeatedly because subsequent calls become no-ops via the
+    /// UserDefaults flag.
+    static func cleanupLegacyWaiSayTCCIfNeeded() {
+        let flagKey = "waicomputerLegacyWaiSayTCCCleanupDone"
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return }
+
+        let legacyBundleId = "is.waiwai.say"
+        guard Bundle.main.bundleIdentifier == "is.waiwai.computer" else {
+            // Only the production WaiComputer build should clean up — the
+            // .dev/.tests/.uitests bundles never owned these entries.
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+
+        log.info("Cleaning up orphaned legacy TCC entries for \(legacyBundleId, privacy: .public)")
+        for service in ["ListenEvent", "Accessibility", "Microphone", "AudioCapture"] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, legacyBundleId]
+            do {
+                try process.run()
+                process.waitUntilExit()
+                // Exit code 0 means an entry existed and was reset; non-zero
+                // typically means "no such entry" which is also fine. Either
+                // way the user-visible orphan row goes away if it was there.
+            } catch {
+                log.warning("tccutil reset \(service, privacy: .public) \(legacyBundleId, privacy: .public) threw: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        UserDefaults.standard.set(true, forKey: flagKey)
+    }
 }
 
 // MARK: - Hotkey Configuration

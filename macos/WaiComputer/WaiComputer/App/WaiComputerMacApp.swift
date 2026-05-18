@@ -131,7 +131,7 @@ struct WaiComputerMacApp: App {
                 Divider()
 
                 Button("Record Mic + System Audio") {
-                    Task { await appState.startRecording(type: .note, inputSource: .dual) }
+                    Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
@@ -421,6 +421,14 @@ final class WaiComputerAppDelegate: NSObject, NSApplicationDelegate {
         let needsRelaunch = MacInputPermission.performOneTimeLegacyTCCMigrationIfNeeded(
             microphoneGranted: microphoneGranted
         )
+
+        // Sweep up ghost "WaiSay.app" rows in System Settings → Privacy &
+        // Security left over from the is.waiwai.say → is.waiwai.computer
+        // rebrand. These never grant permission to the new binary (different
+        // bundle ID + designated requirement), they just confuse the user
+        // into thinking permission is already granted.
+        MacInputPermission.cleanupLegacyWaiSayTCCIfNeeded()
+
         if needsRelaunch {
             MacInputPermission.relaunchAfterTCCMigration()
         }
@@ -996,9 +1004,37 @@ class MacAppState: ObservableObject {
         case .microphone:
             switch AVCaptureDevice.authorizationStatus(for: .audio) {
             case .notDetermined:
+                // `AVCaptureDevice.requestAccess(for: .audio)` is the canonical
+                // macOS API and triggers the TCC prompt reliably. The previous
+                // `AVAudioApplication.requestRecordPermission` path silently
+                // failed on macOS 26 (Tahoe), so the in-app "Grant Permission"
+                // button appeared to do nothing for some users.
+                //
+                // Belt-and-suspenders: schedule a fallback that opens System
+                // Settings if the prompt did not produce a decision within
+                // 1.5s — this covers the rare case where macOS swallows the
+                // prompt because the running process already has a stale TCC
+                // cache from a prior denial.
                 Task {
-                    _ = await AVAudioApplication.requestRecordPermission()
-                    await MainActor.run { self.refreshPermissionStatus() }
+                    SentryHelper.addBreadcrumb(
+                        category: "permission",
+                        message: "mic prompt requested (banner)",
+                        data: ["status": "notDetermined"]
+                    )
+                    let granted = await AVCaptureDevice.requestAccess(for: .audio)
+                    await MainActor.run {
+                        SentryHelper.addBreadcrumb(
+                            category: "permission",
+                            message: "mic prompt resolved (banner)",
+                            data: ["granted": granted]
+                        )
+                        self.refreshPermissionStatus()
+                        if !granted,
+                           AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
+                            MacInputPermission.revealAppInFinder()
+                            MacPrivacySettings.openMicrophone()
+                        }
+                    }
                 }
             default:
                 MacInputPermission.revealAppInFinder()

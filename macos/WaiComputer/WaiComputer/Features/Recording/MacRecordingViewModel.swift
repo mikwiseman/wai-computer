@@ -243,13 +243,40 @@ class MacRecordingViewModel: ObservableObject {
         #endif
 
         do {
-            // Mic permission is always needed (dual and mic-only both use mic)
+            // Mic permission is always needed (dual and mic-only both use mic).
+            // Use `AVCaptureDevice.requestAccess(for: .audio)` — the canonical
+            // macOS API. `AVAudioApplication.requestRecordPermission` is iOS-
+            // first and has been observed silently failing on macOS 26 (Tahoe),
+            // which is why the in-app "Grant Permission" banner used to feel
+            // dead.
             if inputSource == .dual || inputSource == .microphone {
-                let granted = await AVAudioApplication.requestRecordPermission()
-                guard granted else {
-                    error = "Microphone permission denied"
-                    await resetAfterStartFailure()
-                    return
+                let currentStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                if currentStatus == .authorized {
+                    SentryHelper.addBreadcrumb(
+                        category: "recording",
+                        message: "mic permission already granted",
+                        data: ["inputSource": inputSource.rawValue]
+                    )
+                } else {
+                    SentryHelper.addBreadcrumb(
+                        category: "recording",
+                        message: "mic permission needs prompt",
+                        data: [
+                            "inputSource": inputSource.rawValue,
+                            "status": currentStatus.statusName,
+                        ]
+                    )
+                    let granted = await AVCaptureDevice.requestAccess(for: .audio)
+                    SentryHelper.addBreadcrumb(
+                        category: "recording",
+                        message: "mic permission prompt resolved",
+                        data: ["granted": granted]
+                    )
+                    guard granted else {
+                        error = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer."
+                        await resetAfterStartFailure()
+                        return
+                    }
                 }
             }
 
@@ -765,8 +792,14 @@ class MacRecordingViewModel: ObservableObject {
     private func startSystemAudioMonitor(for dualCapture: DualAudioCapture) {
         systemAudioMonitorTask?.cancel()
         systemAudioMonitorTask = Task { [weak self] in
+            // Poll once a second so the warning surfaces ~immediately after
+            // DualAudioCapture's 3-second early-stall detector fires. The
+            // previous 5-second cadence added another ~5s of "Listening..." UI
+            // with no feedback, which is exactly the experience users were
+            // reporting.
+            var warnedOnce = false
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { break }
 
                 let stalled = dualCapture.systemAudioStalled
@@ -776,6 +809,20 @@ class MacRecordingViewModel: ObservableObject {
                     guard let self, self.phase == .recording else { return }
                     if stalled || !receivedAny {
                         self.systemAudioWarning = systemAudioUnavailableWarning
+                        if !warnedOnce {
+                            warnedOnce = true
+                            SentryHelper.addBreadcrumb(
+                                category: "recording",
+                                message: "system audio stalled — banner shown",
+                                level: .warning,
+                                data: [
+                                    "stalled": stalled,
+                                    "receivedAny": receivedAny,
+                                    "recordingId": self.currentRecordingId ?? "unknown",
+                                    "recordingType": self.recordingType.rawValue,
+                                ]
+                            )
+                        }
                     } else {
                         self.systemAudioWarning = nil
                     }
@@ -1162,5 +1209,17 @@ class MacRecordingViewModel: ObservableObject {
         audioTask?.cancel()
         transcriptTask?.cancel()
         cleanupTask?.cancel()
+    }
+}
+
+private extension AVAuthorizationStatus {
+    var statusName: String {
+        switch self {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .authorized: return "authorized"
+        @unknown default: return "unknown"
+        }
     }
 }
