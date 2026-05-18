@@ -30,6 +30,7 @@ from app.core.summarizer import generate_title, resolve_highlight_timestamps, su
 from app.core.transcription import transcribe_audio_file
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
+from app.models.person import Person
 from app.models.recording import (
     ActionItem,
     Folder,
@@ -51,6 +52,11 @@ class SegmentResponse(BaseModel):
 
     id: str
     speaker: str | None
+    raw_label: str | None
+    person_id: str | None
+    display_name: str | None
+    auto_assigned: bool
+    match_confidence: float | None
     content: str
     start_ms: int | None
     end_ms: int | None
@@ -482,18 +488,28 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
     )
 
 
+def _serialize_segment(segment: Segment) -> SegmentResponse:
+    display_name = segment.person.display_name if segment.person is not None else None
+    return SegmentResponse(
+        id=str(segment.id),
+        speaker=segment.speaker,
+        raw_label=segment.raw_label,
+        person_id=str(segment.person_id) if segment.person_id is not None else None,
+        display_name=display_name,
+        auto_assigned=segment.auto_assigned,
+        match_confidence=segment.match_confidence,
+        content=segment.content,
+        start_ms=segment.start_ms,
+        end_ms=segment.end_ms,
+        confidence=segment.confidence,
+    )
+
+
 def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse:
     return RecordingDetailResponse(
         **_serialize_recording(recording).model_dump(),
         segments=[
-            SegmentResponse(
-                id=str(s.id),
-                speaker=s.speaker,
-                content=s.content,
-                start_ms=s.start_ms,
-                end_ms=s.end_ms,
-                confidence=s.confidence,
-            )
+            _serialize_segment(s)
             for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
         summary=_serialize_summary(recording.summary),
@@ -539,14 +555,7 @@ def _serialize_shared_recording(
         created_at=recording.created_at,
         shared_at=share.created_at,
         segments=[
-            SegmentResponse(
-                id=str(s.id),
-                speaker=s.speaker,
-                content=s.content,
-                start_ms=s.start_ms,
-                end_ms=s.end_ms,
-                confidence=s.confidence,
-            )
+            _serialize_segment(s)
             for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
         summary=_serialize_summary(recording.summary),
@@ -1635,14 +1644,7 @@ async def get_transcript(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     return [
-        SegmentResponse(
-            id=str(s.id),
-            speaker=s.speaker,
-            content=s.content,
-            start_ms=s.start_ms,
-            end_ms=s.end_ms,
-            confidence=s.confidence,
-        )
+        _serialize_segment(s)
         for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
     ]
 
@@ -2157,6 +2159,113 @@ async def get_summary(
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
     return summary
+
+
+class AssignSpeakerRequest(BaseModel):
+    """Assign all segments matching ``raw_label`` in this recording to a Person."""
+
+    raw_label: str = Field(min_length=1, max_length=100)
+    person_id: UUID | None = None
+    new_display_name: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class RematchSpeakersResponse(BaseModel):
+    """Result of running voice-ID rematch against current voiceprint library."""
+
+    recording_id: str
+    updated_clusters: int
+    matched_clusters: int
+
+
+@router.post(
+    "/{recording_id}/assign-speaker",
+    response_model=RecordingDetailResponse,
+)
+async def assign_speaker(
+    recording_id: UUID,
+    request: AssignSpeakerRequest,
+    user: CurrentUser,
+    db: Database,
+) -> RecordingDetailResponse:
+    """Map all segments with ``raw_label`` in this recording to a Person.
+
+    Creates the Person if ``new_display_name`` is provided; otherwise resolves
+    ``person_id``. Marks every touched segment as user-confirmed
+    (``auto_assigned=False``) and clears ``match_confidence``.
+    """
+    if (request.person_id is None) == (request.new_display_name is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide exactly one of person_id or new_display_name",
+        )
+
+    recording_result = await db.execute(
+        select(Recording).where(
+            Recording.id == recording_id, Recording.user_id == user.id
+        )
+    )
+    recording = recording_result.scalar_one_or_none()
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    if request.person_id is not None:
+        person_result = await db.execute(
+            select(Person).where(
+                Person.id == request.person_id, Person.user_id == user.id
+            )
+        )
+        person = person_result.scalar_one_or_none()
+        if person is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Person not found"
+            )
+    else:
+        person = Person(
+            user_id=user.id, display_name=request.new_display_name or ""
+        )
+        db.add(person)
+        await db.flush()
+
+    await db.execute(
+        update(Segment)
+        .where(
+            Segment.recording_id == recording_id,
+            Segment.raw_label == request.raw_label,
+        )
+        .values(person_id=person.id, auto_assigned=False, match_confidence=None)
+    )
+    await db.flush()
+
+    detail = await _load_recording_detail(recording_id, user.id, db)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+    return _serialize_recording_detail(detail)
+
+
+@router.post(
+    "/{recording_id}/rematch",
+    response_model=RematchSpeakersResponse,
+)
+async def rematch_speakers(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> RematchSpeakersResponse:
+    """Re-run voice-ID matching against the current voiceprint library.
+
+    Touches only clusters where ``auto_assigned=True`` or ``person_id IS NULL``
+    so user-confirmed assignments are preserved.
+
+    Returns 422 if the source audio is no longer on disk (we only stage uploads
+    transiently — voice ID can only run during the initial transcription).
+    """
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=(
+            "Source audio is not retained after transcription; rematch is not yet "
+            "supported. Reupload the recording to retrigger voice ID."
+        ),
+    )
 
 
 @router.post("/{recording_id}/generate-summary", response_model=SummaryResponse)
