@@ -41,6 +41,15 @@ if [[ ! -d "$RELEASE_DIR" ]]; then
   exit 1
 fi
 
+# Discover sibling variant directories so we publish them alongside the
+# canonical global release (e.g. WaiComputer-ru-1.0.18-108).
+VARIANT_RELEASE_DIRS=()
+for candidate in "$RELEASE_ROOT/${RELEASE_SLUG}-"*; do
+  if [[ -d "$candidate" ]]; then
+    VARIANT_RELEASE_DIRS+=("$candidate")
+  fi
+done
+
 if [[ ! -f "$RELEASE_ROOT/appcast.xml" ]]; then
   echo "ERROR: appcast not found at $RELEASE_ROOT/appcast.xml" >&2
   exit 1
@@ -65,12 +74,28 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT' '$REMOT
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   "$RELEASE_DIR/" \
   "$REMOTE:$REMOTE_RELEASE_ROOT/${RELEASE_SLUG}/"
+for variant_dir in "${VARIANT_RELEASE_DIRS[@]}"; do
+  variant_slug=$(basename "$variant_dir")
+  ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT/${variant_slug}'"
+  rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+    "$variant_dir/" \
+    "$REMOTE:$REMOTE_RELEASE_ROOT/${variant_slug}/"
+done
+
+# Per-variant "latest" pointers ride along with the global artifacts so the
+# marketing site can link directly to e.g. WaiComputer-ru-latest.dmg.
+LATEST_ARTIFACTS=(
+  "$RELEASE_ROOT/appcast.xml"
+  "$RELEASE_ROOT/release-notes.md"
+  "$RELEASE_ROOT/WaiComputer-latest.dmg"
+  "$RELEASE_ROOT/WaiComputer-latest.dmg.sha256"
+  "$RELEASE_ROOT/latest-release-metadata.txt"
+)
+for variant_latest in "$RELEASE_ROOT"/WaiComputer-*-latest.dmg "$RELEASE_ROOT"/WaiComputer-*-latest.dmg.sha256; do
+  [[ -f "$variant_latest" ]] && LATEST_ARTIFACTS+=("$variant_latest")
+done
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
-  "$RELEASE_ROOT/appcast.xml" \
-  "$RELEASE_ROOT/release-notes.md" \
-  "$RELEASE_ROOT/WaiComputer-latest.dmg" \
-  "$RELEASE_ROOT/WaiComputer-latest.dmg.sha256" \
-  "$RELEASE_ROOT/latest-release-metadata.txt" \
+  "${LATEST_ARTIFACTS[@]}" \
   "$REMOTE:$REMOTE_RELEASE_ROOT/"
 
 echo "Published WaiComputer ${VERSION} (${BUILD}) to $REMOTE:$REMOTE_RELEASE_ROOT"

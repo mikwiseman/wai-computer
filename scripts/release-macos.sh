@@ -40,7 +40,17 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Building notarized macOS DMG locally with channel=$CHANNEL ..."
-MACOS_RELEASE_STRICT=1 RELEASE_CHANNEL="$CHANNEL" scripts/build-macos-dmg.sh
-echo "Publishing macOS DMG to wai.computer ..."
+VARIANTS=("global" "ru")
+if [[ -n "${MACOS_VARIANT:-}" ]]; then
+  VARIANTS=("$MACOS_VARIANT")
+fi
+
+for variant in "${VARIANTS[@]}"; do
+  echo "Building notarized macOS DMG locally with channel=$CHANNEL variant=$variant ..."
+  MACOS_RELEASE_STRICT=1 \
+    RELEASE_CHANNEL="$CHANNEL" \
+    MACOS_VARIANT="$variant" \
+    scripts/build-macos-dmg.sh
+done
+echo "Publishing macOS artifacts to wai.computer ..."
 scripts/publish-macos-dmg.sh

@@ -42,6 +42,21 @@ case "$RELEASE_CHANNEL" in
   *) echo "ERROR: RELEASE_CHANNEL must be 'stable' or 'beta', got '$RELEASE_CHANNEL'" >&2; exit 1 ;;
 esac
 
+MACOS_VARIANT=${MACOS_VARIANT:-global}
+case "$MACOS_VARIANT" in
+  global|ru) ;;
+  *) echo "ERROR: MACOS_VARIANT must be 'global' or 'ru', got '$MACOS_VARIANT'" >&2; exit 1 ;;
+esac
+# When the variant is not the canonical global one, suffix DMG filenames
+# and release slugs so both can coexist on the CDN. Sparkle auto-updates
+# everyone from the global appcast — first-install language is the only
+# thing the variant decides.
+if [[ "$MACOS_VARIANT" == "global" ]]; then
+  VARIANT_SUFFIX=""
+else
+  VARIANT_SUFFIX="-${MACOS_VARIANT}"
+fi
+
 if [[ ${MACOS_RELEASE_STRICT:-0} == "1" ]]; then
   REQUIRE_NOTARIZATION=1
   REQUIRE_GATEKEEPER=1
@@ -362,7 +377,7 @@ else
   "$ROOT_DIR/scripts/render-macos-dmg-background.sh" "$BACKGROUND_PATH" "$APP_ICON_PATH"
 fi
 
-echo "Archiving ${APP_NAME} with Developer ID signing..."
+echo "Archiving ${APP_NAME} with Developer ID signing (variant=${MACOS_VARIANT})..."
 xcodebuild archive \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
@@ -375,7 +390,8 @@ xcodebuild archive \
   ENABLE_HARDENED_RUNTIME=YES \
   OTHER_CODE_SIGN_FLAGS='--timestamp' \
   ARCHS='arm64 x86_64' \
-  ONLY_ACTIVE_ARCH=NO
+  ONLY_ACTIVE_ARCH=NO \
+  WAI_DOWNLOAD_REGION="$MACOS_VARIANT"
 
 APP_PATH="$ARCHIVE_PATH/Products/Applications/${APP_NAME}.app"
 if [[ ! -d "$APP_PATH" ]]; then
@@ -389,6 +405,9 @@ BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_INFO")
 RELEASE_SLUG="${VERSION}-${BUILD}"
 if [[ "$RELEASE_CHANNEL" != "stable" ]]; then
   RELEASE_SLUG="${VERSION}-${BUILD}-${RELEASE_CHANNEL}"
+fi
+if [[ -n "$VARIANT_SUFFIX" ]]; then
+  RELEASE_SLUG="${RELEASE_SLUG}${VARIANT_SUFFIX}"
 fi
 RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"
 mkdir -p "$RELEASE_DIR"
@@ -416,7 +435,7 @@ fi
 
 gatekeeper_check "app bundle" spctl -a -vv --type execute "$APP_PATH"
 
-DMG_PATH="$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg"
+DMG_PATH="$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg"
 rm -f "$DMG_PATH"
 
 DMG_STAGING="$TMP_DIR/dmg-staging"
@@ -492,9 +511,9 @@ fi
 gatekeeper_check "disk image" spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
 
 cp "$BACKGROUND_PATH" "$RELEASE_DIR/${APP_NAME}-installer-background.png"
-shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
-cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}-latest.dmg"
-cp "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}-latest.dmg.sha256"
+shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256"
+cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg"
+cp "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg.sha256"
 RELEASE_NOTES_PATH="$RELEASE_DIR/release-notes.md"
 generate_release_notes() {
   echo "# ${APP_NAME} ${VERSION} (${BUILD})"
@@ -522,7 +541,7 @@ generate_release_notes() {
 }
 generate_release_notes > "$RELEASE_NOTES_PATH"
 
-DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/${APP_NAME}-${VERSION}-${BUILD}.dmg"
+DOWNLOAD_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg"
 RELEASE_NOTES_URL="${SPARKLE_DOWNLOAD_BASE_URL}/${RELEASE_SLUG}/release-notes.md"
 PUBLISHED_AT=$(date -u '+%a, %d %b %Y %H:%M:%S %z')
 SPARKLE_SIGNATURE=""
@@ -546,6 +565,36 @@ CHANNEL_XML=""
 if [[ "$RELEASE_CHANNEL" == "beta" ]]; then
   CHANNEL_XML=$'      <sparkle:channel>beta</sparkle:channel>\n'
 fi
+# Both variants share the canonical appcast; only the global variant
+# writes to it. Russian-default installs still receive updates from this
+# feed because the bundle ID and Sparkle EdDSA key are identical — the
+# user's chosen language persists in UserDefaults across updates.
+if [[ "$MACOS_VARIANT" != "global" ]]; then
+  echo "Variant ${MACOS_VARIANT}: skipping appcast write (global feed is canonical)."
+  cat > "$RELEASE_DIR/release-metadata.txt" <<META
+app=${APP_NAME}
+variant=${MACOS_VARIANT}
+version=${VERSION}
+build=${BUILD}
+release_slug=${RELEASE_SLUG}
+release_channel=${RELEASE_CHANNEL}
+team_id=${TEAM_ID}
+signing_identity=${SIGNING_IDENTITY}
+notarization=${NOTARIZATION_MODE}
+notarization_required=${REQUIRE_NOTARIZATION}
+gatekeeper_required=${REQUIRE_GATEKEEPER}
+archive=${ARCHIVE_PATH}
+dmg=${DMG_PATH}
+sparkle_download_url=${DOWNLOAD_URL}
+sparkle_signed=$([[ -n "$SPARKLE_SIGNATURE" ]] && printf yes || printf no)
+built_at=${TIMESTAMP}
+META
+  echo
+  printf 'DMG ready: %s\n' "$DMG_PATH"
+  printf 'Checksum: %s\n' "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256"
+  exit 0
+fi
+
 APPCAST_PATH="$RELEASE_ROOT/appcast.xml"
 cat > "$APPCAST_PATH" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
