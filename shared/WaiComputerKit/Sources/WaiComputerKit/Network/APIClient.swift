@@ -688,6 +688,96 @@ public actor APIClient {
         try await requestNoContent(.POST, path: "/api/recordings/\(recordingId)/rematch")
     }
 
+    /// Submit an in-memory audio sample for first-time (or recurring) voice enrollment.
+    ///
+    /// Backend expects a multipart upload with `audio` (file), optional `display_name`,
+    /// and optional `person_id`. Sample must be 5-60 seconds.
+    public func enrollVoice(
+        audio: Data,
+        filename: String = "enrollment.wav",
+        mimeType: String = "audio/wav",
+        displayName: String? = nil,
+        personId: String? = nil
+    ) async throws -> VoiceEnrollmentResponse {
+        let path = "/api/voice-enrollment"
+        let url = baseURL.appendingPathComponent(path)
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let multipartFileURL = try createVoiceEnrollmentRequestFile(
+            audio: audio,
+            filename: filename,
+            mimeType: mimeType,
+            displayName: displayName,
+            personId: personId,
+            boundary: boundary
+        )
+        defer { try? FileManager.default.removeItem(at: multipartFileURL) }
+
+        let (data, _) = try await performWithAuthRetry(
+            &request,
+            path: path,
+            method: "POST"
+        ) { req in
+            try await self.session.upload(for: req, fromFile: multipartFileURL)
+        }
+
+        do {
+            return try decoder.decode(VoiceEnrollmentResponse.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
+    private func createVoiceEnrollmentRequestFile(
+        audio: Data,
+        filename: String,
+        mimeType: String,
+        displayName: String?,
+        personId: String?,
+        boundary: String
+    ) throws -> URL {
+        let uploadURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-enroll-\(UUID().uuidString).multipart")
+        FileManager.default.createFile(atPath: uploadURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: uploadURL)
+        defer { try? output.close() }
+
+        func writeString(_ string: String) throws {
+            try output.write(contentsOf: Data(string.utf8))
+        }
+
+        try writeString("--\(boundary)\r\n")
+        try writeString("Content-Disposition: form-data; name=\"audio\"; filename=\"\(filename)\"\r\n")
+        try writeString("Content-Type: \(mimeType)\r\n\r\n")
+        try output.write(contentsOf: audio)
+        try writeString("\r\n")
+
+        if let displayName, !displayName.isEmpty {
+            try writeString("--\(boundary)\r\n")
+            try writeString("Content-Disposition: form-data; name=\"display_name\"\r\n\r\n")
+            try writeString(displayName)
+            try writeString("\r\n")
+        }
+        if let personId, !personId.isEmpty {
+            try writeString("--\(boundary)\r\n")
+            try writeString("Content-Disposition: form-data; name=\"person_id\"\r\n\r\n")
+            try writeString(personId)
+            try writeString("\r\n")
+        }
+
+        try writeString("--\(boundary)--\r\n")
+        return uploadURL
+    }
+
     public func getSummary(recordingId: String) async throws -> Summary {
         return try await request(.GET, path: "/api/recordings/\(recordingId)/summary")
     }

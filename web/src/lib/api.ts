@@ -20,6 +20,7 @@ import type {
   MessageResponse,
   Person,
   StarRecordingResponse,
+  VoiceEnrollmentResponse,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -256,6 +257,19 @@ export function assignSpeaker(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function enrollVoice(input: {
+  audio: Blob;
+  filename?: string;
+  display_name?: string;
+  person_id?: string;
+}): Promise<VoiceEnrollmentResponse> {
+  const formData = new FormData();
+  formData.append("audio", input.audio, input.filename ?? "enrollment.wav");
+  if (input.display_name) formData.append("display_name", input.display_name);
+  if (input.person_id) formData.append("person_id", input.person_id);
+  return apiUpload<VoiceEnrollmentResponse>("/api/voice-enrollment", formData);
 }
 
 export function searchTranscript(

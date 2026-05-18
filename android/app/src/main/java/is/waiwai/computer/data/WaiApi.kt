@@ -171,6 +171,27 @@ class WaiApi(
         )
     }
 
+    /// Submit a voice sample for cross-recording speaker identification.
+    /// Audio must be 5-60 seconds. If [personId] is null, backend creates or
+    /// reuses a Person by [displayName] (default "You").
+    suspend fun enrollVoice(
+        audio: ByteArray,
+        filename: String = "enrollment.wav",
+        mimeType: String = "audio/wav",
+        displayName: String? = null,
+        personId: String? = null,
+    ): VoiceEnrollmentResponse {
+        return transport.authorizedVoiceEnrollment(
+            audio = audio,
+            filename = filename,
+            mimeType = mimeType,
+            displayName = displayName,
+            personId = personId,
+            accessTokenProvider = { authStore.currentAccessToken() },
+            refresh = { authStore.refresh() },
+        )
+    }
+
     private suspend inline fun <reified T> authorizedRequest(
         method: HttpMethod,
         path: String,
@@ -468,6 +489,116 @@ class ApiTransport(
             System.arraycopy(content, 0, bytes, header.size, content.size)
             System.arraycopy(footer, 0, bytes, header.size + content.size, footer.size)
         }
+    }
+
+    internal suspend fun authorizedVoiceEnrollment(
+        audio: ByteArray,
+        filename: String,
+        mimeType: String,
+        displayName: String?,
+        personId: String?,
+        accessTokenProvider: suspend () -> String?,
+        refresh: suspend () -> Boolean,
+    ): VoiceEnrollmentResponse {
+        suspend fun once(token: String?): HttpResponse {
+            return uploadVoiceEnrollment(audio, filename, mimeType, displayName, personId, token)
+        }
+        val first = once(accessTokenProvider())
+        if (first.status.value != 401) {
+            return decode(first)
+        }
+        if (!refresh()) {
+            throw ApiError.Unauthorized
+        }
+        val second = once(accessTokenProvider())
+        if (second.status.value == 401) {
+            throw ApiError.Unauthorized
+        }
+        return decode(second)
+    }
+
+    private suspend fun uploadVoiceEnrollment(
+        audio: ByteArray,
+        filename: String,
+        mimeType: String,
+        displayName: String?,
+        personId: String?,
+        bearerToken: String?,
+    ): HttpResponse {
+        val path = "/api/voice-enrollment"
+        val boundary = "WaiComputer-${System.currentTimeMillis()}-${audio.size}"
+        val bodyBytes = buildVoiceEnrollmentMultipart(
+            boundary = boundary,
+            filename = filename,
+            mimeType = mimeType,
+            audio = audio,
+            displayName = displayName,
+            personId = personId,
+        )
+        val url = resolveUrl(path, emptyList())
+        SentryHelper.addBreadcrumb(
+            category = "http.upload",
+            message = "POST $path",
+            data = mapOf("path" to path, "bytes" to audio.size),
+        )
+        return try {
+            client.request(url) {
+                method = HttpMethod.Post
+                applyCommonHeaders(bearerToken)
+                header(HttpHeaders.ContentType, "multipart/form-data; boundary=$boundary")
+                setBody(bodyBytes)
+            }
+        } catch (error: IOException) {
+            SentryHelper.captureError(error, mapOf("path" to path))
+            throw ApiError.Network(error)
+        } catch (error: Throwable) {
+            SentryHelper.captureError(error, mapOf("path" to path))
+            throw ApiError.Network(error)
+        }
+    }
+
+    private fun buildVoiceEnrollmentMultipart(
+        boundary: String,
+        filename: String,
+        mimeType: String,
+        audio: ByteArray,
+        displayName: String?,
+        personId: String?,
+    ): ByteArray {
+        val crlf = "\r\n"
+        val parts = mutableListOf<ByteArray>()
+        parts += buildString {
+            append("--").append(boundary).append(crlf)
+            append("Content-Disposition: form-data; name=\"audio\"; filename=\"")
+            append(filename).append('"').append(crlf)
+            append("Content-Type: ").append(mimeType).append(crlf).append(crlf)
+        }.toByteArray()
+        parts += audio
+        parts += crlf.toByteArray()
+
+        fun addField(name: String, value: String) {
+            parts += buildString {
+                append("--").append(boundary).append(crlf)
+                append("Content-Disposition: form-data; name=\"").append(name).append('"').append(crlf).append(crlf)
+                append(value).append(crlf)
+            }.toByteArray()
+        }
+        if (!displayName.isNullOrEmpty()) {
+            addField("display_name", displayName)
+        }
+        if (!personId.isNullOrEmpty()) {
+            addField("person_id", personId)
+        }
+        parts += "--$boundary--$crlf".toByteArray()
+
+        val total = parts.sumOf { it.size }
+        val out = ByteArray(total)
+        var offset = 0
+        for (part in parts) {
+            System.arraycopy(part, 0, out, offset, part.size)
+            offset += part.size
+        }
+        return out
     }
 
     private companion object {
