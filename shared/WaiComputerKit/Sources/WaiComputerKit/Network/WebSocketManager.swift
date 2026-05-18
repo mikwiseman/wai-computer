@@ -471,8 +471,7 @@ public actor WebSocketManager {
             payload["previous_text"] = previousText
         }
 
-        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
-        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+        return Self.encodeJSONPayload(payload)
     }
 
     private func makeOpenAIAudioAppendMessage(data: Data) -> String {
@@ -480,8 +479,7 @@ public actor WebSocketManager {
             "type": "input_audio_buffer.append",
             "audio": Self.openAI24kMonoPCM(from16kPCM: data, channels: channels).base64EncodedString(),
         ]
-        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
-        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+        return Self.encodeJSONPayload(payload)
     }
 
     private func makeInworldAudioChunkMessage(data: Data) -> String {
@@ -490,8 +488,7 @@ public actor WebSocketManager {
                 "content": data.base64EncodedString()
             ]
         ]
-        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
-        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+        return Self.encodeJSONPayload(payload)
     }
 
     private func makeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
@@ -515,8 +512,7 @@ public actor WebSocketManager {
                 ],
             ],
         ]
-        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
-        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+        return Self.encodeJSONPayload(payload)
     }
 
     private func makeInworldTranscribeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
@@ -548,8 +544,19 @@ public actor WebSocketManager {
         let payload: [String: Any] = [
             "transcribe_config": transcribeConfig
         ]
-        let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: [])
-        return String(data: jsonData ?? Data("{}".utf8), encoding: .utf8) ?? "{}"
+        return Self.encodeJSONPayload(payload)
+    }
+
+    /// Serialize a websocket payload to a JSON string.
+    ///
+    /// These payloads are constructed from statically-typed primitives that are
+    /// always JSON-encodable, so failure here would represent a programmer
+    /// error introducing a non-encodable type. We force-unwrap to surface that
+    /// crash (and the resulting Sentry breadcrumb) instead of silently sending
+    /// `"{}"` and corrupting the wire protocol.
+    private static func encodeJSONPayload(_ payload: [String: Any]) -> String {
+        let jsonData = try! JSONSerialization.data(withJSONObject: payload, options: [])
+        return String(data: jsonData, encoding: .utf8)!
     }
 
     static func openAI24kMonoPCM(from16kPCM data: Data, channels: Int) -> Data {

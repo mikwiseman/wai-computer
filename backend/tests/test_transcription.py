@@ -28,70 +28,16 @@ async def test_transcription_dispatches_to_elevenlabs():
 
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_openai_for_user_choice():
+async def test_transcription_dispatches_to_deepgram_for_user_choice():
     user = type(
         "User",
         (),
-        {"file_stt_provider": "openai", "file_stt_model": "gpt-4o-transcribe"},
+        {"file_stt_provider": "deepgram", "file_stt_model": "nova-3"},
     )()
     with patch(
-        "app.core.transcription.openai_transcribe_audio_file",
-        new=AsyncMock(return_value=["openai-ok"]),
-    ) as mock_openai:
-        from app.core.transcription import transcribe_audio_file
-
-        result = await transcribe_audio_file(
-            b"audio",
-            language="en",
-            content_type="audio/wav",
-            user=user,
-        )
-
-    assert result == ["openai-ok"]
-    mock_openai.assert_awaited_once_with(
-        b"audio",
-        model="gpt-4o-transcribe",
-        language="en",
-        content_type="audio/wav",
-    )
-
-
-@pytest.mark.asyncio
-async def test_transcription_dispatches_to_explicit_provider_and_model_without_user():
-    with patch(
-        "app.core.transcription.openai_transcribe_audio_file",
-        new=AsyncMock(return_value=["openai-ok"]),
-    ) as mock_openai:
-        from app.core.transcription import transcribe_audio_file
-
-        result = await transcribe_audio_file(
-            b"audio",
-            language="en",
-            content_type="audio/wav",
-            provider="openai",
-            model="gpt-4o-transcribe",
-        )
-
-    assert result == ["openai-ok"]
-    mock_openai.assert_awaited_once_with(
-        b"audio",
-        model="gpt-4o-transcribe",
-        language="en",
-        content_type="audio/wav",
-    )
-
-
-@pytest.mark.asyncio
-async def test_transcription_dispatches_to_inworld_for_user_choice():
-    user = type(
-        "User",
-        (),
-        {"file_stt_provider": "inworld", "file_stt_model": "inworld/inworld-stt-1"},
-    )()
-    with patch(
-        "app.core.transcription.inworld_transcribe_audio_file",
-        new=AsyncMock(return_value=["inworld-ok"]),
-    ) as mock_inworld:
+        "app.core.transcription.deepgram_transcribe_audio_file",
+        new=AsyncMock(return_value=["deepgram-ok"]),
+    ) as mock_deepgram:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(
@@ -102,10 +48,10 @@ async def test_transcription_dispatches_to_inworld_for_user_choice():
             user=user,
         )
 
-    assert result == ["inworld-ok"]
-    mock_inworld.assert_awaited_once_with(
+    assert result == ["deepgram-ok"]
+    mock_deepgram.assert_awaited_once_with(
         b"audio",
-        model="inworld/inworld-stt-1",
+        model="nova-3",
         language="en",
         content_type="audio/wav",
         channels=1,
@@ -113,8 +59,79 @@ async def test_transcription_dispatches_to_inworld_for_user_choice():
 
 
 @pytest.mark.asyncio
+async def test_transcription_dispatches_to_soniox_for_user_choice():
+    user = type(
+        "User",
+        (),
+        {"file_stt_provider": "soniox", "file_stt_model": "stt-async-v4"},
+    )()
+    with patch(
+        "app.core.transcription.soniox_transcribe_audio_file",
+        new=AsyncMock(return_value=["soniox-ok"]),
+    ) as mock_soniox:
+        from app.core.transcription import transcribe_audio_file
+
+        result = await transcribe_audio_file(
+            b"audio",
+            language="en",
+            content_type="audio/wav",
+            channels=1,
+            user=user,
+        )
+
+    assert result == ["soniox-ok"]
+    mock_soniox.assert_awaited_once_with(
+        b"audio",
+        model="stt-async-v4",
+        language="en",
+        content_type="audio/wav",
+        channels=1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_transcription_dispatches_to_explicit_provider_and_model_without_user():
+    with patch(
+        "app.core.transcription.deepgram_transcribe_audio_file",
+        new=AsyncMock(return_value=["deepgram-ok"]),
+    ) as mock_deepgram:
+        from app.core.transcription import transcribe_audio_file
+
+        result = await transcribe_audio_file(
+            b"audio",
+            language="en",
+            content_type="audio/wav",
+            provider="deepgram",
+            model="nova-3",
+        )
+
+    assert result == ["deepgram-ok"]
+    mock_deepgram.assert_awaited_once_with(
+        b"audio",
+        model="nova-3",
+        language="en",
+        content_type="audio/wav",
+        channels=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_transcription_rejects_dropped_openai_models():
+    """gpt-4o-transcribe was retired Feb 2026 and is no longer a valid choice."""
+    user = type(
+        "User",
+        (),
+        {"file_stt_provider": "openai", "file_stt_model": "gpt-4o-transcribe"},
+    )()
+    from app.core.transcription import transcribe_audio_file
+
+    with pytest.raises(ValueError, match="Unsupported file_stt option"):
+        await transcribe_audio_file(b"audio", user=user)
+
+
+@pytest.mark.asyncio
 async def test_transcription_rejects_unsupported_user_choice():
-    user = type("User", (), {"file_stt_provider": "openai", "file_stt_model": "bad-model"})()
+    user = type("User", (), {"file_stt_provider": "elevenlabs", "file_stt_model": "bad-model"})()
     from app.core.transcription import transcribe_audio_file
 
     with pytest.raises(ValueError, match="Unsupported file_stt option"):
