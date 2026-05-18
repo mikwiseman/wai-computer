@@ -17,7 +17,6 @@ from app.api.routes import (
     entities,
     folders,
     mcp_oauth,
-    qa,
     realtime_transcription,
     realtime_voice,
     recordings,
@@ -79,10 +78,10 @@ async def lifespan(app: FastAPI):
             "speech_to_text_provider=%s is unsupported — only elevenlabs is supported",
             app_settings.speech_to_text_provider,
         )
-    if not app_settings.anthropic_api_key:
+    if not app_settings.openai_api_key:
         logger.warning(
-            "ANTHROPIC_API_KEY is not configured — summarization and dictation cleanup "
-            "will not work"
+            "OPENAI_API_KEY is not configured — Companion, summarization, dictation "
+            "cleanup, and embeddings will not work"
         )
     if not app_settings.resend_api_key:
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
@@ -158,7 +157,6 @@ app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
-app.include_router(qa.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")

@@ -158,7 +158,8 @@ describe("streamMessage SSE parser", () => {
     );
 
     await expect(async () => {
-      for await (const _ of streamMessage("missing", "hi")) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _event of streamMessage("missing", "hi")) {
         // unreachable
       }
     }).rejects.toMatchObject({ status: 404 });

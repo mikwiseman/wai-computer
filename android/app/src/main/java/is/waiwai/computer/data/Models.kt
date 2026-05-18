@@ -223,18 +223,6 @@ data class UpdateActionItemRequest(
 )
 
 @Serializable
-data class QARequest(
-    val question: String,
-    @SerialName("recording_ids") val recordingIds: List<String>? = null,
-)
-
-@Serializable
-data class QAResponse(
-    val answer: String,
-    val sources: List<QASource> = emptyList(),
-)
-
-@Serializable
 data class UserSettings(
     @SerialName("default_language") val defaultLanguage: String,
     @SerialName("summary_language") val summaryLanguage: String,
@@ -284,17 +272,6 @@ data class TranscriptionOptions(
     @SerialName("recording_live_stt") val recordingLiveStt: List<TranscriptionModelOption>,
     @SerialName("file_stt") val fileStt: List<TranscriptionModelOption>,
     @SerialName("dictation_post_filter") val dictationPostFilter: List<TranscriptionModelOption>,
-)
-
-@Serializable
-data class QASource(
-    @SerialName("segment_id") val segmentId: String,
-    @SerialName("recording_id") val recordingId: String,
-    @SerialName("recording_title") val recordingTitle: String? = null,
-    val speaker: String? = null,
-    val content: String,
-    @SerialName("start_ms") val startMs: Int? = null,
-    @SerialName("end_ms") val endMs: Int? = null,
 )
 
 @Serializable

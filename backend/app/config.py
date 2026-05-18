@@ -50,16 +50,15 @@ class Settings(BaseSettings):
     dictation_stt_language: str = "multi"
 
     # OpenAI — LLM (Companion + summarization + dictation cleanup) and embeddings.
-    # STT models below are independent and unchanged.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 3072
-    # OpenAI speech-to-text (untouched by the May 2026 LLM swap)
+    # OpenAI realtime STT survives the May 2026 STT cleanup;
+    # the gpt-4o-transcribe family was retired by OpenAI and is no longer wired.
     openai_realtime_transcription_model: str = "gpt-realtime-whisper"
-    openai_file_transcription_model: str = "gpt-4o-transcribe"
 
-    # Inworld AI (provides unified STT WebSocket to multiple engines)
+    # Inworld AI (provides unified STT WebSocket to multiple engines; realtime only)
     inworld_api_key: str = ""
 
     # ElevenLabs
@@ -71,15 +70,14 @@ class Settings(BaseSettings):
     elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
-    # Claude/Anthropic
-    anthropic_api_key: str = ""
-    # Production default for summaries. Keep this pinned to an official
-    # Anthropic model id instead of an alias so outputs remain stable.
-    anthropic_model: str = "claude-sonnet-4-6"
-    # Latency-optimised model for dictation cleanup. Sonnet is overkill for
-    # filler-word removal + light grammar fixes, and adds 600-1500ms of paste
-    # latency; Haiku gives the same quality on this task in a fraction of the time.
-    anthropic_dictation_model: str = "claude-haiku-4-5"
+    # Deepgram (dual-mode STT: realtime streaming + batch via the same model id)
+    deepgram_api_key: str = ""
+    deepgram_realtime_stt_model: str = "nova-3"
+    deepgram_file_stt_model: str = "nova-3"
+
+    # Soniox (direct, batch only — realtime Soniox is reached via the Inworld gateway)
+    soniox_api_key: str = ""
+    soniox_file_stt_model: str = "stt-async-v4"
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"

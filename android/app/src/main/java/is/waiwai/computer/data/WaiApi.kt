@@ -91,13 +91,6 @@ class WaiApi(
             body = UpdateActionItemRequest(status = status),
         )
 
-    suspend fun askDatabase(question: String, recordingIds: List<String>? = null): QAResponse =
-        authorizedRequest(
-            method = HttpMethod.Post,
-            path = "/api/qa",
-            body = QARequest(question = question, recordingIds = recordingIds),
-        )
-
     suspend fun getSettings(): UserSettings = authorizedRequest(
         method = HttpMethod.Get,
         path = "/api/settings",
