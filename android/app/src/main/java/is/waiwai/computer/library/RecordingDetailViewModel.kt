@@ -83,6 +83,27 @@ class RecordingDetailViewModel(
         }
     }
 
+    fun assignSpeaker(rawLabel: String, personId: String? = null, newDisplayName: String? = null) {
+        if (localOnly) return
+        viewModelScope.launch {
+            runCatching {
+                waiApi.assignSpeaker(
+                    recordingId = recordingId,
+                    rawLabel = rawLabel,
+                    personId = personId,
+                    newDisplayName = newDisplayName,
+                )
+            }.onSuccess { updated ->
+                _uiState.value = _uiState.value.copy(detail = updated, error = null)
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(error = error.message)
+            }
+        }
+    }
+
+    suspend fun listPeople(): List<`is`.waiwai.computer.data.Person> =
+        runCatching { waiApi.listPeople() }.getOrElse { emptyList() }
+
     fun moveToFolder(folderId: String?) {
         if (localOnly) return
         viewModelScope.launch {
