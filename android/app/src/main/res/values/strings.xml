@@ -62,6 +62,9 @@
     <string name="speakers_delete_confirm_title">Delete speaker?</string>
     <string name="speakers_delete_confirm_body">Their voiceprints will be removed and segments assigned to them will go back to the raw label.</string>
     <string name="settings_section_data">Recording data</string>
+    <string name="detail_generate_summary">Generate summary</string>
+    <string name="detail_regenerate_summary">Regenerate summary</string>
+    <string name="detail_summary_generating">Generating summary…</string>
     <string name="onboarding_title_1">Record, Wai transcribes</string>
     <string name="onboarding_title_2">Everything stays on your device</string>
     <string name="onboarding_title_3">Ask Wai — get answers from your recordings</string>

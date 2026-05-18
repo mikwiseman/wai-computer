@@ -23,6 +23,7 @@ data class RecordingDetailUiState(
     val localManifest: LocalRecordingManifest? = null,
     val folders: List<Folder> = emptyList(),
     val isRetryingUpload: Boolean = false,
+    val isGeneratingSummary: Boolean = false,
     val error: String? = null,
 )
 
@@ -179,16 +180,49 @@ class RecordingDetailViewModel(
         return audioFile.takeIf(File::exists)
     }
 
-    private fun schedulePollingIfNeeded(detail: RecordingDetail?) {
+    fun regenerateSummary() {
+        if (localOnly) return
+        if (_uiState.value.isGeneratingSummary) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isGeneratingSummary = true, error = null)
+            runCatching {
+                val summary = waiApi.generateSummary(recordingId)
+                _uiState.value.detail?.let { current ->
+                    current.copy(summary = summary)
+                }
+            }.onSuccess { merged ->
+                _uiState.value = _uiState.value.copy(
+                    detail = merged ?: _uiState.value.detail,
+                    isGeneratingSummary = false,
+                )
+                schedulePollingIfNeeded(_uiState.value.detail)
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingSummary = false,
+                    error = error.message,
+                )
+            }
+        }
+    }
+
+    internal fun schedulePollingIfNeeded(detail: RecordingDetail?) {
         pollJob?.cancel()
-        if (detail?.status != RecordingStatus.Processing) return
+        if (!detail.isInProgress()) return
+        val startedAt = System.currentTimeMillis()
         pollJob = viewModelScope.launch {
-            while (_uiState.value.detail?.status == RecordingStatus.Processing) {
-                delay(4_000)
+            var attempt = 0
+            while (_uiState.value.detail.isInProgress()) {
+                val elapsed = System.currentTimeMillis() - startedAt
+                if (elapsed >= MAX_POLL_DURATION_MILLIS) {
+                    cancelPolling()
+                    return@launch
+                }
+                attempt += 1
+                delay(backoffMillis(attempt))
                 runCatching { waiApi.getRecording(recordingId) }
                     .onSuccess { refreshed ->
                         _uiState.value = _uiState.value.copy(detail = refreshed, isLoading = false)
-                        if (refreshed.status != RecordingStatus.Processing) {
+                        if (!refreshed.isInProgress()) {
                             cancelPolling()
                         }
                     }
@@ -200,6 +234,21 @@ class RecordingDetailViewModel(
         }
     }
 
+    private fun RecordingDetail?.isInProgress(): Boolean = when (this?.status) {
+        RecordingStatus.PendingUpload,
+        RecordingStatus.Uploading,
+        RecordingStatus.Processing,
+        -> true
+        else -> false
+    }
+
+    internal fun backoffMillis(attempt: Int): Long = when (attempt) {
+        1 -> 2_000L
+        2 -> 3_000L
+        3 -> 5_000L
+        else -> 8_000L
+    }
+
     private fun cancelPolling() {
         pollJob?.cancel()
         pollJob = null
@@ -208,5 +257,9 @@ class RecordingDetailViewModel(
     override fun onCleared() {
         cancelPolling()
         super.onCleared()
+    }
+
+    companion object {
+        private const val MAX_POLL_DURATION_MILLIS: Long = 5L * 60L * 1000L
     }
 }
