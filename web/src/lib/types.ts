@@ -309,21 +309,6 @@ export interface EntityDetail extends Entity {
 
 
 
-export interface QASource {
-  segment_id: string;
-  recording_id: string;
-  recording_title: string | null;
-  speaker: string | null;
-  content: string;
-  start_ms: number | null;
-  end_ms: number | null;
-}
-
-export interface QAResponse {
-  answer: string;
-  sources: QASource[];
-}
-
 export interface StarRecordingResponse {
   id: string;
   starred_at: string | null;

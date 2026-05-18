@@ -1,4 +1,16 @@
-"""Curated transcription and dictation processing settings."""
+"""Curated transcription and dictation processing settings.
+
+Two scenarios, two model pools:
+
+- **Realtime** populates both ``dictation_live_stt`` and ``recording_live_stt``
+  from a single curated list. The mechanics are identical (streaming audio in,
+  text deltas out); dictation is just a shorter session.
+- **Batch** populates ``file_stt`` for uploaded audio.
+
+Hard language filter: every realtime/batch option here covers at least 50
+languages out of the box. English-only or 6-language models are intentionally
+excluded.
+"""
 
 from __future__ import annotations
 
@@ -39,143 +51,55 @@ class ModelOption:
         }
 
 
+_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
+    ModelOption(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        label="ElevenLabs Scribe v2 Realtime",
+        description="Default. 90+ languages, 150 ms latency, 32-speaker diarization.",
+    ),
+    ModelOption(
+        provider="deepgram",
+        model="nova-3",
+        label="Deepgram Nova-3 (also works for files)",
+        description="50+ languages, sub-300 ms streaming, code-switching, smart format.",
+    ),
+    ModelOption(
+        provider="inworld",
+        model="soniox/stt-rt-v4",
+        label="Soniox v4 Realtime",
+        description="60+ languages, 5-hour sessions, semantic end-of-turn detection.",
+    ),
+    ModelOption(
+        provider="openai",
+        model="gpt-realtime-whisper",
+        label="OpenAI GPT Realtime Whisper",
+        description="Whisper-family language coverage, low-latency streaming.",
+    ),
+)
+
+
 TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] = {
-    "dictation_live_stt": (
-        ModelOption(
-            provider="elevenlabs",
-            model="scribe_v2_realtime",
-            label="ElevenLabs Scribe v2 Realtime",
-            description="Default stable dictation path.",
-        ),
-        ModelOption(
-            provider="openai",
-            model="gpt-realtime-whisper",
-            label="OpenAI GPT Realtime Whisper",
-            description="Latest OpenAI realtime speech-to-text for low-latency dictation.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="soniox/stt-rt-v4",
-            label="Inworld + Soniox v4 RT",
-            description="High-accuracy realtime streaming with semantic end-of-turn detection.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="inworld/inworld-stt-1",
-            label="Inworld STT 1",
-            description="Inworld first-party realtime STT with voice profile support.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/u3-rt-pro",
-            label="Inworld + AssemblyAI U3 RT Pro",
-            description="High-accuracy sub-300ms multilingual streaming via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/universal-streaming-multilingual",
-            label="Inworld + AssemblyAI Universal Multilingual",
-            description="Multilingual streaming recognizer via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/universal-streaming-english",
-            label="Inworld + AssemblyAI Universal English",
-            description="English-optimized streaming recognizer via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/whisper-rt",
-            label="Inworld + AssemblyAI Whisper RT",
-            description="Realtime Whisper transcription via Inworld.",
-        ),
-    ),
-    "recording_live_stt": (
-        ModelOption(
-            provider="elevenlabs",
-            model="scribe_v2_realtime",
-            label="ElevenLabs Scribe v2 Realtime",
-            description="Default live recording transcription path.",
-        ),
-        ModelOption(
-            provider="openai",
-            model="gpt-realtime-whisper",
-            label="OpenAI GPT Realtime Whisper",
-            description="OpenAI realtime speech-to-text for live recording transcripts.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="soniox/stt-rt-v4",
-            label="Inworld + Soniox v4 RT",
-            description="High-accuracy realtime streaming with semantic end-of-turn detection.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="inworld/inworld-stt-1",
-            label="Inworld STT 1",
-            description="Inworld first-party realtime STT with voice profile support.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/u3-rt-pro",
-            label="Inworld + AssemblyAI U3 RT Pro",
-            description="High-accuracy sub-300ms multilingual streaming via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/universal-streaming-multilingual",
-            label="Inworld + AssemblyAI Universal Multilingual",
-            description="Multilingual streaming recognizer via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/universal-streaming-english",
-            label="Inworld + AssemblyAI Universal English",
-            description="English-optimized streaming recognizer via Inworld.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="assemblyai/whisper-rt",
-            label="Inworld + AssemblyAI Whisper RT",
-            description="Realtime Whisper transcription via Inworld.",
-        ),
-    ),
+    "dictation_live_stt": _REALTIME_OPTIONS,
+    "recording_live_stt": _REALTIME_OPTIONS,
     "file_stt": (
         ModelOption(
             provider="elevenlabs",
             model="scribe_v2",
             label="ElevenLabs Scribe v2",
-            description="Default full-session and uploaded-file transcription path.",
+            description="Default. 90+ languages, 48-speaker diarization, word timestamps.",
         ),
         ModelOption(
-            provider="openai",
-            model="gpt-4o-transcribe",
-            label="OpenAI GPT-4o Transcribe",
-            description="Higher-accuracy OpenAI speech-to-text for uploaded audio files.",
+            provider="deepgram",
+            model="nova-3",
+            label="Deepgram Nova-3 (also works for realtime)",
+            description="50+ languages, smart format + diarization in batch.",
         ),
         ModelOption(
-            provider="openai",
-            model="gpt-4o-mini-transcribe",
-            label="OpenAI GPT-4o mini Transcribe",
-            description="Lower-cost OpenAI speech-to-text for uploaded audio files.",
-        ),
-        ModelOption(
-            provider="openai",
-            model="gpt-4o-transcribe-diarize",
-            label="OpenAI GPT-4o Transcribe Diarize",
-            description="OpenAI file transcription with speaker labels for full sessions.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="inworld/inworld-stt-1",
-            label="Inworld STT 1",
-            description="Inworld sync STT with optional voice profile support.",
-        ),
-        ModelOption(
-            provider="inworld",
-            model="groq/whisper-large-v3",
-            label="Inworld + Groq Whisper Large v3",
-            description="General-purpose recorded-audio transcription through Inworld.",
+            provider="soniox",
+            model="stt-async-v4",
+            label="Soniox v4 Async",
+            description="60+ languages, full-audio-context diarization, up to 5-hour files.",
         ),
     ),
     "dictation_post_filter": (

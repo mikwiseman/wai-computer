@@ -772,13 +772,6 @@ public actor APIClient {
 
     // MARK: - Chat Endpoints
 
-    // MARK: - QA Endpoints
-
-    public func askDatabase(question: String, recordingIds: [String]? = nil) async throws -> QAResponse {
-        let body = QARequest(question: question, recordingIds: recordingIds)
-        return try await request(.POST, path: "/api/qa", body: body)
-    }
-
     // MARK: - Companion Endpoints
 
     public func createCompanionChat(scope: CompanionScope? = nil) async throws -> CompanionConversation {

@@ -19,7 +19,6 @@ import type {
   KeywordsResponse,
   MessageResponse,
   StarRecordingResponse,
-  QAResponse,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -350,17 +349,6 @@ export function updateSettings(settings: Partial<UserSettings>): Promise<UserSet
     body: JSON.stringify(settings),
   });
 }
-
-export function askDatabase(payload: {
-  question: string;
-  recording_ids?: string[] | null;
-}): Promise<QAResponse> {
-  return apiFetch<QAResponse>('/api/qa', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
 
 export function getWeeklyDigest(): Promise<WeeklyDigestResponse> {
   return apiFetch<WeeklyDigestResponse>("/api/recordings/digest/weekly");
