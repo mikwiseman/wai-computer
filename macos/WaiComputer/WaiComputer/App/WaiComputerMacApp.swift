@@ -67,9 +67,13 @@ struct WaiComputerMacApp: App {
         )
     }
 
+    @StateObject private var languageManager = LanguageManager.shared
+
     var body: some Scene {
         WindowGroup("WaiComputer", id: MacPresentationCoordinator.mainWindowID) {
             MacContentView()
+                .environment(\.locale, languageManager.preferredLocale)
+                .environmentObject(languageManager)
                 .environmentObject(appState)
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
