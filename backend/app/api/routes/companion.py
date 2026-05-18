@@ -1,15 +1,19 @@
-"""Wai Companion REST routes (CRUD only — streaming lives in Phase 5)."""
+"""Wai Companion REST routes — CRUD plus SSE message streaming."""
 
+import json
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
+from app.core.companion import CompanionError, ErrorEvent, run_turn
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 
 logger = logging.getLogger(__name__)
@@ -337,6 +341,52 @@ async def delete_chat(
     chat = await _load_user_chat(db, user.id, chat_id)
     chat.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+
+
+class PostMessageRequest(BaseModel):
+    content: str = Field(min_length=1)
+
+
+def _sse_format(event_obj: Any) -> bytes:
+    """Serialize a CompanionEvent dataclass as a single SSE frame."""
+    data = asdict(event_obj)
+    event_type = data.pop("type")
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
+
+
+@router.post("/chats/{chat_id}/messages")
+async def post_message(
+    chat_id: uuid.UUID,
+    request: PostMessageRequest,
+    user: CurrentUser,
+    db: Database,
+) -> StreamingResponse:
+    # Load + ownership check up front so 404 / 401 are not buried inside SSE.
+    await _load_user_chat(db, user.id, chat_id)
+
+    async def event_stream():
+        try:
+            async for evt in run_turn(db, user.id, chat_id, request.content):
+                yield _sse_format(evt)
+        except CompanionError as exc:
+            logger.warning(
+                "companion turn error code=%s chat_id=%s", exc.code, chat_id
+            )
+            yield _sse_format(ErrorEvent(code=exc.code, message=exc.message))
+        except Exception:
+            logger.exception("companion turn unhandled error chat_id=%s", chat_id)
+            yield _sse_format(
+                ErrorEvent(code="internal_error", message="Turn failed")
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def sa_coalesce_last_message_or_created():
