@@ -54,7 +54,7 @@ platform :ios do
       api_key: api_key,
       app_identifier: "is.waiwai.computer",
       build_number: options[:build_number],
-      app_version: options[:app_version] || "1.0.5",
+      app_version: options[:app_version] || "1.0.7",
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: true,
