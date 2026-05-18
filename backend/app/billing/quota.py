@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.models.billing import Plan, Subscription, UsageWeek
 from app.models.user import User
 
@@ -138,10 +139,22 @@ class WordQuota:
         """Pre-flight check — does ``user`` have headroom for ``estimated_words``?
 
         Returns a QuotaCheckResult; caller decides what to do on a miss.
+
+        When ``billing_enforcement_enabled`` is false (the default), every
+        account is treated as unlimited regardless of plan. This is the
+        "Payment mode off" knob that keeps v1.0 free-for-everyone until we
+        decide to flip the switch.
         """
         plan = await cls._resolve_plan(db, user)
         week_start = current_week_start(now)
         reset_at = next_week_start(now)
+
+        settings = get_settings()
+        if not settings.billing_enforcement_enabled:
+            used = await cls._current_usage(db, user.id, week_start)
+            return QuotaCheckResult(
+                allowed=True, words_used=used, words_cap=None, reset_at=reset_at
+            )
 
         if plan.word_cap_per_week is None:
             return QuotaCheckResult(
