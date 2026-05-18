@@ -43,8 +43,13 @@ def create_mcp_app(settings: Settings) -> Starlette:
     mcp = FastMCP(
         name="WaiComputer",
         instructions=(
-            "Search and fetch the authenticated user's WaiComputer recordings, transcripts, "
-            "summaries, and action items. Tools are read-only."
+            "Read-only access to the authenticated user's WaiComputer library.\n\n"
+            "Tools:\n"
+            "- search(query, limit=10): citation-friendly search across recordings, "
+            "transcripts, summaries, and action items.\n"
+            "- fetch(id): full document for a recording, including summary, key points, "
+            "action items, and the transcript.\n\n"
+            "See Settings → MCP in any WaiComputer client for setup instructions."
         ),
         auth_server_provider=mcp_oauth_provider,
         auth=AuthSettings(
