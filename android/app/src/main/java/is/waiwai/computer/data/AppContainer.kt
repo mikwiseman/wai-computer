@@ -48,6 +48,7 @@ class AppContainer(
         transport = transport,
     )
     val waiApi = waiApiOverride ?: WaiApi(transport = transport, authStore = authStore)
+    val companionApi = CompanionApi(transport = transport, authStore = authStore)
     val localRecordingStore = localRecordingStoreOverride ?: LocalRecordingStore(application)
     val networkMonitor = networkMonitorOverride ?: NetworkMonitor(application)
     private val syncScheduler = syncSchedulerOverride ?: PendingSyncWorkerScheduler(application)
