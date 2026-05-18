@@ -866,16 +866,47 @@ public actor APIClient {
     /// surfacing the failure to the caller.
     public func streamCompanionMessage(
         chatId: String,
-        content: String
+        content: String,
+        viewingRecordingId: String? = nil,
+        viewingFolderId: String? = nil,
+        now: Date = Date(),
+        timeZone: TimeZone = .current,
+        calendar: Calendar = .current
     ) async throws -> AsyncStream<CompanionStreamEvent> {
-        struct Body: Encodable { let content: String }
+        // Per-turn working memory the server cannot guess: the user's local
+        // calendar date (the server only knows UTC), their IANA timezone, and
+        // whatever recording/folder they have open right now. This is what
+        // lets the agent resolve "yesterday" / "вчера" / "this week"
+        // correctly. Date format is the strict ISO YYYY-MM-DD that the
+        // backend Pydantic model expects.
+        struct Body: Encodable {
+            let content: String
+            let client_local_date: String
+            let client_timezone: String
+            let viewing_recording_id: String?
+            let viewing_folder_id: String?
+        }
+        var dayCal = calendar
+        dayCal.timeZone = timeZone
+        let dayFormatter = DateFormatter()
+        dayFormatter.calendar = dayCal
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.timeZone = timeZone
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        let body = Body(
+            content: content,
+            client_local_date: dayFormatter.string(from: now),
+            client_timezone: timeZone.identifier,
+            viewing_recording_id: viewingRecordingId,
+            viewing_folder_id: viewingFolderId
+        )
         let path = "/api/companion/chats/\(chatId)/messages"
 
         func buildRequest() throws -> URLRequest {
             var request = try buildJSONRequest(
                 method: .POST,
                 path: path,
-                body: Body(content: content),
+                body: body,
                 queryItems: nil,
                 timeoutInterval: nil
             )

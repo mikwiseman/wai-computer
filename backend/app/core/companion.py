@@ -32,6 +32,7 @@ from app.core.openai_responses import OpenAIResponseError, ensure_response_compl
 from app.core.qa import SourceSegment, retrieve_context
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.recording import Recording, Summary
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +40,104 @@ TOOL_CALL_CAP = 6
 HISTORY_WINDOW = 20
 SNIPPET_CHAR_CAP = 400
 
-SYSTEM_PROMPT = (
-    "You are Wai, a calm, precise partner — not an assistant, not a chatbot. "
-    "You answer questions over the user's recorded conversations and notes. "
-    "You cite specific moments using inline [n] markers tied to the citations "
-    "list in your structured response. "
-    "Do not start with 'Sure!', 'I'd be happy to', or any acknowledgement. "
-    "Do not use emojis unless the user does first. "
-    "Do not narrate your reasoning or say 'based on the transcripts'. "
-    "When the corpus is silent on a question, say so in one sentence and stop. "
-    "Default to one paragraph; use bullets only when the answer is a list."
+_IDENTITY_SECTION = (
+    "<identity>\n"
+    "You are Wai — a calm, precise partner. Not an assistant, not a "
+    "chatbot. You answer over the user's recorded conversations, notes, "
+    "and reflections.\n"
+    "</identity>"
 )
+
+_TOOL_GUIDANCE_SECTION = (
+    "<tool_guidance>\n"
+    "- list_recordings — call FIRST when the user uses any relative time "
+    "word (today, yesterday, last week, this morning, вчера, сегодня, на "
+    "прошлой неделе) or asks about a recording they did not name. Pass "
+    "date_from/date_to in the user's local timezone from <session>. "
+    "Returns titles + dates; navigation only.\n"
+    "- get_recording_summary — drill into one recording from the list. "
+    "Dense and structured; NOT citable.\n"
+    "- search_transcripts — verbatim quotes. The ONLY tool that returns "
+    "citable segment_ids. Use AFTER you know which recording(s) to search; "
+    "do not use it for date-range or person-name lookups.\n"
+    "</tool_guidance>"
+)
+
+_ANSWER_FORMAT_SECTION = (
+    "<answer_format>\n"
+    "- Match the language of the user's most recent message. If they "
+    "wrote in Russian, answer in Russian.\n"
+    "- One paragraph default. Bullets only when the answer is a list.\n"
+    "- Inline [1] [2] citation markers. Cite ONLY segment_ids returned by "
+    "search_transcripts. No fabricated ids.\n"
+    "- Do not start with 'Sure!', 'I'd be happy to', or any "
+    "acknowledgement. Do not narrate your reasoning or say 'based on the "
+    "transcripts'. Do not use emojis unless the user does first.\n"
+    "- When the corpus is silent, say so in one sentence and stop.\n"
+    "</answer_format>"
+)
+
+
+def _render_user_profile(user: User | None) -> str:
+    """Compact <user_profile> block. Empty when there's no user (tests)."""
+    if user is None:
+        return ""
+    lines: list[str] = ["<user_profile>"]
+    lines.append(f"default_language: {user.default_language}")
+    lines.append(f"summary_language: {user.summary_language}")
+    lines.append(f"summary_style: {user.summary_style}")
+    if user.summary_instructions:
+        lines.append(
+            f"summary_instructions: {user.summary_instructions.strip()[:240]}"
+        )
+    lines.append("</user_profile>")
+    return "\n".join(lines)
+
+
+def _render_memory_section(memory_blocks: dict[str, str] | None) -> str:
+    """<memory> block — empty in Phase 1; populated in Phase 3."""
+    if not memory_blocks:
+        return ""
+    parts: list[str] = ["<memory>"]
+    for label, body in memory_blocks.items():
+        body = (body or "").strip()
+        if not body:
+            continue
+        parts.append(f"## {label}\n{body}")
+    parts.append("</memory>")
+    if len(parts) == 2:  # only opening + closing, no real content
+        return ""
+    return "\n".join(parts)
+
+
+def system_prompt_for(
+    user: User | None = None,
+    memory_blocks: dict[str, str] | None = None,
+) -> str:
+    """Assemble the cacheable system prompt for a turn.
+
+    Order: identity → user_profile → memory → tool_guidance → answer_format.
+    The first three sections vary per user but rarely; the last two are
+    fully static. With `prompt_cache_key` keyed to user_id this keeps a
+    stable prefix that's well above the 1024-token cache warm threshold
+    once user_profile and memory accumulate.
+    """
+    sections: list[str] = [_IDENTITY_SECTION]
+    profile = _render_user_profile(user)
+    if profile:
+        sections.append(profile)
+    memory = _render_memory_section(memory_blocks)
+    if memory:
+        sections.append(memory)
+    sections.append(_TOOL_GUIDANCE_SECTION)
+    sections.append(_ANSWER_FORMAT_SECTION)
+    return "\n\n".join(sections)
+
+
+# Back-compat for any caller still importing SYSTEM_PROMPT directly. New code
+# should call `system_prompt_for(user, memory_blocks)` so per-user profile +
+# memory blocks land in the cacheable prefix.
+SYSTEM_PROMPT = system_prompt_for()
 
 
 # ---------- Event types yielded by run_turn ----------
@@ -131,6 +219,22 @@ class CompanionError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+@dataclass(frozen=True)
+class TurnContext:
+    """Per-turn working memory the client supplies and the server forwards
+    verbatim to the model as a developer message.
+
+    Kept out of the cacheable `instructions` prefix on purpose: the date and
+    viewing fields change every turn, and including them in `instructions`
+    would invalidate the prompt cache on every request.
+    """
+
+    client_local_date: str | None = None      # ISO "2026-05-18"
+    client_timezone: str | None = None        # IANA, e.g. "Europe/Reykjavik"
+    viewing_recording_title: str | None = None
+    viewing_folder_name: str | None = None
 
 
 # ---------- Tool definitions advertised to the model ----------
@@ -617,12 +721,76 @@ def _history_to_responses_input(messages: list[ChatMessage]) -> list[dict[str, A
     return out
 
 
+def _format_weekday(iso_date: str) -> str:
+    """Return ', Mon' / ', Sat' for the given ISO date, or '' if unparseable."""
+    try:
+        d = datetime.strptime(iso_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return ""
+    return f", {d.strftime('%A')}"
+
+
+def _format_scope_for_session(scope: dict[str, Any] | None) -> str:
+    if not scope:
+        return "all of the user's recordings"
+    rec_ids = scope.get("recording_ids") if isinstance(scope, dict) else None
+    if rec_ids:
+        n = len(rec_ids)
+        return f"{n} pinned recording{'s' if n != 1 else ''}"
+    return "all of the user's recordings"
+
+
+def _build_session_developer_message(
+    ctx: TurnContext | None,
+    scope: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Render the per-turn developer message describing date / tz / scope /
+    what the user is currently viewing. Goes in `input` (not `instructions`)
+    so the cacheable prefix is stable across turns.
+
+    Returns None when there is genuinely nothing to say (ctx is None and
+    scope is empty) — keeps short test fixtures clean.
+    """
+    if ctx is None and not scope:
+        return None
+    ctx = ctx or TurnContext()
+    lines: list[str] = ["<session>"]
+    if ctx.client_local_date:
+        weekday = _format_weekday(ctx.client_local_date)
+        lines.append(f"date: {ctx.client_local_date}{weekday}")
+    else:
+        lines.append(
+            "date: unknown (client did not send a local date — do not "
+            "guess; if the user uses a relative time word, ask)"
+        )
+    if ctx.client_timezone:
+        lines.append(f"timezone: {ctx.client_timezone}")
+    else:
+        lines.append(
+            "timezone: unknown (client did not send one — assume the "
+            "user's date above already covers their local day)"
+        )
+    lines.append(f"scope: {_format_scope_for_session(scope)}")
+    if ctx.viewing_recording_title:
+        lines.append(
+            f"user is currently viewing recording: "
+            f"{ctx.viewing_recording_title}"
+        )
+    if ctx.viewing_folder_name:
+        lines.append(
+            f"user is currently viewing folder: {ctx.viewing_folder_name}"
+        )
+    lines.append("</session>")
+    return {"role": "developer", "content": "\n".join(lines)}
+
+
 async def run_turn(
     db: AsyncSession,
     user_id: uuid.UUID,
     conversation_id: uuid.UUID,
     user_text: str,
     *,
+    turn_context: TurnContext | None = None,
     openai_client=None,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
@@ -630,6 +798,8 @@ async def run_turn(
     started = time.monotonic()
 
     conv = await _load_conversation_locked(db, user_id, conversation_id)
+    user_row = await db.get(User, user_id)
+    instructions = system_prompt_for(user_row, memory_blocks=None)
 
     user_msg = ChatMessage(
         conversation_id=conv.id,
@@ -647,11 +817,17 @@ async def run_turn(
 
     history = await _load_history(db, conv.id)
     base_input = _history_to_responses_input(history)
+    session_message = _build_session_developer_message(
+        turn_context, conv.scope
+    )
     tool_definitions_payload = tool_definitions()
     citable_allowlist: dict[str, SourceSegment] = {}
     raw_tool_calls: list[dict[str, Any]] = []
 
-    a_input = list(base_input)
+    a_input: list[dict[str, Any]] = []
+    if session_message is not None:
+        a_input.append(session_message)
+    a_input.extend(base_input)
     tool_calls_made = 0
     response = None
 
@@ -661,7 +837,7 @@ async def run_turn(
 
         response = await client.responses.create(
             model=settings.openai_llm_model,
-            instructions=SYSTEM_PROMPT,
+            instructions=instructions,
             input=a_input,
             tools=tool_definitions_payload,
             parallel_tool_calls=False,
