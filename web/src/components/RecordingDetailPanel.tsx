@@ -8,6 +8,7 @@ import {
   getRecording,
 } from "@/lib/api";
 import type { ActionItem, RecordingDetail, Segment, Summary } from "@/lib/types";
+import { SpeakerChip } from "@/components/SpeakerChip";
 
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return "";
@@ -260,7 +261,13 @@ export function RecordingDetailPanel({
         role="tabpanel"
         aria-labelledby={`recording-tab-${tab}`}
       >
-        {tab === "transcript" && <TranscriptTab segments={recording.segments} />}
+        {tab === "transcript" && (
+          <TranscriptTab
+            segments={recording.segments}
+            recordingId={recording.id}
+            onRecordingUpdate={onRecordingUpdate}
+          />
+        )}
         {tab === "summary" && (
           <SummaryTab summary={recording.summary} onGenerate={handleGenerateSummary} generating={generating} />
         )}
@@ -270,7 +277,15 @@ export function RecordingDetailPanel({
   );
 }
 
-function TranscriptTab({ segments }: { segments: Segment[] }) {
+function TranscriptTab({
+  segments,
+  recordingId,
+  onRecordingUpdate,
+}: {
+  segments: Segment[];
+  recordingId: string;
+  onRecordingUpdate?: (r: RecordingDetail) => void;
+}) {
   if (segments.length === 0) {
     return (
       <div className="empty-state">
@@ -282,7 +297,7 @@ function TranscriptTab({ segments }: { segments: Segment[] }) {
 
   const fullText = segments
     .map((s) => {
-      const speaker = s.speaker ?? "Speaker";
+      const speaker = s.display_name ?? s.raw_label ?? s.speaker ?? "Speaker";
       const ts = formatTimestamp(s.start_ms);
       return `[${speaker}, ${ts}] ${s.content}`;
     })
@@ -297,7 +312,13 @@ function TranscriptTab({ segments }: { segments: Segment[] }) {
       {segments.map((segment) => (
         <article key={segment.id} className="transcript-row">
           <div className="metadata-row">
-            {segment.speaker ? <strong>{segment.speaker}</strong> : null}
+            {segment.raw_label || segment.speaker ? (
+              <SpeakerChip
+                segment={segment}
+                recordingId={recordingId}
+                onUpdated={(detail) => onRecordingUpdate?.(detail)}
+              />
+            ) : null}
             <span className="mono">{formatTimestamp(segment.start_ms)}</span>
           </div>
           <p>{segment.content}</p>

@@ -18,6 +18,7 @@ import type {
   ExportFormat,
   KeywordsResponse,
   MessageResponse,
+  Person,
   StarRecordingResponse,
   Recording,
   RecordingDetail,
@@ -207,6 +208,54 @@ export function unstarRecording(recordingId: string): Promise<StarRecordingRespo
 
 export function getSpeakerStats(recordingId: string): Promise<SpeakerStatsResponse> {
   return apiFetch<SpeakerStatsResponse>(`/api/recordings/${recordingId}/speaker-stats`);
+}
+
+export function listPeople(): Promise<Person[]> {
+  return apiFetch<Person[]>("/api/people");
+}
+
+export function createPerson(input: {
+  display_name: string;
+  color?: string | null;
+  aliases?: string[] | null;
+}): Promise<Person> {
+  return apiFetch<Person>("/api/people", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updatePerson(
+  personId: string,
+  input: { display_name?: string; color?: string | null; aliases?: string[] | null },
+): Promise<Person> {
+  return apiFetch<Person>(`/api/people/${personId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePerson(personId: string): Promise<void> {
+  return apiFetch<void>(`/api/people/${personId}`, { method: "DELETE" });
+}
+
+export function mergePeople(sourceId: string, intoPersonId: string): Promise<Person> {
+  return apiFetch<Person>(`/api/people/${sourceId}/merge`, {
+    method: "POST",
+    body: JSON.stringify({ into_person_id: intoPersonId }),
+  });
+}
+
+export function assignSpeaker(
+  recordingId: string,
+  input:
+    | { raw_label: string; person_id: string }
+    | { raw_label: string; new_display_name: string },
+): Promise<RecordingDetail> {
+  return apiFetch<RecordingDetail>(`/api/recordings/${recordingId}/assign-speaker`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function searchTranscript(
