@@ -95,6 +95,13 @@ struct OnboardingView: View {
                                 isActive: index == currentPage,
                                 dictationManager: dictationManager
                             )
+                        case .voiceSetup:
+                            OnboardingVoiceSetupSlide(
+                                isActive: index == currentPage,
+                                hasMicrophonePermission: hasMicrophonePermission,
+                                onAdvance: advanceToNextPage
+                            )
+                            .environmentObject(appState)
                         case .sandbox:
                             OnboardingDictationSandboxSlide(
                                 isActive: index == currentPage,
@@ -251,6 +258,12 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
         appState.completeOnboarding()
+    }
+
+    private func advanceToNextPage() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentPage = min(currentPage + 1, pages.count - 1)
+        }
     }
 
     private func openHelp() {

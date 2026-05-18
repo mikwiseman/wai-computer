@@ -66,6 +66,7 @@
 		F735FCBB49C960B6DD5F69EF /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */; };
 		FCD45F381A47680297CE1456 /* SystemAudioWarningPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B3889A9A04FC3CA4A048F4D /* SystemAudioWarningPolicyTests.swift */; };
 		FDFC6C1C2F8D256C0EDED048 /* DictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A75D539F70136F36847122EB /* DictationHistoryStore.swift */; };
+		FE34B99935E63E078DF03FED /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA297F1CAC3937B4C29F28FE /* OnboardingVoiceSetupSlide.swift */; };
 		FE4EE18A24E20E2999254168 /* RecordingDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16756CD86835D8D0CF4FC8A /* RecordingDetailUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -124,6 +125,7 @@
 		BB5835543DAC10BA51A41849 /* SystemAudioWarningPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicy.swift; sourceTree = "<group>"; };
 		BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealAppSmokeUITests.swift; sourceTree = "<group>"; };
 		C25F047C635F7E3D47154C29 /* OnboardingDictationSandboxSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDictationSandboxSlide.swift; sourceTree = "<group>"; };
+		CA297F1CAC3937B4C29F28FE /* OnboardingVoiceSetupSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingVoiceSetupSlide.swift; sourceTree = "<group>"; };
 		D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingFlowUITests.swift; sourceTree = "<group>"; };
@@ -274,6 +276,7 @@
 				B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */,
 				D784721D7B258ADA3192BE91 /* OnboardingValuePropsSlide.swift */,
 				D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */,
+				CA297F1CAC3937B4C29F28FE /* OnboardingVoiceSetupSlide.swift */,
 				DC1ECB5B3DBC8E7FE4CB148C /* OnboardingWelcomeSlide.swift */,
 			);
 			path = Onboarding;
@@ -529,6 +532,7 @@
 				BDAD47F58A5228D925DEEFFA /* OnboardingPage.swift in Sources */,
 				8205F7AD37795B4565C85681 /* OnboardingValuePropsSlide.swift in Sources */,
 				C9E5627567722FF9925C20BF /* OnboardingView.swift in Sources */,
+				FE34B99935E63E078DF03FED /* OnboardingVoiceSetupSlide.swift in Sources */,
 				063CEA1A90D4FC6E524DE28C /* OnboardingWelcomeSlide.swift in Sources */,
 				A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */,
 				D45FF865581639B155BE4D04 /* RecordingListView.swift in Sources */,
@@ -622,7 +626,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 106;
+				CURRENT_PROJECT_VERSION = 107;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -785,7 +789,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 106;
+				CURRENT_PROJECT_VERSION = 107;
 				DEVELOPMENT_TEAM = R4A779QVVY;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
