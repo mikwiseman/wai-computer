@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# pre-push hook — fast macOS smoke before pushing.
+#
+# Runs `swift test` + an unsigned `xcodebuild build` when the push touches
+# macOS-relevant paths. Skips silently otherwise. Bypass with
+# `git push --no-verify` for emergencies.
+#
+# Install once per clone:
+#   git config core.hooksPath .git-hooks
+
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# git supplies push refs on stdin: `<local_ref> <local_sha> <remote_ref> <remote_sha>`
+# We only need the range of commits actually being pushed for each ref.
+changed_files=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "$local_ref" ]] && continue
+
+  zero="0000000000000000000000000000000000000000"
+  if [[ "$local_sha" == "$zero" ]]; then
+    # Deleting a remote branch — nothing to validate.
+    continue
+  fi
+
+  if [[ "$remote_sha" == "$zero" ]]; then
+    # New remote branch — diff against origin/main to identify what's new.
+    base=$(git rev-parse --verify --quiet origin/main 2>/dev/null || echo "")
+    if [[ -z "$base" ]]; then
+      # No origin/main yet — pushing everything; just inspect the new ref's tree.
+      changed_files+=$'\n'"$(git ls-tree -r --name-only "$local_sha" || true)"
+    else
+      changed_files+=$'\n'"$(git diff --name-only "$base...$local_sha" 2>/dev/null || true)"
+    fi
+  else
+    changed_files+=$'\n'"$(git diff --name-only "$remote_sha...$local_sha" 2>/dev/null || true)"
+  fi
+done
+
+# De-dupe and drop blanks.
+relevant=$(printf '%s\n' "$changed_files" \
+  | grep -E '^(macos/|shared/WaiComputerKit/|scripts/(build|publish|release|merge)-macos)' \
+  | sort -u || true)
+
+if [[ -z "$relevant" ]]; then
+  exit 0
+fi
+
+echo "[pre-push] macOS smoke check (swift test + unsigned xcodebuild)…"
+echo "[pre-push] (bypass with 'git push --no-verify' if you really need to)"
+
+# 1. Swift Package tests (~5 s warm).
+if ! (cd shared/WaiComputerKit && swift test --quiet); then
+  echo "[pre-push] FAIL — swift test failed; push aborted." >&2
+  exit 1
+fi
+
+# 2. Unsigned macOS build (~30 s warm). Skips signing, skips test target —
+#    the swift test step already covered unit tests.
+if ! (
+  cd macos/WaiComputer
+  if command -v xcodegen >/dev/null 2>&1; then
+    xcodegen generate >/dev/null
+  fi
+  xcodebuild \
+    -project WaiComputer.xcodeproj \
+    -scheme WaiComputer \
+    -destination 'platform=macOS' \
+    CODE_SIGNING_ALLOWED=NO \
+    build \
+    -quiet
+); then
+  echo "[pre-push] FAIL — macOS xcodebuild failed; push aborted." >&2
+  exit 1
+fi
+
+echo "[pre-push] macOS smoke OK"
+exit 0

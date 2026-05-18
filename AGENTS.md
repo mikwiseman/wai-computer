@@ -21,11 +21,13 @@ Keep aligned in env: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wa
 
 ## Deploy
 
-- GitHub Actions are not used for **backend** production deploys. Do not add push-triggered Actions deploys for `backend/` or `web/` unless explicitly asked.
+- GitHub Actions are not used for production deploys or release builds. Do not add push-triggered Actions deploys unless explicitly asked.
 - Production deploy (backend + web): `VPS_USER=root ./scripts/deploy-server.sh`.
 - Deploy syncs source to `/opt/waicomputer`; the VPS builds `api`, `web`, `celery-worker`, starts `caddy`, and checks health for all four services.
 - Runtime env stays only on the server at `/etc/waicomputer/backend.env`; never rebuild it from GitHub secrets.
-- **macOS builds** run on a self-hosted GitHub Actions runner (see `docs/macos-runner-setup.md`). Pushes to `main` that touch macOS-relevant paths trigger `macos-ci.yml` (build + test, no publish). Releases are workflow_dispatch only via `macos-release.yml` — credentials stay in the runner's keychain, nothing uploaded as GitHub Secrets.
+- **macOS validation before push**: `.git-hooks/pre-push` runs `swift test` + an unsigned `xcodebuild build` automatically on pushes that touch `macos/`, `shared/WaiComputerKit/`, or the macOS release scripts. Install once per clone with `git config core.hooksPath .git-hooks`. Bypass in an emergency with `git push --no-verify`.
+- **Continuous validation**: `scripts/qa-loop.sh` is the canonical long-running gate covering backend, web, shared Swift, and native (macOS/iOS/Android) builds. See `README.md` for usage.
+- **macOS release**: `VPS_USER=root scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization credentials configured. Explicit, manual — no CI button, on purpose. Matches the backend deploy pattern.
 
 ## Local Dev
 
