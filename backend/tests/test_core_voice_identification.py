@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import struct
-import tempfile
 import wave
 from pathlib import Path
 from uuid import uuid4

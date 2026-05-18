@@ -13,7 +13,6 @@ from app.core.soniox import (
     _require_api_key,
 )
 
-
 # ---------------------------------------------------------------------------
 # _require_api_key
 # ---------------------------------------------------------------------------
@@ -94,7 +93,13 @@ def test_build_segments_skips_tokens_without_text() -> None:
 
 def test_build_segments_skips_translation_only_tokens() -> None:
     tokens = [
-        {"text": "hi", "start_ms": 0, "end_ms": 100, "speaker": 1, "translation_status": "translation"},
+        {
+            "text": "hi",
+            "start_ms": 0,
+            "end_ms": 100,
+            "speaker": 1,
+            "translation_status": "translation",
+        },
     ]
     result = _build_segments_from_tokens(tokens)
     assert result == []

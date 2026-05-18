@@ -167,7 +167,7 @@ async def merge_person(
     user: CurrentUser,
     db: Database,
 ) -> PersonResponse:
-    """Move voiceprints + segments from ``person_id`` into ``into_person_id``, then delete source."""
+    """Move voiceprints and segments into another person, then delete source."""
     if person_id == request.into_person_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

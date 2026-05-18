@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 
@@ -35,7 +34,6 @@ from app.core.companion import (
     system_prompt_for,
     tool_definitions,
 )
-
 
 # ---------------------------------------------------------------------------
 # _render_user_profile
@@ -70,7 +68,11 @@ def test_render_user_profile_truncates_summary_instructions_to_240_chars() -> No
         summary_instructions = "x" * 300
 
     rendered = _render_user_profile(FakeUser())
-    line = next(l for l in rendered.split("\n") if l.startswith("summary_instructions:"))
+    line = next(
+        line
+        for line in rendered.split("\n")
+        if line.startswith("summary_instructions:")
+    )
     # "summary_instructions: " (22 chars) + up to 240 of body = 262 chars
     assert len(line) <= 22 + 240
 

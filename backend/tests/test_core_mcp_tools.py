@@ -3,7 +3,7 @@ search/fetch entry points used by the MCP server."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,7 +16,6 @@ from app.core.mcp_tools import (
 )
 from app.models.recording import ActionItem, Recording, Segment, Summary
 from app.models.user import User
-
 
 # ---------------------------------------------------------------------------
 # Pure helpers

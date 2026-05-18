@@ -130,8 +130,9 @@ def test_voice_embedding_constants() -> None:
 @pytest.mark.asyncio
 async def test_identify_returns_empty_when_no_speakers() -> None:
     """Empty results or all-None speakers → empty mapping."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     out = await identify_speakers_for_recording(
@@ -152,8 +153,9 @@ async def test_identify_returns_empty_when_no_speakers() -> None:
 @pytest.mark.asyncio
 async def test_identify_assigns_none_when_no_clean_snippet() -> None:
     """Speaker with no ≥5s run → None assignment (line 60)."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     results = [_tr("Speaker 1", 0, 1000)]  # only 1s — too short
@@ -167,8 +169,9 @@ async def test_identify_assigns_none_when_no_clean_snippet() -> None:
 @pytest.mark.asyncio
 async def test_identify_handles_embedding_failure() -> None:
     """Embedding computation raises → assignment is None (lines 68-72)."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     results = [_tr("Speaker 1", 0, 10_000)]  # 10s — passes pick_clean_snippet
@@ -187,8 +190,9 @@ async def test_identify_handles_embedding_failure() -> None:
 @pytest.mark.asyncio
 async def test_identify_calls_best_match_when_embedding_succeeds() -> None:
     """Successful embedding → _best_voiceprint_match invoked, assignment recorded."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     person_id = uuid.uuid4()
@@ -221,8 +225,9 @@ async def test_identify_calls_best_match_when_embedding_succeeds() -> None:
 @pytest.mark.asyncio
 async def test_best_match_returns_none_when_no_rows() -> None:
     """No voiceprints in DB → None."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
@@ -238,8 +243,9 @@ async def test_best_match_returns_none_when_no_rows() -> None:
 @pytest.mark.asyncio
 async def test_best_match_returns_none_below_threshold() -> None:
     """Row found but similarity < threshold → None."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
@@ -256,8 +262,9 @@ async def test_best_match_returns_none_below_threshold() -> None:
 @pytest.mark.asyncio
 async def test_best_match_returns_none_when_similarity_is_null() -> None:
     """Row found but similarity is None → None."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
@@ -274,8 +281,9 @@ async def test_best_match_returns_none_when_similarity_is_null() -> None:
 @pytest.mark.asyncio
 async def test_best_match_returns_pair_above_threshold() -> None:
     """Row found with similarity ≥ threshold → (person_id, similarity)."""
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
@@ -296,8 +304,9 @@ async def test_best_match_returns_pair_above_threshold() -> None:
 
 @pytest.mark.asyncio
 async def test_store_voiceprint_returns_none_when_no_clean_snippet() -> None:
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     db.execute = AsyncMock()
@@ -317,8 +326,9 @@ async def test_store_voiceprint_returns_none_when_no_clean_snippet() -> None:
 
 @pytest.mark.asyncio
 async def test_store_voiceprint_inserts_and_returns_id() -> None:
-    from sqlalchemy.ext.asyncio import AsyncSession
     from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     db = MagicMock(spec=AsyncSession)
     db.execute = AsyncMock()

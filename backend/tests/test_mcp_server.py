@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
-from uuid import uuid4
-
-import pytest
+from unittest.mock import patch
 
 from app import mcp_server
 from app.config import get_settings
-
 
 # ---------------------------------------------------------------------------
 # _allowed_hosts
