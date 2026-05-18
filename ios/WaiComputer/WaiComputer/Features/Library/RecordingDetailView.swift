@@ -51,8 +51,14 @@ struct RecordingDetailView: View {
 
             // Content
             TabView(selection: $selectedTab) {
-                TranscriptView(segments: viewModel.detail?.segments ?? [])
-                    .tag(0)
+                TranscriptView(
+                    segments: viewModel.detail?.segments ?? [],
+                    recordingId: viewModel.detail?.id,
+                    onAssigned: { updated in
+                        viewModel.detail = updated
+                    }
+                )
+                .tag(0)
 
                 SummaryTabView(summary: viewModel.detail?.summary, onGenerate: {
                     Task {

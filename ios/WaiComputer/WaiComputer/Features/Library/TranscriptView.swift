@@ -3,6 +3,8 @@ import WaiComputerKit
 
 struct TranscriptView: View {
     let segments: [Segment]
+    var recordingId: String?
+    var onAssigned: ((RecordingDetail) -> Void)?
     @State private var copied = false
 
     var body: some View {
@@ -15,12 +17,11 @@ struct TranscriptView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    // Copy all button
                     HStack {
                         Spacer()
                         Button {
                             let text = segments.map { seg in
-                                let speaker = seg.speaker ?? "Speaker"
+                                let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? "Speaker"
                                 let ts = seg.formattedTimestamp
                                 return "[\(speaker), \(ts)] \(seg.content)"
                             }.joined(separator: "\n")
@@ -38,7 +39,11 @@ struct TranscriptView: View {
                     }
 
                     ForEach(segments) { segment in
-                        SegmentView(segment: segment)
+                        SegmentView(
+                            segment: segment,
+                            recordingId: recordingId,
+                            onAssigned: onAssigned
+                        )
                     }
                 }
                 .padding(24)
@@ -49,13 +54,20 @@ struct TranscriptView: View {
 
 struct SegmentView: View {
     let segment: Segment
+    let recordingId: String?
+    let onAssigned: ((RecordingDetail) -> Void)?
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Speaker and timestamp
             HStack {
-                if let speaker = segment.speaker {
+                if let recordingId, let rawLabel = effectiveRawLabel, !rawLabel.isEmpty {
+                    SpeakerChipButton(
+                        segment: segment,
+                        recordingId: recordingId,
+                        onAssigned: { detail in onAssigned?(detail) }
+                    )
+                } else if let speaker = effectiveDisplay {
                     Text(speaker)
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -69,7 +81,6 @@ struct SegmentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Content
             Text(segment.content)
                 .font(.body)
                 .lineLimit(isExpanded ? nil : 3)
@@ -83,6 +94,14 @@ struct SegmentView: View {
         .padding()
         .background(Color.gray.opacity(0.05))
         .cornerRadius(8)
+    }
+
+    private var effectiveRawLabel: String? {
+        segment.rawLabel ?? segment.speaker
+    }
+
+    private var effectiveDisplay: String? {
+        segment.displayName ?? segment.rawLabel ?? segment.speaker
     }
 }
 
