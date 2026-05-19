@@ -111,6 +111,48 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(audioChunk["content"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
     }
 
+    func testInworldAudioChunkerBuffersSub20MsFrames() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        var pending = Data()
+
+        let first = await manager.testingInworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x01, count: 320),
+            forceFlush: false
+        )
+        XCTAssertTrue(first.isEmpty)
+        XCTAssertEqual(pending.count, 320)
+
+        let second = await manager.testingInworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x02, count: 320),
+            forceFlush: false
+        )
+        XCTAssertEqual(second.map(\.count), [640])
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testInworldAudioChunkerPadsFinalShortFrame() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        var pending = Data()
+
+        _ = await manager.testingInworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x01, count: 160),
+            forceFlush: false
+        )
+        let flushed = await manager.testingInworldAudioChunks(
+            pending: &pending,
+            appending: Data(),
+            forceFlush: true
+        )
+
+        XCTAssertEqual(flushed.map(\.count), [640])
+        XCTAssertTrue(pending.isEmpty)
+    }
+
     func testInworldTranscribeConfigUsesCurrentCamelCaseWireShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient, language: "multi", channels: 1)
