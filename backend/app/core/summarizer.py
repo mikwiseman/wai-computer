@@ -261,7 +261,7 @@ async def generate_title(transcript: str) -> str:
             f"Transcript:\n{snippet}"
         ),
         reasoning={"effort": "low"},
-        max_output_tokens=50,
+        max_output_tokens=256,
     )
     try:
         ensure_response_completed(response, operation="Title generation")
