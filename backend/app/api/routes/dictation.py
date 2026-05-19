@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.quota import WordQuota, count_words
 from app.config import get_settings
 from app.core.openai_client import get_openai_client
@@ -271,6 +271,7 @@ async def create_dictation_entry(
     user: CurrentUser,
     db: Database,
     response: Response,
+    enforce_payment: PaymentModeOverride,
 ) -> DictationEntryResponse:
     """Create a dictation entry. Idempotent by (user_id, client_entry_id)."""
     existing = await db.execute(
@@ -290,7 +291,9 @@ async def create_dictation_entry(
     if words <= 0:
         words = count_words(request.cleaned_text or request.raw_text)
 
-    quota = await WordQuota.check(db, user, estimated_words=words)
+    quota = await WordQuota.check(
+        db, user, estimated_words=words, enforce_override=enforce_payment
+    )
     if not quota.allowed:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,

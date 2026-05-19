@@ -135,22 +135,25 @@ class WordQuota:
         estimated_words: int = 0,
         *,
         now: datetime | None = None,
+        enforce_override: bool = False,
     ) -> QuotaCheckResult:
         """Pre-flight check — does ``user`` have headroom for ``estimated_words``?
 
         Returns a QuotaCheckResult; caller decides what to do on a miss.
 
-        When ``billing_enforcement_enabled`` is false (the default), every
-        account is treated as unlimited regardless of plan. This is the
-        "Payment mode off" knob that keeps v1.0 free-for-everyone until we
-        decide to flip the switch.
+        Enforcement requires either the global ``billing_enforcement_enabled``
+        env flag, or a per-request ``enforce_override`` (typically supplied
+        by a tester flipping Payment mode on in their Mac client). When
+        neither is set, every account is treated as unlimited — keeping v1.0
+        free-for-everyone as the default while still letting individual
+        testers run the real cap flow.
         """
         plan = await cls._resolve_plan(db, user)
         week_start = current_week_start(now)
         reset_at = next_week_start(now)
 
         settings = get_settings()
-        if not settings.billing_enforcement_enabled:
+        if not (settings.billing_enforcement_enabled or enforce_override):
             used = await cls._current_usage(db, user.id, week_start)
             return QuotaCheckResult(
                 allowed=True, words_used=used, words_cap=None, reset_at=reset_at
