@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
@@ -72,9 +72,17 @@ class CheckoutRequest(BaseModel):
 
 
 @router.get("/usage", response_model=UsageResponse)
-async def get_usage(user: CurrentUser, db: Database) -> UsageResponse:
-    """Return this user's current weekly transcription usage."""
-    result = await WordQuota.check(db, user, estimated_words=0)
+async def get_usage(
+    user: CurrentUser, db: Database, enforce_payment: PaymentModeOverride
+) -> UsageResponse:
+    """Return this user's current weekly transcription usage.
+
+    Respects the per-request Payment-mode override so a tester sees their
+    real cap state while everyone else stays in unlimited mode.
+    """
+    result = await WordQuota.check(
+        db, user, estimated_words=0, enforce_override=enforce_payment
+    )
     return UsageResponse(
         words_used=result.words_used,
         words_cap=result.words_cap,
@@ -106,7 +114,9 @@ async def list_plans(db: Database) -> list[PlanResponse]:
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)
-async def get_subscription(user: CurrentUser, db: Database) -> SubscriptionResponse:
+async def get_subscription(
+    user: CurrentUser, db: Database, enforce_payment: PaymentModeOverride
+) -> SubscriptionResponse:
     """Return the user's effective subscription (active or free fallback)."""
     plan: Plan | None = None
     sub: Subscription | None = None
@@ -148,7 +158,7 @@ async def get_subscription(user: CurrentUser, db: Database) -> SubscriptionRespo
         current_period_end=sub.current_period_end if sub is not None else None,
         cancel_at_period_end=bool(sub and sub.cancel_at_period_end),
         trial_end=sub.trial_end if sub is not None else None,
-        enforcement_enabled=settings.billing_enforcement_enabled,
+        enforcement_enabled=settings.billing_enforcement_enabled or enforce_payment,
     )
 
 

@@ -104,3 +104,18 @@ async def get_optional_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 Database = Annotated[AsyncSession, Depends(get_db)]
+
+
+def payment_mode_override(request: Request) -> bool:
+    """Per-request opt-in to billing enforcement.
+
+    Mac/web clients send ``X-WaiComputer-Payment-Mode: enforce`` when the
+    user has flipped the Payment mode toggle in Settings — this lets a
+    tester run the real quota/402/Upgrade flow against themselves without
+    flipping the global env switch and breaking everyone else.
+    """
+    value = request.headers.get("x-waicomputer-payment-mode")
+    return value is not None and value.lower() == "enforce"
+
+
+PaymentModeOverride = Annotated[bool, Depends(payment_mode_override)]
