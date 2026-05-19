@@ -49,6 +49,8 @@ async def _seed_default_billing_plans(session: AsyncSession) -> None:
                 description=(
                     "Unlimited transcription, permanent memory, agents, MCP, advanced search."
                 ),
+                stripe_price_id_monthly="price_1TYUaVENNsR4WtAWrMI4kLWf",
+                stripe_price_id_yearly="price_1TYUaWENNsR4WtAWRuIYlp7t",
                 usd_amount_monthly=Decimal("12.00"),
                 usd_amount_yearly=Decimal("96.00"),
                 tinkoff_amount_rub_monthly=Decimal("999.00"),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
@@ -57,6 +58,56 @@ def test_stripe_provider_returns_client_when_configured():
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     client = p._client_or_raise()
     assert client is not None
+
+
+@pytest.mark.asyncio
+async def test_resolve_price_id_raises_provider_unavailable_when_plan_price_missing(
+    monkeypatch,
+):
+    pro = Plan(code="pro", name="Pro")
+
+    class FakeResult:
+        def scalar_one_or_none(self):
+            return pro
+
+    class FakeSession:
+        async def execute(self, _statement):
+            return FakeResult()
+
+    @asynccontextmanager
+    async def fake_get_db_context():
+        yield FakeSession()
+
+    monkeypatch.setattr("app.db.session.get_db_context", fake_get_db_context)
+
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+
+    with pytest.raises(ProviderUnavailableError, match="no Stripe price id"):
+        await p._resolve_price_id(plan_code="pro", period="month")
+
+
+@pytest.mark.asyncio
+async def test_resolve_price_id_raises_provider_unavailable_when_plan_missing(
+    monkeypatch,
+):
+    class FakeResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class FakeSession:
+        async def execute(self, _statement):
+            return FakeResult()
+
+    @asynccontextmanager
+    async def fake_get_db_context():
+        yield FakeSession()
+
+    monkeypatch.setattr("app.db.session.get_db_context", fake_get_db_context)
+
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+
+    with pytest.raises(ProviderUnavailableError, match="not found"):
+        await p._resolve_price_id(plan_code="pro", period="month")
 
 
 @pytest.mark.asyncio
