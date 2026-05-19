@@ -8,10 +8,23 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 from sqlalchemy import select
+
+# Decimal values land on the wire as JSON numbers, not strings. The Apple
+# clients decode these straight into `Decimal`/`NSDecimal`, which rejects
+# JSON strings with `typeMismatch`. Float is lossless for cent-level prices.
+DecimalNumber = Annotated[
+    Decimal | None,
+    PlainSerializer(
+        lambda v: float(v) if v is not None else None,
+        return_type=float | None,
+        when_used="json",
+    ),
+]
 
 from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.providers.base import ProviderUnavailableError
@@ -42,10 +55,10 @@ class PlanResponse(BaseModel):
     code: str
     name: str
     description: str | None
-    usd_amount_monthly: Decimal | None
-    usd_amount_yearly: Decimal | None
-    rub_amount_monthly: Decimal | None
-    rub_amount_yearly: Decimal | None
+    usd_amount_monthly: DecimalNumber
+    usd_amount_yearly: DecimalNumber
+    rub_amount_monthly: DecimalNumber
+    rub_amount_yearly: DecimalNumber
     word_cap_per_week: int | None
     memory_retention_days: int | None
     features: dict
