@@ -7,6 +7,8 @@ type Locale = "en" | "ru";
 
 type Currency = "usd" | "rub";
 
+type Provider = "tinkoff" | "stripe";
+
 const COPY: Record<
   Locale,
   {
@@ -30,6 +32,9 @@ const COPY: Record<
       trial: string;
     };
     signInPrompt: string;
+    payWith: string;
+    providerTinkoff: string;
+    providerStripe: string;
   }
 > = {
   en: {
@@ -64,6 +69,9 @@ const COPY: Record<
       trial: "14-day trial — no credit card.",
     },
     signInPrompt: "Sign in to upgrade",
+    payWith: "Pay with",
+    providerTinkoff: "T-Bank (RUB)",
+    providerStripe: "Stripe (USD)",
   },
   ru: {
     heading: "Простой прайс.",
@@ -97,6 +105,9 @@ const COPY: Record<
       trial: "14 дней триал — без карты.",
     },
     signInPrompt: "Войди, чтобы оформить Pro",
+    payWith: "Оплата через",
+    providerTinkoff: "Т-Банк (₽)",
+    providerStripe: "Stripe ($)",
   },
 };
 
@@ -115,13 +126,22 @@ export function PricingCards({
 }: Props) {
   const copy = COPY[locale];
   const [period, setPeriod] = useState<"month" | "year">("month");
+  // RU users can pay with T-Bank (RUB) or Stripe (USD). EN users always Stripe.
+  const [provider, setProvider] = useState<Provider>(
+    currency === "rub" ? "tinkoff" : "stripe",
+  );
   const [inFlight, setInFlight] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The marketing site can render pricing without hitting the API — these are
   // the canonical sandbox-and-launch numbers from the v1.0 billing migration.
-  const proMonthly = currency === "rub" ? "999 ₽" : "$12";
-  const proYearly = currency === "rub" ? "7 999 ₽" : "$96";
+  const rubMonthly = "999 ₽";
+  const rubYearly = "7 999 ₽";
+  const usdMonthly = "$12";
+  const usdYearly = "$96";
+  const useRub = currency === "rub" && provider === "tinkoff";
+  const proMonthly = useRub ? rubMonthly : usdMonthly;
+  const proYearly = useRub ? rubYearly : usdYearly;
 
   async function handleUpgrade() {
     setError(null);
@@ -131,7 +151,6 @@ export function PricingCards({
     }
     setInFlight(true);
     try {
-      const provider = currency === "rub" ? "tinkoff" : "stripe";
       const session = await createBillingCheckout({
         plan: "pro",
         period,
@@ -197,6 +216,31 @@ export function PricingCards({
               <li key={f}>{f}</li>
             ))}
           </ul>
+          {currency === "rub" ? (
+            <fieldset className="pricing-provider" aria-label={copy.payWith}>
+              <legend>{copy.payWith}</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="pricing-provider"
+                  value="tinkoff"
+                  checked={provider === "tinkoff"}
+                  onChange={() => setProvider("tinkoff")}
+                />
+                <span>{copy.providerTinkoff}</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="pricing-provider"
+                  value="stripe"
+                  checked={provider === "stripe"}
+                  onChange={() => setProvider("stripe")}
+                />
+                <span>{copy.providerStripe}</span>
+              </label>
+            </fieldset>
+          ) : null}
           <button
             className="pricing-cta"
             onClick={handleUpgrade}
