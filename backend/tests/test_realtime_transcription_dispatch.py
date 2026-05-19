@@ -180,12 +180,10 @@ async def test_dispatch_dictation_deepgram(
         "app.core.realtime_transcription.mint_deepgram_realtime_session",
         AsyncMock(return_value=fake),
     )
-    session = await create_realtime_transcription_session(
-        purpose="dictation", user=user,
-    )
-    assert session.provider == "deepgram"
-    assert session.model == "flux-general-multi"
-    assert session.auth_scheme == "bearer"
+    with pytest.raises(ValueError, match="Unsupported dictation_live_stt option"):
+        await create_realtime_transcription_session(
+            purpose="dictation", user=user,
+        )
 
 
 @pytest.mark.asyncio
@@ -274,11 +272,10 @@ async def test_dispatch_recording_deepgram(
         "app.core.realtime_transcription.mint_deepgram_realtime_session",
         AsyncMock(return_value=fake),
     )
-    session = await create_realtime_transcription_session(
-        purpose="recording", user=user,
-    )
-    assert session.provider == "deepgram"
-    assert session.auth_scheme == "bearer"
+    with pytest.raises(ValueError, match="Unsupported recording_live_stt option"):
+        await create_realtime_transcription_session(
+            purpose="recording", user=user,
+        )
 
 
 @pytest.mark.asyncio

@@ -30,14 +30,9 @@ const modelMatrix = [
     tags: ["dictation", "realtime", "file"],
   },
   {
-    name: "Deepgram Flux",
-    fit: "Turn-aware realtime model for dictation and agent-style short utterances.",
-    tags: ["dictation", "realtime"],
-  },
-  {
     name: "Deepgram Nova-3",
-    fit: "High-throughput long recording and file transcription model.",
-    tags: ["recording", "file"],
+    fit: "High-throughput full-transcript and file transcription model.",
+    tags: ["file", "full transcript"],
   },
   {
     name: "Inworld STT-1",
@@ -64,7 +59,7 @@ function pct(value: number): string {
 
 export default function DictationBenchmarkPage() {
   const results = benchmarkData.results as BenchmarkResult[];
-  const top = results[0];
+  const previewRows = results.slice(0, 3);
 
   return (
     <main className={styles.page}>
@@ -82,40 +77,48 @@ export default function DictationBenchmarkPage() {
 
       <div className={styles.shell}>
         <section className={styles.hero}>
-          <div>
-            <p className={styles.eyebrow}>Speech benchmark</p>
-            <h1>Dictation models, ranked by our own audio.</h1>
+          <div className={styles.heroCopy}>
+            <h1>WaiComputer Dictation Arena</h1>
             <p className={styles.heroText}>
               Synthetic fixtures track repeatable accuracy and latency. The live arena lets
               signed-in testers dictate once and compare blind model outputs from the same audio.
             </p>
-          </div>
-          <div className={styles.scoreStrip} aria-label="Benchmark highlights">
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "78px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{top ? pct(top.aggregate.wer) : "Pending"}</strong>
-                WER leader
-              </span>
-            </div>
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "102px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{top?.aggregate.speed_factor ?? "Pending"}</strong>
-                Speed factor
-              </span>
-            </div>
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "58px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{results.length || "Pending"}</strong>
-                Models measured
-              </span>
+            <div className={styles.heroActions}>
+              <Link href="#arena">Start live battle</Link>
+              <Link href="#leaderboard">View leaderboard</Link>
             </div>
           </div>
+          <aside className={styles.arenaPreview} aria-label="Live dictation battle preview">
+            <div className={styles.previewHeader}>
+              <span>Blind model battle</span>
+              <span className={styles.previewLive}>live</span>
+            </div>
+            <div className={styles.previewChart}>
+              {previewRows.map((result, index) => (
+                <div className={styles.previewRow} key={`${result.provider}-${result.model}`}>
+                  <span className={styles.previewRank}>#{index + 1}</span>
+                  <span className={styles.previewModel}>
+                    <strong>{result.label}</strong>
+                    <span>{result.provider} / {result.model}</span>
+                  </span>
+                  <span className={styles.previewMetric}>{pct(result.aggregate.wer)}</span>
+                </div>
+              ))}
+            </div>
+            <div className={styles.previewBattle} aria-hidden="true">
+              {["A", "B", "C"].map((letter) => (
+                <div className={styles.previewCard} key={letter}>
+                  <span>{letter}</span>
+                  <p>Model hidden until the tester votes.</p>
+                </div>
+              ))}
+            </div>
+          </aside>
         </section>
 
-        <section className={styles.leaderboard} aria-labelledby="leaderboard-title">
+        <DictationBenchmarkArena />
+
+        <section className={styles.leaderboard} id="leaderboard" aria-labelledby="leaderboard-title">
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Leaderboard</p>
@@ -188,7 +191,6 @@ export default function DictationBenchmarkPage() {
           </div>
         </section>
 
-        <DictationBenchmarkArena />
       </div>
     </main>
   );

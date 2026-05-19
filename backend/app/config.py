@@ -61,9 +61,8 @@ class Settings(BaseSettings):
     elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
-    # Deepgram (dual-mode STT: Flux realtime + Nova batch/recording)
+    # Deepgram (file/full-transcript STT only; realtime hidden until token grants are available)
     deepgram_api_key: str = ""
-    deepgram_realtime_stt_model: str = "flux-general-multi"
     deepgram_file_stt_model: str = "nova-3"
 
     # Soniox (direct realtime + async batch)

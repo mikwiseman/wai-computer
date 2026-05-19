@@ -9,12 +9,19 @@ import time
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.transcription import transcribe_audio_file
-from app.core.transcription_options import TRANSCRIPTION_OPTIONS, provider_is_configured
+from app.core.transcription_options import (
+    TRANSCRIPTION_OPTIONS,
+    is_valid_option,
+    normalize_model,
+    normalize_provider,
+    provider_is_configured,
+)
+from app.models.benchmark import DictationBenchmarkVote
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 logger = logging.getLogger(__name__)
@@ -52,6 +59,23 @@ class DictationBenchmarkBattleResponse(BaseModel):
     battle_id: str
     language: str
     candidates: list[DictationBenchmarkCandidate]
+
+
+class DictationBenchmarkVoteRequest(BaseModel):
+    """Selected winner from a blind benchmark battle."""
+
+    battle_id: str = Field(min_length=1, max_length=64)
+    selected_candidate_id: str = Field(min_length=1, max_length=64)
+    selected_provider: str = Field(min_length=1, max_length=40)
+    selected_model: str = Field(min_length=1, max_length=100)
+    language: str = Field(default="multi", max_length=16)
+    candidate_count: int = Field(ge=1, le=MAX_BENCHMARK_CANDIDATES)
+
+
+class DictationBenchmarkVoteResponse(BaseModel):
+    """Persisted benchmark vote metadata."""
+
+    vote_id: str
 
 
 def _configured_file_stt_options():
@@ -173,3 +197,32 @@ async def create_dictation_benchmark_battle(
         language=normalized_language,
         candidates=list(candidates),
     )
+
+
+@router.post("/dictation/battle/vote", response_model=DictationBenchmarkVoteResponse)
+async def create_dictation_benchmark_vote(
+    request: DictationBenchmarkVoteRequest,
+    user: CurrentUser,
+    db: Database,
+) -> DictationBenchmarkVoteResponse:
+    """Persist the user's blind benchmark winner without audio or transcript text."""
+    provider = normalize_provider(request.selected_provider)
+    model = normalize_model(request.selected_model)
+    if not is_valid_option("file_stt", provider, model):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported benchmark vote option: {provider}/{model}",
+        )
+
+    vote = DictationBenchmarkVote(
+        user_id=user.id,
+        battle_id=request.battle_id,
+        language=request.language.strip().lower() or "multi",
+        selected_candidate_id=request.selected_candidate_id,
+        selected_provider=provider,
+        selected_model=model,
+        candidate_count=request.candidate_count,
+    )
+    db.add(vote)
+    await db.commit()
+    return DictationBenchmarkVoteResponse(vote_id=str(vote.id))

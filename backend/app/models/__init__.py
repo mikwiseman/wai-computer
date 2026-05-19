@@ -1,6 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.base import Base
+from app.models.benchmark import DictationBenchmarkVote
 from app.models.billing import (
     BillingEvent,
     BillingPeriod,
@@ -32,6 +33,7 @@ from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 
 __all__ = [
     "Base",
+    "DictationBenchmarkVote",
     "BillingEvent",
     "BillingPeriod",
     "BillingProvider",
