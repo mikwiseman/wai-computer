@@ -15,6 +15,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private var receiveTask: Task<Void, Never>?
     private var collectedSegments: [LiveTranscriptSegment] = []
     private var interimByItem: [String: String] = [:]
+    private var inworldPendingAudio = Data()
     private var isClosing = false
     private var didSendEndTurn = false
 
@@ -67,9 +68,17 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
                 "audio": audio.base64EncodedString(),
             ])))
         case "inworld":
-            try await webSocket.send(.string(Self.encodeJSON([
-                "audioChunk": ["content": pcm16.base64EncodedString()]
-            ])))
+            for chunk in Self.inworldAudioChunks(
+                pending: &inworldPendingAudio,
+                appending: pcm16,
+                forceFlush: false,
+                sampleRate: config.sampleRate,
+                channels: config.channels
+            ) {
+                try await webSocket.send(.string(Self.encodeJSON([
+                    "audioChunk": ["content": chunk.base64EncodedString()]
+                ])))
+            }
         case "deepgram", "soniox":
             try await webSocket.send(.data(pcm16))
         case "elevenlabs":
@@ -91,6 +100,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         case "openai":
             try await webSocket.send(.string(Self.encodeJSON(["type": "input_audio_buffer.commit"])))
         case "inworld":
+            try await flushInworldPendingAudio(to: webSocket)
             try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
         case "deepgram":
             let silenceBytes = max(1, config.sampleRate / 5) * 2
@@ -137,6 +147,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     public func cancel() async {
         guard !isClosing else { return }
         isClosing = true
+        inworldPendingAudio = Data()
         webSocket?.cancel(with: .goingAway, reason: nil)
         receiveTask?.cancel()
         eventContinuation.yield(.closed(reason: .clientRequested))
@@ -168,6 +179,20 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             throw ProviderError.transcriberInternal(message: "Unsupported auth scheme: \(scheme)")
         }
         return request
+    }
+
+    private func flushInworldPendingAudio(to webSocket: URLSessionWebSocketTask) async throws {
+        for chunk in Self.inworldAudioChunks(
+            pending: &inworldPendingAudio,
+            appending: Data(),
+            forceFlush: true,
+            sampleRate: config.sampleRate,
+            channels: config.channels
+        ) {
+            try await webSocket.send(.string(Self.encodeJSON([
+                "audioChunk": ["content": chunk.base64EncodedString()]
+            ])))
+        }
     }
 
     private func elevenLabsURL() throws -> URL {
@@ -393,7 +418,9 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
                 alternative,
                 isFinal: (json["is_final"] as? Bool) ?? (json["speech_final"] as? Bool) ?? false
             )
-        } else if type == "TurnInfo" || json["transcript"] is String {
+        } else if type == "TurnInfo" {
+            handleDeepgramTranscript(json, isFinal: (json["event"] as? String) == "EndOfTurn")
+        } else if json["transcript"] is String {
             handleDeepgramTranscript(json, isFinal: true)
         } else if type == "Error" || json["error"] != nil {
             eventContinuation.yield(.providerWarning(.transcriberInternal(
@@ -568,5 +595,53 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     static func encodeJSON(_ payload: [String: Any]) -> String {
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [])
         return String(data: data, encoding: .utf8)!
+    }
+
+    static func inworldAudioChunks(
+        pending: inout Data,
+        appending data: Data,
+        forceFlush: Bool,
+        sampleRate: Int,
+        channels: Int
+    ) -> [Data] {
+        if !data.isEmpty {
+            pending.append(data)
+        }
+
+        let bytesPerSecond = max(1, sampleRate) * max(1, channels) * 2
+        let minChunkBytes = max(1, bytesPerSecond * 20 / 1_000)
+        let maxChunkBytes = bytesPerSecond
+
+        var chunks: [Data] = []
+        while pending.count >= maxChunkBytes {
+            chunks.append(Data(pending.prefix(maxChunkBytes)))
+            pending.removeFirst(maxChunkBytes)
+        }
+
+        if forceFlush {
+            guard !pending.isEmpty else { return chunks }
+            var chunk = pending
+            pending.removeAll(keepingCapacity: true)
+            if chunk.count < minChunkBytes {
+                chunk.append(Data(repeating: 0, count: minChunkBytes - chunk.count))
+            }
+            chunks.append(chunk)
+        } else if pending.count >= minChunkBytes {
+            chunks.append(pending)
+            pending = Data()
+        }
+
+        return chunks
+    }
+
+    func testingHandleDeepgramMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        handleDeepgram(json)
+    }
+
+    func testingCollectedSegments() -> [LiveTranscriptSegment] {
+        collectedSegments
     }
 }

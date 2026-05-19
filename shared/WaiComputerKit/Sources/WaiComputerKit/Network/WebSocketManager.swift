@@ -919,7 +919,12 @@ public actor WebSocketManager {
             return
         }
 
-        if messageType == "TurnInfo" || json["transcript"] is String {
+        if messageType == "TurnInfo" {
+            handleDeepgramTranscript(json, isFinal: (json["event"] as? String) == "EndOfTurn")
+            return
+        }
+
+        if json["transcript"] is String {
             handleDeepgramTranscript(json, isFinal: true)
             return
         }
