@@ -43,6 +43,7 @@ async def test_generate_title_returns_whitespace_stripped_text():
 
         title = await generate_title("We discussed the Q1 roadmap...")
         assert title == "Team Standup Notes"
+        assert mock_client.responses.create.await_args.kwargs["max_output_tokens"] == 256
 
 
 @pytest.mark.asyncio
