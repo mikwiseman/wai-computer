@@ -12,6 +12,8 @@ import {
 
 type Locale = "en" | "ru";
 
+type Provider = "tinkoff" | "stripe";
+
 const COPY: Record<
   Locale,
   {
@@ -29,6 +31,9 @@ const COPY: Record<
     cancelledNotice: (date: string) => string;
     loadError: string;
     loading: string;
+    payWith: string;
+    providerTinkoff: string;
+    providerStripe: string;
   }
 > = {
   en: {
@@ -46,6 +51,9 @@ const COPY: Record<
     cancelledNotice: (d) => `Pro is active through ${d}.`,
     loadError: "Couldn't load billing info.",
     loading: "Loading…",
+    payWith: "Pay with",
+    providerTinkoff: "T-Bank (RUB)",
+    providerStripe: "Stripe (USD)",
   },
   ru: {
     heading: "Подписка",
@@ -62,6 +70,9 @@ const COPY: Record<
     cancelledNotice: (d) => `Pro активен до ${d}.`,
     loadError: "Не удалось загрузить данные подписки.",
     loading: "Загрузка…",
+    payWith: "Оплата через",
+    providerTinkoff: "Т-Банк (₽)",
+    providerStripe: "Stripe ($)",
   },
 };
 
@@ -76,6 +87,10 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [usage, setUsage] = useState<BillingUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
+  // RU users choose T-Bank or Stripe; EN locks to Stripe.
+  const [provider, setProvider] = useState<Provider>(
+    currency === "rub" ? "tinkoff" : "stripe",
+  );
 
   useEffect(() => {
     Promise.all([getBillingSubscription(), getBillingUsage()])
@@ -103,7 +118,6 @@ export function BillingDashboard({ locale, currency }: Props) {
   async function handleUpgrade() {
     setInFlight(true);
     try {
-      const provider = currency === "rub" ? "tinkoff" : "stripe";
       const session = await createBillingCheckout({
         plan: "pro",
         period: "month",
@@ -177,13 +191,40 @@ export function BillingDashboard({ locale, currency }: Props) {
           {inFlight ? copy.cancelling : copy.cancel}
         </button>
       ) : (
-        <button
-          className="billing-upgrade"
-          onClick={handleUpgrade}
-          disabled={inFlight}
-        >
-          {copy.upgrade}
-        </button>
+        <>
+          {currency === "rub" ? (
+            <fieldset className="billing-provider" aria-label={copy.payWith}>
+              <legend>{copy.payWith}</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="billing-provider"
+                  value="tinkoff"
+                  checked={provider === "tinkoff"}
+                  onChange={() => setProvider("tinkoff")}
+                />
+                <span>{copy.providerTinkoff}</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="billing-provider"
+                  value="stripe"
+                  checked={provider === "stripe"}
+                  onChange={() => setProvider("stripe")}
+                />
+                <span>{copy.providerStripe}</span>
+              </label>
+            </fieldset>
+          ) : null}
+          <button
+            className="billing-upgrade"
+            onClick={handleUpgrade}
+            disabled={inFlight}
+          >
+            {copy.upgrade}
+          </button>
+        </>
       )}
     </section>
   );
