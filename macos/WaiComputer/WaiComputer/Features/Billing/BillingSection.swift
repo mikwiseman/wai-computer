@@ -2,39 +2,78 @@ import AppKit
 import SwiftUI
 import WaiComputerKit
 
+private enum BillingSectionError: LocalizedError {
+    case unsupportedRegion(String)
+    case missingProPlan
+    case missingPrice(BillingDisplayRegion, BillingDisplayPeriod)
+    case invalidCheckoutURL(String)
+    case checkoutOpenRejected
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedRegion(let region):
+            return String(
+                format: String(localized: "billing.error.unsupportedRegion", bundle: .main),
+                region
+            )
+        case .missingProPlan:
+            return String(localized: "billing.error.missingProPlan", bundle: .main)
+        case .missingPrice(let region, let period):
+            return String(
+                format: String(localized: "billing.error.priceUnavailable", bundle: .main),
+                region.rawValue,
+                period.rawValue
+            )
+        case .invalidCheckoutURL(let url):
+            return String(
+                format: String(localized: "billing.error.checkoutInvalidURL", bundle: .main),
+                url
+            )
+        case .checkoutOpenRejected:
+            return String(localized: "billing.error.checkoutOpenRejected", bundle: .main)
+        }
+    }
+}
+
 /// Subscription + word-usage section embedded in `MacSettingsView`.
-///
-/// Free users see a weekly gauge ("Words: 8,230 / 10,000 this week"),
-/// an Upgrade button that opens hosted Stripe / T-Bank checkout in the
-/// default browser, and the plan summary. Pro users see "Unlimited"
-/// plus a Cancel button that flips ``cancel_at_period_end`` on the
-/// active subscription. Both rails are fed by the same backend
-/// endpoints — the section doesn't care which provider is in play.
 struct BillingSection: View {
     @EnvironmentObject var appState: MacAppState
+    @Environment(\.locale) private var locale
 
     @State private var subscription: BillingSubscription?
     @State private var usage: BillingUsage?
+    @State private var plans: [BillingPlan] = []
+    @State private var billingRegion: BillingDisplayRegion?
     @State private var loadError: String?
+    @State private var actionError: String?
     @State private var checkoutInFlight = false
     @State private var cancelInFlight = false
-    @State private var period: String = "month"
-    @State private var providerOverride: String?
+    @State private var regionUpdateInFlight = false
+    @State private var period: BillingDisplayPeriod = .month
 
     var body: some View {
         Section {
-            if let subscription, let usage {
+            if let subscription, let usage, let billingRegion {
                 planLine(subscription: subscription)
+                regionPicker(region: billingRegion)
                 usageGauge(usage: usage, isPro: subscription.isPro)
                 if subscription.isPro {
                     proControls(subscription: subscription)
                 } else {
-                    freeControls()
+                    freeControls(region: billingRegion)
+                }
+                if let actionError {
+                    Text(actionError)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("settings-billing-action-error")
                 }
             } else if let loadError {
                 Text(loadError)
                     .font(Typography.caption)
                     .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProgressView().controlSize(.small)
             }
@@ -55,6 +94,23 @@ struct BillingSection: View {
             Spacer()
             statusBadge(for: subscription)
         }
+    }
+
+    private func regionPicker(region: BillingDisplayRegion) -> some View {
+        Picker(selection: Binding(
+            get: { region },
+            set: { newRegion in
+                Task { await saveBillingRegion(newRegion) }
+            }
+        )) {
+            Text("billing.region.global", bundle: .main).tag(BillingDisplayRegion.global)
+            Text("billing.region.ru", bundle: .main).tag(BillingDisplayRegion.ru)
+        } label: {
+            Text("billing.region.title", bundle: .main)
+        }
+        .pickerStyle(.menu)
+        .disabled(regionUpdateInFlight || checkoutInFlight || cancelInFlight)
+        .accessibilityIdentifier("settings-billing-region-picker")
     }
 
     @ViewBuilder
@@ -114,24 +170,32 @@ struct BillingSection: View {
     // MARK: - Free user controls
 
     @ViewBuilder
-    private func freeControls() -> some View {
+    private func freeControls(region: BillingDisplayRegion) -> some View {
         Picker(selection: $period) {
-            Text("billing.period.month", bundle: .main).tag("month")
-            Text("billing.period.year", bundle: .main).tag("year")
+            Text("billing.period.month", bundle: .main).tag(BillingDisplayPeriod.month)
+            Text("billing.period.year", bundle: .main).tag(BillingDisplayPeriod.year)
         } label: {
             Text("billing.period.month", bundle: .main).hidden()
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        .disabled(checkoutInFlight || regionUpdateInFlight)
 
         if let pro = currentProPlan() {
+            let label = priceLabel(for: pro, region: region)
             HStack {
-                Text(priceLabel(for: pro))
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
+                if let label {
+                    Text(label)
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(BillingSectionError.missingPrice(region, period).localizedDescription)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                }
                 Spacer()
                 Button {
-                    Task { await startCheckout(plan: pro) }
+                    Task { await startCheckout(plan: pro, region: region) }
                 } label: {
                     if checkoutInFlight {
                         ProgressView().controlSize(.small)
@@ -140,36 +204,24 @@ struct BillingSection: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(checkoutInFlight)
+                .disabled(checkoutInFlight || regionUpdateInFlight || label == nil)
                 .accessibilityIdentifier("settings-billing-upgrade")
             }
+        } else {
+            Text(BillingSectionError.missingProPlan.localizedDescription)
+                .font(Typography.caption)
+                .foregroundStyle(.red)
         }
     }
 
-    /// Region detection for displayed currency. We don't have a server-supplied
-    /// region on the User model yet (it's stored backend-side); fall back to
-    /// the build-time WAIDownloadRegion stamp so RU DMG installs show RUB.
-    private func userRegion() -> String {
-        if let stamp = Bundle.main.object(forInfoDictionaryKey: "WAIDownloadRegion") as? String {
-            return stamp.lowercased()
+    private func priceLabel(for pro: BillingPlan, region: BillingDisplayRegion) -> String? {
+        guard let amount = pro.localizedPrice(for: period, region: region, locale: locale) else {
+            return nil
         }
-        return "global"
-    }
-
-    private func priceLabel(for pro: BillingPlan) -> String {
-        let formatString = period == "year"
+        let formatString = period == .year
             ? String(localized: "billing.price.perYear", bundle: .main)
             : String(localized: "billing.price.perMonth", bundle: .main)
-        if userRegion() == "ru",
-           let monthly = pro.rubAmountMonthly, let yearly = pro.rubAmountYearly {
-            let amount = period == "year" ? yearly : monthly
-            return String(format: formatString, "₽\(amount)")
-        }
-        if let monthly = pro.usdAmountMonthly, let yearly = pro.usdAmountYearly {
-            let amount = period == "year" ? yearly : monthly
-            return String(format: formatString, "$\(amount)")
-        }
-        return ""
+        return String(format: formatString, amount)
     }
 
     // MARK: - Pro user controls
@@ -193,7 +245,7 @@ struct BillingSection: View {
                         Text("billing.subscription.cancel", bundle: .main)
                     }
                 }
-                .disabled(cancelInFlight)
+                .disabled(cancelInFlight || regionUpdateInFlight)
             }
         }
     }
@@ -201,66 +253,116 @@ struct BillingSection: View {
     // MARK: - Actions
 
     private func currentProPlan() -> BillingPlan? {
-        // For v1.0 we only model two plans; if the current subscription is
-        // pro, return its plan; otherwise synthesise a quick lookup.
+        if let plan = plans.first(where: { $0.code == "pro" }) {
+            return plan
+        }
         if subscription?.plan.code == "pro" {
             return subscription?.plan
         }
-        return BillingPlan(
-            code: "pro",
-            name: "Pro",
-            usdAmountMonthly: 12,
-            usdAmountYearly: 96,
-            rubAmountMonthly: 999,
-            rubAmountYearly: 7999,
-            features: ["agents": true, "mcp": true, "advanced_search": true]
-        )
+        return nil
     }
 
     private func loadAll() async {
         do {
-            async let sub = appState.getAPIClient().getBillingSubscription()
-            async let use = appState.getAPIClient().getBillingUsage()
-            let (s, u) = try await (sub, use)
+            let client = appState.getAPIClient()
+            async let sub = client.getBillingSubscription()
+            async let use = client.getBillingUsage()
+            async let planRows = client.listBillingPlans()
+            async let userSettings = client.getSettings()
+            let (s, u, p, settings) = try await (sub, use, planRows, userSettings)
+            guard let region = BillingDisplayRegion(rawValue: settings.region) else {
+                throw BillingSectionError.unsupportedRegion(settings.region)
+            }
             await MainActor.run {
                 self.subscription = s
                 self.usage = u
+                self.plans = p
+                self.billingRegion = region
                 self.loadError = nil
+                self.actionError = nil
             }
         } catch {
             await MainActor.run {
-                self.loadError = String(localized: "billing.error.loadFailed", bundle: .main)
+                self.loadError = error.localizedDescription
             }
         }
     }
 
-    private func startCheckout(plan: BillingPlan) async {
-        await MainActor.run { checkoutInFlight = true }
-        defer { Task { await MainActor.run { checkoutInFlight = false } } }
+    private func saveBillingRegion(_ region: BillingDisplayRegion) async {
+        guard billingRegion != region else { return }
+        let previous = billingRegion
+        await MainActor.run {
+            billingRegion = region
+            regionUpdateInFlight = true
+            actionError = nil
+        }
         do {
-            let resp = try await appState.getAPIClient().createBillingCheckout(
-                plan: plan.code, period: period, provider: providerOverride
+            let settings = try await appState.getAPIClient().updateSettings(
+                UpdateSettingsRequest(region: region.rawValue)
             )
-            if let url = URL(string: resp.checkoutUrl) {
-                await MainActor.run { NSWorkspace.shared.open(url) }
+            guard let confirmed = BillingDisplayRegion(rawValue: settings.region) else {
+                throw BillingSectionError.unsupportedRegion(settings.region)
+            }
+            await MainActor.run {
+                billingRegion = confirmed
+                regionUpdateInFlight = false
             }
         } catch {
             await MainActor.run {
-                loadError = String(localized: "billing.error.checkoutFailed", bundle: .main)
+                billingRegion = previous
+                regionUpdateInFlight = false
+                actionError = error.localizedDescription
             }
+        }
+    }
+
+    private func startCheckout(plan: BillingPlan, region: BillingDisplayRegion) async {
+        await MainActor.run {
+            checkoutInFlight = true
+            actionError = nil
+        }
+        do {
+            let resp = try await appState.getAPIClient().createBillingCheckout(
+                plan: plan.code,
+                period: period.rawValue,
+                provider: region.provider
+            )
+            guard let url = URL(string: resp.checkoutUrl),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http" else {
+                throw BillingSectionError.invalidCheckoutURL(resp.checkoutUrl)
+            }
+            let opened = await MainActor.run {
+                NSWorkspace.shared.open(url)
+            }
+            guard opened else {
+                throw BillingSectionError.checkoutOpenRejected
+            }
+        } catch {
+            await MainActor.run {
+                actionError = error.localizedDescription
+            }
+        }
+        await MainActor.run {
+            checkoutInFlight = false
         }
     }
 
     private func cancelSubscription() async {
-        await MainActor.run { cancelInFlight = true }
-        defer { Task { await MainActor.run { cancelInFlight = false } } }
+        await MainActor.run {
+            cancelInFlight = true
+            actionError = nil
+        }
         do {
             try await appState.getAPIClient().cancelBillingSubscription()
             await loadAll()
         } catch {
             await MainActor.run {
-                loadError = String(localized: "billing.error.cancelFailed", bundle: .main)
+                actionError = error.localizedDescription
             }
+        }
+        await MainActor.run {
+            cancelInFlight = false
         }
     }
 }

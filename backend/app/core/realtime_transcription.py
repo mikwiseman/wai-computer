@@ -127,9 +127,10 @@ async def _build_deepgram_realtime_session(
     channels: int,
     user: User | None = None,
 ) -> RealtimeTranscriptionSession:
-    settings = get_settings()
-
-    if user is not None and settings.deepgram_api_key:
+    if user is not None:
+        settings = get_settings()
+        if not settings.deepgram_api_key:
+            raise ValueError("DEEPGRAM_API_KEY not configured")
         token_ttl = int(settings.deepgram_realtime_proxy_token_ttl_seconds)
         token = create_access_token(user.id, expires_delta=timedelta(seconds=token_ttl))
         _, resolved_language, keep_alive_interval_seconds = deepgram_realtime_websocket_url(
