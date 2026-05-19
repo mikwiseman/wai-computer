@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, WebSocket, status
 from pydantic import BaseModel, Field
+from starlette.websockets import WebSocketDisconnect
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import Database, OptionalUser
 from app.config import get_settings
+from app.core.dictation_benchmark_live import (
+    LiveBenchmarkProviderRunner,
+    configured_live_benchmark_models,
+)
+from app.core.rate_limit import get_rate_limiter
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_options import (
     TRANSCRIPTION_OPTIONS,
@@ -37,6 +44,8 @@ SUPPORTED_BENCHMARK_CONTENT_TYPES = {
     "audio/m4a",
     "audio/ogg",
 }
+BENCHMARK_RATE_LIMIT_REQUESTS = 10
+BENCHMARK_RATE_LIMIT_WINDOW_SECONDS = 60
 
 
 class DictationBenchmarkCandidate(BaseModel):
@@ -85,6 +94,16 @@ def _configured_file_stt_options():
         for option in TRANSCRIPTION_OPTIONS["file_stt"]
         if provider_is_configured(option.provider, settings)
     ][:MAX_BENCHMARK_CANDIDATES]
+
+
+def _check_benchmark_rate_limit(request_or_websocket: Request | WebSocket) -> None:
+    limiter = get_rate_limiter()
+    client_ip = request_or_websocket.client.host if request_or_websocket.client else "unknown"
+    limiter.check(
+        key=f"dictation_benchmark:{client_ip}",
+        max_requests=BENCHMARK_RATE_LIMIT_REQUESTS,
+        window_seconds=BENCHMARK_RATE_LIMIT_WINDOW_SECONDS,
+    )
 
 
 async def _transcribe_candidate(
@@ -140,7 +159,8 @@ async def _transcribe_candidate(
 
 @router.post("/dictation/battle", response_model=DictationBenchmarkBattleResponse)
 async def create_dictation_benchmark_battle(
-    user: CurrentUser,
+    request: Request,
+    user: OptionalUser,
     audio: UploadFile = File(...),
     language: str = Form(default="multi", max_length=16),
 ) -> DictationBenchmarkBattleResponse:
@@ -149,6 +169,7 @@ async def create_dictation_benchmark_battle(
     The audio is kept in memory only for this request and is not persisted.
     """
     del user
+    _check_benchmark_rate_limit(request)
 
     content_type = (audio.content_type or "application/octet-stream").split(";")[0].strip().lower()
     if content_type not in SUPPORTED_BENCHMARK_CONTENT_TYPES:
@@ -199,23 +220,128 @@ async def create_dictation_benchmark_battle(
     )
 
 
+@router.websocket("/dictation/live-battle")
+async def create_live_dictation_benchmark_battle(
+    websocket: WebSocket,
+    language: str = "multi",
+) -> None:
+    """Run one browser microphone stream through realtime providers.
+
+    The client sends raw 16 kHz mono PCM chunks as binary WebSocket frames and
+    finishes with ``{"type":"finish"}``. Provider keys never leave the server.
+    """
+    try:
+        _check_benchmark_rate_limit(websocket)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+
+    settings = get_settings()
+    models = configured_live_benchmark_models(settings=settings)
+    if not models:
+        await websocket.send_json(
+            {
+                "type": "battle_error",
+                "message": "No realtime transcription providers are configured.",
+            }
+        )
+        await websocket.close(code=1011)
+        return
+
+    battle_id = uuid4().hex
+    normalized_language = language.strip().lower() or "multi"
+    random.SystemRandom().shuffle(models)
+    send_lock = asyncio.Lock()
+
+    async def send_event(event: dict) -> None:
+        async with send_lock:
+            await websocket.send_json(event)
+
+    runners = [
+        LiveBenchmarkProviderRunner(
+            battle_id=battle_id,
+            candidate=model,
+            language=normalized_language,
+            settings=settings,
+            send_event=send_event,
+        )
+        for model in models
+    ]
+    tasks = [asyncio.create_task(runner.run()) for runner in runners]
+
+    await send_event(
+        {
+            "type": "battle_started",
+            "battle_id": battle_id,
+            "language": normalized_language,
+            "candidates": [
+                {
+                    "id": model.id,
+                    "provider": model.provider,
+                    "model": model.model,
+                    "label": model.label,
+                    "status": "running",
+                    "transcript": None,
+                    "latency_ms": None,
+                    "word_count": 0,
+                    "error": None,
+                }
+                for model in models
+            ],
+        }
+    )
+
+    client_disconnected = False
+    try:
+        while True:
+            message = await websocket.receive()
+            if message.get("bytes") is not None:
+                chunk = message["bytes"]
+                if chunk:
+                    await asyncio.gather(*(runner.enqueue_audio(chunk) for runner in runners))
+                continue
+
+            text = message.get("text")
+            if text is None:
+                continue
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and payload.get("type") == "finish":
+                break
+    except WebSocketDisconnect:
+        client_disconnected = True
+    finally:
+        await asyncio.gather(*(runner.finish() for runner in runners), return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if not client_disconnected:
+            await send_event({"type": "battle_finished", "battle_id": battle_id})
+            await websocket.close()
+
+
 @router.post("/dictation/battle/vote", response_model=DictationBenchmarkVoteResponse)
 async def create_dictation_benchmark_vote(
     request: DictationBenchmarkVoteRequest,
-    user: CurrentUser,
+    user: OptionalUser,
     db: Database,
 ) -> DictationBenchmarkVoteResponse:
     """Persist the user's blind benchmark winner without audio or transcript text."""
     provider = normalize_provider(request.selected_provider)
     model = normalize_model(request.selected_model)
-    if not is_valid_option("file_stt", provider, model):
+    if not (
+        is_valid_option("file_stt", provider, model)
+        or is_valid_option("dictation_live_stt", provider, model)
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported benchmark vote option: {provider}/{model}",
         )
 
     vote = DictationBenchmarkVote(
-        user_id=user.id,
+        user_id=user.id if user is not None else None,
         battle_id=request.battle_id,
         language=request.language.strip().lower() or "multi",
         selected_candidate_id=request.selected_candidate_id,

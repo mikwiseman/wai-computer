@@ -14,10 +14,10 @@ class DictationBenchmarkVote(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "dictation_benchmark_votes"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     battle_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

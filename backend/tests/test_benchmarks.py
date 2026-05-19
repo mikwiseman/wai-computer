@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dictation_benchmark_live import configured_live_benchmark_models
 from app.core.transcript_utils import TranscriptResult
 from app.models.benchmark import DictationBenchmarkVote
 
@@ -25,13 +26,40 @@ def _settings(**overrides: str) -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_dictation_benchmark_battle_requires_auth(client: AsyncClient):
+async def test_dictation_benchmark_battle_runs_for_anonymous_visitors(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "app.api.routes.benchmarks.get_settings",
+        lambda: _settings(elevenlabs_api_key="xi"),
+    )
+
+    async def fake_transcribe_audio_file(*args, **kwargs):
+        return [
+            TranscriptResult(
+                text="anonymous transcript",
+                speaker=None,
+                is_final=True,
+                start_ms=0,
+                end_ms=1000,
+                confidence=0.9,
+            )
+        ]
+
+    monkeypatch.setattr(
+        "app.api.routes.benchmarks.transcribe_audio_file",
+        fake_transcribe_audio_file,
+    )
+
     response = await client.post(
         "/api/benchmarks/dictation/battle",
         files={"audio": ("sample.webm", b"audio", "audio/webm")},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 200
+    data = response.json()
+    assert data["candidates"][0]["transcript"] == "anonymous transcript"
 
 
 @pytest.mark.asyncio
@@ -152,10 +180,66 @@ async def test_dictation_benchmark_vote_persists_metadata_only(
     assert vote.selected_model == "stt-async-v4"
     assert vote.language == "ru"
     assert vote.candidate_count == 3
+    assert vote.user_id is not None
 
 
 @pytest.mark.asyncio
-async def test_dictation_benchmark_vote_rejects_non_file_model(
+async def test_dictation_benchmark_vote_accepts_anonymous_visitors(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    response = await client.post(
+        "/api/benchmarks/dictation/battle/vote",
+        json={
+            "battle_id": "battle-1",
+            "selected_candidate_id": "candidate-a",
+            "selected_provider": "Soniox",
+            "selected_model": "stt-async-v4",
+            "language": "multi",
+            "candidate_count": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    vote_id = UUID(response.json()["vote_id"])
+
+    result = await db_session.execute(
+        select(DictationBenchmarkVote).where(DictationBenchmarkVote.id == vote_id)
+    )
+    vote = result.scalar_one()
+    assert vote.user_id is None
+    assert vote.selected_provider == "soniox"
+
+
+@pytest.mark.asyncio
+async def test_dictation_benchmark_vote_accepts_live_models(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    response = await client.post(
+        "/api/benchmarks/dictation/battle/vote",
+        json={
+            "battle_id": "live-battle-1",
+            "selected_candidate_id": "candidate-c",
+            "selected_provider": "deepgram",
+            "selected_model": "flux-general-multi",
+            "language": "ru",
+            "candidate_count": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    vote_id = UUID(response.json()["vote_id"])
+    result = await db_session.execute(
+        select(DictationBenchmarkVote).where(DictationBenchmarkVote.id == vote_id)
+    )
+    vote = result.scalar_one()
+    assert vote.selected_provider == "deepgram"
+    assert vote.selected_model == "flux-general-multi"
+
+
+@pytest.mark.asyncio
+async def test_dictation_benchmark_vote_rejects_unsupported_model(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ):
@@ -165,11 +249,28 @@ async def test_dictation_benchmark_vote_rejects_non_file_model(
         json={
             "battle_id": "battle-1",
             "selected_candidate_id": "candidate-a",
-            "selected_provider": "deepgram",
-            "selected_model": "flux-general-multi",
+            "selected_provider": "openai",
+            "selected_model": "gpt-4o-transcribe",
             "language": "multi",
             "candidate_count": 3,
         },
     )
 
     assert response.status_code == 422
+
+
+def test_configured_live_benchmark_models_uses_live_provider_pool():
+    settings = _settings(
+        elevenlabs_api_key="xi",
+        soniox_api_key="sx",
+        deepgram_api_key="dg",
+        inworld_api_key="iw",
+    )
+
+    models = configured_live_benchmark_models(settings=settings)
+
+    assert [(model.provider, model.model) for model in models] == [
+        ("elevenlabs", "scribe_v2_realtime"),
+        ("soniox", "stt-rt-v4"),
+        ("deepgram", "flux-general-multi"),
+    ]

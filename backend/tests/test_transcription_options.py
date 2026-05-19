@@ -127,8 +127,8 @@ def test_is_valid_option_rejects_unknown() -> None:
 
 def test_realtime_pools_are_task_specific() -> None:
     """Dictation and recording expose task-specific realtime models."""
-    assert not is_valid_option("dictation_live_stt", "deepgram", "flux-general-multi")
-    assert not is_valid_option("recording_live_stt", "deepgram", "flux-general-multi")
+    assert is_valid_option("dictation_live_stt", "deepgram", "flux-general-multi")
+    assert is_valid_option("recording_live_stt", "deepgram", "flux-general-multi")
     assert not is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert not is_valid_option("dictation_live_stt", "deepgram", "nova-3")
     assert is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
@@ -191,8 +191,14 @@ def test_options_response_each_entry_is_dict_with_required_fields() -> None:
 def test_options_response_realtime_groups_are_task_specific() -> None:
     out = options_response()
     assert out["dictation_live_stt"] != out["recording_live_stt"]
-    assert all(entry["provider"] != "deepgram" for entry in out["dictation_live_stt"])
-    assert all(entry["provider"] != "deepgram" for entry in out["recording_live_stt"])
+    assert any(
+        entry["provider"] == "deepgram" and entry["model"] == "flux-general-multi"
+        for entry in out["dictation_live_stt"]
+    )
+    assert any(
+        entry["provider"] == "deepgram" and entry["model"] == "flux-general-multi"
+        for entry in out["recording_live_stt"]
+    )
     assert any(entry["provider"] == "inworld" for entry in out["dictation_live_stt"])
     assert any(entry["provider"] == "inworld" for entry in out["recording_live_stt"])
 
@@ -239,9 +245,11 @@ def test_options_response_filters_unconfigured_providers() -> None:
 
     assert {entry["provider"] for entry in out["dictation_live_stt"]} == {
         "elevenlabs",
+        "deepgram",
     }
     assert {entry["provider"] for entry in out["recording_live_stt"]} == {
         "elevenlabs",
+        "deepgram",
     }
     assert {entry["provider"] for entry in out["file_stt"]} == {
         "elevenlabs",
