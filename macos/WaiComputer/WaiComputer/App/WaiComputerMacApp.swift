@@ -956,6 +956,7 @@ class MacAppState: ObservableObject {
             currentUser = user
             isAuthenticated = true
             SentryHelper.setUser(id: user.id)
+            await syncDownloadRegionToServerIfNeeded()
             await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
             dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
                 recordingViewModel?.phase == .idle
@@ -977,6 +978,29 @@ class MacAppState: ObservableObject {
     func resumePendingRecordingSyncIfNeeded() async {
         guard isAuthenticated else { return }
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+    }
+
+    /// Push the build-time WAIDownloadRegion stamp to the server once per
+    /// session so backend-side checkout routing (Stripe vs T-Bank) and
+    /// currency display reflect the variant the user installed. We only
+    /// upgrade `global` → the stamped value; never downgrade or
+    /// overwrite a region the user explicitly chose elsewhere.
+    private func syncDownloadRegionToServerIfNeeded() async {
+        guard let stamp = Bundle.main
+            .object(forInfoDictionaryKey: "WAIDownloadRegion") as? String,
+              stamp == "ru" || stamp == "global" else {
+            return
+        }
+        do {
+            let settings = try await apiClient.getSettings()
+            if settings.region == stamp { return }
+            if settings.region != "global" { return }  // honour explicit user choice
+            let request = UpdateSettingsRequest(region: stamp)
+            _ = try await apiClient.updateSettings(request)
+        } catch {
+            // Best-effort sync — log and move on. The next session retries.
+            print("Region sync failed: \(error)")
+        }
     }
 
     // MARK: - Permission tracking (Wispr Flow-style toast)
