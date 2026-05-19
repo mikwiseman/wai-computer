@@ -101,6 +101,7 @@ public actor WebSocketManager {
     private let reconnectClock = ContinuousClock()
     private var lastTranscriptReceivedAt: ContinuousClock.Instant?
     private var openAIInterimByItem: [String: String] = [:]
+    private var inworldPendingAudio = Data()
 
     private enum CommittedTranscriptKind {
         case plain
@@ -123,6 +124,8 @@ public actor WebSocketManager {
     private let maxBufferChunks = 300 // ~30s of audio at ~100ms/chunk
     private var endOfStreamRequested = false
     private var endOfStreamSent = false
+    private static let inworldMinAudioChunkBytes = 16_000 * 2 * 20 / 1000
+    private static let inworldMaxAudioChunkBytes = 16_000 * 2
 
     /// All final transcript segments collected during this session.
     /// Preserved across reconnections so no transcript data is lost.
@@ -179,6 +182,7 @@ public actor WebSocketManager {
         collectedSegmentKinds = []
         lastTranscriptReceivedAt = nil
         openAIInterimByItem = [:]
+        inworldPendingAudio = Data()
         reconnectAttempt = 0
         audioBuffer = []
         isReconnecting = false
@@ -446,7 +450,7 @@ public actor WebSocketManager {
         }
 
         if transcriptionSession?.provider == "inworld" {
-            try await webSocket.send(.string(makeInworldAudioChunkMessage(data: data)))
+            try await sendInworldAudio(data, forceFlush: false)
             return
         }
 
@@ -1406,6 +1410,7 @@ public actor WebSocketManager {
         }
 
         if transcriptionSession?.provider == "inworld" {
+            try await flushInworldPendingAudio()
             try await webSocket.send(.string("{\"endTurn\":{}}"))
             try await webSocket.send(.string("{\"closeStream\":{}}"))
             endOfStreamSent = true
@@ -1455,7 +1460,57 @@ public actor WebSocketManager {
         reconnectTask = nil
         if clearBufferedAudio {
             audioBuffer = []
+            inworldPendingAudio = Data()
         }
+    }
+
+    private func sendInworldAudio(_ data: Data, forceFlush: Bool) async throws {
+        guard let webSocket else {
+            throw APIError.networkError(URLError(.notConnectedToInternet))
+        }
+        for chunk in Self.inworldAudioChunks(
+            pending: &inworldPendingAudio,
+            appending: data,
+            forceFlush: forceFlush
+        ) {
+            try await webSocket.send(.string(makeInworldAudioChunkMessage(data: chunk)))
+        }
+    }
+
+    private func flushInworldPendingAudio() async throws {
+        guard !inworldPendingAudio.isEmpty else { return }
+        try await sendInworldAudio(Data(), forceFlush: true)
+    }
+
+    static func inworldAudioChunks(
+        pending: inout Data,
+        appending data: Data,
+        forceFlush: Bool
+    ) -> [Data] {
+        if !data.isEmpty {
+            pending.append(data)
+        }
+
+        var chunks: [Data] = []
+        while pending.count >= inworldMaxAudioChunkBytes {
+            chunks.append(Data(pending.prefix(inworldMaxAudioChunkBytes)))
+            pending.removeFirst(inworldMaxAudioChunkBytes)
+        }
+
+        if forceFlush {
+            guard !pending.isEmpty else { return chunks }
+            var chunk = pending
+            pending.removeAll(keepingCapacity: true)
+            if chunk.count < inworldMinAudioChunkBytes {
+                chunk.append(Data(repeating: 0, count: inworldMinAudioChunkBytes - chunk.count))
+            }
+            chunks.append(chunk)
+        } else if pending.count >= inworldMinAudioChunkBytes {
+            chunks.append(pending)
+            pending = Data()
+        }
+
+        return chunks
     }
 
     private func ensureEventStream() {
@@ -1550,6 +1605,7 @@ public actor WebSocketManager {
         receiveTask?.cancel()
         receiveTask = nil
         transcriptionSession = nil
+        inworldPendingAudio = Data()
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))
@@ -1568,5 +1624,13 @@ public actor WebSocketManager {
     func testingYieldEvent(_ event: WebSocketEvent) {
         ensureEventStream()
         eventContinuation?.yield(event)
+    }
+
+    func testingInworldAudioChunks(
+        pending: inout Data,
+        appending data: Data,
+        forceFlush: Bool
+    ) -> [Data] {
+        Self.inworldAudioChunks(pending: &pending, appending: data, forceFlush: forceFlush)
     }
 }
