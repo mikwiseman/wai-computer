@@ -32,8 +32,8 @@ final class RealAppSmokeUITests: XCTestCase {
         app.launchEnvironment["WAI_DISABLE_STORED_SESSION_RESTORE"] = "1"
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
-            "-nativeOnboardingV3Completed", "NO",
-            "-nativeOnboardingV3CurrentPage", "5",
+            "-nativeOnboardingV4Completed", "NO",
+            "-nativeOnboardingV4CurrentPage", "5",
         ]
         app.launch()
         app.activate()
@@ -58,7 +58,8 @@ final class RealAppSmokeUITests: XCTestCase {
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
             "-nativeOnboardingV2Completed", "YES",
-            "-nativeOnboardingV3Completed", "NO",
+            "-nativeOnboardingV3Completed", "YES",
+            "-nativeOnboardingV4Completed", "NO",
         ]
         app.launch()
         app.activate()

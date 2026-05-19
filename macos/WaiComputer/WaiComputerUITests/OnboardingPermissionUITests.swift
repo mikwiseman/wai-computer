@@ -13,7 +13,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
         app.launchArguments = [
-            "-nativeOnboardingV3CurrentPage", "2",
+            "-nativeOnboardingV4CurrentPage", "2",
         ]
         app.launch()
         app.activate()
@@ -43,9 +43,10 @@ final class OnboardingPermissionUITests: XCTestCase {
         app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
         app.launchArguments = [
-            "-nativeOnboardingV3CurrentPage", "0",
+            "-nativeOnboardingV4CurrentPage", "0",
             "-nativeOnboardingV2Completed", "YES",
-            "-nativeOnboardingV3Completed", "NO",
+            "-nativeOnboardingV3Completed", "YES",
+            "-nativeOnboardingV4Completed", "NO",
         ]
         app.launch()
         app.activate()
@@ -62,8 +63,8 @@ final class OnboardingPermissionUITests: XCTestCase {
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
         app.launchArguments = [
-            "-nativeOnboardingV3CurrentPage", "2",
-            "-nativeOnboardingV3Completed", "NO",
+            "-nativeOnboardingV4CurrentPage", "2",
+            "-nativeOnboardingV4Completed", "NO",
         ]
         app.launch()
         app.activate()
@@ -82,7 +83,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
         app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
         app.launchArguments = [
-            "-nativeOnboardingV3CurrentPage", "2",
+            "-nativeOnboardingV4CurrentPage", "2",
         ]
         app.launch()
         app.activate()

@@ -15,6 +15,10 @@ enum MacPrivacySettings {
         openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
     }
 
+    static func openSystemAudio() {
+        openPrivacyPane("x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")
+    }
+
     static func restartForPermissionRefresh() {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true

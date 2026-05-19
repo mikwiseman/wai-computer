@@ -405,6 +405,7 @@ struct MacSettingsView: View {
                     Button {
                         UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
                         UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+                        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingSystemAudioSetupKey)
                         appState.hasCompletedOnboarding = false
                     } label: {
                         Text("settings.dictation.rerunSetup", bundle: .main)

@@ -126,14 +126,6 @@ class MacRecordingViewModel: ObservableObject {
         phase != .idle
     }
 
-    var visibleSystemAudioWarning: String? {
-        SystemAudioWarningPolicy.visibleBannerText(
-            recordingType: recordingType,
-            requestedSystemAudio: recordingInputSource.requestsSystemAudio,
-            warning: systemAudioWarning
-        )
-    }
-
     var canStopRecording: Bool {
         phase == .recording
     }
@@ -309,11 +301,7 @@ class MacRecordingViewModel: ObservableObject {
                 NSLog("[Recording] Starting dual audio capture...")
                 try await capture.startRecording()
                 hasSystemAudio = dualCapture.hasSystemAudio
-                NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO (mic-only)")
-
-                if inputSource == .dual && !hasSystemAudio {
-                    error = "System audio unavailable. Microphone audio is still being recorded.\n\nTo fix: System Settings → Privacy & Security → Audio Capture → enable WaiComputer."
-                }
+                NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO")
             } else {
                 NSLog("[Recording] Starting audio capture...")
                 try await capture.startRecording()
@@ -402,7 +390,8 @@ class MacRecordingViewModel: ObservableObject {
 
             startTimer()
 
-            // Monitor system audio stall status so the user gets immediate feedback
+            // Monitor system audio stall status for telemetry and the compact
+            // header state. Setup belongs in onboarding, not a live banner.
             if #available(macOS 14.2, *), let dualCapture = capture as? DualAudioCapture {
                 startSystemAudioMonitor(for: dualCapture)
             }
@@ -910,7 +899,7 @@ class MacRecordingViewModel: ObservableObject {
                             warnedOnce = true
                             SentryHelper.addBreadcrumb(
                                 category: "recording",
-                                message: "system audio stalled — banner shown",
+                                message: "system audio stalled",
                                 level: .warning,
                                 data: [
                                     "stalled": stalled,
@@ -1227,9 +1216,11 @@ class MacRecordingViewModel: ObservableObject {
         switch inputSource {
         case .dual:
             guard #available(macOS 14.2, *) else {
-                // Fall back to mic-only on older macOS
-                NSLog("[Recording] macOS < 14.2 — falling back to mic-only")
-                return MicrophoneCapture()
+                throw NSError(
+                    domain: "MacRecordingViewModel",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "System audio capture requires macOS 14.2 or newer."]
+                )
             }
             return DualAudioCapture()
         case .microphone:
@@ -1255,6 +1246,10 @@ class MacRecordingViewModel: ObservableObject {
                let systemError = error as? SystemAudioCaptureError {
                 _ = systemError
                 return "System audio capture couldn't start. Check Audio Capture permission in System Settings and try again."
+            }
+            if #available(macOS 14.2, *),
+               let dualError = error as? DualAudioCaptureError {
+                return dualError.localizedDescription
             }
 
             switch error {

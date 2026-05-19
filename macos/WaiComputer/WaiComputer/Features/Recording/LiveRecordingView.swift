@@ -51,31 +51,6 @@ struct LiveRecordingView: View {
                 .accessibilityIdentifier("live-transcription-offline-banner")
             }
 
-            // System audio stall warning
-            if let warning = recordingVM.visibleSystemAudioWarning {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                    Text(warning)
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.textSecondary)
-                    Spacer()
-                    Button("Fix in Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .font(Typography.label)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.yellow)
-                    .accessibilityIdentifier("system-audio-warning-fix")
-                }
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.sm)
-                .background(Color.yellow.opacity(0.1))
-                .accessibilityIdentifier("system-audio-warning")
-            }
-
             WaiDivider()
 
             // Live transcript — committed text renders sharp; the rolling
