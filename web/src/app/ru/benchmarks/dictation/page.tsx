@@ -34,6 +34,11 @@ const modelMatrix = [
     tags: ["файл", "полный транскрипт"],
   },
   {
+    name: "Deepgram Flux",
+    fit: "Realtime-модель с turn detection для live dictation battle и коротких agent-style фраз.",
+    tags: ["диктовка", "realtime"],
+  },
+  {
     name: "Inworld STT-1",
     fit: "Экспериментальный realtime путь через Inworld STT; не файловая модель.",
     tags: ["диктовка", "realtime"],
@@ -66,6 +71,8 @@ const arenaCopy = {
   pickWinner: "Выбрать",
   newRound: "Новый раунд",
   recordingHint: "Говори естественно. Останови запись после полной фразы.",
+  recordingLiveHint: "Live-запись идёт. Говори естественно, потом останови запись для full-прогона.",
+  runningHint: "Тот же аудиофайл проходит через full-модели.",
   resultsHint: "Названия моделей скрыты до выбора победителя.",
   privateRound: "Приватный раунд. Аудио используется только для этого запроса.",
   sameAudio: "Один аудиофайл для всех моделей.",
@@ -80,8 +87,16 @@ const arenaCopy = {
     { label: "RU", value: "ru" },
   ],
   micUnavailable: "Запись с микрофона недоступна в этом браузере.",
+  micPermissionDenied: "Доступ к микрофону заблокирован. Разреши микрофон в браузере и начни новый battle.",
+  emptyRecording: "Аудио не записалось. Начни новый battle и говори хотя бы секунду.",
   requestFailed: "Benchmark-запрос не удался.",
   voteFailed: "Голос не удалось сохранить.",
+  transcribingSameAudio: "Распознаём тот же аудиофайл...",
+  waitingForVote: "Ждём слепой выбор.",
+  livePass: "Live pass",
+  fullPass: "Full pass",
+  liveWaiting: "Ждём live-транскрипт...",
+  liveConnectionFailed: "Live benchmark не подключился. Попробуй новый раунд.",
 };
 
 export const metadata: Metadata = {
@@ -124,7 +139,8 @@ export default function RuDictationBenchmarkPage() {
             <h1>WaiComputer Арена диктовки</h1>
             <p className={styles.heroText}>
               Синтетические фикстуры дают повторяемую проверку точности и latency.
-              Live arena позволяет тестерам надиктовать один раз и выбрать лучший результат вслепую.
+              Live arena позволяет надиктовать один раз, увидеть realtime-ответы моделей,
+              а потом сравнить full-транскрипты на том же аудио.
             </p>
             <div className={styles.heroActions}>
               <Link href="#arena">Начать live battle</Link>

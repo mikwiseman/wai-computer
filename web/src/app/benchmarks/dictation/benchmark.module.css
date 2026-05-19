@@ -464,6 +464,16 @@
   box-shadow: 0 0 0 8px rgba(255, 79, 69, 0.12);
 }
 
+.liveDot[data-state="uploading"] {
+  background: #6b4eff;
+  box-shadow: 0 0 0 8px rgba(107, 78, 255, 0.12);
+}
+
+.liveDot[data-state="done"] {
+  background: #0f7c68;
+  box-shadow: 0 0 0 8px rgba(15, 124, 104, 0.12);
+}
+
 .timer {
   font-size: 2.4rem;
   font-weight: 840;
@@ -645,9 +655,43 @@
   background: #ffe3df;
 }
 
+.modelRail em[data-status="listening"],
+.modelRail em[data-status="running"] {
+  color: #4d38ce;
+  background: #ece9ff;
+}
+
 .modelRail em[data-status="standby"] {
   color: #686d7c;
   background: #e7e9f0;
+}
+
+.resultTabs {
+  width: fit-content;
+  display: inline-flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid #d9dce6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.resultTabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 14px;
+  background: transparent;
+  color: #686d7c;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.resultTabs button[data-active="true"] {
+  background: #111216;
+  color: #fff;
 }
 
 .candidateGrid {
@@ -662,6 +706,14 @@
   grid-template-rows: auto 1fr auto auto;
   gap: 14px;
   padding: 16px;
+}
+
+.candidatePending {
+  background: #fafafc;
+}
+
+.candidatePending .transcriptText {
+  color: #686d7c;
 }
 
 .candidateMeta,

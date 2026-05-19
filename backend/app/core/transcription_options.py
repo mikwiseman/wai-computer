@@ -65,6 +65,15 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         ),
     ),
     ModelOption(
+        provider="deepgram",
+        model="flux-general-multi",
+        label="Deepgram Flux Multilingual",
+        description=(
+            "Best realtime voice-agent candidate. Model-native turn detection, "
+            "very low latency, 10-language multilingual streaming."
+        ),
+    ),
+    ModelOption(
         provider="inworld",
         model="inworld/inworld-stt-1",
         label="Inworld STT-1",
@@ -89,6 +98,15 @@ _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         description=(
             "Best value long realtime option. 60+ languages, semantic endpointing, "
             "up to 5-hour streams."
+        ),
+    ),
+    ModelOption(
+        provider="deepgram",
+        model="flux-general-multi",
+        label="Deepgram Flux Multilingual",
+        description=(
+            "Realtime turn-taking model for live notes and short interactive "
+            "recording sessions."
         ),
     ),
     ModelOption(

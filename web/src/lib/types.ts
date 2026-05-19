@@ -42,7 +42,7 @@ export interface DictationBenchmarkCandidate {
   provider: string;
   model: string;
   label: string;
-  status: "ok" | "error";
+  status: "standby" | "listening" | "running" | "ok" | "error";
   transcript: string | null;
   latency_ms: number | null;
   word_count: number | null;

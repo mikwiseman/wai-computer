@@ -35,6 +35,11 @@ const modelMatrix = [
     tags: ["file", "full transcript"],
   },
   {
+    name: "Deepgram Flux",
+    fit: "Realtime turn-aware model for live dictation battles and short agent-style utterances.",
+    tags: ["dictation", "realtime"],
+  },
+  {
     name: "Inworld STT-1",
     fit: "Realtime experiment path through Inworld’s STT stack; not a file model.",
     tags: ["dictation", "realtime"],
@@ -81,7 +86,8 @@ export default function DictationBenchmarkPage() {
             <h1>WaiComputer Dictation Arena</h1>
             <p className={styles.heroText}>
               Synthetic fixtures track repeatable accuracy and latency. The live arena lets
-              signed-in testers dictate once and compare blind model outputs from the same audio.
+              testers dictate once, watch realtime models respond, then compare full transcripts
+              from the same audio.
             </p>
             <div className={styles.heroActions}>
               <Link href="#arena">Start live battle</Link>
