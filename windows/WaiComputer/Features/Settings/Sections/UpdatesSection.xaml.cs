@@ -18,7 +18,7 @@ public sealed partial class UpdatesSection : UserControl
 
     private async void OnCheck(object sender, RoutedEventArgs e)
     {
-        var settings = App.Settings;
+        var settings = global::WaiComputer.App.Settings;
         var mgr = new UpdateManager(settings.Updates.FeedUrl, BetaChannelStore.IsEnabled);
         var info = await mgr.CheckAsync();
         VersionLabel.Text = info is null ? "You're on the latest version." : $"Update available: {info.TargetFullRelease.Version}";

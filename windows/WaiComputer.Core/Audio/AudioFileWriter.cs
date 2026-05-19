@@ -5,7 +5,7 @@ namespace WaiComputer.Core.Audio;
 /// <summary>
 /// Writes a streamable WAV file (RIFF, 16-bit PCM, configurable channels +
 /// sample rate). Header is emitted at open with placeholder sizes; sizes are
-/// patched atomically on <see cref="Finalize"/>. Thread-safe.
+/// patched atomically on <see cref="Complete"/>. Thread-safe.
 /// Direct port of <c>AudioFileWriter.swift</c> (120 lines).
 /// </summary>
 public sealed class AudioFileWriter : IAsyncDisposable
@@ -62,7 +62,7 @@ public sealed class AudioFileWriter : IAsyncDisposable
         }
     }
 
-    public void Finalize()
+    public void Complete()
     {
         lock (_lock)
         {
@@ -75,7 +75,7 @@ public sealed class AudioFileWriter : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
-        try { Finalize(); } catch { /* swallow on dispose */ }
+        try { Complete(); } catch { /* swallow on dispose */ }
         if (_ownsStream)
         {
             _stream.Dispose();

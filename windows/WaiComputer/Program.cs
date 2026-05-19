@@ -15,7 +15,7 @@ public static class Program
         VelopackApp.Build().Run();
 
         ComWrappersSupport.InitializeComWrappers();
-        Application.Start(_ =>
+        Application.Start(p =>
         {
             var ctx = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
             System.Threading.SynchronizationContext.SetSynchronizationContext(ctx);

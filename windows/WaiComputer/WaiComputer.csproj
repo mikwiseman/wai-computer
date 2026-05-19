@@ -12,9 +12,15 @@
     <EnableMsixTooling>false</EnableMsixTooling>
     <SelfContained>false</SelfContained>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <ApplicationIcon>Resources\Assets\AppIcon.ico</ApplicationIcon>
+    <!-- Skip MSIX MakePri generation: unpackaged apps don't need PRI resources,
+         and MakePri tooling ships only with Visual Studio Build Tools (not the
+         bare .NET SDK). -->
+    <EnableMrtResourceGeneration>false</EnableMrtResourceGeneration>
     <Nullable>enable</Nullable>
     <DefaultLanguage>en-US</DefaultLanguage>
+    <!-- Velopack must boot before WinUI; we have a hand-rolled Program.Main.
+         Suppress the WinUI XAML-generated Main so they don't conflict. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />

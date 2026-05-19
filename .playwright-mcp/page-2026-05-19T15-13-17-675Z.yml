@@ -1,0 +1,186 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - link "WaiComputer home" [ref=e4] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e6]: WaiComputer
+      - navigation [ref=e7]:
+        - link "Pricing" [ref=e8] [cursor=pointer]:
+          - /url: /pricing
+        - group "Language" [ref=e9]:
+          - link "EN" [ref=e10] [cursor=pointer]:
+            - /url: /benchmarks/dictation
+          - generic [ref=e11]: ·
+          - link "RU" [ref=e12] [cursor=pointer]:
+            - /url: /ru/benchmarks/dictation
+        - link "Sign in" [ref=e13] [cursor=pointer]:
+          - /url: /login
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - heading "WaiComputer Dictation Arena" [level=1] [ref=e17]
+          - paragraph [ref=e18]: Synthetic fixtures track repeatable accuracy and latency. The live arena lets signed-in testers dictate once and compare blind model outputs from the same audio.
+          - generic [ref=e19]:
+            - link "Start live battle" [ref=e20] [cursor=pointer]:
+              - /url: "#arena"
+            - link "View leaderboard" [ref=e21] [cursor=pointer]:
+              - /url: "#leaderboard"
+        - complementary "Live dictation battle preview" [ref=e22]:
+          - generic [ref=e23]:
+            - generic [ref=e24]: Blind model battle
+            - generic [ref=e25]: live
+          - generic [ref=e26]:
+            - generic [ref=e27]:
+              - generic [ref=e28]: "#1"
+              - generic [ref=e29]:
+                - strong [ref=e30]: Soniox v4 Async
+                - generic [ref=e31]: soniox / stt-async-v4
+              - generic [ref=e32]: 18.6%
+            - generic [ref=e33]:
+              - generic [ref=e34]: "#2"
+              - generic [ref=e35]:
+                - strong [ref=e36]: ElevenLabs Scribe v2
+                - generic [ref=e37]: elevenlabs / scribe_v2
+              - generic [ref=e38]: 21.9%
+            - generic [ref=e39]:
+              - generic [ref=e40]: "#3"
+              - generic [ref=e41]:
+                - strong [ref=e42]: Deepgram Nova-3
+                - generic [ref=e43]: deepgram / nova-3
+              - generic [ref=e44]: 21.9%
+          - generic [ref=e45]:
+            - generic [ref=e46]:
+              - generic [ref=e47]: A
+              - paragraph [ref=e48]: Model hidden until the tester votes.
+            - generic [ref=e49]:
+              - generic [ref=e50]: B
+              - paragraph [ref=e51]: Model hidden until the tester votes.
+            - generic [ref=e52]:
+              - generic [ref=e53]: C
+              - paragraph [ref=e54]: Model hidden until the tester votes.
+      - region "Dictate once, compare blind outputs" [ref=e55]:
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - paragraph [ref=e58]: Live arena
+            - heading "Dictate once, compare blind outputs" [level=2] [ref=e59]
+          - generic "Battle status" [ref=e60]:
+            - generic [ref=e61]: Record
+            - generic [ref=e62]: Run
+            - generic [ref=e63]: Vote
+            - strong [ref=e64]: Ready
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e69]: 0:00
+            - generic "Battle mechanics" [ref=e97]:
+              - generic [ref=e98]: One audio sample, all models.
+              - strong [ref=e99]: A
+              - strong [ref=e100]: B
+              - strong [ref=e101]: C
+              - generic [ref=e102]: Blind vote before reveal.
+            - paragraph [ref=e103]: Speak naturally. Stop when the phrase is complete.
+            - generic "Language" [ref=e104]:
+              - generic [ref=e105]: Language
+              - generic [ref=e106]:
+                - button "Auto" [ref=e107] [cursor=pointer]
+                - button "English" [ref=e108] [cursor=pointer]
+                - button "Russian" [ref=e109] [cursor=pointer]
+            - generic [ref=e110]:
+              - button "Start dictation battle" [ref=e111] [cursor=pointer]
+              - generic [ref=e112]: Private round. Audio is used for this request only.
+          - generic [ref=e113]:
+            - generic [ref=e114]: Running models
+            - generic [ref=e115]:
+              - generic [ref=e116]:
+                - generic [ref=e117]: A
+                - strong [ref=e118]: ElevenLabs
+                - emphasis [ref=e119]: standby
+              - generic [ref=e120]:
+                - generic [ref=e121]: B
+                - strong [ref=e122]: Soniox
+                - emphasis [ref=e123]: standby
+              - generic [ref=e124]:
+                - generic [ref=e125]: C
+                - strong [ref=e126]: Deepgram
+                - emphasis [ref=e127]: standby
+      - region "WaiComputer Synthetic Dictation v1" [ref=e128]:
+        - generic [ref=e129]:
+          - generic [ref=e130]:
+            - paragraph [ref=e131]: Leaderboard
+            - heading "WaiComputer Synthetic Dictation v1" [level=2] [ref=e132]
+          - paragraph [ref=e133]: macOS say synthetic fixtures + real provider file transcription APIs
+        - table [ref=e135]:
+          - rowgroup [ref=e136]:
+            - row "Rank Model WER CER Latency Speed" [ref=e137]:
+              - columnheader "Rank" [ref=e138]
+              - columnheader "Model" [ref=e139]
+              - columnheader "WER" [ref=e140]
+              - columnheader "CER" [ref=e141]
+              - columnheader "Latency" [ref=e142]
+              - columnheader "Speed" [ref=e143]
+          - rowgroup [ref=e144]:
+            - row "#1 Soniox v4 Async soniox / stt-async-v4 18.6% 10.0% 7102 ms 1.11x" [ref=e145]:
+              - cell "#1" [ref=e146]
+              - cell "Soniox v4 Async soniox / stt-async-v4" [ref=e147]:
+                - generic [ref=e148]:
+                  - strong [ref=e149]: Soniox v4 Async
+                  - generic [ref=e150]: soniox / stt-async-v4
+              - cell "18.6%" [ref=e151]
+              - cell "10.0%" [ref=e152]
+              - cell "7102 ms" [ref=e153]
+              - cell "1.11x" [ref=e154]
+            - row "#2 ElevenLabs Scribe v2 elevenlabs / scribe_v2 21.9% 10.0% 1437 ms 4.92x" [ref=e155]:
+              - cell "#2" [ref=e156]
+              - cell "ElevenLabs Scribe v2 elevenlabs / scribe_v2" [ref=e157]:
+                - generic [ref=e158]:
+                  - strong [ref=e159]: ElevenLabs Scribe v2
+                  - generic [ref=e160]: elevenlabs / scribe_v2
+              - cell "21.9%" [ref=e161]
+              - cell "10.0%" [ref=e162]
+              - cell "1437 ms" [ref=e163]
+              - cell "4.92x" [ref=e164]
+            - row "#3 Deepgram Nova-3 deepgram / nova-3 21.9% 9.5% 1586 ms 4.47x" [ref=e165]:
+              - cell "#3" [ref=e166]
+              - cell "Deepgram Nova-3 deepgram / nova-3" [ref=e167]:
+                - generic [ref=e168]:
+                  - strong [ref=e169]: Deepgram Nova-3
+                  - generic [ref=e170]: deepgram / nova-3
+              - cell "21.9%" [ref=e171]
+              - cell "9.5%" [ref=e172]
+              - cell "1586 ms" [ref=e173]
+              - cell "4.47x" [ref=e174]
+      - region "Which model belongs to which task" [ref=e175]:
+        - generic [ref=e177]:
+          - paragraph [ref=e178]: Model fit
+          - heading "Which model belongs to which task" [level=2] [ref=e179]
+        - generic [ref=e180]:
+          - article [ref=e181]:
+            - generic [ref=e182]:
+              - heading "ElevenLabs Scribe v2" [level=3] [ref=e183]
+              - paragraph [ref=e184]: Default all-rounder for dictation, realtime recording, and file transcription.
+            - generic [ref=e185]:
+              - generic [ref=e186]: dictation
+              - generic [ref=e187]: realtime
+              - generic [ref=e188]: file
+          - article [ref=e189]:
+            - generic [ref=e190]:
+              - heading "Soniox v4" [level=3] [ref=e191]
+              - paragraph [ref=e192]: Best value candidate for multilingual realtime and long-form async transcription.
+            - generic [ref=e193]:
+              - generic [ref=e194]: dictation
+              - generic [ref=e195]: realtime
+              - generic [ref=e196]: file
+          - article [ref=e197]:
+            - generic [ref=e198]:
+              - heading "Deepgram Nova-3" [level=3] [ref=e199]
+              - paragraph [ref=e200]: High-throughput full-transcript and file transcription model.
+            - generic [ref=e201]:
+              - generic [ref=e202]: file
+              - generic [ref=e203]: full transcript
+          - article [ref=e204]:
+            - generic [ref=e205]:
+              - heading "Inworld STT-1" [level=3] [ref=e206]
+              - paragraph [ref=e207]: Realtime experiment path through Inworld’s STT stack; not a file model.
+            - generic [ref=e208]:
+              - generic [ref=e209]: dictation
+              - generic [ref=e210]: realtime
+  - alert [ref=e211]

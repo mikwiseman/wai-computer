@@ -20,6 +20,6 @@ public sealed partial class MainWindow : Window
         if (args.Data is not IProtocolActivatedEventArgs protocol) return;
         if (!MagicLinkUrl.TryParse(protocol.Uri.ToString(), out var token)) return;
 
-        DispatcherQueue.TryEnqueue(() => Content.HandleMagicLinkToken(token));
+        DispatcherQueue.TryEnqueue(() => ContentHost.HandleMagicLinkToken(token));
     }
 }

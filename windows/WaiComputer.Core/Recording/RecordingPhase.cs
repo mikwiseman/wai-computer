@@ -1,4 +1,4 @@
-namespace WaiComputer.Core.Recording;
+namespace WaiComputer.Core.Recordings;
 
 public enum RecordingPhase
 {

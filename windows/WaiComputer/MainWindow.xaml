@@ -7,6 +7,6 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
     <Grid>
-        <features:ContentView x:Name="Content" />
+        <features:ContentView x:Name="ContentHost" />
     </Grid>
 </Window>

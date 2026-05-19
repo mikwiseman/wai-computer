@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace WaiComputer.Core.Api.Models;
 
 public sealed record Summary(
-    string Summary,
+    [property: JsonPropertyName("summary")] string Text,
     [property: JsonPropertyName("key_points")] IReadOnlyList<string> KeyPoints,
     IReadOnlyList<string> Decisions,
     IReadOnlyList<string> Topics,

@@ -19,19 +19,23 @@ public sealed class WasapiSystemAudioCapture : ISystemAudioCapture
 {
     private readonly int _sampleRate;
     private readonly int _frameSizeSamples;
+    private readonly int _frameSizeBytes;
     private readonly ILogger<WasapiSystemAudioCapture> _logger;
     private readonly Channel<AudioFrame> _frames = Channel.CreateBounded<AudioFrame>(
         new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly byte[] _frameBuffer;
     private int _bufferedBytes;
     private WasapiLoopbackCapture? _loopback;
+    private BufferedWaveProvider? _sourceProvider;
+    private MediaFoundationResampler? _resampler;
 
     public WasapiSystemAudioCapture(int sampleRate = 16000, int frameSizeSamples = 1600, ILogger<WasapiSystemAudioCapture>? logger = null)
     {
         _sampleRate = sampleRate;
         _frameSizeSamples = frameSizeSamples;
+        _frameSizeBytes = frameSizeSamples * 2;
         _logger = logger ?? NullLogger<WasapiSystemAudioCapture>.Instance;
-        _frameBuffer = new byte[frameSizeSamples * 2];
+        _frameBuffer = new byte[_frameSizeBytes];
     }
 
     public AudioSource Source => AudioSource.SystemAudio;
@@ -46,6 +50,15 @@ public sealed class WasapiSystemAudioCapture : ISystemAudioCapture
         var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia)
                     ?? throw new InvalidOperationException("No default audio render device — system audio loopback unavailable.");
         _loopback = new WasapiLoopbackCapture(device);
+        _sourceProvider = new BufferedWaveProvider(_loopback.WaveFormat)
+        {
+            BufferDuration = TimeSpan.FromSeconds(2),
+            DiscardOnBufferOverflow = true,
+        };
+        _resampler = new MediaFoundationResampler(_sourceProvider, new WaveFormat(_sampleRate, 16, 1))
+        {
+            ResamplerQuality = 60,
+        };
         _loopback.DataAvailable += OnDataAvailable;
         _loopback.RecordingStopped += (_, e) =>
         {
@@ -64,36 +77,31 @@ public sealed class WasapiSystemAudioCapture : ISystemAudioCapture
 
     public ValueTask DisposeAsync()
     {
+        _resampler?.Dispose();
         _loopback?.Dispose();
         return ValueTask.CompletedTask;
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (_loopback is null) return;
+        if (_sourceProvider is null || _resampler is null) return;
 
-        var sourceProvider = new BufferedWaveProvider(_loopback.WaveFormat)
-        {
-            BufferLength = e.BytesRecorded * 4,
-            DiscardOnBufferOverflow = true,
-        };
-        sourceProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
+        _sourceProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-        using var resampler = new MediaFoundationResampler(sourceProvider, new WaveFormat(_sampleRate, 16, 1)) { ResamplerQuality = 60 };
-        var temp = new byte[_frameSizeSamples * 2];
+        var temp = new byte[_frameSizeBytes];
         int read;
-        while ((read = resampler.Read(temp, 0, temp.Length)) > 0)
+        while ((read = _resampler.Read(temp, 0, temp.Length)) > 0)
         {
             Buffer.BlockCopy(temp, 0, _frameBuffer, _bufferedBytes, read);
             _bufferedBytes += read;
-            while (_bufferedBytes >= _frameBuffer.Length)
+            while (_bufferedBytes >= _frameSizeBytes)
             {
-                var copy = new byte[_frameBuffer.Length];
-                Buffer.BlockCopy(_frameBuffer, 0, copy, 0, _frameBuffer.Length);
-                _bufferedBytes -= _frameBuffer.Length;
+                var copy = new byte[_frameSizeBytes];
+                Buffer.BlockCopy(_frameBuffer, 0, copy, 0, _frameSizeBytes);
+                _bufferedBytes -= _frameSizeBytes;
                 if (_bufferedBytes > 0)
                 {
-                    Buffer.BlockCopy(_frameBuffer, _frameBuffer.Length, _frameBuffer, 0, _bufferedBytes);
+                    Buffer.BlockCopy(_frameBuffer, _frameSizeBytes, _frameBuffer, 0, _bufferedBytes);
                 }
                 if (AudioMixer.ExceedsThreshold(copy, threshold: 32))
                 {

@@ -10,26 +10,30 @@ namespace WaiComputer.Native.Audio;
 /// <summary>
 /// Microphone capture via WASAPI shared mode. Output is 16 kHz mono int16 PCM
 /// frames of <c>frameSizeSamples</c> samples each (default 1600 = 100 ms).
+/// Resamples the device's native mix format down to the target inline.
 /// </summary>
 public sealed class WasapiMicrophoneCapture : IMicrophoneCapture
 {
     private readonly int _sampleRate;
     private readonly int _frameSizeSamples;
+    private readonly int _frameSizeBytes;
     private readonly ILogger<WasapiMicrophoneCapture> _logger;
     private readonly Channel<AudioFrame> _frames = Channel.CreateBounded<AudioFrame>(
         new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     private readonly byte[] _frameBuffer;
+    private int _bufferedBytes;
 
     private WasapiCapture? _capture;
+    private BufferedWaveProvider? _sourceProvider;
     private MediaFoundationResampler? _resampler;
-    private int _bufferedBytes;
 
     public WasapiMicrophoneCapture(int sampleRate = 16000, int frameSizeSamples = 1600, ILogger<WasapiMicrophoneCapture>? logger = null)
     {
         _sampleRate = sampleRate;
         _frameSizeSamples = frameSizeSamples;
+        _frameSizeBytes = frameSizeSamples * 2;
         _logger = logger ?? NullLogger<WasapiMicrophoneCapture>.Instance;
-        _frameBuffer = new byte[frameSizeSamples * 2];
+        _frameBuffer = new byte[_frameSizeBytes];
     }
 
     public AudioSource Source => AudioSource.Microphone;
@@ -45,11 +49,15 @@ public sealed class WasapiMicrophoneCapture : IMicrophoneCapture
                     ?? throw new InvalidOperationException("No default audio capture device available.");
 
         _capture = new WasapiCapture(device);
-        _capture.WaveFormat = device.AudioClient.MixFormat; // capture in device format, resample down
-        _resampler = new MediaFoundationResampler(
-            new WaveFormatConversionProvider(_capture.WaveFormat),
-            new WaveFormat(_sampleRate, 16, 1));
-        _resampler.ResamplerQuality = 60;
+        _sourceProvider = new BufferedWaveProvider(_capture.WaveFormat)
+        {
+            BufferDuration = TimeSpan.FromSeconds(2),
+            DiscardOnBufferOverflow = true,
+        };
+        _resampler = new MediaFoundationResampler(_sourceProvider, new WaveFormat(_sampleRate, 16, 1))
+        {
+            ResamplerQuality = 60,
+        };
 
         _capture.DataAvailable += OnDataAvailable;
         _capture.RecordingStopped += (_, e) =>
@@ -69,42 +77,31 @@ public sealed class WasapiMicrophoneCapture : IMicrophoneCapture
 
     public ValueTask DisposeAsync()
     {
-        _capture?.Dispose();
         _resampler?.Dispose();
+        _capture?.Dispose();
         return ValueTask.CompletedTask;
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (_resampler is null) return;
+        if (_sourceProvider is null || _resampler is null) return;
 
-        // Feed source into the resampler via its internal source, then read 16k mono PCM.
-        // NAudio's MediaFoundationResampler doesn't accept push input directly — we wrap
-        // the buffer in a BufferedWaveProvider for streaming.
-        // For brevity we use BufferedWaveProvider here.
-        var sourceProvider = new BufferedWaveProvider(_capture!.WaveFormat)
-        {
-            BufferLength = e.BytesRecorded * 4,
-            DiscardOnBufferOverflow = true,
-        };
-        sourceProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
+        _sourceProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-        using var resampler = new MediaFoundationResampler(sourceProvider, new WaveFormat(_sampleRate, 16, 1)) { ResamplerQuality = 60 };
-
-        var temp = new byte[_frameSizeSamples * 2];
+        var temp = new byte[_frameSizeBytes];
         int read;
-        while ((read = resampler.Read(temp, 0, temp.Length)) > 0)
+        while ((read = _resampler.Read(temp, 0, temp.Length)) > 0)
         {
             Buffer.BlockCopy(temp, 0, _frameBuffer, _bufferedBytes, read);
             _bufferedBytes += read;
-            while (_bufferedBytes >= _frameBuffer.Length)
+            while (_bufferedBytes >= _frameSizeBytes)
             {
-                var copy = new byte[_frameBuffer.Length];
-                Buffer.BlockCopy(_frameBuffer, 0, copy, 0, _frameBuffer.Length);
-                _bufferedBytes -= _frameBuffer.Length;
+                var copy = new byte[_frameSizeBytes];
+                Buffer.BlockCopy(_frameBuffer, 0, copy, 0, _frameSizeBytes);
+                _bufferedBytes -= _frameSizeBytes;
                 if (_bufferedBytes > 0)
                 {
-                    Buffer.BlockCopy(_frameBuffer, _frameBuffer.Length, _frameBuffer, 0, _bufferedBytes);
+                    Buffer.BlockCopy(_frameBuffer, _frameSizeBytes, _frameBuffer, 0, _bufferedBytes);
                 }
                 if (AudioMixer.ExceedsThreshold(copy, threshold: 32))
                 {
@@ -115,17 +112,4 @@ public sealed class WasapiMicrophoneCapture : IMicrophoneCapture
             }
         }
     }
-}
-
-/// <summary>
-/// Helper to satisfy <see cref="MediaFoundationResampler"/> which wants an
-/// <see cref="IWaveProvider"/>. The WaveFormat is the only field accessed
-/// during construction; the actual data is pushed via BufferedWaveProvider
-/// in <see cref="WasapiMicrophoneCapture.OnDataAvailable"/>.
-/// </summary>
-internal sealed class WaveFormatConversionProvider : IWaveProvider
-{
-    public WaveFormat WaveFormat { get; }
-    public WaveFormatConversionProvider(WaveFormat format) { WaveFormat = format; }
-    public int Read(byte[] buffer, int offset, int count) => 0;
 }

@@ -35,7 +35,7 @@ public sealed partial class AdvancedSection : UserControl
 
     private void OnResetSession(object sender, RoutedEventArgs e)
     {
-        var store = App.Services.GetService(typeof(WaiComputer.Core.Auth.SessionStore)) as WaiComputer.Core.Auth.SessionStore;
+        var store = global::WaiComputer.App.Services.GetService(typeof(WaiComputer.Core.Auth.SessionStore)) as WaiComputer.Core.Auth.SessionStore;
         store?.Clear();
     }
 }
