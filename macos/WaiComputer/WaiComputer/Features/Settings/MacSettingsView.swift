@@ -138,13 +138,21 @@ struct MacSettingsView: View {
         Form {
             Section {
                 if let user = appState.currentUser {
-                    LabeledContent("Email", value: user.email)
-                        .font(Typography.body)
-                    LabeledContent("Member Since", value: user.createdAt.formatted(date: .long, time: .omitted))
-                        .font(Typography.body)
+                    LabeledContent {
+                        Text(user.email)
+                    } label: {
+                        Text("settings.account.email", bundle: .main)
+                    }
+                    .font(Typography.body)
+                    LabeledContent {
+                        Text(user.createdAt.formatted(date: .long, time: .omitted))
+                    } label: {
+                        Text("settings.account.memberSince", bundle: .main)
+                    }
+                    .font(Typography.body)
                 }
             } header: {
-                Text("Account")
+                Text("settings.account.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-account-header")
             }
@@ -173,11 +181,11 @@ struct MacSettingsView: View {
                 LanguagePickerView(store: languageStore)
                     .padding(.vertical, 4)
             } header: {
-                Text("Dictation languages")
+                Text("settings.dictationLanguages.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-transcription-header")
             } footer: {
-                Text("Affects live dictation. Recording transcription auto-detects.")
+                Text("settings.dictationLanguages.footer", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -185,7 +193,7 @@ struct MacSettingsView: View {
             Section {
                 if let transcriptionOptions {
                     transcriptionModelPicker(
-                        "Dictation live",
+                        String(localized: "settings.transcription.dictationLive", bundle: .main),
                         selection: $dictationLiveSTTSelection,
                         options: transcriptionOptions.dictationLiveSTT,
                         identifier: "settings-dictation-live-stt-picker",
@@ -193,7 +201,7 @@ struct MacSettingsView: View {
                     )
 
                     transcriptionModelPicker(
-                        "Recording live",
+                        String(localized: "settings.transcription.recordingLive", bundle: .main),
                         selection: $recordingLiveSTTSelection,
                         options: transcriptionOptions.recordingLiveSTT,
                         identifier: "settings-recording-live-stt-picker",
@@ -201,7 +209,7 @@ struct MacSettingsView: View {
                     )
 
                     transcriptionModelPicker(
-                        "Full session",
+                        String(localized: "settings.transcription.fullSession", bundle: .main),
                         selection: $fileSTTSelection,
                         options: transcriptionOptions.fileSTT,
                         identifier: "settings-file-stt-picker",
@@ -222,24 +230,26 @@ struct MacSettingsView: View {
                         .controlSize(.small)
                 }
             } header: {
-                Text("Transcription Models")
+                Text("settings.transcription.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-transcription-models-header")
             }
 
             Section {
-                Toggle("Show Dock icon after closing main window", isOn: $showDockIconWhenMainWindowClosed)
+                Toggle(isOn: $showDockIconWhenMainWindowClosed) {
+                    Text("settings.appBehavior.showDockIcon", bundle: .main)
+                }
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-show-dock-icon-when-closed-toggle")
                     .onChange(of: showDockIconWhenMainWindowClosed) { _, _ in
                         MacPresentationCoordinator.shared.updateActivationPolicyForCurrentWindowState()
                     }
 
-                Text("When disabled, WaiComputer keeps running from the menu bar after the main window closes.")
+                Text("settings.appBehavior.dockHint", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             } header: {
-                Text("App Behavior")
+                Text("settings.appBehavior.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-app-behavior-header")
             }
@@ -247,20 +257,24 @@ struct MacSettingsView: View {
             // MARK: - Summary Settings
 
             Section {
-                Picker("Language", selection: $summaryLanguage) {
+                Picker(selection: $summaryLanguage) {
                     ForEach(summaryLanguageOptions, id: \.value) { option in
                         Text(option.label).tag(option.value)
                     }
+                } label: {
+                    Text("settings.summary.language", bundle: .main)
                 }
                 .font(Typography.body)
                 .onChange(of: summaryLanguage) { _, newValue in
                     Task { await saveSummarySettings(language: newValue) }
                 }
 
-                Picker("Detail Level", selection: $summaryStyle) {
+                Picker(selection: $summaryStyle) {
                     ForEach(summaryStyleOptions, id: \.value) { option in
                         Text(option.label).tag(option.value)
                     }
+                } label: {
+                    Text("settings.summary.detailLevel", bundle: .main)
                 }
                 .font(Typography.body)
                 .onChange(of: summaryStyle) { _, newValue in
@@ -268,7 +282,7 @@ struct MacSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Custom Instructions")
+                    Text("settings.summary.customInstructions", bundle: .main)
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
                     TextEditor(text: $summaryInstructions)
@@ -280,12 +294,12 @@ struct MacSettingsView: View {
                         .onChange(of: summaryInstructions) { _, _ in
                             Task { await saveSummarySettings(instructions: summaryInstructions) }
                         }
-                    Text("E.g. \"Focus on action items\" or \"Write formally\"")
+                    Text("settings.summary.customExample", bundle: .main)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
             } header: {
-                Text("AI Summary")
+                Text("settings.summary.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-summary-header")
             }
@@ -293,7 +307,9 @@ struct MacSettingsView: View {
             // MARK: - Dictation Settings
 
             Section {
-                Toggle("Enable Dictation", isOn: $dictationManager.isFeatureEnabled)
+                Toggle(isOn: $dictationManager.isFeatureEnabled) {
+                    Text("settings.dictation.enable", bundle: .main)
+                }
                     .font(Typography.body)
                     .onChange(of: dictationManager.isFeatureEnabled) { _, enabled in
                         refreshPermissions()
@@ -302,32 +318,38 @@ struct MacSettingsView: View {
                         }
                     }
 
-                Picker("Push to talk", selection: Binding(
+                Picker(selection: Binding(
                     get: { dictationManager.selectedHotkey },
                     set: { dictationManager.updateHotkey($0) }
                 )) {
                     ForEach(DictationHotkey.allCases) { hotkey in
                         Text(hotkey.label).tag(hotkey)
                     }
+                } label: {
+                    Text("settings.dictation.pushToTalk", bundle: .main)
                 }
                 .font(Typography.body)
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-push-to-talk-picker")
 
-                Picker("Hands-free toggle", selection: Binding<DictationHotkey?>(
+                Picker(selection: Binding<DictationHotkey?>(
                     get: { dictationManager.selectedHandsFreeHotkey },
                     set: { dictationManager.updateHandsFreeHotkey($0) }
                 )) {
-                    Text("Double-tap of push-to-talk").tag(DictationHotkey?.none)
+                    Text("settings.dictation.handsFreeDoubleTap", bundle: .main).tag(DictationHotkey?.none)
                     ForEach(DictationHotkey.allCases) { hotkey in
                         Text(hotkey.label).tag(DictationHotkey?.some(hotkey))
                     }
+                } label: {
+                    Text("settings.dictation.handsFree", bundle: .main)
                 }
                 .font(Typography.body)
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
-                Toggle("Post-filter dictated text", isOn: $dictationPostFilterEnabled)
+                Toggle(isOn: $dictationPostFilterEnabled) {
+                    Text("settings.dictation.postFilter", bundle: .main)
+                }
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
                     .accessibilityIdentifier("settings-dictation-post-filter-toggle")
@@ -338,7 +360,7 @@ struct MacSettingsView: View {
 
                 if let transcriptionOptions, dictationPostFilterEnabled {
                     transcriptionModelPicker(
-                        "Post-filter model",
+                        String(localized: "settings.transcription.postFilterModel", bundle: .main),
                         selection: $dictationPostFilterSelection,
                         options: transcriptionOptions.dictationPostFilter,
                         identifier: "settings-dictation-post-filter-model-picker",
@@ -348,7 +370,7 @@ struct MacSettingsView: View {
                 }
 
                 permissionRow(
-                    title: "Microphone",
+                    title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
                     status: hasMicrophonePermission ? .granted : .denied,
                     identifierBase: "settings-permission-microphone",
                     grantAction: requestMicrophonePermission,
@@ -357,7 +379,7 @@ struct MacSettingsView: View {
                 )
 
                 permissionRow(
-                    title: "Accessibility",
+                    title: String(localized: "settings.dictation.permission.accessibility", bundle: .main),
                     status: accessibilityStatus,
                     identifierBase: "settings-permission-accessibility",
                     grantAction: openAccessibilitySettings,
@@ -367,7 +389,7 @@ struct MacSettingsView: View {
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("How to use")
+                    Text("settings.dictation.howToUse", bundle: .main)
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
                     Text(dictationUsageText)
@@ -380,63 +402,77 @@ struct MacSettingsView: View {
 
                 // Recovery actions for permission state drift after updates
                 HStack(spacing: Spacing.sm) {
-                    Button("Re-run Setup") {
+                    Button {
                         UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
                         UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
                         appState.hasCompletedOnboarding = false
+                    } label: {
+                        Text("settings.dictation.rerunSetup", bundle: .main)
                     }
                     .font(Typography.bodySmall)
                     .accessibilityIdentifier("settings-rerun-setup-button")
 
-                    Button("Reveal in Finder") {
+                    Button {
                         MacInputPermission.revealAppInFinder()
+                    } label: {
+                        Text("settings.dictation.revealInFinder", bundle: .main)
                     }
                     .font(Typography.bodySmall)
                     .accessibilityIdentifier("settings-reveal-app-button")
 
-                    Button("Reset Permissions") {
+                    Button {
                         MacInputPermission.resetTCCEntries()
                         MacPrivacySettings.restartForPermissionRefresh()
+                    } label: {
+                        Text("settings.dictation.resetPermissions", bundle: .main)
                     }
                     .font(Typography.bodySmall)
                     .accessibilityIdentifier("settings-reset-permissions-button")
                 }
             } header: {
-                Text("Dictation")
+                Text("settings.dictation.title", bundle: .main)
                     .waiSectionHeader()
             }
 
             mcpConnectSection
 
             Section {
-                LabeledContent("Version") {
+                LabeledContent {
                     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
                     let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
                     Text("\(version) (\(build))")
                         .font(Typography.mono)
+                } label: {
+                    Text("settings.about.version", bundle: .main)
                 }
                 #if !DEBUG
-                Toggle("Receive beta updates", isOn: $receiveBetaUpdates)
+                Toggle(isOn: $receiveBetaUpdates) {
+                    Text("settings.about.receiveBeta", bundle: .main)
+                }
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-receive-beta-updates-toggle")
-                Text("Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only.")
+                Text("settings.about.betaHint", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
-                Button("Check for Updates…") {
+                Button {
                     NotificationCenter.default.post(name: .waicomputerCheckForUpdates, object: nil)
+                } label: {
+                    Text("settings.about.checkUpdates", bundle: .main)
                 }
                 .font(Typography.body)
                 .accessibilityIdentifier("settings-check-for-updates-button")
                 #endif
             } header: {
-                Text("About")
+                Text("settings.about.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-about-header")
             }
 
             Section {
-                Button("Sign Out") {
+                Button {
                     showSignOutConfirmation = true
+                } label: {
+                    Text("settings.signOut", bundle: .main)
                 }
                 .font(Typography.body)
                 .foregroundStyle(Palette.textSecondary)
@@ -447,8 +483,10 @@ struct MacSettingsView: View {
             // account creation must also offer in-app account deletion.
             Section {
                 HStack {
-                    Button("Delete Account…") {
+                    Button {
                         showDeleteAccountConfirmation = true
+                    } label: {
+                        Text("settings.dangerZone.deleteAccount", bundle: .main)
                     }
                     .font(Typography.body)
                     .foregroundStyle(.red)
@@ -460,11 +498,11 @@ struct MacSettingsView: View {
                             .controlSize(.small)
                     }
                 }
-                Text("Permanently erases your account, recordings, transcripts, and summaries from WaiComputer. This cannot be undone.")
+                Text("settings.dangerZone.deleteHint", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textSecondary)
             } header: {
-                Text("Danger zone")
+                Text("settings.dangerZone.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-danger-zone-header")
             }
@@ -480,37 +518,53 @@ struct MacSettingsView: View {
                 refreshPermissions()
             }
         }
-        .confirmationDialog("Sign out and reset WaiComputer on this Mac?", isPresented: $showSignOutConfirmation) {
-            Button("Sign Out and Reset", role: .destructive) {
+        .confirmationDialog(
+            Text("settings.signOutConfirm.title", bundle: .main),
+            isPresented: $showSignOutConfirmation
+        ) {
+            Button(role: .destructive) {
                 Task {
                     await appState.logout()
                 }
+            } label: {
+                Text("settings.signOutConfirm.confirm", bundle: .main)
             }
             .accessibilityIdentifier("settings-sign-out-confirm-button")
-            Button("Cancel", role: .cancel) {}
+            Button(role: .cancel) { } label: {
+                Text("settings.cancel", bundle: .main)
+            }
         } message: {
-            Text("Clears your session, preferences, dictation history, and onboarding state on this device. Server-side recordings and summaries stay intact. WaiComputer will restart so the next launch is a clean install.")
+            Text("settings.signOutConfirm.body", bundle: .main)
         }
-        .alert("Delete account?", isPresented: $showDeleteAccountConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
+        .alert(
+            Text("settings.deleteAccount.confirmTitle", bundle: .main),
+            isPresented: $showDeleteAccountConfirmation
+        ) {
+            Button(role: .cancel) { } label: {
+                Text("settings.cancel", bundle: .main)
+            }
+            Button(role: .destructive) {
                 Task {
                     isDeletingAccount = true
                     deleteAccountError = await appState.deleteAccount()
                     isDeletingAccount = false
                 }
+            } label: {
+                Text("settings.delete", bundle: .main)
             }
         } message: {
-            Text("This will permanently erase your account, recordings, transcripts, and summaries. WaiComputer will restart afterwards. This action cannot be undone.")
+            Text("settings.deleteAccount.confirmBody", bundle: .main)
         }
         .alert(
-            "Couldn't delete account",
+            Text("settings.deleteAccount.errorTitle", bundle: .main),
             isPresented: Binding(
                 get: { deleteAccountError != nil },
                 set: { if !$0 { deleteAccountError = nil } }
             )
         ) {
-            Button("OK", role: .cancel) { deleteAccountError = nil }
+            Button(role: .cancel) { deleteAccountError = nil } label: {
+                Text("settings.ok", bundle: .main)
+            }
         } message: {
             Text(deleteAccountError ?? "")
         }
@@ -526,21 +580,28 @@ struct MacSettingsView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
-                Button(mcpCopiedField == "endpoint" ? "Copied" : "Copy URL") {
+                Button {
                     copyMcpValue(mcpEndpointURL, field: "endpoint")
+                } label: {
+                    Text(
+                        mcpCopiedField == "endpoint" ? "settings.mcp.copied" : "settings.mcp.copy",
+                        bundle: .main
+                    )
                 }
                 .font(Typography.body)
                 .accessibilityIdentifier("settings-mcp-copy-endpoint")
             }
 
-            Text("WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.")
+            Text("settings.mcp.hint", bundle: .main)
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
 
-            Picker("Client", selection: $mcpClient) {
+            Picker(selection: $mcpClient) {
                 ForEach(McpClient.allCases) { client in
                     Text(client.rawValue).tag(client)
                 }
+            } label: {
+                Text("settings.mcp.client", bundle: .main)
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("settings-mcp-client-picker")
@@ -558,8 +619,13 @@ struct MacSettingsView: View {
                                 .textSelection(.enabled)
                                 .padding(.vertical, 2)
                         }
-                        Button(mcpCopiedField == "snippet" ? "Copied" : "Copy snippet") {
+                        Button {
                             copyMcpValue(snippet, field: "snippet")
+                        } label: {
+                            Text(
+                                mcpCopiedField == "snippet" ? "settings.mcp.copied" : "settings.mcp.copySnippet",
+                                bundle: .main
+                            )
                         }
                         .font(Typography.body)
                         .accessibilityIdentifier("settings-mcp-copy-snippet")
@@ -572,7 +638,7 @@ struct MacSettingsView: View {
                 }
             }
         } header: {
-            Text("MCP")
+            Text("settings.mcp.title", bundle: .main)
                 .waiSectionHeader()
                 .accessibilityIdentifier("settings-mcp-header")
         }
