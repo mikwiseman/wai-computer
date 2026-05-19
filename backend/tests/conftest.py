@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from decimal import Decimal
 from typing import AsyncGenerator
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from app.core.rate_limit import get_rate_limiter
 from app.db.session import get_db
 from app.main import app
 from app.models import Base
+from app.models.billing import Plan
 
 # Use PostgreSQL for tests (required for pgvector, JSONB, UUID)
 # Set TEST_DATABASE_URL env var or use default test database
@@ -23,6 +25,41 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer_test"
 )
+
+
+async def _seed_default_billing_plans(session: AsyncSession) -> None:
+    """Mirror the billing migration seed for metadata-created test schemas."""
+    session.add_all(
+        [
+            Plan(
+                code="free",
+                name="Free",
+                description="10,000 transcribed words per week, 30-day memory window.",
+                usd_amount_monthly=Decimal("0.00"),
+                usd_amount_yearly=Decimal("0.00"),
+                tinkoff_amount_rub_monthly=Decimal("0.00"),
+                tinkoff_amount_rub_yearly=Decimal("0.00"),
+                word_cap_per_week=10000,
+                memory_retention_days=30,
+                features={"agents": False, "mcp": False, "advanced_search": False},
+            ),
+            Plan(
+                code="pro",
+                name="Pro",
+                description=(
+                    "Unlimited transcription, permanent memory, agents, MCP, advanced search."
+                ),
+                usd_amount_monthly=Decimal("12.00"),
+                usd_amount_yearly=Decimal("96.00"),
+                tinkoff_amount_rub_monthly=Decimal("999.00"),
+                tinkoff_amount_rub_yearly=Decimal("7999.00"),
+                word_cap_per_week=None,
+                memory_retention_days=None,
+                features={"agents": True, "mcp": True, "advanced_search": True},
+            ),
+        ]
+    )
+    await session.commit()
 
 
 @pytest.fixture(scope="session")
@@ -62,6 +99,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
+        await _seed_default_billing_plans(session)
         yield session
 
     await engine.dispose()

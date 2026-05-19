@@ -199,6 +199,17 @@ class TranscriptionOptionsResponse(BaseModel):
     dictation_post_filter: list[TranscriptionOptionResponse]
 
 
+def _settings_picker_options() -> dict:
+    options = options_response(settings=get_app_settings(), configured_only=True)
+    # Deepgram Flux stays valid for live benchmark/proxy experiments, but is not
+    # a user-selectable realtime setting until that path is promoted.
+    for group in ("dictation_live_stt", "recording_live_stt"):
+        options[group] = [
+            option for option in options[group] if option["provider"] != "deepgram"
+        ]
+    return options
+
+
 def _settings_response(user: CurrentUser) -> SettingsResponse:
     return SettingsResponse(
         default_language=user.default_language,
@@ -221,9 +232,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
 @router.get("/transcription-options", response_model=TranscriptionOptionsResponse)
 async def get_transcription_options(user: CurrentUser) -> TranscriptionOptionsResponse:
     """Get curated transcription provider/model options."""
-    return TranscriptionOptionsResponse(
-        **options_response(settings=get_app_settings(), configured_only=True)
-    )
+    return TranscriptionOptionsResponse(**_settings_picker_options())
 
 
 @router.get("", response_model=SettingsResponse)
