@@ -901,7 +901,10 @@ class MacRecordingViewModel: ObservableObject {
 
                 await MainActor.run {
                     guard let self, self.phase == .recording else { return }
-                    if stalled || !receivedAny {
+                    if SystemAudioWarningPolicy.shouldShowCaptureWarning(
+                        systemAudioStalled: stalled,
+                        systemAudioReceivedAny: receivedAny
+                    ) {
                         self.systemAudioWarning = systemAudioUnavailableWarning
                         if !warnedOnce {
                             warnedOnce = true

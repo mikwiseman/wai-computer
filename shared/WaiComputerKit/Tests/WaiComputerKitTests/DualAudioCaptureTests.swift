@@ -14,6 +14,7 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(capture.isRecording)
         XCTAssertFalse(capture.hasSystemAudio)
         XCTAssertFalse(capture.systemAudioStalled)
+        XCTAssertFalse(capture.systemAudioStreamActive)
         XCTAssertFalse(capture.systemAudioReceivedAny)
     }
 
@@ -196,6 +197,12 @@ final class DualAudioCaptureTests: XCTestCase {
         let capture = DualAudioCapture()
         XCTAssertFalse(capture.systemAudioReceivedAny,
             "systemAudioReceivedAny should be false before recording starts")
+    }
+
+    func testSystemAudioStreamActiveStartsFalse() {
+        let capture = DualAudioCapture()
+        XCTAssertFalse(capture.systemAudioStreamActive,
+            "systemAudioStreamActive should be false before recording starts")
     }
 
     /// systemAudioStalled must be publicly readable and start as false.
