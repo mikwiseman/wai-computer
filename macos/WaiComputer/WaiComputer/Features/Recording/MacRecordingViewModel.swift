@@ -73,6 +73,12 @@ class MacRecordingViewModel: ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var hasSystemAudio = false
     @Published var currentTranscript = ""
+    /// Final, committed transcript without the interim/predicted tail. Drives
+    /// the high-contrast portion of the live view so users can ignore the
+    /// faded interim text that streams ahead of their speech.
+    @Published var committedTranscript = ""
+    /// Latest interim partial — the model's running guess that may be revised.
+    @Published var interimTranscript = ""
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
@@ -214,6 +220,8 @@ class MacRecordingViewModel: ObservableObject {
         isLoading = true
         error = nil
         currentTranscript = ""
+        committedTranscript = ""
+        interimTranscript = ""
         committedLines = []
         interimText = ""
         interimSpeaker = nil
@@ -536,9 +544,95 @@ class MacRecordingViewModel: ObservableObject {
         await task.value
     }
 
+    /// Abort an in-progress recording without saving anything.
+    ///
+    /// Tears down the same capture/WS resources as `stopRecording`, but skips
+    /// the cloud persistence step, deletes the partial server row, and removes
+    /// the local audio file + backup so nothing about this take survives.
+    func discardRecording() async {
+        guard phase == .recording else { return }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording discarded",
+            data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+        )
+
+        setPhase(.finalizing)
+
+        timerTask?.cancel()
+        timerTask = nil
+        systemAudioMonitorTask?.cancel()
+        systemAudioMonitorTask = nil
+        systemAudioWarning = nil
+
+        isCleaningUp = true
+
+        let ws = webSocketManager
+        let tTask = transcriptTask
+        let recordingId = currentRecordingId
+        let client = self.apiClient
+        let capture = audioCapture
+        let sendingTask = audioTask
+        let fileWriter = audioFileWriter
+        audioTask = nil
+        webSocketManager = nil
+        transcriptTask = nil
+        self.apiClient = nil
+        audioCapture = nil
+        audioFileWriter = nil
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+
+            await capture?.stopRecording()
+            _ = await sendingTask?.result
+
+            tTask?.cancel()
+            await ws?.disconnect()
+
+            try? fileWriter?.finalize()
+            if let fileURL = fileWriter?.fileURL {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+
+            if let recordingId, let client {
+                do {
+                    try await client.deleteRecording(id: recordingId, permanent: true)
+                } catch {
+                    SentryHelper.captureError(
+                        error,
+                        extras: ["action": "discardRecording", "recordingId": recordingId]
+                    )
+                }
+                try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+            }
+
+            await MainActor.run {
+                self.isServerComplete = false
+                self.recording = nil
+                self.currentRecordingId = nil
+                self.currentTranscript = ""
+                self.committedTranscript = ""
+                self.interimTranscript = ""
+                self.committedLines = []
+                self.interimText = ""
+                self.interimSpeaker = nil
+                self.audioEncoder = nil
+                self.setPhase(.idle)
+                self.isCleaningUp = false
+                self.cleanupTask = nil
+            }
+        }
+        cleanupTask = task
+        await task.value
+    }
+
     /// Reset transcript and recording state.
     func resetState() {
         currentTranscript = ""
+        committedTranscript = ""
+        interimTranscript = ""
         committedLines = []
         interimText = ""
         interimSpeaker = nil
@@ -897,12 +991,13 @@ class MacRecordingViewModel: ObservableObject {
                 committedLines.append((speaker: segment.speaker, text: segment.text))
                 interimText = ""
                 interimSpeaker = nil
-                currentTranscript = buildTranscriptText()
             } else {
                 interimText = segment.text
                 interimSpeaker = segment.speaker
-                currentTranscript = buildTranscriptText()
             }
+            currentTranscript = buildTranscriptText()
+            committedTranscript = buildCommittedTranscriptText()
+            interimTranscript = buildInterimTranscriptText()
         case .disconnected(let err):
             if let err, phase == .recording {
                 await failActiveRecording(with: err.userFacingMessage(context: .recording))
@@ -928,60 +1023,64 @@ class MacRecordingViewModel: ObservableObject {
 
     /// Show speaker labels only when realtime metadata actually contains them.
     private func buildTranscriptText() -> String {
-        let showSpeakers = committedLines.contains { speaker, _ in
+        let committed = buildCommittedTranscriptText()
+        let interim = buildInterimTranscriptText()
+        if interim.isEmpty { return committed }
+        if committed.isEmpty { return interim }
+        // Speaker mode uses paragraph break, single-channel uses space.
+        return shouldShowSpeakers
+            ? committed + "\n\n" + interim
+            : committed + " " + interim
+    }
+
+    /// True when realtime metadata carries any non-empty speaker labels.
+    private var shouldShowSpeakers: Bool {
+        committedLines.contains { speaker, _ in
             guard let speaker else { return false }
             return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } || !(interimSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
 
+    /// Committed lines only — never includes the rolling interim guess.
+    private func buildCommittedTranscriptText() -> String {
+        guard shouldShowSpeakers else {
+            return committedLines.map(\.text).joined(separator: " ")
+        }
         var parts: [String] = []
-        if showSpeakers {
-            // Group consecutive segments by same speaker for cleaner display
-            var currentSpeaker: String? = nil
-            var currentText = ""
-
-            for line in committedLines {
-                let speaker = line.speaker ?? "Speaker"
-                if speaker == currentSpeaker {
-                    currentText += " " + line.text
-                } else {
-                    if !currentText.isEmpty, let s = currentSpeaker {
-                        parts.append("\(s): \(currentText)")
-                    }
-                    currentSpeaker = speaker
-                    currentText = line.text
-                }
-            }
-            if !currentText.isEmpty, let s = currentSpeaker {
-                parts.append("\(s): \(currentText)")
-            }
-
-            // Add interim text
-            if !interimText.isEmpty {
-                let speaker = interimSpeaker ?? "..."
-                if speaker == currentSpeaker {
-                    // Append to last line
-                    if let last = parts.last {
-                        parts[parts.count - 1] = last + " " + interimText
-                    } else {
-                        parts.append("\(speaker): \(interimText)")
-                    }
-                } else {
-                    parts.append("\(speaker): \(interimText)")
-                }
-            }
-
-            return parts.joined(separator: "\n\n")
-        } else {
-            // Single channel — no speaker labels
-            let committed = committedLines.map(\.text).joined(separator: " ")
-            if interimText.isEmpty {
-                return committed
-            } else if committed.isEmpty {
-                return interimText
+        var currentSpeaker: String? = nil
+        var currentText = ""
+        for line in committedLines {
+            let speaker = line.speaker ?? "Speaker"
+            if speaker == currentSpeaker {
+                currentText += " " + line.text
             } else {
-                return committed + " " + interimText
+                if !currentText.isEmpty, let s = currentSpeaker {
+                    parts.append("\(s): \(currentText)")
+                }
+                currentSpeaker = speaker
+                currentText = line.text
             }
         }
+        if !currentText.isEmpty, let s = currentSpeaker {
+            parts.append("\(s): \(currentText)")
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// Just the trailing interim text, with speaker prefix when relevant.
+    private func buildInterimTranscriptText() -> String {
+        guard !interimText.isEmpty else { return "" }
+        if !shouldShowSpeakers {
+            return interimText
+        }
+        let speaker = interimSpeaker ?? "..."
+        // Avoid duplicating the speaker prefix when the interim line continues
+        // the same speaker as the most recent committed line.
+        let lastSpeaker = committedLines.last?.speaker
+        if speaker == lastSpeaker {
+            return interimText
+        }
+        return "\(speaker): \(interimText)"
     }
 
     /// Handle permanent reconnection failure — save what we have instead of discarding.

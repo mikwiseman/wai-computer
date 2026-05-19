@@ -59,13 +59,13 @@ struct BillingSection: View {
 
     @ViewBuilder
     private func statusBadge(for sub: BillingSubscription) -> some View {
-        let label: String = {
+        let labelKey: LocalizedStringKey = {
             switch sub.status {
-            case "trialing": return "Trial"
-            case "active": return "Active"
-            case "past_due": return "Past due"
-            case "canceled": return "Canceled"
-            default: return sub.status.capitalized
+            case "trialing": return "billing.status.trialing"
+            case "active": return "billing.status.active"
+            case "past_due": return "billing.status.pastDue"
+            case "canceled": return "billing.status.canceled"
+            default: return LocalizedStringKey(sub.status.capitalized)
             }
         }()
         let color: Color = {
@@ -76,7 +76,7 @@ struct BillingSection: View {
             default: return .secondary
             }
         }()
-        Text(label)
+        Text(labelKey, bundle: .main)
             .font(Typography.caption)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(color.opacity(0.15))
@@ -157,12 +157,17 @@ struct BillingSection: View {
     }
 
     private func priceLabel(for pro: BillingPlan) -> String {
+        let formatString = period == "year"
+            ? String(localized: "billing.price.perYear", bundle: .main)
+            : String(localized: "billing.price.perMonth", bundle: .main)
         if userRegion() == "ru",
            let monthly = pro.rubAmountMonthly, let yearly = pro.rubAmountYearly {
-            return period == "year" ? "₽\(yearly) / year" : "₽\(monthly) / month"
+            let amount = period == "year" ? yearly : monthly
+            return String(format: formatString, "₽\(amount)")
         }
         if let monthly = pro.usdAmountMonthly, let yearly = pro.usdAmountYearly {
-            return period == "year" ? "$\(yearly) / year" : "$\(monthly) / month"
+            let amount = period == "year" ? yearly : monthly
+            return String(format: formatString, "$\(amount)")
         }
         return ""
     }
@@ -172,7 +177,8 @@ struct BillingSection: View {
     @ViewBuilder
     private func proControls(subscription: BillingSubscription) -> some View {
         if subscription.cancelAtPeriodEnd, let end = subscription.currentPeriodEnd {
-            Text("Pro through \(end.formatted(date: .abbreviated, time: .omitted))")
+            let formatted = end.formatted(date: .abbreviated, time: .omitted)
+            Text(String(format: String(localized: "billing.subscription.proThrough", bundle: .main), formatted))
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
         } else {
@@ -223,7 +229,7 @@ struct BillingSection: View {
             }
         } catch {
             await MainActor.run {
-                self.loadError = "Couldn't load billing: \(error)"
+                self.loadError = String(localized: "billing.error.loadFailed", bundle: .main)
             }
         }
     }
@@ -239,7 +245,9 @@ struct BillingSection: View {
                 await MainActor.run { NSWorkspace.shared.open(url) }
             }
         } catch {
-            await MainActor.run { loadError = "Checkout failed: \(error)" }
+            await MainActor.run {
+                loadError = String(localized: "billing.error.checkoutFailed", bundle: .main)
+            }
         }
     }
 
@@ -250,7 +258,9 @@ struct BillingSection: View {
             try await appState.getAPIClient().cancelBillingSubscription()
             await loadAll()
         } catch {
-            await MainActor.run { loadError = "Cancel failed: \(error)" }
+            await MainActor.run {
+                loadError = String(localized: "billing.error.cancelFailed", bundle: .main)
+            }
         }
     }
 }

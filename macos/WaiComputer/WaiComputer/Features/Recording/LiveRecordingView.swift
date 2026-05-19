@@ -5,6 +5,7 @@ import WaiComputerKit
 struct LiveRecordingView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingVM: MacRecordingViewModel
+    @State private var showingDiscardConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,7 +78,9 @@ struct LiveRecordingView: View {
 
             WaiDivider()
 
-            // Live transcript
+            // Live transcript — committed text renders sharp; the rolling
+            // interim guess is faded so users don't fixate on words the model
+            // is still revising ahead of their speech.
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {
@@ -89,13 +92,25 @@ struct LiveRecordingView: View {
                                 .padding(.horizontal, Spacing.xxl)
                                 .padding(.vertical, Spacing.xl)
                         } else {
-                            Text(recordingVM.currentTranscript)
-                                .font(Typography.reading)
-                                .lineSpacing(6)
-                                .textSelection(.enabled)
-                                .padding(.horizontal, Spacing.xxl)
-                                .padding(.vertical, Spacing.xl)
-                                .id("transcript-bottom")
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                if !recordingVM.committedTranscript.isEmpty {
+                                    Text(recordingVM.committedTranscript)
+                                        .font(Typography.reading)
+                                        .lineSpacing(6)
+                                        .textSelection(.enabled)
+                                }
+                                if !recordingVM.interimTranscript.isEmpty {
+                                    Text(recordingVM.interimTranscript)
+                                        .font(Typography.reading.italic())
+                                        .lineSpacing(6)
+                                        .foregroundStyle(Palette.textTertiary)
+                                        .textSelection(.enabled)
+                                        .accessibilityLabel(Text("recording.transcript.interim", bundle: .main))
+                                }
+                            }
+                            .padding(.horizontal, Spacing.xxl)
+                            .padding(.vertical, Spacing.xl)
+                            .id("transcript-bottom")
                         }
                     }
                 }
@@ -108,13 +123,30 @@ struct LiveRecordingView: View {
 
             WaiDivider()
 
-            // Stop button
-            HStack {
+            // Stop + Discard buttons
+            HStack(spacing: Spacing.md) {
                 Spacer()
+
+                Button {
+                    showingDiscardConfirm = true
+                } label: {
+                    Label {
+                        Text("recording.discard", bundle: .main)
+                    } icon: {
+                        Image(systemName: "trash")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(!recordingVM.canStopRecording)
+                .accessibilityIdentifier("discard-recording-button")
 
                 StopRecordingButton(
                     isEnabled: recordingVM.canStopRecording,
-                    title: recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText,
+                    title: recordingVM.canStopRecording
+                        ? String(localized: "recording.stop", bundle: .main)
+                        : recordingVM.statusText,
                     action: stopRecording
                 )
                 .frame(width: 168, height: 34)
@@ -126,6 +158,23 @@ struct LiveRecordingView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-recording-view")
+        .confirmationDialog(
+            Text("recording.discardConfirm.title", bundle: .main),
+            isPresented: $showingDiscardConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                discardRecording()
+            } label: {
+                Text("recording.discardConfirm.confirm", bundle: .main)
+            }
+            .accessibilityIdentifier("discard-recording-confirm")
+            Button(role: .cancel) { } label: {
+                Text("recording.cancel", bundle: .main)
+            }
+        } message: {
+            Text("recording.discardConfirm.body", bundle: .main)
+        }
     }
 
     private var recordingHeader: some View {
@@ -188,6 +237,12 @@ struct LiveRecordingView: View {
     private func stopRecording() {
         Task {
             await appState.stopRecording()
+        }
+    }
+
+    private func discardRecording() {
+        Task {
+            await recordingVM.discardRecording()
         }
     }
 }
