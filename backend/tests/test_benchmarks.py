@@ -7,8 +7,13 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from websockets.exceptions import ConnectionClosedError
 
-from app.core.dictation_benchmark_live import configured_live_benchmark_models
+from app.core.dictation_benchmark_live import (
+    LiveBenchmarkModel,
+    LiveBenchmarkProviderRunner,
+    configured_live_benchmark_models,
+)
 from app.core.transcript_utils import TranscriptResult
 from app.models.benchmark import DictationBenchmarkVote
 
@@ -274,3 +279,34 @@ def test_configured_live_benchmark_models_uses_live_provider_pool():
         ("soniox", "stt-rt-v4"),
         ("deepgram", "flux-general-multi"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_live_benchmark_receive_loop_treats_upstream_close_as_normal():
+    class ClosingUpstream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise ConnectionClosedError(None, None)
+
+    async def send_event(event: dict):
+        raise AssertionError(f"unexpected event: {event}")
+
+    async def handle_message(message: str):
+        raise AssertionError(f"unexpected message: {message}")
+
+    runner = LiveBenchmarkProviderRunner(
+        battle_id="battle-1",
+        candidate=LiveBenchmarkModel(
+            id="candidate-1",
+            provider="elevenlabs",
+            model="scribe_v2_realtime",
+            label="ElevenLabs",
+        ),
+        language="ru",
+        settings=_settings(elevenlabs_api_key="xi"),
+        send_event=send_event,
+    )
+
+    await runner._receive_loop(ClosingUpstream(), handle_message)

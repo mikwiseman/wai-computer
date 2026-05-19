@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import websockets
+from websockets.exceptions import ConnectionClosed
 
 from app.config import Settings, get_settings
 from app.core.deepgram import DEEPGRAM_FLUX_REALTIME_WS_BASE
@@ -243,14 +244,17 @@ class LiveBenchmarkProviderRunner:
         upstream: Any,
         handle_message: Callable[[str], Awaitable[None]],
     ) -> None:
-        async for message in upstream:
-            if isinstance(message, bytes):
-                try:
-                    message = message.decode("utf-8")
-                except UnicodeDecodeError:
-                    continue
-            if isinstance(message, str):
-                await handle_message(message)
+        try:
+            async for message in upstream:
+                if isinstance(message, bytes):
+                    try:
+                        message = message.decode("utf-8")
+                    except UnicodeDecodeError:
+                        continue
+                if isinstance(message, str):
+                    await handle_message(message)
+        except ConnectionClosed:
+            return
 
     async def _send_elevenlabs_audio(self, upstream: Any, chunk: bytes | None) -> None:
         audio = _silence_frame() if chunk is None else chunk
