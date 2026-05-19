@@ -546,6 +546,91 @@
         }
       }
     },
+    "billing.error.unsupportedRegion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported billing region: %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неподдерживаемый регион оплаты: %@."
+          }
+        }
+      }
+    },
+    "billing.error.missingProPlan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro plan is missing from the billing catalogue."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В каталоге оплаты нет тарифа Pro."
+          }
+        }
+      }
+    },
+    "billing.error.priceUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No price configured for %@ / %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цена не настроена для %@ / %@."
+          }
+        }
+      }
+    },
+    "billing.error.checkoutInvalidURL" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checkout returned an invalid URL: %@."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оплата вернула некорректную ссылку: %@."
+          }
+        }
+      }
+    },
+    "billing.error.checkoutOpenRejected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS rejected the checkout link."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS не открыла ссылку оплаты."
+          }
+        }
+      }
+    },
     "recording.stop" : {
       "extractionState" : "manual",
       "localizations" : {
