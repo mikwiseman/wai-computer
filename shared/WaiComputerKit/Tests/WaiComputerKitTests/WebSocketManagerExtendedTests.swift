@@ -307,6 +307,123 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.first?.confidence, 0.91)
     }
 
+    func testDeepgramFluxTurnInfoUpdatesStayInterimUntilEndOfTurn() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "deepgram",
+            token: "dg-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "flux-general-multi",
+            keepAliveIntervalSeconds: nil,
+            commitStrategy: "vad",
+            noVerbatim: false,
+            websocketURL: "wss://wai.computer/api/transcription/deepgram-proxy?model=flux-general-multi",
+            authScheme: "bearer"
+        ))
+
+        await manager.testingHandleDeepgramMessage("""
+        {"type":"TurnInfo","event":"Update","transcript":"Привет"}
+        """)
+        var segments = await manager.collectedSegments
+        XCTAssertTrue(segments.isEmpty)
+
+        await manager.testingHandleDeepgramMessage("""
+        {"type":"TurnInfo","event":"EndOfTurn","transcript":"Привет мир.","words":[{"start":0.0,"end":0.4},{"start":0.4,"end":0.8}]}
+        """)
+
+        segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Привет мир.")
+        XCTAssertEqual(segments.first?.startMs, 0)
+        XCTAssertEqual(segments.first?.endMs, 800)
+    }
+
+    func testProviderBackedDeepgramFluxTurnInfoUpdatesStayInterimUntilEndOfTurn() async {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "deepgram",
+            token: "dg-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "flux-general-multi",
+            keepAliveIntervalSeconds: nil,
+            commitStrategy: "vad",
+            noVerbatim: false,
+            websocketURL: "wss://wai.computer/api/transcription/deepgram-proxy?model=flux-general-multi",
+            authScheme: "bearer"
+        ))
+
+        await session.testingHandleDeepgramMessage("""
+        {"type":"TurnInfo","event":"Update","transcript":"Привет"}
+        """)
+        var segments = await session.testingCollectedSegments()
+        XCTAssertTrue(segments.isEmpty)
+
+        await session.testingHandleDeepgramMessage("""
+        {"type":"TurnInfo","event":"EndOfTurn","transcript":"Привет мир.","words":[{"start":0.0,"end":0.4},{"start":0.4,"end":0.8}]}
+        """)
+
+        segments = await session.testingCollectedSegments()
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Привет мир.")
+        XCTAssertEqual(segments.first?.startMs, 0)
+        XCTAssertEqual(segments.first?.endMs, 800)
+    }
+
+    func testProviderBackedInworldAudioChunkerBuffersSub20MsFrames() {
+        var pending = Data()
+
+        let first = ProviderBackedRealtimeSession.inworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x01, count: 320),
+            forceFlush: false,
+            sampleRate: 16_000,
+            channels: 1
+        )
+        XCTAssertTrue(first.isEmpty)
+        XCTAssertEqual(pending.count, 320)
+
+        let second = ProviderBackedRealtimeSession.inworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x02, count: 320),
+            forceFlush: false,
+            sampleRate: 16_000,
+            channels: 1
+        )
+        XCTAssertEqual(second.map(\.count), [640])
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testProviderBackedInworldAudioChunkerPadsFinalShortFrame() {
+        var pending = Data()
+
+        _ = ProviderBackedRealtimeSession.inworldAudioChunks(
+            pending: &pending,
+            appending: Data(repeating: 0x01, count: 160),
+            forceFlush: false,
+            sampleRate: 16_000,
+            channels: 1
+        )
+        let flushed = ProviderBackedRealtimeSession.inworldAudioChunks(
+            pending: &pending,
+            appending: Data(),
+            forceFlush: true,
+            sampleRate: 16_000,
+            channels: 1
+        )
+
+        XCTAssertEqual(flushed.map(\.count), [640])
+        XCTAssertTrue(pending.isEmpty)
+    }
+
     func testOpenAICompletedTranscriptCollectsSegment() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
