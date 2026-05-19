@@ -50,6 +50,27 @@ def test_dictation_post_filter_openai_migration_flips_defaults(monkeypatch):
     assert defaults["dictation_post_filter_model"] == "gpt-5.5"
 
 
+def test_disable_dictation_post_filter_default_migration(monkeypatch):
+    """May 20 product change should make dictation cleanup opt-in."""
+    migration = _load_migration("20260520_170000_disable_dictation_post_filter_default.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert executed
+    assert "dictation_post_filter_enabled = false" in str(executed[0])
+    assert altered[0]["args"][1] == "dictation_post_filter_enabled"
+    assert str(altered[0]["kwargs"]["server_default"]) == "false"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

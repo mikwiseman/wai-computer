@@ -270,7 +270,7 @@ data class UserSettings(
     @SerialName("recording_live_stt_model") val recordingLiveSttModel: String = "scribe_v2_realtime",
     @SerialName("file_stt_provider") val fileSttProvider: String = "elevenlabs",
     @SerialName("file_stt_model") val fileSttModel: String = "scribe_v2",
-    @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean = true,
+    @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean = false,
     @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "openai",
     @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "gpt-5.5",
 )

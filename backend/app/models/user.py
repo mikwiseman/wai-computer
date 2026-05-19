@@ -69,7 +69,10 @@ class User(Base, UUIDMixin, TimestampMixin):
         default=DEFAULT_FILE_STT_MODEL,
         server_default=DEFAULT_FILE_STT_MODEL,
     )
-    dictation_post_filter_enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    dictation_post_filter_enabled: Mapped[bool] = mapped_column(
+        default=False,
+        server_default="false",
+    )
     dictation_post_filter_provider: Mapped[str] = mapped_column(
         String(40),
         default=DEFAULT_DICTATION_POST_FILTER_PROVIDER,

@@ -102,7 +102,7 @@ struct MacSettingsView: View {
     @State private var dictationLiveSTTSelection = ""
     @State private var recordingLiveSTTSelection = ""
     @State private var fileSTTSelection = ""
-    @State private var dictationPostFilterEnabled = true
+    @State private var dictationPostFilterEnabled = false
     @State private var dictationPostFilterSelection = ""
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
 
@@ -811,6 +811,7 @@ struct MacSettingsView: View {
         recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
         fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
         dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationManager.aiCleanupEnabled = settings.dictationPostFilterEnabled
         dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
     }
 

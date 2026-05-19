@@ -52,6 +52,19 @@ def _patch_client(monkeypatch: pytest.MonkeyPatch, mock_client) -> None:
     )
 
 
+async def _enable_post_filter(client: AsyncClient, headers: dict) -> None:
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={
+            "dictation_post_filter_enabled": True,
+            "dictation_post_filter_provider": "openai",
+            "dictation_post_filter_model": "gpt-5.5",
+        },
+    )
+    assert response.status_code == 200
+
+
 def _fake_httpx_response(status_code: int = 429) -> httpx.Response:
     return httpx.Response(status_code=status_code, request=httpx.Request("POST", "https://test"))
 
@@ -64,6 +77,7 @@ async def test_cleanup_dictation_returns_cleaned_text(
 ):
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, _make_mock_client(response_text="Cleaned text."))
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -116,15 +130,7 @@ async def test_cleanup_dictation_uses_selected_post_filter_model(
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
 
-    settings_response = await client.patch(
-        "/api/settings",
-        headers=auth_headers,
-        json={
-            "dictation_post_filter_provider": "openai",
-            "dictation_post_filter_model": "gpt-5.5",
-        },
-    )
-    assert settings_response.status_code == 200
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -154,6 +160,7 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -181,6 +188,7 @@ async def test_cleanup_dictation_maps_upstream_connection_errors(
         monkeypatch,
         _make_mock_client(error=openai.APIConnectionError(request=None)),
     )
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -213,6 +221,7 @@ async def test_cleanup_missing_api_key_returns_503(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _patch_settings(monkeypatch, api_key="")
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -269,6 +278,7 @@ async def test_cleanup_empty_output_text_returns_502(
     """Model returns an empty output_text → 502."""
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, _make_mock_client(response_text=""))
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -289,6 +299,7 @@ async def test_cleanup_blank_output_text_returns_502(
     """Whitespace-only output_text → 502."""
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, _make_mock_client(response_text="   "))
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -317,6 +328,7 @@ async def test_cleanup_rate_limit_error_returns_429(
             ),
         ),
     )
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -345,6 +357,7 @@ async def test_cleanup_api_status_error_returns_502(
             ),
         ),
     )
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -367,6 +380,7 @@ async def test_cleanup_unexpected_exception_returns_500(
         monkeypatch,
         _make_mock_client(error=RuntimeError("totally unexpected")),
     )
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -394,6 +408,7 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
     mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
         "/api/dictation/cleanup",
@@ -432,6 +447,7 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
     mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
 
     for payload in (
         {"text": "please clean this up please"},

@@ -152,10 +152,10 @@ final class DictationManager: ObservableObject {
         let defaults = UserDefaults.standard
         self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.rightOption.rawValue
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
-        // `aiCleanup` defaults to true; only treat the missing key as "true",
-        // an explicitly-stored `false` should stay `false`.
+        // Dictation STT providers already return polished text in the common
+        // case. Keep AI cleanup opt-in so dictation stays fast and predictable.
         if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
-            self.aiCleanupEnabled = true
+            self.aiCleanupEnabled = false
         } else {
             self.aiCleanupEnabled = defaults.bool(forKey: Self.aiCleanupDefaultsKey)
         }
@@ -342,6 +342,7 @@ final class DictationManager: ObservableObject {
 
         do {
             let settings = try await apiClient.getSettings()
+            aiCleanupEnabled = settings.dictationPostFilterEnabled
             SentryHelper.addBreadcrumb(
                 category: "dictation.session",
                 message: "dictation provider selected",
@@ -375,9 +376,9 @@ final class DictationManager: ObservableObject {
                 "model": sessionConfig.model,
             ])
 
-            // Use the proven per-press MicrophoneCapture path. AudioEngineHost
-            // is kept pre-warmed for future latency work, but it previously
-            // produced silent provider-backed dictation sessions on macOS.
+            // Use the proven per-press MicrophoneCapture path. Do not prewarm
+            // AudioEngineHost in idle: that keeps macOS microphone capture
+            // active and triggers the privacy indicator before user intent.
             let capture = MicrophoneCapture(
                 config: AudioCaptureConfig(
                     sampleRate: Double(sessionConfig.sampleRate),
@@ -506,7 +507,7 @@ final class DictationManager: ObservableObject {
 
         // AI cleanup (optional)
         let rawText = textToInsert
-        if let apiClient {
+        if aiCleanupEnabled, let apiClient {
             do {
                 // Pass the dictionary's vocabulary list so the cleanup pass
                 // preserves user-curated spellings exactly (proper nouns,
