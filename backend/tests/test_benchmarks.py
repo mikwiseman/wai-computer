@@ -275,9 +275,9 @@ def test_configured_live_benchmark_models_uses_live_provider_pool():
     models = configured_live_benchmark_models(settings=settings)
 
     assert [(model.provider, model.model) for model in models] == [
-        ("elevenlabs", "scribe_v2_realtime"),
         ("soniox", "stt-rt-v4"),
         ("deepgram", "flux-general-multi"),
+        ("elevenlabs", "scribe_v2_realtime"),
     ]
 
 

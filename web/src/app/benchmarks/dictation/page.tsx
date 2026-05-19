@@ -21,12 +21,12 @@ type BenchmarkResult = {
 const modelMatrix = [
   {
     name: "ElevenLabs Scribe v2",
-    fit: "Default all-rounder for dictation, realtime recording, and file transcription.",
-    tags: ["dictation", "realtime", "file"],
+    fit: "High-accuracy multilingual option for realtime recording and file transcription; slower dictation finalization.",
+    tags: ["realtime", "file"],
   },
   {
     name: "Soniox v4",
-    fit: "Best value candidate for multilingual realtime and long-form async transcription.",
+    fit: "Default realtime dictation model after our startup eval: fast first text, explicit finalization, strong Russian fixture WER.",
     tags: ["dictation", "realtime", "file"],
   },
   {
@@ -36,7 +36,7 @@ const modelMatrix = [
   },
   {
     name: "Deepgram Flux",
-    fit: "Realtime turn-aware model for live dictation battles and short agent-style utterances.",
+    fit: "Fastest first-text candidate for live battles and short agent-style utterances.",
     tags: ["dictation", "realtime"],
   },
   {

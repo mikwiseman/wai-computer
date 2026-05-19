@@ -74,7 +74,11 @@ final class DictationManager: ObservableObject {
             UserDefaults.standard.set(isFeatureEnabled, forKey: Self.enabledDefaultsKey)
             applyHotkeyAvailability()
             if !isFeatureEnabled {
+                let vault = sessionConfigVault
+                Task { await vault?.clear() }
                 Task { await cancelDictation() }
+            } else {
+                prefetchDictationSessionConfig(reason: "feature_enabled")
             }
         }
     }
@@ -93,7 +97,11 @@ final class DictationManager: ObservableObject {
     // MARK: - Dependencies
 
     private var apiClient: APIClient?
+    private var sessionConfigVault: RealtimeTranscriptionSessionConfigVault?
     private var canStartDictation: (() -> Bool)?
+    private var cachedSettings: UserSettings?
+    private var cachedSettingsLoadedAt: Date?
+    private let settingsCacheTTL: TimeInterval = 60
     var historyStore: DictationHistoryStore?
     var dictionaryStore: DictationDictionaryStore?
     var languageStore: DictationLanguageStore?
@@ -175,9 +183,17 @@ final class DictationManager: ObservableObject {
     /// Called when user authenticates and provides the API client used to mint realtime STT sessions.
     func configure(apiClient: APIClient, canStart: @escaping () -> Bool) {
         self.apiClient = apiClient
+        self.sessionConfigVault = RealtimeTranscriptionSessionConfigVault { key in
+            try await apiClient.createRealtimeTranscriptionSession(
+                language: key.language,
+                channels: key.channels,
+                purpose: key.purpose
+            )
+        }
         self.canStartDictation = canStart
         isConfigured = true
         applyHotkeyAvailability()
+        refreshSettingsAndPrefetch(apiClient: apiClient, reason: "configure")
         log.info("Dictation manager configured")
     }
 
@@ -188,7 +204,26 @@ final class DictationManager: ObservableObject {
         applyHotkeyAvailability()
         Task { await cancelDictation() }
         apiClient = nil
+        let vault = sessionConfigVault
+        sessionConfigVault = nil
+        Task { await vault?.clear() }
+        cachedSettings = nil
+        cachedSettingsLoadedAt = nil
         log.info("Dictation manager disabled")
+    }
+
+    func ingestSettings(_ settings: UserSettings) {
+        let previousProvider = cachedSettings?.dictationLiveSTTProvider
+        let previousModel = cachedSettings?.dictationLiveSTTModel
+        cachedSettings = settings
+        cachedSettingsLoadedAt = Date()
+        aiCleanupEnabled = settings.dictationPostFilterEnabled
+        if previousProvider != settings.dictationLiveSTTProvider
+            || previousModel != settings.dictationLiveSTTModel {
+            let vault = sessionConfigVault
+            Task { await vault?.clear() }
+        }
+        prefetchDictationSessionConfig(reason: "settings_ingested")
     }
 
     func updateEnabled(_ enabled: Bool) {
@@ -341,8 +376,7 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
-            let settings = try await apiClient.getSettings()
-            aiCleanupEnabled = settings.dictationPostFilterEnabled
+            let settings = try await currentSettings(apiClient: apiClient)
             SentryHelper.addBreadcrumb(
                 category: "dictation.session",
                 message: "dictation provider selected",
@@ -352,29 +386,23 @@ final class DictationManager: ObservableObject {
                 ]
             )
 
-            if settings.dictationLiveSTTProvider == "openai" {
-                await startOpenAIDictation(apiClient: apiClient, session: session)
-                return
-            }
-
-            if settings.dictationLiveSTTProvider == "elevenlabs" {
-                await startElevenLabsDictation(apiClient: apiClient, session: session)
-                return
-            }
-
-            // Mint a fresh realtime session. Backend chooses the provider and
-            // model from account settings and returns a client-safe temporary
-            // credential. Read from the multi-select language store.
             let language = currentDictationLanguage()
-            let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+            let sessionConfig = try await takeDictationSessionConfig(
+                settings: settings,
                 language: language,
-                channels: 1,
-                purpose: .dictation
+                session: session,
+                apiClient: apiClient
             )
-            session.event(.tokenMinted, data: [
-                "provider": sessionConfig.provider,
-                "model": sessionConfig.model,
-            ])
+
+            if sessionConfig.provider == "openai" {
+                await startOpenAIDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
+                return
+            }
+
+            if sessionConfig.provider == "elevenlabs" {
+                await startElevenLabsDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
+                return
+            }
 
             // Use the proven per-press MicrophoneCapture path. Do not prewarm
             // AudioEngineHost in idle: that keeps macOS microphone capture
@@ -605,22 +633,103 @@ final class DictationManager: ObservableObject {
         return UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
     }
 
+    private func dictationSessionConfigKey(language: String? = nil) -> RealtimeTranscriptionSessionConfigVault.Key {
+        RealtimeTranscriptionSessionConfigVault.Key(
+            language: language ?? currentDictationLanguage(),
+            channels: 1,
+            purpose: .dictation
+        )
+    }
+
+    private func prefetchDictationSessionConfig(reason: String) {
+        guard isConfigured, isFeatureEnabled, state == .idle, let sessionConfigVault else { return }
+        let key = dictationSessionConfigKey()
+        Task { await sessionConfigVault.prefetch(for: key) }
+        SentryHelper.addBreadcrumb(
+            category: "dictation.session",
+            message: "realtime config prefetch scheduled",
+            data: [
+                "reason": reason,
+                "language": key.language,
+            ]
+        )
+    }
+
+    private func refreshSettingsAndPrefetch(apiClient: APIClient, reason: String) {
+        Task { [weak self] in
+            do {
+                let settings = try await apiClient.getSettings()
+                await MainActor.run {
+                    self?.ingestSettings(settings)
+                }
+            } catch {
+                SentryHelper.captureError(error, extras: ["action": "dictationSettingsPrefetch", "reason": reason])
+            }
+        }
+    }
+
+    private func currentSettings(apiClient: APIClient) async throws -> UserSettings {
+        if let cachedSettings,
+           let cachedSettingsLoadedAt,
+           Date().timeIntervalSince(cachedSettingsLoadedAt) < settingsCacheTTL {
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "settings cache hit",
+                data: [
+                    "provider": cachedSettings.dictationLiveSTTProvider,
+                    "model": cachedSettings.dictationLiveSTTModel,
+                ]
+            )
+            return cachedSettings
+        }
+
+        let settings = try await apiClient.getSettings()
+        ingestSettings(settings)
+        return settings
+    }
+
+    private func takeDictationSessionConfig(
+        settings: UserSettings,
+        language: String,
+        session: DictationInstrumentation.Session,
+        apiClient: APIClient
+    ) async throws -> RealtimeTranscriptionSessionConfig {
+        let key = dictationSessionConfigKey(language: language)
+        let result: RealtimeTranscriptionSessionConfigVault.TakeResult
+        if let sessionConfigVault {
+            result = try await sessionConfigVault.take(
+                for: key,
+                expectedProvider: settings.dictationLiveSTTProvider,
+                expectedModel: settings.dictationLiveSTTModel
+            )
+        } else {
+            let config = try await apiClient.createRealtimeTranscriptionSession(
+                language: key.language,
+                channels: key.channels,
+                purpose: key.purpose
+            )
+            result = RealtimeTranscriptionSessionConfigVault.TakeResult(
+                config: config,
+                prefetched: false,
+                tokenAgeMilliseconds: 0
+            )
+        }
+
+        session.event(.tokenMinted, data: [
+            "provider": result.config.provider,
+            "model": result.config.model,
+            "prefetchHit": result.prefetched,
+            "tokenAgeMs": result.tokenAgeMilliseconds,
+        ])
+        return result.config
+    }
+
     private func startOpenAIDictation(
         apiClient: APIClient,
-        session: DictationInstrumentation.Session
+        session: DictationInstrumentation.Session,
+        sessionConfig: RealtimeTranscriptionSessionConfig
     ) async {
         do {
-            let language = currentDictationLanguage()
-            let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
-                language: language,
-                channels: 1,
-                purpose: .dictation
-            )
-            session.event(.tokenMinted, data: [
-                "provider": sessionConfig.provider,
-                "model": sessionConfig.model,
-            ])
-
             guard let urlString = sessionConfig.websocketURL,
                   let url = URL(string: urlString) else {
                 throw DictationInstrumentationError.unknown("missing OpenAI websocket URL in session config")
@@ -695,13 +804,14 @@ final class DictationManager: ObservableObject {
 
     private func startElevenLabsDictation(
         apiClient: APIClient,
-        session: DictationInstrumentation.Session
+        session: DictationInstrumentation.Session,
+        sessionConfig: RealtimeTranscriptionSessionConfig
     ) async {
         do {
             // Read from the multi-select language store. wireLanguageTag returns
             // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
             // a single-language selection.
-            let language = currentDictationLanguage()
+            let language = sessionConfig.language
 
             // 1. Mic capture — fresh MicrophoneCapture per session. EXACTLY
             //    what pre-Phase-4 (build ≤56) shipped working. The Phase-4
@@ -714,9 +824,10 @@ final class DictationManager: ObservableObject {
             NSLog("[Dictation/EL] starting MicrophoneCapture")
             try await capture.startRecording()
 
-            // 2. WebSocketManager.connect() asks backend for a session token.
-            //    Without `purpose`, backend defaults to "recording" which
-            //    routes through ElevenLabs Scribe v2 Realtime.
+            // 2. WebSocketManager.connect(using:) receives the already-minted
+            //    config so the hotkey path does not pay a second backend
+            //    round-trip. The config contains only a temporary credential;
+            //    no provider socket is opened until connect() below.
             //    Per-session keyterms come from the user's dictation
             //    dictionary — every entry biases the recognizer toward
             //    that spelling. Cap is enforced inside WebSocketManager.
@@ -742,7 +853,7 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            try await ws.connect()
+            try await ws.connect(using: sessionConfig)
             session.event(.providerOpened)
 
             startTimer()
@@ -903,6 +1014,8 @@ final class DictationManager: ObservableObject {
             session.succeed()
             instrumentationSession = nil
         }
+
+        prefetchDictationSessionConfig(reason: "idle_after_session")
     }
 
     private func resetAfterStartFailure() async {

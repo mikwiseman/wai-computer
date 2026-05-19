@@ -101,8 +101,8 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["summary_language"] == "auto"
     assert data["summary_style"] == "medium"
     assert data["summary_instructions"] is None
-    assert data["dictation_live_stt_provider"] == "elevenlabs"
-    assert data["dictation_live_stt_model"] == "scribe_v2_realtime"
+    assert data["dictation_live_stt_provider"] == "soniox"
+    assert data["dictation_live_stt_model"] == "stt-rt-v4"
     assert data["recording_live_stt_provider"] == "elevenlabs"
     assert data["recording_live_stt_model"] == "scribe_v2_realtime"
     assert data["file_stt_provider"] == "elevenlabs"
@@ -338,8 +338,8 @@ async def test_get_transcription_options_returns_curated_choices(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["dictation_live_stt"][0]["provider"] == "elevenlabs"
-    assert data["dictation_live_stt"][0]["model"] == "scribe_v2_realtime"
+    assert data["dictation_live_stt"][0]["provider"] == "soniox"
+    assert data["dictation_live_stt"][0]["model"] == "stt-rt-v4"
     assert any(
         option["provider"] == "soniox" and option["model"] == "stt-rt-v4"
         for option in data["dictation_live_stt"]

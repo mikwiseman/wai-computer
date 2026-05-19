@@ -162,7 +162,7 @@ public actor WebSocketManager {
     }
 
     /// Connect to the configured transcription provider using a backend-issued session token.
-    public func connect() async throws {
+    public func connect(using providedSessionConfig: RealtimeTranscriptionSessionConfig? = nil) async throws {
         if webSocket != nil || receiveTask != nil {
             wsLog.debug("Disconnecting previous connection before new one")
             closeConnection(
@@ -191,11 +191,15 @@ public actor WebSocketManager {
         endOfStreamRequested = false
         endOfStreamSent = false
 
-        let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
-            language: language,
-            channels: channels,
-            purpose: purpose
-        )
+        let sessionConfig = if let providedSessionConfig {
+            providedSessionConfig
+        } else {
+            try await apiClient.createRealtimeTranscriptionSession(
+                language: language,
+                channels: channels,
+                purpose: purpose
+            )
+        }
         transcriptionSession = sessionConfig
         let request = try requestForRealtimeSession(sessionConfig)
 

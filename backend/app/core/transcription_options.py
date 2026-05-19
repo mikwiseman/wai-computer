@@ -22,8 +22,8 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "elevenlabs"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "scribe_v2_realtime"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "soniox"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "stt-rt-v4"
 DEFAULT_RECORDING_LIVE_STT_PROVIDER = "elevenlabs"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "scribe_v2_realtime"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
@@ -50,18 +50,12 @@ class ModelOption:
 
 _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="elevenlabs",
-        model="scribe_v2_realtime",
-        label="ElevenLabs Scribe v2 Realtime",
-        description="Default. Best live accuracy profile, 90+ languages, ~150 ms latency.",
-    ),
-    ModelOption(
         provider="soniox",
         model="stt-rt-v4",
         label="Soniox v4 Realtime",
         description=(
-            "Best value realtime option. 60+ languages, semantic endpointing, "
-            "fast finalization."
+            "Default for dictation. Best measured balance of fast startup, "
+            "manual finalization, and Russian dictation accuracy."
         ),
     ),
     ModelOption(
@@ -69,9 +63,15 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         model="flux-general-multi",
         label="Deepgram Flux Multilingual",
         description=(
-            "Best realtime voice-agent candidate. Model-native turn detection, "
-            "very low latency, 10-language multilingual streaming."
+            "Fastest realtime first-text candidate. Model-native turn detection; "
+            "best for voice-agent style experiments."
         ),
+    ),
+    ModelOption(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        label="ElevenLabs Scribe v2 Realtime",
+        description="High-accuracy multilingual realtime model with slower finalization.",
     ),
     ModelOption(
         provider="inworld",
