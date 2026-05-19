@@ -668,18 +668,386 @@
     "recording.transcript.interim" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Interim transcript — may change as you speak"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Промежуточная расшифровка — текст может уточняться"
-          }
-        }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Interim transcript — may change as you speak" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Промежуточная расшифровка — текст может уточняться" } }
+      }
+    },
+    "settings.account.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Account" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Аккаунт" } }
+      }
+    },
+    "settings.account.email" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Email" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Email" } }
+      }
+    },
+    "settings.account.memberSince" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Member Since" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "С нами с" } }
+      }
+    },
+    "settings.dictationLanguages.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dictation languages" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Языки диктовки" } }
+      }
+    },
+    "settings.dictationLanguages.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Affects live dictation. Recording transcription auto-detects." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Влияет на живую диктовку. Транскрипция записей определяет язык автоматически." } }
+      }
+    },
+    "settings.transcription.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcription Models" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модели транскрипции" } }
+      }
+    },
+    "settings.transcription.dictationLive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dictation live" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Диктовка в реальном времени" } }
+      }
+    },
+    "settings.transcription.recordingLive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Recording live" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Запись в реальном времени" } }
+      }
+    },
+    "settings.transcription.fullSession" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Full session" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Полная сессия" } }
+      }
+    },
+    "settings.transcription.postFilterModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter model" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модель пост-фильтра" } }
+      }
+    },
+    "settings.appBehavior.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "App Behavior" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Поведение приложения" } }
+      }
+    },
+    "settings.appBehavior.showDockIcon" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show Dock icon after closing main window" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Показывать иконку в Dock после закрытия главного окна" } }
+      }
+    },
+    "settings.appBehavior.dockHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "When disabled, WaiComputer keeps running from the menu bar after the main window closes." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Когда выключено, WaiComputer продолжает работать в строке меню после закрытия главного окна." } }
+      }
+    },
+    "settings.summary.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Summary" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "AI-саммари" } }
+      }
+    },
+    "settings.summary.language" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Language" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Язык" } }
+      }
+    },
+    "settings.summary.detailLevel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Detail Level" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Уровень детализации" } }
+      }
+    },
+    "settings.summary.customInstructions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Custom Instructions" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Свои инструкции" } }
+      }
+    },
+    "settings.summary.customExample" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "E.g. \"Focus on action items\" or \"Write formally\"" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Напр. «Делай акцент на действиях» или «Пиши официально»" } }
+      }
+    },
+    "settings.dictation.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Dictation" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Диктовка" } }
+      }
+    },
+    "settings.dictation.enable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Enable Dictation" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Включить диктовку" } }
+      }
+    },
+    "settings.dictation.pushToTalk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Push to talk" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нажми и говори" } }
+      }
+    },
+    "settings.dictation.handsFree" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Hands-free toggle" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Свободные руки" } }
+      }
+    },
+    "settings.dictation.handsFreeDoubleTap" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Double-tap of push-to-talk" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Двойное нажатие push-to-talk" } }
+      }
+    },
+    "settings.dictation.postFilter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter dictated text" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Пост-фильтр продиктованного текста" } }
+      }
+    },
+    "settings.dictation.permission.microphone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Microphone" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Микрофон" } }
+      }
+    },
+    "settings.dictation.permission.accessibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Accessibility" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Универсальный доступ" } }
+      }
+    },
+    "settings.dictation.howToUse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "How to use" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Как пользоваться" } }
+      }
+    },
+    "settings.dictation.rerunSetup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Re-run Setup" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Перезапустить настройку" } }
+      }
+    },
+    "settings.dictation.revealInFinder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reveal in Finder" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Показать в Finder" } }
+      }
+    },
+    "settings.dictation.resetPermissions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset Permissions" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сбросить разрешения" } }
+      }
+    },
+    "settings.about.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "About" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "О приложении" } }
+      }
+    },
+    "settings.about.version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Version" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Версия" } }
+      }
+    },
+    "settings.about.receiveBeta" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Receive beta updates" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получать beta-обновления" } }
+      }
+    },
+    "settings.about.betaHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Новые функции и фиксы раньше всех. Beta-сборки подписаны и нотаризованы, но могут содержать баги. Выключи, чтобы вернуться к стабильному каналу." } }
+      }
+    },
+    "settings.about.checkUpdates" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Check for Updates…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Проверить обновления…" } }
+      }
+    },
+    "settings.signOut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign Out" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти" } }
+      }
+    },
+    "settings.signOutConfirm.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out and reset WaiComputer on this Mac?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти и сбросить WaiComputer на этом Mac?" } }
+      }
+    },
+    "settings.signOutConfirm.confirm" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign Out and Reset" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти и сбросить" } }
+      }
+    },
+    "settings.signOutConfirm.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clears your session, preferences, dictation history, and onboarding state on this device. Server-side recordings and summaries stay intact. WaiComputer will restart so the next launch is a clean install." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистит сессию, настройки, историю диктовки и состояние онбординга на этом устройстве. Записи и саммари на сервере сохранятся. WaiComputer перезапустится, чтобы стартовать с чистого листа." } }
+      }
+    },
+    "settings.cancel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отмена" } }
+      }
+    },
+    "settings.dangerZone.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Danger zone" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Опасная зона" } }
+      }
+    },
+    "settings.dangerZone.deleteAccount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete Account…" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить аккаунт…" } }
+      }
+    },
+    "settings.dangerZone.deleteHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Permanently erases your account, recordings, transcripts, and summaries from WaiComputer. This cannot be undone." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Безвозвратно удалит твой аккаунт, записи, транскрипции и саммари из WaiComputer. Восстановить нельзя." } }
+      }
+    },
+    "settings.deleteAccount.confirmTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete account?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить аккаунт?" } }
+      }
+    },
+    "settings.deleteAccount.confirmBody" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This will permanently erase your account, recordings, transcripts, and summaries. WaiComputer will restart afterwards. This action cannot be undone." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это безвозвратно удалит твой аккаунт, записи, транскрипции и саммари. WaiComputer перезапустится. Восстановить нельзя." } }
+      }
+    },
+    "settings.deleteAccount.errorTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Couldn't delete account" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Не удалось удалить аккаунт" } }
+      }
+    },
+    "settings.delete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Удалить" } }
+      }
+    },
+    "settings.ok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "OK" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "ОК" } }
+      }
+    },
+    "settings.mcp.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "MCP" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "MCP" } }
+      }
+    },
+    "settings.mcp.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент — он получит доступ только на чтение к твоим записям, транскрипциям, саммари, задачам и метаданным. Подтверждение каждого клиента по имени на wai.computer, отозвать доступ можно в любой момент." } }
+      }
+    },
+    "settings.mcp.client" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Client" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Клиент" } }
+      }
+    },
+    "settings.mcp.copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy URL" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировать URL" } }
+      }
+    },
+    "settings.mcp.copied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copied" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировано" } }
+      }
+    },
+    "settings.mcp.copySnippet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Copy snippet" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Скопировать сниппет" } }
       }
     }
   }
