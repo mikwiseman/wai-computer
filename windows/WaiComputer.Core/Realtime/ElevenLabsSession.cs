@@ -8,10 +8,12 @@ namespace WaiComputer.Core.Realtime;
 /// <summary>
 /// ElevenLabs realtime STT.
 /// URL: <c>wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=…&amp;token=…&amp;audio_format=pcm_16000&amp;include_timestamps=true</c>.
-/// Auth: query token. Audio: raw binary PCM. Commits implicitly on VAD.
+/// Auth: query token. Audio: base64 PCM JSON frames. Commit: explicit
+/// final chunk so the tail of dictation is flushed before closing.
 /// </summary>
 public sealed class ElevenLabsSession : IRealtimeTranscriptionSession
 {
+    private const int CommitPaddingMs = 220;
     private readonly RealtimeTranscriptionSessionConfig _config;
     private readonly IWebSocketTransport _ws;
     private readonly List<LiveTranscriptSegment> _segments = new();
@@ -43,9 +45,13 @@ public sealed class ElevenLabsSession : IRealtimeTranscriptionSession
     }
 
     public Task SendPcmAsync(ReadOnlyMemory<byte> pcm16Mono, CancellationToken ct)
-        => _ws.SendBinaryAsync(pcm16Mono, ct);
+        => _ws.SendTextAsync(AudioChunkPayload(pcm16Mono.Span, commit: false), ct);
 
-    public Task EndTurnAsync() => Task.CompletedTask; // VAD-driven; no manual commit
+    public Task EndTurnAsync()
+    {
+        var paddingBytes = Math.Max(1, _config.SampleRate * CommitPaddingMs / 1000) * 2;
+        return _ws.SendTextAsync(AudioChunkPayload(new byte[paddingBytes], commit: true), CancellationToken.None);
+    }
 
     public async Task CloseAsync(TimeSpan timeout)
     {
@@ -64,6 +70,15 @@ public sealed class ElevenLabsSession : IRealtimeTranscriptionSession
         try { await CloseAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); } catch { /* ignore */ }
         await _ws.DisposeAsync().ConfigureAwait(false);
     }
+
+    private string AudioChunkPayload(ReadOnlySpan<byte> pcm, bool commit)
+        => JsonSerializer.Serialize(new
+        {
+            message_type = "input_audio_chunk",
+            audio_base_64 = Convert.ToBase64String(pcm),
+            sample_rate = _config.SampleRate,
+            commit,
+        });
 
     private async Task ReadLoop(CancellationToken ct)
     {

@@ -115,9 +115,9 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Dictation pipeline
 
-    // Inworld path state (Phase 4 — Inworld + Soniox v4 RT)
+    // Provider-backed dictation path for Soniox, Deepgram, and Inworld.
     private var dictationSession: DictationSession?
-    private var providerSession: InworldProviderSession?
+    private var providerSession: (any ProviderSession)?
     private var sessionEventTask: Task<Void, Never>?
 
     // OpenAI realtime STT path — account settings default to
@@ -372,8 +372,9 @@ final class DictationManager: ObservableObject {
                 "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
             ])
 
-            // 3. Mint a fresh Inworld session (backend chooses model from
-            //    account settings).
+            // 3. Mint a fresh realtime session. Backend chooses the provider
+            //    and model from account settings and returns a client-safe
+            //    temporary credential.
             // Read from the multi-select language store. wireLanguageTag returns
             // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
             // a single-language selection.
@@ -388,25 +389,19 @@ final class DictationManager: ObservableObject {
                 "model": sessionConfig.model,
             ])
 
-            guard let urlString = sessionConfig.websocketURL,
-                  let url = URL(string: urlString) else {
-                throw DictationInstrumentationError.unknown("missing websocket URL in session config")
-            }
-
             // 4. Build the provider session and the orchestrating
             //    DictationSession actor, then arm.
-            let provider = InworldProviderSession(
-                websocketURL: url,
-                authHeader: sessionConfig.token,  // already "Basic <base64>"
-                modelId: sessionConfig.model,
-                language: sessionConfig.language,
-                sampleRate: sessionConfig.sampleRate,
-                channels: sessionConfig.channels
+            let keyTerms = dictionaryStore?.vocabularyList ?? []
+            let provider = ProviderBackedRealtimeSession(
+                config: sessionConfig,
+                keyTerms: keyTerms
             )
             providerSession = provider
             session.event(.providerConnecting, data: [
+                "provider": sessionConfig.provider,
                 "model": sessionConfig.model,
                 "language": sessionConfig.language,
+                "key_terms_count": keyTerms.count,
             ])
 
             let dSession = DictationSession(

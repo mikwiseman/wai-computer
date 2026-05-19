@@ -1,21 +1,18 @@
 """Curated transcription and dictation processing settings.
 
-Two scenarios, two model pools:
+Three scenarios, three model pools:
 
-- **Realtime** populates both ``dictation_live_stt`` and ``recording_live_stt``
-  from a single curated list. The mechanics are identical (streaming audio in,
-  text deltas out); dictation is just a shorter session.
+- **Dictation realtime** favours low latency, turn detection, and short
+  push-to-talk sessions.
+- **Recording realtime** favours stable long-running streaming, live captions,
+  and diarization.
 - **Batch** populates ``file_stt`` for uploaded audio.
-
-Hard language filter: every realtime/batch option here covers at least 50
-languages out of the box. English-only or 6-language models are intentionally
-excluded.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 TranscriptionOptionGroup = Literal[
     "dictation_live_stt",
@@ -51,55 +48,109 @@ class ModelOption:
         }
 
 
-_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
+_DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
         provider="elevenlabs",
         model="scribe_v2_realtime",
         label="ElevenLabs Scribe v2 Realtime",
-        description="Default. 90+ languages, 150 ms latency, 32-speaker diarization.",
+        description="Default. Best live accuracy profile, 90+ languages, ~150 ms latency.",
+    ),
+    ModelOption(
+        provider="soniox",
+        model="stt-rt-v4",
+        label="Soniox v4 Realtime",
+        description=(
+            "Best value realtime option. 60+ languages, semantic endpointing, "
+            "fast finalization."
+        ),
+    ),
+    ModelOption(
+        provider="deepgram",
+        model="flux-general-multi",
+        label="Deepgram Flux Multilingual",
+        description=(
+            "Best Deepgram dictation/agent model. Model-native turn detection, "
+            "10-language multilingual."
+        ),
+    ),
+    ModelOption(
+        provider="inworld",
+        model="inworld/inworld-stt-1",
+        label="Inworld STT-1",
+        description=(
+            "Inworld first-party model for voice-profile and configurable "
+            "turn-taking experiments."
+        ),
+    ),
+)
+
+_RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
+    ModelOption(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        label="ElevenLabs Scribe v2 Realtime",
+        description="Default. Best live accuracy profile, 90+ languages, ~150 ms latency.",
+    ),
+    ModelOption(
+        provider="soniox",
+        model="stt-rt-v4",
+        label="Soniox v4 Realtime",
+        description=(
+            "Best value long realtime option. 60+ languages, semantic endpointing, "
+            "up to 5-hour streams."
+        ),
     ),
     ModelOption(
         provider="deepgram",
         model="nova-3",
-        label="Deepgram Nova-3 (also works for files)",
-        description="50+ languages, sub-300 ms streaming, code-switching, smart format.",
+        label="Deepgram Nova-3",
+        description=(
+            "Best Deepgram long-form live transcription. Multilingual, diarization, "
+            "smart formatting."
+        ),
     ),
     ModelOption(
         provider="inworld",
-        model="soniox/stt-rt-v4",
-        label="Soniox v4 Realtime",
-        description="60+ languages, 5-hour sessions, semantic end-of-turn detection.",
-    ),
-    ModelOption(
-        provider="openai",
-        model="gpt-realtime-whisper",
-        label="OpenAI GPT Realtime Whisper",
-        description="Whisper-family language coverage, low-latency streaming.",
+        model="inworld/inworld-stt-1",
+        label="Inworld STT-1",
+        description=(
+            "Inworld first-party model for voice-profile and configurable "
+            "turn-taking experiments."
+        ),
     ),
 )
 
 
 TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] = {
-    "dictation_live_stt": _REALTIME_OPTIONS,
-    "recording_live_stt": _REALTIME_OPTIONS,
+    "dictation_live_stt": _DICTATION_REALTIME_OPTIONS,
+    "recording_live_stt": _RECORDING_REALTIME_OPTIONS,
     "file_stt": (
         ModelOption(
             provider="elevenlabs",
             model="scribe_v2",
             label="ElevenLabs Scribe v2",
-            description="Default. 90+ languages, 48-speaker diarization, word timestamps.",
-        ),
-        ModelOption(
-            provider="deepgram",
-            model="nova-3",
-            label="Deepgram Nova-3 (also works for realtime)",
-            description="50+ languages, smart format + diarization in batch.",
+            description=(
+                "Default. Best accuracy in our supported file providers, "
+                "90+ languages, diarization."
+            ),
         ),
         ModelOption(
             provider="soniox",
             model="stt-async-v4",
             label="Soniox v4 Async",
-            description="60+ languages, full-audio-context diarization, up to 5-hour files.",
+            description=(
+                "Best value file option. 60+ languages, strong long-form "
+                "diarization, up to 5-hour files."
+            ),
+        ),
+        ModelOption(
+            provider="deepgram",
+            model="nova-3",
+            label="Deepgram Nova-3",
+            description=(
+                "Fast high-throughput file transcription with smart formatting "
+                "and diarization."
+            ),
         ),
     ),
     "dictation_post_filter": (
@@ -110,6 +161,14 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             description="Default cleanup model for dictated text.",
         ),
     ),
+}
+
+_PROVIDER_KEY_BY_NAME = {
+    "elevenlabs": "elevenlabs_api_key",
+    "deepgram": "deepgram_api_key",
+    "inworld": "inworld_api_key",
+    "openai": "openai_api_key",
+    "soniox": "soniox_api_key",
 }
 
 
@@ -144,8 +203,46 @@ def validate_option(group: TranscriptionOptionGroup, provider: str, model: str) 
     return normalized_provider, normalized_model
 
 
-def options_response() -> dict[str, list[dict[str, str]]]:
+def provider_is_configured(provider: str, settings: Any) -> bool:
+    """Return whether the provider has the server-side credential it needs.
+
+    The picker is a contract: every provider/model pair exposed to clients must
+    be able to mint a real upstream request from this backend environment.
+    """
+    normalized_provider = normalize_provider(provider)
+    key_name = _PROVIDER_KEY_BY_NAME.get(normalized_provider)
+    if key_name is None:
+        return False
+    return bool(str(getattr(settings, key_name, "") or "").strip())
+
+
+def validate_configured_option(
+    group: TranscriptionOptionGroup,
+    provider: str,
+    model: str,
+    *,
+    settings: Any,
+) -> tuple[str, str]:
+    normalized_provider, normalized_model = validate_option(group, provider, model)
+    if not provider_is_configured(normalized_provider, settings):
+        raise ValueError(
+            f"Provider {normalized_provider} is not configured for {group}: "
+            f"missing {_PROVIDER_KEY_BY_NAME[normalized_provider]}"
+        )
+    return normalized_provider, normalized_model
+
+
+def options_response(
+    *,
+    settings: Any | None = None,
+    configured_only: bool = False,
+) -> dict[str, list[dict[str, str]]]:
     return {
-        group: [option.as_dict() for option in options]
+        group: [
+            option.as_dict()
+            for option in options
+            if not configured_only
+            or settings is not None and provider_is_configured(option.provider, settings)
+        ]
         for group, options in TRANSCRIPTION_OPTIONS.items()
     }

@@ -19,6 +19,7 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -132,6 +133,19 @@ class WaiApiTest {
         assertTrue(settings.dictationPostFilterEnabled)
         assertEquals("openai", settings.dictationPostFilterProvider)
         assertEquals("gpt-5.5", settings.dictationPostFilterModel)
+    }
+
+    @Test
+    fun `realtime transcription request serializes purpose`() {
+        val payload = requestJson.encodeToString(
+            CreateRealtimeTranscriptionSessionRequest(
+                language = "multi",
+                channels = 1,
+                purpose = "dictation",
+            ),
+        )
+
+        assertTrue(payload.contains(""""purpose":"dictation""""))
     }
 
     private fun testClient(engine: MockEngine): HttpClient {

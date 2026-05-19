@@ -1,6 +1,4 @@
-"""Tests covering each provider branch in create_realtime_transcription_session
-and the helper builders. Targets app/core/realtime_transcription.py lines
-125-130, 155, 216-243, 257, 263, 271."""
+"""Tests covering each provider branch in realtime transcription session minting."""
 
 from __future__ import annotations
 
@@ -12,90 +10,121 @@ import pytest
 from app.core.realtime_transcription import (
     _build_deepgram_realtime_session,
     _build_inworld_realtime_session,
+    _build_soniox_realtime_session,
     create_realtime_transcription_session,
 )
 
-# ---------------------------------------------------------------------------
-# _build_deepgram_realtime_session
-# ---------------------------------------------------------------------------
 
-
-def test_build_deepgram_realtime_session() -> None:
-    """Cover lines 125-130 — the deepgram builder body."""
+@pytest.mark.asyncio
+async def test_build_deepgram_realtime_session() -> None:
     fake = SimpleNamespace(
-        api_key="dg-key", sample_rate=16000, language="en",
-        channels=1, model="nova-3", websocket_url="wss://dg/x",
+        access_token="dg-jwt",
+        sample_rate=16000,
+        language="en",
+        channels=1,
+        model="nova-3",
+        websocket_url="wss://dg/x",
+        expires_in_seconds=30,
+        keep_alive_interval_seconds=8,
     )
     with patch(
         "app.core.realtime_transcription.mint_deepgram_realtime_session",
-        return_value=fake,
+        new=AsyncMock(return_value=fake),
     ):
-        session = _build_deepgram_realtime_session(
+        session = await _build_deepgram_realtime_session(
             model="nova-3", language="en", channels=1,
         )
     assert session.provider == "deepgram"
-    assert session.token == "dg-key"
+    assert session.token == "dg-jwt"
     assert session.websocket_url == "wss://dg/x"
     assert session.audio_format == "linear16_16000"
-    assert session.auth_scheme == "token"
+    assert session.auth_scheme == "bearer"
+    assert session.expires_in_seconds == 30
+    assert session.keep_alive_interval_seconds == 8
 
 
-# ---------------------------------------------------------------------------
-# _build_inworld_realtime_session
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_build_soniox_realtime_session() -> None:
+    fake = SimpleNamespace(
+        temporary_api_key="sx-temp",
+        sample_rate=16000,
+        language="ru",
+        channels=2,
+        model="stt-rt-v4",
+        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
+        expires_in_seconds=60,
+    )
+    with patch(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        new=AsyncMock(return_value=fake),
+    ):
+        session = await _build_soniox_realtime_session(
+            model="stt-rt-v4", language="ru", channels=2,
+        )
+    assert session.provider == "soniox"
+    assert session.token == "sx-temp"
+    assert session.auth_scheme == "message_api_key"
+    assert session.websocket_url == "wss://stt-rt.soniox.com/transcribe-websocket"
 
 
-def test_build_inworld_requires_api_key(
+@pytest.mark.asyncio
+async def test_build_inworld_requires_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Without INWORLD_API_KEY → raises ValueError (line 155)."""
     monkeypatch.setattr(
         "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(inworld_api_key=""),
+        lambda: SimpleNamespace(inworld_api_key="", inworld_workspace=""),
     )
     with pytest.raises(ValueError, match="INWORLD_API_KEY"):
-        _build_inworld_realtime_session(
-            "en", 1, model="soniox/stt-rt-v4",
+        await _build_inworld_realtime_session(
+            "en", 1, model="inworld/inworld-stt-1",
         )
 
 
-def test_build_inworld_returns_session_when_key_configured(
+@pytest.mark.asyncio
+async def test_build_inworld_returns_bearer_jwt_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Inworld builder with API key configured."""
     monkeypatch.setattr(
         "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(inworld_api_key="iw-key"),
+        lambda: SimpleNamespace(inworld_api_key="iw-key:iw-secret", inworld_workspace=""),
     )
+    fake_jwt = SimpleNamespace(token="iw-jwt", expires_in_seconds=840)
     fake_inworld = SimpleNamespace(
-        auth_header="Basic abc123",
+        auth_header="Bearer iw-jwt",
         websocket_url="wss://iw/x",
-        model_id="soniox/stt-rt-v4",
+        model_id="inworld/inworld-stt-1",
         language="en",
         audio_encoding="LINEAR16",
         sample_rate_hertz=16000,
         number_of_channels=1,
+        expires_in_seconds=840,
     )
-    with patch(
-        "app.core.realtime_transcription.build_inworld_session",
-        return_value=fake_inworld,
+    with (
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
+        patch(
+            "app.core.realtime_transcription.build_inworld_session",
+            return_value=fake_inworld,
+        ),
     ):
-        session = _build_inworld_realtime_session(
-            "en", 1, model="soniox/stt-rt-v4",
+        session = await _build_inworld_realtime_session(
+            "en", 1, model="inworld/inworld-stt-1",
         )
     assert session.provider == "inworld"
-    assert session.auth_scheme == "basic"
+    assert session.token == "iw-jwt"
+    assert session.auth_scheme == "bearer"
     assert session.websocket_url == "wss://iw/x"
 
 
-# ---------------------------------------------------------------------------
-# create_realtime_transcription_session — dictation provider branches
-# ---------------------------------------------------------------------------
-
-
 def _make_user(
-    *, dictation_provider="elevenlabs", dictation_model="scribe_v2_realtime",
-    recording_provider="elevenlabs", recording_model="scribe_v2_realtime",
+    *,
+    dictation_provider="elevenlabs",
+    dictation_model="scribe_v2_realtime",
+    recording_provider="elevenlabs",
+    recording_model="scribe_v2_realtime",
 ):
     return SimpleNamespace(
         dictation_live_stt_provider=dictation_provider,
@@ -109,9 +138,10 @@ def _make_user(
 async def test_dispatch_dictation_elevenlabs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover lines 222-238 (elevenlabs dictation branch)."""
-    user = _make_user(dictation_provider="elevenlabs",
-                       dictation_model="scribe_v2_realtime")
+    user = _make_user(
+        dictation_provider="elevenlabs",
+        dictation_model="scribe_v2_realtime",
+    )
     monkeypatch.setattr(
         "app.core.realtime_transcription._create_elevenlabs_realtime_token",
         AsyncMock(return_value=("el-token", 600)),
@@ -132,45 +162,87 @@ async def test_dispatch_dictation_elevenlabs(
 async def test_dispatch_dictation_deepgram(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover lines 216-221 (deepgram dictation branch)."""
-    user = _make_user(dictation_provider="deepgram", dictation_model="nova-3")
+    user = _make_user(
+        dictation_provider="deepgram",
+        dictation_model="flux-general-multi",
+    )
     fake = SimpleNamespace(
-        api_key="dg", sample_rate=16000, language="en", channels=1,
-        model="nova-3", websocket_url="wss://dg/x",
+        access_token="dg-jwt",
+        sample_rate=16000,
+        language="multi",
+        channels=1,
+        model="flux-general-multi",
+        websocket_url="wss://dg/x",
+        expires_in_seconds=30,
+        keep_alive_interval_seconds=None,
     )
     monkeypatch.setattr(
         "app.core.realtime_transcription.mint_deepgram_realtime_session",
-        lambda **kw: fake,
+        AsyncMock(return_value=fake),
     )
     session = await create_realtime_transcription_session(
         purpose="dictation", user=user,
     )
     assert session.provider == "deepgram"
+    assert session.model == "flux-general-multi"
+    assert session.auth_scheme == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_dictation_soniox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _make_user(dictation_provider="soniox", dictation_model="stt-rt-v4")
+    fake = SimpleNamespace(
+        temporary_api_key="sx-temp",
+        sample_rate=16000,
+        language="multi",
+        channels=1,
+        model="stt-rt-v4",
+        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
+        expires_in_seconds=60,
+    )
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        AsyncMock(return_value=fake),
+    )
+    session = await create_realtime_transcription_session(
+        purpose="dictation", user=user,
+    )
+    assert session.provider == "soniox"
+    assert session.auth_scheme == "message_api_key"
 
 
 @pytest.mark.asyncio
 async def test_dispatch_dictation_inworld(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover line 243 (inworld dictation branch)."""
     user = _make_user(
-        dictation_provider="inworld", dictation_model="soniox/stt-rt-v4",
+        dictation_provider="inworld",
+        dictation_model="inworld/inworld-stt-1",
     )
     monkeypatch.setattr(
         "app.core.realtime_transcription.get_settings",
         lambda: SimpleNamespace(
-            inworld_api_key="iw-key",
+            inworld_api_key="iw-key:iw-secret",
+            inworld_workspace="",
             elevenlabs_no_verbatim=False,
         ),
     )
+    fake_jwt = SimpleNamespace(token="iw-jwt", expires_in_seconds=840)
     fake_inworld = SimpleNamespace(
-        auth_header="Basic abc123",
+        auth_header="Bearer iw-jwt",
         websocket_url="wss://iw/x",
-        model_id="soniox/stt-rt-v4",
+        model_id="inworld/inworld-stt-1",
         language="en",
         audio_encoding="LINEAR16",
         sample_rate_hertz=16000,
         number_of_channels=1,
+        expires_in_seconds=840,
+    )
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.mint_inworld_client_jwt",
+        AsyncMock(return_value=fake_jwt),
     )
     monkeypatch.setattr(
         "app.core.realtime_transcription.build_inworld_session",
@@ -180,38 +252,64 @@ async def test_dispatch_dictation_inworld(
         purpose="dictation", user=user,
     )
     assert session.provider == "inworld"
-
-
-# ---------------------------------------------------------------------------
-# create_realtime_transcription_session — recording branches
-# ---------------------------------------------------------------------------
+    assert session.auth_scheme == "bearer"
 
 
 @pytest.mark.asyncio
 async def test_dispatch_recording_deepgram(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover line 263 (deepgram recording branch)."""
     user = _make_user(recording_provider="deepgram", recording_model="nova-3")
     fake = SimpleNamespace(
-        api_key="dg", sample_rate=16000, language="en", channels=1,
-        model="nova-3", websocket_url="wss://dg/x",
+        access_token="dg-jwt",
+        sample_rate=16000,
+        language="multi",
+        channels=1,
+        model="nova-3",
+        websocket_url="wss://dg/x",
+        expires_in_seconds=30,
+        keep_alive_interval_seconds=8,
     )
     monkeypatch.setattr(
         "app.core.realtime_transcription.mint_deepgram_realtime_session",
-        lambda **kw: fake,
+        AsyncMock(return_value=fake),
     )
     session = await create_realtime_transcription_session(
         purpose="recording", user=user,
     )
     assert session.provider == "deepgram"
+    assert session.auth_scheme == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_recording_soniox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _make_user(recording_provider="soniox", recording_model="stt-rt-v4")
+    fake = SimpleNamespace(
+        temporary_api_key="sx-temp",
+        sample_rate=16000,
+        language="multi",
+        channels=1,
+        model="stt-rt-v4",
+        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
+        expires_in_seconds=60,
+    )
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        AsyncMock(return_value=fake),
+    )
+    session = await create_realtime_transcription_session(
+        purpose="recording", user=user,
+    )
+    assert session.provider == "soniox"
+    assert session.auth_scheme == "message_api_key"
 
 
 @pytest.mark.asyncio
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """user=None → defaults (DEFAULT_RECORDING_LIVE_STT_PROVIDER)."""
     monkeypatch.setattr(
         "app.core.realtime_transcription._create_elevenlabs_realtime_token",
         AsyncMock(return_value=("el", 600)),
@@ -230,7 +328,6 @@ async def test_dispatch_recording_with_no_user_uses_defaults(
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """language="  EN  " is normalized to "en"."""
     monkeypatch.setattr(
         "app.core.realtime_transcription._create_elevenlabs_realtime_token",
         AsyncMock(return_value=("el", 600)),
@@ -249,7 +346,6 @@ async def test_resolved_language_lower_strip(
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """language="" or whitespace falls back to "multi"."""
     monkeypatch.setattr(
         "app.core.realtime_transcription._create_elevenlabs_realtime_token",
         AsyncMock(return_value=("el", 600)),

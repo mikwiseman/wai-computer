@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
-import { apiFetch, apiFetchResponse } from "./http";
+import { apiFetch, apiFetchResponse, apiUpload } from "./http";
 
 vi.mock("./http", () => ({
   apiFetch: vi.fn(),
   apiFetchResponse: vi.fn(),
+  apiUpload: vi.fn(),
   syncLocalhostAuthCookie: vi.fn((token: string | null) => {
     if (!token) {
       document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
@@ -23,11 +24,14 @@ vi.mock("./http", () => ({
 
 const mockedApiFetch = vi.mocked(apiFetch);
 const mockedApiFetchResponse = vi.mocked(apiFetchResponse);
+const mockedApiUpload = vi.mocked(apiUpload);
 
 beforeEach(() => {
   mockedApiFetch.mockReset();
   mockedApiFetch.mockResolvedValue({} as never);
   mockedApiFetchResponse.mockReset();
+  mockedApiUpload.mockReset();
+  mockedApiUpload.mockResolvedValue({} as never);
   document.cookie = "wai_access_token=; Path=/; Max-Age=0; SameSite=Lax";
   document.cookie = "wai_refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
 });
@@ -207,6 +211,21 @@ describe("api client wrappers", () => {
         new_password: "new",
       }),
     });
+  });
+
+  it("calls createDictationBenchmarkBattle with multipart audio", async () => {
+    const audio = new Blob(["audio"], { type: "audio/webm" });
+
+    await api.createDictationBenchmarkBattle({ audio, filename: "sample.webm", language: "ru" });
+
+    expect(mockedApiUpload).toHaveBeenCalledWith(
+      "/api/benchmarks/dictation/battle",
+      expect.any(FormData),
+    );
+    const formData = mockedApiUpload.mock.calls[0]?.[1] as FormData;
+    expect(formData.get("language")).toBe("ru");
+    expect(formData.get("audio")).toBeInstanceOf(File);
+    expect((formData.get("audio") as File).name).toBe("sample.webm");
   });
 
   it("calls getSpeakerStats", async () => {

@@ -127,10 +127,15 @@ class WaiApi(
     suspend fun createRealtimeTranscriptionSession(
         language: String,
         channels: Int = 1,
+        purpose: String = "recording",
     ): RealtimeTranscriptionSessionConfig = authorizedRequest(
         method = HttpMethod.Post,
         path = "/api/transcription/session",
-        body = CreateRealtimeTranscriptionSessionRequest(language = language, channels = channels),
+        body = CreateRealtimeTranscriptionSessionRequest(
+            language = language,
+            channels = channels,
+            purpose = purpose,
+        ),
     )
 
     suspend fun saveLiveTranscript(

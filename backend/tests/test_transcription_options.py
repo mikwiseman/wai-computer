@@ -13,12 +13,13 @@ from app.core.transcription_options import (
     DEFAULT_FILE_STT_PROVIDER,
     DEFAULT_RECORDING_LIVE_STT_MODEL,
     DEFAULT_RECORDING_LIVE_STT_PROVIDER,
-    TRANSCRIPTION_OPTIONS,
     ModelOption,
     is_valid_option,
     normalize_model,
     normalize_provider,
     options_response,
+    provider_is_configured,
+    validate_configured_option,
     validate_option,
 )
 
@@ -105,6 +106,7 @@ def test_normalize_model_rejects_empty() -> None:
 
 def test_is_valid_option_matches_registered() -> None:
     assert is_valid_option("dictation_live_stt", "elevenlabs", "scribe_v2_realtime")
+    assert is_valid_option("dictation_live_stt", "deepgram", "flux-general-multi")
     assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert is_valid_option("file_stt", "soniox", "stt-async-v4")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
@@ -122,10 +124,14 @@ def test_is_valid_option_rejects_unknown() -> None:
     assert not is_valid_option("dictation_live_stt", "soniox", "stt-async-v4")
 
 
-def test_is_valid_option_realtime_pool_shared_between_groups() -> None:
-    """dictation_live_stt and recording_live_stt share the same option pool."""
-    for option in TRANSCRIPTION_OPTIONS["dictation_live_stt"]:
-        assert is_valid_option("recording_live_stt", option.provider, option.model)
+def test_realtime_pools_are_task_specific() -> None:
+    """Dictation and recording expose task-specific realtime models."""
+    assert is_valid_option("dictation_live_stt", "deepgram", "flux-general-multi")
+    assert not is_valid_option("recording_live_stt", "deepgram", "flux-general-multi")
+    assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
+    assert not is_valid_option("dictation_live_stt", "deepgram", "nova-3")
+    assert is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
+    assert is_valid_option("recording_live_stt", "soniox", "stt-rt-v4")
 
 
 # ---------------------------------------------------------------------------
@@ -180,11 +186,91 @@ def test_options_response_each_entry_is_dict_with_required_fields() -> None:
                 assert isinstance(value, str)
 
 
-def test_options_response_realtime_groups_have_same_pool() -> None:
+def test_options_response_realtime_groups_are_task_specific() -> None:
     out = options_response()
-    assert out["dictation_live_stt"] == out["recording_live_stt"]
+    assert out["dictation_live_stt"] != out["recording_live_stt"]
+    assert any(
+        entry["provider"] == "deepgram" and entry["model"] == "flux-general-multi"
+        for entry in out["dictation_live_stt"]
+    )
+    assert any(
+        entry["provider"] == "deepgram" and entry["model"] == "nova-3"
+        for entry in out["recording_live_stt"]
+    )
 
 
 def test_options_response_at_least_three_file_stt_options() -> None:
     out = options_response()
     assert len(out["file_stt"]) >= 3
+
+
+def test_provider_is_configured_checks_required_key_names() -> None:
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "",
+            "deepgram_api_key": "dg-key",
+            "inworld_api_key": "",
+            "soniox_api_key": "soniox-key",
+        },
+    )()
+
+    assert provider_is_configured("elevenlabs", settings)
+    assert provider_is_configured("deepgram", settings)
+    assert provider_is_configured("soniox", settings)
+    assert not provider_is_configured("openai", settings)
+    assert not provider_is_configured("inworld", settings)
+
+
+def test_options_response_filters_unconfigured_providers() -> None:
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "",
+            "deepgram_api_key": "dg-key",
+            "inworld_api_key": "",
+            "soniox_api_key": "",
+        },
+    )()
+
+    out = options_response(settings=settings, configured_only=True)
+
+    assert {entry["provider"] for entry in out["dictation_live_stt"]} == {
+        "elevenlabs",
+        "deepgram",
+    }
+    assert {entry["provider"] for entry in out["recording_live_stt"]} == {
+        "elevenlabs",
+        "deepgram",
+    }
+    assert {entry["provider"] for entry in out["file_stt"]} == {
+        "elevenlabs",
+        "deepgram",
+    }
+    assert out["dictation_post_filter"] == []
+
+
+def test_validate_configured_option_rejects_missing_provider_key() -> None:
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "",
+            "openai_api_key": "",
+            "deepgram_api_key": "",
+            "inworld_api_key": "",
+            "soniox_api_key": "",
+        },
+    )()
+
+    with pytest.raises(ValueError, match="not configured"):
+        validate_configured_option(
+            "dictation_live_stt",
+            "soniox",
+            "stt-rt-v4",
+            settings=settings,
+        )

@@ -34,6 +34,9 @@ export default function RuHome() {
           <Link href="/ru/pricing" className={styles.navLink}>
             Цены
           </Link>
+          <Link href="/ru/benchmarks/dictation" className={styles.navLink}>
+            Бенчмарк
+          </Link>
           <LocaleSwitcher current="ru" />
           <Link href="/login" className={styles.signin}>
             Войти →

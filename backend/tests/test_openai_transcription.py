@@ -13,7 +13,7 @@ from app.core.openai_transcription import (
 
 def test_build_realtime_transcription_session_update_uses_24khz_pcm():
     payload = build_realtime_transcription_session_update(
-        model="gpt-realtime-whisper",
+        model="gpt-4o-mini-transcribe-2025-12-15",
         language="en",
         turn_detection=None,
     )
@@ -23,7 +23,7 @@ def test_build_realtime_transcription_session_update_uses_24khz_pcm():
     assert session["type"] == "transcription"
     assert audio_input["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert audio_input["transcription"] == {
-        "model": "gpt-realtime-whisper",
+        "model": "gpt-4o-mini-transcribe-2025-12-15",
         "language": "en",
     }
     assert audio_input["turn_detection"] is None
@@ -42,11 +42,14 @@ async def test_create_realtime_client_secret_posts_transcription_session():
         patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)) as mock_post,
     ):
         mock_settings.return_value.openai_api_key = "sk-test"
-        token = await create_realtime_client_secret(model="gpt-realtime-whisper", language="multi")
+        token = await create_realtime_client_secret(
+            model="gpt-4o-mini-transcribe-2025-12-15",
+            language="multi",
+        )
 
     assert token == "ek_test"
     kwargs = mock_post.await_args.kwargs
     assert kwargs["headers"] == {"Authorization": "Bearer sk-test"}
     assert kwargs["json"]["session"]["type"] == "transcription"
     transcription = kwargs["json"]["session"]["audio"]["input"]["transcription"]
-    assert transcription == {"model": "gpt-realtime-whisper"}
+    assert transcription == {"model": "gpt-4o-mini-transcribe-2025-12-15"}

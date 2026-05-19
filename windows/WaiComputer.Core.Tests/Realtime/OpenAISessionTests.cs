@@ -15,7 +15,7 @@ public class OpenAISessionTests
         AudioFormat: "pcm_24000",
         Language: "multi",
         Channels: 1,
-        Model: "gpt-realtime-whisper",
+        Model: "gpt-4o-mini-transcribe-2025-12-15",
         KeepAliveIntervalSeconds: null,
         CommitStrategy: CommitStrategy.Manual,
         NoVerbatim: false,
@@ -31,7 +31,7 @@ public class OpenAISessionTests
         transport.SentText.Should().ContainSingle(s =>
             s.Contains("\"type\":\"session.update\"")
             && s.Contains("\"type\":\"transcription\"")
-            && s.Contains("\"model\":\"gpt-realtime-whisper\""));
+            && s.Contains("\"model\":\"gpt-4o-mini-transcribe-2025-12-15\""));
     }
 
     [Fact]

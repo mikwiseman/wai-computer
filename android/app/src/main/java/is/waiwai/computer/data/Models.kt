@@ -393,6 +393,7 @@ data class PostCompanionMessageRequest(val content: String)
 data class CreateRealtimeTranscriptionSessionRequest(
     val language: String = "multi",
     val channels: Int = 1,
+    val purpose: String = "recording",
 )
 
 @Serializable

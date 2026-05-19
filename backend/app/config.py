@@ -48,8 +48,9 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
 
-    # Inworld AI (provides unified STT WebSocket to multiple engines; realtime only)
+    # Inworld AI (first-party STT experiments; realtime only)
     inworld_api_key: str = ""
+    inworld_workspace: str = ""
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
@@ -60,13 +61,14 @@ class Settings(BaseSettings):
     elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
-    # Deepgram (dual-mode STT: realtime streaming + batch via the same model id)
+    # Deepgram (dual-mode STT: Flux realtime + Nova batch/recording)
     deepgram_api_key: str = ""
-    deepgram_realtime_stt_model: str = "nova-3"
+    deepgram_realtime_stt_model: str = "flux-general-multi"
     deepgram_file_stt_model: str = "nova-3"
 
-    # Soniox (direct, batch only — realtime Soniox is reached via the Inworld gateway)
+    # Soniox (direct realtime + async batch)
     soniox_api_key: str = ""
+    soniox_realtime_stt_model: str = "stt-rt-v4"
     soniox_file_stt_model: str = "stt-async-v4"
 
     upload_max_bytes: int = 200 * 1024 * 1024

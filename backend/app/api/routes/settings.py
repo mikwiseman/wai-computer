@@ -4,10 +4,11 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, field_validator, model_validator
 
 from app.api.deps import CurrentUser, Database
+from app.config import get_settings as get_app_settings
 from app.core.security import hash_password, verify_password
 from app.core.transcription_options import (
     options_response,
-    validate_option,
+    validate_configured_option,
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -171,7 +172,12 @@ class UpdateSettingsRequest(BaseModel):
             if (provider is None) != (model is None):
                 raise ValueError(f"{group} provider and model must be updated together")
             if provider is not None and model is not None:
-                validate_option(group, provider, model)  # type: ignore[arg-type]
+                validate_configured_option(
+                    group,
+                    provider,
+                    model,
+                    settings=get_app_settings(),
+                )  # type: ignore[arg-type]
         return self
 
 
@@ -215,7 +221,9 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
 @router.get("/transcription-options", response_model=TranscriptionOptionsResponse)
 async def get_transcription_options(user: CurrentUser) -> TranscriptionOptionsResponse:
     """Get curated transcription provider/model options."""
-    return TranscriptionOptionsResponse(**options_response())
+    return TranscriptionOptionsResponse(
+        **options_response(settings=get_app_settings(), configured_only=True)
+    )
 
 
 @router.get("", response_model=SettingsResponse)

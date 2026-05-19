@@ -40,7 +40,7 @@ public actor DictationSession {
     public private(set) var phase: Phase = .idle
     public let id = UUID()
 
-    private let provider: InworldProviderSession
+    private let provider: any ProviderSession
     private let lease: AudioEngineHost.Lease
     private weak var hostRef: AudioEngineHost?
 
@@ -54,7 +54,7 @@ public actor DictationSession {
     /// provider session. The session is responsible for closing both
     /// (lease release + provider close) at end-of-life.
     public init(
-        provider: InworldProviderSession,
+        provider: any ProviderSession,
         lease: AudioEngineHost.Lease,
         host: AudioEngineHost
     ) {
@@ -199,4 +199,3 @@ public actor DictationSession {
         }
     }
 }
-

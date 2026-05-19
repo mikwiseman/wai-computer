@@ -1,13 +1,9 @@
 """Realtime speech-to-text session minting.
 
-Two flows live side-by-side:
-
-- **Recording** (long-form library transcription) can use ElevenLabs,
-  OpenAI, or Inworld realtime STT based on account settings.
-- **Dictation** (push-to-talk) can use OpenAI, ElevenLabs, or Inworld. Inworld
-  auth is HTTP Basic with a base64 `<id>:<secret>` credential held server-side;
-  the backend issues a short-lived session payload to the native client which
-  then connects directly to `wss://api.inworld.ai`.
+The native apps connect directly to provider WebSockets for low latency, but
+they must never receive long-lived provider API keys. Every provider branch
+returns either a single-use token, a short-lived bearer token, or an ephemeral
+client secret.
 """
 
 from __future__ import annotations
@@ -19,13 +15,11 @@ import httpx
 
 from app.config import get_settings
 from app.core.deepgram import (
-    DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS,
-)
-from app.core.deepgram import (
     mint_realtime_session as mint_deepgram_realtime_session,
 )
 from app.core.elevenlabs import ELEVENLABS_API_BASE
 from app.core.inworld import build_session as build_inworld_session
+from app.core.inworld import mint_client_jwt as mint_inworld_client_jwt
 from app.core.openai_transcription import (
     OPENAI_REALTIME_SAMPLE_RATE,
     OPENAI_REALTIME_TOKEN_TTL_SECONDS,
@@ -35,6 +29,9 @@ from app.core.openai_transcription import (
 )
 from app.core.openai_transcription import (
     realtime_websocket_url as openai_realtime_websocket_url,
+)
+from app.core.soniox import (
+    mint_realtime_session as mint_soniox_realtime_session,
 )
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
@@ -46,11 +43,9 @@ from app.core.transcription_options import (
 from app.models.user import User
 
 ELEVENLABS_TOKEN_TTL_SECONDS = 15 * 60
-INWORLD_TOKEN_TTL_SECONDS = 15 * 60  # Inworld credentials don't expire, but
-# the Swift client treats the session as short-lived to mirror ElevenLabs.
 DEFAULT_SAMPLE_RATE = 16_000
 
-DictationProvider = Literal["elevenlabs", "inworld", "openai", "deepgram"]
+DictationProvider = Literal["elevenlabs", "inworld", "openai", "deepgram", "soniox"]
 
 
 @dataclass(frozen=True)
@@ -69,7 +64,7 @@ class RealtimeTranscriptionSession:
     commit_strategy: str | None = None
     no_verbatim: bool = True
     websocket_url: str | None = None
-    auth_scheme: str = "query_token"  # "query_token" (ElevenLabs) | "basic" (Inworld)
+    auth_scheme: str = "query_token"
 
 
 async def _create_elevenlabs_realtime_token() -> tuple[str, int]:
@@ -116,35 +111,63 @@ async def _build_openai_realtime_session(
     )
 
 
-def _build_deepgram_realtime_session(
+async def _build_deepgram_realtime_session(
     *,
     model: str,
     language: str,
     channels: int,
 ) -> RealtimeTranscriptionSession:
-    session = mint_deepgram_realtime_session(
+    session = await mint_deepgram_realtime_session(
         model=model,
         language=language,
         channels=channels,
     )
     return RealtimeTranscriptionSession(
         provider="deepgram",
-        token=session.api_key,
-        expires_in_seconds=DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS,
+        token=session.access_token,
+        expires_in_seconds=session.expires_in_seconds,
         sample_rate=session.sample_rate,
         audio_format=f"linear16_{session.sample_rate}",
         language=session.language,
         channels=session.channels,
         model=session.model,
-        keep_alive_interval_seconds=8,
+        keep_alive_interval_seconds=session.keep_alive_interval_seconds,
         commit_strategy="vad",
         no_verbatim=False,
         websocket_url=session.websocket_url,
-        auth_scheme="token",
+        auth_scheme="bearer",
     )
 
 
-def _build_inworld_realtime_session(
+async def _build_soniox_realtime_session(
+    *,
+    model: str,
+    language: str,
+    channels: int,
+) -> RealtimeTranscriptionSession:
+    session = await mint_soniox_realtime_session(
+        model=model,
+        language=language,
+        channels=channels,
+    )
+    return RealtimeTranscriptionSession(
+        provider="soniox",
+        token=session.temporary_api_key,
+        expires_in_seconds=session.expires_in_seconds,
+        sample_rate=session.sample_rate,
+        audio_format=f"linear16_{session.sample_rate}",
+        language=session.language,
+        channels=session.channels,
+        model=session.model,
+        keep_alive_interval_seconds=None,
+        commit_strategy="vad",
+        no_verbatim=False,
+        websocket_url=session.websocket_url,
+        auth_scheme="message_api_key",
+    )
+
+
+async def _build_inworld_realtime_session(
     language: str,
     channels: int,
     *,
@@ -154,8 +177,14 @@ def _build_inworld_realtime_session(
     if not settings.inworld_api_key:
         raise ValueError("INWORLD_API_KEY not configured")
 
+    jwt = await mint_inworld_client_jwt(
+        api_key=settings.inworld_api_key,
+        workspace=settings.inworld_workspace,
+    )
     inworld = build_inworld_session(
         api_key=settings.inworld_api_key,
+        auth_header=f"Bearer {jwt.token}",
+        expires_in_seconds=jwt.expires_in_seconds,
         model_id=model,
         language=language,
         sample_rate=DEFAULT_SAMPLE_RATE,
@@ -163,8 +192,8 @@ def _build_inworld_realtime_session(
     )
     return RealtimeTranscriptionSession(
         provider="inworld",
-        token=inworld.auth_header,  # full "Basic <base64>" string
-        expires_in_seconds=INWORLD_TOKEN_TTL_SECONDS,
+        token=jwt.token,
+        expires_in_seconds=inworld.expires_in_seconds,
         sample_rate=inworld.sample_rate_hertz,
         audio_format="linear16_16000",
         language=inworld.language,
@@ -174,7 +203,7 @@ def _build_inworld_realtime_session(
         commit_strategy="vad",
         no_verbatim=False,
         websocket_url=inworld.websocket_url,
-        auth_scheme="basic",
+        auth_scheme="bearer",
     )
 
 
@@ -214,7 +243,13 @@ async def create_realtime_transcription_session(
                 channels=resolved_channels,
             )
         if provider == "deepgram":
-            return _build_deepgram_realtime_session(
+            return await _build_deepgram_realtime_session(
+                model=model,
+                language=resolved_language,
+                channels=resolved_channels,
+            )
+        if provider == "soniox":
+            return await _build_soniox_realtime_session(
                 model=model,
                 language=resolved_language,
                 channels=resolved_channels,
@@ -240,7 +275,11 @@ async def create_realtime_transcription_session(
             raise ValueError(
                 f"Unsupported dictation_live_stt_provider: {provider}."
             )
-        return _build_inworld_realtime_session(resolved_language, resolved_channels, model=model)
+        return await _build_inworld_realtime_session(
+            resolved_language,
+            resolved_channels,
+            model=model,
+        )
 
     provider = (
         user.recording_live_stt_provider
@@ -260,13 +299,23 @@ async def create_realtime_transcription_session(
             channels=resolved_channels,
         )
     if provider == "deepgram":
-        return _build_deepgram_realtime_session(
+        return await _build_deepgram_realtime_session(
+            model=model,
+            language=resolved_language,
+            channels=resolved_channels,
+        )
+    if provider == "soniox":
+        return await _build_soniox_realtime_session(
             model=model,
             language=resolved_language,
             channels=resolved_channels,
         )
     if provider == "inworld":
-        return _build_inworld_realtime_session(resolved_language, resolved_channels, model=model)
+        return await _build_inworld_realtime_session(
+            resolved_language,
+            resolved_channels,
+            model=model,
+        )
     if provider != "elevenlabs":
         raise ValueError(f"Unsupported recording_live_stt_provider: {provider}.")
 
