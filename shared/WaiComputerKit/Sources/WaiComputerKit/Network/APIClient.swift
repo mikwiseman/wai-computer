@@ -520,8 +520,8 @@ public actor APIClient {
 
     // MARK: - Auth Endpoints
 
-    public func register(email: String, password: String) async throws -> AuthResponse {
-        let request = RegisterRequest(email: email, password: password)
+    public func register(email: String, password: String, region: String? = nil) async throws -> AuthResponse {
+        let request = RegisterRequest(email: email, password: password, region: region)
         return try await self.request(.POST, path: "/api/auth/register", body: request)
     }
 
@@ -530,8 +530,12 @@ public actor APIClient {
         return try await self.request(.POST, path: "/api/auth/login", body: request)
     }
 
-    public func requestMagicLink(email: String, client: String? = nil) async throws -> MessageResponse {
-        let request = MagicLinkRequest(email: email, client: client)
+    public func requestMagicLink(
+        email: String,
+        client: String? = nil,
+        region: String? = nil
+    ) async throws -> MessageResponse {
+        let request = MagicLinkRequest(email: email, client: client, region: region)
         return try await self.request(.POST, path: "/api/auth/magic-link", body: request)
     }
 

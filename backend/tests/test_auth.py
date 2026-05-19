@@ -18,6 +18,41 @@ async def test_register(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_accepts_region_and_me_returns_region(client: AsyncClient):
+    """Mac RU builds must be able to seed billing region at signup."""
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "region@example.com",
+            "password": "password123",
+            "region": "ru",
+        },
+    )
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+
+    me_response = await client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["region"] == "ru"
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_unknown_region(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "bad-region@example.com",
+            "password": "password123",
+            "region": "mars",
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient):
     """Test registration with duplicate email."""
     # First registration

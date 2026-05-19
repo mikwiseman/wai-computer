@@ -1,5 +1,32 @@
 import Foundation
 
+public enum BillingDisplayPeriod: String, Codable, CaseIterable, Sendable {
+    case month
+    case year
+}
+
+public enum BillingDisplayRegion: String, Codable, CaseIterable, Sendable {
+    case global
+    case ru
+
+    public var provider: String {
+        switch self {
+        case .global: return "stripe"
+        case .ru: return "tinkoff"
+        }
+    }
+
+    public var currencyCode: String {
+        switch self {
+        case .global: return "USD"
+        case .ru: return "RUB"
+        }
+    }
+}
+
+public typealias BillingPeriod = BillingDisplayPeriod
+public typealias BillingRegion = BillingDisplayRegion
+
 /// Marketing-display data returned by `/api/billing/plans` and embedded
 /// inside `/api/billing/subscription` responses.
 public struct BillingPlan: Codable, Equatable, Sendable {
@@ -77,6 +104,34 @@ public struct BillingPlan: Codable, Equatable, Sendable {
         self.memoryRetentionDays = memoryRetentionDays
         self.features = features
     }
+
+    public func amount(for period: BillingDisplayPeriod, region: BillingDisplayRegion) -> Decimal? {
+        switch (period, region) {
+        case (.month, .global):
+            return usdAmountMonthly
+        case (.year, .global):
+            return usdAmountYearly
+        case (.month, .ru):
+            return rubAmountMonthly
+        case (.year, .ru):
+            return rubAmountYearly
+        }
+    }
+
+    public func localizedPrice(
+        for period: BillingDisplayPeriod,
+        region: BillingDisplayRegion,
+        locale: Locale = .current
+    ) -> String? {
+        guard let amount = amount(for: period, region: region) else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = region.currencyCode
+        formatter.locale = locale
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSDecimalNumber(decimal: amount))
+    }
 }
 
 public struct BillingSubscription: Codable, Equatable, Sendable {
@@ -87,6 +142,7 @@ public struct BillingSubscription: Codable, Equatable, Sendable {
     public let currentPeriodEnd: Date?
     public let cancelAtPeriodEnd: Bool
     public let trialEnd: Date?
+    public let enforcementEnabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case plan, status, provider
@@ -94,9 +150,34 @@ public struct BillingSubscription: Codable, Equatable, Sendable {
         case currentPeriodEnd = "current_period_end"
         case cancelAtPeriodEnd = "cancel_at_period_end"
         case trialEnd = "trial_end"
+        case enforcementEnabled = "enforcement_enabled"
     }
 
     public var isPro: Bool { plan.code == "pro" && status != "canceled" && status != "expired" }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        plan = try c.decode(BillingPlan.self, forKey: .plan)
+        status = try c.decode(String.self, forKey: .status)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        billingPeriod = try c.decodeIfPresent(String.self, forKey: .billingPeriod)
+        currentPeriodEnd = try c.decodeIfPresent(Date.self, forKey: .currentPeriodEnd)
+        cancelAtPeriodEnd = try c.decode(Bool.self, forKey: .cancelAtPeriodEnd)
+        trialEnd = try c.decodeIfPresent(Date.self, forKey: .trialEnd)
+        enforcementEnabled = try c.decodeIfPresent(Bool.self, forKey: .enforcementEnabled) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(plan, forKey: .plan)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(provider, forKey: .provider)
+        try c.encodeIfPresent(billingPeriod, forKey: .billingPeriod)
+        try c.encodeIfPresent(currentPeriodEnd, forKey: .currentPeriodEnd)
+        try c.encode(cancelAtPeriodEnd, forKey: .cancelAtPeriodEnd)
+        try c.encodeIfPresent(trialEnd, forKey: .trialEnd)
+        try c.encode(enforcementEnabled, forKey: .enforcementEnabled)
+    }
 }
 
 public struct BillingUsage: Codable, Equatable, Sendable {

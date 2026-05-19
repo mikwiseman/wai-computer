@@ -151,3 +151,69 @@ async def test_parse_webhook_rejected_status_maps_to_past_due():
     body = json.dumps({**payload, "Token": token}).encode()
     event = await provider.parse_webhook(raw_body=body, headers={})
     assert event.status == "past_due"
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
+    provider = TinkoffProvider(terminal_key="terminal", password="pw")
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_amount(*, plan_code: str, period: str) -> int:
+        return 99900
+
+    async def fake_call(method: str, payload: dict) -> dict:
+        calls.append((method, payload))
+        return {"Success": True, "PaymentURL": "https://pay.tbank.test/new/abc", "PaymentId": "p1"}
+
+    monkeypatch.setattr(provider, "_resolve_amount_kopecks", fake_amount)
+    monkeypatch.setattr(provider, "_call", fake_call)
+
+    await provider.create_checkout(
+        plan_code="pro",
+        period="month",
+        user_email="payer@example.test",
+        user_id="user-uuid",
+        success_url="https://wai.computer/billing/success",
+        cancel_url="https://wai.computer/billing/cancel",
+    )
+
+    assert calls[0][0] == "Init"
+    payload = calls[0][1]
+    assert payload["Recurrent"] == "Y"
+    assert payload["OperationInitiatorType"] == "1"
+    assert payload["CustomerKey"] == "user-uuid"
+    assert verify_tinkoff_token(payload, "pw") is True
+
+
+@pytest.mark.asyncio
+async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
+    provider = TinkoffProvider(terminal_key="terminal", password="pw")
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_call(method: str, payload: dict) -> dict:
+        calls.append((method, payload))
+        if method == "Init":
+            return {"Success": True, "PaymentId": "payment-1"}
+        return {"Success": True, "Status": "CONFIRMED"}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+
+    await provider.charge_rebill(
+        rebill_id="rebill-1",
+        amount_kopecks=99900,
+        description="PRO month",
+        customer_email="payer@example.test",
+        user_id="user-uuid",
+    )
+
+    assert calls[0][0] == "Init"
+    init_payload = calls[0][1]
+    assert init_payload["OperationInitiatorType"] == "R"
+    assert "Recurrent" not in init_payload
+    assert "CustomerKey" not in init_payload
+    assert verify_tinkoff_token(init_payload, "pw") is True
+
+    assert calls[1][0] == "Charge"
+    charge_payload = calls[1][1]
+    assert charge_payload["RebillId"] == "rebill-1"
+    assert verify_tinkoff_token(charge_payload, "pw") is True

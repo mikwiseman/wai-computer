@@ -773,7 +773,11 @@ class MacAppState: ObservableObject {
         error = nil
 
         do {
-            let response = try await apiClient.register(email: email, password: password)
+            let response = try await apiClient.register(
+                email: email,
+                password: password,
+                region: installedBillingRegion()?.rawValue
+            )
             await apiClient.setAccessToken(response.accessToken)
             if let rt = response.refreshToken {
                 await apiClient.setRefreshToken(rt)
@@ -794,7 +798,11 @@ class MacAppState: ObservableObject {
         error = nil
 
         do {
-            _ = try await apiClient.requestMagicLink(email: email, client: "macos")
+            _ = try await apiClient.requestMagicLink(
+                email: email,
+                client: "macos",
+                region: installedBillingRegion()?.rawValue
+            )
             magicLinkSent = true
         } catch let apiError as APIError {
             handleAPIError(apiError)
@@ -986,11 +994,10 @@ class MacAppState: ObservableObject {
     /// upgrade `global` → the stamped value; never downgrade or
     /// overwrite a region the user explicitly chose elsewhere.
     private func syncDownloadRegionToServerIfNeeded() async {
-        guard let stamp = Bundle.main
-            .object(forInfoDictionaryKey: "WAIDownloadRegion") as? String,
-              stamp == "ru" || stamp == "global" else {
+        guard let region = installedBillingRegion() else {
             return
         }
+        let stamp = region.rawValue
         do {
             let settings = try await apiClient.getSettings()
             if settings.region == stamp { return }
@@ -1001,6 +1008,14 @@ class MacAppState: ObservableObject {
             // Best-effort sync — log and move on. The next session retries.
             print("Region sync failed: \(error)")
         }
+    }
+
+    private func installedBillingRegion() -> BillingDisplayRegion? {
+        guard let stamp = Bundle.main
+            .object(forInfoDictionaryKey: "WAIDownloadRegion") as? String else {
+            return nil
+        }
+        return BillingDisplayRegion(rawValue: stamp.lowercased())
     }
 
     // MARK: - Permission tracking (Wispr Flow-style toast)

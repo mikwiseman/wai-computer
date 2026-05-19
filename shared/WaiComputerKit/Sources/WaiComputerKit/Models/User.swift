@@ -6,12 +6,20 @@ public struct User: Codable, Identifiable, Sendable {
     public let email: String
     public let createdAt: Date
     public let hasPassword: Bool
+    public let region: String
 
-    public init(id: String, email: String, createdAt: Date, hasPassword: Bool = true) {
+    public init(
+        id: String,
+        email: String,
+        createdAt: Date,
+        hasPassword: Bool = true,
+        region: String = "global"
+    ) {
         self.id = id
         self.email = email
         self.createdAt = createdAt
         self.hasPassword = hasPassword
+        self.region = region
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -19,6 +27,7 @@ public struct User: Codable, Identifiable, Sendable {
         case email
         case createdAt = "created_at"
         case hasPassword = "has_password"
+        case region
     }
 
     public init(from decoder: Decoder) throws {
@@ -27,6 +36,7 @@ public struct User: Codable, Identifiable, Sendable {
         email = try container.decode(String.self, forKey: .email)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         hasPassword = try container.decodeIfPresent(Bool.self, forKey: .hasPassword) ?? true
+        region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -35,6 +45,7 @@ public struct User: Codable, Identifiable, Sendable {
         try container.encode(email, forKey: .email)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(hasPassword, forKey: .hasPassword)
+        try container.encode(region, forKey: .region)
     }
 }
 
@@ -91,20 +102,24 @@ public struct LoginRequest: Codable, Sendable {
 public struct RegisterRequest: Codable, Sendable {
     public let email: String
     public let password: String
+    public let region: String?
 
-    public init(email: String, password: String) {
+    public init(email: String, password: String, region: String? = nil) {
         self.email = email
         self.password = password
+        self.region = region
     }
 }
 
 public struct MagicLinkRequest: Codable, Sendable {
     public let email: String
     public let client: String?
+    public let region: String?
 
-    public init(email: String, client: String? = nil) {
+    public init(email: String, client: String? = nil, region: String? = nil) {
         self.email = email
         self.client = client
+        self.region = region
     }
 }
 
