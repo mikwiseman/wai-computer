@@ -90,6 +90,39 @@ async def test_transcription_dispatches_to_soniox_for_user_choice():
 
 
 @pytest.mark.asyncio
+async def test_transcription_normalizes_browser_audio_before_soniox_file_stt():
+    with (
+        patch(
+            "app.core.transcription._normalize_soniox_file_audio",
+            return_value=(b"wav-data", "audio/wav", 1),
+        ) as mock_normalize,
+        patch(
+            "app.core.transcription.soniox_transcribe_audio_file",
+            new=AsyncMock(return_value=["soniox-ok"]),
+        ) as mock_soniox,
+    ):
+        from app.core.transcription import transcribe_audio_file
+
+        result = await transcribe_audio_file(
+            b"webm-data",
+            language="en",
+            content_type="audio/webm",
+            provider="soniox",
+            model="stt-async-v4",
+        )
+
+    assert result == ["soniox-ok"]
+    mock_normalize.assert_called_once_with(b"webm-data", "audio/webm", None)
+    mock_soniox.assert_awaited_once_with(
+        b"wav-data",
+        model="stt-async-v4",
+        language="en",
+        content_type="audio/wav",
+        channels=1,
+    )
+
+
+@pytest.mark.asyncio
 async def test_transcription_dispatches_to_explicit_provider_and_model_without_user():
     with patch(
         "app.core.transcription.deepgram_transcribe_audio_file",

@@ -1,5 +1,7 @@
 """Provider-dispatched file transcription."""
 
+from io import BytesIO
+
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
 from app.core.soniox import transcribe_audio_file as soniox_transcribe_audio_file
@@ -10,6 +12,35 @@ from app.core.transcription_options import (
     validate_option,
 )
 from app.models.user import User
+
+SONIOX_BROWSER_AUDIO_CONTENT_TYPES = {
+    "audio/webm",
+    "audio/ogg",
+    "audio/opus",
+}
+
+
+def _normalize_soniox_file_audio(
+    audio_data: bytes,
+    content_type: str,
+    channels: int | None,
+) -> tuple[bytes, str, int | None]:
+    """Convert browser-recorded containers into WAV before Soniox async upload."""
+    normalized_content_type = content_type.split(";")[0].strip().lower()
+    if normalized_content_type not in SONIOX_BROWSER_AUDIO_CONTENT_TYPES:
+        return audio_data, content_type, channels
+
+    from pydub import AudioSegment
+
+    try:
+        segment = AudioSegment.from_file(BytesIO(audio_data))
+    except Exception as exc:
+        raise RuntimeError("Could not decode browser audio for Soniox transcription.") from exc
+
+    segment = segment.set_frame_rate(16_000).set_channels(1).set_sample_width(2)
+    output = BytesIO()
+    segment.export(output, format="wav")
+    return output.getvalue(), "audio/wav", 1
 
 
 async def transcribe_audio_file(
@@ -39,6 +70,11 @@ async def transcribe_audio_file(
             channels=channels,
         )
     if provider == "soniox":
+        audio_data, content_type, channels = _normalize_soniox_file_audio(
+            audio_data,
+            content_type,
+            channels,
+        )
         return await soniox_transcribe_audio_file(
             audio_data,
             model=selected_model,
