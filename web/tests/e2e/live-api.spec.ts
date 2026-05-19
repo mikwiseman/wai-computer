@@ -23,17 +23,41 @@ const describeOrSkip = LIVE ? test.describe : test.describe.skip;
 describeOrSkip("Live API", () => {
   // Increase timeout for live tests -- network calls take longer than mocks
   test.setTimeout(60_000);
+  test.describe.configure({ mode: "serial" });
+
+  const sharedPassword = "TestPassword123!";
+  let sharedEmail = "";
+
+  test.beforeAll(async ({ request }) => {
+    sharedEmail = uniqueEmail();
+    const response = await request.post(`${API_URL}/api/auth/register`, {
+      data: { email: sharedEmail, password: sharedPassword },
+    });
+    expect(response.status()).toBe(200);
+  });
 
   async function registerThroughWeb(page: Page, email: string) {
     await page.goto("/register", { waitUntil: "networkidle" });
     await expect(page.locator("h1")).toContainText("Create Account");
 
     await page.getByTestId("auth-email").fill(email);
-    await page.getByTestId("auth-password").fill("TestPassword123!");
+    await page.getByTestId("auth-password").fill(sharedPassword);
     await page.getByTestId("auth-submit").click();
 
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
     await expect(page.getByTestId("user-email")).toContainText(email);
+  }
+
+  async function loginThroughWeb(page: Page) {
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await expect(page.locator("h1")).toContainText("Sign In");
+
+    await page.getByTestId("auth-email").fill(sharedEmail);
+    await page.getByTestId("auth-password").fill(sharedPassword);
+    await page.getByTestId("auth-submit").click();
+
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
+    await expect(page.getByTestId("user-email")).toContainText(sharedEmail);
   }
 
   test("health check returns 200", async ({ request }) => {
@@ -47,9 +71,7 @@ describeOrSkip("Live API", () => {
   });
 
   test("create recording through dashboard UI", async ({ page }) => {
-    const email = uniqueEmail();
-
-    await registerThroughWeb(page, email);
+    await loginThroughWeb(page);
     await page.getByTestId("tab-library").click();
 
     // Create a new recording
@@ -62,10 +84,8 @@ describeOrSkip("Live API", () => {
   });
 
   test("create entity through dashboard UI", async ({ page }) => {
-    const email = uniqueEmail();
-
-    await registerThroughWeb(page, email);
-    await page.getByTestId("tab-library").click();
+    await loginThroughWeb(page);
+    await page.getByTestId("tab-topics").click();
 
     // Create a new entity
     await page.getByTestId("entity-name").fill("Live test entity");
@@ -77,9 +97,7 @@ describeOrSkip("Live API", () => {
   });
 
   test("logout redirects to login", async ({ page }) => {
-    const email = uniqueEmail();
-
-    await registerThroughWeb(page, email);
+    await loginThroughWeb(page);
 
     // Click logout
     await page.getByTestId("logout-button").click();
