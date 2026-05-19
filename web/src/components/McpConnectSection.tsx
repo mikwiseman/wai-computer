@@ -52,7 +52,7 @@ const CLIENT_GUIDES: McpClientGuide[] = [
     snippet: {
       language: "json",
       body: `# CLI
-claude mcp add waicomputer ${MCP_ENDPOINT_URL}
+claude mcp add --transport http waicomputer ${MCP_ENDPOINT_URL}
 
 # Or .mcp.json:
 {

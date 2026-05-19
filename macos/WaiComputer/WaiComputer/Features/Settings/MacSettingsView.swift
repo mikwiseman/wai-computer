@@ -52,7 +52,7 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
         steps: "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
         snippet: """
         # CLI
-        claude mcp add waicomputer \(mcpEndpointURL)
+        claude mcp add --transport http waicomputer \(mcpEndpointURL)
 
         # Or .mcp.json:
         {

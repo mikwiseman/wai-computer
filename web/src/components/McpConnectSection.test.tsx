@@ -63,4 +63,14 @@ describe("McpConnectSection", () => {
       expect(lastCall?.[0]).toContain("codex mcp add waicomputer --url https://wai.computer/mcp");
     });
   });
+
+  it("uses --transport http in the Claude Code CLI snippet so it is treated as HTTP, not stdio", async () => {
+    render(<McpConnectSection />);
+    fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
+    fireEvent.click(screen.getByTestId("mcp-copy-snippet"));
+    await waitFor(() => {
+      const lastCall = clipboardWriteText.mock.calls.at(-1);
+      expect(lastCall?.[0]).toContain("claude mcp add --transport http waicomputer https://wai.computer/mcp");
+    });
+  });
 });
