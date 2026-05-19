@@ -93,6 +93,8 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         case "inworld":
             try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
         case "deepgram":
+            let silenceBytes = max(1, config.sampleRate / 5) * 2
+            try await webSocket.send(.data(Data(repeating: 0, count: silenceBytes)))
             try await webSocket.send(.string(Self.encodeJSON(["type": "CloseStream"])))
         case "soniox":
             let silenceBytes = max(1, config.sampleRate / 5) * 2

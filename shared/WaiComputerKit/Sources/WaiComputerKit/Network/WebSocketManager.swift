@@ -1421,11 +1421,14 @@ public actor WebSocketManager {
         }
 
         if transcriptionSession?.provider == "deepgram" {
+            let sampleRate = transcriptionSession?.sampleRate ?? 16_000
+            let silenceBytes = max(1, sampleRate / 5) * 2
+            try await webSocket.send(.data(Data(repeating: 0, count: silenceBytes)))
             try await webSocket.send(.string("{\"type\":\"CloseStream\"}"))
             endOfStreamSent = true
             reconnectEnabled = false
             cancelReconnection(clearBufferedAudio: false)
-            wsLog.debug("Sent CloseStream to Deepgram")
+            wsLog.debug("Sent silence and CloseStream to Deepgram")
             return
         }
 
