@@ -344,14 +344,20 @@ async def test_get_transcription_options_returns_curated_choices(
         option["provider"] == "soniox" and option["model"] == "stt-rt-v4"
         for option in data["dictation_live_stt"]
     )
-    assert all(option["provider"] != "deepgram" for option in data["dictation_live_stt"])
+    assert any(
+        option["provider"] == "deepgram" and option["model"] == "flux-general-multi"
+        for option in data["dictation_live_stt"]
+    )
     assert all(option["provider"] != "openai" for option in data["dictation_live_stt"])
     assert all(option["provider"] != "openai" for option in data["recording_live_stt"])
     assert any(
         option["provider"] == "inworld" and option["model"] == "inworld/inworld-stt-1"
         for option in data["recording_live_stt"]
     )
-    assert all(option["provider"] != "deepgram" for option in data["recording_live_stt"])
+    assert any(
+        option["provider"] == "deepgram" and option["model"] == "flux-general-multi"
+        for option in data["recording_live_stt"]
+    )
     assert any(
         option["provider"] == "deepgram" and option["model"] == "nova-3"
         for option in data["file_stt"]
