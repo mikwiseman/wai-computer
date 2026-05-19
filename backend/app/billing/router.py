@@ -224,7 +224,7 @@ async def create_checkout(
         except ProviderUnavailableError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Stripe not configured: {exc}",
+                detail=f"Stripe checkout unavailable: {exc}",
             ) from exc
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
@@ -243,7 +243,7 @@ async def create_checkout(
         except ProviderUnavailableError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"T-Bank not configured: {exc}",
+                detail=f"T-Bank checkout unavailable: {exc}",
             ) from exc
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
@@ -270,7 +270,7 @@ async def cancel_subscription(user: CurrentUser, db: Database) -> dict:
         except ProviderUnavailableError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Stripe not configured: {exc}",
+                detail=f"Stripe subscription unavailable: {exc}",
             ) from exc
         sub.cancel_at_period_end = True
         await db.flush()

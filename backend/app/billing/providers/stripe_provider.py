@@ -157,12 +157,12 @@ class StripeProvider(PaymentProvider):
                 await db.execute(select(Plan).where(Plan.code == plan_code))
             ).scalar_one_or_none()
         if plan is None:
-            raise ValueError(f"Plan '{plan_code}' not found")
+            raise ProviderUnavailableError(f"Plan '{plan_code}' not found")
         price_id = (
             plan.stripe_price_id_yearly if period == "year" else plan.stripe_price_id_monthly
         )
         if not price_id:
-            raise ValueError(
+            raise ProviderUnavailableError(
                 f"Plan '{plan_code}' has no Stripe price id for period '{period}'"
             )
         return price_id
