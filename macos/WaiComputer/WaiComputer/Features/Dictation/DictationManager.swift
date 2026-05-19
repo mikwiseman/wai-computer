@@ -459,7 +459,7 @@ final class DictationManager: ObservableObject {
         // Drain the active provider: direct provider session, OpenAI, or
         // ElevenLabs via WebSocketManager.
         providerAudioTask?.cancel()
-        let providerSegments = (try? await providerSession?.close(timeout: .seconds(3))) ?? []
+        let providerSegments = (try? await providerSession?.close(timeout: .seconds(7))) ?? []
         openAIAudioTask?.cancel()
         let openAIOutcome = try? await openAISession?.close(timeout: .seconds(3))
         if let ws = elevenLabsWebSocket {

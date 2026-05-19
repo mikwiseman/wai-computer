@@ -38,6 +38,7 @@ CHANNELS = 1
 BYTES_PER_SAMPLE = 2
 FINALIZATION_SILENCE_MS = 240
 FINALIZATION_WAIT_SECONDS = 2.8
+DEEPGRAM_FINALIZATION_WAIT_SECONDS = 7.0
 MAX_LIVE_BENCHMARK_MODELS = 3
 SUPPORTED_LIVE_BENCHMARK_PROVIDERS = {"elevenlabs", "soniox", "deepgram"}
 
@@ -210,17 +211,29 @@ class LiveBenchmarkProviderRunner:
         send_task = asyncio.create_task(self._send_loop(upstream, send_audio))
         receive_task = asyncio.create_task(self._receive_loop(upstream, handle_message))
         try:
-            done, pending = await asyncio.wait(
-                {send_task, receive_task},
-                return_when=asyncio.FIRST_EXCEPTION,
-            )
-            for task in done:
-                exception = task.exception()
-                if exception is not None:
-                    raise exception
-            for task in pending:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+            while True:
+                done, _ = await asyncio.wait(
+                    {send_task, receive_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in done:
+                    exception = task.exception()
+                    if exception is not None:
+                        raise exception
+
+                if receive_task in done:
+                    return
+
+                if send_task in done:
+                    try:
+                        await asyncio.wait_for(
+                            receive_task,
+                            timeout=self._finalization_wait_seconds(),
+                        )
+                    except TimeoutError:
+                        await upstream.close()
+                        await asyncio.gather(receive_task, return_exceptions=True)
+                    return
         finally:
             send_task.cancel()
             receive_task.cancel()
@@ -235,9 +248,12 @@ class LiveBenchmarkProviderRunner:
             chunk = await self.queue.get()
             await send_audio(upstream, chunk)
             if chunk is None:
-                await asyncio.sleep(FINALIZATION_WAIT_SECONDS)
-                await upstream.close()
                 return
+
+    def _finalization_wait_seconds(self) -> float:
+        if self.candidate.provider == "deepgram":
+            return DEEPGRAM_FINALIZATION_WAIT_SECONDS
+        return FINALIZATION_WAIT_SECONDS
 
     async def _receive_loop(
         self,
@@ -277,6 +293,7 @@ class LiveBenchmarkProviderRunner:
 
     async def _send_deepgram_audio(self, upstream: Any, chunk: bytes | None) -> None:
         if chunk is None:
+            await upstream.send(_silence_frame())
             await upstream.send(json.dumps({"type": "CloseStream"}))
             return
         await upstream.send(chunk)

@@ -310,3 +310,37 @@ async def test_live_benchmark_receive_loop_treats_upstream_close_as_normal():
     )
 
     await runner._receive_loop(ClosingUpstream(), handle_message)
+
+
+@pytest.mark.asyncio
+async def test_live_benchmark_deepgram_finalization_sends_silence_then_close_stream():
+    class Upstream:
+        def __init__(self) -> None:
+            self.sent: list[bytes | str] = []
+
+        async def send(self, message: bytes | str) -> None:
+            self.sent.append(message)
+
+    async def send_event(event: dict):
+        raise AssertionError(f"unexpected event: {event}")
+
+    runner = LiveBenchmarkProviderRunner(
+        battle_id="battle-1",
+        candidate=LiveBenchmarkModel(
+            id="candidate-1",
+            provider="deepgram",
+            model="flux-general-multi",
+            label="Deepgram",
+        ),
+        language="ru",
+        settings=_settings(deepgram_api_key="dg"),
+        send_event=send_event,
+    )
+    upstream = Upstream()
+
+    await runner._send_deepgram_audio(upstream, None)
+
+    assert len(upstream.sent) == 2
+    assert isinstance(upstream.sent[0], bytes)
+    assert set(upstream.sent[0]) == {0}
+    assert upstream.sent[1] == '{"type": "CloseStream"}'
