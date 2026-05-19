@@ -187,8 +187,19 @@ public sealed class ApiClient : IApiClient, IDisposable
         };
         AttachBearer(req);
 
-        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        return await ReadOrThrowAsync<RecordingDetail>(resp, ct).ConfigureAwait(false);
+        try
+        {
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            return await ReadOrThrowAsync<RecordingDetail>(resp, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ApiError.Network(ex.Message, ex);
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new ApiError.Network("Upload timed out");
+        }
     }
 
     public Task<RecordingDetail> SaveLiveTranscriptAsync(
@@ -479,15 +490,26 @@ public sealed class ApiClient : IApiClient, IDisposable
         var req = BuildRequest(method, path);
         try
         {
-            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-            if (resp.StatusCode == HttpStatusCode.Unauthorized && await TryRecoverAuthAsync(ct).ConfigureAwait(false))
+            try
             {
-                var retry = BuildRequest(method, path);
-                using var retryResp = await _http.SendAsync(retry, ct).ConfigureAwait(false);
-                await EnsureSuccessAsync(retryResp, ct).ConfigureAwait(false);
-                return;
+                using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+                if (resp.StatusCode == HttpStatusCode.Unauthorized && await TryRecoverAuthAsync(ct).ConfigureAwait(false))
+                {
+                    using var retry = BuildRequest(method, path);
+                    using var retryResp = await _http.SendAsync(retry, ct).ConfigureAwait(false);
+                    await EnsureSuccessAsync(retryResp, ct).ConfigureAwait(false);
+                    return;
+                }
+                await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
             }
-            await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
+            catch (HttpRequestException ex)
+            {
+                throw new ApiError.Network(ex.Message, ex);
+            }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new ApiError.Network("Request timed out");
+            }
         }
         finally
         {

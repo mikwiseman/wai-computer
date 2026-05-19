@@ -13,7 +13,7 @@ public class AudioFileWriterTests
         var ms = new MemoryStream();
         await using (var writer = new AudioFileWriter(ms, 16000, 1, ownsStream: false))
         {
-            writer.Finalize();
+            writer.Complete();
         }
         ms.Position = 0;
         var buf = ms.ToArray();
@@ -35,7 +35,7 @@ public class AudioFileWriterTests
         await using (var writer = new AudioFileWriter(ms, 16000, 1, ownsStream: false))
         {
             writer.WriteEncodedPcm(pcm);
-            writer.Finalize();
+            writer.Complete();
         }
         var buf = ms.ToArray();
         BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(4, 4)).Should().Be(36u + 32000u);
@@ -65,7 +65,7 @@ public class AudioFileWriterTests
     {
         using var ms = new MemoryStream();
         var writer = new AudioFileWriter(ms, 16000, 1, ownsStream: false);
-        writer.Finalize();
+        writer.Complete();
         Action act = () => writer.WriteEncodedPcm(new byte[2]);
         act.Should().Throw<InvalidOperationException>();
     }

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using WaiComputer.Core.Api;
 using WaiComputer.Core.Api.Models;
 
-namespace WaiComputer.Core.Recording;
+namespace WaiComputer.Core.Recordings;
 
 /// <summary>
 /// Local-first store for recordings that have not yet been uploaded (network

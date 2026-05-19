@@ -85,6 +85,9 @@ try {
     $vpsHost = if ($env:WAI_VPS_HOST) { $env:WAI_VPS_HOST } else { "<release-host>" }
     $remote = "${vpsUser}@${vpsHost}:<remote-root>/releases/windows/"
 
+    Write-Host "▶ Ensuring remote releases/windows directory exists" -ForegroundColor Cyan
+    ssh "${vpsUser}@${vpsHost}" "mkdir -p <remote-root>/releases/windows"
+
     Write-Host "▶ Uploading to $remote" -ForegroundColor Cyan
     scp -r Releases/* $remote
 

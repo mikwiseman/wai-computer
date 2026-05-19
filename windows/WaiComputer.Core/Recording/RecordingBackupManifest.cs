@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using WaiComputer.Core.Api.Models;
 
-namespace WaiComputer.Core.Recording;
+namespace WaiComputer.Core.Recordings;
 
 /// <summary>
 /// On-disk metadata for a pending/failed recording awaiting upload. Mirrors

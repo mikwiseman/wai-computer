@@ -7,7 +7,7 @@ using Microsoft.Windows.AppLifecycle;
 using WaiComputer.Core.Api;
 using WaiComputer.Core.Auth;
 using WaiComputer.Core.Monitoring;
-using WaiComputer.Core.Recording;
+using WaiComputer.Core.Recordings;
 using WaiComputer.Native.Platform;
 
 namespace WaiComputer;
@@ -52,7 +52,6 @@ public partial class App : Application
             .SetBasePath(basePath)
             .AddJsonFile("appsettings.json", optional: false)
             .AddJsonFile("appsettings.user.json", optional: true, reloadOnChange: true)
-            .AddEnvironmentVariables(prefix: "WAICOMPUTER_")
             .Build();
     }
 
@@ -74,11 +73,17 @@ public partial class App : Application
             var dir = Path.Combine(SessionDirectory(), "PendingTranscripts");
             return new RecordingBackupStore(dir);
         });
-        services.AddSingleton(_ => new SentryHelper(settings.Sentry.Dsn));
+        if (IsRealSentryDsn(settings.Sentry.Dsn))
+        {
+            services.AddSingleton(_ => new SentryHelper(settings.Sentry.Dsn));
+        }
         services.AddSingleton<NetworkMonitor>();
 
         return services.BuildServiceProvider();
     }
+
+    private static bool IsRealSentryDsn(string? dsn) =>
+        !string.IsNullOrWhiteSpace(dsn) && !dsn.Contains("REPLACE_ME", StringComparison.Ordinal);
 
     private static string SessionDirectory()
     {
@@ -94,7 +99,7 @@ public partial class App : Application
         // instance to the running window.
         if (_mainWindow is MainWindow mw)
         {
-            DispatcherQueue?.TryEnqueue(() => mw.HandleActivation(args));
+            mw.DispatcherQueue?.TryEnqueue(() => mw.HandleActivation(args));
         }
     }
 }

@@ -17,7 +17,6 @@ public sealed class DualAudioCapture : IAsyncDisposable
     private readonly AudioCaptureConfig _config;
     private readonly ILogger<DualAudioCapture> _logger;
     private readonly TimeSpan _stallTimeout = TimeSpan.FromSeconds(3);
-    private static readonly short AudibilityThreshold = 32;
 
     private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(
         new BoundedChannelOptions(64)

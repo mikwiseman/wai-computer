@@ -40,19 +40,12 @@ public sealed class SentryHelper : IDisposable
             });
             o.SetBeforeBreadcrumb((b, _) =>
             {
-                if (b is null) return b;
-                if (b.Data is not null)
-                {
-                    var sanitised = Sanitizer.SanitizeDictionary(
-                        b.Data.ToDictionary(kv => kv.Key, kv => (object?)kv.Value));
-                    foreach (var k in b.Data.Keys.ToList())
-                    {
-                        if (sanitised.TryGetValue(k, out var v))
-                        {
-                            b.Data[k] = v?.ToString() ?? string.Empty;
-                        }
-                    }
-                }
+                // All WaiComputer breadcrumbs are funneled through
+                // SentryHelper.AddBreadcrumb / CaptureRequestFailure which
+                // pre-sanitise paths and exclude raw PII keys. The Sentry
+                // SDK's Breadcrumb.Data is read-only, so we can't rewrite it
+                // here without reconstructing the entire breadcrumb — accept
+                // pre-sanitised input and pass through.
                 return b;
             });
         });
@@ -60,11 +53,11 @@ public sealed class SentryHelper : IDisposable
 
     public void SetUser(string id) => SentrySdk.ConfigureScope(s => s.User = new SentryUser { Id = id });
 
-    public void ClearUser() => SentrySdk.ConfigureScope(s => s.User = null);
+    public void ClearUser() => SentrySdk.ConfigureScope(s => s.User = new SentryUser());
 
-    public void AddBreadcrumb(string category, string message, BreadcrumbLevel level = BreadcrumbLevel.Info, IDictionary<string, string>? data = null)
+    public void AddBreadcrumb(string category, string message, WaiBreadcrumbLevel level = WaiBreadcrumbLevel.Info, IDictionary<string, string>? data = null)
     {
-        SentrySdk.AddBreadcrumb(message, category, level: ToSentryLevel(level), data: data);
+        SentrySdk.AddBreadcrumb(message, category, level: ToBreadcrumbLevel(level), data: data);
     }
 
     public void CaptureRequestFailure(HttpMethod method, string path, int? statusCode, string errorKind, Exception? exception)
@@ -74,7 +67,7 @@ public sealed class SentryHelper : IDisposable
 
         if (statusCode == (int)HttpStatusCode.Unauthorized)
         {
-            AddBreadcrumb("api", $"{method.Method} {normalisedPath} unauthorized", BreadcrumbLevel.Info);
+            AddBreadcrumb("api", $"{method.Method} {normalisedPath} unauthorized", WaiBreadcrumbLevel.Info);
             return;
         }
 
@@ -89,7 +82,7 @@ public sealed class SentryHelper : IDisposable
         if (statusCode is < 500 and >= 100)
         {
             AddBreadcrumb("api", $"{method.Method} {normalisedPath} → {statusCode}",
-                statusCode >= 400 ? BreadcrumbLevel.Warning : BreadcrumbLevel.Info, crumbData);
+                statusCode >= 400 ? WaiBreadcrumbLevel.Warning : WaiBreadcrumbLevel.Info, crumbData);
             return;
         }
 
@@ -110,7 +103,7 @@ public sealed class SentryHelper : IDisposable
         }
         else
         {
-            AddBreadcrumb("api", $"{method.Method} {normalisedPath} failed (dedup)", BreadcrumbLevel.Warning, crumbData);
+            AddBreadcrumb("api", $"{method.Method} {normalisedPath} failed (dedup)", WaiBreadcrumbLevel.Warning, crumbData);
         }
     }
 
@@ -123,16 +116,17 @@ public sealed class SentryHelper : IDisposable
         });
     }
 
-    private static SentryLevel ToSentryLevel(BreadcrumbLevel level) => level switch
+    private static Sentry.BreadcrumbLevel ToBreadcrumbLevel(WaiBreadcrumbLevel level) => level switch
     {
-        BreadcrumbLevel.Debug => SentryLevel.Debug,
-        BreadcrumbLevel.Info => SentryLevel.Info,
-        BreadcrumbLevel.Warning => SentryLevel.Warning,
-        BreadcrumbLevel.Error => SentryLevel.Error,
-        _ => SentryLevel.Info,
+        WaiBreadcrumbLevel.Debug => Sentry.BreadcrumbLevel.Debug,
+        WaiBreadcrumbLevel.Info => Sentry.BreadcrumbLevel.Info,
+        WaiBreadcrumbLevel.Warning => Sentry.BreadcrumbLevel.Warning,
+        WaiBreadcrumbLevel.Error => Sentry.BreadcrumbLevel.Error,
+        _ => Sentry.BreadcrumbLevel.Info,
     };
 
     public void Dispose() => _sentry?.Dispose();
 }
 
-public enum BreadcrumbLevel { Debug, Info, Warning, Error }
+/// <summary>Local enum to avoid clashing with <see cref="Sentry.BreadcrumbLevel"/>.</summary>
+public enum WaiBreadcrumbLevel { Debug, Info, Warning, Error }

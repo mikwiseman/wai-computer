@@ -1,6 +1,6 @@
 using FluentAssertions;
 using WaiComputer.Core.Api.Models;
-using WaiComputer.Core.Recording;
+using WaiComputer.Core.Recordings;
 using Xunit;
 
 namespace WaiComputer.Core.Tests.Recording;
