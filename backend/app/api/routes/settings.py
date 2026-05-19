@@ -52,6 +52,10 @@ class SettingsResponse(BaseModel):
     dictation_post_filter_enabled: bool
     dictation_post_filter_provider: str
     dictation_post_filter_model: str
+    region: str
+
+
+VALID_REGIONS = {"global", "ru"}
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -70,6 +74,17 @@ class UpdateSettingsRequest(BaseModel):
     dictation_post_filter_enabled: bool | None = None
     dictation_post_filter_provider: str | None = None
     dictation_post_filter_model: str | None = None
+    region: str | None = None
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in VALID_REGIONS:
+            raise ValueError(f"region must be one of: {', '.join(sorted(VALID_REGIONS))}")
+        return normalized
 
     @field_validator("default_language")
     @classmethod
@@ -193,6 +208,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         dictation_post_filter_enabled=user.dictation_post_filter_enabled,
         dictation_post_filter_provider=user.dictation_post_filter_provider,
         dictation_post_filter_model=user.dictation_post_filter_model,
+        region=user.region,
     )
 
 
@@ -249,6 +265,8 @@ async def update_settings(
     ):
         user.dictation_post_filter_provider = request.dictation_post_filter_provider
         user.dictation_post_filter_model = request.dictation_post_filter_model
+    if request.region is not None:
+        user.region = request.region
     await db.flush()
     return _settings_response(user)
 

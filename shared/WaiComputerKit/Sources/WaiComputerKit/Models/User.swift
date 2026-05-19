@@ -148,6 +148,7 @@ public struct UserSettings: Codable, Sendable {
     public let dictationPostFilterEnabled: Bool
     public let dictationPostFilterProvider: String
     public let dictationPostFilterModel: String
+    public let region: String
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -166,6 +167,7 @@ public struct UserSettings: Codable, Sendable {
         dictationPostFilterEnabled = try container.decode(Bool.self, forKey: .dictationPostFilterEnabled)
         dictationPostFilterProvider = try container.decode(String.self, forKey: .dictationPostFilterProvider)
         dictationPostFilterModel = try container.decode(String.self, forKey: .dictationPostFilterModel)
+        region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -182,6 +184,7 @@ public struct UserSettings: Codable, Sendable {
         case dictationPostFilterEnabled = "dictation_post_filter_enabled"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
+        case region
     }
 }
 
@@ -200,6 +203,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
     public var dictationPostFilterEnabled: Bool?
     public var dictationPostFilterProvider: String?
     public var dictationPostFilterModel: String?
+    public var region: String?
 
     public init(
         defaultLanguage: String? = nil,
@@ -214,7 +218,8 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         fileSTTModel: String? = nil,
         dictationPostFilterEnabled: Bool? = nil,
         dictationPostFilterProvider: String? = nil,
-        dictationPostFilterModel: String? = nil
+        dictationPostFilterModel: String? = nil,
+        region: String? = nil
     ) {
         self.defaultLanguage = defaultLanguage
         self.summaryLanguage = summaryLanguage
@@ -229,6 +234,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         self.dictationPostFilterEnabled = dictationPostFilterEnabled
         self.dictationPostFilterProvider = dictationPostFilterProvider
         self.dictationPostFilterModel = dictationPostFilterModel
+        self.region = region
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -245,6 +251,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         case dictationPostFilterEnabled = "dictation_post_filter_enabled"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
+        case region
     }
 }
 
