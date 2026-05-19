@@ -152,7 +152,7 @@ struct MacSettingsView: View {
             Section {
                 PaymentModeToggle()
             } header: {
-                Text("Payments")
+                Text("settings.payments.title", bundle: .main)
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-payment-mode-header")
             }

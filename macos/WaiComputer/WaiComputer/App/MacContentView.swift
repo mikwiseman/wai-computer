@@ -712,14 +712,21 @@ struct MacMainView: View {
 
     /// When recording state changes from recording to not-recording,
     /// select the completed recording and refresh the library.
+    ///
+    /// We pre-select the recording immediately so the user lands on its
+    /// detail view (with a loading state if needed) instead of a blank
+    /// All Recordings list while the upload + summary pipeline finishes.
     private func handleCompletedRecordingChange() {
         completionTask?.cancel()
 
         guard let completedContext = appState.completedRecordingContext else { return }
 
         selectedSection = .allRecordings
-        selectedRecordingIds.removeAll()
         prefetchedRecordingDetail = nil
+        // Immediate selection — the detail view shows a loading state until
+        // resolveCompletedRecording returns. This avoids the "where did my
+        // recording go?" moment from WW-50 #2.
+        selectedRecordingIds = [completedContext.recordingId]
 
         completionTask = Task {
             // Wait for the upload to finish (phase goes idle when cleanup completes)
@@ -744,15 +751,15 @@ struct MacMainView: View {
             guard appState.completedRecordingContext?.recordingId == completedContext.recordingId else { return }
 
             if let selectedRecordingId, selectedRecordingId != completedContext.recordingId {
+                // User navigated away while we were waiting — respect that.
                 withAnimation(.easeInOut(duration: 0.25)) {
                     appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
                 }
                 return
             }
 
-            // Set prefetched detail first so MacRecordingDetailView won't show a loading state
+            // Hand the detail to the already-selected detail view.
             prefetchedRecordingDetail = detail
-            selectedRecordingIds = [completedContext.recordingId]
 
             withAnimation(.easeInOut(duration: 0.25)) {
                 appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)

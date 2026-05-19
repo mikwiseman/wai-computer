@@ -15,9 +15,9 @@ struct PaymentModeToggle: View {
     var body: some View {
         Toggle(isOn: $enabled) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Payment mode")
+                Text("settings.payments.toggle.title", bundle: .main)
                     .font(Typography.body)
-                Text("Show the Subscription tab and weekly word counter. Off by default — leave it off and everything stays free and unlimited.")
+                Text("settings.payments.toggle.description", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

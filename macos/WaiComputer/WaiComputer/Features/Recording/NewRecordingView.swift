@@ -63,6 +63,14 @@ struct NewRecordingView: View {
             .disabled(isImporting)
             .opacity(isImporting ? 0.5 : 1.0)
 
+            Text("recording.hint.minDuration", bundle: .main)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Spacing.md)
+                .accessibilityIdentifier("recording-min-duration-hint")
+
             Spacer()
         }
         .frame(maxWidth: 380)
