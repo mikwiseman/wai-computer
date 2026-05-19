@@ -29,14 +29,9 @@ const modelMatrix = [
     tags: ["диктовка", "realtime", "файл"],
   },
   {
-    name: "Deepgram Flux",
-    fit: "Turn-aware realtime модель для коротких диктовок и voice-agent сценариев.",
-    tags: ["диктовка", "realtime"],
-  },
-  {
     name: "Deepgram Nova-3",
-    fit: "Быстрая модель для длинных записей и файловой транскрибации.",
-    tags: ["запись", "файл"],
+    fit: "Быстрая модель для полного транскрипта и файловой транскрибации.",
+    tags: ["файл", "полный транскрипт"],
   },
   {
     name: "Inworld STT-1",
@@ -50,6 +45,11 @@ const arenaCopy = {
   title: "Надиктуй один раз и сравни результаты вслепую",
   start: "Начать dictation battle",
   stop: "Остановить и сравнить",
+  steps: {
+    record: "Запись",
+    run: "Прогон",
+    vote: "Выбор",
+  },
   statuses: {
     idle: "Готово",
     recording: "Идёт запись",
@@ -61,9 +61,27 @@ const arenaCopy = {
   signIn: "Войти",
   modelHidden: "Модель скрыта",
   selected: "Выбрано",
+  savingVote: "Сохраняем",
+  voteSaved: "Голос сохранён",
   pickWinner: "Выбрать",
+  newRound: "Новый раунд",
+  recordingHint: "Говори естественно. Останови запись после полной фразы.",
+  resultsHint: "Названия моделей скрыты до выбора победителя.",
+  privateRound: "Приватный раунд. Аудио используется только для этого запроса.",
+  sameAudio: "Один аудиофайл для всех моделей.",
+  blindVote: "Слепой выбор до раскрытия.",
+  languageLabel: "Язык",
+  runningModelsLabel: "Модели в прогоне",
+  outputsReadyLabel: "ответа готовы",
+  wordsLabel: "слов",
+  languageOptions: [
+    { label: "Авто", value: "multi" },
+    { label: "EN", value: "en" },
+    { label: "RU", value: "ru" },
+  ],
   micUnavailable: "Запись с микрофона недоступна в этом браузере.",
   requestFailed: "Benchmark-запрос не удался.",
+  voteFailed: "Голос не удалось сохранить.",
 };
 
 export const metadata: Metadata = {
@@ -84,7 +102,7 @@ function pct(value: number): string {
 
 export default function RuDictationBenchmarkPage() {
   const results = benchmarkData.results as BenchmarkResult[];
-  const top = results[0];
+  const previewRows = results.slice(0, 3);
 
   return (
     <main className={styles.page}>
@@ -102,40 +120,48 @@ export default function RuDictationBenchmarkPage() {
 
       <div className={styles.shell}>
         <section className={styles.hero}>
-          <div>
-            <p className={styles.eyebrow}>Speech benchmark</p>
-            <h1>Модели диктовки, ранжированные на нашем аудио.</h1>
+          <div className={styles.heroCopy}>
+            <h1>WaiComputer Арена диктовки</h1>
             <p className={styles.heroText}>
               Синтетические фикстуры дают повторяемую проверку точности и latency.
               Live arena позволяет тестерам надиктовать один раз и выбрать лучший результат вслепую.
             </p>
-          </div>
-          <div className={styles.scoreStrip} aria-label="Benchmark highlights">
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "78px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{top ? pct(top.aggregate.wer) : "Pending"}</strong>
-                WER leader
-              </span>
-            </div>
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "102px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{top?.aggregate.speed_factor ?? "Pending"}</strong>
-                Speed factor
-              </span>
-            </div>
-            <div className={styles.scoreCell}>
-              <span className={styles.scoreBar} style={{ height: "58px" }} />
-              <span className={styles.scoreLabel}>
-                <strong>{results.length || "Pending"}</strong>
-                Models measured
-              </span>
+            <div className={styles.heroActions}>
+              <Link href="#arena">Начать live battle</Link>
+              <Link href="#leaderboard">Смотреть рейтинг</Link>
             </div>
           </div>
+          <aside className={styles.arenaPreview} aria-label="Live dictation battle preview">
+            <div className={styles.previewHeader}>
+              <span>Слепое сравнение</span>
+              <span className={styles.previewLive}>live</span>
+            </div>
+            <div className={styles.previewChart}>
+              {previewRows.map((result, index) => (
+                <div className={styles.previewRow} key={`${result.provider}-${result.model}`}>
+                  <span className={styles.previewRank}>#{index + 1}</span>
+                  <span className={styles.previewModel}>
+                    <strong>{result.label}</strong>
+                    <span>{result.provider} / {result.model}</span>
+                  </span>
+                  <span className={styles.previewMetric}>{pct(result.aggregate.wer)}</span>
+                </div>
+              ))}
+            </div>
+            <div className={styles.previewBattle} aria-hidden="true">
+              {["A", "B", "C"].map((letter) => (
+                <div className={styles.previewCard} key={letter}>
+                  <span>{letter}</span>
+                  <p>Модель скрыта до выбора тестера.</p>
+                </div>
+              ))}
+            </div>
+          </aside>
         </section>
 
-        <section className={styles.leaderboard} aria-labelledby="leaderboard-title">
+        <DictationBenchmarkArena copy={arenaCopy} signInHref="/login" />
+
+        <section className={styles.leaderboard} id="leaderboard" aria-labelledby="leaderboard-title">
           <div className={styles.sectionHeader}>
             <div>
               <p className={styles.eyebrow}>Leaderboard</p>
@@ -208,7 +234,6 @@ export default function RuDictationBenchmarkPage() {
           </div>
         </section>
 
-        <DictationBenchmarkArena copy={arenaCopy} signInHref="/login" />
       </div>
     </main>
   );

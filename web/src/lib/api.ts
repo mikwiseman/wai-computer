@@ -13,6 +13,7 @@ import type {
   BulkAction,
   BulkOperationResponse,
   DictationBenchmarkBattleResponse,
+  DictationBenchmarkVoteResponse,
   Entity,
   EntityDetail,
   EntityType,
@@ -416,6 +417,20 @@ export function createDictationBenchmarkBattle(input: {
   formData.append("audio", input.audio, input.filename ?? "dictation.webm");
   formData.append("language", input.language ?? "multi");
   return apiUpload<DictationBenchmarkBattleResponse>("/api/benchmarks/dictation/battle", formData);
+}
+
+export function submitDictationBenchmarkVote(input: {
+  battle_id: string;
+  selected_candidate_id: string;
+  selected_provider: string;
+  selected_model: string;
+  language: string;
+  candidate_count: number;
+}): Promise<DictationBenchmarkVoteResponse> {
+  return apiFetch<DictationBenchmarkVoteResponse>("/api/benchmarks/dictation/battle/vote", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {

@@ -65,15 +65,6 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         ),
     ),
     ModelOption(
-        provider="deepgram",
-        model="flux-general-multi",
-        label="Deepgram Flux Multilingual",
-        description=(
-            "Best Deepgram dictation/agent model. Model-native turn detection, "
-            "10-language multilingual."
-        ),
-    ),
-    ModelOption(
         provider="inworld",
         model="inworld/inworld-stt-1",
         label="Inworld STT-1",
@@ -98,15 +89,6 @@ _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         description=(
             "Best value long realtime option. 60+ languages, semantic endpointing, "
             "up to 5-hour streams."
-        ),
-    ),
-    ModelOption(
-        provider="deepgram",
-        model="nova-3",
-        label="Deepgram Nova-3",
-        description=(
-            "Best Deepgram long-form live transcription. Multilingual, diarization, "
-            "smart formatting."
         ),
     ),
     ModelOption(

@@ -55,6 +55,10 @@ export interface DictationBenchmarkBattleResponse {
   candidates: DictationBenchmarkCandidate[];
 }
 
+export interface DictationBenchmarkVoteResponse {
+  vote_id: string;
+}
+
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string;

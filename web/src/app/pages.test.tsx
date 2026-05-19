@@ -258,14 +258,14 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /Dictation models, ranked by our own audio/i,
+        name: /WaiComputer Dictation Arena/i,
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Start dictation battle/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("WaiComputer Synthetic Dictation v1")).toBeInTheDocument();
-    expect(screen.getByText("Soniox v4 Async")).toBeInTheDocument();
+    expect(screen.getAllByText("Soniox v4 Async").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Russian dictation benchmark page", () => {
@@ -274,7 +274,7 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /Модели диктовки/i,
+        name: /WaiComputer Арена диктовки/i,
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Начать dictation battle/i })).toBeInTheDocument();

@@ -116,8 +116,9 @@ final class DictationManager: ObservableObject {
     // MARK: - Dictation pipeline
 
     // Provider-backed dictation path for Soniox, Deepgram, and Inworld.
-    private var dictationSession: DictationSession?
     private var providerSession: (any ProviderSession)?
+    private var providerCapture: MicrophoneCapture?
+    private var providerAudioTask: Task<Void, Never>?
     private var sessionEventTask: Task<Void, Never>?
 
     // OpenAI realtime STT path — account settings default to
@@ -360,24 +361,9 @@ final class DictationManager: ObservableObject {
                 return
             }
 
-            // 1. Pre-warm the shared engine if it isn't already. This is
-            //    a one-time cost on the first ever press; subsequent presses
-            //    instantly install the tap on a running engine.
-            try await AudioEngineHost.shared.prewarm()
-
-            // 2. Lease the engine — installs the tap, snapshots the 500 ms
-            //    pre-roll buffer (so the user's first word is never lost).
-            let lease = try await AudioEngineHost.shared.lease()
-            session.event(.audioLeaseAcquired, data: [
-                "preRollFrames": lease.preRoll.reduce(0) { $0 + Int($1.frameLength) }
-            ])
-
-            // 3. Mint a fresh realtime session. Backend chooses the provider
-            //    and model from account settings and returns a client-safe
-            //    temporary credential.
-            // Read from the multi-select language store. wireLanguageTag returns
-            // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
-            // a single-language selection.
+            // Mint a fresh realtime session. Backend chooses the provider and
+            // model from account settings and returns a client-safe temporary
+            // credential. Read from the multi-select language store.
             let language = currentDictationLanguage()
             let sessionConfig = try await apiClient.createRealtimeTranscriptionSession(
                 language: language,
@@ -389,8 +375,19 @@ final class DictationManager: ObservableObject {
                 "model": sessionConfig.model,
             ])
 
-            // 4. Build the provider session and the orchestrating
-            //    DictationSession actor, then arm.
+            // Use the proven per-press MicrophoneCapture path. AudioEngineHost
+            // is kept pre-warmed for future latency work, but it previously
+            // produced silent provider-backed dictation sessions on macOS.
+            let capture = MicrophoneCapture(
+                config: AudioCaptureConfig(
+                    sampleRate: Double(sessionConfig.sampleRate),
+                    channelCount: 1,
+                    bufferSize: UInt32(max(sessionConfig.sampleRate / 10, 1))
+                )
+            )
+            providerCapture = capture
+            try await capture.startRecording()
+
             let keyTerms = dictionaryStore?.vocabularyList ?? []
             let provider = ProviderBackedRealtimeSession(
                 config: sessionConfig,
@@ -403,17 +400,6 @@ final class DictationManager: ObservableObject {
                 "language": sessionConfig.language,
                 "key_terms_count": keyTerms.count,
             ])
-
-            let dSession = DictationSession(
-                provider: provider,
-                lease: lease,
-                host: AudioEngineHost.shared
-            )
-            dictationSession = dSession
-
-            // 5. Subscribe to provider events for live overlay updates.
-            //    The DictationSession actor accumulates segments internally
-            //    for the final transcript; we only need this stream for UI.
             let stream = provider.events
             sessionEventTask = Task { [weak self] in
                 guard let self else { return }
@@ -422,12 +408,33 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            try await dSession.arm()
+            try await provider.open()
             session.event(.providerOpened)
 
             startTimer()
             setState(.listening)
             session.event(.audioFirstChunkSent)
+
+            let encoder = AudioEncoder(sampleRate: sessionConfig.sampleRate, channels: 1)
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
+                guard let provider, let capture else { return }
+                var liveSent = 0
+                for await buffer in capture.audioBuffers {
+                    guard !Task.isCancelled else { return }
+                    guard let data = encoder.encode(buffer) else { continue }
+                    do {
+                        try await provider.send(pcm16: data)
+                        liveSent += 1
+                        if liveSent <= 3 || liveSent % 20 == 0 {
+                            NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, data.count, sessionConfig.provider)
+                        }
+                    } catch {
+                        NSLog("[Dictation/Provider] send #%d failed provider=%@: %@", liveSent, sessionConfig.provider, String(describing: error))
+                        return
+                    }
+                }
+                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", sessionConfig.provider, liveSent)
+            }
 
             // Hotkey released during connect — apply now.
             if deferredStop && !isHandsFree {
@@ -448,9 +455,10 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
-        // Drain the active provider — Inworld via DictationSession, OR
-        // OpenAI directly, OR ElevenLabs via WebSocketManager (rollback path).
-        let inworldOutcome = await dictationSession?.commit(timeout: .seconds(3))
+        // Drain the active provider: direct provider session, OpenAI, or
+        // ElevenLabs via WebSocketManager.
+        providerAudioTask?.cancel()
+        let providerSegments = (try? await providerSession?.close(timeout: .seconds(3))) ?? []
         openAIAudioTask?.cancel()
         let openAIOutcome = try? await openAISession?.close(timeout: .seconds(3))
         if let ws = elevenLabsWebSocket {
@@ -472,8 +480,18 @@ final class DictationManager: ObservableObject {
             .map(\.text)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedText = (inworldOutcome?.transcript ?? openAITranscript ?? buildTranscript())
+        let providerTranscript = providerSegments
+            .map(\.text)
+            .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcriptCandidates = [
+            providerTranscript.isEmpty ? nil : providerTranscript,
+            openAITranscript,
+            buildTranscript(),
+        ]
+        let trimmedText = transcriptCandidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
 
         guard !trimmedText.isEmpty else {
             log.info("No text transcribed — nothing to insert")
@@ -559,7 +577,8 @@ final class DictationManager: ObservableObject {
             instrumentationSession = nil
         }
 
-        await dictationSession?.cancel()
+        providerAudioTask?.cancel()
+        await providerSession?.cancel()
         await openAISession?.cancel()
         if let ws = elevenLabsWebSocket {
             elevenLabsAudioTask?.cancel()
@@ -821,8 +840,6 @@ final class DictationManager: ObservableObject {
             }
         case .reconnectionFailed(let err):
             log.warning("ElevenLabs reconnection failed: \(err?.localizedDescription ?? "unknown", privacy: .public)")
-        default:
-            break
         }
     }
 
@@ -835,9 +852,24 @@ final class DictationManager: ObservableObject {
     }
 
     private func cleanup() async {
-        dictationSession = nil
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
+        timerTask?.cancel()
+        timerTask = nil
+
+        let activeProviderSession = providerSession
         providerSession = nil
+        providerAudioTask?.cancel()
+        providerAudioTask = nil
+        await activeProviderSession?.cancel()
+        if let capture = providerCapture {
+            await capture.stopRecording()
+            providerCapture = nil
+        }
+
+        let activeOpenAISession = openAISession
         openAISession = nil
+        await activeOpenAISession?.cancel()
         deferredStop = false
         firstTokenReported = false
 
@@ -873,11 +905,6 @@ final class DictationManager: ObservableObject {
     }
 
     private func resetAfterStartFailure() async {
-        sessionEventTask?.cancel()
-        sessionEventTask = nil
-        timerTask?.cancel()
-        timerTask = nil
-        await dictationSession?.cancel()
         await cleanup()
     }
 

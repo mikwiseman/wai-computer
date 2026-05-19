@@ -228,6 +228,29 @@ describe("api client wrappers", () => {
     expect((formData.get("audio") as File).name).toBe("sample.webm");
   });
 
+  it("calls submitDictationBenchmarkVote endpoint", async () => {
+    await api.submitDictationBenchmarkVote({
+      battle_id: "battle-1",
+      selected_candidate_id: "candidate-a",
+      selected_provider: "soniox",
+      selected_model: "stt-async-v4",
+      language: "ru",
+      candidate_count: 3,
+    });
+
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/benchmarks/dictation/battle/vote", {
+      method: "POST",
+      body: JSON.stringify({
+        battle_id: "battle-1",
+        selected_candidate_id: "candidate-a",
+        selected_provider: "soniox",
+        selected_model: "stt-async-v4",
+        language: "ru",
+        candidate_count: 3,
+      }),
+    });
+  });
+
   it("calls getSpeakerStats", async () => {
     await api.getSpeakerStats("rec1");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1/speaker-stats");

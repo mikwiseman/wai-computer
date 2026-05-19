@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-19T12:27:29.437817+00:00",
+  "generated_at": "2026-05-19T14:20:25.075903+00:00",
   "suite": "WaiComputer Synthetic Dictation v1",
   "source": "macOS say synthetic fixtures + real provider file transcription APIs",
   "fixtures": [
@@ -28,8 +28,8 @@
       "aggregate": {
         "wer": 0.186,
         "cer": 0.0999,
-        "latency_ms": 5165,
-        "speed_factor": 1.37
+        "latency_ms": 7102,
+        "speed_factor": 1.11
       },
       "fixtures": [
         {
@@ -39,8 +39,8 @@
           "transcript": "Сегодня мы проверяем диктовку в eComputer. Встреча началась в 10:30, следующий шаг — отправить отчёт команде.",
           "wer": 0.2667,
           "cer": 0.17,
-          "latency_ms": 5089,
-          "speed_factor": 1.51
+          "latency_ms": 5021,
+          "speed_factor": 1.53
         },
         {
           "fixture_id": "en-product-dictation",
@@ -49,8 +49,8 @@
           "transcript": "Why computers should capture the last phrase without cutting it off: please create a follow-up reminder for Friday morning.",
           "wer": 0.1053,
           "cer": 0.0297,
-          "latency_ms": 5241,
-          "speed_factor": 1.23
+          "latency_ms": 9184,
+          "speed_factor": 0.7
         }
       ]
     },
@@ -63,8 +63,8 @@
       "aggregate": {
         "wer": 0.2193,
         "cer": 0.0999,
-        "latency_ms": 1397,
-        "speed_factor": 5.06
+        "latency_ms": 1437,
+        "speed_factor": 4.92
       },
       "fixtures": [
         {
@@ -74,8 +74,8 @@
           "transcript": "Сегодня мы проверяем диктовку в eComputer. Встреча началась в 10:30. Следующий шаг — отправить отчет команде.",
           "wer": 0.3333,
           "cer": 0.18,
-          "latency_ms": 1429,
-          "speed_factor": 5.38
+          "latency_ms": 1526,
+          "speed_factor": 5.03
         },
         {
           "fixture_id": "en-product-dictation",
@@ -84,8 +84,43 @@
           "transcript": "Why computer should capture the last phrase without cutting it off? Please create a follow-up reminder for Friday morning",
           "wer": 0.1053,
           "cer": 0.0198,
-          "latency_ms": 1365,
-          "speed_factor": 4.74
+          "latency_ms": 1348,
+          "speed_factor": 4.8
+        }
+      ]
+    },
+    {
+      "provider": "deepgram",
+      "model": "nova-3",
+      "label": "Deepgram Nova-3",
+      "description": "Fast high-throughput file transcription with smart formatting and diarization.",
+      "task": "file",
+      "aggregate": {
+        "wer": 0.2193,
+        "cer": 0.0949,
+        "latency_ms": 1586,
+        "speed_factor": 4.47
+      },
+      "fixtures": [
+        {
+          "fixture_id": "ru-product-dictation",
+          "language": "ru",
+          "duration_seconds": 7.682,
+          "transcript": "Сегодня мы проверяем диктовку в E-computer. Встреча началась в 10 30. Следующий шаг отправить отчёт команде.",
+          "wer": 0.3333,
+          "cer": 0.17,
+          "latency_ms": 1751,
+          "speed_factor": 4.39
+        },
+        {
+          "fixture_id": "en-product-dictation",
+          "language": "en",
+          "duration_seconds": 6.469,
+          "transcript": "Why computer should capture the last phrase without cutting it off? Please create a follow-up reminder for Friday morning.",
+          "wer": 0.1053,
+          "cer": 0.0198,
+          "latency_ms": 1420,
+          "speed_factor": 4.56
         }
       ]
     }

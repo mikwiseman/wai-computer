@@ -1,11 +1,15 @@
 """Tests for dictation benchmark endpoints."""
 
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.transcript_utils import TranscriptResult
+from app.models.benchmark import DictationBenchmarkVote
 
 
 def _settings(**overrides: str) -> SimpleNamespace:
@@ -114,3 +118,58 @@ async def test_dictation_benchmark_battle_returns_provider_errors_per_candidate(
     assert data["candidates"][0]["status"] == "error"
     assert data["candidates"][0]["error"] == "Provider request failed."
     assert data["candidates"][0]["transcript"] is None
+
+
+@pytest.mark.asyncio
+async def test_dictation_benchmark_vote_persists_metadata_only(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+):
+    response = await client.post(
+        "/api/benchmarks/dictation/battle/vote",
+        headers=auth_headers,
+        json={
+            "battle_id": "battle-1",
+            "selected_candidate_id": "candidate-a",
+            "selected_provider": "Soniox",
+            "selected_model": "stt-async-v4",
+            "language": " RU ",
+            "candidate_count": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    vote_id = UUID(response.json()["vote_id"])
+
+    result = await db_session.execute(
+        select(DictationBenchmarkVote).where(DictationBenchmarkVote.id == vote_id)
+    )
+    vote = result.scalar_one()
+    assert vote.battle_id == "battle-1"
+    assert vote.selected_candidate_id == "candidate-a"
+    assert vote.selected_provider == "soniox"
+    assert vote.selected_model == "stt-async-v4"
+    assert vote.language == "ru"
+    assert vote.candidate_count == 3
+
+
+@pytest.mark.asyncio
+async def test_dictation_benchmark_vote_rejects_non_file_model(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    response = await client.post(
+        "/api/benchmarks/dictation/battle/vote",
+        headers=auth_headers,
+        json={
+            "battle_id": "battle-1",
+            "selected_candidate_id": "candidate-a",
+            "selected_provider": "deepgram",
+            "selected_model": "flux-general-multi",
+            "language": "multi",
+            "candidate_count": 3,
+        },
+    )
+
+    assert response.status_code == 422

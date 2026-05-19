@@ -1,14 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createDictationBenchmarkBattle } from "@/lib/api";
+import { createDictationBenchmarkBattle, submitDictationBenchmarkVote } from "@/lib/api";
 import { DictationBenchmarkArena } from "./DictationBenchmarkArena";
 
 vi.mock("@/lib/api", () => ({
   createDictationBenchmarkBattle: vi.fn(),
+  submitDictationBenchmarkVote: vi.fn(),
 }));
 
 const mockedCreateBattle = vi.mocked(createDictationBenchmarkBattle);
+const mockedSubmitVote = vi.mocked(submitDictationBenchmarkVote);
 
 class FakeMediaRecorder {
   static isTypeSupported = vi.fn(() => true);
@@ -46,6 +48,8 @@ function installMediaDevices() {
 describe("DictationBenchmarkArena", () => {
   beforeEach(() => {
     mockedCreateBattle.mockReset();
+    mockedSubmitVote.mockReset();
+    mockedSubmitVote.mockResolvedValue({ vote_id: "vote-1" });
   });
 
   it("shows an unavailable message when microphone APIs are missing", async () => {
@@ -101,11 +105,19 @@ describe("DictationBenchmarkArena", () => {
       filename: "dictation-benchmark.webm",
       language: "multi",
     });
-    expect(screen.getAllByText("Model hidden")).toHaveLength(2);
+    expect(screen.getAllByText("Model hidden").length).toBeGreaterThanOrEqual(2);
 
     await userEvent.click(screen.getAllByRole("button", { name: "Pick winner" })[0]);
 
-    expect(screen.getByText("Soniox v4 Async")).toBeInTheDocument();
+    expect(mockedSubmitVote).toHaveBeenCalledWith({
+      battle_id: "battle-1",
+      selected_candidate_id: "a",
+      selected_provider: "soniox",
+      selected_model: "stt-async-v4",
+      language: "multi",
+      candidate_count: 2,
+    });
+    expect(screen.getAllByText("Soniox v4 Async").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("soniox / stt-async-v4")).toBeInTheDocument();
   });
 });
