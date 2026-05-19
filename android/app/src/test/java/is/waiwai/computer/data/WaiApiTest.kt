@@ -22,6 +22,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -130,7 +131,7 @@ class WaiApiTest {
         assertEquals("scribe_v2_realtime", settings.recordingLiveSttModel)
         assertEquals("elevenlabs", settings.fileSttProvider)
         assertEquals("scribe_v2", settings.fileSttModel)
-        assertTrue(settings.dictationPostFilterEnabled)
+        assertFalse(settings.dictationPostFilterEnabled)
         assertEquals("openai", settings.dictationPostFilterProvider)
         assertEquals("gpt-5.5", settings.dictationPostFilterModel)
     }

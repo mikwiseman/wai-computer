@@ -92,12 +92,6 @@ struct WaiComputerMacApp: App {
                     Task {
                         await appState.resumePendingRecordingSyncIfNeeded()
                     }
-                    // Pre-warm the shared AVAudioEngine + pre-roll buffer so
-                    // the first dictation press hits a hot path. Idempotent —
-                    // subsequent calls are no-ops while the engine is running.
-                    Task.detached(priority: .userInitiated) {
-                        try? await AudioEngineHost.shared.prewarm()
-                    }
                 }
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
