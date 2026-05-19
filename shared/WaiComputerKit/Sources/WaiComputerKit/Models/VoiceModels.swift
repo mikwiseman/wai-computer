@@ -5,7 +5,7 @@ public enum RealtimeVoiceMode: String, Codable, Sendable {
     case recording
 }
 
-public enum RealtimeTranscriptionPurpose: String, Codable, Sendable {
+public enum RealtimeTranscriptionPurpose: String, Codable, Sendable, Hashable {
     case recording
     case dictation
 }

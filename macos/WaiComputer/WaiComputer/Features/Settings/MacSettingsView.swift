@@ -811,7 +811,7 @@ struct MacSettingsView: View {
         recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
         fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
         dictationPostFilterEnabled = settings.dictationPostFilterEnabled
-        dictationManager.aiCleanupEnabled = settings.dictationPostFilterEnabled
+        dictationManager.ingestSettings(settings)
         dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
     }
 
