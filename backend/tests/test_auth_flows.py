@@ -190,6 +190,31 @@ async def test_magic_link_creates_user_and_stores_token(
 
 
 @pytest.mark.asyncio
+async def test_magic_link_creates_user_with_region(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Magic-link signup should preserve the client billing region."""
+
+    async def fake_send_magic_link_email(to_email: str, token: str, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
+
+    email = "magic.region@example.com"
+    response = await client.post(
+        "/api/auth/magic-link",
+        json={"email": email, "region": "ru"},
+    )
+    assert response.status_code == 200
+
+    user_result = await db_session.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one()
+    assert user.region == "ru"
+
+
+@pytest.mark.asyncio
 async def test_verify_magic_link_success_clears_token(
     client: AsyncClient,
     db_session: AsyncSession,

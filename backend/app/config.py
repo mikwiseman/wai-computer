@@ -61,9 +61,10 @@ class Settings(BaseSettings):
     elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
-    # Deepgram (file/full-transcript STT only; realtime hidden until token grants are available)
+    # Deepgram (batch STT + server-proxied realtime; API key stays backend-only)
     deepgram_api_key: str = ""
     deepgram_file_stt_model: str = "nova-3"
+    deepgram_realtime_proxy_token_ttl_seconds: int = 10 * 60
 
     # Soniox (direct realtime + async batch)
     soniox_api_key: str = ""

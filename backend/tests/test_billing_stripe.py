@@ -98,6 +98,58 @@ async def test_parse_webhook_extracts_subscription_event():
     assert result.status == "active"
 
 
+@pytest.mark.asyncio
+async def test_create_checkout_free_trial_does_not_require_payment_method(monkeypatch):
+    """Marketing promises no card for trial; Stripe requires explicit params."""
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    captured: dict = {}
+
+    class FakeSession:
+        id = "cs_test_123"
+        url = "https://checkout.stripe.test/session"
+
+    class FakeSessions:
+        async def create_async(self, *, params):
+            captured.update(params)
+            return FakeSession()
+
+    class FakeCheckout:
+        sessions = FakeSessions()
+
+    class FakeV1:
+        checkout = FakeCheckout()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    async def fake_resolve_price_id(*, plan_code: str, period: str) -> str:
+        return "price_test_pro_month"
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+    monkeypatch.setattr(p, "_resolve_price_id", fake_resolve_price_id)
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.get_settings",
+        lambda: type("S", (), {"stripe_automatic_tax": False})(),
+    )
+
+    result = await p.create_checkout(
+        plan_code="pro",
+        period="month",
+        user_email="trial@example.test",
+        user_id="user-1",
+        success_url="https://wai.computer/billing/success",
+        cancel_url="https://wai.computer/billing/cancel",
+        trial_days=14,
+    )
+
+    assert result.checkout_url == "https://checkout.stripe.test/session"
+    assert captured["payment_method_collection"] == "if_required"
+    assert captured["subscription_data"]["trial_period_days"] == 14
+    assert captured["subscription_data"]["trial_settings"] == {
+        "end_behavior": {"missing_payment_method": "cancel"}
+    }
+
+
 # ----- service event handlers ---------------------------------------------
 
 

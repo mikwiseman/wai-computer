@@ -3,11 +3,12 @@
 We use different Deepgram models for different jobs:
 
 - :func:`transcribe_audio_file` — POST to ``/v1/listen`` for batch.
-- :func:`mint_realtime_session` — mint a short-lived token and issue the
-  WebSocket connection blob consumed by :mod:`app.core.realtime_transcription`.
+- :func:`realtime_websocket_url` — build provider WebSocket URLs for either
+  temporary-token direct clients or the backend realtime proxy.
 
 Native realtime clients never receive the long-lived ``DEEPGRAM_API_KEY``.
-The backend exchanges it for a short-lived bearer token via ``/v1/auth/grant``.
+If the Deepgram key supports ``/v1/auth/grant`` we can mint a direct temporary
+token; otherwise the backend proxy uses the server-side key and relays audio.
 """
 
 from __future__ import annotations
@@ -86,6 +87,48 @@ def _deepgram_language_hints(language: str) -> list[str]:
     return [resolved]
 
 
+def realtime_websocket_url(
+    *,
+    model: str,
+    language: str,
+    channels: int = 1,
+) -> tuple[str, str, int | None]:
+    """Build the Deepgram realtime URL and normalized language metadata."""
+    resolved_language = _normalize_language(language)
+    resolved_channels = max(1, channels)
+
+    if model.startswith("flux-"):
+        params: list[tuple[str, str]] = [
+            ("model", model),
+            ("encoding", "linear16"),
+            ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
+        ]
+        for hint in _deepgram_language_hints(language):
+            params.append(("language_hint", hint))
+        return (
+            f"{DEEPGRAM_FLUX_REALTIME_WS_BASE}?{urlencode(params)}",
+            resolved_language,
+            None,
+        )
+
+    params = [
+        ("model", model),
+        ("encoding", "linear16"),
+        ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
+        ("channels", str(resolved_channels)),
+        ("interim_results", "true"),
+        ("smart_format", "true"),
+        ("punctuate", "true"),
+        ("diarize", "true"),
+        ("language", resolved_language),
+    ]
+    return (
+        f"{DEEPGRAM_NOVA_REALTIME_WS_BASE}?{urlencode(params)}",
+        resolved_language,
+        8,
+    )
+
+
 async def mint_realtime_session(
     *,
     model: str,
@@ -99,33 +142,12 @@ async def mint_realtime_session(
     Bearer``.
     """
     access_token, expires_in_seconds = await _create_realtime_access_token()
-    resolved_language = _normalize_language(language)
     resolved_channels = max(1, channels)
-
-    if model.startswith("flux-"):
-        params: list[tuple[str, str]] = [
-            ("model", model),
-            ("encoding", "linear16"),
-            ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
-        ]
-        for hint in _deepgram_language_hints(language):
-            params.append(("language_hint", hint))
-        websocket_url = f"{DEEPGRAM_FLUX_REALTIME_WS_BASE}?{urlencode(params)}"
-        keep_alive_interval_seconds = None
-    else:
-        params = [
-            ("model", model),
-            ("encoding", "linear16"),
-            ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
-            ("channels", str(resolved_channels)),
-            ("interim_results", "true"),
-            ("smart_format", "true"),
-            ("punctuate", "true"),
-            ("diarize", "true"),
-            ("language", resolved_language),
-        ]
-        websocket_url = f"{DEEPGRAM_NOVA_REALTIME_WS_BASE}?{urlencode(params)}"
-        keep_alive_interval_seconds = 8
+    websocket_url, resolved_language, keep_alive_interval_seconds = realtime_websocket_url(
+        model=model,
+        language=language,
+        channels=resolved_channels,
+    )
 
     return DeepgramRealtimeSession(
         access_token=access_token,

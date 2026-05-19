@@ -6,7 +6,7 @@ final class OnboardingPermissionUITests: XCTestCase {
     }
 
     @MainActor
-    func testOnboardingPermissionSlideShowsGrantControlsForBothDictationPermissions() throws {
+    func testOnboardingPermissionSlideShowsGrantControlsForRequiredPermissions() throws {
         let app = XCUIApplication()
         app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
@@ -25,8 +25,10 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Give WaiComputer permissions"].exists)
         XCTAssertTrue(waitForElement(app.staticTexts["Microphone"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.staticTexts["Accessibility"], in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.staticTexts["System Audio"], in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch, in: app, timeout: 3))
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-accessibility-grant").firstMatch, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "onboarding-permission-system-audio-setup").firstMatch, in: app, timeout: 3))
         // Input Monitoring is no longer required — the global hotkey monitor
         // uses NSEvent.addGlobalMonitorForEvents which is governed by the same
         // Accessibility TCC service as ⌘V paste.

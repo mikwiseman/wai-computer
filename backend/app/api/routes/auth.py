@@ -37,6 +37,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
 GENERIC_REGISTER_ERROR = "Unable to create account. Try signing in or request a magic link."
+VALID_REGIONS = {"global", "ru"}
+
+
+def _normalize_region(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in VALID_REGIONS:
+        raise ValueError(f"region must be one of: {', '.join(sorted(VALID_REGIONS))}")
+    return normalized
 
 
 class RegisterRequest(BaseModel):
@@ -44,6 +52,7 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str
+    region: str = "global"
 
     @field_validator("email")
     @classmethod
@@ -58,6 +67,11 @@ class RegisterRequest(BaseModel):
         if len(v.strip()) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, v: str) -> str:
+        return _normalize_region(v)
 
 
 class LoginRequest(BaseModel):
@@ -77,11 +91,17 @@ class MagicLinkRequest(BaseModel):
 
     email: EmailStr
     client: str | None = None
+    region: str = "global"
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, v: str) -> str:
         return v.lower()
+
+    @field_validator("region")
+    @classmethod
+    def validate_region(cls, v: str) -> str:
+        return _normalize_region(v)
 
 
 class VerifyMagicLinkRequest(BaseModel):
@@ -124,6 +144,7 @@ class UserResponse(BaseModel):
     email: str
     created_at: datetime
     has_password: bool
+    region: str
 
 
 class MessageResponse(BaseModel):
@@ -247,6 +268,7 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
     user = User(
         email=request.email,
         password_hash=password_hash,
+        region=request.region,
     )
     db.add(user)
     await db.flush()
@@ -315,7 +337,7 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
 
     if user is None:
         # Create user without password for magic link auth
-        user = User(email=request.email)
+        user = User(email=request.email, region=request.region)
         db.add(user)
         await db.flush()
 
@@ -456,6 +478,7 @@ async def get_current_user_info(user: CurrentUser) -> UserResponse:
         email=user.email,
         created_at=user.created_at,
         has_password=user.password_hash is not None,
+        region=user.region,
     )
 
 

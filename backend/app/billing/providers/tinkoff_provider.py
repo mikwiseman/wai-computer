@@ -175,6 +175,8 @@ class TinkoffProvider(PaymentProvider):
             "Description": f"{plan_code.upper()} {period}"[:64],
             "CustomerKey": user_id,
             "Recurrent": "Y",
+            "OperationInitiatorType": "1",
+            "Language": "ru",
             "SuccessURL": success_url,
             "FailURL": cancel_url,
             "NotificationURL": _notification_url(),
@@ -227,8 +229,7 @@ class TinkoffProvider(PaymentProvider):
             "Amount": amount_kopecks,
             "OrderId": order_id,
             "Description": description[:64],
-            "CustomerKey": user_id,
-            "Recurrent": "Y",
+            "OperationInitiatorType": "R",
             "NotificationURL": _notification_url(),
         }
         init_token = generate_tinkoff_token(init_base, password)

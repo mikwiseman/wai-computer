@@ -9,13 +9,21 @@ client secret.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Literal
+from urllib.parse import urlencode
 
 import httpx
 
 from app.config import get_settings
 from app.core.deepgram import (
+    DEEPGRAM_REALTIME_SAMPLE_RATE,
+)
+from app.core.deepgram import (
     mint_realtime_session as mint_deepgram_realtime_session,
+)
+from app.core.deepgram import (
+    realtime_websocket_url as deepgram_realtime_websocket_url,
 )
 from app.core.elevenlabs import ELEVENLABS_API_BASE
 from app.core.inworld import build_session as build_inworld_session
@@ -30,6 +38,7 @@ from app.core.openai_transcription import (
 from app.core.openai_transcription import (
     realtime_websocket_url as openai_realtime_websocket_url,
 )
+from app.core.security import create_access_token
 from app.core.soniox import (
     mint_realtime_session as mint_soniox_realtime_session,
 )
@@ -116,7 +125,39 @@ async def _build_deepgram_realtime_session(
     model: str,
     language: str,
     channels: int,
+    user: User | None = None,
 ) -> RealtimeTranscriptionSession:
+    settings = get_settings()
+
+    if user is not None and settings.deepgram_api_key:
+        token_ttl = int(settings.deepgram_realtime_proxy_token_ttl_seconds)
+        token = create_access_token(user.id, expires_delta=timedelta(seconds=token_ttl))
+        _, resolved_language, keep_alive_interval_seconds = deepgram_realtime_websocket_url(
+            model=model,
+            language=language,
+            channels=channels,
+        )
+        websocket_url = _deepgram_proxy_websocket_url(
+            model=model,
+            language=language,
+            channels=channels,
+        )
+        return RealtimeTranscriptionSession(
+            provider="deepgram",
+            token=token,
+            expires_in_seconds=token_ttl,
+            sample_rate=DEEPGRAM_REALTIME_SAMPLE_RATE,
+            audio_format=f"linear16_{DEEPGRAM_REALTIME_SAMPLE_RATE}",
+            language=resolved_language,
+            channels=max(1, channels),
+            model=model,
+            keep_alive_interval_seconds=keep_alive_interval_seconds,
+            commit_strategy="vad",
+            no_verbatim=False,
+            websocket_url=websocket_url,
+            auth_scheme="bearer",
+        )
+
     session = await mint_deepgram_realtime_session(
         model=model,
         language=language,
@@ -136,6 +177,21 @@ async def _build_deepgram_realtime_session(
         no_verbatim=False,
         websocket_url=session.websocket_url,
         auth_scheme="bearer",
+    )
+
+
+def _deepgram_proxy_websocket_url(*, model: str, language: str, channels: int) -> str:
+    settings = get_settings()
+    base_url = settings.frontend_url.rstrip("/")
+    if base_url.startswith("https://"):
+        ws_base_url = f"wss://{base_url.removeprefix('https://')}"
+    elif base_url.startswith("http://"):
+        ws_base_url = f"ws://{base_url.removeprefix('http://')}"
+    else:
+        ws_base_url = base_url
+    return (
+        f"{ws_base_url}/api/transcription/deepgram-proxy?"
+        f"{urlencode({'model': model, 'language': language, 'channels': max(1, channels)})}"
     )
 
 
@@ -247,6 +303,7 @@ async def create_realtime_transcription_session(
                 model=model,
                 language=resolved_language,
                 channels=resolved_channels,
+                user=user,
             )
         if provider == "soniox":
             return await _build_soniox_realtime_session(
@@ -303,6 +360,7 @@ async def create_realtime_transcription_session(
             model=model,
             language=resolved_language,
             channels=resolved_channels,
+            user=user,
         )
     if provider == "soniox":
         return await _build_soniox_realtime_session(

@@ -91,6 +91,10 @@ class StripeProvider(PaymentProvider):
             params["automatic_tax"] = {"enabled": True}
         if trial_days and trial_days > 0:
             params["subscription_data"]["trial_period_days"] = trial_days
+            params["subscription_data"]["trial_settings"] = {
+                "end_behavior": {"missing_payment_method": "cancel"}
+            }
+            params["payment_method_collection"] = "if_required"
 
         session = await client.v1.checkout.sessions.create_async(params=params)
         return CheckoutResult(
