@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Carbon
+import WaiComputerKit
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: MacAppState
@@ -9,6 +10,8 @@ struct OnboardingView: View {
     @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
+    @State private var systemAudioStatus = OnboardingView.systemAudioPermissionStatus
+    @State private var isRequestingSystemAudioPermission = false
     @State private var permissionPollTimer: Timer?
     /// Set when the user clicks Grant for a permission whose state is
     /// already `.denied` — that path opens System Settings instead of
@@ -19,6 +22,7 @@ struct OnboardingView: View {
     /// when scenePhase becomes active again with status still denied.
     @State private var triggeredOpenMicrophoneSettings = false
     @State private var triggeredOpenAccessibilitySettings = false
+    @State private var triggeredOpenSystemAudioSettings = false
 
     private let pages = OnboardingPage.allCases
     @EnvironmentObject var languageStore: DictationLanguageStore
@@ -79,9 +83,12 @@ struct OnboardingView: View {
                                 isActive: index == currentPage,
                                 hasMicrophonePermission: hasMicrophonePermission,
                                 accessibilityStatus: accessibilityStatus,
+                                systemAudioStatus: systemAudioStatus,
+                                isRequestingSystemAudioPermission: isRequestingSystemAudioPermission,
                                 showSettingsRestartHint: showSettingsRestartHint,
                                 requestMicrophonePermission: requestMicrophonePermission,
                                 openAccessibilitySettings: openAccessibilitySettings,
+                                requestSystemAudioPermission: requestSystemAudioPermission,
                                 restartForPermissionRefresh: MacPrivacySettings.restartForPermissionRefresh
                             )
                             .environmentObject(dictationManager)
@@ -190,8 +197,8 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Skip drops the user into the main UI. Missing permissions
-            // surface as a banner there, so skipping is safe.
+            // Skip is an explicit opt-out of setup; normal recording should be
+            // ready before the user reaches the main UI.
             Button(isPermissionPage || isSandboxPage ? "Skip for Now" : "Skip") {
                 completeOnboarding()
             }
@@ -220,6 +227,11 @@ struct OnboardingView: View {
             }
             if permissionRestartRecommended {
                 return "Restart WaiComputer"
+            }
+            if hasMicrophonePermission,
+               accessibilityStatus == .granted,
+               systemAudioStatus == .denied {
+                return "Set Up System Audio"
             }
             return "Open Settings"
         }
@@ -285,7 +297,7 @@ struct OnboardingView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        hasMicrophonePermission && accessibilityStatus == .granted
+        hasMicrophonePermission && accessibilityStatus == .granted && systemAudioStatus == .granted
     }
 
     /// True when the user clicked Grant for a denied permission (which
@@ -295,11 +307,12 @@ struct OnboardingView: View {
     private var showSettingsRestartHint: Bool {
         let micStuck = triggeredOpenMicrophoneSettings && !hasMicrophonePermission
         let axStuck = triggeredOpenAccessibilitySettings && accessibilityStatus != .granted
-        return micStuck || axStuck
+        let systemAudioStuck = triggeredOpenSystemAudioSettings && systemAudioStatus != .granted
+        return micStuck || axStuck || systemAudioStuck
     }
 
     private var permissionRestartRecommended: Bool {
-        accessibilityStatus == .staleNeedsRestart
+        accessibilityStatus == .staleNeedsRestart || systemAudioStatus == .staleNeedsRestart
     }
 
     private static var hasMicrophonePermission: Bool {
@@ -311,17 +324,35 @@ struct OnboardingView: View {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
+    private static var systemAudioPermissionStatus: MacInputPermission.Status {
+        #if DEBUG
+        if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
+            return snapshot.systemAudioStatus
+        }
+        #endif
+
+        guard #available(macOS 14.2, *) else {
+            return .granted
+        }
+        return UserDefaults.standard.bool(forKey: MacAppState.onboardingSystemAudioSetupKey) ? .granted : .denied
+    }
+
     private func refreshPermissions() {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
             accessibilityStatus = snapshot.accessibilityStatus
+            systemAudioStatus = snapshot.systemAudioStatus
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
         accessibilityStatus = MacInputPermission.accessibilityStatus()
+        let refreshedSystemAudioStatus = Self.systemAudioPermissionStatus
+        systemAudioStatus = triggeredOpenSystemAudioSettings && refreshedSystemAudioStatus != .granted
+            ? .staleNeedsRestart
+            : refreshedSystemAudioStatus
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -377,6 +408,53 @@ struct OnboardingView: View {
         MacPrivacySettings.openAccessibility()
     }
 
+    /// Triggers the macOS System Audio Recording prompt before the first real
+    /// meeting recording. Apple exposes no standalone authorization API for Core
+    /// Audio taps, so the supported preflight is a short tap start/stop.
+    private func requestSystemAudioPermission() {
+        startPermissionPolling()
+        #if DEBUG
+        if MacPermissionTesting.forcesMissingDictationPermissions {
+            return
+        }
+        #endif
+
+        guard #available(macOS 14.2, *) else {
+            UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
+            systemAudioStatus = .granted
+            refreshPermissions()
+            return
+        }
+        guard !isRequestingSystemAudioPermission else { return }
+        isRequestingSystemAudioPermission = true
+
+        Task {
+            let capture = SystemAudioCapture()
+            do {
+                try await capture.startRecording()
+                try? await Task.sleep(for: .milliseconds(250))
+                await capture.stopRecording()
+                await MainActor.run {
+                    UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
+                    triggeredOpenSystemAudioSettings = false
+                    systemAudioStatus = .granted
+                    isRequestingSystemAudioPermission = false
+                    refreshPermissions()
+                }
+            } catch {
+                await capture.stopRecording()
+                await MainActor.run {
+                    UserDefaults.standard.set(false, forKey: MacAppState.onboardingSystemAudioSetupKey)
+                    triggeredOpenSystemAudioSettings = true
+                    systemAudioStatus = .staleNeedsRestart
+                    isRequestingSystemAudioPermission = false
+                    MacInputPermission.revealAppInFinder()
+                    MacPrivacySettings.openSystemAudio()
+                }
+            }
+        }
+    }
+
     private func startPermissionPollingIfNeeded() {
         if !dictationPermissionsReady {
             startPermissionPolling()
@@ -402,6 +480,8 @@ struct OnboardingView: View {
             requestMicrophonePermission()
         } else if accessibilityStatus != .granted {
             openAccessibilitySettings()
+        } else if systemAudioStatus != .granted {
+            requestSystemAudioPermission()
         }
     }
 }
@@ -413,9 +493,12 @@ private struct OnboardingPermissionSlide: View {
     let isActive: Bool
     let hasMicrophonePermission: Bool
     let accessibilityStatus: MacInputPermission.Status
+    let systemAudioStatus: MacInputPermission.Status
+    let isRequestingSystemAudioPermission: Bool
     let showSettingsRestartHint: Bool
     let requestMicrophonePermission: () -> Void
     let openAccessibilitySettings: () -> Void
+    let requestSystemAudioPermission: () -> Void
     let restartForPermissionRefresh: () -> Void
 
     var body: some View {
@@ -441,6 +524,7 @@ private struct OnboardingPermissionSlide: View {
                 VStack(spacing: 12) {
                     microphoneRow
                     accessibilityRow
+                    systemAudioRow
                 }
 
                 if showSettingsRestartHint {
@@ -485,6 +569,11 @@ private struct OnboardingPermissionSlide: View {
                 paneTitle: "Accessibility",
                 rowLabel: "WaiComputer"
             )
+        } else if systemAudioStatus != .granted {
+            PermissionPreviewSettings(
+                paneTitle: "Screen & System Audio Recording",
+                rowLabel: "WaiComputer"
+            )
         } else {
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle.fill")
@@ -501,7 +590,10 @@ private struct OnboardingPermissionSlide: View {
         if accessibilityStatus == .staleNeedsRestart {
             return "WaiComputer is enabled in System Settings. Restart WaiComputer so macOS applies the new permission to this running app."
         }
-        return "Grant Microphone for recording, and Accessibility for the global hotkey and text insertion."
+        if systemAudioStatus == .staleNeedsRestart {
+            return "Enable WaiComputer in System Settings, then restart so macOS applies System Audio Recording to this running app."
+        }
+        return "Grant Microphone for recording, Accessibility for the global hotkey and text insertion, and System Audio so meeting recordings capture what plays on your Mac."
     }
 
     @ViewBuilder
@@ -529,6 +621,28 @@ private struct OnboardingPermissionSlide: View {
             detail: "Listen for the global hotkey and paste dictated text",
             status: accessibilityStatus,
             identifierBase: "onboarding-permission-accessibility",
+            primaryAction: primary,
+            restartAction: restart
+        )
+    }
+
+    @ViewBuilder
+    private var systemAudioRow: some View {
+        let primary: PermissionRow.Action? = systemAudioStatus == .denied
+            ? PermissionRow.Action(
+                label: isRequestingSystemAudioPermission ? "Setting Up..." : "Set Up",
+                identifier: "setup",
+                run: requestSystemAudioPermission
+            )
+            : nil
+        let restart: PermissionRow.Action? = systemAudioStatus == .staleNeedsRestart
+            ? PermissionRow.Action(label: "Restart WaiComputer", identifier: "restart", run: restartForPermissionRefresh)
+            : nil
+        PermissionRow(
+            title: "System Audio",
+            detail: "Capture audio from calls and meetings",
+            status: systemAudioStatus,
+            identifierBase: "onboarding-permission-system-audio",
             primaryAction: primary,
             restartAction: restart
         )

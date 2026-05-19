@@ -566,10 +566,11 @@ class MacAppState: ObservableObject {
         case accessibility
     }
 
-    static let onboardingCompletedKey = "nativeOnboardingV3Completed"
-    static let onboardingCurrentPageKey = "nativeOnboardingV3CurrentPage"
-    static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed"]
+    static let onboardingCompletedKey = "nativeOnboardingV4Completed"
+    static let onboardingCurrentPageKey = "nativeOnboardingV4CurrentPage"
+    static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed", "nativeOnboardingV3Completed"]
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
+    static let onboardingSystemAudioSetupKey = "onboardingSystemAudioSetupCompleted"
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
@@ -602,8 +603,8 @@ class MacAppState: ObservableObject {
         apiClient = APIClient(baseURL: baseURL)
 
         // Resolve onboarding flag honoring env-var overrides used by tests/dev.
-        // The V3 key intentionally invalidates older completion flags because
-        // permission onboarding now uses the unified Accessibility model.
+        // The V4 key intentionally invalidates older completion flags because
+        // permission onboarding now preflights System Audio before recording.
         let env = ProcessInfo.processInfo.environment
         if env["WAI_FORCE_ONBOARDING"] == "1" {
             UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
@@ -927,6 +928,7 @@ class MacAppState: ObservableObject {
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCompletedKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingMicAcknowledgedKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.onboardingSystemAudioSetupKey)
             MacAppState.legacyOnboardingCompletedKeys.forEach {
                 UserDefaults.standard.removeObject(forKey: $0)
             }

@@ -14,11 +14,10 @@ private let dualLog = Logger(subsystem: "is.waiwai.computer.kit", category: "dua
 /// When `mixToMono` is `false`, produces 2-channel non-interleaved PCM buffers
 /// (ch0 = mic, ch1 = system audio) for provider-side multichannel transcription.
 ///
-/// When system audio is unavailable, produces mono buffers from mic only.
 @available(macOS 14.2, *)
 public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
-    private let mic: MicrophoneCapture
-    private let system: SystemAudioCapture
+    private let mic: any AudioCaptureProtocol
+    private let system: any SystemAudioCaptureProtocol
     private let config: AudioCaptureConfig
 
     /// When `true`, mic and system audio are mixed into a single mono channel
@@ -69,6 +68,23 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         self.bufferContinuation = continuation
     }
 
+    init(
+        config: AudioCaptureConfig = .default,
+        mixToMono: Bool = true,
+        mic: any AudioCaptureProtocol,
+        system: any SystemAudioCaptureProtocol
+    ) {
+        self.config = config
+        self.mixToMono = mixToMono
+        self.mic = mic
+        self.system = system
+        self.continuationLock = .allocate(capacity: 1)
+        self.continuationLock.initialize(to: os_unfair_lock())
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        self.audioBuffers = stream
+        self.bufferContinuation = continuation
+    }
+
     private func setupBufferStream() {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         audioBuffers = stream
@@ -85,23 +101,19 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         try await mic.startRecording()
         dualLog.warning("[Dual] Microphone started")
 
-        // Try system audio
         do {
             try await system.startRecording()
             hasSystemAudio = true
             dualLog.warning("[Dual] System audio started — \(self.mixToMono ? "mono-mix mode (diarization)" : "2-channel mode (multichannel)")")
         } catch {
             hasSystemAudio = false
-            dualLog.warning("[Dual] System audio unavailable: \(error.localizedDescription) — mic-only")
+            await mic.stopRecording()
+            dualLog.error("[Dual] System audio unavailable: \(error.localizedDescription, privacy: .public)")
+            throw DualAudioCaptureError.systemAudioUnavailable(error.localizedDescription)
         }
 
         _isRecording = true
-
-        if hasSystemAudio {
-            startDualMode()
-        } else {
-            startMicOnlyMode()
-        }
+        startDualMode()
     }
 
     /// Dual mode: accumulate both streams, flush as 2-channel buffers.
@@ -160,19 +172,9 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
                     // buffers and is normal.
                     if zeroSystemCount >= 2 {
                         self?.markSystemAudioStalled()
-                        dualLog.error("[Dual] System audio produced no buffers for \(zeroSystemCount * 3)s; microphone audio continues.")
+                        dualLog.error("[Dual] System audio produced no buffers for \(zeroSystemCount * 3)s.")
                     }
                 }
-            }
-        }
-    }
-
-    /// Mic-only mode: forward mic buffers directly (mono).
-    private func startMicOnlyMode() {
-        micTask = Task { [weak self] in
-            guard let self else { return }
-            for await buffer in self.mic.audioBuffers {
-                self.yieldBuffer(buffer)
             }
         }
     }
@@ -210,7 +212,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
     /// Flush accumulated mic + system samples into a 2-channel non-interleaved PCM buffer.
     /// Uses the minimum of both buffers when both have data, to keep channels in sync.
-    /// Falls back to mic-only with silence padding if system audio stalls.
+    /// Pads the system channel with silence if an already-started system stream stalls.
     private func flushDualBuffers() {
         lock.lock()
         let micCount = micBuffer.count
@@ -403,6 +405,25 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
         os_unfair_lock_unlock(continuationLock)
+    }
+}
+
+@available(macOS 14.2, *)
+protocol SystemAudioCaptureProtocol: AudioCaptureProtocol {
+    func waitForAudioBuffers(timeout: TimeInterval) async -> Bool
+}
+
+@available(macOS 14.2, *)
+extension SystemAudioCapture: SystemAudioCaptureProtocol {}
+
+public enum DualAudioCaptureError: Error, LocalizedError, Sendable {
+    case systemAudioUnavailable(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .systemAudioUnavailable:
+            return "System audio capture could not start. Complete System Audio setup in onboarding or enable WaiComputer in System Settings."
+        }
     }
 }
 #endif

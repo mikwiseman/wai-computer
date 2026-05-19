@@ -183,6 +183,7 @@ enum MacUITestFixtures {
 struct MacPermissionTestingSnapshot {
     let hasMicrophonePermission: Bool
     let accessibilityStatus: MacInputPermission.Status
+    let systemAudioStatus: MacInputPermission.Status
 }
 
 enum MacPermissionTesting {
@@ -195,7 +196,8 @@ enum MacPermissionTesting {
         case "missing":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: false,
-                accessibilityStatus: .denied
+                accessibilityStatus: .denied,
+                systemAudioStatus: .denied
             )
         case "needs_restart_accessibility", "needs_restart_paste", "needs_restart_input":
             // Legacy aliases (the latter two referred to TCC services that
@@ -203,12 +205,14 @@ enum MacPermissionTesting {
             // single Accessibility-stale state under the unified model.
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                accessibilityStatus: .staleNeedsRestart
+                accessibilityStatus: .staleNeedsRestart,
+                systemAudioStatus: .granted
             )
         case "all_granted":
             return MacPermissionTestingSnapshot(
                 hasMicrophonePermission: true,
-                accessibilityStatus: .granted
+                accessibilityStatus: .granted,
+                systemAudioStatus: .granted
             )
         default:
             return nil

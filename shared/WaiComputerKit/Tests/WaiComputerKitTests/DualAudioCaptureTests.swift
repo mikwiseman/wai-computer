@@ -27,6 +27,25 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(capture.hasSystemAudio)
     }
 
+    func testStartRecordingThrowsInsteadOfFallingBackWhenSystemAudioFails() async {
+        let mic = MockAudioCapture()
+        let system = FailingSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+
+        do {
+            try await capture.startRecording()
+            XCTFail("Dual capture must not silently fall back to mic-only when system audio fails")
+        } catch let error as DualAudioCaptureError {
+            XCTAssertEqual(error.localizedDescription, "System audio capture could not start. Complete System Audio setup in onboarding or enable WaiComputer in System Settings.")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertFalse(capture.isRecording)
+        XCTAssertFalse(capture.hasSystemAudio)
+        XCTAssertFalse(mic.isRecording)
+    }
+
     // MARK: - 2-Channel PCM Buffer Format (mirrors flushDualBuffers output)
 
     /// Verify that the 2-channel non-interleaved PCM format used by flushDualBuffers
@@ -101,7 +120,7 @@ final class DualAudioCaptureTests: XCTestCase {
     }
 
     /// Verify that when system audio stalls, ch1 is padded with silence (zeros),
-    /// matching the flushDualBuffers fallback behavior.
+    /// matching the flushDualBuffers silence-padding behavior.
     func testDualChannelBufferWithSilentSystemAudio() {
         let config = AudioCaptureConfig.default
         let frames = 1280  // 80ms @ 16kHz (minimum flush size)
@@ -162,7 +181,7 @@ final class DualAudioCaptureTests: XCTestCase {
             "Min flush size should be smaller than default buffer size")
     }
 
-    /// Verify that the max flush cap (1 second) matches the stall-fallback logic.
+    /// Verify that the max flush cap (1 second) matches the stall padding logic.
     func testMaxFlushCapAtOneSec() {
         let config = AudioCaptureConfig.default
         let maxFlushCap = Int(config.sampleRate)
@@ -439,5 +458,38 @@ final class DualAudioCaptureTests: XCTestCase {
                     "Frame \(i) ch1 (system) mismatch")
             }
         }
+    }
+}
+
+@available(macOS 14.2, *)
+private final class FailingSystemAudioCapture: SystemAudioCaptureProtocol, @unchecked Sendable {
+    private(set) var isRecording = false
+    let audioBuffers: AsyncStream<AVAudioPCMBuffer>
+
+    init() {
+        self.audioBuffers = AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func startRecording() async throws {
+        isRecording = false
+        throw FailingSystemAudioError.denied
+    }
+
+    func stopRecording() async {
+        isRecording = false
+    }
+
+    func waitForAudioBuffers(timeout: TimeInterval) async -> Bool {
+        false
+    }
+}
+
+private enum FailingSystemAudioError: LocalizedError {
+    case denied
+
+    var errorDescription: String? {
+        "Audio Capture denied"
     }
 }

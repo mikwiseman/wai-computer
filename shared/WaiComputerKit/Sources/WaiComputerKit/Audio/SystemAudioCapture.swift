@@ -463,8 +463,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     /// - The user is on macOS 14.2+ but has nothing actually playing — in that
     ///   case the result is genuinely "no audio yet", which is benign.
     ///
-    /// Callers use the result to decide whether to keep the tap or fall back to
-    /// microphone-only. Returns `true` as soon as any non-zero sample is seen, or
+    /// Callers use the result to decide whether the tap is receiving audible data.
+    /// Returns `true` as soon as any non-zero sample is seen, or
     /// `false` if the timeout elapses with only silence.
     public func waitForAudibleAudio(timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)

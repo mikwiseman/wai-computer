@@ -323,14 +323,10 @@ struct MacMainView: View {
                 }
             } else if message.contains("Audio Capture") || message.contains("System audio") {
                 Button("Open System Settings") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") {
-                        NSWorkspace.shared.open(url)
-                    }
+                    MacPrivacySettings.openSystemAudio()
                     recordingViewModel.clearError()
                 }
-                Button("Continue Mic-Only") {
-                    recordingViewModel.clearError()
-                }
+                Button("Cancel", role: .cancel) { recordingViewModel.clearError() }
             } else {
                 Button("OK") {
                     recordingViewModel.clearError()
