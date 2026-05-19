@@ -14,18 +14,6 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, PlainSerializer
 from sqlalchemy import select
 
-# Decimal values land on the wire as JSON numbers, not strings. The Apple
-# clients decode these straight into `Decimal`/`NSDecimal`, which rejects
-# JSON strings with `typeMismatch`. Float is lossless for cent-level prices.
-DecimalNumber = Annotated[
-    Decimal | None,
-    PlainSerializer(
-        lambda v: float(v) if v is not None else None,
-        return_type=float | None,
-        when_used="json",
-    ),
-]
-
 from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
@@ -38,6 +26,18 @@ from app.models.billing import (
     Plan,
     Subscription,
 )
+
+# Decimal values land on the wire as JSON numbers, not strings. The Apple
+# clients decode these straight into `Decimal`/`NSDecimal`, which rejects
+# JSON strings with `typeMismatch`. Float is lossless for cent-level prices.
+DecimalNumber = Annotated[
+    Decimal | None,
+    PlainSerializer(
+        lambda v: float(v) if v is not None else None,
+        return_type=float | None,
+        when_used="json",
+    ),
+]
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
