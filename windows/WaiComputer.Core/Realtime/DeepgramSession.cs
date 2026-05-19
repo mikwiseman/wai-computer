@@ -6,9 +6,10 @@ using WaiComputer.Core.Api.Models;
 namespace WaiComputer.Core.Realtime;
 
 /// <summary>
-/// Deepgram realtime transcription. Auth: <c>Authorization: Token …</c>.
-/// Audio: raw binary PCM. Commit: server VAD. Requires periodic keep-alive
-/// JSON pings; interval comes from
+/// Deepgram realtime transcription. Auth: short-lived
+/// <c>Authorization: Bearer …</c> token minted by the backend. Audio: raw
+/// binary PCM. Commit: CloseStream when the user stops. Requires periodic
+/// keep-alive JSON pings for long sessions; interval comes from
 /// <see cref="RealtimeTranscriptionSessionConfig.KeepAliveIntervalSeconds"/>.
 /// </summary>
 public sealed class DeepgramSession : IRealtimeTranscriptionSession
@@ -37,7 +38,7 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
         var url = _config.WebSocketUrl ?? throw new InvalidOperationException("Deepgram session requires websocket_url");
         await _ws.ConnectAsync(new Uri(url), options =>
         {
-            options.SetRequestHeader("Authorization", $"Token {_config.Token}");
+            options.SetRequestHeader("Authorization", $"Bearer {_config.Token}");
         }, ct).ConfigureAwait(false);
 
         await _events.Writer.WriteAsync(new TranscriptionEvent.Connected(), ct).ConfigureAwait(false);
@@ -52,7 +53,8 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
     public Task SendPcmAsync(ReadOnlyMemory<byte> pcm16Mono, CancellationToken ct)
         => _ws.SendBinaryAsync(pcm16Mono, ct);
 
-    public Task EndTurnAsync() => Task.CompletedTask;
+    public Task EndTurnAsync()
+        => _ws.SendTextAsync("{\"type\":\"CloseStream\"}", CancellationToken.None);
 
     public async Task CloseAsync(TimeSpan timeout)
     {
@@ -128,8 +130,31 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
         if (string.IsNullOrEmpty(text)) return;
         var isFinal = root.TryGetProperty("is_final", out var f) && f.GetBoolean();
         var confidence = alt.TryGetProperty("confidence", out var c) && c.TryGetDouble(out var cv) ? cv : 1.0;
-        var seg = new LiveTranscriptSegment(text, Speaker: null, IsFinal: isFinal, StartMs: 0, EndMs: 0, Confidence: confidence);
+        var (speaker, startMs, endMs) = WordMetadata(alt);
+        var seg = new LiveTranscriptSegment(text, speaker, isFinal, startMs, endMs, confidence);
         if (isFinal) _segments.Add(seg);
         _ = _events.Writer.TryWrite(new TranscriptionEvent.Transcript(seg));
+    }
+
+    private static (string? Speaker, long StartMs, long EndMs) WordMetadata(JsonElement alternative)
+    {
+        if (!alternative.TryGetProperty("words", out var words) || words.ValueKind != JsonValueKind.Array || words.GetArrayLength() == 0)
+        {
+            return (null, 0, 0);
+        }
+
+        var first = words[0];
+        var last = words[words.GetArrayLength() - 1];
+        var startMs = first.TryGetProperty("start", out var start) && start.TryGetDouble(out var startSeconds)
+            ? (long)Math.Round(startSeconds * 1000)
+            : 0L;
+        var endMs = last.TryGetProperty("end", out var end) && end.TryGetDouble(out var endSeconds)
+            ? (long)Math.Round(endSeconds * 1000)
+            : startMs;
+        var speaker = first.TryGetProperty("speaker", out var speakerElement) && speakerElement.ValueKind == JsonValueKind.Number
+            ? $"Speaker {speakerElement.GetInt32()}"
+            : null;
+
+        return (speaker, startMs, endMs);
     }
 }

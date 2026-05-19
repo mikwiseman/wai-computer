@@ -1,15 +1,13 @@
-"""Deepgram speech-to-text client (Nova-3 family).
+"""Deepgram speech-to-text client.
 
-Deepgram is the only dual-mode option in our registry: the same ``nova-3``
-model id powers both the synchronous file endpoint and the WebSocket streaming
-endpoint. We expose both here:
+We use different Deepgram models for different jobs:
 
 - :func:`transcribe_audio_file` — POST to ``/v1/listen`` for batch.
-- :func:`mint_realtime_session` — issue the WebSocket connection blob consumed
-  by :mod:`app.core.realtime_transcription`.
+- :func:`mint_realtime_session` — mint a short-lived token and issue the
+  WebSocket connection blob consumed by :mod:`app.core.realtime_transcription`.
 
-Auth is a static ``Authorization: Token <api_key>`` header on REST, and the
-same token passed via the ``Sec-WebSocket-Protocol`` subprotocol on streaming.
+Native realtime clients never receive the long-lived ``DEEPGRAM_API_KEY``.
+The backend exchanges it for a short-lived bearer token via ``/v1/auth/grant``.
 """
 
 from __future__ import annotations
@@ -24,8 +22,9 @@ from app.config import get_settings
 from app.core.transcript_utils import TranscriptResult
 
 DEEPGRAM_API_BASE = "https://api.deepgram.com"
-DEEPGRAM_REALTIME_WS_BASE = "wss://api.deepgram.com/v1/listen"
-DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS = 15 * 60
+DEEPGRAM_NOVA_REALTIME_WS_BASE = "wss://api.deepgram.com/v1/listen"
+DEEPGRAM_FLUX_REALTIME_WS_BASE = "wss://api.deepgram.com/v2/listen"
+DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS = 30
 DEEPGRAM_REALTIME_SAMPLE_RATE = 16_000
 
 
@@ -47,15 +46,47 @@ def _normalize_language(language: str) -> str:
 class DeepgramRealtimeSession:
     """Connection blob handed to the native client for Deepgram streaming."""
 
-    api_key: str
+    access_token: str
     websocket_url: str
     model: str
     language: str
     sample_rate: int
     channels: int
+    expires_in_seconds: int
+    keep_alive_interval_seconds: int | None
 
 
-def mint_realtime_session(
+async def _create_realtime_access_token() -> tuple[str, int]:
+    api_key = _require_api_key()
+    async with httpx.AsyncClient(base_url=DEEPGRAM_API_BASE, timeout=15.0) as client:
+        response = await client.post(
+            "/v1/auth/grant",
+            headers={"Authorization": f"Token {api_key}"},
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                "Deepgram /v1/auth/grant failed "
+                f"status={response.status_code} body={response.text[:512]}"
+            )
+        body = response.json()
+
+    access_token = body.get("access_token") if isinstance(body, dict) else None
+    expires_in = body.get("expires_in") if isinstance(body, dict) else None
+    if not isinstance(access_token, str) or not access_token:
+        raise RuntimeError("Deepgram auth grant response missing 'access_token'")
+    if not isinstance(expires_in, int) or expires_in <= 0:
+        raise RuntimeError("Deepgram auth grant response missing positive 'expires_in'")
+    return access_token, expires_in
+
+
+def _deepgram_language_hints(language: str) -> list[str]:
+    resolved = _normalize_language(language)
+    if resolved in {"auto", "multi"}:
+        return []
+    return [resolved]
+
+
+async def mint_realtime_session(
     *,
     model: str,
     language: str,
@@ -64,33 +95,47 @@ def mint_realtime_session(
     """Build the connection blob for a Deepgram streaming session.
 
     The native client speaks WebSocket directly to ``api.deepgram.com`` and
-    authenticates via the ``token`` subprotocol with the API key as the second
-    subprotocol entry.
+    authenticates with the short-lived grant token using ``Authorization:
+    Bearer``.
     """
-    api_key = _require_api_key()
+    access_token, expires_in_seconds = await _create_realtime_access_token()
     resolved_language = _normalize_language(language)
     resolved_channels = max(1, channels)
 
-    params = {
-        "model": model,
-        "encoding": "linear16",
-        "sample_rate": str(DEEPGRAM_REALTIME_SAMPLE_RATE),
-        "channels": str(resolved_channels),
-        "interim_results": "true",
-        "smart_format": "true",
-        "punctuate": "true",
-        "diarize": "true",
-        "language": resolved_language,
-    }
-    websocket_url = f"{DEEPGRAM_REALTIME_WS_BASE}?{urlencode(params)}"
+    if model.startswith("flux-"):
+        params: list[tuple[str, str]] = [
+            ("model", model),
+            ("encoding", "linear16"),
+            ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
+        ]
+        for hint in _deepgram_language_hints(language):
+            params.append(("language_hint", hint))
+        websocket_url = f"{DEEPGRAM_FLUX_REALTIME_WS_BASE}?{urlencode(params)}"
+        keep_alive_interval_seconds = None
+    else:
+        params = [
+            ("model", model),
+            ("encoding", "linear16"),
+            ("sample_rate", str(DEEPGRAM_REALTIME_SAMPLE_RATE)),
+            ("channels", str(resolved_channels)),
+            ("interim_results", "true"),
+            ("smart_format", "true"),
+            ("punctuate", "true"),
+            ("diarize", "true"),
+            ("language", resolved_language),
+        ]
+        websocket_url = f"{DEEPGRAM_NOVA_REALTIME_WS_BASE}?{urlencode(params)}"
+        keep_alive_interval_seconds = 8
 
     return DeepgramRealtimeSession(
-        api_key=api_key,
+        access_token=access_token,
         websocket_url=websocket_url,
         model=model,
         language=resolved_language,
         sample_rate=DEEPGRAM_REALTIME_SAMPLE_RATE,
         channels=resolved_channels,
+        expires_in_seconds=expires_in_seconds,
+        keep_alive_interval_seconds=keep_alive_interval_seconds,
     )
 
 

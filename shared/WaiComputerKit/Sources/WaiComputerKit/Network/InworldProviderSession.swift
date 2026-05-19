@@ -5,16 +5,16 @@ import os
 private let inworldLog = Logger(subsystem: "is.waiwai.computer.kit", category: "inworld")
 
 /// Inworld AI realtime STT WebSocket session — single primary path for the
-/// dictation flow. Connects to Soniox v4 RT (default model) via Inworld's
-/// unified bidirectional streaming endpoint.
+/// dictation flow. Connects to Inworld's unified bidirectional streaming
+/// endpoint.
 ///
 /// Protocol (verified against docs.inworld.ai 2026-05-06):
 /// - URL: `wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional`
-/// - Auth: HTTP `Authorization: Basic <base64-id:secret>` header
-/// - First message: `transcribe_config` JSON
-/// - Audio: `audio_chunk` with base64-encoded LINEAR16 PCM
-/// - End turn: `end_turn` (signals utterance boundary for VAD)
-/// - Close: `close_stream` (mandatory before disconnect)
+/// - Auth: HTTP `Authorization: Bearer <jwt>` header
+/// - First message: `transcribeConfig` JSON
+/// - Audio: `audioChunk` with base64-encoded LINEAR16 PCM
+/// - End turn: `endTurn` (signals utterance boundary for VAD)
+/// - Close: `closeStream` (mandatory before disconnect)
 /// - Server frames: `transcription` (interim+final), `voice_profile`,
 ///   `usage`, `error`
 public actor InworldProviderSession: ProviderSession {
@@ -95,7 +95,7 @@ public actor InworldProviderSession: ProviderSession {
     public func send(pcm16: Data) async throws {
         guard let webSocket else { throw ProviderError.transcriberInternal(message: "socket not open") }
         let payload: [String: Any] = [
-            "audio_chunk": [
+            "audioChunk": [
                 "content": pcm16.base64EncodedString()
             ]
         ]
@@ -104,13 +104,13 @@ public actor InworldProviderSession: ProviderSession {
         // Log first 5 chunks (so we see audio actually starts) then every 20th
         // (so we get ~1Hz progress signal without spamming).
         if audioChunksSent <= 5 || audioChunksSent % 20 == 0 {
-            inworldLog.info("[Inworld] TX audio_chunk #\(self.audioChunksSent) bytes=\(pcm16.count)")
+            inworldLog.info("[Inworld] TX audioChunk #\(self.audioChunksSent) bytes=\(pcm16.count)")
         }
     }
 
     public func endTurn() async throws {
         guard let webSocket else { return }
-        try await webSocket.send(.string(Self.encodeJSON(["end_turn": [String: Any]()])))
+        try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
     }
 
     public func close(timeout: Duration = .seconds(5)) async throws -> [LiveTranscriptSegment] {
@@ -118,7 +118,7 @@ public actor InworldProviderSession: ProviderSession {
         isClosing = true
 
         guard let webSocket else { return collectedSegments }
-        try? await webSocket.send(.string(Self.encodeJSON(["close_stream": [String: Any]()])))
+        try? await webSocket.send(.string(Self.encodeJSON(["closeStream": [String: Any]()])))
 
         // Drain remaining transcription frames within `timeout`. The server
         // closes the socket after the final `usage` frame; we wait for that
@@ -146,7 +146,7 @@ public actor InworldProviderSession: ProviderSession {
 
     // MARK: - Connection bring-up
 
-    /// Open the WebSocket and send the initial `transcribe_config`. Throws
+    /// Open the WebSocket and send the initial `transcribeConfig`. Throws
     /// when the handshake or first-message send fails. After this call
     /// returns, `events` will start emitting `.opened` followed by
     /// `.interim` / `.committed` frames.
@@ -160,7 +160,7 @@ public actor InworldProviderSession: ProviderSession {
         let task = urlSession.webSocketTask(with: request)
         webSocket = task
         task.resume()
-        inworldLog.info("[Inworld] WebSocket task created, sending transcribe_config model=\(self.modelId, privacy: .public) lang=\(self.language, privacy: .public)")
+        inworldLog.info("[Inworld] WebSocket task created, sending transcribeConfig model=\(self.modelId, privacy: .public) lang=\(self.language, privacy: .public)")
 
         // First message — provider session config.
         //
@@ -189,28 +189,22 @@ public actor InworldProviderSession: ProviderSession {
         // `inactivity_timeout_seconds` keeps hands-free silent gaps alive
         // (Inworld's undocumented default fires too aggressively).
         var transcribeConfig: [String: Any] = [
-            "model_id": modelId,
+            "modelId": modelId,
             "language": normalisedLanguage,
-            "audio_encoding": "LINEAR16",
-            "sample_rate_hertz": sampleRate,
-            "number_of_channels": channels,
-            "inactivity_timeout_seconds": 60,
+            "audioEncoding": "LINEAR16",
+            "sampleRateHertz": sampleRate,
+            "numberOfChannels": channels,
+            "inactivityTimeoutSeconds": 60,
         ]
-        // Soniox v4 RT supports per-session vocabulary biasing via
-        // `sonioxConfig.context.terms`. Inworld passes this through
-        // verbatim. Cap at ~10K total chars across the list — Soniox's
-        // documented hard limit on the context block.
         let cappedTerms = Self.cappedKeyTerms(keyTerms)
-        if !cappedTerms.isEmpty, modelId.contains("soniox") {
-            transcribeConfig["soniox_config"] = [
-                "context": ["terms": cappedTerms]
-            ]
+        if !cappedTerms.isEmpty {
+            transcribeConfig["context"] = ["terms": cappedTerms]
         }
         let configPayload: [String: Any] = [
-            "transcribe_config": transcribeConfig
+            "transcribeConfig": transcribeConfig
         ]
         try await task.send(.string(Self.encodeJSON(configPayload)))
-        inworldLog.info("[Inworld] sent transcribe_config language='\(normalisedLanguage, privacy: .public)' (caller passed '\(self.language, privacy: .public)')")
+        inworldLog.info("[Inworld] sent transcribeConfig language='\(normalisedLanguage, privacy: .public)' (caller passed '\(self.language, privacy: .public)')")
 
         startReceiveLoop(for: task)
     }
@@ -287,8 +281,11 @@ public actor InworldProviderSession: ProviderSession {
     }
 
     private func handleTranscription(_ payload: [String: Any]) {
-        let text = (payload["text"] as? String) ?? ""
-        let isFinal = (payload["is_final"] as? Bool) ?? false
+        let text = ((payload["text"] as? String) ?? (payload["transcript"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.isEmpty == false else { return }
+
+        let isFinal = (payload["is_final"] as? Bool) ?? (payload["isFinal"] as? Bool) ?? false
         let language = payload["language"] as? String
         let confidence = (payload["confidence"] as? Double) ?? 0.0
 
@@ -300,14 +297,26 @@ public actor InworldProviderSession: ProviderSession {
         if isFinal {
             // Soniox / Inworld may include word-level timing as `words`. Fold
             // start/end ms when present; fall back to 0 otherwise.
-            let words = payload["words"] as? [[String: Any]] ?? []
-            let startMs = (words.first?["start_ms"] as? Int)
-                ?? (words.first?["start_ms"] as? Double).map(Int.init)
+            let words = (payload["words"] as? [[String: Any]])
+                ?? (payload["word_timestamps"] as? [[String: Any]])
+                ?? (payload["wordTimestamps"] as? [[String: Any]])
+                ?? []
+            let startMs = Self.timestampMs(
+                words.first?["start_ms"]
+                    ?? words.first?["startMs"]
+                    ?? words.first?["start_time_ms"]
+                    ?? words.first?["start"]
+            )
                 ?? 0
-            let endMs = (words.last?["end_ms"] as? Int)
-                ?? (words.last?["end_ms"] as? Double).map(Int.init)
+            let endMs = Self.timestampMs(
+                words.last?["end_ms"]
+                    ?? words.last?["endMs"]
+                    ?? words.last?["end_time_ms"]
+                    ?? words.last?["end"]
+            )
                 ?? 0
-            let speaker = words.first?["speaker"] as? String
+            let speaker = (words.first?["speaker"] as? String)
+                ?? (words.first?["speaker_id"] as? String)
 
             let segment = LiveTranscriptSegment(
                 text: text,
@@ -322,6 +331,19 @@ public actor InworldProviderSession: ProviderSession {
         } else {
             eventContinuation.yield(.interim(text: text, language: language))
         }
+    }
+
+    private static func timestampMs(_ value: Any?) -> Int? {
+        if let intValue = value as? Int {
+            return intValue
+        }
+        if let doubleValue = value as? Double {
+            return doubleValue > 10_000 ? Int(doubleValue) : Int(doubleValue * 1000)
+        }
+        if let stringValue = value as? String, let doubleValue = Double(stringValue) {
+            return doubleValue > 10_000 ? Int(doubleValue) : Int(doubleValue * 1000)
+        }
+        return nil
     }
 
     private func handleVoiceProfile(_ payload: [String: Any]) {

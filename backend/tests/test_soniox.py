@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.core.soniox import transcribe_audio_file
+from app.core.soniox import (
+    SONIOX_REALTIME_WS_URL,
+    mint_realtime_session,
+    transcribe_audio_file,
+)
 
 
 def _resp(status_code: int, body: Any) -> MagicMock:
@@ -46,6 +50,45 @@ def _token(
         "confidence": confidence,
         "speaker": speaker,
     }
+
+
+@pytest.mark.asyncio
+async def test_mint_realtime_session_uses_temporary_key_flow():
+    temp_resp = _resp(200, {"api_key": "sx-temp"})
+    patcher, client_mock = _patch_async_client([temp_resp], [])
+
+    with (
+        patch("app.core.soniox.get_settings") as mock_settings,
+        patcher,
+    ):
+        mock_settings.return_value.soniox_api_key = "test-key"
+        session = await mint_realtime_session(
+            model="stt-rt-v4",
+            language="ru",
+            channels=2,
+            client_reference_id="test-session",
+        )
+
+    assert session.temporary_api_key == "sx-temp"
+    assert session.websocket_url == SONIOX_REALTIME_WS_URL
+    assert session.model == "stt-rt-v4"
+    assert session.language == "ru"
+    assert session.sample_rate == 16_000
+    assert session.channels == 2
+    call = client_mock.post.await_args_list[0]
+    assert call.args == ("/v1/auth/temporary-api-key",)
+    assert call.kwargs["headers"] == {"Authorization": "Bearer test-key"}
+    assert call.kwargs["json"]["usage_type"] == "transcribe_websocket"
+    assert call.kwargs["json"]["single_use"] is True
+    assert call.kwargs["json"]["client_reference_id"] == "test-session"
+
+
+@pytest.mark.asyncio
+async def test_mint_realtime_session_requires_api_key():
+    with patch("app.core.soniox.get_settings") as mock_settings:
+        mock_settings.return_value.soniox_api_key = ""
+        with pytest.raises(ValueError, match="SONIOX_API_KEY not configured"):
+            await mint_realtime_session(model="stt-rt-v4", language="en")
 
 
 @pytest.mark.asyncio

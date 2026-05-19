@@ -59,10 +59,10 @@ final class ModelTests: XCTestCase {
             "summary_language": "en",
             "summary_style": "detailed",
             "summary_instructions": "Write formally",
-            "dictation_live_stt_provider": "openai",
-            "dictation_live_stt_model": "gpt-realtime-whisper",
-            "recording_live_stt_provider": "openai",
-            "recording_live_stt_model": "gpt-realtime-whisper",
+            "dictation_live_stt_provider": "soniox",
+            "dictation_live_stt_model": "stt-rt-v4",
+            "recording_live_stt_provider": "soniox",
+            "recording_live_stt_model": "stt-rt-v4",
             "file_stt_provider": "deepgram",
             "file_stt_model": "nova-3",
             "dictation_post_filter_enabled": false,
@@ -77,10 +77,10 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.summaryLanguage, "en")
         XCTAssertEqual(settings.summaryStyle, "detailed")
         XCTAssertEqual(settings.summaryInstructions, "Write formally")
-        XCTAssertEqual(settings.dictationLiveSTTProvider, "openai")
-        XCTAssertEqual(settings.dictationLiveSTTModel, "gpt-realtime-whisper")
-        XCTAssertEqual(settings.recordingLiveSTTProvider, "openai")
-        XCTAssertEqual(settings.recordingLiveSTTModel, "gpt-realtime-whisper")
+        XCTAssertEqual(settings.dictationLiveSTTProvider, "soniox")
+        XCTAssertEqual(settings.dictationLiveSTTModel, "stt-rt-v4")
+        XCTAssertEqual(settings.recordingLiveSTTProvider, "soniox")
+        XCTAssertEqual(settings.recordingLiveSTTModel, "stt-rt-v4")
         XCTAssertEqual(settings.fileSTTProvider, "deepgram")
         XCTAssertEqual(settings.fileSTTModel, "nova-3")
         XCTAssertFalse(settings.dictationPostFilterEnabled)

@@ -15,7 +15,8 @@ public protocol RealtimeTranscriptionProvider: Sendable {
 }
 
 public protocol ProviderSession: Actor {
-    var events: AsyncStream<TranscriptionEvent> { get }
+    nonisolated var events: AsyncStream<TranscriptionEvent> { get }
+    func open() async throws
     func send(pcm16: Data) async throws
     func endTurn() async throws
     func close(timeout: Duration) async throws -> [LiveTranscriptSegment]

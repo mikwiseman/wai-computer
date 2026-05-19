@@ -315,9 +315,24 @@ async def test_update_summary_language_normalizes(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_transcription_options_returns_curated_choices(client: AsyncClient):
-    """GET /api/settings/transcription-options returns shared model choices."""
+async def test_get_transcription_options_returns_curated_choices(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """GET /api/settings/transcription-options returns configured curated choices."""
     headers = await _register(client, "settings.options@example.com", "password-123")
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "openai-test-key",
+            "deepgram_api_key": "deepgram-test-key",
+            "inworld_api_key": "iw:key",
+            "soniox_api_key": "soniox-key",
+        },
+    )()
+    monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
 
     response = await client.get("/api/settings/transcription-options", headers=headers)
 
@@ -326,19 +341,21 @@ async def test_get_transcription_options_returns_curated_choices(client: AsyncCl
     assert data["dictation_live_stt"][0]["provider"] == "elevenlabs"
     assert data["dictation_live_stt"][0]["model"] == "scribe_v2_realtime"
     assert any(
-        option["provider"] == "inworld" and option["model"] == "soniox/stt-rt-v4"
+        option["provider"] == "soniox" and option["model"] == "stt-rt-v4"
         for option in data["dictation_live_stt"]
+    )
+    assert any(
+        option["provider"] == "deepgram" and option["model"] == "flux-general-multi"
+        for option in data["dictation_live_stt"]
+    )
+    assert all(option["provider"] != "openai" for option in data["dictation_live_stt"])
+    assert all(option["provider"] != "openai" for option in data["recording_live_stt"])
+    assert any(
+        option["provider"] == "inworld" and option["model"] == "inworld/inworld-stt-1"
+        for option in data["recording_live_stt"]
     )
     assert any(
         option["provider"] == "deepgram" and option["model"] == "nova-3"
-        for option in data["dictation_live_stt"]
-    )
-    assert any(
-        option["provider"] == "openai" and option["model"] == "gpt-realtime-whisper"
-        for option in data["dictation_live_stt"]
-    )
-    assert any(
-        option["provider"] == "inworld" and option["model"] == "soniox/stt-rt-v4"
         for option in data["recording_live_stt"]
     )
     assert any(
@@ -358,12 +375,62 @@ async def test_get_transcription_options_returns_curated_choices(client: AsyncCl
         option["model"] == "gpt-5.5"
         for option in data["dictation_post_filter"]
     )
+    assert all(
+        option["model"] != "gpt-4o-transcribe"
+        for group in data.values()
+        for option in group
+    )
 
 
 @pytest.mark.asyncio
-async def test_update_transcription_settings_persists_valid_choices(client: AsyncClient):
+async def test_get_transcription_options_hides_unconfigured_providers(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The picker must not offer provider/model pairs that cannot mint real requests."""
+    headers = await _register(client, "settings.configured.options@example.com", "password-123")
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "",
+            "deepgram_api_key": "",
+            "inworld_api_key": "",
+            "soniox_api_key": "",
+        },
+    )()
+    monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
+
+    response = await client.get("/api/settings/transcription-options", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert {option["provider"] for option in data["dictation_live_stt"]} == {"elevenlabs"}
+    assert {option["provider"] for option in data["recording_live_stt"]} == {"elevenlabs"}
+    assert {option["provider"] for option in data["file_stt"]} == {"elevenlabs"}
+    assert data["dictation_post_filter"] == []
+
+
+@pytest.mark.asyncio
+async def test_update_transcription_settings_persists_valid_choices(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """PATCH /api/settings should persist curated transcription choices."""
     headers = await _register(client, "settings.stt@example.com", "password-123")
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "openai-test-key",
+            "deepgram_api_key": "deepgram-test-key",
+            "inworld_api_key": "iw:key",
+            "soniox_api_key": "soniox-key",
+        },
+    )()
+    monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
 
     response = await client.patch(
         "/api/settings",
@@ -371,8 +438,8 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
         json={
             "dictation_live_stt_provider": "elevenlabs",
             "dictation_live_stt_model": "scribe_v2_realtime",
-            "recording_live_stt_provider": "inworld",
-            "recording_live_stt_model": "soniox/stt-rt-v4",
+            "recording_live_stt_provider": "soniox",
+            "recording_live_stt_model": "stt-rt-v4",
             "file_stt_provider": "soniox",
             "file_stt_model": "stt-async-v4",
             "dictation_post_filter_enabled": False,
@@ -384,8 +451,8 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
     assert response.status_code == 200
     data = response.json()
     assert data["dictation_live_stt_provider"] == "elevenlabs"
-    assert data["recording_live_stt_provider"] == "inworld"
-    assert data["recording_live_stt_model"] == "soniox/stt-rt-v4"
+    assert data["recording_live_stt_provider"] == "soniox"
+    assert data["recording_live_stt_model"] == "stt-rt-v4"
     assert data["file_stt_provider"] == "soniox"
     assert data["file_stt_model"] == "stt-async-v4"
     assert data["dictation_post_filter_enabled"] is False
@@ -393,6 +460,38 @@ async def test_update_transcription_settings_persists_valid_choices(client: Asyn
 
     get_response = await client.get("/api/settings", headers=headers)
     assert get_response.json()["file_stt_model"] == "stt-async-v4"
+
+
+@pytest.mark.asyncio
+async def test_update_transcription_settings_rejects_unconfigured_choice(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """PATCH /api/settings rejects choices that are curated but unavailable in env."""
+    headers = await _register(client, "settings.unconfiguredstt@example.com", "password-123")
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "",
+            "deepgram_api_key": "",
+            "inworld_api_key": "",
+            "soniox_api_key": "",
+        },
+    )()
+    monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={
+            "recording_live_stt_provider": "deepgram",
+            "recording_live_stt_model": "nova-3",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

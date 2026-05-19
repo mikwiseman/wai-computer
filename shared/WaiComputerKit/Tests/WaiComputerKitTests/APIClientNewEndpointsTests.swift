@@ -534,9 +534,9 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "audio_format":"pcm_24000",
                 "language":"multi",
                 "channels":1,
-                "model":"gpt-realtime-whisper",
+                "model":"gpt-4o-mini-transcribe-2025-12-15",
                 "commit_strategy":"manual",
-                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-4o-mini-transcribe-2025-12-15",
                 "auth_scheme":"bearer"
             }
             """.data(using: .utf8)!

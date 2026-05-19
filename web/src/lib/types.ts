@@ -37,6 +37,24 @@ export interface TranscriptionOptions {
   dictation_post_filter: TranscriptionModelOption[];
 }
 
+export interface DictationBenchmarkCandidate {
+  id: string;
+  provider: string;
+  model: string;
+  label: string;
+  status: "ok" | "error";
+  transcript: string | null;
+  latency_ms: number | null;
+  word_count: number | null;
+  error: string | null;
+}
+
+export interface DictationBenchmarkBattleResponse {
+  battle_id: string;
+  language: string;
+  candidates: DictationBenchmarkCandidate[];
+}
+
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string;

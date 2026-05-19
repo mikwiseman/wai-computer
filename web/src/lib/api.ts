@@ -12,6 +12,7 @@ import type {
   AnalyticsResponse,
   BulkAction,
   BulkOperationResponse,
+  DictationBenchmarkBattleResponse,
   Entity,
   EntityDetail,
   EntityType,
@@ -404,6 +405,17 @@ export function getSettings(): Promise<UserSettings> {
 
 export function getTranscriptionOptions(): Promise<TranscriptionOptions> {
   return apiFetch<TranscriptionOptions>("/api/settings/transcription-options");
+}
+
+export function createDictationBenchmarkBattle(input: {
+  audio: Blob;
+  filename?: string;
+  language?: string;
+}): Promise<DictationBenchmarkBattleResponse> {
+  const formData = new FormData();
+  formData.append("audio", input.audio, input.filename ?? "dictation.webm");
+  formData.append("language", input.language ?? "multi");
+  return apiUpload<DictationBenchmarkBattleResponse>("/api/benchmarks/dictation/battle", formData);
 }
 
 export function updateSettings(settings: Partial<UserSettings>): Promise<UserSettings> {

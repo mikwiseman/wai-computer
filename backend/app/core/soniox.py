@@ -1,9 +1,13 @@
-"""Soniox async batch transcription client (stt-async-v4).
+"""Soniox direct speech-to-text client.
 
-This module is **batch-only**. Realtime Soniox traffic continues to flow
-through the existing Inworld gateway (see :mod:`app.core.inworld`); we add a
-direct client here for the async file endpoint because Inworld does not proxy
-Soniox over the synchronous REST path.
+Soniox is integrated directly rather than through Inworld:
+
+- ``stt-rt-v4`` for realtime WebSocket dictation/recording.
+- ``stt-async-v4`` for batch file transcription.
+
+Native realtime clients never receive the long-lived ``SONIOX_API_KEY``. The
+backend mints a short-lived, single-use temporary API key via
+``/v1/auth/temporary-api-key`` and sends only that temporary key to clients.
 
 Flow per call (matches the v4 async API):
 
@@ -24,6 +28,7 @@ an empty transcript.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -32,9 +37,26 @@ from app.config import get_settings
 from app.core.transcript_utils import TranscriptResult
 
 SONIOX_API_BASE = "https://api.soniox.com"
+SONIOX_REALTIME_WS_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
+SONIOX_REALTIME_TOKEN_TTL_SECONDS = 60
+SONIOX_REALTIME_MAX_SESSION_SECONDS = 5 * 60 * 60
+SONIOX_REALTIME_SAMPLE_RATE = 16_000
 SONIOX_POLL_INITIAL_DELAY_SECONDS = 1.0
 SONIOX_POLL_MAX_DELAY_SECONDS = 8.0
 SONIOX_POLL_HARD_TIMEOUT_SECONDS = 30 * 60
+
+
+@dataclass(frozen=True)
+class SonioxRealtimeSession:
+    """Connection blob for a direct Soniox realtime WebSocket session."""
+
+    temporary_api_key: str
+    websocket_url: str
+    model: str
+    language: str
+    sample_rate: int
+    channels: int
+    expires_in_seconds: int
 
 
 def _require_api_key() -> str:
@@ -49,6 +71,52 @@ def _language_hints(language: str) -> list[str]:
     if not cleaned or cleaned in {"auto", "multi"}:
         return []
     return [cleaned]
+
+
+async def mint_realtime_session(
+    *,
+    model: str,
+    language: str,
+    channels: int = 1,
+    client_reference_id: str = "waicomputer-realtime-stt",
+) -> SonioxRealtimeSession:
+    """Create a short-lived Soniox realtime session for a native client."""
+    api_key = _require_api_key()
+    resolved_language = (language or "").strip().lower() or "multi"
+    payload: dict[str, Any] = {
+        "usage_type": "transcribe_websocket",
+        "expires_in_seconds": SONIOX_REALTIME_TOKEN_TTL_SECONDS,
+        "single_use": True,
+        "max_session_duration_seconds": SONIOX_REALTIME_MAX_SESSION_SECONDS,
+        "client_reference_id": client_reference_id,
+    }
+
+    async with httpx.AsyncClient(base_url=SONIOX_API_BASE, timeout=15.0) as client:
+        response = await client.post(
+            "/v1/auth/temporary-api-key",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=payload,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                "Soniox temporary API key request failed "
+                f"status={response.status_code} body={response.text[:512]}"
+            )
+        body = response.json()
+
+    temporary_api_key = body.get("api_key") if isinstance(body, dict) else None
+    if not isinstance(temporary_api_key, str) or not temporary_api_key:
+        raise RuntimeError("Soniox temporary API key response missing 'api_key'")
+
+    return SonioxRealtimeSession(
+        temporary_api_key=temporary_api_key,
+        websocket_url=SONIOX_REALTIME_WS_URL,
+        model=model,
+        language=resolved_language,
+        sample_rate=SONIOX_REALTIME_SAMPLE_RATE,
+        channels=max(1, channels),
+        expires_in_seconds=SONIOX_REALTIME_TOKEN_TTL_SECONDS,
+    )
 
 
 def _build_segments_from_tokens(tokens: list[dict[str, Any]]) -> list[TranscriptResult]:

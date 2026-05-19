@@ -75,27 +75,27 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(decoded.count, 12, "16 kHz mono PCM should be converted to 24 kHz mono PCM")
     }
 
-    func testInworldRequestUsesConfiguredWebSocketURLAndBasicAuth() async throws {
+    func testInworldRequestUsesConfiguredWebSocketURLAndBearerAuth() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         let config = RealtimeTranscriptionSessionConfig(
             provider: "inworld",
-            token: "Basic abc123",
+            token: "jwt-token",
             expiresInSeconds: 900,
             sampleRate: 16_000,
             audioFormat: "linear16_16000",
             language: "multi",
             channels: 1,
-            model: "soniox/stt-rt-v4",
+            model: "inworld/inworld-stt-1",
             websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-            authScheme: "basic"
+            authScheme: "bearer"
         )
 
         let request = try await manager.testingRequestForRealtimeSession(config)
 
         XCTAssertEqual(request.url?.host, "api.inworld.ai")
         XCTAssertEqual(request.url?.path, "/stt/v1/transcribe:streamBidirectional")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Basic abc123")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-token")
     }
 
     func testInworldAudioChunkMessageUsesProviderPayloadShape() async throws {
@@ -106,9 +106,163 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let payload = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
         )
-        let audioChunk = try XCTUnwrap(payload["audio_chunk"] as? [String: Any])
+        let audioChunk = try XCTUnwrap(payload["audioChunk"] as? [String: Any])
 
         XCTAssertEqual(audioChunk["content"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
+    }
+
+    func testInworldTranscribeConfigUsesCurrentCamelCaseWireShape() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient, language: "multi", channels: 1)
+        let config = RealtimeTranscriptionSessionConfig(
+            provider: "inworld",
+            token: "jwt-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "multi",
+            channels: 1,
+            model: "inworld/inworld-stt-1",
+            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            authScheme: "bearer"
+        )
+
+        let message = await manager.testingMakeInworldTranscribeConfigMessage(config)
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+        let transcribeConfig = try XCTUnwrap(payload["transcribeConfig"] as? [String: Any])
+
+        XCTAssertEqual(transcribeConfig["modelId"] as? String, "inworld/inworld-stt-1")
+        XCTAssertEqual(transcribeConfig["audioEncoding"] as? String, "LINEAR16")
+        XCTAssertEqual(transcribeConfig["sampleRateHertz"] as? Int, 16_000)
+        XCTAssertEqual(transcribeConfig["numberOfChannels"] as? Int, 1)
+        XCTAssertEqual(transcribeConfig["language"] as? String, "")
+        XCTAssertNil(payload["transcribe_config"])
+    }
+
+    func testDeepgramRequestUsesConfiguredURLAndTokenAuth() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let config = RealtimeTranscriptionSessionConfig(
+            provider: "deepgram",
+            token: "dg-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "multi",
+            channels: 1,
+            model: "nova-3",
+            keepAliveIntervalSeconds: 8,
+            commitStrategy: "vad",
+            noVerbatim: false,
+            websocketURL: "wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16",
+            authScheme: "bearer"
+        )
+
+        let request = try await manager.testingRequestForRealtimeSession(config)
+
+        XCTAssertEqual(request.url?.host, "api.deepgram.com")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer dg-token")
+    }
+
+    func testSonioxRequestUsesConfiguredURLWithoutAuthHeader() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let config = RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        )
+
+        let request = try await manager.testingRequestForRealtimeSession(config)
+
+        XCTAssertEqual(request.url?.host, "stt-rt.soniox.com")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testSonioxRealtimeConfigUsesTemporaryApiKeyMessageShape() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        let config = RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 2,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        )
+
+        let message = await manager.testingMakeSonioxRealtimeConfigMessage(config)
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+
+        XCTAssertEqual(payload["api_key"] as? String, "sx-temp")
+        XCTAssertEqual(payload["model"] as? String, "stt-rt-v4")
+        XCTAssertEqual(payload["audio_format"] as? String, "pcm_s16le")
+        XCTAssertEqual(payload["sample_rate"] as? Int, 16_000)
+        XCTAssertEqual(payload["num_channels"] as? Int, 2)
+        XCTAssertEqual(payload["language_hints"] as? [String], ["ru"])
+        XCTAssertEqual(payload["enable_speaker_diarization"] as? Bool, true)
+        XCTAssertEqual(payload["enable_endpoint_detection"] as? Bool, true)
+    }
+
+    func testDeepgramFinalTranscriptCollectsSegment() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "deepgram",
+            token: "dg-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "en",
+            channels: 1,
+            model: "nova-3",
+            keepAliveIntervalSeconds: 8,
+            commitStrategy: "vad",
+            noVerbatim: false,
+            websocketURL: "wss://api.deepgram.com/v1/listen?model=nova-3",
+            authScheme: "bearer"
+        ))
+
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type":"Results",
+            "is_final":true,
+            "channel":{
+                "alternatives":[{
+                    "transcript":"Hello world.",
+                    "confidence":0.91,
+                    "words":[
+                        {"word":"Hello","start":0.0,"end":0.4,"confidence":0.9,"speaker":0},
+                        {"punctuated_word":"world.","start":0.4,"end":0.8,"confidence":0.92,"speaker":0}
+                    ]
+                }]
+            }
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Hello world.")
+        XCTAssertEqual(segments.first?.speaker, "Speaker 0")
+        XCTAssertEqual(segments.first?.startMs, 0)
+        XCTAssertEqual(segments.first?.endMs, 800)
+        XCTAssertEqual(segments.first?.confidence, 0.91)
     }
 
     func testOpenAICompletedTranscriptCollectsSegment() async {
@@ -135,15 +289,15 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         _ = await manager.events
         await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
             provider: "inworld",
-            token: "Basic abc123",
+            token: "jwt-token",
             expiresInSeconds: 900,
             sampleRate: 16_000,
             audioFormat: "linear16_16000",
             language: "en",
             channels: 1,
-            model: "soniox/stt-rt-v4",
+            model: "inworld/inworld-stt-1",
             websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-            authScheme: "basic"
+            authScheme: "bearer"
         ))
 
         await manager.testingHandleInworldMessage("""
@@ -167,6 +321,77 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.first?.startMs, 100)
         XCTAssertEqual(segments.first?.endMs, 900)
         XCTAssertEqual(segments.first?.confidence, 0.92)
+    }
+
+    func testInworldWrappedResultTranscriptCollectsSegment() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "inworld",
+            token: "jwt-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "en",
+            channels: 1,
+            model: "inworld/inworld-stt-1",
+            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            authScheme: "bearer"
+        ))
+
+        await manager.testingHandleInworldMessage("""
+        {
+            "result": {
+                "transcription": {
+                    "transcript": "This is an in-world real-time smoke test.",
+                    "isFinal": true,
+                    "wordTimestamps": []
+                }
+            }
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "This is an in-world real-time smoke test.")
+        XCTAssertEqual(segments.first?.isFinal, true)
+    }
+
+    func testSonioxFinalTokensCollectSegment() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        ))
+
+        await manager.testingHandleSonioxMessage("""
+        {
+            "tokens": [
+                {"text":"Привет","is_final":true,"start_ms":0,"end_ms":400,"confidence":0.93,"speaker":1},
+                {"text":" мир","is_final":true,"start_ms":400,"end_ms":800,"confidence":0.95,"speaker":1},
+                {"text":"<fin>","is_final":true,"start_ms":800,"end_ms":800,"confidence":1.0,"speaker":1}
+            ],
+            "finished": false
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments.first?.text, "Привет мир")
+        XCTAssertEqual(segments.first?.speaker, "Speaker 1")
+        XCTAssertEqual(segments.first?.endMs, 800)
+        XCTAssertEqual(segments.first?.confidence ?? 0, 0.94, accuracy: 0.001)
     }
 
     func testTimestampedCommittedTranscriptReplacesPlainDuplicate() async {

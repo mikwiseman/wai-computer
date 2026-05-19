@@ -26,6 +26,9 @@ export default function Home() {
           <Link href="/pricing" className={styles.navLink}>
             Pricing
           </Link>
+          <Link href="/benchmarks/dictation" className={styles.navLink}>
+            Benchmark
+          </Link>
           <LocaleSwitcher current="en" />
           <Link href="/login" className={styles.signin}>
             Sign in →

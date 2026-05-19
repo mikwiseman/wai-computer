@@ -209,6 +209,7 @@ public actor WebSocketManager {
         }
         try await sendOpenAISessionUpdateIfNeeded(sessionConfig)
         try await sendInworldTranscribeConfigIfNeeded(sessionConfig)
+        try await sendSonioxRealtimeConfigIfNeeded(sessionConfig)
 
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
@@ -390,25 +391,25 @@ public actor WebSocketManager {
     private func requestForRealtimeSession(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) throws -> URLRequest {
-        if sessionConfig.provider == "openai" {
+        if ["openai", "inworld", "deepgram", "soniox"].contains(sessionConfig.provider) {
             guard let urlString = sessionConfig.websocketURL,
                   let url = URL(string: urlString) else {
                 throw WebSocketConnectionError.invalidURL
             }
             var request = URLRequest(url: url)
             request.timeoutInterval = 300
-            request.setValue("Bearer \(sessionConfig.token)", forHTTPHeaderField: "Authorization")
-            return request
-        }
-
-        if sessionConfig.provider == "inworld" {
-            guard let urlString = sessionConfig.websocketURL,
-                  let url = URL(string: urlString) else {
-                throw WebSocketConnectionError.invalidURL
+            switch sessionConfig.authScheme {
+            case "bearer":
+                request.setValue("Bearer \(sessionConfig.token)", forHTTPHeaderField: "Authorization")
+            case "basic":
+                request.setValue(sessionConfig.token, forHTTPHeaderField: "Authorization")
+            case "message_api_key", nil:
+                break
+            case let scheme?:
+                throw WebSocketConnectionError.tokenFetchFailed(
+                    "Unsupported auth scheme for \(sessionConfig.provider): \(scheme)"
+                )
             }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 300
-            request.setValue(sessionConfig.token, forHTTPHeaderField: "Authorization")
             return request
         }
 
@@ -449,6 +450,11 @@ public actor WebSocketManager {
             return
         }
 
+        if transcriptionSession?.provider == "deepgram" || transcriptionSession?.provider == "soniox" {
+            try await webSocket.send(.data(data))
+            return
+        }
+
         try await webSocket.send(.string(makeElevenLabsAudioChunkMessage(
             data: data,
             previousText: previousText,
@@ -484,7 +490,7 @@ public actor WebSocketManager {
 
     private func makeInworldAudioChunkMessage(data: Data) -> String {
         let payload: [String: Any] = [
-            "audio_chunk": [
+            "audioChunk": [
                 "content": data.base64EncodedString()
             ]
         ]
@@ -527,23 +533,50 @@ public actor WebSocketManager {
         }
 
         var transcribeConfig: [String: Any] = [
-            "model_id": sessionConfig.model,
+            "modelId": sessionConfig.model,
             "language": normalisedLanguage,
-            "audio_encoding": "LINEAR16",
-            "sample_rate_hertz": sessionConfig.sampleRate,
-            "number_of_channels": sessionConfig.channels,
-            "inactivity_timeout_seconds": 60,
+            "audioEncoding": "LINEAR16",
+            "sampleRateHertz": sessionConfig.sampleRate,
+            "numberOfChannels": sessionConfig.channels,
+            "inactivityTimeoutSeconds": 60,
         ]
         let cappedTerms = InworldProviderSession.cappedKeyTerms(keyTerms)
-        if !cappedTerms.isEmpty, sessionConfig.model.contains("soniox") {
-            transcribeConfig["soniox_config"] = [
-                "context": ["terms": cappedTerms]
-            ]
+        if !cappedTerms.isEmpty {
+            transcribeConfig["context"] = ["terms": cappedTerms]
         }
 
         let payload: [String: Any] = [
-            "transcribe_config": transcribeConfig
+            "transcribeConfig": transcribeConfig
         ]
+        return Self.encodeJSONPayload(payload)
+    }
+
+    private func makeSonioxRealtimeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        let normalisedLanguage = sessionConfig.language.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let isAutoLanguage = normalisedLanguage.isEmpty
+            || normalisedLanguage == "multi"
+            || normalisedLanguage == "auto"
+            || normalisedLanguage == "und"
+
+        var payload: [String: Any] = [
+            "api_key": sessionConfig.token,
+            "model": sessionConfig.model,
+            "audio_format": "pcm_s16le",
+            "sample_rate": sessionConfig.sampleRate,
+            "num_channels": sessionConfig.channels,
+            "enable_speaker_diarization": true,
+            "enable_language_identification": isAutoLanguage,
+            "enable_endpoint_detection": true,
+            "max_endpoint_delay_ms": 500,
+        ]
+        if !isAutoLanguage {
+            payload["language_hints"] = [normalisedLanguage]
+        }
+        let cappedTerms = InworldProviderSession.cappedKeyTerms(keyTerms)
+        if !cappedTerms.isEmpty {
+            payload["context"] = ["terms": cappedTerms]
+        }
         return Self.encodeJSONPayload(payload)
     }
 
@@ -617,6 +650,14 @@ public actor WebSocketManager {
         makeInworldAudioChunkMessage(data: data)
     }
 
+    func testingMakeInworldTranscribeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        makeInworldTranscribeConfigMessage(sessionConfig)
+    }
+
+    func testingMakeSonioxRealtimeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        makeSonioxRealtimeConfigMessage(sessionConfig)
+    }
+
     func testingSetSessionConfig(_ sessionConfig: RealtimeTranscriptionSessionConfig) {
         transcriptionSession = sessionConfig
     }
@@ -677,6 +718,14 @@ public actor WebSocketManager {
         }
         if transcriptionSession?.provider == "inworld" {
             handleInworldMessage(text)
+            return
+        }
+        if transcriptionSession?.provider == "deepgram" {
+            handleDeepgramMessage(text)
+            return
+        }
+        if transcriptionSession?.provider == "soniox" {
+            handleSonioxMessage(text)
             return
         }
         handleElevenLabsMessage(text)
@@ -847,6 +896,200 @@ public actor WebSocketManager {
             resolved *= 1_000
         }
         return Int(resolved)
+    }
+
+    private func handleDeepgramMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        let messageType = json["type"] as? String
+        if messageType == "Results",
+           let channel = json["channel"] as? [String: Any],
+           let alternatives = channel["alternatives"] as? [[String: Any]],
+           let alternative = alternatives.first {
+            handleDeepgramTranscript(
+                alternative,
+                isFinal: (json["is_final"] as? Bool) ?? (json["speech_final"] as? Bool) ?? false
+            )
+            return
+        }
+
+        if messageType == "TurnInfo" || json["transcript"] is String {
+            handleDeepgramTranscript(json, isFinal: true)
+            return
+        }
+
+        if messageType == "Error" || json["error"] != nil {
+            let message = (json["description"] as? String)
+                ?? (json["message"] as? String)
+                ?? (json["error"] as? String)
+                ?? "Deepgram realtime transcription error"
+            let error = WebSocketConnectionError.serverError(message)
+            if reconnectEnabled {
+                startReconnection(afterError: error)
+            } else {
+                closeConnection(
+                    forConnection: connectionId,
+                    error: error,
+                    emitDisconnected: true,
+                    finishEventStream: false
+                )
+            }
+        }
+    }
+
+    private func handleDeepgramTranscript(_ payload: [String: Any], isFinal: Bool) {
+        let transcript = (payload["transcript"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return }
+
+        let words = payload["words"] as? [[String: Any]] ?? []
+        let startMs = Self.secondsTimestampMs(words.first?["start"]) ?? (collectedSegments.last?.endMs ?? 0)
+        let endMs = Self.secondsTimestampMs(words.last?["end"]) ?? startMs
+        let confidence = (payload["confidence"] as? Double)
+            ?? Self.averageConfidence(words)
+        let speaker = Self.speakerLabel(words.first?["speaker"])
+
+        let segment = LiveTranscriptSegment(
+            text: transcript,
+            speaker: speaker,
+            isFinal: isFinal,
+            startMs: startMs,
+            endMs: endMs,
+            confidence: confidence ?? 0.0
+        )
+        if isFinal {
+            lastTranscriptReceivedAt = reconnectClock.now
+            if let emittedSegment = collectCommittedSegment(segment, kind: .timestamped) {
+                eventContinuation?.yield(.transcript(emittedSegment))
+            }
+        } else {
+            eventContinuation?.yield(.transcript(segment))
+        }
+    }
+
+    private func handleSonioxMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        if let errorCode = json["error_code"] as? String, !errorCode.isEmpty {
+            let message = json["error_message"] as? String
+                ?? "Soniox realtime transcription error: \(errorCode)"
+            let error = WebSocketConnectionError.serverError(message)
+            if reconnectEnabled {
+                startReconnection(afterError: error)
+            } else {
+                closeConnection(
+                    forConnection: connectionId,
+                    error: error,
+                    emitDisconnected: true,
+                    finishEventStream: false
+                )
+            }
+            return
+        }
+
+        let tokens = json["tokens"] as? [[String: Any]] ?? []
+        guard !tokens.isEmpty else { return }
+
+        let finalTokens = tokens.filter { ($0["is_final"] as? Bool) == true }
+        let nonFinalTokens = tokens.filter { ($0["is_final"] as? Bool) != true }
+
+        if let finalSegment = sonioxSegment(from: finalTokens, isFinal: true) {
+            lastTranscriptReceivedAt = reconnectClock.now
+            if let emittedSegment = collectCommittedSegment(finalSegment, kind: .timestamped) {
+                eventContinuation?.yield(.transcript(emittedSegment))
+            }
+        }
+
+        if let nonFinalSegment = sonioxSegment(from: nonFinalTokens, isFinal: false) {
+            eventContinuation?.yield(.transcript(nonFinalSegment))
+        }
+    }
+
+    private func sonioxSegment(from tokens: [[String: Any]], isFinal: Bool) -> LiveTranscriptSegment? {
+        let speechTokens = tokens.filter { token in
+            (token["translation_status"] as? String) != "translation"
+                && ((token["text"] as? String)?.hasPrefix("<") != true)
+        }
+        let transcript = speechTokens
+            .compactMap { $0["text"] as? String }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return nil }
+
+        return LiveTranscriptSegment(
+            text: transcript,
+            speaker: Self.speakerLabel(speechTokens.first?["speaker"]),
+            isFinal: isFinal,
+            startMs: Self.integerTimestampMs(speechTokens.first?["start_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
+            endMs: Self.integerTimestampMs(speechTokens.last?["end_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
+            confidence: Self.averageConfidence(speechTokens) ?? 0.0
+        )
+    }
+
+    private static func speakerLabel(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let string = value as? String {
+            if string.lowercased().hasPrefix("speaker") {
+                return string
+            }
+            return "Speaker \(string)"
+        }
+        if let int = value as? Int {
+            return "Speaker \(int)"
+        }
+        if let number = value as? NSNumber {
+            return "Speaker \(number.intValue)"
+        }
+        return nil
+    }
+
+    private static func secondsTimestampMs(_ value: Any?) -> Int? {
+        guard let value else { return nil }
+        if let double = value as? Double {
+            return Int(double * 1000)
+        }
+        if let int = value as? Int {
+            return int * 1000
+        }
+        if let number = value as? NSNumber {
+            return Int(number.doubleValue * 1000)
+        }
+        if let string = value as? String, let double = Double(string) {
+            return Int(double * 1000)
+        }
+        return nil
+    }
+
+    private static func integerTimestampMs(_ value: Any?) -> Int? {
+        guard let value else { return nil }
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = value as? String, let int = Int(string) {
+            return int
+        }
+        return nil
+    }
+
+    private static func averageConfidence(_ words: [[String: Any]]) -> Double? {
+        let values = words.compactMap { word -> Double? in
+            if let value = word["confidence"] as? Double {
+                return value
+            }
+            if let number = word["confidence"] as? NSNumber {
+                return number.doubleValue
+            }
+            return nil
+        }
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     private func handleElevenLabsMessage(_ text: String) {
@@ -1087,6 +1330,7 @@ public actor WebSocketManager {
                 }
                 try await sendOpenAISessionUpdateIfNeeded(sessionConfig)
                 try await sendInworldTranscribeConfigIfNeeded(sessionConfig)
+                try await sendSonioxRealtimeConfigIfNeeded(sessionConfig)
 
                 // Replay buffered audio
                 let bufferedChunks = audioBuffer
@@ -1162,12 +1406,34 @@ public actor WebSocketManager {
         }
 
         if transcriptionSession?.provider == "inworld" {
-            try await webSocket.send(.string("{\"end_turn\":{}}"))
-            try await webSocket.send(.string("{\"close_stream\":{}}"))
+            try await webSocket.send(.string("{\"endTurn\":{}}"))
+            try await webSocket.send(.string("{\"closeStream\":{}}"))
             endOfStreamSent = true
             reconnectEnabled = false
             cancelReconnection(clearBufferedAudio: false)
-            wsLog.debug("Sent end_turn and close_stream to Inworld")
+            wsLog.debug("Sent endTurn and closeStream to Inworld")
+            return
+        }
+
+        if transcriptionSession?.provider == "deepgram" {
+            try await webSocket.send(.string("{\"type\":\"CloseStream\"}"))
+            endOfStreamSent = true
+            reconnectEnabled = false
+            cancelReconnection(clearBufferedAudio: false)
+            wsLog.debug("Sent CloseStream to Deepgram")
+            return
+        }
+
+        if transcriptionSession?.provider == "soniox" {
+            let sampleRate = transcriptionSession?.sampleRate ?? 16_000
+            let silenceBytes = max(1, sampleRate / 5) * 2
+            try await webSocket.send(.data(Data(repeating: 0, count: silenceBytes)))
+            try await webSocket.send(.string("{\"type\":\"finalize\"}"))
+            try await webSocket.send(.string(""))
+            endOfStreamSent = true
+            reconnectEnabled = false
+            cancelReconnection(clearBufferedAudio: false)
+            wsLog.debug("Sent silence, finalize, and finish signal to Soniox")
             return
         }
 
@@ -1241,6 +1507,14 @@ public actor WebSocketManager {
         handleInworldMessage(text)
     }
 
+    func testingHandleDeepgramMessage(_ text: String) {
+        handleDeepgramMessage(text)
+    }
+
+    func testingHandleSonioxMessage(_ text: String) {
+        handleSonioxMessage(text)
+    }
+
     private func sendOpenAISessionUpdateIfNeeded(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) async throws {
@@ -1253,6 +1527,13 @@ public actor WebSocketManager {
     ) async throws {
         guard sessionConfig.provider == "inworld", let webSocket else { return }
         try await webSocket.send(.string(makeInworldTranscribeConfigMessage(sessionConfig)))
+    }
+
+    private func sendSonioxRealtimeConfigIfNeeded(
+        _ sessionConfig: RealtimeTranscriptionSessionConfig
+    ) async throws {
+        guard sessionConfig.provider == "soniox", let webSocket else { return }
+        try await webSocket.send(.string(makeSonioxRealtimeConfigMessage(sessionConfig)))
     }
 
     private func closeConnection(

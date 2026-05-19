@@ -9,6 +9,7 @@ public enum RealtimeProvider
     [JsonStringEnumMemberName("openai")] OpenAi,
     [JsonStringEnumMemberName("inworld")] Inworld,
     [JsonStringEnumMemberName("deepgram")] Deepgram,
+    [JsonStringEnumMemberName("soniox")] Soniox,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<AuthScheme>))]
@@ -18,6 +19,7 @@ public enum AuthScheme
     [JsonStringEnumMemberName("bearer")] Bearer,
     [JsonStringEnumMemberName("basic")] Basic,
     [JsonStringEnumMemberName("token")] Token,
+    [JsonStringEnumMemberName("message_api_key")] MessageApiKey,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<CommitStrategy>))]

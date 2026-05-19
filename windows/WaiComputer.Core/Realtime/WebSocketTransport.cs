@@ -38,8 +38,16 @@ public sealed class ClientWebSocketTransport : IWebSocketTransport
     public Task SendBinaryAsync(ReadOnlyMemory<byte> payload, CancellationToken ct)
         => _ws.SendAsync(payload, WebSocketMessageType.Binary, endOfMessage: true, ct).AsTask();
 
-    public Task<WebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken ct)
-        => _ws.ReceiveAsync(buffer, ct).AsTask();
+    public async Task<WebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken ct)
+    {
+        var v = await _ws.ReceiveAsync(buffer, ct).ConfigureAwait(false);
+        return new WebSocketReceiveResult(
+            v.Count,
+            v.MessageType,
+            v.EndOfMessage,
+            _ws.CloseStatus,
+            _ws.CloseStatusDescription);
+    }
 
     public async Task CloseAsync(WebSocketCloseStatus status, string? description, CancellationToken ct)
     {

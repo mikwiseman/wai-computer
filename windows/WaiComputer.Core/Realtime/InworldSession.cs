@@ -6,9 +6,9 @@ using WaiComputer.Core.Api.Models;
 namespace WaiComputer.Core.Realtime;
 
 /// <summary>
-/// Inworld realtime transcription. Auth: pre-built
-/// <c>Authorization: Basic …</c> string supplied by the WaiComputer backend.
-/// Audio: raw binary PCM. Commit: server VAD.
+/// Inworld realtime transcription. Auth: short-lived
+/// <c>Authorization: Bearer …</c> JWT minted server-side. Audio: base64 PCM
+/// JSON frames using the current camelCase streaming protocol.
 /// </summary>
 public sealed class InworldSession : IRealtimeTranscriptionSession
 {
@@ -35,21 +35,29 @@ public sealed class InworldSession : IRealtimeTranscriptionSession
         var url = _config.WebSocketUrl ?? throw new InvalidOperationException("Inworld session requires websocket_url");
         await _ws.ConnectAsync(new Uri(url), options =>
         {
-            options.SetRequestHeader("Authorization", _config.Token); // backend pre-builds "Basic …"
+            options.SetRequestHeader("Authorization", $"Bearer {_config.Token}");
         }, ct).ConfigureAwait(false);
 
         await _events.Writer.WriteAsync(new TranscriptionEvent.Connected(), ct).ConfigureAwait(false);
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _readLoop = Task.Run(() => ReadLoop(_cts.Token), _cts.Token);
+        await _ws.SendTextAsync(TranscribeConfigPayload(), ct).ConfigureAwait(false);
     }
 
     public Task SendPcmAsync(ReadOnlyMemory<byte> pcm16Mono, CancellationToken ct)
-        => _ws.SendBinaryAsync(pcm16Mono, ct);
+        => _ws.SendTextAsync(AudioChunkPayload(pcm16Mono.Span), ct);
 
-    public Task EndTurnAsync() => Task.CompletedTask;
+    public Task EndTurnAsync()
+        => _ws.SendTextAsync("{\"endTurn\":{}}", CancellationToken.None);
 
     public async Task CloseAsync(TimeSpan timeout)
     {
+        if (_ws.State == WebSocketState.Open)
+        {
+            try { await EndTurnAsync().ConfigureAwait(false); } catch { /* close continues */ }
+            try { await _ws.SendTextAsync("{\"closeStream\":{}}", CancellationToken.None).ConfigureAwait(false); } catch { /* close continues */ }
+        }
+
         _cts?.Cancel();
         using var closeCts = new CancellationTokenSource(timeout);
         await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "client done", closeCts.Token).ConfigureAwait(false);
@@ -65,6 +73,28 @@ public sealed class InworldSession : IRealtimeTranscriptionSession
         try { await CloseAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); } catch { /* ignore */ }
         await _ws.DisposeAsync().ConfigureAwait(false);
     }
+
+    private string TranscribeConfigPayload()
+        => JsonSerializer.Serialize(new
+        {
+            transcribeConfig = new
+            {
+                modelId = _config.Model,
+                audioEncoding = "LINEAR16",
+                sampleRateHertz = _config.SampleRate,
+                numberOfChannels = _config.Channels,
+                language = _config.Language is "multi" ? string.Empty : _config.Language,
+            },
+        });
+
+    private string AudioChunkPayload(ReadOnlySpan<byte> pcm)
+        => JsonSerializer.Serialize(new
+        {
+            audioChunk = new
+            {
+                content = Convert.ToBase64String(pcm),
+            },
+        });
 
     private async Task ReadLoop(CancellationToken ct)
     {
@@ -109,16 +139,67 @@ public sealed class InworldSession : IRealtimeTranscriptionSession
             return;
         }
 
-        if (!root.TryGetProperty("transcription", out var trans)) return;
-        var text = trans.TryGetProperty("text", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+        if (!TryGetTranscription(root, out var trans)) return;
+        var text = trans.TryGetProperty("transcript", out var transcript)
+            ? transcript.GetString() ?? string.Empty
+            : trans.TryGetProperty("text", out var textElement)
+                ? textElement.GetString() ?? string.Empty
+                : string.Empty;
         if (string.IsNullOrEmpty(text)) return;
 
-        var isFinal = trans.TryGetProperty("is_final", out var f) && f.GetBoolean();
-        var start = trans.TryGetProperty("start_ms", out var s) && s.TryGetInt64(out var sv) ? sv : 0L;
-        var end = trans.TryGetProperty("end_ms", out var e) && e.TryGetInt64(out var ev) ? ev : start;
+        var isFinal = TryGetBoolean(trans, "isFinal") ?? TryGetBoolean(trans, "is_final") ?? false;
+        var (speaker, start, end) = WordMetadata(trans);
+        if (start == 0 && trans.TryGetProperty("start_ms", out var s) && s.TryGetInt64(out var sv)) start = sv;
+        if (end == 0 && trans.TryGetProperty("end_ms", out var e) && e.TryGetInt64(out var ev)) end = ev;
         var confidence = trans.TryGetProperty("confidence", out var c) && c.TryGetDouble(out var cv) ? cv : 1.0;
-        var seg = new LiveTranscriptSegment(text, Speaker: null, IsFinal: isFinal, StartMs: start, EndMs: end, Confidence: confidence);
+        var seg = new LiveTranscriptSegment(text, speaker, isFinal, start, end, confidence);
         if (isFinal) _segments.Add(seg);
         _ = _events.Writer.TryWrite(new TranscriptionEvent.Transcript(seg));
+    }
+
+    private static bool? TryGetBoolean(JsonElement root, string property)
+        => root.TryGetProperty(property, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+
+    private static bool TryGetTranscription(JsonElement root, out JsonElement transcription)
+    {
+        if (root.TryGetProperty("transcription", out transcription))
+        {
+            return true;
+        }
+
+        if (root.TryGetProperty("result", out var result)
+            && result.TryGetProperty("transcription", out transcription))
+        {
+            return true;
+        }
+
+        transcription = default;
+        return false;
+    }
+
+    private static (string? Speaker, long StartMs, long EndMs) WordMetadata(JsonElement transcription)
+    {
+        if (!transcription.TryGetProperty("wordTimestamps", out var words)
+            || words.ValueKind != JsonValueKind.Array
+            || words.GetArrayLength() == 0)
+        {
+            return (null, 0, 0);
+        }
+
+        var first = words[0];
+        var last = words[words.GetArrayLength() - 1];
+        var startMs = first.TryGetProperty("startMs", out var start) && start.TryGetInt64(out var startValue)
+            ? startValue
+            : 0L;
+        var endMs = last.TryGetProperty("endMs", out var end) && end.TryGetInt64(out var endValue)
+            ? endValue
+            : startMs;
+        var speaker = first.TryGetProperty("speaker", out var speakerElement) && speakerElement.ValueKind == JsonValueKind.String
+            ? speakerElement.GetString()
+            : null;
+
+        return (speaker, startMs, endMs);
     }
 }

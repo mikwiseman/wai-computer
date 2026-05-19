@@ -10,6 +10,8 @@ import OnboardingPage from "./onboarding/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
 import RuHome from "./ru/page";
+import DictationBenchmarkPage from "./benchmarks/dictation/page";
+import RuDictationBenchmarkPage from "./ru/benchmarks/dictation/page";
 import RootLayout, { metadata } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
@@ -201,6 +203,10 @@ describe("app pages", () => {
     );
     expect(androidLink).toHaveAttribute("download");
     expect(androidLink).toHaveTextContent("APK");
+    expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
+      "href",
+      "/benchmarks/dictation",
+    );
   });
 
   it("renders Russian landing with download links including Android", () => {
@@ -240,6 +246,38 @@ describe("app pages", () => {
     expect(
       screen.getByRole("link", { name: /конфиденциальность/i }),
     ).toHaveAttribute("href", "/privacy");
+    expect(screen.getByRole("link", { name: "Бенчмарк" })).toHaveAttribute(
+      "href",
+      "/ru/benchmarks/dictation",
+    );
+  });
+
+  it("renders dictation benchmark page", () => {
+    render(<DictationBenchmarkPage />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /Dictation models, ranked by our own audio/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Start dictation battle/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("WaiComputer Synthetic Dictation v1")).toBeInTheDocument();
+    expect(screen.getByText("Soniox v4 Async")).toBeInTheDocument();
+  });
+
+  it("renders Russian dictation benchmark page", () => {
+    render(<RuDictationBenchmarkPage />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /Модели диктовки/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Начать dictation battle/i })).toBeInTheDocument();
   });
 
   it("renders first-party privacy and terms pages", () => {

@@ -87,19 +87,77 @@ async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_uses_inworld_recording_choice():
+async def test_create_realtime_transcription_session_uses_soniox_recording_choice():
+    user = type(
+        "User",
+        (),
+        {
+            "recording_live_stt_provider": "soniox",
+            "recording_live_stt_model": "stt-rt-v4",
+        },
+    )()
+    from app.core.realtime_transcription import create_realtime_transcription_session
+
+    fake_soniox = type(
+        "SonioxSession",
+        (),
+        {
+            "temporary_api_key": "sx-temp",
+            "expires_in_seconds": 60,
+            "sample_rate": 16_000,
+            "language": "ru",
+            "channels": 2,
+            "model": "stt-rt-v4",
+            "websocket_url": "wss://stt-rt.soniox.com/transcribe-websocket",
+        },
+    )()
+    with patch(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        new=AsyncMock(return_value=fake_soniox),
+    ):
+        session = await create_realtime_transcription_session(
+            language="ru",
+            channels=2,
+            purpose="recording",
+            user=user,
+        )
+
+    assert session.provider == "soniox"
+    assert session.model == "stt-rt-v4"
+    assert session.language == "ru"
+    assert session.channels == 2
+    assert session.token == "sx-temp"
+    assert session.auth_scheme == "message_api_key"
+    assert session.websocket_url == "wss://stt-rt.soniox.com/transcribe-websocket"
+
+
+@pytest.mark.asyncio
+async def test_create_realtime_transcription_session_uses_inworld_bearer_jwt():
     user = type(
         "User",
         (),
         {
             "recording_live_stt_provider": "inworld",
-            "recording_live_stt_model": "soniox/stt-rt-v4",
+            "recording_live_stt_model": "inworld/inworld-stt-1",
         },
     )()
+    fake_jwt = type(
+        "InworldJwt",
+        (),
+        {"token": "iw-jwt", "expires_in_seconds": 850},
+    )()
+
     from app.core.realtime_transcription import create_realtime_transcription_session
 
-    with patch("app.core.realtime_transcription.get_settings") as mock_settings:
+    with (
+        patch("app.core.realtime_transcription.get_settings") as mock_settings,
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
+    ):
         mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
         session = await create_realtime_transcription_session(
             language="ru",
             channels=2,
@@ -108,10 +166,12 @@ async def test_create_realtime_transcription_session_uses_inworld_recording_choi
         )
 
     assert session.provider == "inworld"
-    assert session.model == "soniox/stt-rt-v4"
+    assert session.model == "inworld/inworld-stt-1"
     assert session.language == "ru"
     assert session.channels == 2
-    assert session.auth_scheme == "basic"
+    assert session.token == "iw-jwt"
+    assert session.auth_scheme == "bearer"
+    assert session.expires_in_seconds == 850
     assert session.websocket_url == "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional"
 
 
@@ -129,7 +189,7 @@ async def test_create_realtime_transcription_session_rejects_bad_recording_model
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_uses_openai_user_default():
+async def test_create_dictation_session_rejects_removed_openai_realtime_model():
     user = type(
         "User",
         (),
@@ -138,23 +198,12 @@ async def test_create_dictation_session_uses_openai_user_default():
             "dictation_live_stt_model": "gpt-realtime-whisper",
         },
     )()
-    with patch(
-        "app.core.realtime_transcription.create_openai_realtime_client_secret",
-        new=AsyncMock(return_value="oai-ephemeral"),
-    ):
-        from app.core.realtime_transcription import create_realtime_transcription_session
+    from app.core.realtime_transcription import create_realtime_transcription_session
 
-        session = await create_realtime_transcription_session(
+    with pytest.raises(ValueError, match="Unsupported dictation_live_stt option"):
+        await create_realtime_transcription_session(
             language="en",
             channels=1,
             purpose="dictation",
             user=user,
         )
-
-    assert session.provider == "openai"
-    assert session.model == "gpt-realtime-whisper"
-    assert session.token == "oai-ephemeral"
-    assert session.sample_rate == 24_000
-    assert session.audio_format == "pcm_24000"
-    assert session.websocket_url == "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper"
-    assert session.auth_scheme == "bearer"

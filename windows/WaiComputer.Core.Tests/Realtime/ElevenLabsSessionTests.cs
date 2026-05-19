@@ -35,7 +35,7 @@ public class ElevenLabsSessionTests
     }
 
     [Fact]
-    public async Task SendsBinaryFramesForPcm()
+    public async Task SendsInputAudioChunkJsonForPcm()
     {
         var transport = new FakeWebSocketTransport();
         await using var session = new ElevenLabsSession(Cfg(), transport);
@@ -44,7 +44,27 @@ public class ElevenLabsSessionTests
         var pcm = new byte[1600 * 2];
         await session.SendPcmAsync(pcm, CancellationToken.None);
 
-        transport.SentBinary.Should().ContainSingle().Which.Length.Should().Be(pcm.Length);
+        transport.SentBinary.Should().BeEmpty();
+        var payload = transport.SentText.Should().ContainSingle().Subject;
+        payload.Should().Contain("\"message_type\":\"input_audio_chunk\"");
+        payload.Should().Contain("\"audio_base_64\"");
+        payload.Should().Contain("\"sample_rate\":16000");
+        payload.Should().Contain("\"commit\":false");
+        payload.Should().Contain(Convert.ToBase64String(pcm));
+    }
+
+    [Fact]
+    public async Task EndTurnSendsCommitChunk()
+    {
+        var transport = new FakeWebSocketTransport();
+        await using var session = new ElevenLabsSession(Cfg(), transport);
+        await session.OpenAsync(CancellationToken.None);
+
+        await session.EndTurnAsync();
+
+        transport.SentText.Should().ContainSingle(s =>
+            s.Contains("\"message_type\":\"input_audio_chunk\"")
+            && s.Contains("\"commit\":true"));
     }
 
     [Fact]

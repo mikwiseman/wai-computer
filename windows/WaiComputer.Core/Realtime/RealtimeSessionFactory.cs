@@ -11,6 +11,7 @@ public static class RealtimeSessionFactory
             RealtimeProvider.OpenAi => new OpenAISession(config, transport),
             RealtimeProvider.Inworld => new InworldSession(config, transport),
             RealtimeProvider.Deepgram => new DeepgramSession(config, transport),
+            RealtimeProvider.Soniox => new SonioxSession(config, transport),
             _ => throw new NotSupportedException($"Unknown realtime provider: {config.Provider}"),
         };
 }

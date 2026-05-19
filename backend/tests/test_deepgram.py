@@ -11,6 +11,7 @@ import pytest
 
 from app.core.deepgram import (
     DEEPGRAM_REALTIME_SAMPLE_RATE,
+    _create_realtime_access_token,
     mint_realtime_session,
     transcribe_audio_file,
 )
@@ -189,16 +190,40 @@ async def test_transcribe_audio_file_falls_back_to_top_level_transcript():
     assert results[0].speaker is None
 
 
-def test_mint_realtime_session_builds_websocket_url_with_required_params():
-    with patch("app.core.deepgram.get_settings") as mock_settings:
-        mock_settings.return_value.deepgram_api_key = "test-key"
-        session = mint_realtime_session(model="nova-3", language="multi", channels=2)
+@pytest.mark.asyncio
+async def test_create_realtime_access_token_uses_auth_grant():
+    response = _mock_response(200, {"access_token": "dg-jwt", "expires_in": 30})
 
-    assert session.api_key == "test-key"
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response),
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        token, expires_in = await _create_realtime_access_token()
+
+    assert token == "dg-jwt"
+    assert expires_in == 30
+
+
+@pytest.mark.asyncio
+async def test_mint_realtime_session_builds_nova_websocket_url_with_required_params():
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        patch(
+            "app.core.deepgram._create_realtime_access_token",
+            new=AsyncMock(return_value=("dg-jwt", 30)),
+        ),
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        session = await mint_realtime_session(model="nova-3", language="multi", channels=2)
+
+    assert session.access_token == "dg-jwt"
+    assert session.expires_in_seconds == 30
     assert session.model == "nova-3"
     assert session.language == "multi"
     assert session.channels == 2
     assert session.sample_rate == DEEPGRAM_REALTIME_SAMPLE_RATE
+    assert session.keep_alive_interval_seconds == 8
     assert "wss://api.deepgram.com/v1/listen?" in session.websocket_url
     assert "model=nova-3" in session.websocket_url
     assert "encoding=linear16" in session.websocket_url
@@ -207,8 +232,35 @@ def test_mint_realtime_session_builds_websocket_url_with_required_params():
     assert "language=multi" in session.websocket_url
 
 
-def test_mint_realtime_session_requires_api_key():
+@pytest.mark.asyncio
+async def test_mint_realtime_session_builds_flux_websocket_url_with_language_hint():
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        patch(
+            "app.core.deepgram._create_realtime_access_token",
+            new=AsyncMock(return_value=("dg-jwt", 30)),
+        ),
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        session = await mint_realtime_session(
+            model="flux-general-multi",
+            language="ru",
+            channels=1,
+        )
+
+    assert session.access_token == "dg-jwt"
+    assert session.model == "flux-general-multi"
+    assert session.keep_alive_interval_seconds is None
+    assert "wss://api.deepgram.com/v2/listen?" in session.websocket_url
+    assert "model=flux-general-multi" in session.websocket_url
+    assert "encoding=linear16" in session.websocket_url
+    assert "sample_rate=16000" in session.websocket_url
+    assert "language_hint=ru" in session.websocket_url
+
+
+@pytest.mark.asyncio
+async def test_mint_realtime_session_requires_api_key():
     with patch("app.core.deepgram.get_settings") as mock_settings:
         mock_settings.return_value.deepgram_api_key = ""
         with pytest.raises(ValueError, match="DEEPGRAM_API_KEY not configured"):
-            mint_realtime_session(model="nova-3", language="en", channels=1)
+            await mint_realtime_session(model="nova-3", language="en", channels=1)
