@@ -31,7 +31,15 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     private var aggregateDeviceID: AudioObjectID = AudioObjectID.max
     private var ioProcID: AudioDeviceIOProcID?
 
-    // Audio flow verification — uses raw pointer for real-time thread safety (no locks)
+    // Audio flow verification — uses raw pointers for real-time thread safety (no locks)
+    /// Atomic flag: 0 = no buffers received, 1 = at least one buffer received.
+    /// Written from the real-time IO thread, read from any thread.
+    private let _bufferReceivedFlag: UnsafeMutablePointer<Int32> = {
+        let p = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+        p.initialize(to: 0)
+        return p
+    }()
+
     /// Atomic flag: 0 = no audio received, 1 = non-zero audio received.
     /// Written from the real-time IO thread, read from any thread.
     private let _audioReceivedFlag: UnsafeMutablePointer<Int32> = {
@@ -43,6 +51,11 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     /// `true` once the IOProc has received at least one buffer containing non-zero audio samples.
     public var hasReceivedAudio: Bool {
         OSAtomicAdd32(0, _audioReceivedFlag) != 0
+    }
+
+    /// `true` once the IOProc has received at least one buffer, even if it is silent.
+    public var hasReceivedBuffers: Bool {
+        OSAtomicAdd32(0, _bufferReceivedFlag) != 0
     }
 
     private static let audioPresenceThreshold: Float = 0.000_001
@@ -277,6 +290,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             let ratio = nativeSR / targetSR
             let outFrames = Int(Double(srcFrames) / ratio)
             if outFrames == 0 { return }
+            OSAtomicCompareAndSwap32(0, 1, self._bufferReceivedFlag)
 
             guard let outBuffer = AVAudioPCMBuffer(
                 pcmFormat: targetFormat,
@@ -461,6 +475,20 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         return hasReceivedAudio
     }
 
+    /// Wait up to `timeout` seconds for the tap to start producing buffers.
+    ///
+    /// This is the UI-facing health signal. A buffer that contains silence can be
+    /// healthy system audio when nothing is playing yet; no buffers means the tap
+    /// is not delivering data to the app.
+    public func waitForAudioBuffers(timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if hasReceivedBuffers { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)  // 100 ms
+        }
+        return hasReceivedBuffers
+    }
+
     /// Stop capturing system audio and release all Core Audio resources.
     public func stopCapture() {
         guard _isCapturing else { return }
@@ -477,6 +505,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         destroyTap()
 
         _isCapturing = false
+        OSAtomicCompareAndSwap32(1, 0, _bufferReceivedFlag)
         OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
@@ -516,6 +545,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
         continuationLock.deinitialize(count: 1)
         continuationLock.deallocate()
+        _bufferReceivedFlag.deinitialize(count: 1)
+        _bufferReceivedFlag.deallocate()
         _audioReceivedFlag.deinitialize(count: 1)
         _audioReceivedFlag.deallocate()
     }

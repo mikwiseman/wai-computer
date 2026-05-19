@@ -44,12 +44,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
+    /// Whether system audio has delivered any buffers since recording started.
+    public private(set) var systemAudioStreamActive = false
+
     /// Whether system audio has ever received non-silent samples since recording started.
     public private(set) var systemAudioReceivedAny = false
 
-    private var lastAudibleSystemAudioAt: Date?
+    private var lastSystemBufferAt: Date?
 
-    /// Whether system audio has stalled (no audible samples for multiple monitor intervals).
+    /// Whether system audio has stalled (no buffers for multiple monitor intervals).
     public private(set) var systemAudioStalled = false
 
     static let audioPresenceThreshold: Float = 0.000_001
@@ -124,16 +127,13 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             }
         }
 
-        // Fast-path stall detection: if the CATap was created but is producing
-        // pure silence (e.g. permission was denied, the running process has a
-        // stale TCC cache, or the user's output device is a Bluetooth sink the
-        // tap can't observe), surface the warning at 3 seconds instead of
-        // waiting the usual ~6 seconds for the periodic flush-task detector.
+        // Fast-path stall detection: surface a warning only if the tap produces
+        // no buffers. Silent buffers are valid when nothing is playing yet.
         earlySystemAudioCheckTask = Task { [weak self] in
             guard let self else { return }
-            let received = await self.system.waitForAudibleAudio(timeout: 3.0)
+            let received = await self.system.waitForAudioBuffers(timeout: 3.0)
             if !received {
-                dualLog.error("[Dual] System audio tap produced no audible samples within 3s — marking stalled. Likely causes: TCC denied, stale permission cache after grant, or output device (e.g. Bluetooth headphones) is not observable by CATap.")
+                dualLog.error("[Dual] System audio tap produced no buffers within 3s — marking stalled.")
                 self.markSystemAudioStalled()
             }
         }
@@ -149,20 +149,18 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
                 // Stall detection: check every ~3 seconds (18 flushes × 160ms)
                 if flushCount % 18 == 0 {
-                    if self?.hasRecentSystemAudio() == false {
+                    if self?.hasRecentSystemAudioBuffer() == false {
                         zeroSystemCount += 1
                     } else {
                         zeroSystemCount = 0
                     }
 
-                    // Only surface a stall warning when system audio NEVER
-                    // arrived. A mid-recording silence (meeting pause, user
-                    // hits mute on the other end, etc.) is normal — surfacing
-                    // "system audio not reaching" in that case would be a
-                    // false positive that erodes trust in the warning.
-                    if zeroSystemCount >= 2, self?.systemAudioReceivedAny == false {
+                    // Only surface a stall warning when system audio buffers
+                    // are not arriving. Mid-recording silence still delivers
+                    // buffers and is normal.
+                    if zeroSystemCount >= 2 {
                         self?.markSystemAudioStalled()
-                        dualLog.error("[Dual] System audio never produced audible samples after \(zeroSystemCount * 3)s; microphone audio continues.")
+                        dualLog.error("[Dual] System audio produced no buffers for \(zeroSystemCount * 3)s; microphone audio continues.")
                     }
                 }
             }
@@ -360,21 +358,22 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private func appendSystemSamples(_ samples: [Float], hasRealSystemAudio: Bool) {
         lock.lock()
         systemBuffer.append(contentsOf: samples)
+        systemAudioStreamActive = true
+        lastSystemBufferAt = Date()
         if hasRealSystemAudio {
             systemAudioReceivedAny = true
-            lastAudibleSystemAudioAt = Date()
             systemAudioStalled = false
         }
         lock.unlock()
     }
 
-    private func hasRecentSystemAudio() -> Bool {
+    private func hasRecentSystemAudioBuffer() -> Bool {
         lock.lock()
-        let lastAudibleAt = lastAudibleSystemAudioAt
+        let lastBufferAt = lastSystemBufferAt
         lock.unlock()
 
-        guard let lastAudibleAt else { return false }
-        return Date().timeIntervalSince(lastAudibleAt) < 4.0
+        guard let lastBufferAt else { return false }
+        return Date().timeIntervalSince(lastBufferAt) < 4.0
     }
 
     private func markSystemAudioStalled() {
@@ -387,9 +386,10 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         lock.lock()
         micBuffer.removeAll()
         systemBuffer.removeAll()
+        systemAudioStreamActive = false
         systemAudioReceivedAny = false
         systemAudioStalled = false
-        lastAudibleSystemAudioAt = nil
+        lastSystemBufferAt = nil
         lock.unlock()
     }
 
