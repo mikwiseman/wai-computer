@@ -161,7 +161,13 @@ async def test_mcp_oauth_consent_and_token_exchange(
             )
     assert tools_response.status_code == 200, tools_response.text
     tool_names = {tool["name"] for tool in tools_response.json()["result"]["tools"]}
-    assert tool_names == {"search", "fetch"}
+    assert tool_names == {
+        "search",
+        "fetch",
+        "list_folders",
+        "list_recordings",
+        "list_action_items",
+    }
 
 
 @pytest.mark.asyncio

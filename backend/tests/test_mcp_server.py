@@ -89,9 +89,42 @@ def test_create_mcp_app_instructions_mention_tools() -> None:
     with patch.object(mcp_server.FastMCP, "__init__", _capturing_init):
         _ = mcp_server.create_mcp_app(settings)
 
-    assert "search" in captured["instructions"]
-    assert "fetch" in captured["instructions"]
+    instructions = captured["instructions"]
+    for tool_name in (
+        "search",
+        "fetch",
+        "list_folders",
+        "list_recordings",
+        "list_action_items",
+    ):
+        assert tool_name in instructions, f"{tool_name} missing from instructions"
     assert captured["name"] == "WaiComputer"
     assert captured["streamable_http_path"] == "/mcp"
     assert captured["stateless_http"] is True
     assert captured["json_response"] is True
+
+
+def test_create_mcp_app_registers_all_tools() -> None:
+    """Sanity check that every advertised tool is wired into FastMCP."""
+    import asyncio
+
+    settings = get_settings()
+    captured_mcp: dict[str, object] = {}
+    original_init = mcp_server.FastMCP.__init__
+
+    def _capturing_init(self, *args, **kwargs):  # noqa: ANN001
+        original_init(self, *args, **kwargs)
+        captured_mcp["mcp"] = self
+
+    with patch.object(mcp_server.FastMCP, "__init__", _capturing_init):
+        _ = mcp_server.create_mcp_app(settings)
+
+    tools = asyncio.run(captured_mcp["mcp"].list_tools())
+    names = {tool.name for tool in tools}
+    assert names == {
+        "search",
+        "fetch",
+        "list_folders",
+        "list_recordings",
+        "list_action_items",
+    }
