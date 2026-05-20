@@ -511,9 +511,14 @@ fi
 gatekeeper_check "disk image" spctl --assess --type open --context context:primary-signature -vv "$DMG_PATH"
 
 cp "$BACKGROUND_PATH" "$RELEASE_DIR/${APP_NAME}-installer-background.png"
-shasum -a 256 "$DMG_PATH" > "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256"
+DMG_BASENAME=$(basename "$DMG_PATH")
+CHECKSUM_PATH="$RELEASE_DIR/${DMG_BASENAME}.sha256"
+(
+  cd "$RELEASE_DIR"
+  shasum -a 256 "$DMG_BASENAME" > "$(basename "$CHECKSUM_PATH")"
+)
 cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg"
-cp "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg.sha256"
+cp "$CHECKSUM_PATH" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg.sha256"
 RELEASE_NOTES_PATH="$RELEASE_DIR/release-notes.md"
 generate_release_notes() {
   echo "# ${APP_NAME} ${VERSION} (${BUILD})"
@@ -591,7 +596,7 @@ built_at=${TIMESTAMP}
 META
   echo
   printf 'DMG ready: %s\n' "$DMG_PATH"
-  printf 'Checksum: %s\n' "$RELEASE_DIR/${APP_NAME}${VARIANT_SUFFIX}-${VERSION}-${BUILD}.dmg.sha256"
+  printf 'Checksum: %s\n' "$CHECKSUM_PATH"
   exit 0
 fi
 
@@ -641,7 +646,7 @@ cp "$RELEASE_DIR/release-metadata.txt" "$RELEASE_ROOT/latest-release-metadata.tx
 
 echo
 printf 'DMG ready: %s\n' "$DMG_PATH"
-printf 'Checksum: %s\n' "$RELEASE_DIR/${APP_NAME}-${VERSION}-${BUILD}.dmg.sha256"
+printf 'Checksum: %s\n' "$CHECKSUM_PATH"
 printf 'Appcast: %s\n' "$APPCAST_PATH"
 printf 'Background: %s\n' "$RELEASE_DIR/${APP_NAME}-installer-background.png"
 printf 'Metadata: %s\n' "$RELEASE_DIR/release-metadata.txt"
