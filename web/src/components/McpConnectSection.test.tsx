@@ -79,12 +79,11 @@ describe("McpConnectSection", () => {
     });
   });
 
-  it("documents the headless bot recipe: public client + rotated refresh token", () => {
+  it("documents the headless bot recipe: API token via Bearer on REST + MCP", () => {
     render(<McpConnectSection />);
     fireEvent.click(screen.getByRole("tab", { name: "Custom / bot" }));
     const guide = screen.getByTestId("mcp-guide-bot");
-    expect(guide.textContent?.toLowerCase()).toContain("public client");
-    expect(guide.textContent).toMatch(/rotate/i);
-    expect(guide.textContent).toContain("mcp:read");
+    expect(guide.textContent).toMatch(/API token/i);
+    expect(guide.textContent).toMatch(/Bearer/);
   });
 });

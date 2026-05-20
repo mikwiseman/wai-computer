@@ -47,6 +47,10 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     """Audio recording model."""
 
     __tablename__ = "recordings"
+    # RETURNING-fetch server defaults (e.g. updated_at onupdate) on flush so the
+    # ORM object isn't left with an expired attribute that a sync serializer would
+    # try to lazy-load (MissingGreenlet) after an UPDATE.
+    __mapper_args__ = {"eager_defaults": True}
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True

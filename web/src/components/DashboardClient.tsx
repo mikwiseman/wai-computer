@@ -29,6 +29,7 @@ import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
 import { McpConnectSection } from "@/components/McpConnectSection";
+import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
@@ -883,6 +884,7 @@ export function DashboardClient() {
         </form>
 
         <McpConnectSection />
+        <ApiKeysSection />
       </section>
     );
   }

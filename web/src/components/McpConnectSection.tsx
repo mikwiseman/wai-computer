@@ -82,21 +82,24 @@ codex mcp login waicomputer`,
     id: "bot",
     label: "Custom / bot",
     steps:
-      "For an unattended bot (no human at a browser), use an OAuth-capable MCP client library. Register as a public client, approve once, then let it refresh automatically — read-only access on the 90-day sliding refresh.",
+      "For an unattended bot or cron job (no browser), create a read-only API token under “API tokens” below and send it as a Bearer header. The same token works on the REST API and this MCP endpoint — no OAuth, no refresh to manage.",
     snippet: {
-      language: "text",
-      body: `Endpoint: ${MCP_ENDPOINT_URL}
+      language: "bash",
+      body: `# Create a token under "API tokens" below (copy it once), then:
 
-Use any OAuth-capable MCP client library and:
-1. Register as a PUBLIC client — token_endpoint_auth_method "none"
-   (no client secret, so nothing expires at the 90-day mark).
-2. Use a loopback redirect URI, e.g. http://127.0.0.1:8123/callback.
-3. Approve once in a browser (one-time consent on wai.computer).
-4. Persist the refresh token and REPLACE it after every refresh — it rotates.
+# REST — incremental pull of recordings:
+curl -H "Authorization: Bearer wc_live_…" \\
+  "https://wai.computer/api/recordings?updated_after=2026-05-01T00:00:00Z"
 
-Access is read-only (mcp:read). Refresh is a sliding 90-day window, so an
-active bot never needs to re-authorize. Revoke it anytime under
-"Connected clients" below.`,
+# MCP — same token, the read tools:
+# {
+#   "mcpServers": {
+#     "waicomputer": {
+#       "url": "${MCP_ENDPOINT_URL}",
+#       "headers": { "Authorization": "Bearer wc_live_…" }
+#     }
+#   }
+# }`,
     },
   },
 ];

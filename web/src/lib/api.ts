@@ -10,6 +10,8 @@ import type {
   ActionPriority,
   ActionStatus,
   AnalyticsResponse,
+  ApiKey,
+  ApiKeyCreated,
   BulkAction,
   BulkOperationResponse,
   DictationBenchmarkBattleResponse,
@@ -485,4 +487,19 @@ export function revokeMcpConnection(clientId: string): Promise<void> {
     `/api/mcp/oauth/connections/${encodeURIComponent(clientId)}/revoke`,
     { method: "POST" },
   );
+}
+
+export function listApiKeys(): Promise<ApiKey[]> {
+  return apiFetch<ApiKey[]>("/api/api-keys");
+}
+
+export function createApiKey(name: string, expiresAt?: string | null): Promise<ApiKeyCreated> {
+  return apiFetch<ApiKeyCreated>("/api/api-keys", {
+    method: "POST",
+    body: JSON.stringify({ name, expires_at: expiresAt ?? null }),
+  });
+}
+
+export function revokeApiKey(id: string): Promise<void> {
+  return apiFetch<void>(`/api/api-keys/${encodeURIComponent(id)}/revoke`, { method: "POST" });
 }

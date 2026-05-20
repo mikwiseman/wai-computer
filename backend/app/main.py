@@ -11,6 +11,7 @@ from starlette.routing import Route
 
 from app.api.routes import (
     action_items,
+    api_keys,
     auth,
     benchmarks,
     companion,
@@ -132,6 +133,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api")
+app.include_router(api_keys.router, prefix="/api")
 app.include_router(benchmarks.router, prefix="/api")
 app.include_router(recordings.router, prefix="/api")
 app.include_router(search.router, prefix="/api")

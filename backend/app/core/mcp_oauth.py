@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.core.api_keys import is_api_key, resolve_api_key
 from app.db.session import get_db_context
 from app.models.mcp_oauth import (
     McpOAuthAuthorizationCode,
@@ -319,8 +320,11 @@ async def auto_complete_authorization_if_consented(
 
 
 async def resolve_mcp_access_token_user_id(token: str) -> UUID | None:
-    """Resolve a valid MCP access token to the owning user id."""
+    """Resolve a valid MCP access token (OAuth token or wc_live_ API key) to the user id."""
     async with _mcp_db_context() as db:
+        if is_api_key(token):
+            api_key = await resolve_api_key(db, token)
+            return api_key.user_id if api_key else None
         result = await db.execute(
             select(McpOAuthToken).where(
                 McpOAuthToken.token_hash == token_hash(token),
@@ -564,6 +568,17 @@ class WaiComputerMcpOAuthProvider(
 
     async def verify_token(self, token: str) -> AccessToken | None:
         async with _mcp_db_context() as db:
+            if is_api_key(token):
+                api_key = await resolve_api_key(db, token)
+                if api_key is None:
+                    return None
+                return AccessToken(
+                    token=token,
+                    client_id=f"api_key:{api_key.id}",
+                    scopes=[MCP_READ_SCOPE],
+                    expires_at=_as_timestamp(api_key.expires_at) if api_key.expires_at else None,
+                    resource=get_settings().mcp_resource_url_resolved,
+                )
             result = await db.execute(
                 select(McpOAuthToken).where(
                     McpOAuthToken.token_hash == token_hash(token),
