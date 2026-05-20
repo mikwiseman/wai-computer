@@ -387,6 +387,13 @@ final class MainWindowCloseInterceptor: NSObject, NSWindowDelegate {
         return originalDelegate?.windowShouldClose?(sender) ?? true
     }
 
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, window === attachedWindow {
+            MacPresentationCoordinator.shared.mainWindowDidClose()
+        }
+        originalDelegate?.windowWillClose?(notification)
+    }
+
     override func responds(to aSelector: Selector!) -> Bool {
         if super.responds(to: aSelector) { return true }
         return originalDelegate?.responds(to: aSelector) ?? false

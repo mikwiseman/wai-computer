@@ -24,8 +24,8 @@ TranscriptionOptionGroup = Literal[
 
 DEFAULT_DICTATION_LIVE_STT_PROVIDER = "soniox"
 DEFAULT_DICTATION_LIVE_STT_MODEL = "stt-rt-v4"
-DEFAULT_RECORDING_LIVE_STT_PROVIDER = "elevenlabs"
-DEFAULT_RECORDING_LIVE_STT_MODEL = "scribe_v2_realtime"
+DEFAULT_RECORDING_LIVE_STT_PROVIDER = "soniox"
+DEFAULT_RECORDING_LIVE_STT_MODEL = "stt-rt-v4"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
@@ -86,19 +86,19 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
 
 _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="elevenlabs",
-        model="scribe_v2_realtime",
-        label="ElevenLabs Scribe v2 Realtime",
-        description="Default. Best live accuracy profile, 90+ languages, ~150 ms latency.",
-    ),
-    ModelOption(
         provider="soniox",
         model="stt-rt-v4",
         label="Soniox v4 Realtime",
         description=(
-            "Best value long realtime option. 60+ languages, semantic endpointing, "
+            "Default. Best value long realtime option. 60+ languages, semantic endpointing, "
             "up to 5-hour streams."
         ),
+    ),
+    ModelOption(
+        provider="elevenlabs",
+        model="scribe_v2_realtime",
+        label="ElevenLabs Scribe v2 Realtime",
+        description="High-accuracy multilingual realtime model with slower finalization.",
     ),
     ModelOption(
         provider="deepgram",

@@ -96,14 +96,15 @@ public final class LanguageManager: ObservableObject {
     }
 
     /// First-launch decision: if the DMG was tagged ``ru``, default to
-    /// Russian; otherwise follow the OS preference. Defaulting to
-    /// ``followSystem`` keeps behaviour predictable across regions.
+    /// Russian; otherwise default to English. The user can still choose
+    /// "Follow system" later in Settings, but onboarding starts in the
+    /// language matching the downloaded build.
     private static func resolveFirstLaunchDefault(downloadRegion: String?) -> SupportedLanguage {
         switch downloadRegion?.lowercased() {
         case "ru":
             return .russian
         default:
-            return .followSystem
+            return .english
         }
     }
 

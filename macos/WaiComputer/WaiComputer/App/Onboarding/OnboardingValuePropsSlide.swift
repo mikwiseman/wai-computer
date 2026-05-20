@@ -1,17 +1,19 @@
 import SwiftUI
+import WaiComputerKit
 
 struct OnboardingValuePropsSlide: View {
     let isActive: Bool
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: 32) {
             Spacer(minLength: 0)
 
             VStack(spacing: 8) {
-                Text("Two ways to use WaiComputer")
+                Text(t("Two ways to use WaiComputer", "Два способа использовать WaiComputer"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text("Pick either or use both. You can change anytime.")
+                Text(t("Pick either or use both. You can change anytime.", "Выбери один или используй оба. Это можно изменить позже."))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -19,15 +21,21 @@ struct OnboardingValuePropsSlide: View {
             HStack(alignment: .top, spacing: 20) {
                 valueCard(
                     icon: "keyboard.badge.eye",
-                    title: "Dictate",
-                    primary: "Voice-type into any app",
-                    detail: "Hold a hotkey, speak, release. Text appears at your cursor — in Slack, Notion, Mail, anywhere."
+                    title: t("Dictate", "Диктовка"),
+                    primary: t("Voice-type into any app", "Голосом вводи текст в любом приложении"),
+                    detail: t(
+                        "Hold a hotkey, speak, release. Text appears at your cursor — in Slack, Notion, Mail, anywhere.",
+                        "Зажми горячую клавишу, скажи фразу, отпусти. Текст появится у курсора — в Slack, Notion, Mail и где угодно."
+                    )
                 )
                 valueCard(
                     icon: "waveform",
-                    title: "Record",
-                    primary: "Capture meetings & notes",
-                    detail: "Hit record in WaiComputer. Get a full transcript, AI summary, and action items when you're done."
+                    title: t("Record", "Запись"),
+                    primary: t("Capture meetings & notes", "Записывай встречи и заметки"),
+                    detail: t(
+                        "Hit record in WaiComputer. Get a full transcript, AI summary, and action items when you're done.",
+                        "Нажми запись в WaiComputer. После встречи получишь полный транскрипт, AI-саммари и задачи."
+                    )
                 )
             }
             .frame(maxWidth: 760)
@@ -79,9 +87,14 @@ struct OnboardingValuePropsSlide: View {
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 #Preview {
     OnboardingValuePropsSlide(isActive: true)
         .frame(width: 880, height: 580)
+        .environmentObject(LanguageManager.shared)
 }

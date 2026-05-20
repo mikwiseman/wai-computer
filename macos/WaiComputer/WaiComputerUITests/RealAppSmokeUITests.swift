@@ -43,7 +43,7 @@ final class RealAppSmokeUITests: XCTestCase {
             "Installed release must require auth before showing the dictation sandbox."
         )
         XCTAssertFalse(
-            app.staticTexts["Try it now"].exists,
+            app.staticTexts["Try dictation now"].exists,
             "The dictation sandbox requires an authenticated, configured DictationManager."
         )
 

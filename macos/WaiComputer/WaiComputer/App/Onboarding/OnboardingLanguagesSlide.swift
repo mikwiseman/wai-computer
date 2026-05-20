@@ -1,4 +1,5 @@
 import SwiftUI
+import WaiComputerKit
 
 /// Onboarding language picker slide. Sits between Allow and Hotkey so the
 /// user can narrow STT to specific languages (lower latency, fewer
@@ -7,16 +8,20 @@ import SwiftUI
 struct OnboardingLanguagesSlide: View {
     let isActive: Bool
     @ObservedObject var store: DictationLanguageStore
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: 24) {
             Spacer(minLength: 0)
 
             VStack(spacing: 10) {
-                Text("Pick your languages")
+                Text(t("Choose dictation languages", "Выбери языки диктовки"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text("One for the lowest latency, several to switch fluidly, or auto-detect any language. You can change this later in Settings.")
+                Text(t(
+                    "One language gives the lowest latency. Several languages let you switch naturally. You can change this later in Settings.",
+                    "Один язык дает минимальную задержку. Несколько языков позволяют свободно переключаться. Это можно изменить позже в настройках."
+                ))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -46,5 +51,9 @@ struct OnboardingLanguagesSlide: View {
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

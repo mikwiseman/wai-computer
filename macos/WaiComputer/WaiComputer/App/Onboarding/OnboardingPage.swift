@@ -1,25 +1,33 @@
 import Foundation
+import WaiComputerKit
 
 enum OnboardingPage: Int, CaseIterable, Identifiable {
     case welcome
     case valueProps
     case permission
-    case voiceSetup
     case languages
     case hotkey
     case sandbox
+    case voiceSetup
 
     var id: Int { rawValue }
 
-    var breadcrumbLabel: String {
+    func breadcrumbLabel(language: LanguageManager.SupportedLanguage) -> String {
         switch self {
-        case .welcome: return "Welcome"
-        case .valueProps: return "What"
-        case .permission: return "Allow"
-        case .voiceSetup: return "Voice"
-        case .languages: return "Languages"
-        case .hotkey: return "Hotkey"
-        case .sandbox: return "Try"
+        case .welcome:
+            return OnboardingL10n.text("Welcome", "Старт", language: language)
+        case .valueProps:
+            return OnboardingL10n.text("What", "Что", language: language)
+        case .permission:
+            return OnboardingL10n.text("Allow", "Доступ", language: language)
+        case .languages:
+            return OnboardingL10n.text("Languages", "Языки", language: language)
+        case .hotkey:
+            return OnboardingL10n.text("Hotkey", "Клавиша", language: language)
+        case .sandbox:
+            return OnboardingL10n.text("Try", "Проба", language: language)
+        case .voiceSetup:
+            return OnboardingL10n.text("Voice", "Голос", language: language)
         }
     }
 }

@@ -97,6 +97,32 @@ def test_soniox_dictation_default_migration(monkeypatch):
     assert defaults["dictation_live_stt_model"] == "stt-rt-v4"
 
 
+def test_soniox_recording_live_default_migration(monkeypatch):
+    """May 20 realtime eval should switch only default live-recording users to Soniox."""
+    migration = _load_migration("20260520_200000_soniox_recording_live_default.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert executed
+    statement = str(executed[0])
+    assert "recording_live_stt_provider = :new_provider" in statement
+    assert "recording_live_stt_model = :new_model" in statement
+    assert "recording_live_stt_provider = :old_provider" in statement
+    assert "recording_live_stt_model = :old_model" in statement
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["recording_live_stt_provider"] == "soniox"
+    assert defaults["recording_live_stt_model"] == "stt-rt-v4"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

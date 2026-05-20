@@ -1,18 +1,23 @@
 import SwiftUI
+import WaiComputerKit
 
 struct OnboardingHotkeyPickerSlide: View {
     let isActive: Bool
     @ObservedObject var dictationManager: DictationManager
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: 28) {
             Spacer(minLength: 0)
 
             VStack(spacing: 10) {
-                Text("Pick your dictation key")
+                Text(t("Pick your dictation key", "Выбери клавишу диктовки"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text("Hold this key to dictate. Release to insert. We recommend Right Option.")
+                Text(t(
+                    "Hold this key to dictate. Release to insert. We recommend Right Option.",
+                    "Зажми эту клавишу, чтобы диктовать. Отпусти — текст вставится. Рекомендуем правый Option."
+                ))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -76,5 +81,9 @@ struct OnboardingHotkeyPickerSlide: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("onboarding-hotkey-\(hotkey.rawValue)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

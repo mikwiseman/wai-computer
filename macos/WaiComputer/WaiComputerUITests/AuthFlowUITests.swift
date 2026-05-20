@@ -58,6 +58,6 @@ final class AuthFlowUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(app.textFields["Email"].waitForExistence(timeout: 8), "Unauthenticated users must sign in before the dictation onboarding tour")
-        XCTAssertFalse(app.staticTexts["Try it now"].exists, "The dictation sandbox requires an authenticated, configured DictationManager")
+        XCTAssertFalse(app.staticTexts["Try dictation now"].exists, "The dictation sandbox requires an authenticated, configured DictationManager")
     }
 }
