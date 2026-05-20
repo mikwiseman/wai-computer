@@ -51,17 +51,19 @@ struct BillingSection: View {
     @State private var cancelInFlight = false
     @State private var regionUpdateInFlight = false
     @State private var period: BillingDisplayPeriod = .month
-    @AppStorage("billingRegionUserSelected") private var billingRegionUserSelected = false
+    @AppStorage("billingRegionUserSelectedRussian") private var billingRegionUserSelectedRussian = false
 
     private var isRussianUI: Bool {
-        languageManager.current == .russian
+        languageManager.preferredLocale.language.languageCode?.identifier == "ru"
     }
 
     var body: some View {
         Section {
             if let subscription, let usage, let billingRegion {
                 planLine(subscription: subscription)
-                regionPicker(region: billingRegion)
+                if isRussianUI {
+                    regionPicker(region: billingRegion)
+                }
                 usageGauge(usage: usage, isPro: subscription.isPro)
                 if subscription.isPro {
                     proControls(subscription: subscription)
@@ -89,6 +91,9 @@ struct BillingSection: View {
                 .accessibilityIdentifier("settings-billing-header")
         }
         .task { await loadAll() }
+        .onChange(of: languageManager.current) { _, _ in
+            Task { await applyRegionForCurrentLanguage() }
+        }
     }
 
     // MARK: - Plan + Usage
@@ -119,13 +124,6 @@ struct BillingSection: View {
                 .pickerStyle(.menu)
                 .disabled(regionUpdateInFlight || checkoutInFlight || cancelInFlight)
                 .accessibilityIdentifier("settings-billing-region-picker")
-            } else {
-                LabeledContent {
-                    Text("billing.region.global", bundle: .main)
-                } label: {
-                    Text("billing.region.title", bundle: .main)
-                }
-                .font(Typography.body)
             }
         }
     }
@@ -285,10 +283,14 @@ struct BillingSection: View {
         if !isRussianUI {
             return .global
         }
-        if storedRegion == .global, !billingRegionUserSelected {
+        if storedRegion == .global, !billingRegionUserSelectedRussian {
             return .ru
         }
         return storedRegion
+    }
+
+    private func shouldPersistRussianDefault(storedRegion: BillingDisplayRegion) -> Bool {
+        isRussianUI && storedRegion == .global && !billingRegionUserSelectedRussian
     }
 
     private func displayWordsCap(usage: BillingUsage) -> Int? {
@@ -315,17 +317,58 @@ struct BillingSection: View {
             guard let region = BillingDisplayRegion(rawValue: settings.region) else {
                 throw BillingSectionError.unsupportedRegion(settings.region)
             }
+            let displayRegion = displayRegion(for: region)
             await MainActor.run {
                 self.subscription = s
                 self.usage = u
                 self.plans = p
-                self.billingRegion = displayRegion(for: region)
+                self.billingRegion = displayRegion
                 self.loadError = nil
                 self.actionError = nil
+            }
+            if shouldPersistRussianDefault(storedRegion: region) {
+                await persistDefaultRussianRegion()
             }
         } catch {
             await MainActor.run {
                 self.loadError = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyRegionForCurrentLanguage() async {
+        if !isRussianUI {
+            await MainActor.run {
+                billingRegion = .global
+                actionError = nil
+            }
+            return
+        }
+        guard billingRegion == .global, !billingRegionUserSelectedRussian else { return }
+        await MainActor.run { billingRegion = .ru }
+        await persistDefaultRussianRegion()
+    }
+
+    private func persistDefaultRussianRegion() async {
+        await MainActor.run {
+            regionUpdateInFlight = true
+            actionError = nil
+        }
+        do {
+            let settings = try await appState.getAPIClient().updateSettings(
+                UpdateSettingsRequest(region: BillingDisplayRegion.ru.rawValue)
+            )
+            guard let confirmed = BillingDisplayRegion(rawValue: settings.region) else {
+                throw BillingSectionError.unsupportedRegion(settings.region)
+            }
+            await MainActor.run {
+                billingRegion = displayRegion(for: confirmed)
+                regionUpdateInFlight = false
+            }
+        } catch {
+            await MainActor.run {
+                regionUpdateInFlight = false
+                actionError = error.localizedDescription
             }
         }
     }
@@ -339,7 +382,7 @@ struct BillingSection: View {
         let previous = billingRegion
         await MainActor.run {
             billingRegion = region
-            billingRegionUserSelected = true
+            billingRegionUserSelectedRussian = true
             regionUpdateInFlight = true
             actionError = nil
         }
