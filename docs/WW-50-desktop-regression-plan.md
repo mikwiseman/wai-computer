@@ -82,8 +82,8 @@ These items were already handled in the previous pass, but must be regression-ch
 - [x] C61. After T-Bank checkout/cancel, `/billing/cancel` page is English and visually broken; localize, polish, and route users back cleanly. Screenshot: current Image #59. Fixed with localized RU/EN billing result pages and provider-specific checkout return URLs.
 - [x] C62. While a new recording is still processing, the detail view says "No transcript"; show an explicit processing/preparing state instead. Screenshot: current Image #60. Fixed in web and macOS transcript empty states.
 - [x] C63. Public shared note page still shows the old logo; replace it with the current brand mark. Screenshot: current Image #61. Fixed by serving the current brand mark and masking web shared/new-recording marks from it.
-- [ ] C64. Rename modal/popover is too narrow on macOS; widen it and keep the field/actions readable. Screenshot: latest user item 63.
-- [ ] C65. After T-Bank payment, the subscription status does not update to Pro in the macOS settings view. Screenshot: latest user item 62. Backend webhook ACK was fixed to exact plain `OK`; still needs live T-Bank webhook/status verification and macOS refresh check.
+- [x] C64. Rename modal/popover is too narrow on macOS; widen it and keep the field/actions readable. Screenshot: latest user item 63. Fixed by widening speaker assignment popover and folder rename/create sheets, including readable text fields and stable action button widths.
+- [ ] C65. After T-Bank payment, the subscription status does not update to Pro in the macOS settings view. Screenshot: latest user item 62. Backend webhook ACK was fixed to exact plain `OK` and deployed; still needs live valid T-Bank payment/status verification and macOS refresh check.
 - [x] C66. T-Bank success/cancel pages must be Russian and polished even if the browser lands on `/billing/success` or `/billing/cancel`. Screenshots: latest user items 59 and 61. Fixed with `provider=tinkoff&lang=ru` return URLs plus localized result pages.
 - [x] C67. Stripe checkout must not offer or mention a 14-day trial; the free weekly word quota is the free tier. Screenshot: latest checkout trial image. Fixed by sending no trial period to Stripe checkout.
 - [x] C68. T-Bank test-card failures, including the Stripe test card `4242 4242 4242 4242`, must show a clear Russian failed-payment page instead of generic English cancel copy. Screenshot: latest user item 59. Fixed by using Russian T-Bank cancel copy that explains card/provider mismatch.
@@ -118,3 +118,10 @@ These items were already handled in the previous pass, but must be regression-ch
 - 2026-05-20: Billing/pass recheck: `cd web && pnpm exec vitest run src/app/pages.test.tsx src/components/RecordingDetailPanel.test.tsx` passed, 32 tests.
 - 2026-05-20: Billing/pass recheck: `cd web && pnpm lint` passed.
 - 2026-05-20: Billing/pass recheck: `cd web && pnpm build` passed.
+- 2026-05-20: Commit `ba1ab237 fix: polish billing results and processing states` pushed to `origin/main`.
+- 2026-05-20: Server deploy completed with `VPS_USER=root ./scripts/deploy-server.sh`; `/health` returned healthy with database connected.
+- 2026-05-20: Live `https://wai.computer/billing/cancel?provider=tinkoff&lang=ru` served Russian failed-payment copy and explicitly explained that `4242 4242 4242 4242` is a Stripe test card, not a T-Bank card.
+- 2026-05-20: Live `https://wai.computer/billing/success?provider=tinkoff&lang=ru` served Russian success copy.
+- 2026-05-20: Live `https://wai.computer/billing/cancel` still served the generic English Stripe cancel page, as intended for non-Russian/non-T-Bank checkout.
+- 2026-05-20: Live `https://wai.computer/brand-mark.svg` served the current brand mark asset.
+- 2026-05-20: C64 macOS UI build passed with `xcodebuild -project macos/WaiComputer/WaiComputer.xcodeproj -scheme WaiComputer -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build` after widening the speaker assignment popover and folder name sheets.

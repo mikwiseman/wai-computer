@@ -35,7 +35,7 @@ struct SpeakerChipView: View {
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             popoverContent
                 .padding(Spacing.md)
-                .frame(width: 320)
+                .frame(minWidth: 460, idealWidth: 500, maxWidth: 560)
         }
         .task(id: isPopoverPresented) {
             if isPopoverPresented && people.isEmpty {
@@ -49,6 +49,7 @@ struct SpeakerChipView: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             TextField(t("Search or create…", "Найти или создать…"), text: $filter)
                 .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
             if let loadError {
                 Text(loadError)
                     .font(.caption)
@@ -79,6 +80,7 @@ struct SpeakerChipView: View {
                                     .font(.system(size: 12, weight: .semibold))
                                 Text(t("Create", "Создать") + " “\(trimmedFilter)”")
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Spacing.xs)

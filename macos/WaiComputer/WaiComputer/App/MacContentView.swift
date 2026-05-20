@@ -1107,26 +1107,28 @@ private struct FolderNameSheet: View {
             TextField(textFieldPlaceholder, text: $folderName)
                 .textFieldStyle(.plain)
                 .waiTextField()
+                .frame(maxWidth: .infinity)
 
             if canMoveSelection {
                 Toggle(moveSelectionText, isOn: $moveSelectionIntoFolder)
-                .toggleStyle(.checkbox)
+                    .toggleStyle(.checkbox)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: Spacing.md) {
                 Spacer()
 
                 Button(cancelTitle, action: onCancel)
-                    .frame(minWidth: 96)
+                    .frame(minWidth: 112)
 
                 Button(primaryTitle, action: onSubmit)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .frame(minWidth: 116)
+                    .frame(minWidth: 144)
             }
         }
         .padding(Spacing.xl)
-        .frame(width: 460)
+        .frame(minWidth: 560, idealWidth: 600)
     }
 }
 
