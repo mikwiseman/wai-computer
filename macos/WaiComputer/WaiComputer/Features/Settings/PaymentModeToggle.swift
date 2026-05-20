@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Hides the billing surface entirely until the user opts in.
 ///
-/// v1.0 ships Payment mode **off** so every install is effectively free
-/// and unlimited. Flipping it on reveals the Subscription section, the
+/// v1.0 ships Payment mode **off** while paid billing is dogfooded.
+/// Flipping it on reveals the Subscription section, the
 /// weekly word gauge, the Upgrade button, and the cap-exceeded sheet —
 /// purely so we can dogfood the paid flow against the sandbox before
 /// announcing it. The server-side ``billing_enforcement_enabled`` env

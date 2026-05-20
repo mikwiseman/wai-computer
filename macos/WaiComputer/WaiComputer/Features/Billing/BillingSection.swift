@@ -38,6 +38,7 @@ private enum BillingSectionError: LocalizedError {
 /// Subscription + word-usage section embedded in `MacSettingsView`.
 struct BillingSection: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.locale) private var locale
 
     @State private var subscription: BillingSubscription?
@@ -50,6 +51,11 @@ struct BillingSection: View {
     @State private var cancelInFlight = false
     @State private var regionUpdateInFlight = false
     @State private var period: BillingDisplayPeriod = .month
+    @AppStorage("billingRegionUserSelected") private var billingRegionUserSelected = false
+
+    private var isRussianUI: Bool {
+        languageManager.current == .russian
+    }
 
     var body: some View {
         Section {
@@ -97,20 +103,31 @@ struct BillingSection: View {
     }
 
     private func regionPicker(region: BillingDisplayRegion) -> some View {
-        Picker(selection: Binding(
-            get: { region },
-            set: { newRegion in
-                Task { await saveBillingRegion(newRegion) }
+        Group {
+            if isRussianUI {
+                Picker(selection: Binding(
+                    get: { region },
+                    set: { newRegion in
+                        Task { await saveBillingRegion(newRegion) }
+                    }
+                )) {
+                    Text("billing.region.global", bundle: .main).tag(BillingDisplayRegion.global)
+                    Text("billing.region.ru", bundle: .main).tag(BillingDisplayRegion.ru)
+                } label: {
+                    Text("billing.region.title", bundle: .main)
+                }
+                .pickerStyle(.menu)
+                .disabled(regionUpdateInFlight || checkoutInFlight || cancelInFlight)
+                .accessibilityIdentifier("settings-billing-region-picker")
+            } else {
+                LabeledContent {
+                    Text("billing.region.global", bundle: .main)
+                } label: {
+                    Text("billing.region.title", bundle: .main)
+                }
+                .font(Typography.body)
             }
-        )) {
-            Text("billing.region.global", bundle: .main).tag(BillingDisplayRegion.global)
-            Text("billing.region.ru", bundle: .main).tag(BillingDisplayRegion.ru)
-        } label: {
-            Text("billing.region.title", bundle: .main)
         }
-        .pickerStyle(.menu)
-        .disabled(regionUpdateInFlight || checkoutInFlight || cancelInFlight)
-        .accessibilityIdentifier("settings-billing-region-picker")
     }
 
     @ViewBuilder
@@ -142,7 +159,8 @@ struct BillingSection: View {
 
     @ViewBuilder
     private func usageGauge(usage: BillingUsage, isPro: Bool) -> some View {
-        if isPro || usage.wordsCap == nil {
+        let displayCap = displayWordsCap(usage: usage)
+        if displayCap == nil {
             LabeledContent {
                 Text("billing.usage.unlimited", bundle: .main)
                     .foregroundStyle(.secondary)
@@ -154,12 +172,13 @@ struct BillingSection: View {
                 HStack {
                     Text("billing.usage.title", bundle: .main)
                     Spacer()
-                    Text("\(usage.wordsUsed.formatted()) / \(usage.wordsCap!.formatted())")
+                    Text("\(usage.wordsUsed.formatted()) / \(displayCap!.formatted())")
                         .foregroundStyle(usage.capExceeded ? .red : .primary)
                         .monospacedDigit()
                 }
-                ProgressView(value: usage.fractionUsed)
-                    .tint(usage.capExceeded ? .red : usage.fractionUsed > 0.8 ? .orange : .accentColor)
+                let fraction = min(1.0, max(0.0, Double(usage.wordsUsed) / Double(displayCap!)))
+                ProgressView(value: fraction)
+                    .tint(usage.capExceeded ? .red : fraction > 0.8 ? .orange : .accentColor)
                 Text("billing.usage.resetsSunday", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
@@ -262,6 +281,29 @@ struct BillingSection: View {
         return nil
     }
 
+    private func displayRegion(for storedRegion: BillingDisplayRegion) -> BillingDisplayRegion {
+        if !isRussianUI {
+            return .global
+        }
+        if storedRegion == .global, !billingRegionUserSelected {
+            return .ru
+        }
+        return storedRegion
+    }
+
+    private func displayWordsCap(usage: BillingUsage) -> Int? {
+        if let cap = usage.wordsCap {
+            return cap
+        }
+        if let cap = subscription?.plan.wordCapPerWeek {
+            return cap
+        }
+        if subscription?.isPro == true {
+            return currentProPlan()?.wordCapPerWeek
+        }
+        return plans.first(where: { $0.code == "free" })?.wordCapPerWeek
+    }
+
     private func loadAll() async {
         do {
             let client = appState.getAPIClient()
@@ -277,7 +319,7 @@ struct BillingSection: View {
                 self.subscription = s
                 self.usage = u
                 self.plans = p
-                self.billingRegion = region
+                self.billingRegion = displayRegion(for: region)
                 self.loadError = nil
                 self.actionError = nil
             }
@@ -289,10 +331,15 @@ struct BillingSection: View {
     }
 
     private func saveBillingRegion(_ region: BillingDisplayRegion) async {
+        guard isRussianUI else {
+            await MainActor.run { billingRegion = .global }
+            return
+        }
         guard billingRegion != region else { return }
         let previous = billingRegion
         await MainActor.run {
             billingRegion = region
+            billingRegionUserSelected = true
             regionUpdateInFlight = true
             actionError = nil
         }

@@ -5,6 +5,7 @@ import WaiComputerKit
 struct LiveRecordingView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingVM: MacRecordingViewModel
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var showingDiscardConfirm = false
 
     var body: some View {
@@ -16,11 +17,11 @@ struct LiveRecordingView: View {
                 HStack(spacing: Spacing.sm) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Reconnecting… (\(attempt)/\(maxAttempts))")
+                    Text(t("Reconnecting…", "Переподключение…") + " (\(attempt)/\(maxAttempts))")
                         .font(Typography.label)
                         .foregroundStyle(.white)
                     Spacer()
-                    Text("Audio is being buffered")
+                    Text(t("Audio is being buffered", "Аудио сохраняется локально"))
                         .font(Typography.label)
                         .foregroundStyle(.white.opacity(0.7))
                 }
@@ -36,10 +37,13 @@ struct LiveRecordingView: View {
                     Image(systemName: "wifi.exclamationmark")
                         .foregroundStyle(.white)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Live transcription unavailable")
+                        Text(t("Live transcription unavailable", "Живая транскрипция недоступна"))
                             .font(Typography.label)
                             .foregroundStyle(.white)
-                        Text("Audio is recording locally — transcript will be generated when you stop.")
+                        Text(t(
+                            "Audio is recording locally. Transcript will be generated when you stop.",
+                            "Аудио записывается локально. Транскрипт появится после остановки."
+                        ))
                             .font(Typography.caption)
                             .foregroundStyle(.white.opacity(0.85))
                     }
@@ -117,14 +121,24 @@ struct LiveRecordingView: View {
                 .disabled(!recordingVM.canStopRecording)
                 .accessibilityIdentifier("discard-recording-button")
 
-                StopRecordingButton(
-                    isEnabled: recordingVM.canStopRecording,
-                    title: recordingVM.canStopRecording
-                        ? String(localized: "recording.stop", bundle: .main)
-                        : recordingVM.statusText,
-                    action: stopRecording
-                )
-                .frame(width: 168, height: 34)
+                Button(action: stopRecording) {
+                    Label {
+                        Text(recordingVM.canStopRecording
+                            ? String(localized: "recording.stop", bundle: .main)
+                            : recordingVM.statusText
+                        )
+                        .lineLimit(1)
+                    } icon: {
+                        Image(systemName: "stop.fill")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(minWidth: 150)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(recordingVM.canStopRecording ? .red : .gray)
+                .disabled(!recordingVM.canStopRecording)
+                .accessibilityIdentifier("stop-recording-button")
 
                 Spacer()
             }
@@ -187,13 +201,14 @@ struct LiveRecordingView: View {
                         Image(systemName: systemOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(systemOk ? .green : .yellow)
-                        Text(systemOk ? "Mic + System" : "Mic Only")
+                        Text(systemOk ? t("Mic + System", "Микрофон + Mac") : t("Microphone", "Микрофон"))
                             .font(Typography.label)
                             .foregroundStyle(systemOk ? Palette.textSecondary : .yellow)
                     }
                     .help(systemOk
-                        ? "Recording mic and system audio (2 channels)"
-                        : "Only microphone audio is being recorded")
+                        ? t("Recording mic and system audio (2 channels)", "Записывается микрофон и звук Mac (2 канала)")
+                        : t("Only microphone audio is being recorded", "Записывается только микрофон")
+                    )
                 } else {
                     Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
                         .font(Typography.label)
@@ -220,6 +235,10 @@ struct LiveRecordingView: View {
             await recordingVM.discardRecording()
         }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 struct PulseModifier: ViewModifier {
@@ -230,50 +249,5 @@ struct PulseModifier: ViewModifier {
             .opacity(isPulsing ? 0.4 : 1.0)
             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
             .onAppear { isPulsing = true }
-    }
-}
-
-private struct StopRecordingButton: NSViewRepresentable {
-    let isEnabled: Bool
-    let title: String
-    let action: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(action: action)
-    }
-
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(title: title, target: context.coordinator, action: #selector(Coordinator.stopButtonPressed(_:)))
-        button.bezelStyle = NSButton.BezelStyle.rounded
-        button.controlSize = NSControl.ControlSize.large
-        button.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        button.imagePosition = NSControl.ImagePosition.imageLeading
-        button.setAccessibilityIdentifier("stop-recording-button")
-        button.setAccessibilityLabel(title)
-        return button
-    }
-
-    func updateNSView(_ button: NSButton, context: Context) {
-        context.coordinator.action = action
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.stopButtonPressed(_:))
-        button.title = title
-        button.isEnabled = isEnabled
-        button.contentTintColor = isEnabled ? .systemRed : .secondaryLabelColor
-        button.image = isEnabled ? NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil) : nil
-        button.setAccessibilityIdentifier("stop-recording-button")
-        button.setAccessibilityLabel(title)
-    }
-
-    final class Coordinator: NSObject {
-        var action: () -> Void
-
-        init(action: @escaping () -> Void) {
-            self.action = action
-        }
-
-        @objc func stopButtonPressed(_ sender: NSButton) {
-            action()
-        }
     }
 }

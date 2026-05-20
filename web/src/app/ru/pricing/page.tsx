@@ -7,7 +7,7 @@ import styles from "../../page.module.css";
 export const metadata: Metadata = {
   title: "Цены — WaiComputer",
   description:
-    "WaiComputer бесплатно для повседневных голосовых заметок. Pro даёт безлимит транскрипции, постоянную память и доступ к агентам и MCP.",
+    "WaiComputer бесплатно для повседневных голосовых заметок. Pro даёт 50 000 слов транскрипции в неделю, постоянную память и доступ к агентам и MCP.",
   alternates: {
     canonical: "https://wai.computer/ru/pricing",
     languages: {

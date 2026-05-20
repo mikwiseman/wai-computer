@@ -20,7 +20,9 @@ function formatDuration(seconds: number | null): string {
   if (!seconds || seconds <= 0) return "";
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+  if (mins > 0 && secs > 0) return `${mins} min ${secs} sec`;
+  if (mins > 0) return `${mins} min`;
+  return `${secs} sec`;
 }
 
 function formatError(error: unknown): string {

@@ -30,7 +30,7 @@ const freeSub = {
     usd_amount_yearly: null,
     rub_amount_monthly: null,
     rub_amount_yearly: null,
-    word_cap_per_week: 10000,
+    word_cap_per_week: 3000,
     memory_retention_days: 30,
     features: {},
   },
@@ -52,7 +52,7 @@ const proSub = {
 
 const usage = {
   words_used: 1200,
-  words_cap: 10000,
+  words_cap: 3000,
   reset_at: "2026-05-24T00:00:00Z",
   cap_exceeded: false,
 };

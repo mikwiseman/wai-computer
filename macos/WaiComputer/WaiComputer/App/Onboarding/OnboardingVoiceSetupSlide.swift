@@ -26,6 +26,12 @@ struct OnboardingVoiceSetupSlide: View {
             )
             .font(Typography.body)
             .foregroundStyle(Palette.textSecondary)
+            Text(t(
+                "Record at least 5 seconds. This also checks the same microphone path used for dictation.",
+                "Запиши минимум 5 секунд. Заодно мы проверим тот же микрофонный путь, который используется для диктовки."
+            ))
+            .font(Typography.label)
+            .foregroundStyle(Palette.textTertiary)
 
             promptCard
 
@@ -117,8 +123,8 @@ struct OnboardingVoiceSetupSlide: View {
                 Button(t("Re-record", "Записать заново"), action: handleRecordTap)
                     .buttonStyle(WaiGhostButtonStyle())
                 Button(t("Use this take", "Использовать запись"), action: submit)
-                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading))
-                    .disabled(recorder.state == .uploading)
+                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration))
+                    .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
             }
         }
         Text(t(
@@ -142,6 +148,13 @@ struct OnboardingVoiceSetupSlide: View {
     private func submit() {
         Task {
             guard let data = recorder.recordedData else { return }
+            guard recorder.hasMinimumDuration else {
+                recorder.errorMessage = t(
+                    "Record at least 5 seconds before submitting.",
+                    "Перед отправкой запиши минимум 5 секунд."
+                )
+                return
+            }
             recorder.state = .uploading
             do {
                 _ = try await appState.getAPIClient().enrollVoice(
@@ -177,6 +190,12 @@ struct OnboardingVoiceSetupSlide: View {
                 "Запись… \(Int(recorder.elapsedSeconds)) c / 20 c"
             )
         case .recorded:
+            if !recorder.hasMinimumDuration {
+                return t(
+                    "Recorded \(Int(recorder.elapsedSeconds))s. Minimum is 5s.",
+                    "Записано \(Int(recorder.elapsedSeconds)) c. Нужно минимум 5 c."
+                )
+            }
             return t(
                 "Recorded \(Int(recorder.elapsedSeconds))s. Re-record or submit.",
                 "Записано \(Int(recorder.elapsedSeconds)) c. Можно перезаписать или отправить."
@@ -210,6 +229,11 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
     private var timer: Timer?
 
     private let maxDurationSeconds: Double = 20.0
+    private let minDurationSeconds: Double = 5.0
+
+    var hasMinimumDuration: Bool {
+        elapsedSeconds >= minDurationSeconds
+    }
 
     var progress: Double {
         min(elapsedSeconds / maxDurationSeconds, 1.0)

@@ -182,7 +182,7 @@ public struct BillingSubscription: Codable, Equatable, Sendable {
 
 public struct BillingUsage: Codable, Equatable, Sendable {
     public let wordsUsed: Int
-    public let wordsCap: Int?  // nil == unlimited (Pro)
+    public let wordsCap: Int?  // nil means the server is not enforcing a weekly cap for this request.
     public let resetAt: Date
     public let capExceeded: Bool
 

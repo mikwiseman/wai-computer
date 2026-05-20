@@ -16,6 +16,29 @@ from app.core.realtime_transcription import (
 )
 
 
+def _patch_soniox_mint(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    language: str = "multi",
+    channels: int = 1,
+) -> AsyncMock:
+    fake = SimpleNamespace(
+        temporary_api_key="sx-temp",
+        sample_rate=16000,
+        language=language,
+        channels=channels,
+        model="stt-rt-v4",
+        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
+        expires_in_seconds=60,
+    )
+    mock = AsyncMock(return_value=fake)
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        mock,
+    )
+    return mock
+
+
 @pytest.mark.asyncio
 async def test_build_deepgram_realtime_session() -> None:
     fake = SimpleNamespace(
@@ -339,32 +362,19 @@ async def test_dispatch_recording_soniox(
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.core.realtime_transcription._create_elevenlabs_realtime_token",
-        AsyncMock(return_value=("el", 600)),
-    )
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(elevenlabs_no_verbatim=False),
-    )
+    _patch_soniox_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="recording", user=None,
     )
-    assert session.provider == "elevenlabs"
+    assert session.provider == "soniox"
+    assert session.auth_scheme == "message_api_key"
 
 
 @pytest.mark.asyncio
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.core.realtime_transcription._create_elevenlabs_realtime_token",
-        AsyncMock(return_value=("el", 600)),
-    )
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(elevenlabs_no_verbatim=False),
-    )
+    _patch_soniox_mint(monkeypatch, language="en")
     session = await create_realtime_transcription_session(
         language="  EN  ", purpose="recording", user=None,
     )
@@ -375,14 +385,7 @@ async def test_resolved_language_lower_strip(
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "app.core.realtime_transcription._create_elevenlabs_realtime_token",
-        AsyncMock(return_value=("el", 600)),
-    )
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(elevenlabs_no_verbatim=False),
-    )
+    _patch_soniox_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         language="   ", purpose="recording", user=None,
     )

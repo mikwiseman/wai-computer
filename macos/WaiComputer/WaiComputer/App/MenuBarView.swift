@@ -7,6 +7,7 @@ struct MenuBarView: View {
     @EnvironmentObject var recordingVM: MacRecordingViewModel
     @EnvironmentObject var dictationManager: DictationManager
     @EnvironmentObject var historyStore: DictationHistoryStore
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var recentRecordings: [Recording] = []
     @State private var lastDictationCopied = false
 
@@ -16,10 +17,10 @@ struct MenuBarView: View {
 
     private var menuStatusText: String {
         if appState.completedRecordingContext != nil {
-            return "Saving transcript"
+            return t("Saving transcript", "Сохраняем транскрипт")
         }
 
-        return recordingVM.shouldPresentLiveView ? recordingVM.statusText : "Ready"
+        return recordingVM.shouldPresentLiveView ? recordingVM.statusText : t("Ready", "Готово")
     }
 
     private var menuDurationText: String? {
@@ -83,7 +84,7 @@ struct MenuBarView: View {
                         HStack {
                             Image(systemName: recordingVM.canStopRecording ? "stop.circle.fill" : "hourglass.circle")
                                 .foregroundStyle(recordingVM.canStopRecording ? Palette.recording : Palette.textSecondary)
-                            Text(recordingVM.canStopRecording ? "Stop Recording" : recordingVM.statusText)
+                            Text(recordingVM.canStopRecording ? t("Stop Recording", "Остановить запись") : recordingVM.statusText)
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}R")
@@ -100,7 +101,7 @@ struct MenuBarView: View {
                     HStack {
                         Image(systemName: "hourglass.circle")
                             .foregroundStyle(Palette.textSecondary)
-                        Text("Saving Transcript")
+                        Text(t("Saving Transcript", "Сохраняем транскрипт"))
                             .font(Typography.body)
                         Spacer()
                     }
@@ -108,12 +109,12 @@ struct MenuBarView: View {
                     .padding(.horizontal, Spacing.lg)
                 } else {
                     Button {
-                        Task { await appState.startRecording(type: .note, inputSource: .dual) }
+                        Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
                     } label: {
                         HStack {
                             Image(systemName: "waveform")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("Mic + System Audio")
+                            Text(t("Record", "Записать"))
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}N")
@@ -127,35 +128,13 @@ struct MenuBarView: View {
                     .buttonStyle(.plain)
 
                     Button {
-                        Task { await appState.startRecording(type: .note, inputSource: .microphone) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "mic")
-                                .foregroundStyle(Palette.textSecondary)
-                            Text("Mic Only")
-                                .font(Typography.body)
-                            Spacer()
-                            Text("\u{21E7}\u{2318}N")
-                                .font(Typography.caption)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, Spacing.sm)
-                        .padding(.horizontal, Spacing.lg)
-                    }
-                    .buttonStyle(.plain)
-
-                    WaiDivider()
-                        .padding(.horizontal, Spacing.lg)
-
-                    Button {
                         appState.pendingMainWindowAction = .importAudioFile
                         openMainWindow()
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.down")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text("Import File")
+                            Text(t("Import Audio File", "Импорт аудиофайла"))
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}I")
@@ -175,12 +154,12 @@ struct MenuBarView: View {
 
             // Recent recordings
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("RECENT")
+                Text(t("RECENT", "НЕДАВНИЕ"))
                     .waiSectionHeader()
                     .padding(.horizontal, Spacing.lg)
 
                 if recentRecordings.isEmpty {
-                    Text("No recordings yet")
+                    Text(t("No recordings yet", "Записей пока нет"))
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                         .padding(.horizontal, Spacing.lg)
@@ -192,7 +171,7 @@ struct MenuBarView: View {
                             openMainWindow()
                         } label: {
                             HStack {
-                                Text(recording.title ?? "Untitled")
+                                Text(recording.title ?? t("Untitled", "Без названия"))
                                     .font(Typography.bodySmall)
                                     .lineLimit(1)
                                 Spacer()
@@ -211,7 +190,7 @@ struct MenuBarView: View {
 
             // Dictation status
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("DICTATION")
+                Text(t("DICTATION", "ДИКТОВКА"))
                     .waiSectionHeader()
                     .padding(.horizontal, Spacing.lg)
 
@@ -244,7 +223,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
-                    .help("Copy last dictation to clipboard")
+                    .help(t("Copy last dictation to clipboard", "Скопировать последнюю диктовку"))
                 }
 
                 HStack {
@@ -263,18 +242,18 @@ struct MenuBarView: View {
 
             // Bottom actions
             HStack {
-                Button("Open App") {
+                Button(t("Open App", "Открыть приложение")) {
                     openMainWindow()
                 }
 
-                Button("Settings") {
+                Button(t("Settings", "Настройки")) {
                     appState.pendingMainWindowAction = .settings
                     openMainWindow()
                 }
 
                 Spacer()
 
-                Button("Quit") {
+                Button(t("Quit", "Выйти")) {
                     NSApplication.shared.terminate(nil)
                 }
             }
@@ -288,17 +267,17 @@ struct MenuBarView: View {
 
     private var unauthenticatedMenu: some View {
         VStack(spacing: Spacing.md) {
-            Text("Not signed in")
+            Text(t("Not signed in", "Вход не выполнен"))
                 .font(Typography.headingSmall)
 
-            Button("Open App") {
+            Button(t("Open App", "Открыть приложение")) {
                 openMainWindow()
             }
             .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
 
             WaiDivider()
 
-            Button("Quit") {
+            Button(t("Quit", "Выйти")) {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)
@@ -329,9 +308,16 @@ struct MenuBarView: View {
 
     private var dictationHint: String {
         if !dictationManager.isFeatureEnabled {
-            return "Dictation is disabled"
+            return t("Dictation is disabled", "Диктовка выключена")
         }
-        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate"
+        return t(
+            "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate",
+            "Зажми \(dictationManager.selectedHotkey.shortLabel), чтобы диктовать"
+        )
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -343,4 +329,5 @@ struct MenuBarView: View {
         .environmentObject(appState)
         .environmentObject(recordingViewModel)
         .environmentObject(dictation)
+        .environmentObject(LanguageManager.shared)
 }

@@ -12,6 +12,7 @@ struct RecordingListView: View {
     let onPermanentDelete: ([String]) -> Void
     let onMoveToFolder: ([String], String?) -> Void
     let onRequestRename: (String) -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         List(recordings, selection: $selectedRecordingIds) { recording in
@@ -22,34 +23,40 @@ struct RecordingListView: View {
                 .tag(recording.id)
                 .contextMenu {
                     let contextSelection = selection(for: recording.id)
+                    let contextRecordings = recordings.filter { contextSelection.contains($0.id) }
+                    let canRemoveFromFolder = contextRecordings.contains { $0.folderId != nil }
 
                     if isTrash {
-                        Button("Restore") {
+                        Button(t("Restore", "Восстановить")) {
                             onRestore(contextSelection)
                         }
 
-                        Button("Delete Permanently", role: .destructive) {
+                        Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
                             onPermanentDelete(contextSelection)
                         }
                     } else {
-                        Button("Rename…") {
+                        Button(t("Rename…", "Переименовать…")) {
                             onRequestRename(recording.id)
                         }
                         .disabled(contextSelection.count > 1)
 
-                        Menu("Move to Folder") {
-                            Button("Unfiled") {
-                                onMoveToFolder(contextSelection, nil)
-                            }
+                        if canRemoveFromFolder || !folders.isEmpty {
+                            Menu(t("Move to Folder", "Переместить в папку")) {
+                                if canRemoveFromFolder {
+                                    Button(t("Remove from Folder", "Убрать из папки")) {
+                                        onMoveToFolder(contextSelection, nil)
+                                    }
+                                }
 
-                            ForEach(folders) { folder in
-                                Button(folder.name) {
-                                    onMoveToFolder(contextSelection, folder.id)
+                                ForEach(folders) { folder in
+                                    Button(folder.name) {
+                                        onMoveToFolder(contextSelection, folder.id)
+                                    }
                                 }
                             }
                         }
 
-                        Button("Move to Trash", role: .destructive) {
+                        Button(t("Move to Trash", "Переместить в корзину"), role: .destructive) {
                             onTrash(contextSelection)
                         }
                     }
@@ -67,6 +74,10 @@ struct RecordingListView: View {
         }
     }
 
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
     private func selection(for recordingId: String) -> [String] {
         if selectedRecordingIds.contains(recordingId) {
             return Array(selectedRecordingIds)
@@ -78,11 +89,12 @@ struct RecordingListView: View {
 struct RecordingRowView: View {
     let recording: Recording
     let hasLocalRecoveryBackup: Bool
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
-                Text(recording.title ?? "Untitled")
+                Text(recording.title ?? t("Untitled", "Без названия"))
                     .font(Typography.headingMedium)
                     .lineLimit(1)
 
@@ -134,5 +146,9 @@ struct RecordingRowView: View {
 
     private var statusColor: Color {
         recording.isFailedUpload ? Palette.recording : Palette.textSecondary
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

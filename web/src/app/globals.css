@@ -1486,12 +1486,6 @@ h4 {
   cursor: progress;
 }
 
-.pricing-trial {
-  margin: 0.75rem 0 0;
-  font-size: 0.875rem;
-  color: var(--color-text-secondary, #777);
-}
-
 .pricing-error {
   margin-top: 0.75rem;
   color: #c0392b;

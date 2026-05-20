@@ -150,6 +150,36 @@ class MacLibraryViewModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func renameFolder(id: String, name: String, apiClient: APIClient) async -> Folder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        error = nil
+
+        do {
+            let folder = try await apiClient.updateFolder(id: id, name: trimmed)
+            await loadLibrary(apiClient: apiClient)
+            return folder
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+            return nil
+        }
+    }
+
+    @discardableResult
+    func deleteFolder(id: String, apiClient: APIClient) async -> Bool {
+        error = nil
+
+        do {
+            try await apiClient.deleteFolder(id: id)
+            await loadLibrary(apiClient: apiClient)
+            return true
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+            return false
+        }
+    }
+
     func renameRecording(id: String, newTitle: String, apiClient: APIClient) async {
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

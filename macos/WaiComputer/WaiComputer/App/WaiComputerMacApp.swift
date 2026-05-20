@@ -116,7 +116,7 @@ struct WaiComputerMacApp: App {
             // Replace default Cmd+N (new window) with recording commands
             CommandGroup(replacing: .newItem) {
                 if recordingViewModel.shouldPresentLiveView {
-                    Button("Stop Recording") {
+                    Button(t("Stop Recording", "Остановить запись")) {
                         Task { await appState.stopRecording() }
                     }
                     .keyboardShortcut("r", modifiers: .command)
@@ -125,29 +125,15 @@ struct WaiComputerMacApp: App {
                     Divider()
                 }
 
-                Button("New Recording") {
-                    NotificationCenter.default.post(name: .showNewRecording, object: nil)
+                Button(t("New Recording", "Новая запись")) {
+                    Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
                 Divider()
 
-                Button("Record Mic + System Audio") {
-                    Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
-                }
-                .keyboardShortcut("r", modifiers: .command)
-                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
-
-                Button("Record Mic Only") {
-                    Task { await appState.startRecording(type: .note, inputSource: .microphone) }
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
-
-                Divider()
-
-                Button("Import Audio File") {
+                Button(t("Import Audio File", "Импорт аудиофайла")) {
                     NotificationCenter.default.post(name: .importAudioFile, object: nil)
                 }
                 .keyboardShortcut("i", modifiers: .command)
@@ -156,7 +142,7 @@ struct WaiComputerMacApp: App {
 
             // Settings (Cmd+,)
             CommandGroup(replacing: .appSettings) {
-                Button("Settings…") {
+                Button(t("Settings…", "Настройки…")) {
                     NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
@@ -168,57 +154,47 @@ struct WaiComputerMacApp: App {
 
                 Divider()
                 #if !DEBUG
-                Button("Check for Updates…") {
+                Button(t("Check for Updates…", "Проверить обновления…")) {
                     updaterController?.checkForUpdates(nil)
                 }
                 #endif
             }
 
             // View menu — sidebar navigation
-            CommandMenu("View") {
-                Button("All Recordings") {
+            CommandMenu(t("View", "Вид")) {
+                Button(t("All Recordings", "Все записи")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "allRecordings")
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
-                Button("Meetings") {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "meetings")
-                }
-                .keyboardShortcut("2", modifiers: .command)
-
-                Button("Notes") {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "notes")
-                }
-                .keyboardShortcut("3", modifiers: .command)
-
-                Button("Search") {
+                Button(t("Search", "Поиск")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "search")
                 }
                 .keyboardShortcut("f", modifiers: .command)
 
                 Divider()
 
-                Button("History") {
+                Button(t("History", "История")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Button(t("Dictionary", "Словарь")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
+                }
+                .keyboardShortcut("3", modifiers: .command)
+
+                Button(t("Settings", "Настройки")) {
+                    NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
                 }
                 .keyboardShortcut("4", modifiers: .command)
 
-                Button("Dictionary") {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
-                }
-                .keyboardShortcut("5", modifiers: .command)
-
-                Button("Settings") {
-                    NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
-                }
-                .keyboardShortcut("6", modifiers: .command)
-
                 Divider()
 
-                Button("Trash") {
+                Button(t("Trash", "Корзина")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
                 }
-                .keyboardShortcut("7", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
             }
 
             // Remove the default "New Window" from the Window menu
@@ -234,6 +210,7 @@ struct WaiComputerMacApp: App {
                 .environmentObject(recordingViewModel)
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
+                .environmentObject(languageManager)
         } label: {
             if isRecordingActivityVisible {
                 Image(systemName: "waveform.circle.fill")
@@ -246,6 +223,10 @@ struct WaiComputerMacApp: App {
 
     private var isRecordingActivityVisible: Bool {
         recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -268,12 +249,14 @@ final class MacPresentationCoordinator {
     static let mainWindowID = "main"
 
     private let closeInterceptor = MainWindowCloseInterceptor()
+    private var didPlaceMainWindowThisLaunch = false
 
     private init() {}
 
     func mainWindowDidAppear() {
         setRegularActivationPolicy()
         attachCloseInterceptorToMainWindow()
+        centerMainWindowIfNeeded()
     }
 
     /// Find the SwiftUI-managed main NSWindow and route close attempts
@@ -285,6 +268,19 @@ final class MacPresentationCoordinator {
     private func attachCloseInterceptorToMainWindow() {
         guard let window = visibleMainWindows.first else { return }
         closeInterceptor.attach(to: window)
+    }
+
+    private func centerMainWindowIfNeeded() {
+        guard !didPlaceMainWindowThisLaunch,
+              let window = visibleMainWindows.first,
+              let screen = window.screen ?? NSScreen.main
+        else { return }
+
+        let visibleFrame = screen.visibleFrame
+        if window.frame.maxY >= visibleFrame.maxY - 4 {
+            window.center()
+        }
+        didPlaceMainWindowThisLaunch = true
     }
 
     func mainWindowDidClose() {

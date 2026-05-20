@@ -43,7 +43,7 @@ const COPY: Record<
     renewsLabel: "Renews",
     endsLabel: "Ends",
     wordsLabel: "Words this week",
-    unlimited: "Unlimited (Pro)",
+    unlimited: "No weekly cap reported",
     resets: "Resets Sunday at 00:00 UTC",
     upgrade: "Upgrade to Pro",
     cancel: "Cancel subscription",
@@ -52,8 +52,8 @@ const COPY: Record<
     loadError: "Couldn't load billing info.",
     loading: "Loading…",
     payWith: "Pay with",
-    providerTinkoff: "T-Bank (RUB)",
-    providerStripe: "Stripe (USD)",
+    providerTinkoff: "RUB via T-Bank",
+    providerStripe: "USD via Stripe",
   },
   ru: {
     heading: "Подписка",
@@ -62,7 +62,7 @@ const COPY: Record<
     renewsLabel: "Продление",
     endsLabel: "Заканчивается",
     wordsLabel: "Слов на этой неделе",
-    unlimited: "Без ограничений (Pro)",
+    unlimited: "Недельный лимит не получен",
     resets: "Сбрасывается в воскресенье в 00:00 UTC",
     upgrade: "Оформить Pro",
     cancel: "Отменить подписку",
@@ -71,8 +71,8 @@ const COPY: Record<
     loadError: "Не удалось загрузить данные подписки.",
     loading: "Загрузка…",
     payWith: "Оплата через",
-    providerTinkoff: "Т-Банк (₽)",
-    providerStripe: "Stripe ($)",
+    providerTinkoff: "RUB через Т-Банк",
+    providerStripe: "USD через Stripe",
   },
 };
 
@@ -87,9 +87,9 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [usage, setUsage] = useState<BillingUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
-  // RU users choose T-Bank or Stripe; EN locks to Stripe.
+  // RU UI users choose T-Bank or Stripe; other locales lock to Stripe.
   const [provider, setProvider] = useState<Provider>(
-    currency === "rub" ? "tinkoff" : "stripe",
+    locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
   );
 
   useEffect(() => {
@@ -105,8 +105,9 @@ export function BillingDashboard({ locale, currency }: Props) {
   if (!sub || !usage) return <p>{copy.loading}</p>;
 
   const isPro = sub.plan.code === "pro" && sub.status !== "canceled";
-  const fraction = usage.words_cap
-    ? Math.min(1, usage.words_used / usage.words_cap)
+  const displayCap = usage.words_cap ?? sub.plan.word_cap_per_week;
+  const fraction = displayCap
+    ? Math.min(1, usage.words_used / displayCap)
     : 0;
   const periodEnd = sub.current_period_end
     ? new Date(sub.current_period_end).toLocaleDateString(
@@ -166,13 +167,13 @@ export function BillingDashboard({ locale, currency }: Props) {
 
       <div className="billing-usage">
         <h2>{copy.wordsLabel}</h2>
-        {usage.words_cap === null ? (
+        {displayCap === null ? (
           <p>{copy.unlimited}</p>
         ) : (
           <>
             <p>
               {usage.words_used.toLocaleString()} /{" "}
-              {usage.words_cap.toLocaleString()}
+              {displayCap.toLocaleString()}
             </p>
             <progress max={1} value={fraction} />
             <p className="billing-caption">{copy.resets}</p>
@@ -192,7 +193,7 @@ export function BillingDashboard({ locale, currency }: Props) {
         </button>
       ) : (
         <>
-          {currency === "rub" ? (
+          {locale === "ru" && currency === "rub" ? (
             <fieldset className="billing-provider" aria-label={copy.payWith}>
               <legend>{copy.payWith}</legend>
               <label>

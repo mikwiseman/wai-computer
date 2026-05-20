@@ -101,7 +101,8 @@ struct OnboardingView: View {
                         case .hotkey:
                             OnboardingHotkeyPickerSlide(
                                 isActive: index == currentPage,
-                                dictationManager: dictationManager
+                                dictationManager: dictationManager,
+                                onSelect: advanceOrComplete
                             )
                         case .voiceSetup:
                             OnboardingVoiceSetupSlide(
@@ -167,34 +168,15 @@ struct OnboardingView: View {
     @ViewBuilder
     private var footerControls: some View {
         HStack(spacing: 12) {
-            // Help pill anchored to footer-leading so it never overlaps Skip.
-            Button(action: openHelp) {
-                HStack(spacing: 6) {
-                    ZStack {
-                        Circle()
-                            .stroke(Palette.textTertiary, lineWidth: 1)
-                            .frame(width: 16, height: 16)
-                        Image(systemName: "questionmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Palette.textTertiary)
+            if currentPage > 0 {
+                Button(t("Back", "Назад")) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        currentPage = max(currentPage - 1, 0)
                     }
-                    Text(t("Help", "Помощь"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.textSecondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(Color(NSColor.windowBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .strokeBorder(Palette.border, lineWidth: 1)
-                )
+                .buttonStyle(WaiGhostButtonStyle())
+                .accessibilityIdentifier("onboarding-back-button")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("onboarding-help-button")
 
             Spacer()
 
@@ -287,12 +269,6 @@ struct OnboardingView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-
-    private func openHelp() {
-        if let url = URL(string: "https://wai.computer/help") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private static func initialCurrentPage() -> Int {
@@ -596,7 +572,7 @@ private struct OnboardingPermissionSlide: View {
                     .foregroundStyle(.green)
                 Text(t("All set", "Все готово"))
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Palette.textPrimary)
+                    .foregroundStyle(Color.black.opacity(0.82))
             }
         }
     }

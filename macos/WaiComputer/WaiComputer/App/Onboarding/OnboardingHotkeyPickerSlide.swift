@@ -4,6 +4,7 @@ import WaiComputerKit
 struct OnboardingHotkeyPickerSlide: View {
     let isActive: Bool
     @ObservedObject var dictationManager: DictationManager
+    let onSelect: () -> Void
     @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
@@ -50,6 +51,9 @@ struct OnboardingHotkeyPickerSlide: View {
         let selected = dictationManager.selectedHotkey == hotkey
         Button {
             dictationManager.updateHotkey(hotkey)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                onSelect()
+            }
         } label: {
             VStack(spacing: 10) {
                 Text(hotkey.shortLabel)

@@ -33,3 +33,7 @@ async def test_billing_plans_amounts_are_numbers_not_strings(
     pro = next(p for p in plans if p["code"] == "pro")
     assert pro["usd_amount_monthly"] == 12.0
     assert pro["rub_amount_monthly"] == 999.0
+    assert pro["word_cap_per_week"] == 50_000
+
+    free = next(p for p in plans if p["code"] == "free")
+    assert free["word_cap_per_week"] == 3_000

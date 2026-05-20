@@ -1,4 +1,4 @@
-import type { Breadcrumb, ErrorEvent, EventHint } from "@sentry/nextjs";
+import type { Breadcrumb, ErrorEvent } from "@sentry/nextjs";
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 
@@ -36,7 +36,7 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   return breadcrumb;
 }
 
-export function scrubEvent(event: ErrorEvent, _hint: EventHint): ErrorEvent {
+export function scrubEvent(event: ErrorEvent): ErrorEvent {
   if (event.request) {
     if (event.request.url) {
       event.request.url = stripQuery(event.request.url);

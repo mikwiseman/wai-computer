@@ -91,7 +91,7 @@ async def get_usage(
     """Return this user's current weekly transcription usage.
 
     Respects the per-request Payment-mode override so a tester sees their
-    real cap state while everyone else stays in unlimited mode.
+    real cap state while everyone else stays in uncapped compatibility mode.
     """
     result = await WordQuota.check(
         db, user, estimated_words=0, enforce_override=enforce_payment
