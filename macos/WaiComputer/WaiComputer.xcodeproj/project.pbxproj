@@ -26,8 +26,6 @@
 		50BAC1344C74873CD701ED03 /* DictationOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDCD1871205A4EDE6AFE8C5A /* DictationOverlayView.swift */; };
 		51B644191FE104273179EF02 /* SystemAudioWarningPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5835543DAC10BA51A41849 /* SystemAudioWarningPolicy.swift */; };
 		51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */; };
-		55F4103AEE9B5B70E8445D89 /* icon.json in Resources */ = {isa = PBXBuildFile; fileRef = 62F21A624A307F0E6468D964 /* icon.json */; };
-		66DCE948A735CD124B120846 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */; };
 		6BC44F13D8DEC60C6771BDE3 /* OnboardingHotkeyPickerSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3996AAFF9389472FC679B74E /* OnboardingHotkeyPickerSlide.swift */; };
 		6E344544C36E05B5FE529ED5 /* DictationDictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */; };
 		72DE8195FCC004F3A3AF8642 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */; };
@@ -37,9 +35,9 @@
 		833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */; };
 		83CB01D05304F022D5A2188E /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = C9FED7AFDFB3BD38C93665B6 /* WaiComputerKit */; };
 		87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 864F5988EFF4C90C1885EAD1 /* Assets.xcassets */; };
-		88EA75E26AB36FF6CB77EE0A /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png in Resources */ = {isa = PBXBuildFile; fileRef = 96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */; };
 		8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299E722D1B0554D90131758 /* MacSettingsView.swift */; };
 		8EFA5306BA7BFE70BB94925B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2D8C691A99FD7DEA5AE7FA15 /* Sparkle */; };
+		908000D73E621D62B2638F0E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 63673E10D195B18342C22A3A /* AppIcon.icon */; };
 		9270DF3835C1779D8BE98818 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
 		9FBAB99C8DBEE0A314C6944D /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64605678EEFC8F7DE615F3F /* AppLanguagePicker.swift */; };
@@ -109,8 +107,8 @@
 		5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTestingSupport.swift; sourceTree = "<group>"; };
 		5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		6299E722D1B0554D90131758 /* MacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSettingsView.swift; sourceTree = "<group>"; };
-		62F21A624A307F0E6468D964 /* icon.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = icon.json; sourceTree = "<group>"; };
 		63599FDEBFCAB293C25C3CA5 /* NewRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewRecordingView.swift; sourceTree = "<group>"; };
+		63673E10D195B18342C22A3A /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
 		66FA75D8ABA621613DBC2F59 /* ImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportUITests.swift; sourceTree = "<group>"; };
 		72DC15C789AC6D3DE96B7454 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
@@ -121,11 +119,9 @@
 		8720A51453F6A00129C44413 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerMacApp.swift; sourceTree = "<group>"; };
 		90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
-		96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png"; sourceTree = "<group>"; };
 		99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		9B3889A9A04FC3CA4A048F4D /* SystemAudioWarningPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicyTests.swift; sourceTree = "<group>"; };
 		9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStore.swift; sourceTree = "<group>"; };
-		9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png"; sourceTree = "<group>"; };
 		A75D539F70136F36847122EB /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
@@ -246,15 +242,6 @@
 			path = WaiComputerUITests;
 			sourceTree = "<group>";
 		};
-		50190F52C27634A705D17962 /* AppIcon.icon */ = {
-			isa = PBXGroup;
-			children = (
-				62F21A624A307F0E6468D964 /* icon.json */,
-				DE2F2B22309DAA4D0BAC49B8 /* Assets */,
-			);
-			path = AppIcon.icon;
-			sourceTree = "<group>";
-		};
 		59B2AD84382DEB3E12F19C35 /* Billing */ = {
 			isa = PBXGroup;
 			children = (
@@ -358,9 +345,9 @@
 		C302D34B9210F9FA7170AD26 /* WaiComputer */ = {
 			isa = PBXGroup;
 			children = (
+				63673E10D195B18342C22A3A /* AppIcon.icon */,
 				864F5988EFF4C90C1885EAD1 /* Assets.xcassets */,
 				80368ACBB24566AA7B8D7B0B /* App */,
-				50190F52C27634A705D17962 /* AppIcon.icon */,
 				E1A98E16AC8A5557AE9585A0 /* Core */,
 				5D15DE54E4FDA3B1560A15A6 /* Features */,
 				8C9F74D9A3A5DF8C28E76AD9 /* Resources */,
@@ -376,15 +363,6 @@
 				010A1CB6C20DE6517AA54CD3 /* PaymentModeToggle.swift */,
 			);
 			path = Settings;
-			sourceTree = "<group>";
-		};
-		DE2F2B22309DAA4D0BAC49B8 /* Assets */ = {
-			isa = PBXGroup;
-			children = (
-				9F5B0209ABC807CD463C8597 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png */,
-				96D13D7FFE0E9D9DDBB37C74 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png */,
-			);
-			path = Assets;
 			sourceTree = "<group>";
 		};
 		E1A98E16AC8A5557AE9585A0 /* Core */ = {
@@ -519,11 +497,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				66DCE948A735CD124B120846 /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e-dark.png in Resources */,
-				88EA75E26AB36FF6CB77EE0A /* 72eb7034-4bcb-4a4c-b842-bd0dac562f7e.png in Resources */,
+				908000D73E621D62B2638F0E /* AppIcon.icon in Resources */,
 				87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */,
 				7F57E2B7481CBD2DEE85FB8E /* Localizable.xcstrings in Resources */,
-				55F4103AEE9B5B70E8445D89 /* icon.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
