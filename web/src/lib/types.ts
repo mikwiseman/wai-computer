@@ -491,3 +491,18 @@ export interface McpConnection {
   approved_at: string;
   last_active_at: string | null;
 }
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  scopes: string[];
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  token: string;
+}

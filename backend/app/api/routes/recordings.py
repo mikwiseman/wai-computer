@@ -230,6 +230,7 @@ class RecordingResponse(BaseModel):
     deleted_at: datetime | None
     starred_at: datetime | None
     created_at: datetime
+    updated_at: datetime
 
 
 class RecordingDetailResponse(RecordingResponse):
@@ -485,6 +486,7 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
         deleted_at=recording.deleted_at,
         starred_at=recording.starred_at,
         created_at=recording.created_at,
+        updated_at=recording.updated_at,
     )
 
 
@@ -915,8 +917,13 @@ async def list_recordings(
     folder_id: UUID | None = None,
     trashed: bool = False,
     starred: bool = False,
+    updated_after: datetime | None = None,
 ) -> list[RecordingResponse]:
-    """List user's recordings."""
+    """List user's recordings.
+
+    ``updated_after`` filters to recordings updated strictly after the given
+    timestamp (ascending order) for watermark-based incremental sync.
+    """
     query = select(Recording).where(Recording.user_id == user.id)
 
     if trashed:
@@ -930,8 +937,15 @@ async def list_recordings(
         query = query.where(Recording.folder_id == folder_id)
     if starred:
         query = query.where(Recording.starred_at.is_not(None))
+    if updated_after is not None:
+        query = query.where(Recording.updated_at > updated_after)
 
-    query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
+    if updated_after is not None:
+        # Stable forward pagination for watermark-based incremental sync.
+        query = query.order_by(Recording.updated_at.asc(), Recording.id.asc())
+    else:
+        query = query.order_by(Recording.created_at.desc())
+    query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)
     recordings = result.scalars().all()

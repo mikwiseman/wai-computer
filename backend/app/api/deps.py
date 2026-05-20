@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.api_keys import is_api_key, resolve_api_key
 from app.core.observability import bind_user_context
 from app.core.security import decode_access_token
 from app.db.session import get_db
@@ -32,6 +33,18 @@ def _extract_access_token(
     return None
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+async def _user_for_api_key(db: AsyncSession, token: str) -> User | None:
+    """Resolve a ``wc_live_`` API key to its owning user (or None)."""
+    api_key = await resolve_api_key(db, token)
+    if api_key is None:
+        return None
+    result = await db.execute(select(User).where(User.id == api_key.user_id))
+    return result.scalar_one_or_none()
+
+
 async def get_current_user(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_security)],
@@ -50,6 +63,23 @@ async def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if is_api_key(token):
+        user = await _user_for_api_key(db, token)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if request.method not in SAFE_METHODS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This API token is read-only",
+            )
+        request.state.auth_via_api_key = True
+        bind_user_context(str(user.id))
+        return user
 
     user_id = decode_access_token(token)
 
@@ -88,6 +118,13 @@ async def get_optional_user(
     if token is None:
         return None
 
+    if is_api_key(token):
+        user = await _user_for_api_key(db, token)
+        if user is not None:
+            request.state.auth_via_api_key = True
+            bind_user_context(str(user.id))
+        return user
+
     user_id = decode_access_token(token)
 
     if user_id is None:
@@ -104,6 +141,23 @@ async def get_optional_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 Database = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def get_current_session_user(request: Request, user: CurrentUser) -> User:
+    """Like ``CurrentUser`` but rejects API-token principals.
+
+    Used by the API-token management routes so a token cannot mint, list, or
+    revoke tokens (privilege escalation).
+    """
+    if getattr(request.state, "auth_via_api_key", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API tokens cannot manage API tokens",
+        )
+    return user
+
+
+SessionUser = Annotated[User, Depends(get_current_session_user)]
 
 
 def payment_mode_override(request: Request) -> bool:

@@ -22,6 +22,9 @@ const mockChangePassword = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
 const mockRevokeMcpConnection = vi.fn();
+const mockListApiKeys = vi.fn();
+const mockCreateApiKey = vi.fn();
+const mockRevokeApiKey = vi.fn();
 const mockReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -47,6 +50,9 @@ vi.mock("@/lib/api", () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
   revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
+  listApiKeys: (...args: unknown[]) => mockListApiKeys(...args),
+  createApiKey: (...args: unknown[]) => mockCreateApiKey(...args),
+  revokeApiKey: (...args: unknown[]) => mockRevokeApiKey(...args),
 }));
 
 const baseUser = {
@@ -131,6 +137,9 @@ function arrangeHappyPathMocks() {
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
   mockRevokeMcpConnection.mockResolvedValue(undefined);
+  mockListApiKeys.mockResolvedValue([]);
+  mockCreateApiKey.mockResolvedValue({});
+  mockRevokeApiKey.mockResolvedValue(undefined);
 }
 
 function createDeferred<T>() {
@@ -190,6 +199,9 @@ describe("DashboardClient", () => {
       mockLogout,
       mockListMcpConnections,
       mockRevokeMcpConnection,
+      mockListApiKeys,
+      mockCreateApiKey,
+      mockRevokeApiKey,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
   });

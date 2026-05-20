@@ -1066,6 +1066,56 @@ h4 {
   overflow-wrap: anywhere;
 }
 
+.api-keys-section {
+  margin-top: 1.2rem;
+}
+
+.api-key-create-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.api-key-create-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-size: 0.85rem;
+}
+
+.api-key-created {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+}
+
+.api-key-created-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.api-key-token-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.api-key-token {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+}
+
 .shared-page {
   min-height: 100vh;
   background: var(--bg);
