@@ -1,19 +1,22 @@
-"""Browser consent routes for MCP OAuth authorization."""
+"""Browser consent and connection-management routes for MCP OAuth."""
 
 from __future__ import annotations
 
 import html
+from datetime import datetime, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import _extract_access_token, bearer_security
+from app.api.deps import CurrentUser, Database, _extract_access_token, bearer_security
 from app.config import get_settings
 from app.core.mcp_oauth import (
+    ACCESS_TOKEN_TYPE,
     McpAuthorizationRequestError,
     auto_complete_authorization_if_consented,
     complete_authorization_request,
@@ -21,6 +24,7 @@ from app.core.mcp_oauth import (
 )
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.mcp_oauth import McpOAuthClient, McpOAuthConsent, McpOAuthToken
 from app.models.user import User
 
 router = APIRouter(prefix="/mcp/oauth", tags=["mcp-oauth"])
@@ -229,3 +233,80 @@ async def post_consent(
     except McpAuthorizationRequestError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return RedirectResponse(redirect, status_code=status.HTTP_302_FOUND)
+
+
+class McpConnection(BaseModel):
+    """A connected MCP client — an approved, non-revoked consent."""
+
+    client_id: str
+    client_name: str
+    client_uri: str | None
+    scopes: list[str]
+    approved_at: datetime
+    last_active_at: datetime | None
+
+
+@router.get("/connections")
+async def list_connections(user: CurrentUser, db: Database) -> list[McpConnection]:
+    """List the MCP clients the current user has connected."""
+    result = await db.execute(
+        select(McpOAuthConsent, McpOAuthClient)
+        .join(McpOAuthClient, McpOAuthConsent.client_id == McpOAuthClient.client_id)
+        .where(
+            McpOAuthConsent.user_id == user.id,
+            McpOAuthConsent.revoked_at.is_(None),
+        )
+        .order_by(McpOAuthConsent.approved_at.desc())
+    )
+    rows = result.all()
+
+    # "Last active" ≈ newest access token issued (auth-code exchange or refresh).
+    last_active_result = await db.execute(
+        select(McpOAuthToken.client_id, func.max(McpOAuthToken.created_at))
+        .where(
+            McpOAuthToken.user_id == user.id,
+            McpOAuthToken.token_type == ACCESS_TOKEN_TYPE,
+        )
+        .group_by(McpOAuthToken.client_id)
+    )
+    last_active = dict(last_active_result.all())
+
+    return [
+        McpConnection(
+            client_id=consent.client_id,
+            client_name=client.client_name or "MCP client",
+            client_uri=client.client_uri,
+            scopes=consent.scopes,
+            approved_at=consent.approved_at,
+            last_active_at=last_active.get(consent.client_id),
+        )
+        for consent, client in rows
+    ]
+
+
+@router.post("/connections/{client_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_connection(client_id: str, user: CurrentUser, db: Database) -> Response:
+    """Revoke a connected MCP client: cut its consent and all of its tokens."""
+    result = await db.execute(
+        select(McpOAuthConsent).where(
+            McpOAuthConsent.user_id == user.id,
+            McpOAuthConsent.client_id == client_id,
+            McpOAuthConsent.revoked_at.is_(None),
+        )
+    )
+    consent = result.scalar_one_or_none()
+    if consent is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    now = datetime.now(timezone.utc)
+    consent.revoked_at = now
+    await db.execute(
+        update(McpOAuthToken)
+        .where(
+            McpOAuthToken.user_id == user.id,
+            McpOAuthToken.client_id == client_id,
+            McpOAuthToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
