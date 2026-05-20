@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 
+import { McpConnectionsList } from "./McpConnectionsList";
+
 const MCP_ENDPOINT_URL = "https://wai.computer/mcp";
 
-type McpClient = "claudeai" | "cursor" | "chatgpt" | "claudecode" | "codex";
+type McpClient = "claudeai" | "cursor" | "chatgpt" | "claudecode" | "codex" | "bot";
 
 type McpClientGuide = {
   id: McpClient;
@@ -74,6 +76,27 @@ claude mcp add --transport http waicomputer ${MCP_ENDPOINT_URL}
       language: "bash",
       body: `codex mcp add waicomputer --url ${MCP_ENDPOINT_URL}
 codex mcp login waicomputer`,
+    },
+  },
+  {
+    id: "bot",
+    label: "Custom / bot",
+    steps:
+      "For an unattended bot (no human at a browser), use an OAuth-capable MCP client library. Register as a public client, approve once, then let it refresh automatically — read-only access on the 90-day sliding refresh.",
+    snippet: {
+      language: "text",
+      body: `Endpoint: ${MCP_ENDPOINT_URL}
+
+Use any OAuth-capable MCP client library and:
+1. Register as a PUBLIC client — token_endpoint_auth_method "none"
+   (no client secret, so nothing expires at the 90-day mark).
+2. Use a loopback redirect URI, e.g. http://127.0.0.1:8123/callback.
+3. Approve once in a browser (one-time consent on wai.computer).
+4. Persist the refresh token and REPLACE it after every refresh — it rotates.
+
+Access is read-only (mcp:read). Refresh is a sliding 90-day window, so an
+active bot never needs to re-authorize. Revoke it anytime under
+"Connected clients" below.`,
     },
   },
 ];
@@ -170,6 +193,8 @@ export function McpConnectSection() {
           </a>
         ) : null}
       </div>
+
+      <McpConnectionsList />
     </div>
   );
 }

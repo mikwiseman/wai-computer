@@ -19,6 +19,7 @@ import type {
   EntityType,
   ExportFormat,
   KeywordsResponse,
+  McpConnection,
   MessageResponse,
   Person,
   StarRecordingResponse,
@@ -473,4 +474,15 @@ export function createRecordingShareLink(recordingId: string): Promise<Recording
 
 export function getSharedRecording(token: string): Promise<SharedRecording> {
   return apiFetch<SharedRecording>(`/api/recordings/shared/${token}`);
+}
+
+export function listMcpConnections(): Promise<McpConnection[]> {
+  return apiFetch<McpConnection[]>("/api/mcp/oauth/connections");
+}
+
+export function revokeMcpConnection(clientId: string): Promise<void> {
+  return apiFetch<void>(
+    `/api/mcp/oauth/connections/${encodeURIComponent(clientId)}/revoke`,
+    { method: "POST" },
+  );
 }

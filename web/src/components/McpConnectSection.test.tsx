@@ -3,6 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import { McpConnectSection } from "./McpConnectSection";
 
+vi.mock("@/lib/api", () => ({
+  listMcpConnections: vi.fn().mockResolvedValue([]),
+  revokeMcpConnection: vi.fn(),
+}));
+
 let clipboardWriteText: ReturnType<typeof vi.fn>;
 
 describe("McpConnectSection", () => {
@@ -72,5 +77,14 @@ describe("McpConnectSection", () => {
       const lastCall = clipboardWriteText.mock.calls.at(-1);
       expect(lastCall?.[0]).toContain("claude mcp add --transport http waicomputer https://wai.computer/mcp");
     });
+  });
+
+  it("documents the headless bot recipe: public client + rotated refresh token", () => {
+    render(<McpConnectSection />);
+    fireEvent.click(screen.getByRole("tab", { name: "Custom / bot" }));
+    const guide = screen.getByTestId("mcp-guide-bot");
+    expect(guide.textContent?.toLowerCase()).toContain("public client");
+    expect(guide.textContent).toMatch(/rotate/i);
+    expect(guide.textContent).toContain("mcp:read");
   });
 });

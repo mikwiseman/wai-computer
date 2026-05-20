@@ -482,3 +482,12 @@ export interface RealtimeVoiceSession {
   environment: string | null;
   branch_id: string | null;
 }
+
+export interface McpConnection {
+  client_id: string;
+  client_name: string;
+  client_uri: string | null;
+  scopes: string[];
+  approved_at: string;
+  last_active_at: string | null;
+}

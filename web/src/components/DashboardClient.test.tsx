@@ -20,6 +20,8 @@ const mockCreateEntity = vi.fn();
 const mockDeleteEntity = vi.fn();
 const mockChangePassword = vi.fn();
 const mockLogout = vi.fn();
+const mockListMcpConnections = vi.fn();
+const mockRevokeMcpConnection = vi.fn();
 const mockReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -43,6 +45,8 @@ vi.mock("@/lib/api", () => ({
   deleteEntity: (...args: unknown[]) => mockDeleteEntity(...args),
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
+  listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
+  revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
 }));
 
 const baseUser = {
@@ -125,6 +129,8 @@ function arrangeHappyPathMocks() {
   mockDeleteEntity.mockResolvedValue(undefined);
   mockChangePassword.mockResolvedValue({ message: "Password changed successfully" });
   mockLogout.mockResolvedValue({ message: "Logged out" });
+  mockListMcpConnections.mockResolvedValue([]);
+  mockRevokeMcpConnection.mockResolvedValue(undefined);
 }
 
 function createDeferred<T>() {
@@ -182,6 +188,8 @@ describe("DashboardClient", () => {
       mockDeleteEntity,
       mockChangePassword,
       mockLogout,
+      mockListMcpConnections,
+      mockRevokeMcpConnection,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
   });
