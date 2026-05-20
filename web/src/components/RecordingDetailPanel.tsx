@@ -264,6 +264,7 @@ export function RecordingDetailPanel({
         {tab === "transcript" && (
           <TranscriptTab
             segments={recording.segments}
+            status={recording.status}
             recordingId={recording.id}
             onRecordingUpdate={onRecordingUpdate}
           />
@@ -279,14 +280,25 @@ export function RecordingDetailPanel({
 
 function TranscriptTab({
   segments,
+  status,
   recordingId,
   onRecordingUpdate,
 }: {
   segments: Segment[];
+  status: string;
   recordingId: string;
   onRecordingUpdate?: (r: RecordingDetail) => void;
 }) {
   if (segments.length === 0) {
+    if (isRecordingProcessing(status)) {
+      return (
+        <div className="empty-state">
+          <h3>Transcript is processing</h3>
+          <p>WaiComputer is processing this recording. The transcript will appear here automatically.</p>
+        </div>
+      );
+    }
+
     return (
       <div className="empty-state">
         <h3>No Transcript</h3>
@@ -326,6 +338,10 @@ function TranscriptTab({
       ))}
     </div>
   );
+}
+
+function isRecordingProcessing(status: string) {
+  return ["pending_upload", "uploading", "processing"].includes(status);
 }
 
 function SummaryTab({

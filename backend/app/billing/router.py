@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, PlainSerializer
@@ -184,6 +185,14 @@ def _pick_provider(user_region: str, override: str | None) -> str:
     return BillingProvider.STRIPE.value
 
 
+def _checkout_result_urls(frontend_url: str, provider_code: str) -> tuple[str, str]:
+    frontend = frontend_url.rstrip("/")
+    if provider_code == BillingProvider.TINKOFF.value:
+        query = urlencode({"provider": BillingProvider.TINKOFF.value, "lang": "ru"})
+        return f"{frontend}/billing/success?{query}", f"{frontend}/billing/cancel?{query}"
+    return f"{frontend}/billing/success", f"{frontend}/billing/cancel"
+
+
 class CheckoutResponse(BaseModel):
     provider: str
     checkout_url: str
@@ -205,9 +214,7 @@ async def create_checkout(
 
     settings = get_settings()
     provider_code = _pick_provider(user.region, payload.provider)
-    frontend = settings.frontend_url.rstrip("/")
-    success_url = f"{frontend}/billing/success"
-    cancel_url = f"{frontend}/billing/cancel"
+    success_url, cancel_url = _checkout_result_urls(settings.frontend_url, provider_code)
 
     if provider_code == BillingProvider.STRIPE.value:
         provider = StripeProvider()
@@ -219,7 +226,7 @@ async def create_checkout(
                 user_id=str(user.id),
                 success_url=success_url,
                 cancel_url=cancel_url,
-                trial_days=settings.billing_trial_days,
+                trial_days=None,
             )
         except ProviderUnavailableError as exc:
             raise HTTPException(

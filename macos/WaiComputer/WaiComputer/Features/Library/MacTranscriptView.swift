@@ -4,6 +4,7 @@ import WaiComputerKit
 
 struct MacTranscriptView: View {
     let segments: [Segment]
+    var status: RecordingStatus = .ready
     var recordingId: String?
     var onAssigned: ((RecordingDetail) -> Void)?
     @EnvironmentObject private var languageManager: LanguageManager
@@ -11,12 +12,7 @@ struct MacTranscriptView: View {
 
     var body: some View {
         if segments.isEmpty {
-            ContentUnavailableView(
-                t("No Transcript", "Нет транскрипта"),
-                systemImage: "text.alignleft",
-                description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет транскрипта."))
-            )
-            .accessibilityIdentifier("transcript-empty-state")
+            emptyState
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
@@ -39,6 +35,37 @@ struct MacTranscriptView: View {
                 .padding(.vertical, Spacing.xl)
             }
             .accessibilityIdentifier("transcript-content")
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if isProcessing {
+            ContentUnavailableView(
+                t("Transcript is processing", "Транскрипт готовится"),
+                systemImage: "hourglass",
+                description: Text(t(
+                    "WaiComputer is processing this recording. The transcript will appear here automatically.",
+                    "WaiComputer обрабатывает запись. Текст появится здесь автоматически."
+                ))
+            )
+            .accessibilityIdentifier("transcript-processing-state")
+        } else {
+            ContentUnavailableView(
+                t("No Transcript", "Нет транскрипта"),
+                systemImage: "text.alignleft",
+                description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет транскрипта."))
+            )
+            .accessibilityIdentifier("transcript-empty-state")
+        }
+    }
+
+    private var isProcessing: Bool {
+        switch status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed:
+            return false
         }
     }
 

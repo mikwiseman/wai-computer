@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 
 from app.api.deps import Database
 from app.billing.providers.base import ProviderUnavailableError
@@ -15,6 +16,10 @@ from app.billing.service import apply_stripe_event, apply_tinkoff_event
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def _tinkoff_ack_response() -> PlainTextResponse:
+    return PlainTextResponse("OK")
 
 
 @router.post("/stripe")
@@ -39,12 +44,11 @@ async def stripe_webhook(request: Request, db: Database) -> dict:
 
 
 @router.post("/tinkoff")
-async def tinkoff_webhook(request: Request, db: Database) -> dict:
+async def tinkoff_webhook(request: Request, db: Database) -> PlainTextResponse:
     """Receive a T-Bank webhook, verify signature, dispatch to subscription state.
 
     T-Bank requires the body ``OK`` (plain text) for successful acknowledgement.
-    Anything else triggers their retry loop. We always return ``{"OK": true}``
-    in JSON since FastAPI's JSON response keys "OK" on the wire.
+    Anything else triggers their retry loop.
     """
     raw = await request.body()
     provider = TinkoffProvider()
@@ -61,4 +65,4 @@ async def tinkoff_webhook(request: Request, db: Database) -> dict:
 
     logger.info("Tinkoff webhook received type=%s status=%s", event.type, event.status)
     await apply_tinkoff_event(db, event)
-    return {"OK": True}
+    return _tinkoff_ack_response()
