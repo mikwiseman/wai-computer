@@ -5,7 +5,7 @@ let package = Package(
     name: "WaiComputerKit",
     platforms: [
         .iOS(.v17),
-        .macOS(.v14)
+        .macOS("14.2")
     ],
     products: [
         .library(
