@@ -29,7 +29,6 @@ const COPY: Record<
       features: string[];
       cta: string;
       ctaInFlight: string;
-      trial: string;
     };
     signInPrompt: string;
     payWith: string;
@@ -47,7 +46,7 @@ const COPY: Record<
       name: "Free",
       price: "$0",
       features: [
-        "10,000 transcribed words per week",
+        "3,000 transcribed words per week",
         "30-day searchable memory",
         "AI summaries on every recording",
         "Live dictation + meeting capture",
@@ -58,7 +57,7 @@ const COPY: Record<
       monthly: (a) => `${a} / month`,
       yearly: (a) => `${a} / year`,
       features: [
-        "Unlimited transcription",
+        "50,000 transcribed words per week",
         "Permanent searchable memory",
         "Agents + MCP access",
         "Advanced search across everything",
@@ -66,12 +65,11 @@ const COPY: Record<
       ],
       cta: "Upgrade to Pro",
       ctaInFlight: "Opening checkout…",
-      trial: "14-day trial — no credit card.",
     },
     signInPrompt: "Sign in to upgrade",
     payWith: "Pay with",
-    providerTinkoff: "T-Bank (RUB)",
-    providerStripe: "Stripe (USD)",
+    providerTinkoff: "RUB via T-Bank",
+    providerStripe: "USD via Stripe",
   },
   ru: {
     heading: "Простой прайс.",
@@ -83,7 +81,7 @@ const COPY: Record<
       name: "Free",
       price: "0 ₽",
       features: [
-        "10 000 транскрибированных слов в неделю",
+        "3 000 транскрибированных слов в неделю",
         "Память с поиском за 30 дней",
         "AI-саммари к каждой записи",
         "Живая диктовка и запись встреч",
@@ -94,7 +92,7 @@ const COPY: Record<
       monthly: (a) => `${a} / мес`,
       yearly: (a) => `${a} / год`,
       features: [
-        "Транскрипция без ограничений",
+        "50 000 транскрибированных слов в неделю",
         "Память с поиском навсегда",
         "Агенты + доступ к MCP",
         "Расширенный поиск по всему",
@@ -102,12 +100,11 @@ const COPY: Record<
       ],
       cta: "Оформить Pro",
       ctaInFlight: "Открываем оплату…",
-      trial: "14 дней триал — без карты.",
     },
     signInPrompt: "Войди, чтобы оформить Pro",
     payWith: "Оплата через",
-    providerTinkoff: "Т-Банк (₽)",
-    providerStripe: "Stripe ($)",
+    providerTinkoff: "RUB через Т-Банк",
+    providerStripe: "USD через Stripe",
   },
 };
 
@@ -126,9 +123,9 @@ export function PricingCards({
 }: Props) {
   const copy = COPY[locale];
   const [period, setPeriod] = useState<"month" | "year">("month");
-  // RU users can pay with T-Bank (RUB) or Stripe (USD). EN users always Stripe.
+  // RU UI users can pay with T-Bank (RUB) or Stripe (USD). Other locales always Stripe.
   const [provider, setProvider] = useState<Provider>(
-    currency === "rub" ? "tinkoff" : "stripe",
+    locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
   );
   const [inFlight, setInFlight] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,7 +213,7 @@ export function PricingCards({
               <li key={f}>{f}</li>
             ))}
           </ul>
-          {currency === "rub" ? (
+          {locale === "ru" && currency === "rub" ? (
             <fieldset className="pricing-provider" aria-label={copy.payWith}>
               <legend>{copy.payWith}</legend>
               <label>
@@ -248,7 +245,6 @@ export function PricingCards({
           >
             {inFlight ? copy.pro.ctaInFlight : copy.pro.cta}
           </button>
-          <p className="pricing-trial">{copy.pro.trial}</p>
           {error ? <p className="pricing-error">{error}</p> : null}
         </article>
       </div>

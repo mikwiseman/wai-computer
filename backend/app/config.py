@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     tinkoff_password: str = ""
 
     # Billing — generic
-    billing_trial_days: int = 14
+    billing_trial_days: int = 0
     billing_refund_window_days: int = 7
     billing_default_region: str = "global"
     # Master switch. When false (the default) the backend ignores word caps

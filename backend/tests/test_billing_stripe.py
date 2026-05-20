@@ -26,7 +26,7 @@ from app.models.user import User
 async def _seed_plans(db_session) -> tuple[Plan, Plan]:
     free = (await db_session.execute(select(Plan).where(Plan.code == "free"))).scalar_one_or_none()
     if free is None:
-        free = Plan(code="free", name="Free", word_cap_per_week=10000, memory_retention_days=30)
+        free = Plan(code="free", name="Free", word_cap_per_week=3000, memory_retention_days=30)
         db_session.add(free)
     pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one_or_none()
     if pro is None:
@@ -35,6 +35,7 @@ async def _seed_plans(db_session) -> tuple[Plan, Plan]:
             name="Pro",
             stripe_price_id_monthly="price_test_pro_month",
             stripe_price_id_yearly="price_test_pro_year",
+            word_cap_per_week=50000,
         )
         db_session.add(pro)
     await db_session.flush()
@@ -150,8 +151,8 @@ async def test_parse_webhook_extracts_subscription_event():
 
 
 @pytest.mark.asyncio
-async def test_create_checkout_free_trial_does_not_require_payment_method(monkeypatch):
-    """Marketing promises no card for trial; Stripe requires explicit params."""
+async def test_create_checkout_without_trial_does_not_add_trial_params(monkeypatch):
+    """Launch billing uses the free word cap, not a hosted-checkout trial."""
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     captured: dict = {}
 
@@ -186,19 +187,17 @@ async def test_create_checkout_free_trial_does_not_require_payment_method(monkey
     result = await p.create_checkout(
         plan_code="pro",
         period="month",
-        user_email="trial@example.test",
+        user_email="billing@example.test",
         user_id="user-1",
         success_url="https://wai.computer/billing/success",
         cancel_url="https://wai.computer/billing/cancel",
-        trial_days=14,
+        trial_days=0,
     )
 
     assert result.checkout_url == "https://checkout.stripe.test/session"
-    assert captured["payment_method_collection"] == "if_required"
-    assert captured["subscription_data"]["trial_period_days"] == 14
-    assert captured["subscription_data"]["trial_settings"] == {
-        "end_behavior": {"missing_payment_method": "cancel"}
-    }
+    assert "payment_method_collection" not in captured
+    assert "trial_period_days" not in captured["subscription_data"]
+    assert "trial_settings" not in captured["subscription_data"]
 
 
 # ----- service event handlers ---------------------------------------------

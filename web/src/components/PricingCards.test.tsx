@@ -19,6 +19,9 @@ describe("PricingCards", () => {
     render(<PricingCards locale="en" currency="usd" />);
 
     expect(screen.getByRole("heading", { name: "Simple pricing." })).toBeInTheDocument();
+    expect(screen.getByText("3,000 transcribed words per week")).toBeInTheDocument();
+    expect(screen.getByText("50,000 transcribed words per week")).toBeInTheDocument();
+    expect(screen.queryByText(/trial/i)).not.toBeInTheDocument();
     expect(screen.getByText("$12 / month")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: /Yearly/i }));

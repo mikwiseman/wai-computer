@@ -60,6 +60,7 @@ struct MacContentView: View {
 struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
     @State private var selectedSection: SidebarSection? = .allRecordings
@@ -71,15 +72,16 @@ struct MacMainView: View {
     @State private var isShowingCreateFolderSheet = false
     @State private var newFolderName = ""
     @State private var shouldAssignNewFolderToSelection = true
+    @State private var isShowingRenameFolderSheet = false
+    @State private var folderBeingEdited: Folder?
+    @State private var editedFolderName = ""
+    @State private var folderPendingDeletion: Folder?
     @State private var libraryErrorAutoDismissTask: Task<Void, Never>?
     @State private var recoveryNotice: String?
     @State private var recoveryNoticeAutoDismissTask: Task<Void, Never>?
 
     enum SidebarSection: Hashable {
         case allRecordings
-        case meetings
-        case notes
-        case reflections
         case folder(String)
         case trash
         case search
@@ -91,7 +93,7 @@ struct MacMainView: View {
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .reflections, .folder(_), .trash, .none:
+        case .allRecordings, .folder(_), .trash, .none:
             return true
         case .search, .history, .dictionary, .wai, .settings:
             return false
@@ -99,16 +101,7 @@ struct MacMainView: View {
     }
 
     private var currentRecordingType: RecordingType? {
-        switch selectedSection {
-        case .meetings:
-            return .meeting
-        case .notes:
-            return .note
-        case .reflections:
-            return .reflection
-        default:
-            return nil
-        }
+        nil
     }
 
     private var currentFolderId: String? {
@@ -143,29 +136,23 @@ struct MacMainView: View {
     private var currentListTitle: String {
         switch selectedSection {
         case .allRecordings:
-            return "All Recordings"
-        case .meetings:
-            return "Meetings"
-        case .notes:
-            return "Notes"
-        case .reflections:
-            return "Reflections"
+            return t("All Recordings", "Все записи")
         case .folder(let folderId):
-            return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? "Folder"
+            return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? t("Folder", "Папка")
         case .trash:
-            return "Trash"
+            return t("Trash", "Корзина")
         case .search:
-            return "Search"
+            return t("Search", "Поиск")
         case .history:
-            return "History"
+            return t("History", "История")
         case .dictionary:
-            return "Dictionary"
+            return t("Dictionary", "Словарь")
         case .wai:
             return "Wai"
         case .settings:
-            return "Settings"
+            return t("Settings", "Настройки")
         case .none:
-            return "Library"
+            return t("Library", "Библиотека")
         }
     }
 
@@ -173,140 +160,176 @@ struct MacMainView: View {
         recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 
-    var body: some View {
+    private var selectedRecordingsForActions: [Recording] {
+        libraryViewModel.recordings.filter { selectedRecordingIds.contains($0.id) }
+    }
+
+    private var canMoveSelectedRecordingsToUnfiled: Bool {
+        selectedRecordingsForActions.contains { $0.folderId != nil }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private var mainSplitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
-                .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 248, max: 300)
         } content: {
             listColumn
                 .navigationSplitViewColumnWidth(
-                    min: hasListColumn ? 260 : 0,
-                    ideal: hasListColumn ? 320 : 0,
-                    max: hasListColumn ? 450 : 0
+                    min: hasListColumn ? 340 : 0,
+                    ideal: hasListColumn ? 410 : 0,
+                    max: hasListColumn ? 560 : 0
                 )
         } detail: {
             detailColumn
                 .id(detailPhaseKey)
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+    }
+
+    @ToolbarContentBuilder
+    private var mainToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                startRecording(type: .meeting, inputSource: .dual)
+            } label: {
+                Label(t("New Recording", "Новая запись"), systemImage: "plus")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            .disabled(isRecordingHandoffActive || !appState.isAuthenticated)
+            .help(t("New Recording", "Новая запись"))
+            .accessibilityIdentifier("new-recording-toolbar-button")
+
+            if hasListColumn && !isTrashSection {
                 Button {
-                    selectedRecordingIds.removeAll()
-                    prefetchedRecordingDetail = nil
-                    if !hasListColumn {
-                        selectedSection = .allRecordings
-                    }
+                    shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
+                    isShowingCreateFolderSheet = true
                 } label: {
-                    Label("New Recording", systemImage: "plus")
-                        .labelStyle(.iconOnly)
+                    Image(systemName: "folder.badge.plus")
                         .foregroundStyle(Palette.textSecondary)
                 }
-                .disabled(isRecordingHandoffActive || (selectedRecordingIds.isEmpty && hasListColumn))
-                .help("New Recording")
-                .accessibilityIdentifier("new-recording-toolbar-button")
+                .help(t("New Folder", "Новая папка"))
 
-                if hasListColumn && !isTrashSection {
-                    Button {
-                        shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
-                        isShowingCreateFolderSheet = true
-                    } label: {
-                        Image(systemName: "folder.badge.plus")
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                    .help("New Folder")
-
-                    Menu {
-                        Button("Unfiled") {
+                Menu {
+                    if canMoveSelectedRecordingsToUnfiled {
+                        Button(t("Remove from Folder", "Убрать из папки")) {
                             moveSelectedRecordings(to: nil)
                         }
                         .disabled(selectedRecordingIds.isEmpty)
+                    }
 
-                        ForEach(libraryViewModel.folders) { folder in
-                            Button(folder.name) {
-                                moveSelectedRecordings(to: folder.id)
-                            }
-                            .disabled(selectedRecordingIds.isEmpty)
+                    ForEach(libraryViewModel.folders) { folder in
+                        Button(folder.name) {
+                            moveSelectedRecordings(to: folder.id)
                         }
-                    } label: {
-                        Image(systemName: "folder")
-                            .foregroundStyle(Palette.textSecondary)
+                        .disabled(selectedRecordingIds.isEmpty)
                     }
-                    .help("Move to Folder")
-                    .disabled(selectedRecordingIds.isEmpty)
-
-                    Button {
-                        moveSelectedRecordingsToTrash()
-                    } label: {
-                        Image(systemName: "trash")
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                    .help("Move to Trash")
-                    .disabled(selectedRecordingIds.isEmpty)
+                } label: {
+                    Image(systemName: "folder")
+                        .foregroundStyle(Palette.textSecondary)
                 }
+                .help(t("Move to Folder", "Переместить в папку"))
+                .disabled(selectedRecordingIds.isEmpty || (!canMoveSelectedRecordingsToUnfiled && libraryViewModel.folders.isEmpty))
 
-                if isTrashSection {
-                    Button {
-                        restoreSelectedRecordings()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                    .help("Restore")
-                    .disabled(selectedRecordingIds.isEmpty)
-
-                    Button {
-                        permanentlyDeleteSelectedRecordings()
-                    } label: {
-                        Image(systemName: "trash.slash")
-                            .foregroundStyle(Palette.recording)
-                    }
-                    .help("Delete Permanently")
-                    .disabled(selectedRecordingIds.isEmpty)
+                Button {
+                    moveSelectedRecordingsToTrash()
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Palette.textSecondary)
                 }
+                .help(t("Move to Trash", "Переместить в корзину"))
+                .disabled(selectedRecordingIds.isEmpty)
             }
+
+            if isTrashSection {
+                Button {
+                    restoreSelectedRecordings()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                .help(t("Restore", "Восстановить"))
+                .disabled(selectedRecordingIds.isEmpty)
+
+                Button {
+                    permanentlyDeleteSelectedRecordings()
+                } label: {
+                    Image(systemName: "trash.slash")
+                        .foregroundStyle(Palette.recording)
+                }
+                .help(t("Delete Permanently", "Удалить навсегда"))
+                .disabled(selectedRecordingIds.isEmpty)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var importOverlay: some View {
+        if importViewModel.isImporting {
+            VStack(spacing: Spacing.md) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(t("Importing", "Импорт") + " \(importViewModel.currentFilename)...")
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            .padding(Spacing.lg)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.bottom, Spacing.xl)
+        }
+    }
+
+    @ViewBuilder
+    private var topBanners: some View {
+        VStack(spacing: Spacing.sm) {
+            if let libraryError = libraryViewModel.error {
+                InlineLibraryErrorBanner(
+                    message: libraryError,
+                    onDismiss: { libraryViewModel.error = nil }
+                )
+            }
+
+            if let recoveryNotice {
+                RecordingRecoveryNoticeBanner(
+                    message: recoveryNotice,
+                    onDismiss: { dismissRecoveryNotice() }
+                )
+            }
+        }
+        .padding(.top, Spacing.lg)
+    }
+
+    private var deleteFolderDialogTitle: String {
+        guard let folder = folderPendingDeletion else {
+            return t("Delete Folder?", "Удалить папку?")
+        }
+        return t("Delete “\(folder.name)”?", "Удалить «\(folder.name)»?")
+    }
+
+    var body: some View {
+        mainSplitView
+        .toolbar {
+            mainToolbar
         }
         .overlay {
-            if importViewModel.isImporting {
-                VStack(spacing: Spacing.md) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Importing \(importViewModel.currentFilename)...")
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.textSecondary)
-                        .lineLimit(1)
-                }
-                .padding(Spacing.lg)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, Spacing.xl)
-            }
+            importOverlay
         }
         .overlay(alignment: .top) {
-            VStack(spacing: Spacing.sm) {
-                if let libraryError = libraryViewModel.error {
-                    InlineLibraryErrorBanner(
-                        message: libraryError,
-                        onDismiss: { libraryViewModel.error = nil }
-                    )
-                }
-
-                if let recoveryNotice {
-                    RecordingRecoveryNoticeBanner(
-                        message: recoveryNotice,
-                        onDismiss: { dismissRecoveryNotice() }
-                    )
-                }
-            }
-            .padding(.top, Spacing.lg)
+            topBanners
         }
-        .alert("Import Error", isPresented: $importViewModel.showError) {
-            Button("OK") {}
+        .alert(t("Import Error", "Ошибка импорта"), isPresented: $importViewModel.showError) {
+            Button(t("OK", "ОК")) {}
         } message: {
             Text(importViewModel.errorMessage)
         }
         .alert(
-            "Recording Error",
+            t("Recording Error", "Ошибка записи"),
             isPresented: Binding(
                 get: { recordingViewModel.error != nil },
                 set: { if !$0 { recordingViewModel.clearError() } }
@@ -314,43 +337,96 @@ struct MacMainView: View {
         ) {
             let message = recordingViewModel.error ?? ""
             if message.contains("Microphone permission") {
-                Button("Open Microphone Settings") {
+                Button(t("Open Microphone Settings", "Открыть настройки микрофона")) {
                     MacPrivacySettings.openMicrophone()
                     recordingViewModel.clearError()
                 }
-                Button("Cancel", role: .cancel) {
+                Button(t("Cancel", "Отмена"), role: .cancel) {
                     recordingViewModel.clearError()
                 }
             } else if message.contains("Audio Capture") || message.contains("System audio") {
-                Button("Open System Settings") {
+                Button(t("Open System Settings", "Открыть системные настройки")) {
                     MacPrivacySettings.openSystemAudio()
                     recordingViewModel.clearError()
                 }
-                Button("Cancel", role: .cancel) { recordingViewModel.clearError() }
+                Button(t("Cancel", "Отмена"), role: .cancel) { recordingViewModel.clearError() }
             } else {
-                Button("OK") {
+                Button(t("OK", "ОК")) {
                     recordingViewModel.clearError()
                 }
             }
         } message: {
-            Text(recordingViewModel.error ?? "The recording could not continue.")
+            Text(recordingViewModel.error ?? t("The recording could not continue.", "Запись не может продолжаться."))
         }
         .sheet(isPresented: $isShowingCreateFolderSheet) {
-            CreateFolderSheet(
+            FolderNameSheet(
+                title: t("New Folder", "Новая папка"),
+                textFieldPlaceholder: t("Folder name", "Название папки"),
+                primaryTitle: t("Create", "Создать"),
+                cancelTitle: t("Cancel", "Отмена"),
                 folderName: $newFolderName,
                 moveSelectionIntoFolder: $shouldAssignNewFolderToSelection,
                 selectionCount: selectedRecordingIds.count,
                 canMoveSelection: !selectedRecordingIds.isEmpty && !isTrashSection,
+                moveSelectionText: t(
+                    "Move \(selectedRecordingIds.count) selected \(selectedRecordingIds.count == 1 ? "recording" : "recordings") into this folder",
+                    "Переместить выбранные записи (\(selectedRecordingIds.count)) в эту папку"
+                ),
                 onCancel: {
                     newFolderName = ""
                     isShowingCreateFolderSheet = false
                 },
-                onCreate: {
+                onSubmit: {
                     Task {
                         await createFolder()
                     }
                 }
             )
+        }
+        .sheet(isPresented: $isShowingRenameFolderSheet) {
+            FolderNameSheet(
+                title: t("Rename Folder", "Переименовать папку"),
+                textFieldPlaceholder: t("Folder name", "Название папки"),
+                primaryTitle: t("Rename", "Переименовать"),
+                cancelTitle: t("Cancel", "Отмена"),
+                folderName: $editedFolderName,
+                moveSelectionIntoFolder: .constant(false),
+                selectionCount: 0,
+                canMoveSelection: false,
+                moveSelectionText: "",
+                onCancel: {
+                    editedFolderName = ""
+                    folderBeingEdited = nil
+                    isShowingRenameFolderSheet = false
+                },
+                onSubmit: {
+                    Task {
+                        await renameFolder()
+                    }
+                }
+            )
+        }
+        .confirmationDialog(
+            deleteFolderDialogTitle,
+            isPresented: Binding(
+                get: { folderPendingDeletion != nil },
+                set: { if !$0 { folderPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(t("Delete Folder", "Удалить папку"), role: .destructive) {
+                if let folder = folderPendingDeletion {
+                    Task { await deleteFolder(folder) }
+                }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {
+                folderPendingDeletion = nil
+            }
+        } message: {
+            Text(t(
+                "Recordings stay in All Recordings. Only the folder is removed.",
+                "Записи останутся во всех записях. Удалится только папка."
+            ))
         }
         .task {
             await reloadLibrary()
@@ -383,9 +459,6 @@ struct MacMainView: View {
             guard let target = notification.object as? String else { return }
             switch target {
             case "allRecordings": selectedSection = .allRecordings
-            case "meetings": selectedSection = .meetings
-            case "notes": selectedSection = .notes
-            case "reflections": selectedSection = .reflections
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -455,14 +528,10 @@ struct MacMainView: View {
     private var sidebar: some View {
         List {
             Section {
-                sidebarRow("All Recordings", icon: "folder", section: .allRecordings)
-                sidebarRow("Meetings", icon: "person.2", section: .meetings)
-                sidebarRow("Notes", icon: "note.text", section: .notes)
-                sidebarRow("Reflections", icon: "sparkles", section: .reflections)
-                sidebarRow("Search", icon: "magnifyingglass", section: .search)
-                sidebarRow("Trash", icon: "trash", section: .trash)
+                sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
+                sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
-                Text("Library")
+                Text(t("Library", "Библиотека"))
                     .waiSectionHeader()
             }
 
@@ -471,30 +540,31 @@ struct MacMainView: View {
                     shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
                     isShowingCreateFolderSheet = true
                 } label: {
-                    Label("New Folder", systemImage: "folder.badge.plus")
+                    Label(t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
                         .font(Typography.body)
                 }
                 .buttonStyle(.plain)
 
                 ForEach(libraryViewModel.folders) { folder in
-                    sidebarRow(folder.name, icon: "folder", section: .folder(folder.id))
+                    folderSidebarRow(folder)
                 }
             } header: {
-                Text("Folders")
+                Text(t("Folders", "Папки"))
                     .waiSectionHeader()
             }
 
             Section {
-                sidebarRow("History", icon: "clock", section: .history)
-                sidebarRow("Dictionary", icon: "book", section: .dictionary)
+                sidebarRow(t("History", "История"), icon: "clock", section: .history, identifier: "history")
+                sidebarRow(t("Dictionary", "Словарь"), icon: "book", section: .dictionary, identifier: "dictionary")
             } header: {
-                Text("Dictation")
+                Text(t("Dictation", "Диктовка"))
                     .waiSectionHeader()
             }
 
             Section {
-                sidebarRow("Wai", icon: "sparkles", section: .wai)
-                sidebarRow("Settings", icon: "gear", section: .settings)
+                sidebarRow("Wai", icon: "sparkles", section: .wai, identifier: "wai")
+                sidebarRow(t("Search", "Поиск"), icon: "magnifyingglass", section: .search, identifier: "search")
+                sidebarRow(t("Settings", "Настройки"), icon: "gear", section: .settings, identifier: "settings")
             } header: {
                 Text("Wai")
                     .waiSectionHeader()
@@ -504,7 +574,7 @@ struct MacMainView: View {
         .accessibilityIdentifier("sidebar")
     }
 
-    private func sidebarRow(_ title: String, icon: String, section: SidebarSection) -> some View {
+    private func sidebarRow(_ title: String, icon: String, section: SidebarSection, identifier: String) -> some View {
         Button {
             selectedSection = section
         } label: {
@@ -512,12 +582,24 @@ struct MacMainView: View {
                 .font(Typography.body)
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("sidebar-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
+        .accessibilityIdentifier("sidebar-\(identifier)")
         .listRowBackground(
             selectedSection == section
                 ? Color.accentColor.opacity(0.15)
                 : Color.clear
         )
+    }
+
+    private func folderSidebarRow(_ folder: Folder) -> some View {
+        sidebarRow(folder.name, icon: "folder", section: .folder(folder.id), identifier: "folder-\(folder.id)")
+            .contextMenu {
+                Button(t("Rename…", "Переименовать…")) {
+                    beginRenameFolder(folder)
+                }
+                Button(t("Delete Folder", "Удалить папку"), role: .destructive) {
+                    folderPendingDeletion = folder
+                }
+            }
     }
 
     // MARK: - List Column
@@ -554,7 +636,7 @@ struct MacMainView: View {
                     VStack {
                         Spacer().frame(height: Spacing.xxxl)
                         ContentUnavailableView(
-                            isTrashSection ? "Trash is Empty" : "No Recordings",
+                            isTrashSection ? t("Trash is Empty", "Корзина пуста") : t("No Recordings", "Нет записей"),
                             systemImage: isTrashSection ? "trash" : "waveform",
                             description: Text(emptyStateDescription)
                         )
@@ -628,7 +710,7 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .allRecordings, .meetings, .notes, .reflections, .folder(_), .trash, .none:
+        case .allRecordings, .folder(_), .trash, .none:
             if selectedRecordingIds.count > 1 {
                 BulkSelectionDetailView(
                     selectionCount: selectedRecordingIds.count,
@@ -678,14 +760,13 @@ struct MacMainView: View {
                 )
             } else if isTrashSection {
                 ContentUnavailableView(
-                    "Select a Recording",
+                    t("Select a Recording", "Выбери запись"),
                     systemImage: "trash",
-                    description: Text("Choose a recording to view its details.")
+                    description: Text(t("Choose a recording to view its details.", "Выбери запись, чтобы открыть детали."))
                 )
             } else {
                 NewRecordingView(
-                    onStartDual: { startRecording(type: .meeting, inputSource: .dual) },
-                    onStartMicOnly: { startRecording(type: .note, inputSource: .microphone) },
+                    onStartRecording: { startRecording(type: .meeting, inputSource: .dual) },
                     onImportFile: { importAudioFile() },
                     isImporting: importViewModel.isImporting
                 )
@@ -857,12 +938,24 @@ struct MacMainView: View {
 
     private var emptyStateDescription: String {
         if isTrashSection {
-            return "Deleted recordings appear here until you permanently remove them."
+            return t(
+                "Deleted recordings appear here until you permanently remove them.",
+                "Удаленные записи остаются здесь, пока ты не удалишь их навсегда."
+            )
         }
         if currentFolderId != nil {
-            return "Move recordings into this folder to organize them here."
+            return t(
+                "Move recordings into this folder to organize them here.",
+                "Перемести записи в эту папку, чтобы организовать их здесь."
+            )
         }
-        return "Start a recording to see it here."
+        return t("Start a recording to see it here.", "Начни запись, чтобы она появилась здесь.")
+    }
+
+    private func beginRenameFolder(_ folder: Folder) {
+        folderBeingEdited = folder
+        editedFolderName = folder.name
+        isShowingRenameFolderSheet = true
     }
 
     private func createFolder() async {
@@ -879,6 +972,32 @@ struct MacMainView: View {
             newFolderName = ""
             shouldAssignNewFolderToSelection = true
             isShowingCreateFolderSheet = false
+        }
+    }
+
+    private func renameFolder() async {
+        guard let folder = folderBeingEdited else { return }
+        let name = editedFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        if let renamed = await libraryViewModel.renameFolder(id: folder.id, name: name, apiClient: appState.getAPIClient()) {
+            if selectedSection == .folder(folder.id) {
+                selectedSection = .folder(renamed.id)
+            }
+            editedFolderName = ""
+            folderBeingEdited = nil
+            isShowingRenameFolderSheet = false
+        }
+    }
+
+    private func deleteFolder(_ folder: Folder) async {
+        if await libraryViewModel.deleteFolder(id: folder.id, apiClient: appState.getAPIClient()) {
+            if selectedSection == .folder(folder.id) {
+                selectedSection = .allRecordings
+            }
+            selectedRecordingIds.removeAll()
+            prefetchedRecordingDetail = nil
+            folderPendingDeletion = nil
         }
     }
 
@@ -967,43 +1086,47 @@ private struct InlineLibraryErrorBanner: View {
     }
 }
 
-private struct CreateFolderSheet: View {
+private struct FolderNameSheet: View {
+    let title: String
+    let textFieldPlaceholder: String
+    let primaryTitle: String
+    let cancelTitle: String
     @Binding var folderName: String
     @Binding var moveSelectionIntoFolder: Bool
     let selectionCount: Int
     let canMoveSelection: Bool
+    let moveSelectionText: String
     let onCancel: () -> Void
-    let onCreate: () -> Void
+    let onSubmit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("New Folder")
+            Text(title)
                 .font(Typography.displaySmall)
 
-            TextField("Folder name", text: $folderName)
+            TextField(textFieldPlaceholder, text: $folderName)
                 .textFieldStyle(.plain)
                 .waiTextField()
 
             if canMoveSelection {
-                Toggle(
-                    "Move \(selectionCount) selected \(selectionCount == 1 ? "recording" : "recordings") into this folder",
-                    isOn: $moveSelectionIntoFolder
-                )
+                Toggle(moveSelectionText, isOn: $moveSelectionIntoFolder)
                 .toggleStyle(.checkbox)
             }
 
-            HStack {
+            HStack(spacing: Spacing.md) {
                 Spacer()
 
-                Button("Cancel", action: onCancel)
+                Button(cancelTitle, action: onCancel)
+                    .frame(minWidth: 96)
 
-                Button("Create", action: onCreate)
+                Button(primaryTitle, action: onSubmit)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .frame(minWidth: 116)
             }
         }
         .padding(Spacing.xl)
-        .frame(width: 420)
+        .frame(width: 460)
     }
 }
 
@@ -1013,34 +1136,42 @@ private struct BulkSelectionDetailView: View {
     let onTrash: () -> Void
     let onRestore: () -> Void
     let onPermanentDelete: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: Spacing.lg) {
             ContentUnavailableView(
-                "\(selectionCount) Recordings Selected",
+                t(
+                    "\(selectionCount) Recordings Selected",
+                    "Выбрано записей: \(selectionCount)"
+                ),
                 systemImage: isTrash ? "trash" : "checklist",
                 description: Text(
                     isTrash
-                        ? "Restore them or delete them permanently."
-                        : "Use the toolbar to move them into folders or send them to trash."
+                        ? t("Restore them or delete them permanently.", "Восстанови их или удали навсегда.")
+                        : t("Use the toolbar to move them into folders or send them to trash.", "Используй панель сверху, чтобы переместить их в папку или корзину.")
                 )
             )
 
             HStack(spacing: Spacing.md) {
                 if isTrash {
-                    Button("Restore", action: onRestore)
+                    Button(t("Restore", "Восстановить"), action: onRestore)
                         .buttonStyle(WaiGhostButtonStyle())
 
-                    Button("Delete Permanently", action: onPermanentDelete)
+                    Button(t("Delete Permanently", "Удалить навсегда"), action: onPermanentDelete)
                         .buttonStyle(WaiGhostButtonStyle())
                 } else {
-                    Button("Move to Trash", action: onTrash)
+                    Button(t("Move to Trash", "Переместить в корзину"), action: onTrash)
                         .buttonStyle(WaiGhostButtonStyle())
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Spacing.huge)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

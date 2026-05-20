@@ -14,7 +14,7 @@ final class BillingModelsTests: XCTestCase {
             "usd_amount_yearly": 0,
             "rub_amount_monthly": 0,
             "rub_amount_yearly": 0,
-            "word_cap_per_week": 10000,
+            "word_cap_per_week": 3000,
             "memory_retention_days": 30,
             "features": {}
           },

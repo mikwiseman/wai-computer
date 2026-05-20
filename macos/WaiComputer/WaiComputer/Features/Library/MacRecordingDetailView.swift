@@ -17,6 +17,7 @@ struct MacRecordingDetailView: View {
     var onDidRename: (() -> Void)?
     @Binding var pendingTitleEditId: String?
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: MacRecordingDetailViewModel
     @State private var showDeleteConfirmation = false
     @State private var loadTask: Task<Void, Never>?
@@ -52,11 +53,11 @@ struct MacRecordingDetailView: View {
     var body: some View {
         Group {
             if viewModel.isLoading {
-                ProgressView("Loading...")
+                ProgressView(t("Loading...", "Загрузка..."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.error {
                 ContentUnavailableView(
-                    "Error",
+                    t("Error", "Ошибка"),
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
@@ -68,12 +69,12 @@ struct MacRecordingDetailView: View {
 
                     WaiTabBar(
                         tabs: [
-                            ("Transcript", MacRecordingDetailViewModel.Tab.transcript),
-                            ("Summary", MacRecordingDetailViewModel.Tab.summary),
+                            (t("Transcript", "Транскрипт"), MacRecordingDetailViewModel.Tab.transcript),
+                            (t("Summary", "Саммари"), MacRecordingDetailViewModel.Tab.summary),
                             (
                                 detail.actionItems.isEmpty
-                                    ? "Action Items"
-                                    : "Action Items (\(detail.actionItems.count))",
+                                    ? t("Action Items", "Действия")
+                                    : t("Action Items", "Действия") + " (\(detail.actionItems.count))",
                                 MacRecordingDetailViewModel.Tab.actions
                             ),
                         ],
@@ -105,9 +106,9 @@ struct MacRecordingDetailView: View {
                 )
             } else {
                 ContentUnavailableView(
-                    "Recording Not Found",
+                    t("Recording Not Found", "Запись не найдена"),
                     systemImage: "doc.questionmark",
-                    description: Text("Unable to load this recording.")
+                    description: Text(t("Unable to load this recording.", "Не удалось загрузить эту запись."))
                 )
             }
         }
@@ -213,7 +214,7 @@ struct MacRecordingDetailView: View {
             )
         }
         .buttonStyle(WaiGhostButtonStyle())
-        .help(copiedSection == section ? "Copied!" : title)
+        .help(copiedSection == section ? t("Copied!", "Скопировано") : title)
     }
 
     private func exportRecording(format: String) async {
@@ -262,9 +263,10 @@ struct MacRecordingDetailView: View {
         HStack {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 if isEditingTitle && mode == .active {
-                    TextField("Title", text: $titleDraft)
+                    TextField(t("Title", "Название"), text: $titleDraft)
                         .textFieldStyle(.plain)
                         .font(Typography.displayMedium)
+                        .lineLimit(2)
                         .focused($titleFieldFocused)
                         .onSubmit { commitTitleEdit(originalTitle: detail.title) }
                         .onKeyPress(.escape) {
@@ -278,8 +280,10 @@ struct MacRecordingDetailView: View {
                         }
                         .accessibilityIdentifier("recording-title-edit")
                 } else {
-                    Text(detail.title ?? "Untitled")
+                    Text(detail.title ?? t("Untitled", "Без названия"))
                         .font(Typography.displayMedium)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityElement(children: .ignore)
                         .accessibilityIdentifier("recording-title")
                         .contentShape(Rectangle())
@@ -287,11 +291,11 @@ struct MacRecordingDetailView: View {
                             guard mode == .active else { return }
                             startTitleEdit(currentTitle: detail.title)
                         }
-                        .help(mode == .active ? "Double-click to rename" : "")
+                        .help(mode == .active ? t("Double-click to rename", "Двойной клик для переименования") : "")
                 }
 
                 HStack(spacing: Spacing.sm) {
-                    Text(detail.type.rawValue.capitalized)
+                    Text(recordingTypeLabel(detail.type))
                         .font(Typography.label)
                         .foregroundStyle(Palette.typeColor(detail.type))
 
@@ -315,20 +319,20 @@ struct MacRecordingDetailView: View {
                 // Export dropdown
                 if mode == .active {
                     Menu {
-                        Button("Export Markdown (.md)") {
+                        Button(t("Export Markdown (.md)", "Экспорт Markdown (.md)")) {
                             Task { await exportRecording(format: "markdown") }
                         }
-                        Button("Export Plain Text (.txt)") {
+                        Button(t("Export Plain Text (.txt)", "Экспорт TXT (.txt)")) {
                             Task { await exportRecording(format: "txt") }
                         }
-                        Button("Export Subtitles (.srt)") {
+                        Button(t("Export Subtitles (.srt)", "Экспорт субтитров (.srt)")) {
                             Task { await exportRecording(format: "srt") }
                         }
                     } label: {
-                        Label("Export", systemImage: "square.and.arrow.down")
+                        Label(t("Export", "Экспорт"), systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(WaiGhostButtonStyle())
-                    .help("Export Recording")
+                    .help(t("Export Recording", "Экспортировать запись"))
                 }
 
                 if mode == .active {
@@ -338,25 +342,27 @@ struct MacRecordingDetailView: View {
                         }
                     } label: {
                         Label(
-                            copiedSection == "share-link" ? "Copied" : "Share",
+                            copiedSection == "share-link" ? t("Copied", "Скопировано") : t("Share", "Поделиться"),
                             systemImage: copiedSection == "share-link" ? "checkmark" : "square.and.arrow.up"
                         )
                     }
                     .buttonStyle(WaiGhostButtonStyle())
-                    .help("Create a web share link")
+                    .help(t("Create a web share link", "Создать ссылку для просмотра"))
                     .disabled(isSharing)
                 }
 
                 if mode == .active {
                     Menu {
-                        Button("Unfiled") {
-                            Task {
-                                let didMove = await viewModel.moveRecording(
-                                    to: nil,
-                                    apiClient: appState.getAPIClient()
-                                )
-                                if didMove {
-                                    onMoveToFolder?(nil)
+                        if detail.folderId != nil {
+                            Button(t("Remove from Folder", "Убрать из папки")) {
+                                Task {
+                                    let didMove = await viewModel.moveRecording(
+                                        to: nil,
+                                        apiClient: appState.getAPIClient()
+                                    )
+                                    if didMove {
+                                        onMoveToFolder?(nil)
+                                    }
                                 }
                             }
                         }
@@ -379,7 +385,8 @@ struct MacRecordingDetailView: View {
                             .foregroundStyle(Palette.textSecondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Move to Folder")
+                    .help(t("Move to Folder", "Переместить в папку"))
+                    .disabled(detail.folderId == nil && folders.isEmpty)
                 }
 
                 if mode == .trash {
@@ -395,7 +402,7 @@ struct MacRecordingDetailView: View {
                             .foregroundStyle(Palette.textSecondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Restore Recording")
+                    .help(t("Restore Recording", "Восстановить запись"))
                 }
 
                 Button {
@@ -405,12 +412,12 @@ struct MacRecordingDetailView: View {
                         .foregroundStyle(mode == .trash ? Palette.recording : Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help(mode == .trash ? "Delete Permanently" : "Move to Trash")
+                .help(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"))
                 .confirmationDialog(
-                    mode == .trash ? "Delete this recording permanently?" : "Move this recording to trash?",
+                    mode == .trash ? t("Delete this recording permanently?", "Удалить запись навсегда?") : t("Move this recording to trash?", "Переместить запись в корзину?"),
                     isPresented: $showDeleteConfirmation
                 ) {
-                    Button(mode == .trash ? "Delete Permanently" : "Move to Trash", role: .destructive) {
+                    Button(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"), role: .destructive) {
                         Task {
                             let didDelete = await viewModel.deleteRecording(
                                 apiClient: appState.getAPIClient(),
@@ -421,12 +428,12 @@ struct MacRecordingDetailView: View {
                             }
                         }
                     }
-                    Button("Cancel", role: .cancel) {}
+                    Button(t("Cancel", "Отмена"), role: .cancel) {}
                 } message: {
                     Text(
                         mode == .trash
-                            ? "This action cannot be undone."
-                            : "You can restore it later from Trash."
+                            ? t("This action cannot be undone.", "Это действие нельзя отменить.")
+                            : t("You can restore it later from Trash.", "Позже запись можно восстановить из корзины.")
                     )
                 }
             }
@@ -438,13 +445,13 @@ struct MacRecordingDetailView: View {
         var parts: [String] = []
         if let text = summary.summary { parts.append(text) }
         if let points = summary.keyPoints, !points.isEmpty {
-            parts.append("\nKey Points:\n" + points.map { "— \($0)" }.joined(separator: "\n"))
+            parts.append("\n\(t("Key Points", "Ключевые пункты")):\n" + points.map { "— \($0)" }.joined(separator: "\n"))
         }
         if let topics = summary.topics, !topics.isEmpty {
-            parts.append("\nTopics: " + topics.joined(separator: ", "))
+            parts.append("\n\(t("Topics", "Темы")): " + topics.joined(separator: ", "))
         }
         if let people = summary.peopleMentioned, !people.isEmpty {
-            parts.append("\nPeople: " + people.joined(separator: ", "))
+            parts.append("\n\(t("People", "Люди")): " + people.joined(separator: ", "))
         }
         return parts.joined(separator: "\n")
     }
@@ -452,16 +459,16 @@ struct MacRecordingDetailView: View {
     private func actionItemsText(_ items: [ActionItem]) -> String {
         items.enumerated().map { index, item in
             var lines = ["\(index + 1). \(item.task)"]
-            lines.append("Status: \(actionItemStatusLabel(item.status))")
+            lines.append("\(t("Status", "Статус")): \(actionItemStatusLabel(item.status))")
 
             if let owner = item.owner, !owner.isEmpty {
-                lines.append("Owner: \(owner)")
+                lines.append("\(t("Owner", "Ответственный")): \(owner)")
             }
             if let dueDate = item.dueDate, !dueDate.isEmpty {
-                lines.append("Due: \(dueDate)")
+                lines.append("\(t("Due", "Срок")): \(dueDate)")
             }
             if let priority = item.priority {
-                lines.append("Priority: \(priority.rawValue.capitalized)")
+                lines.append("\(t("Priority", "Приоритет")): \(priorityLabel(priority))")
             }
 
             return lines.joined(separator: "\n")
@@ -472,13 +479,13 @@ struct MacRecordingDetailView: View {
     private func actionItemStatusLabel(_ status: ActionItem.Status) -> String {
         switch status {
         case .pending:
-            return "Pending"
+            return t("Pending", "Ожидает")
         case .inProgress:
-            return "In Progress"
+            return t("In Progress", "В работе")
         case .completed:
-            return "Completed"
+            return t("Completed", "Готово")
         case .cancelled:
-            return "Cancelled"
+            return t("Cancelled", "Отменено")
         }
     }
 
@@ -488,12 +495,12 @@ struct MacRecordingDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack {
-                        Text("Summary")
+                        Text(t("Summary", "Саммари"))
                             .waiSectionHeader()
                         Spacer()
                         copyActionButton(
-                            title: "Copy Summary",
-                            copiedTitle: "Copied",
+                            title: t("Copy Summary", "Скопировать саммари"),
+                            copiedTitle: t("Copied", "Скопировано"),
                             text: fullSummaryText(summary),
                             section: "summary-all"
                         )
@@ -501,7 +508,7 @@ struct MacRecordingDetailView: View {
 
                     if let text = summary.summary {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Overview")
+                            Text(t("Overview", "Обзор"))
                                 .waiSectionHeader()
                             Text(text)
                                 .font(Typography.reading)
@@ -512,7 +519,7 @@ struct MacRecordingDetailView: View {
 
                     if let points = summary.keyPoints, !points.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Key Points")
+                            Text(t("Key Points", "Ключевые пункты"))
                                 .waiSectionHeader()
                             ForEach(points, id: \.self) { point in
                                 HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
@@ -530,7 +537,7 @@ struct MacRecordingDetailView: View {
 
                     if let topics = summary.topics, !topics.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("Topics")
+                            Text(t("Topics", "Темы"))
                                 .waiSectionHeader()
                             Text(topics.joined(separator: " \u{00B7} "))
                                 .font(Typography.body)
@@ -541,7 +548,7 @@ struct MacRecordingDetailView: View {
 
                     if let people = summary.peopleMentioned, !people.isEmpty {
                         VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text("People")
+                            Text(t("People", "Люди"))
                                 .waiSectionHeader()
                             Text(people.joined(separator: ", "))
                                 .font(Typography.body)
@@ -558,9 +565,9 @@ struct MacRecordingDetailView: View {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
-                    "No Summary",
+                    t("No Summary", "Нет саммари"),
                     systemImage: "doc.text",
-                    description: Text("Generate a summary to see key points and insights.")
+                    description: Text(t("Generate a summary to see key points and insights.", "Сгенерируй саммари, чтобы увидеть ключевые пункты."))
                 )
 
                 Button(action: {
@@ -568,13 +575,13 @@ struct MacRecordingDetailView: View {
                         await viewModel.generateSummary(apiClient: appState.getAPIClient())
                     }
                 }) {
-                    Text("Generate Summary")
+                    Text(t("Generate Summary", "Сгенерировать саммари"))
                 }
                 .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
                 .disabled(viewModel.isGeneratingSummary)
 
                 if viewModel.isGeneratingSummary {
-                    ProgressView("Generating summary...")
+                    ProgressView(t("Generating summary...", "Генерируем саммари..."))
                 }
                 Spacer()
             }
@@ -588,12 +595,12 @@ struct MacRecordingDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack {
-                        Text("Action Items")
+                        Text(t("Action Items", "Действия"))
                             .waiSectionHeader()
                         Spacer()
                         copyActionButton(
-                            title: "Copy Action Items",
-                            copiedTitle: "Copied",
+                            title: t("Copy Action Items", "Скопировать действия"),
+                            copiedTitle: t("Copied", "Скопировано"),
                             text: actionItemsText(detail.actionItems),
                             section: "action-items"
                         )
@@ -619,9 +626,9 @@ struct MacRecordingDetailView: View {
             VStack {
                 Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
-                    "No Action Items Found",
+                    t("No Action Items Found", "Действий не найдено"),
                     systemImage: "checklist",
-                    description: Text("This summary did not include any concrete follow-ups.")
+                    description: Text(t("This summary did not include any concrete follow-ups.", "В саммари нет конкретных следующих шагов."))
                 )
                 Spacer()
             }
@@ -630,9 +637,9 @@ struct MacRecordingDetailView: View {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
-                    "No Action Items",
+                    t("No Action Items", "Нет действий"),
                     systemImage: "checklist",
-                    description: Text("Generate a summary first to extract action items.")
+                    description: Text(t("Generate a summary first to extract action items.", "Сначала сгенерируй саммари, чтобы выделить действия."))
                 )
 
                 Button(action: {
@@ -640,7 +647,7 @@ struct MacRecordingDetailView: View {
                         await viewModel.generateSummary(apiClient: appState.getAPIClient())
                     }
                 }) {
-                    Text("Generate Summary")
+                    Text(t("Generate Summary", "Сгенерировать саммари"))
                 }
                 .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
                 .disabled(viewModel.isGeneratingSummary)
@@ -648,6 +655,32 @@ struct MacRecordingDetailView: View {
             }
             .accessibilityIdentifier("actions-empty-state")
         }
+    }
+
+    private func recordingTypeLabel(_ type: RecordingType) -> String {
+        switch type {
+        case .meeting:
+            return t("Meeting", "Встреча")
+        case .note:
+            return t("Note", "Заметка")
+        case .reflection:
+            return t("Reflection", "Рефлексия")
+        }
+    }
+
+    private func priorityLabel(_ priority: ActionItem.Priority) -> String {
+        switch priority {
+        case .high:
+            return t("High", "Высокий")
+        case .medium:
+            return t("Medium", "Средний")
+        case .low:
+            return t("Low", "Низкий")
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -677,6 +710,7 @@ private struct SharePickerPresenter: NSViewRepresentable {
 struct ActionItemCard: View {
     let item: ActionItem
     let onStatusChange: (ActionItem.Status) -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -709,7 +743,7 @@ struct ActionItemCard: View {
                     }
 
                     if let priority = item.priority {
-                        metadataBadge(priority.rawValue.capitalized, color: priorityColor(priority))
+                        metadataBadge(priorityLabel(priority), color: priorityColor(priority))
                     }
 
                     metadataBadge(statusLabel, color: statusColor)
@@ -731,13 +765,13 @@ struct ActionItemCard: View {
     private var statusLabel: String {
         switch item.status {
         case .pending:
-            return "Pending"
+            return t("Pending", "Ожидает")
         case .inProgress:
-            return "In Progress"
+            return t("In Progress", "В работе")
         case .completed:
-            return "Completed"
+            return t("Completed", "Готово")
         case .cancelled:
-            return "Cancelled"
+            return t("Cancelled", "Отменено")
         }
     }
 
@@ -762,6 +796,21 @@ struct ActionItemCard: View {
             .padding(.vertical, Spacing.xs)
             .background(Palette.surfaceSubtle)
             .clipShape(Capsule())
+    }
+
+    private func priorityLabel(_ priority: ActionItem.Priority) -> String {
+        switch priority {
+        case .high:
+            return t("High", "Высокий")
+        case .medium:
+            return t("Medium", "Средний")
+        case .low:
+            return t("Low", "Низкий")
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

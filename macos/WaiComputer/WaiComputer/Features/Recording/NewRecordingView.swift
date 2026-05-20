@@ -1,47 +1,38 @@
 import SwiftUI
+import WaiComputerKit
 
 struct NewRecordingView: View {
-    let onStartDual: () -> Void
-    let onStartMicOnly: () -> Void
+    let onStartRecording: () -> Void
     let onImportFile: () -> Void
     let isImporting: Bool
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: Spacing.xl) {
             Spacer()
 
             VStack(spacing: Spacing.md) {
-                Image(nsImage: NSApp.applicationIconImage)
+                Image("BrandIcon")
                     .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
                     .frame(width: 64, height: 64)
 
-                Text("New Recording")
+                Text(t("New Recording", "Новая запись"))
                     .font(Typography.displaySmall)
             }
 
             // Recording options card
             VStack(spacing: 0) {
                 RecordingOptionRow(
-                    title: "Mic + System Audio",
+                    title: t("Record", "Записать"),
                     icon: "waveform",
-                    subtitle: "Records your mic and computer audio",
-                    shortcut: "⌘R",
+                    subtitle: t("Records your mic and computer audio", "Записывает микрофон и звук компьютера"),
+                    shortcut: "⌘N",
                     isPrimary: true,
-                    action: onStartDual
+                    action: onStartRecording
                 )
                 .accessibilityIdentifier("start-recording-button")
-
-                WaiDivider()
-                    .padding(.horizontal, Spacing.md)
-
-                RecordingOptionRow(
-                    title: "Mic Only",
-                    icon: "mic",
-                    subtitle: "Records from your microphone only",
-                    shortcut: "⇧⌘R",
-                    isPrimary: false,
-                    action: onStartMicOnly
-                )
             }
             .background(Palette.surfaceSubtle)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -49,9 +40,9 @@ struct NewRecordingView: View {
             // Import card (separate)
             VStack(spacing: 0) {
                 RecordingOptionRow(
-                    title: "Import Audio File",
+                    title: t("Import Audio File", "Импорт аудиофайла"),
                     icon: "square.and.arrow.down",
-                    subtitle: "Transcribe an existing audio file",
+                    subtitle: t("Transcribe an existing audio file", "Расшифровать готовый аудиофайл"),
                     shortcut: "⌘I",
                     isPrimary: false,
                     action: onImportFile
@@ -63,18 +54,14 @@ struct NewRecordingView: View {
             .disabled(isImporting)
             .opacity(isImporting ? 0.5 : 1.0)
 
-            Text("recording.hint.minDuration", bundle: .main)
-                .font(Typography.caption)
-                .foregroundStyle(Palette.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Spacing.md)
-                .accessibilityIdentifier("recording-min-duration-hint")
-
             Spacer()
         }
         .frame(maxWidth: 380)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

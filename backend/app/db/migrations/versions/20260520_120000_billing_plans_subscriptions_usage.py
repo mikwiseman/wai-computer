@@ -259,17 +259,17 @@ def upgrade() -> None:
         ) VALUES (
             'free',
             'Free',
-            '10,000 transcribed words per week, 30-day memory window.',
+            '3,000 transcribed words per week, 30-day memory window.',
             0, 0, 0, 0,
-            10000, 30,
+            3000, 30,
             '{"agents": false, "mcp": false, "advanced_search": false}'::jsonb
         ),
         (
             'pro',
             'Pro',
-            'Unlimited transcription, permanent memory, agents, MCP, advanced search.',
+            '50,000 transcribed words per week, permanent memory, agents, MCP, advanced search.',
             12, 96, 999, 7999,
-            NULL, NULL,
+            50000, NULL,
             '{"agents": true, "mcp": true, "advanced_search": true}'::jsonb
         );
         """

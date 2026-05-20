@@ -39,7 +39,7 @@ Smoke checks done:
 - `client.v1.checkout.sessions.create_async` against sandbox Stripe → returns
   hosted Checkout URL.
 - Signature verifier round-trips a fake T-Bank notification body.
-- `/api/billing/usage` returns 0/10000 for a new user, increments after
+- `/api/billing/usage` returns 0/3000 for a new Free user, increments after
   a dictation entry is persisted, 402s when the cap would be exceeded.
 - Sparkle keys / Developer ID identity unchanged — DMG builds use the
   existing `is.waiwai.computer` bundle id for both variants.
@@ -67,7 +67,7 @@ When ready to flip the live switch:
    TINKOFF_API_URL=https://securepay.tinkoff.ru/v2/
    TINKOFF_TERMINAL_KEY=...        # live terminal
    TINKOFF_PASSWORD=...
-   BILLING_TRIAL_DAYS=14
+   BILLING_TRIAL_DAYS=0
    BILLING_REFUND_WINDOW_DAYS=7
    BILLING_DEFAULT_REGION=global
    ```

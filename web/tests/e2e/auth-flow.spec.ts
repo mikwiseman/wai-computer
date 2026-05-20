@@ -289,11 +289,11 @@ test.describe("Auth flow", () => {
     );
   });
 
-  test("magic link verification with valid token redirects to dashboard", async ({ page }) => {
+  test("magic link verification with valid token redirects new users to onboarding", async ({ page }) => {
     await page.goto("/auth/verify?token=valid-token");
 
-    await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByTestId("user-email")).toContainText("test@example.com");
+    await expect(page).toHaveURL(/\/onboarding/);
+    await expect(page.getByRole("heading", { name: "Teach Wai your voice" })).toBeVisible();
   });
 
   test("magic link verification with invalid token shows error", async ({ page }) => {

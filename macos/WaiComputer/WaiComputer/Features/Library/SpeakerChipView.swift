@@ -7,6 +7,7 @@ struct SpeakerChipView: View {
     let onAssigned: (RecordingDetail) -> Void
 
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var isPopoverPresented = false
     @State private var people: [Person] = []
     @State private var filter: String = ""
@@ -34,7 +35,7 @@ struct SpeakerChipView: View {
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             popoverContent
                 .padding(Spacing.md)
-                .frame(minWidth: 240, maxWidth: 280)
+                .frame(width: 320)
         }
         .task(id: isPopoverPresented) {
             if isPopoverPresented && people.isEmpty {
@@ -46,7 +47,7 @@ struct SpeakerChipView: View {
     @ViewBuilder
     private var popoverContent: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            TextField("Search or create…", text: $filter)
+            TextField(t("Search or create…", "Найти или создать…"), text: $filter)
                 .textFieldStyle(.roundedBorder)
             if let loadError {
                 Text(loadError)
@@ -60,9 +61,10 @@ struct SpeakerChipView: View {
                             Task { await assign(personId: person.id) }
                         } label: {
                             Text(person.displayName)
+                                .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 4)
+                                .frame(height: 32)
                         }
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
@@ -72,17 +74,22 @@ struct SpeakerChipView: View {
                         Button {
                             Task { await assign(newName: trimmedFilter) }
                         } label: {
-                            Text("+ Create \u{201C}\(trimmedFilter)\u{201D}")
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 4)
-                                .foregroundStyle(Palette.accent)
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Text(t("Create", "Создать") + " “\(trimmedFilter)”")
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Spacing.xs)
+                            .frame(height: 32)
+                            .foregroundStyle(Palette.accent)
                         }
                         .buttonStyle(.plain)
                         .disabled(isWorking)
                     }
                     if filteredPeople.isEmpty && trimmedFilter.isEmpty {
-                        Text("No people yet. Type a name above.")
+                        Text(t("No people yet. Type a name above.", "Людей пока нет. Введи имя выше."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, Spacing.xs)
@@ -101,7 +108,7 @@ struct SpeakerChipView: View {
     }
 
     private var displayLabel: String {
-        segment.displayName ?? segment.rawLabel ?? segment.speaker ?? "Speaker"
+        segment.displayName ?? segment.rawLabel ?? segment.speaker ?? t("Speaker", "Спикер")
     }
 
     private var isAssigned: Bool {
@@ -115,9 +122,12 @@ struct SpeakerChipView: View {
 
     private var helpText: String {
         if let conf = confidencePercent, segment.autoAssigned {
-            return "Auto-assigned (\(conf)% match) — click to override"
+            return t(
+                "Auto-assigned (\(conf)% match). Click to override.",
+                "Назначено автоматически, совпадение \(conf)%. Нажми, чтобы изменить."
+            )
         }
-        return "Click to assign"
+        return t("Click to assign", "Нажми, чтобы назначить")
     }
 
     private var trimmedFilter: String {
@@ -202,5 +212,9 @@ struct SpeakerChipView: View {
                 loadError = error.localizedDescription
             }
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

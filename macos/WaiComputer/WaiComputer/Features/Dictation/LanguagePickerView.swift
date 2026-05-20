@@ -84,11 +84,12 @@ struct LanguagePickerView: View {
                     .foregroundStyle(isSelected ? Palette.accent : Palette.textTertiary)
                     .font(.system(size: 16))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.englishName)
+                    Text(primaryName(for: entry))
                         .font(Typography.body)
                         .foregroundStyle(Palette.textPrimary)
-                    if entry.nativeName != entry.englishName {
-                        Text(entry.nativeName)
+                    let secondary = secondaryName(for: entry)
+                    if !secondary.isEmpty {
+                        Text(secondary)
                             .font(Typography.caption)
                             .foregroundStyle(Palette.textTertiary)
                     }
@@ -122,7 +123,9 @@ struct LanguagePickerView: View {
                 ))
             } else {
                 let names = store.selectedLanguages
-                    .compactMap { DictationLanguageCatalog.entry(for: $0)?.englishName }
+                    .compactMap { code in
+                        DictationLanguageCatalog.entry(for: code).map { primaryName(for: $0) }
+                    }
                     .sorted()
                     .joined(separator: ", ")
                 Text(t(
@@ -139,5 +142,35 @@ struct LanguagePickerView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private func primaryName(for entry: DictationLanguageCatalog.Entry) -> String {
+        guard languageManager.current == .russian else { return entry.englishName }
+        switch entry.code {
+        case "en": return "Английский"
+        case "ru": return "Русский"
+        case "es": return "Испанский"
+        case "de": return "Немецкий"
+        case "fr": return "Французский"
+        case "it": return "Итальянский"
+        case "pt": return "Португальский"
+        case "ja": return "Японский"
+        case "zh": return "Китайский"
+        case "ko": return "Корейский"
+        case "hi": return "Хинди"
+        case "ar": return "Арабский"
+        case "uk": return "Украинский"
+        case "pl": return "Польский"
+        case "nl": return "Нидерландский"
+        case "tr": return "Турецкий"
+        default: return entry.nativeName
+        }
+    }
+
+    private func secondaryName(for entry: DictationLanguageCatalog.Entry) -> String {
+        if languageManager.current == .russian {
+            return entry.nativeName == primaryName(for: entry) ? "" : entry.nativeName
+        }
+        return entry.nativeName == entry.englishName ? "" : entry.nativeName
     }
 }

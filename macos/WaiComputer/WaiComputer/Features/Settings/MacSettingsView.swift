@@ -14,24 +14,28 @@ private enum McpClient: String, CaseIterable, Identifiable {
 }
 
 private struct McpClientGuide {
-    let steps: String
+    let stepsEnglish: String
+    let stepsRussian: String
     let snippet: String?
-    let externalLink: (label: String, url: URL)?
+    let externalLink: (englishLabel: String, russianLabel: String, url: URL)?
 }
 
 private let mcpEndpointURL = "https://wai.computer/mcp"
 
 private let mcpClientGuides: [McpClient: McpClientGuide] = [
     .claudeAI: McpClientGuide(
-        steps: "Open Customize → Connectors and click the “+” button, paste the URL, then approve the request on wai.computer when prompted.",
+        stepsEnglish: "Open Customize -> Connectors and click the + button, paste the URL, then approve the request on wai.computer when prompted.",
+        stepsRussian: "Открой Customize -> Connectors, нажми +, вставь URL и подтверди запрос на wai.computer.",
         snippet: nil,
         externalLink: (
-            label: "Open Connectors in Claude.ai",
+            englishLabel: "Open Connectors in Claude.ai",
+            russianLabel: "Открыть Connectors в Claude.ai",
             url: URL(string: "https://claude.ai/customize/connectors")!
         )
     ),
     .cursor: McpClientGuide(
-        steps: "Add this server to .cursor/mcp.json in your project root (or to your global Cursor MCP settings). Cursor starts the OAuth flow on first use.",
+        stepsEnglish: "Add this server to .cursor/mcp.json in your project root or to global Cursor MCP settings. Cursor starts the OAuth flow on first use.",
+        stepsRussian: "Добавь этот сервер в .cursor/mcp.json в корне проекта или в глобальные MCP-настройки Cursor. OAuth начнётся при первом использовании.",
         snippet: """
         {
           "mcpServers": {
@@ -44,12 +48,14 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
         externalLink: nil
     ),
     .chatGPT: McpClientGuide(
-        steps: "Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+        stepsEnglish: "Open ChatGPT -> Settings -> Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+        stepsRussian: "Открой ChatGPT -> Settings -> Connectors. Включи Developer Mode, добавь MCP-сервер и вставь URL.",
         snippet: nil,
         externalLink: nil
     ),
     .claudeCode: McpClientGuide(
-        steps: "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
+        stepsEnglish: "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
+        stepsRussian: "Запусти CLI-команду или положи сниппет в .mcp.json в корне проекта.",
         snippet: """
         # CLI
         claude mcp add --transport http waicomputer \(mcpEndpointURL)
@@ -67,7 +73,8 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
         externalLink: nil
     ),
     .codex: McpClientGuide(
-        steps: "Add the server, then complete the OAuth login from the browser when prompted.",
+        stepsEnglish: "Add the server, then complete the OAuth login from the browser when prompted.",
+        stepsRussian: "Добавь сервер, затем заверши OAuth-вход в браузере, когда Codex попросит.",
         snippet: """
         codex mcp add waicomputer --url \(mcpEndpointURL)
         codex mcp login waicomputer
@@ -79,6 +86,7 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
+    @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
     @State private var showDeleteAccountConfirmation = false
@@ -106,33 +114,26 @@ struct MacSettingsView: View {
     @State private var dictationPostFilterSelection = ""
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
 
-    private let languageOptions: [(label: String, value: String)] = [
-        ("Auto-detect (Multi-language)", "multi"),
-        ("English", "en"),
-        ("Russian", "ru"),
-        ("Spanish", "es"),
-        ("German", "de"),
-        ("French", "fr"),
-        ("Japanese", "ja"),
-        ("Chinese", "zh"),
-    ]
+    private var summaryLanguageOptions: [(label: String, value: String)] {
+        [
+            (t("Auto (match transcript)", "Авто (как в транскрипте)"), "auto"),
+            (t("English", "Английский"), "en"),
+            (t("Russian", "Русский"), "ru"),
+            (t("Spanish", "Испанский"), "es"),
+            (t("German", "Немецкий"), "de"),
+            (t("French", "Французский"), "fr"),
+            (t("Japanese", "Японский"), "ja"),
+            (t("Chinese", "Китайский"), "zh"),
+        ]
+    }
 
-    private let summaryLanguageOptions: [(label: String, value: String)] = [
-        ("Auto (match transcript)", "auto"),
-        ("English", "en"),
-        ("Russian", "ru"),
-        ("Spanish", "es"),
-        ("German", "de"),
-        ("French", "fr"),
-        ("Japanese", "ja"),
-        ("Chinese", "zh"),
-    ]
-
-    private let summaryStyleOptions: [(label: String, value: String)] = [
-        ("Brief", "brief"),
-        ("Medium", "medium"),
-        ("Detailed", "detailed"),
-    ]
+    private var summaryStyleOptions: [(label: String, value: String)] {
+        [
+            (t("Brief", "Кратко"), "brief"),
+            (t("Medium", "Средне"), "medium"),
+            (t("Detailed", "Подробно"), "detailed"),
+        ]
+    }
 
     var body: some View {
         Form {
@@ -608,7 +609,7 @@ struct MacSettingsView: View {
             .accessibilityIdentifier("settings-mcp-client-picker")
 
             if let guide = mcpClientGuides[mcpClient] {
-                Text(guide.steps)
+                Text(t(guide.stepsEnglish, guide.stepsRussian))
                     .font(Typography.body)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -634,7 +635,7 @@ struct MacSettingsView: View {
                 }
 
                 if let link = guide.externalLink {
-                    Link(link.label, destination: link.url)
+                    Link(t(link.englishLabel, link.russianLabel), destination: link.url)
                         .font(Typography.body)
                 }
             }
@@ -659,25 +660,46 @@ struct MacSettingsView: View {
 
     private var dictationUsageText: String {
         if !dictationManager.isFeatureEnabled {
-            return "Enable Dictation to use a global hold-to-talk hotkey."
+            return t(
+                "Enable Dictation to use a global hold-to-talk hotkey.",
+                "Включи диктовку, чтобы использовать глобальную клавишу «зажми и говори»."
+            )
         }
         if accessibilityStatus == .staleNeedsRestart {
-            return "Restart WaiComputer so macOS applies Accessibility to this running app."
+            return t(
+                "Restart WaiComputer so macOS applies Accessibility to this running app.",
+                "Перезапусти WaiComputer, чтобы macOS применила разрешение Универсального доступа к запущенному приложению."
+            )
         }
         if !hasMicrophonePermission {
-            return "Grant Microphone permission to capture your voice."
+            return t(
+                "Grant Microphone permission to capture your voice.",
+                "Дай доступ к микрофону, чтобы записывать голос."
+            )
         }
         if accessibilityStatus != .granted {
-            return "Grant Accessibility for the global hotkey and automatic paste."
+            return t(
+                "Grant Accessibility for the global hotkey and automatic paste.",
+                "Дай доступ к Универсальному доступу для глобальной клавиши и автоматической вставки."
+            )
         }
-        return "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate (release to paste). Double-tap to start hands-free; double-tap again to stop."
+        return t(
+            "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate. Release to paste. Double-tap to start hands-free; double-tap again to stop.",
+            "Зажми \(dictationManager.selectedHotkey.shortLabel), чтобы диктовать. Отпусти, чтобы вставить. Двойное нажатие включает режим без рук, ещё одно двойное нажатие останавливает."
+        )
     }
 
     private var dictationPrivacyText: String {
         if dictationPostFilterEnabled {
-            return "Post-filtering sends dictated text through the selected cleanup model before insertion."
+            return t(
+                "Post-filtering sends dictated text through the selected cleanup model before insertion.",
+                "Пост-фильтр отправляет продиктованный текст в выбранную модель очистки перед вставкой."
+            )
         }
-        return "Post-filtering is off; dictated text is inserted after dictionary replacements."
+        return t(
+            "Post-filtering is off; dictated text is inserted after dictionary replacements.",
+            "Пост-фильтр выключен; текст вставляется после замен из словаря."
+        )
     }
 
     private var dictationPermissionsReady: Bool {
@@ -710,25 +732,25 @@ struct MacSettingsView: View {
 
                 switch status {
                 case .granted:
-                    Label("Granted", systemImage: "checkmark.circle.fill")
+                    Label(t("Granted", "Разрешено"), systemImage: "checkmark.circle.fill")
                         .font(Typography.bodySmall)
                         .foregroundStyle(.green)
                 case .denied:
-                    Button("Grant") {
+                    Button(t("Grant", "Разрешить")) {
                         grantAction()
                     }
                     .font(Typography.bodySmall)
                     .accessibilityIdentifier("\(identifierBase)-grant")
 
                     if let settingsAction {
-                        Button("Settings") {
+                        Button(t("Settings", "Настройки")) {
                             settingsAction()
                         }
                         .font(Typography.bodySmall)
                         .accessibilityIdentifier("\(identifierBase)-settings")
                     }
                 case .staleNeedsRestart:
-                    Label("Restart Required", systemImage: "arrow.clockwise.circle.fill")
+                    Label(t("Restart Required", "Нужен перезапуск"), systemImage: "arrow.clockwise.circle.fill")
                         .font(Typography.bodySmall)
                         .foregroundStyle(Palette.accent)
                         .accessibilityIdentifier("\(identifierBase)-restart-required")
@@ -743,7 +765,7 @@ struct MacSettingsView: View {
 
                 HStack(spacing: Spacing.sm) {
                     if let settingsAction {
-                        Button("Settings") {
+                        Button(t("Settings", "Настройки")) {
                             settingsAction()
                         }
                         .font(Typography.bodySmall)
@@ -751,7 +773,7 @@ struct MacSettingsView: View {
                     }
 
                     if let restartAction {
-                        Button("Restart WaiComputer") {
+                        Button(t("Restart WaiComputer", "Перезапустить WaiComputer")) {
                             restartAction()
                         }
                         .font(Typography.bodySmall)
@@ -895,7 +917,10 @@ struct MacSettingsView: View {
             settingsError = nil
             settingsLoaded = true
         } catch {
-            settingsError = "Couldn't load account settings: \(error.localizedDescription)"
+            settingsError = t(
+                "Couldn't load account settings: \(error.localizedDescription)",
+                "Не удалось загрузить настройки аккаунта: \(error.localizedDescription)"
+            )
             return
         }
 
@@ -907,7 +932,10 @@ struct MacSettingsView: View {
             transcriptionOptions = try await appState.getAPIClient().getTranscriptionOptions()
             settingsError = nil
         } catch {
-            settingsError = "Couldn't load transcription model options: \(error.localizedDescription)"
+            settingsError = t(
+                "Couldn't load transcription model options: \(error.localizedDescription)",
+                "Не удалось загрузить список моделей транскрипции: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -958,7 +986,10 @@ struct MacSettingsView: View {
             applySettings(settings)
             settingsError = nil
         } catch {
-            settingsError = "Couldn't save account settings: \(error.localizedDescription)"
+            settingsError = t(
+                "Couldn't save account settings: \(error.localizedDescription)",
+                "Не удалось сохранить настройки аккаунта: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -973,5 +1004,9 @@ struct MacSettingsView: View {
             summaryInstructions: instructions
         )
         _ = try? await appState.getAPIClient().updateSettings(request)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

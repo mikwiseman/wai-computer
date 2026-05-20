@@ -57,7 +57,7 @@ class QuotaCheckResult:
 
     allowed: bool
     words_used: int
-    words_cap: int | None  # None == unlimited (Pro)
+    words_cap: int | None  # None means cap enforcement is disabled for this request.
     reset_at: datetime
 
     @property
@@ -144,7 +144,7 @@ class WordQuota:
         Enforcement requires either the global ``billing_enforcement_enabled``
         env flag, or a per-request ``enforce_override`` (typically supplied
         by a tester flipping Payment mode on in their Mac client). When
-        neither is set, every account is treated as unlimited — keeping v1.0
+        neither is set, every account is treated as uncapped — keeping v1.0
         free-for-everyone as the default while still letting individual
         testers run the real cap flow.
         """

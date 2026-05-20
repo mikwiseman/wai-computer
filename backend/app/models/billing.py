@@ -79,7 +79,7 @@ class Plan(Base, UUIDMixin, TimestampMixin):
     usd_amount_monthly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     usd_amount_yearly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
 
-    # Quota & entitlement caps. NULL == unlimited.
+    # Quota & entitlement caps. NULL means the plan does not expose a weekly cap.
     word_cap_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
     memory_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

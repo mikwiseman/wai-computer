@@ -34,12 +34,12 @@ async def _seed_default_billing_plans(session: AsyncSession) -> None:
             Plan(
                 code="free",
                 name="Free",
-                description="10,000 transcribed words per week, 30-day memory window.",
+                description="3,000 transcribed words per week, 30-day memory window.",
                 usd_amount_monthly=Decimal("0.00"),
                 usd_amount_yearly=Decimal("0.00"),
                 tinkoff_amount_rub_monthly=Decimal("0.00"),
                 tinkoff_amount_rub_yearly=Decimal("0.00"),
-                word_cap_per_week=10000,
+                word_cap_per_week=3000,
                 memory_retention_days=30,
                 features={"agents": False, "mcp": False, "advanced_search": False},
             ),
@@ -47,7 +47,8 @@ async def _seed_default_billing_plans(session: AsyncSession) -> None:
                 code="pro",
                 name="Pro",
                 description=(
-                    "Unlimited transcription, permanent memory, agents, MCP, advanced search."
+                    "50,000 transcribed words per week, permanent memory, agents, "
+                    "MCP, advanced search."
                 ),
                 stripe_price_id_monthly="price_1TYUaVENNsR4WtAWrMI4kLWf",
                 stripe_price_id_yearly="price_1TYUaWENNsR4WtAWRuIYlp7t",
@@ -55,7 +56,7 @@ async def _seed_default_billing_plans(session: AsyncSession) -> None:
                 usd_amount_yearly=Decimal("96.00"),
                 tinkoff_amount_rub_monthly=Decimal("999.00"),
                 tinkoff_amount_rub_yearly=Decimal("7999.00"),
-                word_cap_per_week=None,
+                word_cap_per_week=50000,
                 memory_retention_days=None,
                 features={"agents": True, "mcp": True, "advanced_search": True},
             ),

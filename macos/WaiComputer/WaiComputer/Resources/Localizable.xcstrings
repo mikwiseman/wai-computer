@@ -25,13 +25,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "You've used this week's free transcription. Upgrade to Pro for unlimited usage, or wait until Sunday for the next reset."
+            "value" : "You've used this week's free transcription. Upgrade to Pro for the higher weekly limit, or wait until Sunday for the next reset."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Лимит бесплатной транскрипции на эту неделю исчерпан. Оформи Pro, чтобы пользоваться без ограничений, или подожди до воскресенья — лимит сбрасывается."
+            "value" : "Лимит бесплатной транскрипции на эту неделю исчерпан. Оформи Pro для большего недельного лимита или подожди до воскресенья — лимит сбрасывается."
           }
         }
       }
@@ -144,13 +144,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Global (USD via Stripe)"
+            "value" : "USD via Stripe"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Мир (USD через Stripe)"
+            "value" : "USD через Stripe"
           }
         }
       }
@@ -161,13 +161,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Russia (RUB via T-Bank)"
+            "value" : "RUB via T-Bank"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Россия (RUB через Т-Банк)"
+            "value" : "RUB через Т-Банк"
           }
         }
       }
@@ -280,13 +280,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unlimited (Pro)"
+            "value" : "No weekly cap reported"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Без ограничений (Pro)"
+            "value" : "Недельный лимит не получен"
           }
         }
       }
@@ -365,13 +365,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show the Subscription tab and weekly word counter. Off by default — leave it off and everything stays free and unlimited."
+            "value" : "Show the Subscription section, weekly word counter, and upgrade controls."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывать раздел «Подписка» и недельный счётчик слов. По умолчанию выключено — пока выключено, всё бесплатно и без ограничений."
+            "value" : "Показывать раздел «Подписка», недельный счётчик слов и управление апгрейдом."
           }
         }
       }

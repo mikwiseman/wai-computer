@@ -6,21 +6,22 @@ struct MacTranscriptView: View {
     let segments: [Segment]
     var recordingId: String?
     var onAssigned: ((RecordingDetail) -> Void)?
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var copied = false
 
     var body: some View {
         if segments.isEmpty {
             ContentUnavailableView(
-                "No Transcript",
+                t("No Transcript", "Нет транскрипта"),
                 systemImage: "text.alignleft",
-                description: Text("This recording doesn't have a transcript yet.")
+                description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет транскрипта."))
             )
             .accessibilityIdentifier("transcript-empty-state")
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack {
-                        Text("Transcript")
+                        Text(t("Transcript", "Транскрипт"))
                             .waiSectionHeader()
                         Spacer()
                         copyTranscriptButton
@@ -43,7 +44,7 @@ struct MacTranscriptView: View {
 
     private var transcriptText: String {
         segments.map { seg in
-            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? "Speaker"
+            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? t("Speaker", "Спикер")
             let timestamp = seg.formattedTimestamp
             return "[\(speaker), \(timestamp)] \(seg.content)"
         }
@@ -60,10 +61,14 @@ struct MacTranscriptView: View {
                 copied = false
             }
         } label: {
-            Label(copied ? "Copied" : "Copy Transcript", systemImage: copied ? "checkmark" : "doc.on.doc")
+            Label(copied ? t("Copied", "Скопировано") : t("Copy Transcript", "Скопировать транскрипт"), systemImage: copied ? "checkmark" : "doc.on.doc")
         }
         .buttonStyle(WaiGhostButtonStyle())
-        .help(copied ? "Copied!" : "Copy transcript")
+        .help(copied ? t("Copied!", "Скопировано") : t("Copy transcript", "Скопировать транскрипт"))
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
