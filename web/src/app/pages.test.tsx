@@ -1,5 +1,5 @@
 import type React from "react";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
@@ -12,6 +12,10 @@ import Home from "./page";
 import RuHome from "./ru/page";
 import DictationBenchmarkPage from "./benchmarks/dictation/page";
 import RuDictationBenchmarkPage from "./ru/benchmarks/dictation/page";
+import BillingCancelPage from "./billing/cancel/page";
+import BillingSuccessPage from "./billing/success/page";
+import RuBillingCancelPage from "./ru/billing/cancel/page";
+import RuBillingSuccessPage from "./ru/billing/success/page";
 import RootLayout, { metadata } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
@@ -278,6 +282,33 @@ describe("app pages", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Начать dictation battle/i })).toBeInTheDocument();
+  });
+
+  it("renders localized billing result pages", async () => {
+    render(await BillingCancelPage());
+    expect(screen.getByRole("heading", { level: 1, name: "Checkout canceled" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open billing" })).toHaveAttribute("href", "/billing");
+
+    cleanup();
+    render(await BillingSuccessPage());
+    expect(screen.getByRole("heading", { level: 1, name: "Billing updated" })).toBeInTheDocument();
+
+    cleanup();
+    render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
+    expect(screen.getByText(/4242 4242 4242 4242/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Вернуться к подписке" })).toHaveAttribute(
+      "href",
+      "/ru/billing",
+    );
+
+    cleanup();
+    render(<RuBillingCancelPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
+
+    cleanup();
+    render(<RuBillingSuccessPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата обновлена" })).toBeInTheDocument();
   });
 
   it("renders first-party privacy and terms pages", () => {

@@ -94,6 +94,12 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("No Transcript")).toBeTruthy();
   });
 
+  it("shows processing transcript state while transcription is running", () => {
+    render(<RecordingDetailPanel recording={makeRecording({ status: "processing" })} />);
+    expect(screen.getByText("Transcript is processing")).toBeTruthy();
+    expect(screen.queryByText("No Transcript")).toBeNull();
+  });
+
   it("renders transcript segments with speakers and timestamps", () => {
     const recording = makeRecording({
       segments: [

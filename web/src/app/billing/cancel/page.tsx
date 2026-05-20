@@ -1,20 +1,28 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import {
+  BillingResultCard,
+  type BillingResultSearchParams,
+  resolveBillingResultLocale,
+} from "@/components/BillingResultCard";
 
 export const metadata: Metadata = {
-  title: "Checkout canceled — WaiComputer",
+  title: "Payment status — WaiComputer",
 };
 
-export default function BillingCancelPage() {
-  return (
-    <main className="container">
-      <section className="auth-card">
-        <h1>Checkout canceled</h1>
-        <p>No payment was made. You can restart checkout from Billing when you are ready.</p>
-        <Link className="primary-button" href="/billing">
-          Open billing
-        </Link>
-      </section>
-    </main>
-  );
+type BillingResultPageProps = {
+  searchParams?: Promise<BillingResultSearchParams> | BillingResultSearchParams;
+};
+
+async function resolveSearchParams(
+  searchParams: BillingResultPageProps["searchParams"],
+): Promise<BillingResultSearchParams> {
+  return searchParams ? await searchParams : {};
+}
+
+export default async function BillingCancelPage({
+  searchParams,
+}: BillingResultPageProps = {}) {
+  const params = await resolveSearchParams(searchParams);
+
+  return <BillingResultCard kind="cancel" locale={resolveBillingResultLocale(params)} />;
 }

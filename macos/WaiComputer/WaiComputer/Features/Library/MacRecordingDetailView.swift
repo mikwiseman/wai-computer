@@ -87,6 +87,7 @@ struct MacRecordingDetailView: View {
                     case .transcript:
                         MacTranscriptView(
                             segments: detail.segments,
+                            status: detail.status,
                             recordingId: detail.id,
                             onAssigned: { updated in
                                 viewModel.recordingDetail = updated

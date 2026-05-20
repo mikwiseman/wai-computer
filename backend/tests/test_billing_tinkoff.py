@@ -13,6 +13,8 @@ from app.billing.providers.tinkoff_provider import (
     generate_tinkoff_token,
     verify_tinkoff_token,
 )
+from app.billing.router import _checkout_result_urls
+from app.billing.webhooks import _tinkoff_ack_response
 
 
 def test_token_is_deterministic_and_sorted():
@@ -97,6 +99,27 @@ def test_provider_requires_credentials(monkeypatch):
     provider = TinkoffProvider(terminal_key="", password="")
     with pytest.raises(ProviderUnavailableError):
         provider._require_creds()
+
+
+def test_tinkoff_checkout_result_urls_tag_tinkoff_provider_for_russian_pages():
+    assert _checkout_result_urls("https://wai.computer/", "tinkoff") == (
+        "https://wai.computer/billing/success?provider=tinkoff&lang=ru",
+        "https://wai.computer/billing/cancel?provider=tinkoff&lang=ru",
+    )
+
+
+def test_stripe_checkout_result_urls_use_global_billing_pages():
+    assert _checkout_result_urls("https://wai.computer/", "stripe") == (
+        "https://wai.computer/billing/success",
+        "https://wai.computer/billing/cancel",
+    )
+
+
+def test_tinkoff_ack_response_is_plain_ok():
+    response = _tinkoff_ack_response()
+    assert response.status_code == 200
+    assert response.media_type == "text/plain"
+    assert response.body == b"OK"
 
 
 @pytest.mark.asyncio

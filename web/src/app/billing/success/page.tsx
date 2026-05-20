@@ -1,20 +1,28 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import {
+  BillingResultCard,
+  type BillingResultSearchParams,
+  resolveBillingResultLocale,
+} from "@/components/BillingResultCard";
 
 export const metadata: Metadata = {
-  title: "Billing updated — WaiComputer",
+  title: "Payment status — WaiComputer",
 };
 
-export default function BillingSuccessPage() {
-  return (
-    <main className="container">
-      <section className="auth-card">
-        <h1>Billing updated</h1>
-        <p>Your payment was accepted. Return to WaiComputer and refresh Billing if the Pro status is not visible yet.</p>
-        <Link className="primary-button" href="/billing">
-          Open billing
-        </Link>
-      </section>
-    </main>
-  );
+type BillingResultPageProps = {
+  searchParams?: Promise<BillingResultSearchParams> | BillingResultSearchParams;
+};
+
+async function resolveSearchParams(
+  searchParams: BillingResultPageProps["searchParams"],
+): Promise<BillingResultSearchParams> {
+  return searchParams ? await searchParams : {};
+}
+
+export default async function BillingSuccessPage({
+  searchParams,
+}: BillingResultPageProps = {}) {
+  const params = await resolveSearchParams(searchParams);
+
+  return <BillingResultCard kind="success" locale={resolveBillingResultLocale(params)} />;
 }
