@@ -614,7 +614,7 @@ cat > "$APPCAST_PATH" <<XML
       <pubDate>${PUBLISHED_AT}</pubDate>
 ${CHANNEL_XML}      <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>${RELEASE_NOTES_URL}</sparkle:releaseNotesLink>
       <enclosure url="${DOWNLOAD_URL}" type="application/x-apple-diskimage" ${SPARKLE_ENCLOSURE_ATTRS}/>
     </item>

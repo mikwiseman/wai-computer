@@ -22,6 +22,8 @@
 	<string>WaiComputer needs audio capture access to record system audio from meetings and calls.</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.2</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
