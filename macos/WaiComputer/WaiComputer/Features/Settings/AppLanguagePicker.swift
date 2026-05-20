@@ -10,12 +10,25 @@ import WaiComputerKit
 struct AppLanguagePicker: View {
     @EnvironmentObject var languageManager: LanguageManager
 
+    private let selectableLanguages: [LanguageManager.SupportedLanguage] = [.english, .russian]
+
+    private var selectedLanguage: LanguageManager.SupportedLanguage {
+        switch languageManager.current {
+        case .russian:
+            return .russian
+        case .followSystem:
+            return Locale.current.language.languageCode?.identifier == "ru" ? .russian : .english
+        case .english:
+            return .english
+        }
+    }
+
     var body: some View {
         Picker(selection: Binding(
-            get: { languageManager.current },
+            get: { selectedLanguage },
             set: { languageManager.setLanguage($0) }
         )) {
-            ForEach(LanguageManager.SupportedLanguage.allCases) { language in
+            ForEach(selectableLanguages) { language in
                 Text(language.nativeDisplayName).tag(language)
             }
         } label: {
