@@ -6,6 +6,7 @@ import WaiComputerKit
 struct OnboardingView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
+    @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
@@ -106,14 +107,14 @@ struct OnboardingView: View {
                             OnboardingVoiceSetupSlide(
                                 isActive: index == currentPage,
                                 hasMicrophonePermission: hasMicrophonePermission,
-                                onAdvance: advanceToNextPage
+                                onAdvance: advanceOrComplete
                             )
                             .environmentObject(appState)
                         case .sandbox:
                             OnboardingDictationSandboxSlide(
                                 isActive: index == currentPage,
                                 dictationManager: dictationManager,
-                                onContinue: completeOnboarding
+                                onContinue: advanceOrComplete
                             )
                         }
                     }
@@ -138,7 +139,7 @@ struct OnboardingView: View {
                         .foregroundStyle(Palette.textTertiary.opacity(0.5))
                 }
                 VStack(spacing: 6) {
-                    Text(pages[index].breadcrumbLabel.uppercased())
+                    Text(pages[index].breadcrumbLabel(language: languageManager.current).uppercased())
                         .font(.system(size: 11, weight: .medium))
                         .tracking(1.3)
                         .foregroundStyle(index == currentPage ? Palette.textPrimary : Palette.textTertiary)
@@ -177,7 +178,7 @@ struct OnboardingView: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Palette.textTertiary)
                     }
-                    Text("Help")
+                    Text(t("Help", "Помощь"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -199,7 +200,7 @@ struct OnboardingView: View {
 
             // Skip is an explicit opt-out of setup; normal recording should be
             // ready before the user reaches the main UI.
-            Button(isPermissionPage || isSandboxPage ? "Skip for Now" : "Skip") {
+            Button(isPermissionPage || isSandboxPage ? t("Skip for Now", "Пропустить пока") : t("Skip", "Пропустить")) {
                 completeOnboarding()
             }
             .buttonStyle(WaiGhostButtonStyle())
@@ -223,19 +224,19 @@ struct OnboardingView: View {
     private var primaryButtonTitle: String {
         if isPermissionPage {
             if dictationPermissionsReady {
-                return "Continue"
+                return t("Continue", "Продолжить")
             }
             if permissionRestartRecommended {
-                return "Restart WaiComputer"
+                return t("Restart WaiComputer", "Перезапустить WaiComputer")
             }
             if hasMicrophonePermission,
                accessibilityStatus == .granted,
                systemAudioStatus == .denied {
-                return "Set Up System Audio"
+                return t("Set Up System Audio", "Настроить звук Mac")
             }
-            return "Open Settings"
+            return t("Open Settings", "Открыть настройки")
         }
-        return "Continue"
+        return t("Continue", "Продолжить")
     }
 
     private var primaryButtonAccessibilityId: String {
@@ -261,9 +262,7 @@ struct OnboardingView: View {
                 requestNextMissingPermission()
             }
         } else {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                currentPage = min(currentPage + 1, pages.count - 1)
-            }
+            advanceOrComplete()
         }
     }
 
@@ -276,6 +275,18 @@ struct OnboardingView: View {
         withAnimation(.easeInOut(duration: 0.3)) {
             currentPage = min(currentPage + 1, pages.count - 1)
         }
+    }
+
+    private func advanceOrComplete() {
+        if isLastPage {
+            completeOnboarding()
+        } else {
+            advanceToNextPage()
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 
     private func openHelp() {
@@ -489,6 +500,7 @@ struct OnboardingView: View {
 
 private struct OnboardingPermissionSlide: View {
     @EnvironmentObject var dictationManager: DictationManager
+    @EnvironmentObject private var languageManager: LanguageManager
 
     let isActive: Bool
     let hasMicrophonePermission: Bool
@@ -507,11 +519,11 @@ private struct OnboardingPermissionSlide: View {
             VStack(alignment: .leading, spacing: 24) {
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Give WaiComputer permissions")
+                    Text(t("Give WaiComputer permissions", "Дай WaiComputer нужные разрешения"))
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(Palette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("on your computer")
+                    Text(t("on your computer", "на этом Mac"))
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(Palette.textPrimary)
                 }
@@ -532,7 +544,10 @@ private struct OnboardingPermissionSlide: View {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.clockwise.circle.fill")
                                 .font(.system(size: 13))
-                            Text("Already granted? Restart WaiComputer to apply")
+                            Text(t(
+                                "Already granted? Restart WaiComputer to apply",
+                                "Уже разрешено? Перезапусти WaiComputer"
+                            ))
                                 .font(.system(size: 12, weight: .medium))
                                 .underline()
                         }
@@ -566,12 +581,12 @@ private struct OnboardingPermissionSlide: View {
             PermissionPreviewMicrophone()
         } else if accessibilityStatus != .granted {
             PermissionPreviewSettings(
-                paneTitle: "Accessibility",
+                paneTitle: t("Accessibility", "Универсальный доступ"),
                 rowLabel: "WaiComputer"
             )
         } else if systemAudioStatus != .granted {
             PermissionPreviewSettings(
-                paneTitle: "Screen & System Audio Recording",
+                paneTitle: t("Screen & System Audio Recording", "Запись экрана и звука Mac"),
                 rowLabel: "WaiComputer"
             )
         } else {
@@ -579,7 +594,7 @@ private struct OnboardingPermissionSlide: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(.green)
-                Text("All set")
+                Text(t("All set", "Все готово"))
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Palette.textPrimary)
             }
@@ -588,22 +603,31 @@ private struct OnboardingPermissionSlide: View {
 
     private var permissionBody: String {
         if accessibilityStatus == .staleNeedsRestart {
-            return "WaiComputer is enabled in System Settings. Restart WaiComputer so macOS applies the new permission to this running app."
+            return t(
+                "WaiComputer is enabled in System Settings. Restart WaiComputer so macOS applies the new permission to this running app.",
+                "WaiComputer включен в системных настройках. Перезапусти приложение, чтобы macOS применила разрешение к текущему процессу."
+            )
         }
         if systemAudioStatus == .staleNeedsRestart {
-            return "Enable WaiComputer in System Settings, then restart so macOS applies System Audio Recording to this running app."
+            return t(
+                "Enable WaiComputer in System Settings, then restart so macOS applies System Audio Recording to this running app.",
+                "Включи WaiComputer в системных настройках, затем перезапусти приложение, чтобы macOS применила запись звука Mac."
+            )
         }
-        return "Grant Microphone for recording, Accessibility for the global hotkey and text insertion, and System Audio so meeting recordings capture what plays on your Mac."
+        return t(
+            "Grant Microphone for your voice, Accessibility for the global dictation hotkey and text insertion, and System Audio so meeting recordings capture other speakers and audio playing on your Mac.",
+            "Разреши микрофон для твоего голоса, универсальный доступ для глобальной клавиши диктовки и вставки текста, а звук Mac — чтобы записи встреч слышали других участников и аудио из приложений."
+        )
     }
 
     @ViewBuilder
     private var microphoneRow: some View {
         PermissionRow(
-            title: "Microphone",
-            detail: "Record meetings and dictation",
+            title: t("Microphone", "Микрофон"),
+            detail: t("Record your voice for dictation, notes, and meetings", "Запись твоего голоса для диктовки, заметок и встреч"),
             status: hasMicrophonePermission ? .granted : .denied,
             identifierBase: "onboarding-permission-microphone",
-            primaryAction: PermissionRow.Action(label: "Grant", identifier: "grant", run: requestMicrophonePermission),
+            primaryAction: PermissionRow.Action(label: t("Grant", "Разрешить"), identifier: "grant", run: requestMicrophonePermission),
             restartAction: nil
         )
     }
@@ -611,14 +635,17 @@ private struct OnboardingPermissionSlide: View {
     @ViewBuilder
     private var accessibilityRow: some View {
         let primary: PermissionRow.Action? = accessibilityStatus == .denied
-            ? PermissionRow.Action(label: "Grant", identifier: "grant", run: openAccessibilitySettings)
+            ? PermissionRow.Action(label: t("Grant", "Разрешить"), identifier: "grant", run: openAccessibilitySettings)
             : nil
         let restart: PermissionRow.Action? = accessibilityStatus == .staleNeedsRestart
-            ? PermissionRow.Action(label: "Restart WaiComputer", identifier: "restart", run: restartForPermissionRefresh)
+            ? PermissionRow.Action(label: t("Restart WaiComputer", "Перезапустить WaiComputer"), identifier: "restart", run: restartForPermissionRefresh)
             : nil
         PermissionRow(
-            title: "Accessibility",
-            detail: "Listen for the global hotkey and paste dictated text",
+            title: t("Accessibility", "Универсальный доступ"),
+            detail: t(
+                "Listen for the global hotkey and paste dictated text",
+                "Глобальная клавиша и автоматическая вставка текста"
+            ),
             status: accessibilityStatus,
             identifierBase: "onboarding-permission-accessibility",
             primaryAction: primary,
@@ -630,26 +657,37 @@ private struct OnboardingPermissionSlide: View {
     private var systemAudioRow: some View {
         let primary: PermissionRow.Action? = systemAudioStatus == .denied
             ? PermissionRow.Action(
-                label: isRequestingSystemAudioPermission ? "Setting Up..." : "Set Up",
+                label: isRequestingSystemAudioPermission
+                    ? t("Setting Up...", "Настраиваем...")
+                    : t("Set Up", "Настроить"),
                 identifier: "setup",
                 run: requestSystemAudioPermission
             )
             : nil
         let restart: PermissionRow.Action? = systemAudioStatus == .staleNeedsRestart
-            ? PermissionRow.Action(label: "Restart WaiComputer", identifier: "restart", run: restartForPermissionRefresh)
+            ? PermissionRow.Action(label: t("Restart WaiComputer", "Перезапустить WaiComputer"), identifier: "restart", run: restartForPermissionRefresh)
             : nil
         PermissionRow(
-            title: "System Audio",
-            detail: "Capture audio from calls and meetings",
+            title: t("System Audio", "Звук Mac"),
+            detail: t(
+                "Capture other speakers and app audio in calls and meetings",
+                "Запись других участников и звука приложений во встречах"
+            ),
             status: systemAudioStatus,
             identifierBase: "onboarding-permission-system-audio",
             primaryAction: primary,
             restartAction: restart
         )
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 private struct PermissionRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+
     struct Action {
         let label: String
         let identifier: String
@@ -680,7 +718,10 @@ private struct PermissionRow: View {
                 trailingControls
             }
             if status == .staleNeedsRestart {
-                Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
+                Text(t(
+                    "After changing this in System Settings, restart WaiComputer so macOS applies it to the running app. If Settings shows duplicate WaiComputer rows, enable the current app bundle.",
+                    "После изменения в системных настройках перезапусти WaiComputer, чтобы macOS применила доступ к текущему процессу. Если в настройках несколько строк WaiComputer, включи текущий .app."
+                ))
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -722,7 +763,7 @@ private struct PermissionRow: View {
             }
         case .staleNeedsRestart:
             HStack(spacing: 6) {
-                Text("Restart Required")
+                Text(t("Restart Required", "Нужен перезапуск"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.accent)
                     .accessibilityIdentifier("\(identifierBase)-restart-required")
@@ -744,6 +785,10 @@ private struct PermissionRow: View {
             }
         }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 // MARK: - Permission preview illustrations (right pane)
@@ -752,6 +797,7 @@ private struct PermissionRow: View {
 /// visual hint so the user knows exactly what window appears after pressing
 /// Allow on the left card. Pure SwiftUI — no PNG asset required.
 private struct PermissionPreviewMicrophone: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var pulse = false
 
     var body: some View {
@@ -776,15 +822,15 @@ private struct PermissionPreviewMicrophone: View {
                     }
 
                     VStack(spacing: 6) {
-                        Text("\u{201C}WaiComputer\u{201D} would like to")
+                        Text(t("\u{201C}WaiComputer\u{201D} would like to", "«WaiComputer» хочет"))
                             .font(.system(size: 13, weight: .semibold))
-                        Text("access the microphone.")
+                        Text(t("access the microphone.", "получить доступ к микрофону."))
                             .font(.system(size: 13, weight: .semibold))
-                        Text("WaiComputer needs access to your")
+                        Text(t("WaiComputer needs access to your", "Микрофон нужен WaiComputer"))
                             .font(.system(size: 11))
                             .foregroundStyle(.gray)
                             .padding(.top, 4)
-                        Text("microphone to record dictation!")
+                        Text(t("microphone to record dictation!", "для диктовки и записи встреч."))
                             .font(.system(size: 11))
                             .foregroundStyle(.gray)
                     }
@@ -794,7 +840,7 @@ private struct PermissionPreviewMicrophone: View {
                         ZStack {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(Color.gray.opacity(0.18))
-                            Text("Don\u{2019}t Allow")
+                            Text(t("Don\u{2019}t Allow", "Не разрешать"))
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.black.opacity(0.75))
                         }
@@ -834,12 +880,18 @@ private struct PermissionPreviewMicrophone: View {
         }
         .onAppear { pulse = true }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 /// Stylized macOS System Settings window (Privacy & Security pane) showing
 /// a list with the current app's row toggled ON. Used for Input Monitoring
 /// and Accessibility steps so the user sees exactly what to look for.
 private struct PermissionPreviewSettings: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+
     let paneTitle: String
     let rowLabel: String
     @State private var pulse = false
@@ -871,7 +923,10 @@ private struct PermissionPreviewSettings: View {
                 // Settings rows
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Allow the applications below to control your computer.")
+                        Text(t(
+                            "Allow the applications below to control your computer.",
+                            "Разреши приложениям ниже управлять компьютером."
+                        ))
                             .font(.system(size: 11))
                             .foregroundStyle(.gray)
                         Spacer()
@@ -937,5 +992,9 @@ private struct PermissionPreviewSettings: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

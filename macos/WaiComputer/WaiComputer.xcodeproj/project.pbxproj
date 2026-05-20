@@ -50,6 +50,7 @@
 		AE273B9C32682BCF6CF7DEC7 /* AuthFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */; };
 		B1CF145D35CC71C46999E898 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */; };
 		B5DDE9F109AC3D9232120D55 /* RealAppSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */; };
+		B90DD23490D4CFB96DD66DD1 /* OnboardingL10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */; };
 		BC6AA2538B96B8493E9BF247 /* LanguagePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 168C1BFCC7BF45C935DAFEAA /* LanguagePickerView.swift */; };
 		BDAD47F58A5228D925DEEFFA /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */; };
 		C9E5627567722FF9925C20BF /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */; };
@@ -132,6 +133,7 @@
 		BB5835543DAC10BA51A41849 /* SystemAudioWarningPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicy.swift; sourceTree = "<group>"; };
 		BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealAppSmokeUITests.swift; sourceTree = "<group>"; };
 		C25F047C635F7E3D47154C29 /* OnboardingDictationSandboxSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDictationSandboxSlide.swift; sourceTree = "<group>"; };
+		C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingL10n.swift; sourceTree = "<group>"; };
 		CA297F1CAC3937B4C29F28FE /* OnboardingVoiceSetupSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingVoiceSetupSlide.swift; sourceTree = "<group>"; };
 		D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -289,6 +291,7 @@
 			children = (
 				C25F047C635F7E3D47154C29 /* OnboardingDictationSandboxSlide.swift */,
 				3996AAFF9389472FC679B74E /* OnboardingHotkeyPickerSlide.swift */,
+				C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */,
 				2726E5985992C99A14EA708C /* OnboardingLanguagesSlide.swift */,
 				B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */,
 				D784721D7B258ADA3192BE91 /* OnboardingValuePropsSlide.swift */,
@@ -560,6 +563,7 @@
 				CDEFA7621310F11B57F75165 /* NewRecordingView.swift in Sources */,
 				E5ED0DB2D8A307AC1B9666BE /* OnboardingDictationSandboxSlide.swift in Sources */,
 				6BC44F13D8DEC60C6771BDE3 /* OnboardingHotkeyPickerSlide.swift in Sources */,
+				B90DD23490D4CFB96DD66DD1 /* OnboardingL10n.swift in Sources */,
 				1E7A16239D816318A2D9F3F0 /* OnboardingLanguagesSlide.swift in Sources */,
 				BDAD47F58A5228D925DEEFFA /* OnboardingPage.swift in Sources */,
 				8205F7AD37795B4565C85681 /* OnboardingValuePropsSlide.swift in Sources */,

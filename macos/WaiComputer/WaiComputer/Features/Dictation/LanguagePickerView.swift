@@ -1,9 +1,12 @@
 import SwiftUI
+import WaiComputerKit
 
 /// Reusable language picker — used in onboarding and Settings. Lets the user
 /// pick zero (auto-detect), one (single-language for lowest latency), or many
 /// (multilingual hint set) languages.
 struct LanguagePickerView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+
     @ObservedObject var store: DictationLanguageStore
     /// Optional cap on the visible list; nil shows all entries. Onboarding
     /// uses a smaller cap to keep the screen tidy; Settings shows all.
@@ -44,10 +47,13 @@ struct LanguagePickerView: View {
                     .foregroundStyle(store.isAutoDetect ? Palette.accent : Palette.textTertiary)
                     .font(.system(size: 18))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Auto-detect any language")
+                    Text(t("Auto-detect any language", "Автоопределение языка"))
                         .font(Typography.body)
                         .foregroundStyle(Palette.textPrimary)
-                    Text("Best when you switch languages often. Slightly slower start than picking one.")
+                    Text(t(
+                        "Best when you switch languages often. Slightly slower start than picking one.",
+                        "Лучше, если ты часто переключаешься между языками. Запуск чуть медленнее, чем с одним языком."
+                    ))
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -104,21 +110,34 @@ struct LanguagePickerView: View {
         let count = store.selectedLanguages.count
         Group {
             if count == 0 {
-                Text("Auto-detect mode — the model identifies the language from your audio.")
+                Text(t(
+                    "Auto-detect mode — the model identifies the language from your audio.",
+                    "Автоопределение — модель сама распознает язык по аудио."
+                ))
             } else if count == 1, let only = store.selectedLanguages.first,
                       let entry = DictationLanguageCatalog.entry(for: only) {
-                Text("\(entry.englishName) only — fastest, lowest latency.")
+                Text(t(
+                    "\(entry.englishName) only — fastest, lowest latency.",
+                    "Только \(entry.nativeName) — самый быстрый режим с минимальной задержкой."
+                ))
             } else {
                 let names = store.selectedLanguages
                     .compactMap { DictationLanguageCatalog.entry(for: $0)?.englishName }
                     .sorted()
                     .joined(separator: ", ")
-                Text("\(count) languages selected (\(names)). Multilingual auto-detect is used at the model layer.")
+                Text(t(
+                    "\(count) languages selected (\(names)). Multilingual auto-detect is used at the model layer.",
+                    "Выбрано языков: \(count) (\(names)). Модель использует мультиязычное автоопределение."
+                ))
             }
         }
         .font(Typography.caption)
         .foregroundStyle(Palette.textSecondary)
         .padding(.top, 4)
         .accessibilityIdentifier("language-picker-summary")
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

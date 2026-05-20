@@ -1,9 +1,11 @@
 import SwiftUI
+import WaiComputerKit
 
 struct OnboardingDictationSandboxSlide: View {
     let isActive: Bool
     @ObservedObject var dictationManager: DictationManager
     let onContinue: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     @State private var text: String = ""
     @State private var hasDictatedOnce: Bool = false
@@ -14,7 +16,10 @@ struct OnboardingDictationSandboxSlide: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 8) {
-                Text(hasDictatedOnce ? "Looks great." : "Try it now")
+                Text(hasDictatedOnce
+                    ? t("Looks great.", "Отлично.")
+                    : t("Try dictation now", "Попробуй диктовку")
+                )
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
 
@@ -26,7 +31,7 @@ struct OnboardingDictationSandboxSlide: View {
             statusPill
 
             HStack(spacing: 12) {
-                Button("Continue", action: onContinue)
+                Button(t("Continue", "Продолжить"), action: onContinue)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !hasDictatedOnce))
                     .disabled(!hasDictatedOnce)
                     .accessibilityIdentifier("onboarding-sandbox-continue")
@@ -71,11 +76,11 @@ struct OnboardingDictationSandboxSlide: View {
     private var instructionLine: some View {
         HStack(spacing: 6) {
             if hasDictatedOnce {
-                Text("You can dictate from any app the same way.")
+                Text(t("You can dictate from any app the same way.", "Так же можно диктовать в любом приложении."))
             } else {
-                Text("Hold")
+                Text(t("Hold", "Зажми"))
                 keyChip(dictationManager.selectedHotkey.shortLabel)
-                Text("and speak. Release to insert.")
+                Text(t("and speak. Release to insert.", "и говори. Отпусти, чтобы вставить текст."))
             }
         }
         .font(.system(size: 14))
@@ -85,13 +90,13 @@ struct OnboardingDictationSandboxSlide: View {
     @ViewBuilder
     private var sandboxField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Compose")
+            Text(t("Compose", "Текст"))
                 .font(.system(size: 11, weight: .medium))
                 .tracking(0.6)
                 .foregroundStyle(Palette.textTertiary)
                 .textCase(.uppercase)
 
-            TextField("Compose a message…", text: $text, axis: .vertical)
+            TextField(t("Compose a message…", "Надиктуй сообщение…"), text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .padding(16)
@@ -120,7 +125,7 @@ struct OnboardingDictationSandboxSlide: View {
             switch dictationManager.state {
             case .connecting:
                 ProgressView().controlSize(.small)
-                Text("Connecting…")
+                Text(t("Connecting…", "Подключаемся…"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.textSecondary)
             case .listening:
@@ -128,17 +133,17 @@ struct OnboardingDictationSandboxSlide: View {
                     .symbolEffect(.variableColor.iterative)
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.accent)
-                Text("Listening — keep the key held.")
+                Text(t("Listening — keep the key held.", "Слушаем — держи клавишу."))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.accent)
             case .processing:
                 ProgressView().controlSize(.small)
-                Text("Transcribing…")
+                Text(t("Transcribing…", "Распознаем…"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.textSecondary)
             case .inserting:
                 ProgressView().controlSize(.small)
-                Text("Inserting…")
+                Text(t("Inserting…", "Вставляем…"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.textSecondary)
             case .idle:
@@ -198,5 +203,9 @@ struct OnboardingDictationSandboxSlide: View {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Palette.accent.opacity(0.15))
             )
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

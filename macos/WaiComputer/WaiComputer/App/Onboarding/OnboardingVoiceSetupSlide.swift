@@ -11,18 +11,18 @@ struct OnboardingVoiceSetupSlide: View {
     let onAdvance: () -> Void
 
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var recorder = VoiceEnrollmentRecorder()
-
-    private static let promptText =
-        "Hi, I'm setting up Wai Computer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter."
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
-            Text("Teach Wai your voice")
+            Text(t("Optional: identify your voice", "Опционально: распознавать твой голос"))
                 .font(Typography.displayMedium)
             Text(
-                "Wai will learn your voice now so it can recognise you in future "
-                + "meetings without you tagging every clip. Takes about 20 seconds."
+                t(
+                    "Record a short sample so WaiComputer can recognize you in future meetings without manual speaker tagging. Takes about 20 seconds.",
+                    "Запиши короткий образец, чтобы WaiComputer узнавал тебя на будущих встречах без ручной разметки спикеров. Это займет около 20 секунд."
+                )
             )
             .font(Typography.body)
             .foregroundStyle(Palette.textSecondary)
@@ -45,7 +45,7 @@ struct OnboardingVoiceSetupSlide: View {
     }
 
     private var promptCard: some View {
-        Text(Self.promptText)
+        Text(promptText)
             .font(Typography.reading)
             .lineSpacing(6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,6 +58,13 @@ struct OnboardingVoiceSetupSlide: View {
                             .strokeBorder(Palette.border, lineWidth: 1)
                     )
             )
+    }
+
+    private var promptText: String {
+        t(
+            "Hi, I'm setting up Wai Computer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter.",
+            "Привет, я настраиваю WaiComputer. Он записывает встречи, звонки и идеи в течение дня, чтобы мне не приходилось все запоминать. Wai слушает, расшифровывает людей, с которыми я говорю, и сохраняет важные моменты."
+        )
     }
 
     @ViewBuilder
@@ -94,24 +101,30 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .buttonStyle(.plain)
         .disabled(!hasMicrophonePermission || recorder.state == .uploading)
-        .help(hasMicrophonePermission ? "Tap to record" : "Allow microphone in the previous step")
+        .help(hasMicrophonePermission
+            ? t("Tap to record", "Нажми, чтобы записать")
+            : t("Allow microphone in the previous step", "Сначала разреши микрофон")
+        )
     }
 
     @ViewBuilder
     private var footer: some View {
         HStack {
-            Button("Skip for now", action: skipAndAdvance)
+            Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
                 .buttonStyle(WaiGhostButtonStyle())
             Spacer()
             if recorder.state == .recorded {
-                Button("Re-record", action: handleRecordTap)
+                Button(t("Re-record", "Записать заново"), action: handleRecordTap)
                     .buttonStyle(WaiGhostButtonStyle())
-                Button("Use this take", action: submit)
+                Button(t("Use this take", "Использовать запись"), action: submit)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading))
                     .disabled(recorder.state == .uploading)
             }
         }
-        Text("We store a 192-number signature, not your audio. The recording is deleted after the signature is created.")
+        Text(t(
+            "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
+            "Мы храним 192-числовую подпись, а не аудио. Запись удаляется после создания подписи."
+        ))
             .font(.caption)
             .foregroundStyle(Palette.textTertiary)
     }
@@ -156,15 +169,25 @@ struct OnboardingVoiceSetupSlide: View {
         switch recorder.state {
         case .idle:
             return hasMicrophonePermission
-                ? "Press the mic to start"
-                : "Grant microphone access first"
+                ? t("Press the mic to start", "Нажми микрофон, чтобы начать")
+                : t("Grant microphone access first", "Сначала разреши микрофон")
         case .recording:
-            return "Recording… \(Int(recorder.elapsedSeconds))s / 20s"
+            return t(
+                "Recording… \(Int(recorder.elapsedSeconds))s / 20s",
+                "Запись… \(Int(recorder.elapsedSeconds)) c / 20 c"
+            )
         case .recorded:
-            return "Recorded \(Int(recorder.elapsedSeconds))s. Re-record or submit."
+            return t(
+                "Recorded \(Int(recorder.elapsedSeconds))s. Re-record or submit.",
+                "Записано \(Int(recorder.elapsedSeconds)) c. Можно перезаписать или отправить."
+            )
         case .uploading:
-            return "Uploading voice signature…"
+            return t("Uploading voice signature…", "Загружаем голосовую подпись…")
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

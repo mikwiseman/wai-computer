@@ -56,33 +56,42 @@ async def test_create_elevenlabs_realtime_token_requires_api_key():
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_uses_elevenlabs_defaults():
-    with (
-        patch("app.core.realtime_transcription.get_settings") as mock_settings,
-        patch(
-            "app.core.realtime_transcription._create_elevenlabs_realtime_token",
-            new=AsyncMock(return_value=("el-token", 900)),
-        ),
+async def test_create_realtime_transcription_session_uses_soniox_recording_defaults():
+    fake_soniox = type(
+        "SonioxSession",
+        (),
+        {
+            "temporary_api_key": "sx-temp",
+            "expires_in_seconds": 60,
+            "sample_rate": 16_000,
+            "language": "multi",
+            "channels": 1,
+            "model": "stt-rt-v4",
+            "websocket_url": "wss://stt-rt.soniox.com/transcribe-websocket",
+        },
+    )()
+    with patch(
+        "app.core.realtime_transcription.mint_soniox_realtime_session",
+        new=AsyncMock(return_value=fake_soniox),
     ):
-        mock_settings.return_value.elevenlabs_realtime_speech_to_text_model = "scribe_v2_realtime"
-        mock_settings.return_value.elevenlabs_no_verbatim = True
-
         from app.core.realtime_transcription import create_realtime_transcription_session
 
         session = await create_realtime_transcription_session(language="multi", channels=1)
 
     assert session == RealtimeTranscriptionSession(
-        provider="elevenlabs",
-        token="el-token",
-        expires_in_seconds=900,
+        provider="soniox",
+        token="sx-temp",
+        expires_in_seconds=60,
         sample_rate=16_000,
-        audio_format="pcm_16000",
+        audio_format="linear16_16000",
         language="multi",
         channels=1,
-        model="scribe_v2_realtime",
+        model="stt-rt-v4",
         keep_alive_interval_seconds=None,
         commit_strategy="vad",
-        no_verbatim=True,
+        no_verbatim=False,
+        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
+        auth_scheme="message_api_key",
     )
 
 
