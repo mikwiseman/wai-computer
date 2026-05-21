@@ -641,6 +641,61 @@ async def test_generate_summary_preserves_custom_style_for_auto_language(
 
 
 @pytest.mark.asyncio
+async def test_generate_summary_auto_language_uses_user_default_for_multilingual_recording(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """language=multi should not make Russian users get English titles/summaries."""
+    user = (await db_session.execute(select(User))).scalar_one()
+    user.default_language = "ru"
+    user.summary_language = "auto"
+    await db_session.flush()
+
+    recording = await _create_recording(client, auth_headers, title=None, language="multi")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Q2 roadmap and budget were discussed.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_summarize_transcript(_: str, **kwargs) -> SummaryResult:
+        captured["language"] = kwargs.get("language")
+        return SummaryResult(
+            title="План Q2",
+            summary="Сводка на русском.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+        )
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", fake_summarize_transcript)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert captured["language"] == "ru"
+
+
+@pytest.mark.asyncio
 async def test_generate_summary_regeneration_replaces_action_items(
     client: AsyncClient,
     auth_headers: dict,
@@ -898,6 +953,52 @@ async def test_upload_no_speech_fallback_uses_russian_recording_language(
     assert data["title"] == "Без речи"
     assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
     title_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_no_speech_fallback_uses_user_default_for_multilingual_recording(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = (await db_session.execute(select(User))).scalar_one()
+    user.default_language = "ru"
+    await db_session.flush()
+    recording = await _create_recording(client, auth_headers, title=None, language="multi")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(
+            return_value=[
+                TranscriptResult(
+                    text="[noise]",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1200,
+                    confidence=0.1,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("noise.wav", b"noise", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
+    assert data["title"] == "Без речи"
+    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
 
 
 @pytest.mark.asyncio

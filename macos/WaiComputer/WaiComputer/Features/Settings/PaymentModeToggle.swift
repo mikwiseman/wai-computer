@@ -37,3 +37,7 @@ enum PaymentModeStore {
         UserDefaults.standard.bool(forKey: userDefaultsKey)
     }
 }
+
+enum BillingCheckoutRefreshStore {
+    static let pendingKey = "billingCheckoutRefreshPending"
+}

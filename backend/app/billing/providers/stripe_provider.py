@@ -115,8 +115,15 @@ class StripeProvider(PaymentProvider):
         except stripe.SignatureVerificationError as exc:  # type: ignore[attr-defined]
             raise ValueError(f"Invalid Stripe webhook signature: {exc}") from exc
 
-        obj: dict[str, Any] = event["data"]["object"] if "data" in event else {}
-        event_type: str = event["type"]
+        if hasattr(event, "to_dict"):
+            raw_event = event.to_dict()
+        elif hasattr(event, "to_dict_recursive"):
+            raw_event = event.to_dict_recursive()
+        else:
+            raw_event = dict(event)
+
+        obj: dict[str, Any] = raw_event.get("data", {}).get("object", {})
+        event_type: str = raw_event["type"]
         subscription_id = None
         customer_id = obj.get("customer") if isinstance(obj, dict) else None
         status = None
@@ -132,7 +139,7 @@ class StripeProvider(PaymentProvider):
             subscription_id_provider=subscription_id,
             customer_id_provider=customer_id,
             status=status,
-            raw=event,
+            raw=raw_event,
         )
 
     # ------------------------------------------------------------------

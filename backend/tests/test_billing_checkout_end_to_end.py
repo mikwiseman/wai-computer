@@ -20,7 +20,7 @@ from app.billing.providers.tinkoff_provider import (
     generate_tinkoff_token,
     verify_tinkoff_token,
 )
-from app.models.billing import Subscription
+from app.models.billing import Plan, Subscription
 from app.models.user import User
 
 
@@ -278,6 +278,74 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     assert payload["status"] == "active"
     assert payload["provider"] == "tinkoff"
     assert payload["billing_period"] == "year"
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_webhook_repairs_existing_subscription_endpoint(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_billing_settings(monkeypatch)
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr("app.db.session.get_db_context", fake_db_context)
+
+    email = "tinkoff.restore-pointer.e2e@example.com"
+    _, bearer = await _register(client, email)
+    user_id = await _user_id(db_session, email)
+
+    user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
+    assert (await db_session.execute(select(Subscription))).scalars().first() is None
+    pro_plan = (
+        await db_session.execute(select(Plan).where(Plan.code == "pro"))
+    ).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro_plan.id,
+        status="incomplete",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_customer_key=user_id,
+        tinkoff_rebill_id="rebill-e2e-old",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    assert user.current_subscription_id is None
+
+    notification = {
+        "TerminalKey": BillingTestSettings.tinkoff_terminal_key,
+        "OrderId": "order-restore-pointer-e2e",
+        "Status": "CONFIRMED",
+        "Success": True,
+        "PaymentId": "payment-restore-pointer-e2e",
+        "Amount": 99900,
+        "CustomerKey": user_id,
+        "RebillId": "rebill-e2e-new",
+    }
+    token = generate_tinkoff_token(notification, BillingTestSettings.tinkoff_password)
+    webhook = await client.post(
+        "/api/webhooks/tinkoff",
+        content=json.dumps({**notification, "Token": token}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert webhook.status_code == 200
+    assert webhook.text == "OK"
+
+    subscription = await client.get(
+        "/api/billing/subscription",
+        headers={"Authorization": bearer},
+    )
+    assert subscription.status_code == 200
+    payload = subscription.json()
+    assert payload["plan"]["code"] == "pro"
+    assert payload["status"] == "active"
+    assert payload["provider"] == "tinkoff"
+    assert payload["billing_period"] == "month"
 
 
 @pytest.mark.asyncio

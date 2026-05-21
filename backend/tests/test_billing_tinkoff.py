@@ -552,6 +552,53 @@ async def test_apply_tinkoff_confirmed_updates_rebill_id_for_existing_customer(
 
 
 @pytest.mark.asyncio
+async def test_apply_tinkoff_confirmed_restores_current_subscription_for_existing_customer(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.restore-pointer@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="incomplete",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_customer_key=str(user.id),
+        tinkoff_rebill_id="rebill-restore-old",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    assert user.current_subscription_id is None
+
+    event = ProviderEvent(
+        type="tinkoff.confirmed",
+        subscription_id_provider="order-restore-pointer",
+        customer_id_provider=str(user.id),
+        status="active",
+        raw={
+            "order_id": "order-restore-pointer",
+            "status": "CONFIRMED",
+            "rebill_id": "rebill-restore-new",
+            "payment_id": "payment-restore-pointer",
+            "amount": 99900,
+            "plan_code": "pro",
+            "period": "month",
+            "payload": {"Status": "CONFIRMED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(user)
+    await db_session.refresh(sub)
+
+    assert user.current_subscription_id == sub.id
+    assert sub.status == "active"
+    assert sub.tinkoff_rebill_id == "rebill-restore-new"
+
+
+@pytest.mark.asyncio
 async def test_apply_tinkoff_confirmed_is_idempotent_by_payment_id(
     db_session: AsyncSession,
 ):

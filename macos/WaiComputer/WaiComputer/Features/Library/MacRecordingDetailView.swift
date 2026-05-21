@@ -498,7 +498,10 @@ struct MacRecordingDetailView: View {
 
     @ViewBuilder
     private func summaryTab(_ detail: RecordingDetail) -> some View {
-        let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id)
+        let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id) ||
+            appState.isSummaryGenerationActive(for: detail.id)
+        let isSummaryBlockedByAnotherRecording = appState.isAnySummaryGenerationActive &&
+            !appState.isSummaryGenerationActive(for: detail.id)
 
         if let summary = detail.summary {
             ScrollView {
@@ -581,16 +584,30 @@ struct MacRecordingDetailView: View {
 
                 Button(action: {
                     Task {
-                        await viewModel.generateSummary(apiClient: appState.getAPIClient())
+                        guard appState.beginSummaryGeneration(recordingId: detail.id) else { return }
+                        defer {
+                            appState.finishSummaryGeneration(recordingId: detail.id)
+                        }
+                        await viewModel.generateSummary(
+                            recordingId: detail.id,
+                            apiClient: appState.getAPIClient()
+                        )
                     }
                 }) {
                     Text(t("Generate Summary", "Сгенерировать сводку"))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
-                .disabled(isGeneratingSummary)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary || isSummaryBlockedByAnotherRecording))
+                .disabled(isGeneratingSummary || isSummaryBlockedByAnotherRecording)
 
                 if isGeneratingSummary {
                     ProgressView(t("Generating summary...", "Генерируем сводку..."))
+                } else if isSummaryBlockedByAnotherRecording {
+                    Text(t(
+                        "Another summary is generating. Wait for it to finish.",
+                        "Другая сводка уже генерируется. Дождись завершения."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
                 }
                 Spacer()
             }
@@ -719,8 +736,7 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
     }
 
-    func generateSummary(apiClient: APIClient) async {
-        guard let id = recordingDetail?.id else { return }
+    func generateSummary(recordingId id: String, apiClient: APIClient) async {
         generatingSummaryRecordingId = id
         defer {
             if generatingSummaryRecordingId == id {

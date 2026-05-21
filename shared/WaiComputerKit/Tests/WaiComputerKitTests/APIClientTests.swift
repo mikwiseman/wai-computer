@@ -212,6 +212,36 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(result.tokenType, "bearer")
     }
 
+    func testRequestPasswordResetSendsLocaleHint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/auth/forgot-password")
+
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["email"] as? String, "user@example.com")
+            XCTAssertEqual(body?["locale"] as? String, "ru")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"message":"If this email is registered, we sent a password reset link."}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let result = try await client.requestPasswordReset(email: "user@example.com", locale: "ru")
+        XCTAssertEqual(
+            result.message,
+            "If this email is registered, we sent a password reset link."
+        )
+    }
+
     // MARK: - Recording Endpoint Tests
 
     func testListRecordingsUsesGetMethod() async throws {
