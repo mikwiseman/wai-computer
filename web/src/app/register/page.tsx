@@ -1,14 +1,12 @@
-"use client";
+import { headers } from "next/headers";
+import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
+import { RegisterClient } from "./RegisterClient";
 
-import { useRouter } from "next/navigation";
-import { AuthForm } from "@/components/AuthForm";
-
-export default function RegisterPage() {
-  const router = useRouter();
-
-  return (
-    <main className="container auth-page">
-      <AuthForm mode="register" onSuccess={() => router.replace("/dashboard")} />
-    </main>
+export default async function RegisterPage() {
+  const requestHeaders = await headers();
+  const initialLocale = resolveAuthLocaleFromAcceptLanguage(
+    requestHeaders.get("accept-language"),
   );
+
+  return <RegisterClient initialLocale={initialLocale} />;
 }

@@ -21,6 +21,10 @@ function jsonHeaders(route: Route) {
  */
 async function installAuthMocks(page: Page) {
   let isAuthenticated = false;
+  let authenticatedEmail = "test@example.com";
+  let lastMagicLinkRequest: unknown = null;
+  let lastPasswordResetRequest: unknown = null;
+  let lastResetPasswordRequest: unknown = null;
 
   const handler = async (route: Route) => {
     const request = route.request();
@@ -40,10 +44,15 @@ async function installAuthMocks(page: Page) {
       const body = request.postDataJSON() as { email?: string; password?: string };
       if (body?.email === "test@example.com" && body?.password === "password123") {
         isAuthenticated = true;
+        authenticatedEmail = body.email;
         await route.fulfill({
           status: 200,
           headers: { ...headers, ...authCookieHeader },
-          body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
+          body: JSON.stringify({
+            access_token: "mock-token",
+            refresh_token: "mock-refresh-token",
+            token_type: "bearer",
+          }),
         });
         return;
       }
@@ -57,21 +66,59 @@ async function installAuthMocks(page: Page) {
 
     // POST /api/auth/register
     if (path === "/api/auth/register" && method === "POST") {
+      const body = request.postDataJSON() as { email?: string };
       isAuthenticated = true;
+      authenticatedEmail = body?.email || "test@example.com";
       await route.fulfill({
         status: 200,
         headers: { ...headers, ...authCookieHeader },
-        body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
+        body: JSON.stringify({
+          access_token: "mock-token",
+          refresh_token: "mock-refresh-token",
+          token_type: "bearer",
+        }),
       });
       return;
     }
 
     // POST /api/auth/magic-link
     if (path === "/api/auth/magic-link" && method === "POST") {
+      lastMagicLinkRequest = request.postDataJSON();
       await route.fulfill({
         status: 200,
         headers,
         body: JSON.stringify({ message: "Magic link sent to your email" }),
+      });
+      return;
+    }
+
+    // POST /api/auth/forgot-password
+    if (path === "/api/auth/forgot-password" && method === "POST") {
+      lastPasswordResetRequest = request.postDataJSON();
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ message: "Detailed server response should not be shown" }),
+      });
+      return;
+    }
+
+    // POST /api/auth/reset-password
+    if (path === "/api/auth/reset-password" && method === "POST") {
+      lastResetPasswordRequest = request.postDataJSON();
+      const body = lastResetPasswordRequest as { token?: string; password?: string };
+      if (body?.token === "reset-token" && body?.password === "password123") {
+        await route.fulfill({
+          status: 200,
+          headers,
+          body: JSON.stringify({ message: "Password reset successfully" }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 401,
+        headers,
+        body: JSON.stringify({ detail: "Password reset link expired" }),
       });
       return;
     }
@@ -81,10 +128,15 @@ async function installAuthMocks(page: Page) {
       const body = request.postDataJSON() as { token?: string };
       if (body?.token === "valid-token") {
         isAuthenticated = true;
+        authenticatedEmail = "magic@example.com";
         await route.fulfill({
           status: 200,
           headers: { ...headers, ...authCookieHeader },
-          body: JSON.stringify({ access_token: "mock-token", token_type: "bearer" }),
+          body: JSON.stringify({
+            access_token: "mock-token",
+            refresh_token: "mock-refresh-token",
+            token_type: "bearer",
+          }),
         });
         return;
       }
@@ -126,8 +178,10 @@ async function installAuthMocks(page: Page) {
         headers,
         body: JSON.stringify({
           id: "user-1",
-          email: "test@example.com",
+          email: authenticatedEmail,
           created_at: "2026-01-01T00:00:00Z",
+          has_password: true,
+          region: "global",
         }),
       });
       return;
@@ -178,6 +232,11 @@ async function installAuthMocks(page: Page) {
   };
 
   await page.route("**/api/**", handler);
+  return {
+    lastMagicLinkRequest: () => lastMagicLinkRequest,
+    lastPasswordResetRequest: () => lastPasswordResetRequest,
+    lastResetPasswordRequest: () => lastResetPasswordRequest,
+  };
 }
 
 async function fillEmailAfterHydration(page: Page, email: string) {
@@ -190,18 +249,21 @@ async function fillEmailAfterHydration(page: Page, email: string) {
 // ---------------------------------------------------------------------------
 
 test.describe("Auth flow", () => {
+  let authRequests: Awaited<ReturnType<typeof installAuthMocks>>;
+
   test.beforeEach(async ({ page }) => {
-    await installAuthMocks(page);
+    authRequests = await installAuthMocks(page);
   });
 
   test("login with valid credentials redirects to dashboard", async ({ page }) => {
     await page.goto("/login");
 
     // Verify the login page renders
-    await expect(page.locator("h1")).toContainText("Sign In");
+    await expect(page.locator("h1")).toContainText("Sign in");
 
     // Fill in credentials and submit
     await fillEmailAfterHydration(page, "test@example.com");
+    await page.getByTestId("password-mode-button").click();
     await page.getByTestId("auth-password").fill("password123");
     await page.getByTestId("auth-submit").click();
 
@@ -214,22 +276,24 @@ test.describe("Auth flow", () => {
     await page.goto("/register");
 
     // Verify the register page renders
-    await expect(page.locator("h1")).toContainText("Create Account");
+    await expect(page.locator("h1")).toContainText("Create account");
 
     // Fill in form and submit
     await fillEmailAfterHydration(page, "newuser@example.com");
+    await page.getByTestId("password-mode-button").click();
     await page.getByTestId("auth-password").fill("securePass1");
     await page.getByTestId("auth-submit").click();
 
     // Should redirect to dashboard
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByTestId("user-email")).toContainText("test@example.com");
+    await expect(page.getByTestId("user-email")).toContainText("newuser@example.com");
   });
 
   test("login with wrong credentials shows error message", async ({ page }) => {
     await page.goto("/login");
 
     await fillEmailAfterHydration(page, "wrong@example.com");
+    await page.getByTestId("password-mode-button").click();
     await page.getByTestId("auth-password").fill("wrongpassword");
     await page.getByTestId("auth-submit").click();
 
@@ -262,6 +326,75 @@ test.describe("Auth flow", () => {
 
     // Should show the success message from the mock
     await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    expect(authRequests.lastMagicLinkRequest()).toEqual({
+      email: "test@example.com",
+      locale: "en",
+      region: "global",
+    });
+  });
+
+  test("new email register primary flow requests a magic link", async ({ page }) => {
+    await page.goto("/register");
+
+    await fillEmailAfterHydration(page, "brand-new@example.com");
+    await page.getByTestId("magic-link-button").click();
+
+    await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    expect(authRequests.lastMagicLinkRequest()).toEqual({
+      email: "brand-new@example.com",
+      locale: "en",
+      region: "global",
+    });
+    await expect(page).toHaveURL(/\/register/);
+  });
+
+  test("password reset request and reset page use localized non-enumerating copy", async ({ page }) => {
+    await page.goto("/login");
+
+    await fillEmailAfterHydration(page, "reset@example.com");
+    await page.getByTestId("password-mode-button").click();
+    await page.getByTestId("forgot-password-button").click();
+    await page.getByTestId("forgot-password-submit").click();
+
+    await expect(page.getByTestId("auth-message")).toContainText(
+      "If this email is registered, we sent a password reset link.",
+    );
+    expect(authRequests.lastPasswordResetRequest()).toEqual({
+      email: "reset@example.com",
+      locale: "en",
+    });
+
+    await page.goto("/auth/reset?token=reset-token&locale=ru");
+    await expect(page.locator("h1")).toContainText("Сброс пароля");
+    await page.getByTestId("reset-password").fill("password123");
+    await page.getByTestId("reset-password-confirm").fill("password123");
+    await page.getByTestId("reset-password-submit").click();
+
+    await expect(page.getByTestId("reset-password-message")).toContainText(
+      "Пароль успешно сброшен",
+    );
+    expect(authRequests.lastResetPasswordRequest()).toEqual({
+      token: "reset-token",
+      password: "password123",
+      locale: "ru",
+    });
+  });
+
+  test("app-open page exposes app link and browser fallback", async ({ page }) => {
+    await page.goto("/auth/app?token=valid-token&client=macos&locale=ru");
+
+    await expect(page.locator("h1")).toContainText("Открыть приложение WaiComputer");
+    await expect(page.getByTestId("open-app-link")).toHaveAttribute(
+      "href",
+      "waicomputer://auth/verify?token=valid-token",
+    );
+    await expect(page.getByTestId("browser-sign-in-link")).toHaveAttribute(
+      "href",
+      "/auth/verify?token=valid-token&locale=ru",
+    );
+
+    await page.getByTestId("browser-sign-in-link").click();
+    await expect(page).toHaveURL(/\/onboarding/);
   });
 
   test("home page shows download CTAs", async ({ page }) => {
@@ -308,5 +441,50 @@ test.describe("Auth flow", () => {
 
     // The component shows "Missing token." when no token param is provided
     await expect(page.getByTestId("verify-message")).toContainText("Missing token");
+  });
+});
+
+test.describe("Auth flow with Russian browser locale", () => {
+  test.use({ locale: "ru-RU" });
+
+  test("login and app-open fallback use Russian browser locale without query params", async ({ page }) => {
+    const authRequests = await installAuthMocks(page);
+    const runtimeErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") {
+        runtimeErrors.push(message.text());
+      }
+    });
+    page.on("pageerror", (error) => {
+      runtimeErrors.push(error.message);
+    });
+
+    await page.goto("/login");
+    await expect(page.locator("h1")).toContainText("Войти");
+    await expect(page.getByTestId("magic-link-button")).toContainText("Отправить ссылку для входа");
+
+    await fillEmailAfterHydration(page, "ru@example.com");
+    await page.getByTestId("magic-link-button").click();
+
+    await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    expect(authRequests.lastMagicLinkRequest()).toEqual({
+      email: "ru@example.com",
+      locale: "ru",
+      region: "ru",
+    });
+
+    await page.goto("/auth/app?token=valid-token&client=macos");
+    await expect(page.locator("h1")).toContainText("Открыть приложение WaiComputer");
+    await expect(page.getByTestId("browser-sign-in-link")).toHaveAttribute(
+      "href",
+      "/auth/verify?token=valid-token&locale=ru",
+    );
+    expect(
+      runtimeErrors.filter(
+        (message) =>
+          message.includes("Hydration failed")
+          || message.includes("server rendered text didn't match"),
+      ),
+    ).toEqual([]);
   });
 });

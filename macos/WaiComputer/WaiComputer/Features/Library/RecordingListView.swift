@@ -102,7 +102,7 @@ struct RecordingRowView: View {
 
                 if let statusText = recording.statusDisplayText(
                     hasLocalRecoveryBackup: hasLocalRecoveryBackup,
-                    languageCode: recording.language ?? languageManager.current.rawValue
+                    languageCode: recording.language ?? fallbackStatusLanguageCode
                 ) {
                     Text(statusText)
                         .font(Typography.label)
@@ -117,7 +117,12 @@ struct RecordingRowView: View {
                     .fill(Palette.typeColor(recording.type))
                     .frame(width: 6, height: 6)
 
-                Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(MacDateFormatting.string(
+                    from: recording.createdAt,
+                    dateStyle: .medium,
+                    timeStyle: .short,
+                    language: languageManager.current
+                ))
                     .font(Typography.label)
                     .foregroundStyle(Palette.textSecondary)
 
@@ -147,6 +152,15 @@ struct RecordingRowView: View {
 
     private var statusColor: Color {
         recording.isFailedUpload ? Palette.recording : Palette.textSecondary
+    }
+
+    private var fallbackStatusLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

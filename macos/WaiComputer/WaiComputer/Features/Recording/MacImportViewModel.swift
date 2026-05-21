@@ -20,8 +20,9 @@ class MacImportViewModel: ObservableObject {
     private let allowedTypes = ["mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"]
 
     func pickAndUpload(apiClient: APIClient) async {
+        let language = LanguageManager.shared.current
         let panel = NSOpenPanel()
-        panel.title = "Import Audio File"
+        panel.title = RecordingCopy.importPanelTitle(language: language)
         panel.allowedContentTypes = allowedTypes.compactMap {
             .init(filenameExtension: $0)
         }
@@ -46,7 +47,7 @@ class MacImportViewModel: ObservableObject {
             if detail.status == .failed || detail.failureMessage?.isEmpty == false {
                 errorMessage = UserFacingErrorFormatter.displayMessage(
                     detail.failureMessage,
-                    fallback: "We couldn't transcribe that audio file right now. Please try again in a moment.",
+                    fallback: RecordingCopy.importProcessingFailedFallback(language: language),
                     context: .recording
                 )
                 showError = true

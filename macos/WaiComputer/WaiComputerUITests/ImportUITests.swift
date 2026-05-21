@@ -7,9 +7,11 @@ final class ImportUITests: XCTestCase {
 
     private func launchAuthenticatedApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true,
+            launchArguments: ["-waiUserLanguage", "en"]
+        )
         app.launch()
         app.activate()
         return app
@@ -70,5 +72,34 @@ final class ImportUITests: XCTestCase {
             .matching(identifier: "start-recording-button")
             .firstMatch
         XCTAssertTrue(waitForElement(startRecordingButton, in: app, timeout: 3))
+    }
+
+    @MainActor
+    func testRussianNewRecordingAndImportCopy() throws {
+        let app = XCUIApplication()
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true,
+            launchArguments: ["-waiUserLanguage", "ru"]
+        )
+        app.launch()
+        app.activate()
+
+        let sidebar = app.descendants(matching: .any)
+            .matching(identifier: "sidebar")
+            .firstMatch
+        XCTAssertTrue(waitForElement(sidebar, in: app, timeout: 8))
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Новая запись"], in: app, timeout: 5))
+        let importButton = app.descendants(matching: .any)
+            .matching(identifier: "import-audio-button")
+            .firstMatch
+        XCTAssertTrue(waitForElement(importButton, in: app, timeout: 3))
+
+        let importLabel = importButton.label
+        XCTAssertTrue(importLabel.contains("Импорт аудиофайла"),
+                      "Import button label should contain Russian title, got: \(importLabel)")
+        XCTAssertTrue(importLabel.contains("Расшифровать готовый аудиофайл"),
+                      "Import button label should contain Russian subtitle, got: \(importLabel)")
     }
 }

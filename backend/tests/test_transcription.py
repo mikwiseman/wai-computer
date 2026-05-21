@@ -169,3 +169,32 @@ async def test_transcription_rejects_unsupported_user_choice():
 
     with pytest.raises(ValueError, match="Unsupported file_stt option"):
         await transcribe_audio_file(b"audio", user=user)
+
+
+def test_normalize_soniox_file_audio_leaves_non_browser_audio_unchanged():
+    from app.core.transcription import _normalize_soniox_file_audio
+
+    assert _normalize_soniox_file_audio(b"wav", "audio/wav; codecs=1", 2) == (
+        b"wav",
+        "audio/wav; codecs=1",
+        2,
+    )
+
+
+def test_normalize_soniox_file_audio_surfaces_decode_errors():
+    from app.core.transcription import _normalize_soniox_file_audio
+
+    with pytest.raises(RuntimeError, match="Could not decode browser audio"):
+        _normalize_soniox_file_audio(b"not-a-real-webm", " audio/webm ;codecs=opus", None)
+
+
+@pytest.mark.asyncio
+async def test_transcription_rejects_provider_left_after_validation(monkeypatch):
+    monkeypatch.setattr(
+        "app.core.transcription.validate_option",
+        lambda _kind, _provider, _model: ("bogus", "model"),
+    )
+    from app.core.transcription import transcribe_audio_file
+
+    with pytest.raises(ValueError, match="Unsupported file_stt_provider: bogus"):
+        await transcribe_audio_file(b"audio", provider="elevenlabs", model="scribe_v2")

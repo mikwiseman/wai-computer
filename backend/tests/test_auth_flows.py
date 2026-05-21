@@ -215,6 +215,44 @@ async def test_magic_link_creates_user_with_region(
 
 
 @pytest.mark.asyncio
+async def test_magic_link_passes_client_and_locale_to_email(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """App-open magic links should keep platform and browser locale hints."""
+    captured: dict[str, str | None] = {}
+
+    async def fake_send_magic_link_email(
+        to_email: str,
+        token: str,
+        **kwargs,
+    ) -> None:
+        captured["to_email"] = to_email
+        captured["token"] = token
+        captured["client"] = kwargs.get("client")
+        captured["locale"] = kwargs.get("locale")
+
+    monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
+
+    response = await client.post(
+        "/api/auth/magic-link",
+        json={
+            "email": "magic.client-locale@example.com",
+            "client": "macos",
+            "locale": "ru-RU",
+            "region": "global",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Мы отправили ссылку для входа на твою почту."
+    assert captured["to_email"] == "magic.client-locale@example.com"
+    assert captured["token"]
+    assert captured["client"] == "macos"
+    assert captured["locale"] == "ru"
+
+
+@pytest.mark.asyncio
 async def test_register_sets_password_for_existing_magic_link_user(
     client: AsyncClient,
     db_session: AsyncSession,

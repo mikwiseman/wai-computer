@@ -1263,14 +1263,12 @@ class MacRecordingViewModel: ObservableObject {
             if #available(macOS 14.2, *),
                let systemError = error as? SystemAudioCaptureError {
                 _ = systemError
-                return t(
-                    "System audio capture couldn't start. Check Audio Capture permission in System Settings and try again.",
-                    "Не удалось запустить захват звука Mac. Проверь разрешение Audio Capture в Системных настройках и попробуй снова."
-                )
+                return RecordingCopy.systemAudioCaptureUnavailableMessage(language: LanguageManager.shared.current)
             }
             if #available(macOS 14.2, *),
                let dualError = error as? DualAudioCaptureError {
-                return dualError.localizedDescription
+                _ = dualError
+                return RecordingCopy.systemAudioCaptureUnavailableMessage(language: LanguageManager.shared.current)
             }
 
             switch error {

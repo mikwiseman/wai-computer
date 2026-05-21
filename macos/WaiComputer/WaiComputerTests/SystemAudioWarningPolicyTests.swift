@@ -1,6 +1,78 @@
 import XCTest
 
 final class SystemAudioWarningPolicyTests: XCTestCase {
+    func testOnboardingPrimaryActionPromptsFreshMicrophonePermission() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .requestable,
+                accessibilityStatus: .denied,
+                systemAudioReadiness: .setupNeeded,
+                restartRecommended: false,
+                language: .english
+            ),
+            "Grant Microphone"
+        )
+    }
+
+    func testOnboardingPrimaryActionOpensMicrophoneSettingsAfterDeniedDecision() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .settingsRequired,
+                accessibilityStatus: .denied,
+                systemAudioReadiness: .setupNeeded,
+                restartRecommended: false,
+                language: .english
+            ),
+            "Open Microphone Settings"
+        )
+    }
+
+    func testOnboardingPrimaryActionUsesRussianCopy() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .requestable,
+                accessibilityStatus: .denied,
+                systemAudioReadiness: .setupNeeded,
+                restartRecommended: false,
+                language: .russian
+            ),
+            "Разрешить микрофон"
+        )
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.microphoneRowActionLabel(
+                microphoneStatus: .settingsRequired,
+                language: .russian
+            ),
+            "Открыть настройки"
+        )
+    }
+
+    func testRecordingImportCopyUsesSelectedLanguage() {
+        XCTAssertEqual(
+            RecordingCopy.importPanelTitle(language: .english),
+            "Import Audio File"
+        )
+        XCTAssertEqual(
+            RecordingCopy.importPanelTitle(language: .russian),
+            "Импорт аудиофайла"
+        )
+        XCTAssertFalse(
+            RecordingCopy.importProcessingFailedFallback(language: .russian)
+                .contains("transcribe")
+        )
+    }
+
+    func testSystemAudioCaptureErrorCopyUsesSelectedLanguage() {
+        XCTAssertEqual(
+            RecordingCopy.systemAudioCaptureUnavailableMessage(language: .english),
+            "System audio capture couldn't start. Check Audio Capture permission in System Settings and try again."
+        )
+        XCTAssertFalse(
+            RecordingCopy.systemAudioCaptureUnavailableMessage(language: .russian)
+                .contains("System audio capture")
+        )
+    }
+
     func testDoesNotShowCaptureWarningBeforeStallDetectorFires() {
         XCTAssertFalse(
             SystemAudioWarningPolicy.shouldShowCaptureWarning(

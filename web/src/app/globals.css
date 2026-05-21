@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f7f7f5;
   --panel: #ffffff;
   --panel-subtle: #f1f3f2;
@@ -8,6 +9,7 @@
   --ink-faint: #9199a2;
   --accent: #2f756d;
   --accent-strong: #245e57;
+  --accent-contrast: #ffffff;
   --accent-soft: rgba(47, 117, 109, 0.12);
   --warm: #b86f2e;
   --warm-soft: rgba(184, 111, 46, 0.12);
@@ -16,6 +18,34 @@
   --danger: #ba3d37;
   --success: #17765a;
   --shadow: 0 16px 44px rgba(24, 26, 31, 0.06);
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--ink-soft);
+  --color-border: var(--border);
+  --color-surface: var(--panel);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #101214;
+    --panel: #171a1d;
+    --panel-subtle: #202528;
+    --panel-raised: #131619;
+    --ink: #f3f5f2;
+    --ink-soft: #c2cac7;
+    --ink-faint: #8d9996;
+    --accent: #73d2c3;
+    --accent-strong: #96e4d8;
+    --accent-contrast: #071513;
+    --accent-soft: rgba(115, 210, 195, 0.16);
+    --warm: #e0a15d;
+    --warm-soft: rgba(224, 161, 93, 0.18);
+    --border: #30383b;
+    --border-strong: #495458;
+    --danger: #ff8a82;
+    --success: #80d8ba;
+    --shadow: 0 20px 56px rgba(0, 0, 0, 0.34);
+  }
 }
 
 * {
@@ -60,7 +90,7 @@ button {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   cursor: pointer;
   font-weight: 680;
   padding: 0.6rem 0.9rem;
@@ -82,7 +112,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel-raised);
   color: var(--ink);
   padding: 0.68rem 0.76rem;
 }
@@ -222,9 +252,7 @@ h4 {
   display: grid;
   place-items: center;
   padding: 32px;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(65, 94, 82, 0.14), transparent 36%),
-    #f7f5ee;
+  background: var(--bg);
 }
 
 .billing-result-card {
@@ -233,10 +261,10 @@ h4 {
   flex-direction: column;
   gap: 18px;
   padding: 36px;
-  border: 1px solid rgba(25, 25, 25, 0.12);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 254, 249, 0.96);
-  box-shadow: 0 20px 60px rgba(24, 26, 24, 0.12);
+  background: var(--panel);
+  box-shadow: var(--shadow);
 }
 
 .billing-result-card h1 {
@@ -255,7 +283,7 @@ h4 {
 }
 
 .billing-result-card .eyebrow {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .billing-result-button {
@@ -263,14 +291,30 @@ h4 {
   margin-top: 6px;
 }
 
-.primary-button {
+.primary-button,
+a.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border-radius: 8px;
   background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 680;
+  padding: 0.6rem 0.9rem;
+  text-align: center;
+  transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.primary-button:hover,
+a.primary-button:hover {
+  background: var(--accent-strong);
 }
 
 .ghost-button,
 .select-button {
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   box-shadow: none;
 }
@@ -367,7 +411,7 @@ h4 {
   min-height: 100vh;
   flex-direction: column;
   border-right: 1px solid var(--border);
-  background: #fbfbfa;
+  background: var(--panel-raised);
   padding: 1.05rem;
 }
 
@@ -424,7 +468,7 @@ h4 {
 
 .sidebar-nav__item:hover,
 .sidebar-nav__item[aria-current="page"] {
-  background: #eff1f0;
+  background: var(--panel-subtle);
 }
 
 .sidebar-nav__item strong,
@@ -446,7 +490,7 @@ h4 {
 .sidebar-nav__item em {
   min-width: 1.55rem;
   border-radius: 999px;
-  background: #fff;
+  background: var(--panel);
   color: var(--ink-soft);
   font-size: 0.75rem;
   font-style: normal;
@@ -556,7 +600,7 @@ h4 {
 
 .recording-row:hover,
 .recording-row[aria-current="true"] {
-  background: #eff1f0;
+  background: var(--panel-subtle);
 }
 
 .recording-row__main {
@@ -1273,7 +1317,7 @@ h4 {
   min-height: 96px;
   border: 1px dashed var(--border-strong);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
@@ -1318,7 +1362,7 @@ h4 {
   min-height: 62px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   padding: 0.75rem;
 }
 
@@ -1482,12 +1526,12 @@ h4 {
 .pricing header h1 {
   font-size: clamp(2.25rem, 5vw, 3.5rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 0 0 0.75rem;
 }
 
 .pricing header p {
-  color: var(--color-text-secondary, #555);
+  color: var(--color-text-secondary);
   font-size: 1.125rem;
 }
 
@@ -1495,10 +1539,10 @@ h4 {
   display: inline-flex;
   gap: 0.5rem;
   margin: 0 auto 2.5rem;
-  border: 1px solid var(--color-border, #e2e2e2);
-  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 0.25rem;
-  background: var(--color-surface, #fafafa);
+  background: var(--panel-subtle);
   align-self: center;
 }
 
@@ -1513,15 +1557,15 @@ h4 {
   border: 0;
   background: transparent;
   padding: 0.5rem 1.25rem;
-  border-radius: 9999px;
+  border-radius: 8px;
   cursor: pointer;
   font: inherit;
-  color: var(--color-text-secondary, #555);
+  color: var(--color-text-secondary);
 }
 
 .pricing-toggle button[aria-selected="true"] {
-  background: var(--color-text-primary, #111);
-  color: var(--color-surface, #fff);
+  background: var(--color-text-primary);
+  color: var(--color-surface);
 }
 
 .pricing-save {
@@ -1539,14 +1583,14 @@ h4 {
 }
 
 .pricing-card {
-  border: 1px solid var(--color-border, #e2e2e2);
-  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 2rem;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 .pricing-card--pro {
-  border-color: var(--color-text-primary, #111);
+  border-color: var(--color-text-primary);
   position: relative;
 }
 
@@ -1559,7 +1603,7 @@ h4 {
 .pricing-price {
   font-size: 2rem;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   margin: 0 0 1.25rem;
 }
 
@@ -1574,24 +1618,24 @@ h4 {
 .pricing-card li {
   padding-left: 1.25rem;
   position: relative;
-  color: var(--color-text-secondary, #444);
+  color: var(--color-text-secondary);
 }
 
 .pricing-card li::before {
   content: "✓";
   position: absolute;
   left: 0;
-  color: var(--color-text-primary, #111);
+  color: var(--color-text-primary);
 }
 
 .pricing-cta {
   display: inline-block;
   width: 100%;
   padding: 0.875rem 1.25rem;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 0;
-  background: var(--color-text-primary, #111);
-  color: var(--color-surface, #fff);
+  background: var(--color-text-primary);
+  color: var(--color-surface);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -1599,8 +1643,8 @@ h4 {
 
 .pricing-provider,
 .billing-provider {
-  border: 1px solid var(--color-border, #e2e2e2);
-  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 0.5rem 0.875rem 0.625rem;
   margin: 0 0 1rem;
   display: flex;
@@ -1613,24 +1657,34 @@ h4 {
 .billing-provider legend {
   padding: 0 0.25rem;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary, #555);
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 
 .pricing-provider label,
 .billing-provider label {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   font-size: 0.9375rem;
   cursor: pointer;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .pricing-provider input[type="radio"],
 .billing-provider input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
   margin: 0;
   flex-shrink: 0;
+}
+
+.pricing-provider label span,
+.billing-provider label span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pricing-cta:disabled {
@@ -1640,7 +1694,7 @@ h4 {
 
 .pricing-error {
   margin-top: 0.75rem;
-  color: #c0392b;
+  color: var(--danger);
   font-size: 0.875rem;
 }
 
@@ -1665,11 +1719,11 @@ h4 {
   display: flex;
   justify-content: space-between;
   padding: 0.75rem 0;
-  border-bottom: 1px solid var(--color-border, #e2e2e2);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .billing-meta dt {
-  color: var(--color-text-secondary, #555);
+  color: var(--color-text-secondary);
   font-weight: 500;
   margin: 0;
 }
@@ -1687,7 +1741,7 @@ h4 {
   font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #555);
+  color: var(--color-text-secondary);
   margin: 0 0 0.5rem;
 }
 
@@ -1698,14 +1752,14 @@ h4 {
 }
 
 .billing-caption {
-  color: var(--color-text-secondary, #777);
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
 }
 
 .billing-upgrade,
 .billing-cancel {
   padding: 0.75rem 1.25rem;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 0;
   font: inherit;
   font-weight: 600;
@@ -1713,26 +1767,26 @@ h4 {
 }
 
 .billing-upgrade {
-  background: var(--color-text-primary, #111);
-  color: var(--color-surface, #fff);
+  background: var(--color-text-primary);
+  color: var(--color-surface);
 }
 
 .billing-cancel {
   background: transparent;
-  color: #c0392b;
-  border: 1px solid #c0392b;
+  color: var(--danger);
+  border: 1px solid var(--danger);
 }
 
 .billing-notice {
   padding: 0.875rem 1rem;
-  background: var(--color-surface, #fafafa);
-  border: 1px solid var(--color-border, #e2e2e2);
-  border-radius: 12px;
-  color: var(--color-text-secondary, #555);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
 }
 
 .billing-error {
-  color: #c0392b;
+  color: var(--danger);
 }
 
 .locale-switcher {

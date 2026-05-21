@@ -17,7 +17,7 @@ import BillingCancelPage from "./billing/cancel/page";
 import BillingSuccessPage from "./billing/success/page";
 import RuBillingCancelPage from "./ru/billing/cancel/page";
 import RuBillingSuccessPage from "./ru/billing/success/page";
-import RootLayout, { metadata } from "./layout";
+import RootLayout, { metadata, viewport } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
 
@@ -114,40 +114,62 @@ describe("app pages", () => {
     });
   }
 
-  it("renders login page and wires onSuccess to router", () => {
-    render(<LoginPage />);
+  it("renders login page and wires onSuccess to router", async () => {
+    render(await LoginPage());
     expect(screen.getByTestId("auth-form-mock")).toBeInTheDocument();
 
-    const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
+    const call = authFormMock.mock.calls[0]?.[0] as {
+      mode: string;
+      initialLocale: string;
+      onSuccess: () => void;
+    };
     expect(call.mode).toBe("login");
+    expect(call.initialLocale).toBe("en");
     call.onSuccess();
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("renders register page and wires onSuccess to router", () => {
-    render(<RegisterPage />);
+  it("renders register page and wires onSuccess to router", async () => {
+    render(await RegisterPage());
     expect(screen.getByTestId("auth-form-mock")).toBeInTheDocument();
 
-    const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
+    const call = authFormMock.mock.calls[0]?.[0] as {
+      mode: string;
+      initialLocale: string;
+      onSuccess: () => void;
+    };
     expect(call.mode).toBe("register");
+    expect(call.initialLocale).toBe("en");
     call.onSuccess();
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("uses a safe returnTo target after login", () => {
+  it("passes browser locale from request headers to auth pages", async () => {
+    requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9,en-US;q=0.8";
+
+    render(await LoginPage());
+    render(await RegisterPage());
+
+    const loginCall = authFormMock.mock.calls[0]?.[0] as { initialLocale: string };
+    const registerCall = authFormMock.mock.calls[1]?.[0] as { initialLocale: string };
+    expect(loginCall.initialLocale).toBe("ru");
+    expect(registerCall.initialLocale).toBe("ru");
+  });
+
+  it("uses a safe returnTo target after login", async () => {
     mockSearchParams = new URLSearchParams({
       returnTo: "/api/mcp/oauth/consent?request=oauth-request",
     });
-    render(<LoginPage />);
+    render(await LoginPage());
 
     const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
     call.onSuccess();
     expect(mockReplace).toHaveBeenCalledWith("/api/mcp/oauth/consent?request=oauth-request");
   });
 
-  it("rejects external returnTo targets after login", () => {
+  it("rejects external returnTo targets after login", async () => {
     mockSearchParams = new URLSearchParams({ returnTo: "https://evil.example/callback" });
-    render(<LoginPage />);
+    render(await LoginPage());
 
     const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
     call.onSuccess();
@@ -173,7 +195,7 @@ describe("app pages", () => {
     render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getAllByTestId("verify-client-mock")[1]).toHaveTextContent("null-token");
     expect(verifyClientMock).toHaveBeenCalledWith("abc-token", "ru");
-    expect(verifyClientMock).toHaveBeenCalledWith(null, null);
+    expect(verifyClientMock).toHaveBeenCalledWith(null, "en");
   });
 
   it("resolves app magic-link token and client from searchParams", async () => {
@@ -204,7 +226,7 @@ describe("app pages", () => {
   });
 
   it("falls back to browser Russian locale for app-open links without locale query", async () => {
-    setNavigatorLanguages(["ru-RU", "en-US"]);
+    requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9,en-US;q=0.8";
 
     render(await AppMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", client: "macos" }) }));
 
@@ -394,6 +416,10 @@ describe("layout", () => {
     expect(metadata.description).toBe(
       "Record, transcribe, search, and ask anything across everything you've ever said.",
     );
+    expect(viewport.themeColor).toEqual([
+      { media: "(prefers-color-scheme: light)", color: "#f7f7f5" },
+      { media: "(prefers-color-scheme: dark)", color: "#101214" },
+    ]);
 
     const element = RootLayout({ children: <div data-testid="layout-child">Child</div> });
     expect(element.type).toBe("html");

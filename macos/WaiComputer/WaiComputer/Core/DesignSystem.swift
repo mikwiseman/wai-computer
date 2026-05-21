@@ -158,6 +158,32 @@ struct MacThemePreferences {
     }
 }
 
+enum MacDateFormatting {
+    static func locale(for language: LanguageManager.SupportedLanguage) -> Locale {
+        switch language {
+        case .followSystem:
+            return .current
+        case .english:
+            return Locale(identifier: "en")
+        case .russian:
+            return Locale(identifier: "ru")
+        }
+    }
+
+    static func string(
+        from date: Date,
+        dateStyle: DateFormatter.Style,
+        timeStyle: DateFormatter.Style,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale(for: language)
+        formatter.dateStyle = dateStyle
+        formatter.timeStyle = timeStyle
+        return formatter.string(from: date)
+    }
+}
+
 // MARK: - Palette
 
 enum Palette {
@@ -271,6 +297,16 @@ enum MacMainLayoutMetrics {
     static let folderNameSheetWidth: CGFloat = 600
     static let folderNameSheetActionWidth: CGFloat = 168
     static let searchContentMaxWidth: CGFloat = 880
+    static let minimumReadableDetailWidth: CGFloat = 360
+    static let allColumnsReadableWidth: CGFloat = sidebarMinWidth + listMinWidth + minimumReadableDetailWidth
+
+    static func preferredColumnVisibility(
+        hasListColumn: Bool,
+        containerWidth: CGFloat
+    ) -> NavigationSplitViewVisibility {
+        guard hasListColumn else { return .all }
+        return containerWidth < allColumnsReadableWidth ? .doubleColumn : .all
+    }
 }
 
 /// Uppercase, tracked, tertiary section header

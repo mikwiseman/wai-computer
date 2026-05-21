@@ -28,6 +28,13 @@ describeOrSkip("Live API", () => {
   const sharedPassword = "TestPassword123!";
   let sharedEmail = "";
 
+  async function openPasswordModeIfNeeded(page: Page) {
+    const passwordModeButton = page.getByTestId("password-mode-button");
+    if (await passwordModeButton.isVisible()) {
+      await passwordModeButton.click();
+    }
+  }
+
   test.beforeAll(async ({ request }) => {
     sharedEmail = uniqueEmail();
     const response = await request.post(`${API_URL}/api/auth/register`, {
@@ -38,9 +45,10 @@ describeOrSkip("Live API", () => {
 
   async function registerThroughWeb(page: Page, email: string) {
     await page.goto("/register", { waitUntil: "networkidle" });
-    await expect(page.locator("h1")).toContainText("Create Account");
+    await expect(page.locator("h1")).toContainText(/Create Account|Create account/);
 
     await page.getByTestId("auth-email").fill(email);
+    await openPasswordModeIfNeeded(page);
     await page.getByTestId("auth-password").fill(sharedPassword);
     await page.getByTestId("auth-submit").click();
 
@@ -50,9 +58,10 @@ describeOrSkip("Live API", () => {
 
   async function loginThroughWeb(page: Page) {
     await page.goto("/login", { waitUntil: "networkidle" });
-    await expect(page.locator("h1")).toContainText("Sign In");
+    await expect(page.locator("h1")).toContainText(/Sign In|Sign in/);
 
     await page.getByTestId("auth-email").fill(sharedEmail);
+    await openPasswordModeIfNeeded(page);
     await page.getByTestId("auth-password").fill(sharedPassword);
     await page.getByTestId("auth-submit").click();
 

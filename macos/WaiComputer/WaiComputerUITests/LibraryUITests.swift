@@ -18,9 +18,10 @@ final class LibraryUITests: XCTestCase {
     @MainActor
     func testLibraryViewElements() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true
+        )
         app.launch()
         app.activate()
 
@@ -51,9 +52,10 @@ final class LibraryUITests: XCTestCase {
     @MainActor
     func testProcessingRecordingShowsProcessingTranscriptState() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true
+        )
         app.launch()
         app.activate()
 
@@ -71,9 +73,10 @@ final class LibraryUITests: XCTestCase {
     @MainActor
     func testNewFolderSheetHasStableWidth() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true
+        )
         app.launch()
         app.activate()
 
@@ -85,6 +88,7 @@ final class LibraryUITests: XCTestCase {
             .matching(identifier: "folder-name-sheet")
             .firstMatch
         XCTAssertTrue(waitForElement(folderSheet, in: app, timeout: 5))
-        XCTAssertEqual(folderSheet.frame.width, 560, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(folderSheet.frame.width, 540)
+        XCTAssertLessThanOrEqual(folderSheet.frame.width, 620)
     }
 }

@@ -4,12 +4,13 @@ import WaiComputerKit
 struct MacContentView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
+    @EnvironmentObject private var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
             if appState.isCheckingAuth {
-                ProgressView("Loading...")
+                ProgressView(t("Loading...", "Загрузка..."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !appState.isAuthenticated {
                 MacAuthView()
@@ -53,6 +54,10 @@ struct MacContentView: View {
     private var isRecordingHandoffActive: Bool {
         recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 // MARK: - Main View
@@ -79,6 +84,7 @@ struct MacMainView: View {
     @State private var libraryErrorAutoDismissTask: Task<Void, Never>?
     @State private var recoveryNotice: String?
     @State private var recoveryNoticeAutoDismissTask: Task<Void, Never>?
+    @State private var lastMeasuredLayoutWidth: CGFloat = 0
 
     enum SidebarSection: Hashable {
         case allRecordings
@@ -328,6 +334,17 @@ struct MacMainView: View {
 
     var body: some View {
         mainSplitView
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        updateColumnVisibility(for: proxy.size.width)
+                    }
+                    .onChange(of: proxy.size.width) { _, width in
+                        updateColumnVisibility(for: width)
+                    }
+            }
+        }
         .toolbar {
             mainToolbar
         }
@@ -454,6 +471,9 @@ struct MacMainView: View {
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil
         }
+        .onChange(of: hasListColumn) { _, _ in
+            updateColumnVisibility(for: lastMeasuredLayoutWidth)
+        }
         .onChange(of: appState.completedRecordingContext?.recordingId) { _, _ in
             handleCompletedRecordingChange()
         }
@@ -517,6 +537,18 @@ struct MacMainView: View {
             libraryErrorAutoDismissTask?.cancel()
             recoveryNoticeAutoDismissTask?.cancel()
         }
+    }
+
+    private func updateColumnVisibility(for width: CGFloat) {
+        guard width > 0 else { return }
+        lastMeasuredLayoutWidth = width
+
+        let preferredVisibility = MacMainLayoutMetrics.preferredColumnVisibility(
+            hasListColumn: hasListColumn,
+            containerWidth: width
+        )
+        guard columnVisibility != preferredVisibility else { return }
+        columnVisibility = preferredVisibility
     }
 
     private func dismissRecoveryNotice() {
@@ -1142,6 +1174,7 @@ private struct FolderNameSheet: View {
         }
         .padding(Spacing.xl)
         .frame(width: MacMainLayoutMetrics.folderNameSheetWidth)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("folder-name-sheet")
     }
 }
@@ -1213,6 +1246,7 @@ private struct BulkSelectionDetailView: View {
 
 private struct CompletedRecordingTransitionView: View {
     let transition: CompletedRecordingContext
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1221,7 +1255,7 @@ private struct CompletedRecordingTransitionView: View {
                     .controlSize(.small)
                     .frame(width: 12, height: 12)
 
-                Text("Saving transcript...")
+                Text(t("Saving transcript...", "Сохраняем транскрипт..."))
                     .font(Typography.displaySmall)
                     .foregroundStyle(Palette.textSecondary)
 
@@ -1231,7 +1265,7 @@ private struct CompletedRecordingTransitionView: View {
                     .font(Typography.monoLarge)
                     .foregroundStyle(Palette.textSecondary)
 
-                Text(transition.recordingType.rawValue.capitalized)
+                Text(recordingTypeLabel(transition.recordingType))
                     .font(Typography.label)
                     .foregroundStyle(Palette.typeColor(transition.recordingType))
             }
@@ -1252,7 +1286,7 @@ private struct CompletedRecordingTransitionView: View {
             } else {
                 VStack {
                     Spacer()
-                    ProgressView("Finalizing transcript...")
+                    ProgressView(t("Finalizing transcript...", "Завершаем транскрипт..."))
                         .foregroundStyle(Palette.textSecondary)
                     Spacer()
                 }
@@ -1268,6 +1302,21 @@ private struct CompletedRecordingTransitionView: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func recordingTypeLabel(_ type: RecordingType) -> String {
+        switch type {
+        case .meeting:
+            return t("Meeting", "Встреча")
+        case .note:
+            return t("Note", "Заметка")
+        case .reflection:
+            return t("Reflection", "Рефлексия")
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

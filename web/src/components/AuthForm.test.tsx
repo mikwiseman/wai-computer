@@ -228,10 +228,9 @@ describe("AuthForm", () => {
 
   it("uses Russian copy and locale when the browser language is Russian", async () => {
     const user = userEvent.setup();
-    setNavigatorLanguages(["ru-RU", "en-US"]);
     mockRequestMagicLink.mockResolvedValue({ message: "Мы отправили ссылку для входа на твою почту." });
 
-    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+    render(<AuthForm mode="login" initialLocale="ru" onSuccess={vi.fn()} />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Войти");
     expect(screen.getByText("Email")).toBeInTheDocument();
@@ -246,6 +245,17 @@ describe("AuthForm", () => {
         region: "ru",
       });
     });
+  });
+
+  it("updates to Russian browser locale after mount when no server locale is provided", async () => {
+    setNavigatorLanguages(["ru-RU", "en-US"]);
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Войти");
+    });
+    expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Отправить ссылку для входа");
   });
 
   it("shows forgot-password request flow from password login without enumerating users", async () => {

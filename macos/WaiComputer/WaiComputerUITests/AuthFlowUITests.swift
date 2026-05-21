@@ -7,9 +7,10 @@ final class AuthFlowUITests: XCTestCase {
 
     private func launchAuthApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "auth_flow"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "auth_flow",
+            skipOnboarding: true
+        )
         app.launch()
         app.activate()
         return app
@@ -51,9 +52,10 @@ final class AuthFlowUITests: XCTestCase {
     @MainActor
     func testUnauthenticatedLaunchShowsAuthBeforeOnboarding() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["WAI_DISABLE_STORED_SESSION_RESTORE"] = "1"
-        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "auth_flow",
+            forceOnboarding: true
+        )
         app.launch()
         app.activate()
 

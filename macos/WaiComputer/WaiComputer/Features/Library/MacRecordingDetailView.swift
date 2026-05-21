@@ -311,7 +311,12 @@ struct MacRecordingDetailView: View {
                     .font(Typography.label)
                     .foregroundStyle(Palette.typeColor(detail.type))
 
-                Text(detail.createdAt.formatted(date: .long, time: .shortened))
+                Text(MacDateFormatting.string(
+                    from: detail.createdAt,
+                    dateStyle: .long,
+                    timeStyle: .short,
+                    language: languageManager.current
+                ))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textSecondary)
 

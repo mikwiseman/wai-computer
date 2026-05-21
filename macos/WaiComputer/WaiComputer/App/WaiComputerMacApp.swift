@@ -46,6 +46,9 @@ struct WaiComputerMacApp: App {
         #endif
 
         let testingMode = MacTestingMode.current
+        #if DEBUG
+        testingMode.prepareProcessForUITesting()
+        #endif
         let recordingViewModel = MacRecordingViewModel(testingMode: testingMode)
         let dictation = DictationManager()
         let history = DictationHistoryStore()
@@ -1043,6 +1046,19 @@ class MacAppState: ObservableObject {
         }
 
         var missing: Set<MissingPermission> = []
+        #if DEBUG
+        if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
+            if !snapshot.hasMicrophonePermission {
+                missing.insert(.microphone)
+            }
+            if snapshot.accessibilityStatus != .granted {
+                missing.insert(.accessibility)
+            }
+            updateMissingPermissions(missing)
+            return
+        }
+        #endif
+
         if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
             missing.insert(.microphone)
         }
@@ -1050,6 +1066,10 @@ class MacAppState: ObservableObject {
             missing.insert(.accessibility)
         }
 
+        updateMissingPermissions(missing)
+    }
+
+    private func updateMissingPermissions(_ missing: Set<MissingPermission>) {
         if missing != missingPermissions {
             missingPermissions = missing
         }

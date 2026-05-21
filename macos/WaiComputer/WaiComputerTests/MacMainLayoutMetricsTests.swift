@@ -19,4 +19,31 @@ final class MacMainLayoutMetricsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetActionWidth, 168)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.searchContentMaxWidth, 800)
     }
+
+    func testListSectionsHideSidebarBeforeDetailBecomesUnreadable() {
+        let narrowWidth = MacMainLayoutMetrics.allColumnsReadableWidth - 1
+        let wideWidth = MacMainLayoutMetrics.allColumnsReadableWidth + 1
+
+        XCTAssertEqual(
+            MacMainLayoutMetrics.preferredColumnVisibility(
+                hasListColumn: true,
+                containerWidth: narrowWidth
+            ),
+            .doubleColumn
+        )
+        XCTAssertEqual(
+            MacMainLayoutMetrics.preferredColumnVisibility(
+                hasListColumn: true,
+                containerWidth: wideWidth
+            ),
+            .all
+        )
+        XCTAssertEqual(
+            MacMainLayoutMetrics.preferredColumnVisibility(
+                hasListColumn: false,
+                containerWidth: narrowWidth
+            ),
+            .all
+        )
+    }
 }

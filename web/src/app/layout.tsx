@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
@@ -11,6 +11,13 @@ export const metadata: Metadata = {
   title: "WaiComputer — AI second brain for voice",
   description:
     "Record, transcribe, search, and ask anything across everything you've ever said.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f7f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#101214" },
+  ],
 };
 
 export default function RootLayout({

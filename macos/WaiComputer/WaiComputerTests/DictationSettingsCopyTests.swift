@@ -2,6 +2,15 @@ import WaiComputerKit
 import XCTest
 
 final class DictationSettingsCopyTests: XCTestCase {
+    func testFreshInstallPushToTalkDefaultIsRightCommand() {
+        XCTAssertEqual(DictationHotkey.defaultPushToTalk, .rightCommand)
+    }
+
+    @MainActor
+    func testHotkeyManagerUsesRightCommandBeforeConfiguration() {
+        XCTAssertEqual(GlobalHotkeyManager().hotkey, .rightCommand)
+    }
+
     func testHotkeyLabelsUseRussianCopyInSettings() {
         XCTAssertEqual(
             DictationSettingsCopy.hotkeyLabel(rawValue: "right_command", language: .russian),

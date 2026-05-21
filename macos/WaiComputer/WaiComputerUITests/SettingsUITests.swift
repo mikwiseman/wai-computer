@@ -8,12 +8,11 @@ final class SettingsUITests: XCTestCase {
     private func launchToSettings(permissionMock: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.terminate()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
-        if let permissionMock {
-            app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = permissionMock
-        }
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true,
+            permissionMock: permissionMock
+        )
         app.launch()
         app.activate()
 
@@ -33,9 +32,9 @@ final class SettingsUITests: XCTestCase {
 
     private func revealElementIfNeeded(_ element: XCUIElement, in app: XCUIApplication) {
         guard !element.exists else { return }
-        let scrollContainer = app.scrollViews.firstMatch.exists
-            ? app.scrollViews.firstMatch
-            : app.tables.firstMatch
+        let settingsScrollView = app.scrollViews.allElementsBoundByIndex.first { $0.frame.width > 500 }
+        let scrollContainer = settingsScrollView
+            ?? (app.scrollViews.firstMatch.exists ? app.scrollViews.firstMatch : app.tables.firstMatch)
         guard scrollContainer.exists else { return }
         for _ in 0..<6 where !element.exists {
             scrollContainer.swipeUp()

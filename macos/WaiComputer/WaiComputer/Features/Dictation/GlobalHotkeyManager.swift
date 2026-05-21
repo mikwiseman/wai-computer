@@ -285,6 +285,8 @@ enum DictationHotkey: String, CaseIterable, Identifiable {
     case fn = "fn"
     case controlOption = "control_option"
 
+    static let defaultPushToTalk: DictationHotkey = .rightCommand
+
     var id: String { rawValue }
 
     var label: String {
@@ -347,7 +349,7 @@ final class GlobalHotkeyManager: ObservableObject {
     var onCancelled: (() -> Void)?
 
     /// Configuration
-    var hotkey: DictationHotkey = .rightOption {
+    var hotkey: DictationHotkey = .defaultPushToTalk {
         didSet { log.info("Hotkey changed to \(self.hotkey.label)") }
     }
 

@@ -24,6 +24,7 @@
 		35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */; };
 		3C978997A1606FAF34D81A6A /* WaiComputerMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */; };
 		3CDB378E9E5BE4BC61E1C0E1 /* DictationCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CF28431931F926527ADB97 /* DictationCopy.swift */; };
+		430254DE6ECBC18D3046F0FB /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */; };
 		43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A467DA7396A262853AB8271 /* MacContentView.swift */; };
 		46BE292270D1BB89FB202981 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		4F5A778B7DB5B69113852A9B /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8720A51453F6A00129C44413 /* MenuBarView.swift */; };
@@ -45,6 +46,7 @@
 		8EFA5306BA7BFE70BB94925B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2D8C691A99FD7DEA5AE7FA15 /* Sparkle */; };
 		908000D73E621D62B2638F0E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 63673E10D195B18342C22A3A /* AppIcon.icon */; };
 		9270DF3835C1779D8BE98818 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
+		993E2B7420345FC3F5DA5CF0 /* WaiComputerUITestAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */; };
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
 		9FBAB99C8DBEE0A314C6944D /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64605678EEFC8F7DE615F3F /* AppLanguagePicker.swift */; };
 		A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */; };
@@ -130,6 +132,7 @@
 		8720A51453F6A00129C44413 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		899477C0E7692EB51A497716 /* WaiComputerMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerMacApp.swift; sourceTree = "<group>"; };
 		90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITests.swift; sourceTree = "<group>"; };
+		9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerUITestAppLauncher.swift; sourceTree = "<group>"; };
 		99AD484F2A2F2CA925BADC74 /* MacRecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailView.swift; sourceTree = "<group>"; };
 		9B3889A9A04FC3CA4A048F4D /* SystemAudioWarningPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioWarningPolicyTests.swift; sourceTree = "<group>"; };
 		9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStore.swift; sourceTree = "<group>"; };
@@ -257,6 +260,7 @@
 				D422A1DF17DD1B90154C6409 /* RecordingFlowUITests.swift */,
 				EBF23F17DA476E6DC9973406 /* SearchUITests.swift */,
 				EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */,
+				9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */,
 			);
 			path = WaiComputerUITests;
 			sourceTree = "<group>";
@@ -595,6 +599,7 @@
 				B3392D023DF7B881CEDF5AD2 /* DictationCopyTests.swift in Sources */,
 				D3653CEAB7832F04F6C8B9E7 /* DictationSettingsCopy.swift in Sources */,
 				6B0BDBBEC143EED5383F245A /* DictationSettingsCopyTests.swift in Sources */,
+				430254DE6ECBC18D3046F0FB /* GlobalHotkeyManager.swift in Sources */,
 				BBE8C20EE2EE668EC5EF1A70 /* MacMainLayoutMetricsTests.swift in Sources */,
 				F423AE5C768A34AE805AEED4 /* MacThemePreferencesTests.swift in Sources */,
 				E35B8D7C1FDB761C888E6A9E /* SystemAudioWarningPolicy.swift in Sources */,
@@ -616,6 +621,7 @@
 				7E61921B00538EC196811D7E /* RecordingFlowUITests.swift in Sources */,
 				23BEF6B926C9E23459068D56 /* SearchUITests.swift in Sources */,
 				F09C575E02BA3143640C9CC9 /* SettingsUITests.swift in Sources */,
+				993E2B7420345FC3F5DA5CF0 /* WaiComputerUITestAppLauncher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
