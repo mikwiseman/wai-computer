@@ -89,7 +89,12 @@ vpk pack \
   --releaseNotes "$NOTES_PATH" \
   --outputDir "$PACKAGE_DIR"
 
-sha256sum "$PACKAGE_DIR"/*.AppImage > "$PACKAGE_DIR/SHA256SUMS"
+(
+  cd "$PACKAGE_DIR"
+  for appimage in *.AppImage; do
+    sha256sum "$appimage"
+  done > SHA256SUMS
+)
 cat > "$PACKAGE_DIR/runtime-dependencies.txt" <<'EOF'
 WaiComputer Linux runtime dependencies:
 
