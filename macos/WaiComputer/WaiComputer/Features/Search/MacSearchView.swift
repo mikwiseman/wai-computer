@@ -53,9 +53,9 @@ struct MacSearchView: View {
 
             WaiTabBar(
                 tabs: [
-                    (t("Hybrid", "Гибридный"), MacSearchViewModel.SearchMode.hybrid),
-                    (t("Semantic", "Смысловой"), MacSearchViewModel.SearchMode.semantic),
-                    (t("Full Text", "Точный текст"), MacSearchViewModel.SearchMode.fts),
+                    (t("Hybrid", "Комбинированный"), MacSearchViewModel.SearchMode.hybrid),
+                    (t("Semantic", "По смыслу"), MacSearchViewModel.SearchMode.semantic),
+                    (t("Full Text", "По тексту"), MacSearchViewModel.SearchMode.fts),
                 ],
                 selection: $viewModel.searchMode
             )
@@ -87,7 +87,7 @@ struct MacSearchView: View {
                 systemImage: "magnifyingglass",
                 description: Text(t(
                     "Search across all your recording transcripts.",
-                    "Ищи по всем транскриптам записей."
+                    "Ищи по всем расшифровкам записей."
                 ))
             )
             .accessibilityIdentifier("search-empty-state")

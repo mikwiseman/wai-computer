@@ -69,7 +69,7 @@ struct MacRecordingDetailView: View {
 
                     WaiTabBar(
                         tabs: [
-                            (t("Transcript", "Транскрипт"), MacRecordingDetailViewModel.Tab.transcript),
+                            (t("Transcript", "Расшифровка"), MacRecordingDetailViewModel.Tab.transcript),
                             (t("Summary", "Сводка"), MacRecordingDetailViewModel.Tab.summary),
                         ],
                         selection: $viewModel.selectedTab

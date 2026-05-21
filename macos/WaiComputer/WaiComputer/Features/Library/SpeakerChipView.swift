@@ -115,7 +115,7 @@ struct SpeakerChipView: View {
     }
 
     private var displayLabel: String {
-        segment.displayName ?? segment.rawLabel ?? segment.speaker ?? t("Speaker", "Спикер")
+        segment.displayName ?? segment.rawLabel ?? segment.speaker ?? t("Speaker", "Говорящий")
     }
 
     private var isAssigned: Bool {

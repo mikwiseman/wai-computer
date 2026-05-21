@@ -150,7 +150,7 @@ class MacRecordingViewModel: ObservableObject {
         case .recording:
             return t("Recording", "Идет запись", language: language)
         case .finalizing:
-            return t("Saving transcript...", "Сохраняем транскрипт...", language: language)
+            return t("Saving transcript...", "Сохраняем расшифровку...", language: language)
         }
     }
 
@@ -1288,7 +1288,7 @@ class MacRecordingViewModel: ObservableObject {
     private func transcriptRecoveredMessage() -> String {
         t(
             "Connection was interrupted, but your transcript was saved successfully.",
-            "Соединение прервалось, но транскрипт успешно сохранен."
+            "Соединение прервалось, но расшифровка успешно сохранена."
         )
     }
 

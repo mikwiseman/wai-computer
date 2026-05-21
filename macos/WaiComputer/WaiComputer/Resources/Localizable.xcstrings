@@ -31,7 +31,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Лимит бесплатной транскрипции на эту неделю исчерпан. Оформи Pro для большего недельного лимита или подожди до воскресенья — лимит сбрасывается."
+            "value" : "Бесплатный лимит расшифровки на эту неделю исчерпан. Оформи Pro для большего недельного лимита или подожди до воскресенья — лимит сбрасывается."
           }
         }
       }
@@ -48,7 +48,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недельный лимит транскрипции исчерпан"
+            "value" : "Недельный лимит расшифровки исчерпан"
           }
         }
       }
@@ -116,7 +116,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Free"
+            "value" : "Бесплатный"
           }
         }
       }
@@ -218,7 +218,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Подписка"
+            "value" : "План и лимит"
           }
         }
       }
@@ -269,7 +269,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Слов на этой неделе"
+            "value" : "Слова за неделю"
           }
         }
       }
@@ -286,7 +286,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Недельный лимит не получен"
+            "value" : "Без недельного лимита"
           }
         }
       }
@@ -337,7 +337,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Платежи"
+            "value" : "Оплата"
           }
         }
       }
@@ -365,13 +365,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show the Subscription section, weekly word counter, and upgrade controls."
+            "value" : "Show checkout, region, and plan management controls for billing dogfood."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показывать раздел «Подписка», недельный счётчик слов и управление апгрейдом."
+            "value" : "Показывать тестовые элементы оплаты, региона и управления планом."
           }
         }
       }
@@ -643,7 +643,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Стоп"
+            "value" : "Остановить"
           }
         }
       }
@@ -660,7 +660,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отменить"
+            "value" : "Не сохранять"
           }
         }
       }
@@ -677,7 +677,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отменить эту запись?"
+            "value" : "Удалить эту запись?"
           }
         }
       }
@@ -694,7 +694,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Аудио и транскрипция будут удалены без возможности восстановить."
+            "value" : "Аудио и расшифровка будут удалены. Восстановить их нельзя."
           }
         }
       }
@@ -711,7 +711,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Отменить запись"
+            "value" : "Удалить запись"
           }
         }
       }
@@ -789,14 +789,14 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Affects live dictation. Recording transcription auto-detects." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Влияет на живую диктовку. Транскрипция записей определяет язык автоматически." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Влияет на живую диктовку. Расшифровка записей определяет язык автоматически." } }
       }
     },
     "settings.transcription.title" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Transcription Models" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модели транскрипции" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модели распознавания" } }
       }
     },
     "settings.transcription.dictationLive" : {
@@ -824,7 +824,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter model" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модель пост-фильтра" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модель очистки текста" } }
       }
     },
     "settings.appBehavior.title" : {
@@ -901,28 +901,28 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Push to talk" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нажми и говори" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Зажми и говори" } }
       }
     },
     "settings.dictation.handsFree" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Hands-free toggle" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Свободные руки" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Диктовка без зажатия клавиши" } }
       }
     },
     "settings.dictation.handsFreeDoubleTap" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Double-tap of push-to-talk" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Двойное нажатие push-to-talk" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Двойное нажатие основной клавиши" } }
       }
     },
     "settings.dictation.postFilter" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter dictated text" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Пост-фильтр продиктованного текста" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очищать текст перед вставкой" } }
       }
     },
     "settings.dictation.permission.microphone" : {
@@ -985,14 +985,14 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Receive beta updates" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получать beta-обновления" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Получать бета-обновления" } }
       }
     },
     "settings.about.betaHint" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Get new features and fixes earlier. Beta builds are signed and notarized but may contain bugs. Turn off to return to stable updates only." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Новые функции и фиксы раньше всех. Beta-сборки подписаны и нотаризованы, но могут содержать баги. Выключи, чтобы вернуться к стабильному каналу." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Новые функции и исправления будут приходить раньше. Бета-сборки подписаны и нотаризованы, но могут содержать ошибки. Выключи, чтобы вернуться к стабильному каналу." } }
       }
     },
     "settings.about.checkUpdates" : {
@@ -1041,7 +1041,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Danger zone" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Опасная зона" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Критичные действия" } }
       }
     },
     "settings.dangerZone.deleteAccount" : {
@@ -1055,7 +1055,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Permanently erases your account, recordings, transcripts, and summaries from WaiComputer. This cannot be undone." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Безвозвратно удалит твой аккаунт, записи, транскрипции и сводки из WaiComputer. Восстановить нельзя." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Безвозвратно удалит твой аккаунт, записи, расшифровки и сводки из WaiComputer. Восстановить нельзя." } }
       }
     },
     "settings.deleteAccount.confirmTitle" : {
@@ -1069,7 +1069,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "This will permanently erase your account, recordings, transcripts, and summaries. WaiComputer will restart afterwards. This action cannot be undone." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это безвозвратно удалит твой аккаунт, записи, транскрипции и сводки. WaiComputer перезапустится. Восстановить нельзя." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это безвозвратно удалит твой аккаунт, записи, расшифровки и сводки. WaiComputer перезапустится. Восстановить нельзя." } }
       }
     },
     "settings.deleteAccount.errorTitle" : {
@@ -1104,7 +1104,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент — он получит доступ только на чтение к твоим записям, транскрипциям, сводкам, задачам и метаданным. Подтверждение каждого клиента по имени на wai.computer, отозвать доступ можно в любой момент." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент: он получит доступ только на чтение к твоим записям, расшифровкам, сводкам, задачам и метаданным. Каждый клиент нужно подтвердить по имени на wai.computer; доступ можно отозвать в любой момент." } }
       }
     },
     "settings.mcp.client" : {

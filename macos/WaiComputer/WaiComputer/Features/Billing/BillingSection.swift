@@ -36,10 +36,17 @@ private enum BillingSectionError: LocalizedError {
 }
 
 /// Subscription + word-usage section embedded in `MacSettingsView`.
+enum BillingSectionMode {
+    case statusOnly
+    case fullManagement
+}
+
 struct BillingSection: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.locale) private var locale
+
+    let mode: BillingSectionMode
 
     @State private var subscription: BillingSubscription?
     @State private var usage: BillingUsage?
@@ -54,6 +61,10 @@ struct BillingSection: View {
     @State private var period: BillingDisplayPeriod = .month
     @AppStorage("billingRegionUserSelectedRussian") private var billingRegionUserSelectedRussian = false
     @AppStorage(BillingCheckoutRefreshStore.pendingKey) private var checkoutRefreshPending = false
+
+    init(mode: BillingSectionMode = .fullManagement) {
+        self.mode = mode
+    }
 
     private static let checkoutRefreshDelaysNanoseconds: [UInt64] = [
         2_000_000_000,
@@ -72,21 +83,23 @@ struct BillingSection: View {
         Section {
             if let subscription, let usage, let billingRegion {
                 planLine(subscription: subscription)
-                if isRussianUI {
+                if mode == .fullManagement, isRussianUI {
                     regionPicker(region: billingRegion)
                 }
                 usageGauge(usage: usage, isPro: subscription.isPro)
-                if subscription.isPro {
-                    proControls(subscription: subscription)
-                } else {
-                    freeControls(region: billingRegion)
-                }
-                if let actionError {
-                    Text(actionError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings-billing-action-error")
+                if mode == .fullManagement {
+                    if subscription.isPro {
+                        proControls(subscription: subscription)
+                    } else {
+                        freeControls(region: billingRegion)
+                    }
+                    if let actionError {
+                        Text(actionError)
+                            .font(Typography.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings-billing-action-error")
+                    }
                 }
             } else if let loadError {
                 Text(loadError)

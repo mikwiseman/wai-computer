@@ -27,7 +27,7 @@ enum DictationCopy {
     }
 
     static func handsFreeBadge(language: LanguageManager.SupportedLanguage) -> String {
-        text("Hands-free", "Без удержания", language: language)
+        text("Hands-free", "Режим без рук", language: language)
     }
 
     static func overlayStatus(
@@ -84,7 +84,7 @@ enum DictationCopy {
         case .authError:
             return text(
                 "Authentication with the transcription service failed. Please try again.",
-                "Не удалось авторизоваться в сервисе транскрипции. Попробуй ещё раз.",
+                "Не удалось авторизоваться в сервисе распознавания речи. Попробуй ещё раз.",
                 language: language
             )
         case .quotaExceeded:
@@ -102,7 +102,7 @@ enum DictationCopy {
         case .insufficientAudioActivity:
             return text(
                 "Hold the hotkey and speak clearly to dictate.",
-                "Удерживай горячую клавишу и говори чётко.",
+                "Удерживай клавишу диктовки и говори чётко.",
                 language: language
             )
         case .sessionTimeLimitExceeded:
@@ -114,7 +114,7 @@ enum DictationCopy {
         case .chunkSizeExceeded, .commitThrottled, .malformedFrame:
             return text(
                 "Live transcription was interrupted. Try again.",
-                "Потоковая транскрипция прервалась. Попробуй ещё раз.",
+                "Потоковое распознавание прервалось. Попробуй ещё раз.",
                 language: language
             )
         case .unsupportedModel(let model):
@@ -127,13 +127,13 @@ enum DictationCopy {
             if message.isEmpty {
                 return text(
                     "The transcription service returned an error. Please try again.",
-                    "Сервис транскрипции вернул ошибку. Попробуй ещё раз.",
+                    "Сервис распознавания речи вернул ошибку. Попробуй ещё раз.",
                     language: language
                 )
             }
             return text(
                 "Transcription error: \(message)",
-                "Ошибка транскрипции: \(message)",
+                "Ошибка распознавания речи: \(message)",
                 language: language
             )
         }

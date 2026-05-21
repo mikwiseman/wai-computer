@@ -92,7 +92,7 @@ struct DictationDictionaryView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(t(
                 "Each entry biases the recognizer toward your spelling. Add an optional replacement to also auto-correct a known misspelling after transcription.",
-                "Каждая запись подсказывает распознавателю нужное написание. Добавь замену, чтобы автоматически исправлять известную ошибку после транскрипции."
+                "Каждая запись подсказывает распознавателю нужное написание. Добавь замену, чтобы автоматически исправлять известную ошибку после распознавания."
             ))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)

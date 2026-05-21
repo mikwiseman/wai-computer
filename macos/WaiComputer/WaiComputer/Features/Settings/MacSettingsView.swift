@@ -108,12 +108,7 @@ struct MacSettingsView: View {
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
-    @State private var transcriptionOptions: TranscriptionOptions?
-    @State private var dictationLiveSTTSelection = ""
-    @State private var recordingLiveSTTSelection = ""
-    @State private var fileSTTSelection = ""
     @State private var dictationPostFilterEnabled = false
-    @State private var dictationPostFilterSelection = ""
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -130,7 +125,7 @@ struct MacSettingsView: View {
 
     private var summaryLanguageOptions: [(label: String, value: String)] {
         [
-            (t("Auto (match transcript)", "Авто (как в транскрипте)"), "auto"),
+            (t("Auto (match transcript)", "Авто (как в расшифровке)"), "auto"),
             (t("English", "Английский"), "en"),
             (t("Russian", "Русский"), "ru"),
             (t("Spanish", "Испанский"), "es"),
@@ -186,10 +181,11 @@ struct MacSettingsView: View {
                         .accessibilityIdentifier("settings-payment-mode-header")
                 }
 
-                if paymentModeEnabled {
-                    BillingSection()
-                        .id(billingRefreshID)
-                }
+                BillingSection(mode: paymentModeEnabled ? .fullManagement : .statusOnly)
+                    .id(billingRefreshID)
+            #else
+                BillingSection(mode: .statusOnly)
+                    .id(billingRefreshID)
             #endif
 
             Section {
@@ -213,54 +209,6 @@ struct MacSettingsView: View {
                 Text("settings.dictationLanguages.footer", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
-            }
-
-            Section {
-                if let transcriptionOptions {
-                    transcriptionModelPicker(
-                        String(localized: "settings.transcription.dictationLive", bundle: .main),
-                        selection: $dictationLiveSTTSelection,
-                        options: transcriptionOptions.dictationLiveSTT,
-                        context: .dictationLiveSTT,
-                        identifier: "settings-dictation-live-stt-picker",
-                        save: { await saveDictationLiveSTT(selection: $0) }
-                    )
-
-                    transcriptionModelPicker(
-                        String(localized: "settings.transcription.recordingLive", bundle: .main),
-                        selection: $recordingLiveSTTSelection,
-                        options: transcriptionOptions.recordingLiveSTT,
-                        context: .recordingLiveSTT,
-                        identifier: "settings-recording-live-stt-picker",
-                        save: { await saveRecordingLiveSTT(selection: $0) }
-                    )
-
-                    transcriptionModelPicker(
-                        String(localized: "settings.transcription.fullSession", bundle: .main),
-                        selection: $fileSTTSelection,
-                        options: transcriptionOptions.fileSTT,
-                        context: .fileSTT,
-                        identifier: "settings-file-stt-picker",
-                        save: { await saveFileSTT(selection: $0) }
-                    )
-
-                    if let settingsError {
-                        Text(settingsError)
-                            .font(Typography.caption)
-                            .foregroundStyle(.red)
-                    }
-                } else if let settingsError {
-                    Text(settingsError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            } header: {
-                Text("settings.transcription.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-transcription-models-header")
             }
 
             Section {
@@ -326,6 +274,13 @@ struct MacSettingsView: View {
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textTertiary)
                 }
+
+                if let settingsError {
+                    Text(settingsError)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } header: {
                 Text("settings.summary.title", bundle: .main)
                     .waiSectionHeader()
@@ -385,18 +340,6 @@ struct MacSettingsView: View {
                         guard settingsLoaded else { return }
                         Task { await saveDictationPostFilterEnabled(enabled) }
                     }
-
-                if let transcriptionOptions, dictationPostFilterEnabled {
-                    transcriptionModelPicker(
-                        String(localized: "settings.transcription.postFilterModel", bundle: .main),
-                        selection: $dictationPostFilterSelection,
-                        options: transcriptionOptions.dictationPostFilter,
-                        context: .dictationPostFilter,
-                        identifier: "settings-dictation-post-filter-model-picker",
-                        save: { await saveDictationPostFilter(selection: $0) }
-                    )
-                    .disabled(!dictationManager.isFeatureEnabled)
-                }
 
                 permissionRow(
                     title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
@@ -902,13 +845,13 @@ struct MacSettingsView: View {
     private var dictationPrivacyText: String {
         if dictationPostFilterEnabled {
             return t(
-                "Post-filtering sends dictated text through the selected cleanup model before insertion.",
-                "Пост-фильтр отправляет продиктованный текст в выбранную модель очистки перед вставкой."
+                "Dictated text is cleaned up before insertion.",
+                "Перед вставкой текст проходит очистку."
             )
         }
         return t(
-            "Post-filtering is off; dictated text is inserted after dictionary replacements.",
-            "Пост-фильтр выключен; текст вставляется после замен из словаря."
+            "Cleanup is off; dictated text is inserted after dictionary replacements.",
+            "Очистка выключена; текст вставляется после замен из словаря."
         )
     }
 
@@ -994,67 +937,12 @@ struct MacSettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private func transcriptionModelPicker(
-        _ title: String,
-        selection: Binding<String>,
-        options: [TranscriptionModelOption],
-        context: TranscriptionModelOptionContext,
-        identifier: String,
-        save: @escaping (String) async -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Picker(title, selection: selection) {
-                ForEach(options) { option in
-                    Text(option.label).tag(option.id)
-                }
-            }
-            .font(Typography.body)
-            .disabled(options.isEmpty)
-            .accessibilityIdentifier(identifier)
-            .onChange(of: selection.wrappedValue) { _, newValue in
-                guard settingsLoaded else { return }
-                Task { await save(newValue) }
-            }
-
-            if let description = selectedOptionDescription(selection.wrappedValue, in: options, context: context) {
-                Text(description)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func selectedOptionDescription(
-        _ selection: String,
-        in options: [TranscriptionModelOption],
-        context: TranscriptionModelOptionContext
-    ) -> String? {
-        guard let option = options.first(where: { $0.id == selection }) else { return nil }
-        return TranscriptionModelDescriptionCopy.description(
-            for: option,
-            context: context,
-            language: languageManager.current
-        )
-    }
-
-    private func splitSelection(_ selection: String) -> (provider: String, model: String)? {
-        let parts = selection.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
-        return (String(parts[0]), String(parts[1]))
-    }
-
     private func applySettings(_ settings: UserSettings) {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
-        dictationLiveSTTSelection = "\(settings.dictationLiveSTTProvider):\(settings.dictationLiveSTTModel)"
-        recordingLiveSTTSelection = "\(settings.recordingLiveSTTProvider):\(settings.recordingLiveSTTModel)"
-        fileSTTSelection = "\(settings.fileSTTProvider):\(settings.fileSTTModel)"
         dictationPostFilterEnabled = settings.dictationPostFilterEnabled
         dictationManager.ingestSettings(settings)
-        dictationPostFilterSelection = "\(settings.dictationPostFilterProvider):\(settings.dictationPostFilterModel)"
     }
 
     private func refreshPermissions() {
@@ -1075,7 +963,7 @@ struct MacSettingsView: View {
     }
 
     private func refreshBillingOnReturnIfNeeded() {
-        guard paymentModeEnabled, billingCheckoutRefreshPending else { return }
+        guard billingCheckoutRefreshPending else { return }
         billingReturnRefreshTask?.cancel()
         billingRefreshID += 1
         billingReturnRefreshTask = Task { @MainActor in
@@ -1085,7 +973,7 @@ struct MacSettingsView: View {
                 } catch {
                     return
                 }
-                guard paymentModeEnabled, billingCheckoutRefreshPending else {
+                guard billingCheckoutRefreshPending else {
                     billingReturnRefreshTask = nil
                     return
                 }
@@ -1159,7 +1047,6 @@ struct MacSettingsView: View {
 
     private func loadSummarySettings() async {
         guard !settingsLoaded else { return }
-        transcriptionOptions = nil
         do {
             let settings = try await appState.getAPIClient().getSettings()
             applySettings(settings)
@@ -1172,60 +1059,10 @@ struct MacSettingsView: View {
             )
             return
         }
-
-        await loadTranscriptionOptions()
-    }
-
-    private func loadTranscriptionOptions() async {
-        do {
-            transcriptionOptions = try await appState.getAPIClient().getTranscriptionOptions()
-            settingsError = nil
-        } catch {
-            settingsError = t(
-                "Couldn't load transcription model options: \(error.localizedDescription)",
-                "Не удалось загрузить список моделей транскрипции: \(error.localizedDescription)"
-            )
-        }
-    }
-
-    private func saveDictationLiveSTT(selection: String) async {
-        guard let pair = splitSelection(selection) else { return }
-        let request = UpdateSettingsRequest(
-            dictationLiveSTTProvider: pair.provider,
-            dictationLiveSTTModel: pair.model
-        )
-        await saveTranscriptionSettings(request)
-    }
-
-    private func saveRecordingLiveSTT(selection: String) async {
-        guard let pair = splitSelection(selection) else { return }
-        let request = UpdateSettingsRequest(
-            recordingLiveSTTProvider: pair.provider,
-            recordingLiveSTTModel: pair.model
-        )
-        await saveTranscriptionSettings(request)
-    }
-
-    private func saveFileSTT(selection: String) async {
-        guard let pair = splitSelection(selection) else { return }
-        let request = UpdateSettingsRequest(
-            fileSTTProvider: pair.provider,
-            fileSTTModel: pair.model
-        )
-        await saveTranscriptionSettings(request)
     }
 
     private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
         let request = UpdateSettingsRequest(dictationPostFilterEnabled: enabled)
-        await saveTranscriptionSettings(request)
-    }
-
-    private func saveDictationPostFilter(selection: String) async {
-        guard let pair = splitSelection(selection) else { return }
-        let request = UpdateSettingsRequest(
-            dictationPostFilterProvider: pair.provider,
-            dictationPostFilterModel: pair.model
-        )
         await saveTranscriptionSettings(request)
     }
 

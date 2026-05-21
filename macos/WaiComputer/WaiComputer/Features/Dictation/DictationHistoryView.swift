@@ -57,7 +57,7 @@ struct DictationHistoryView: View {
                     searchText.isEmpty ? t("No Dictations Yet", "Пока нет диктовок") : t("No Results", "Ничего не найдено"),
                     systemImage: searchText.isEmpty ? "mic.badge.plus" : "magnifyingglass",
                     description: Text(searchText.isEmpty
-                        ? t("Press your dictation hotkey to start. Your transcriptions will appear here.", "Нажми клавишу диктовки, чтобы начать. Транскрипты появятся здесь.")
+                        ? t("Press your dictation hotkey to start. Your transcriptions will appear here.", "Нажми клавишу диктовки, чтобы начать. Расшифровки появятся здесь.")
                         : t("No dictations match your search.", "По этому запросу диктовок нет."))
                 )
                 Spacer()

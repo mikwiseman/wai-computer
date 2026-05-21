@@ -273,25 +273,17 @@ async def create_realtime_transcription_session(
 ) -> RealtimeTranscriptionSession:
     """Create a realtime transcription session for the active speech runtime.
 
-    Both dictation and recording routes honor the authenticated user's curated
-    provider/model settings and then return provider-specific connection
-    details for the native client.
+    Dictation and recording use product-managed provider/model defaults. The
+    user argument is still accepted for provider-specific session context, but
+    no user preference can change the selected model.
     """
     settings = get_settings()
     resolved_language = language.strip().lower() or "multi"
     resolved_channels = max(1, channels)
 
     if purpose == "dictation":
-        provider = (
-            user.dictation_live_stt_provider
-            if user is not None
-            else DEFAULT_DICTATION_LIVE_STT_PROVIDER
-        )
-        model = (
-            user.dictation_live_stt_model
-            if user is not None
-            else DEFAULT_DICTATION_LIVE_STT_MODEL
-        )
+        provider = DEFAULT_DICTATION_LIVE_STT_PROVIDER
+        model = DEFAULT_DICTATION_LIVE_STT_MODEL
         provider, model = validate_option("dictation_live_stt", provider, model)
         if provider == "openai":
             return await _build_openai_realtime_session(
@@ -339,16 +331,8 @@ async def create_realtime_transcription_session(
             model=model,
         )
 
-    provider = (
-        user.recording_live_stt_provider
-        if user is not None
-        else DEFAULT_RECORDING_LIVE_STT_PROVIDER
-    )
-    model = (
-        user.recording_live_stt_model
-        if user is not None
-        else DEFAULT_RECORDING_LIVE_STT_MODEL
-    )
+    provider = DEFAULT_RECORDING_LIVE_STT_PROVIDER
+    model = DEFAULT_RECORDING_LIVE_STT_MODEL
     provider, model = validate_option("recording_live_stt", provider, model)
     if provider == "openai":
         return await _build_openai_realtime_session(

@@ -120,17 +120,15 @@ def test_normalize_model_rejects_empty() -> None:
 
 
 def test_is_valid_option_matches_registered() -> None:
-    assert is_valid_option("dictation_live_stt", "elevenlabs", "scribe_v2_realtime")
-    assert is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
+    assert is_valid_option("dictation_live_stt", "inworld", "inworld/inworld-stt-1")
     assert is_valid_option("recording_live_stt", "inworld", "inworld/inworld-stt-1")
-    assert is_valid_option("file_stt", "soniox", "stt-async-v4")
-    assert is_valid_option("file_stt", "deepgram", "nova-3")
+    assert is_valid_option("file_stt", "elevenlabs", "scribe_v2")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
 
 
 def test_is_valid_option_normalizes_input() -> None:
-    assert is_valid_option("dictation_live_stt", "ELEVENLABS", " scribe_v2_realtime ")
-    assert is_valid_option("file_stt", "DeepGram", "nova-3")
+    assert is_valid_option("dictation_live_stt", "INWORLD", " inworld/inworld-stt-1 ")
+    assert is_valid_option("file_stt", "ElevenLabs", "scribe_v2")
 
 
 def test_is_valid_option_rejects_unknown() -> None:
@@ -141,14 +139,14 @@ def test_is_valid_option_rejects_unknown() -> None:
 
 
 def test_realtime_pools_are_task_specific() -> None:
-    """Dictation and recording expose task-specific realtime models."""
-    assert is_valid_option("dictation_live_stt", "deepgram", "flux-general-multi")
-    assert is_valid_option("recording_live_stt", "deepgram", "flux-general-multi")
+    """Dictation and recording are locked to the same fixed realtime model."""
+    assert is_valid_option("dictation_live_stt", "inworld", "inworld/inworld-stt-1")
+    assert is_valid_option("recording_live_stt", "inworld", "inworld/inworld-stt-1")
     assert not is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert not is_valid_option("dictation_live_stt", "deepgram", "nova-3")
-    assert is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
-    assert is_valid_option("recording_live_stt", "soniox", "stt-rt-v4")
-    assert is_valid_option("file_stt", "deepgram", "nova-3")
+    assert not is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
+    assert not is_valid_option("recording_live_stt", "soniox", "stt-rt-v4")
+    assert not is_valid_option("file_stt", "deepgram", "nova-3")
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +155,9 @@ def test_realtime_pools_are_task_specific() -> None:
 
 
 def test_validate_option_returns_normalized() -> None:
-    provider, model = validate_option("dictation_live_stt", "  ELEVENLABS  ", "scribe_v2_realtime")
-    assert provider == "elevenlabs"
-    assert model == "scribe_v2_realtime"
+    provider, model = validate_option("dictation_live_stt", "  INWORLD  ", "inworld/inworld-stt-1")
+    assert provider == "inworld"
+    assert model == "inworld/inworld-stt-1"
 
 
 def test_validate_option_raises_for_unknown() -> None:
@@ -203,24 +201,36 @@ def test_options_response_each_entry_is_dict_with_required_fields() -> None:
                 assert isinstance(value, str)
 
 
-def test_options_response_realtime_groups_are_task_specific() -> None:
+def test_options_response_stt_groups_are_fixed() -> None:
     out = options_response()
-    assert out["dictation_live_stt"] != out["recording_live_stt"]
-    assert any(
-        entry["provider"] == "deepgram" and entry["model"] == "flux-general-multi"
-        for entry in out["dictation_live_stt"]
-    )
-    assert any(
-        entry["provider"] == "deepgram" and entry["model"] == "flux-general-multi"
-        for entry in out["recording_live_stt"]
-    )
-    assert any(entry["provider"] == "inworld" for entry in out["dictation_live_stt"])
-    assert any(entry["provider"] == "inworld" for entry in out["recording_live_stt"])
+    assert out["dictation_live_stt"] == [
+        {
+            "provider": "inworld",
+            "model": "inworld/inworld-stt-1",
+            "label": "Inworld STT-1",
+            "description": "Fixed low-latency model for live dictation.",
+        }
+    ]
+    assert out["recording_live_stt"] == [
+        {
+            "provider": "inworld",
+            "model": "inworld/inworld-stt-1",
+            "label": "Inworld STT-1",
+            "description": "Fixed realtime model for live recording.",
+        }
+    ]
 
 
-def test_options_response_at_least_three_file_stt_options() -> None:
+def test_options_response_file_stt_only_fixed_model() -> None:
     out = options_response()
-    assert len(out["file_stt"]) >= 3
+    assert out["file_stt"] == [
+        {
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "label": "ElevenLabs Scribe v2",
+            "description": "Fixed file transcription model with diarization.",
+        }
+    ]
 
 
 def test_provider_is_configured_checks_required_key_names() -> None:
@@ -258,18 +268,9 @@ def test_options_response_filters_unconfigured_providers() -> None:
 
     out = options_response(settings=settings, configured_only=True)
 
-    assert {entry["provider"] for entry in out["dictation_live_stt"]} == {
-        "elevenlabs",
-        "deepgram",
-    }
-    assert {entry["provider"] for entry in out["recording_live_stt"]} == {
-        "elevenlabs",
-        "deepgram",
-    }
-    assert {entry["provider"] for entry in out["file_stt"]} == {
-        "elevenlabs",
-        "deepgram",
-    }
+    assert out["dictation_live_stt"] == []
+    assert out["recording_live_stt"] == []
+    assert {entry["provider"] for entry in out["file_stt"]} == {"elevenlabs"}
     assert out["dictation_post_filter"] == []
 
 
@@ -289,7 +290,7 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
     with pytest.raises(ValueError, match="not configured"):
         validate_configured_option(
             "dictation_live_stt",
-            "soniox",
-            "stt-rt-v4",
+            "inworld",
+            "inworld/inworld-stt-1",
             settings=settings,
         )

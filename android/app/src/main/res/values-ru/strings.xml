@@ -99,7 +99,7 @@
     <string name="record_saving">Сохраняю расшифровку…</string>
     <string name="record_stop">Остановить запись</string>
     <string name="record_start">Начать запись</string>
-    <string name="record_live_offline_title">Транскрипция недоступна</string>
+    <string name="record_live_offline_title">Расшифровка недоступна</string>
     <string name="record_live_offline_body">Аудио пишется локально — расшифровка появится после остановки.</string>
     <string name="record_reconnecting">Переподключаюсь…</string>
     <string name="record_reconnecting_body">Переподключение (%1$d/%2$d)</string>
@@ -173,9 +173,9 @@
     <string name="settings_dictation_live_model">Модель живой диктовки</string>
     <string name="settings_recording_live_model">Модель живой расшифровки</string>
     <string name="settings_file_model">Модель полной сессии</string>
-    <string name="settings_dictation_post_filter">Пост-фильтрация диктовки</string>
+    <string name="settings_dictation_post_filter">Очищать текст перед вставкой</string>
     <string name="settings_dictation_post_filter_model">Модель пост-фильтрации</string>
-    <string name="settings_loading_account_models">Загружаю настройки моделей аккаунта…</string>
+    <string name="settings_loading_account_settings">Загружаю настройки аккаунта…</string>
     <string name="settings_storage_clear">Очистить локальный кэш</string>
     <string name="settings_storage_clear_confirm">Удалить все локальные записи и кэшированные файлы расшифровки?</string>
     <string name="settings_storage_count">Локальных записей: %1$d</string>

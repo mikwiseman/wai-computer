@@ -37,12 +37,12 @@ struct LiveRecordingView: View {
                     Image(systemName: "wifi.exclamationmark")
                         .foregroundStyle(.white)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(t("Live transcription unavailable", "Живая транскрипция недоступна"))
+                        Text(t("Live transcription unavailable", "Живая расшифровка недоступна"))
                             .font(Typography.label)
                             .foregroundStyle(.white)
                         Text(t(
                             "Audio is recording locally. Transcript will be generated when you stop.",
-                            "Аудио записывается локально. Транскрипт появится после остановки."
+                            "Аудио записывается локально. Расшифровка появится после остановки."
                         ))
                             .font(Typography.caption)
                             .foregroundStyle(.white.opacity(0.85))
