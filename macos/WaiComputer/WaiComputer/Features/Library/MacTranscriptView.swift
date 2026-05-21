@@ -17,7 +17,7 @@ struct MacTranscriptView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack {
-                        Text(t("Transcript", "Транскрипт"))
+                        Text(t("Transcript", "Расшифровка"))
                             .waiSectionHeader()
                         Spacer()
                         copyTranscriptButton
@@ -42,19 +42,19 @@ struct MacTranscriptView: View {
     private var emptyState: some View {
         if isProcessing {
             ContentUnavailableView(
-                t("Transcript is processing", "Транскрипт готовится"),
+                t("Transcript is processing", "Расшифровка готовится"),
                 systemImage: "hourglass",
                 description: Text(t(
                     "WaiComputer is processing this recording. The transcript will appear here automatically.",
-                    "WaiComputer обрабатывает запись. Текст появится здесь автоматически."
+                    "WaiComputer обрабатывает запись. Расшифровка появится здесь автоматически."
                 ))
             )
             .accessibilityIdentifier("transcript-processing-state")
         } else {
             ContentUnavailableView(
-                t("No Transcript", "Нет транскрипта"),
+                t("No Transcript", "Нет расшифровки"),
                 systemImage: "text.alignleft",
-                description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет транскрипта."))
+                description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет расшифровки."))
             )
             .accessibilityIdentifier("transcript-empty-state")
         }
@@ -71,7 +71,7 @@ struct MacTranscriptView: View {
 
     private var transcriptText: String {
         segments.map { seg in
-            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? t("Speaker", "Спикер")
+            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? t("Speaker", "Говорящий")
             let timestamp = seg.formattedTimestamp
             return "[\(speaker), \(timestamp)] \(seg.content)"
         }
@@ -88,10 +88,10 @@ struct MacTranscriptView: View {
                 copied = false
             }
         } label: {
-            Label(copied ? t("Copied", "Скопировано") : t("Copy Transcript", "Скопировать транскрипт"), systemImage: copied ? "checkmark" : "doc.on.doc")
+            Label(copied ? t("Copied", "Скопировано") : t("Copy Transcript", "Скопировать расшифровку"), systemImage: copied ? "checkmark" : "doc.on.doc")
         }
         .buttonStyle(WaiGhostButtonStyle())
-        .help(copied ? t("Copied!", "Скопировано") : t("Copy transcript", "Скопировать транскрипт"))
+        .help(copied ? t("Copied!", "Скопировано") : t("Copy transcript", "Скопировать расшифровку"))
     }
 
     private func t(_ english: String, _ russian: String) -> String {

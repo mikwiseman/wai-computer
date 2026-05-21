@@ -6,11 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -47,8 +45,6 @@ import `is`.waiwai.computer.R
 import `is`.waiwai.computer.auth.AuthState
 import `is`.waiwai.computer.auth.AuthViewModel
 import `is`.waiwai.computer.data.AppContainer
-import `is`.waiwai.computer.data.TranscriptionModelOption
-import `is`.waiwai.computer.data.TranscriptionOptions
 import `is`.waiwai.computer.data.UpdateSettingsRequest
 import `is`.waiwai.computer.data.UserSettings
 import `is`.waiwai.computer.ui.TestTags
@@ -58,13 +54,6 @@ private data class StorageSummary(
     val count: Int = 0,
     val sizeMb: Double = 0.0,
 )
-
-private enum class ModelPreference {
-    DictationLive,
-    RecordingLive,
-    File,
-    DictationPostFilter,
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,9 +83,7 @@ fun SettingsScreen(
     var showMcpSheet by rememberSaveable { mutableStateOf(false) }
     var showFoldersSheet by rememberSaveable { mutableStateOf(false) }
     var showSpeakersSheet by rememberSaveable { mutableStateOf(false) }
-    var activeModelPreference by remember { mutableStateOf<ModelPreference?>(null) }
     var accountSettings by remember { mutableStateOf<UserSettings?>(null) }
-    var transcriptionOptions by remember { mutableStateOf<TranscriptionOptions?>(null) }
     var settingsError by remember { mutableStateOf<String?>(null) }
     var showClearCacheConfirm by rememberSaveable { mutableStateOf(false) }
     var showDeleteAccountConfirm by rememberSaveable { mutableStateOf(false) }
@@ -126,26 +113,14 @@ fun SettingsScreen(
 
     LaunchedEffect(authState) {
         if (authState is AuthState.Authenticated) {
-            transcriptionOptions = null
             try {
                 accountSettings = container.waiApi.getSettings()
                 settingsError = null
             } catch (error: Throwable) {
                 settingsError = error.localizedMessage ?: "Couldn't load account settings."
-                transcriptionOptions = null
-                return@LaunchedEffect
-            }
-
-            try {
-                transcriptionOptions = container.waiApi.getTranscriptionOptions()
-                settingsError = null
-            } catch (error: Throwable) {
-                settingsError = error.localizedMessage ?: "Couldn't load transcription model options."
-                transcriptionOptions = null
             }
         } else {
             accountSettings = null
-            transcriptionOptions = null
             settingsError = null
         }
     }
@@ -219,36 +194,8 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                accountSettings != null && transcriptionOptions != null -> {
+                accountSettings != null -> {
                     val currentSettings = accountSettings!!
-                    val options = transcriptionOptions!!
-                    ModelChoiceRow(
-                        title = stringResource(R.string.settings_dictation_live_model),
-                        value = optionLabel(
-                            options.dictationLiveStt,
-                            currentSettings.dictationLiveSttProvider,
-                            currentSettings.dictationLiveSttModel,
-                        ),
-                        onClick = { activeModelPreference = ModelPreference.DictationLive },
-                    )
-                    ModelChoiceRow(
-                        title = stringResource(R.string.settings_recording_live_model),
-                        value = optionLabel(
-                            options.recordingLiveStt,
-                            currentSettings.recordingLiveSttProvider,
-                            currentSettings.recordingLiveSttModel,
-                        ),
-                        onClick = { activeModelPreference = ModelPreference.RecordingLive },
-                    )
-                    ModelChoiceRow(
-                        title = stringResource(R.string.settings_file_model),
-                        value = optionLabel(
-                            options.fileStt,
-                            currentSettings.fileSttProvider,
-                            currentSettings.fileSttModel,
-                        ),
-                        onClick = { activeModelPreference = ModelPreference.File },
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -264,17 +211,6 @@ fun SettingsScreen(
                                     UpdateSettingsRequest(dictationPostFilterEnabled = enabled),
                                 )
                             },
-                        )
-                    }
-                    if (currentSettings.dictationPostFilterEnabled) {
-                        ModelChoiceRow(
-                            title = stringResource(R.string.settings_dictation_post_filter_model),
-                            value = optionLabel(
-                                options.dictationPostFilter,
-                                currentSettings.dictationPostFilterProvider,
-                                currentSettings.dictationPostFilterModel,
-                            ),
-                            onClick = { activeModelPreference = ModelPreference.DictationPostFilter },
                         )
                     }
                     if (settingsError != null) {
@@ -294,7 +230,7 @@ fun SettingsScreen(
                 }
                 else -> {
                     Text(
-                        text = stringResource(R.string.settings_loading_account_models),
+                        text = stringResource(R.string.settings_loading_account_settings),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -495,56 +431,6 @@ fun SettingsScreen(
         }
     }
 
-    if (
-        activeModelPreference != null &&
-        accountSettings != null &&
-        transcriptionOptions != null
-    ) {
-        val preference = activeModelPreference!!
-        val options = modelOptionsFor(preference, transcriptionOptions!!)
-        val title = when (preference) {
-            ModelPreference.DictationLive -> stringResource(R.string.settings_dictation_live_model)
-            ModelPreference.RecordingLive -> stringResource(R.string.settings_recording_live_model)
-            ModelPreference.File -> stringResource(R.string.settings_file_model)
-            ModelPreference.DictationPostFilter -> stringResource(R.string.settings_dictation_post_filter_model)
-        }
-
-        ModalBottomSheet(
-            onDismissRequest = { activeModelPreference = null },
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                options.forEach { option ->
-                    TextButton(
-                        onClick = {
-                            saveAccountSettings(updateRequestFor(preference, option))
-                            activeModelPreference = null
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(option.label)
-                            Text(
-                                text = option.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     if (showDeleteAccountConfirm) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDeleteAccountConfirm = false },
@@ -619,71 +505,6 @@ private fun SettingsSectionCard(
             },
         )
     }
-}
-
-@Composable
-private fun ModelChoiceRow(
-    title: String,
-    value: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title)
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        TextButton(onClick = onClick) {
-            Text(stringResource(R.string.common_change))
-        }
-    }
-}
-
-private fun optionLabel(
-    options: List<TranscriptionModelOption>,
-    provider: String,
-    model: String,
-): String {
-    return options.firstOrNull { it.provider == provider && it.model == model }?.label ?: "$provider / $model"
-}
-
-private fun modelOptionsFor(
-    preference: ModelPreference,
-    options: TranscriptionOptions,
-): List<TranscriptionModelOption> = when (preference) {
-    ModelPreference.DictationLive -> options.dictationLiveStt
-    ModelPreference.RecordingLive -> options.recordingLiveStt
-    ModelPreference.File -> options.fileStt
-    ModelPreference.DictationPostFilter -> options.dictationPostFilter
-}
-
-private fun updateRequestFor(
-    preference: ModelPreference,
-    option: TranscriptionModelOption,
-): UpdateSettingsRequest = when (preference) {
-    ModelPreference.DictationLive -> UpdateSettingsRequest(
-        dictationLiveSttProvider = option.provider,
-        dictationLiveSttModel = option.model,
-    )
-    ModelPreference.RecordingLive -> UpdateSettingsRequest(
-        recordingLiveSttProvider = option.provider,
-        recordingLiveSttModel = option.model,
-    )
-    ModelPreference.File -> UpdateSettingsRequest(
-        fileSttProvider = option.provider,
-        fileSttModel = option.model,
-    )
-    ModelPreference.DictationPostFilter -> UpdateSettingsRequest(
-        dictationPostFilterProvider = option.provider,
-        dictationPostFilterModel = option.model,
-    )
 }
 
 @Composable

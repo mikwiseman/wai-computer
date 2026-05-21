@@ -3,6 +3,7 @@ import WaiComputerKit
 
 final class DictationCopyTests: XCTestCase {
     func testOverlayCopyUsesRussianLanguage() {
+        XCTAssertEqual(DictationCopy.handsFreeBadge(language: .russian), "Режим без рук")
         assertRussian(DictationCopy.handsFreeBadge(language: .russian))
         assertRussian(DictationCopy.overlayStatus(.idle, language: .russian))
         assertRussian(DictationCopy.overlayStatus(.connecting, language: .russian))
@@ -50,5 +51,8 @@ final class DictationCopyTests: XCTestCase {
         XCTAssertFalse(value.contains("Microphone permission denied"), file: file, line: line)
         XCTAssertFalse(value.contains("A recovery copy was kept"), file: file, line: line)
         XCTAssertFalse(value.contains("Please try again"), file: file, line: line)
+        XCTAssertFalse(value.contains("Без удержания"), file: file, line: line)
+        XCTAssertFalse(value.contains("push-to-talk"), file: file, line: line)
+        XCTAssertFalse(value.contains("Пост-фильтр"), file: file, line: line)
     }
 }

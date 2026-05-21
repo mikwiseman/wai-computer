@@ -28,16 +28,16 @@ async def test_transcription_dispatches_to_elevenlabs():
 
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_deepgram_for_user_choice():
+async def test_transcription_ignores_deepgram_user_choice():
     user = type(
         "User",
         (),
         {"file_stt_provider": "deepgram", "file_stt_model": "nova-3"},
     )()
     with patch(
-        "app.core.transcription.deepgram_transcribe_audio_file",
-        new=AsyncMock(return_value=["deepgram-ok"]),
-    ) as mock_deepgram:
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["elevenlabs-ok"]),
+    ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(
@@ -48,27 +48,27 @@ async def test_transcription_dispatches_to_deepgram_for_user_choice():
             user=user,
         )
 
-    assert result == ["deepgram-ok"]
-    mock_deepgram.assert_awaited_once_with(
+    assert result == ["elevenlabs-ok"]
+    mock_elevenlabs.assert_awaited_once_with(
         b"audio",
-        model="nova-3",
         language="en",
         content_type="audio/wav",
         channels=1,
+        model="scribe_v2",
     )
 
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_soniox_for_user_choice():
+async def test_transcription_ignores_soniox_user_choice():
     user = type(
         "User",
         (),
         {"file_stt_provider": "soniox", "file_stt_model": "stt-async-v4"},
     )()
     with patch(
-        "app.core.transcription.soniox_transcribe_audio_file",
-        new=AsyncMock(return_value=["soniox-ok"]),
-    ) as mock_soniox:
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["elevenlabs-ok"]),
+    ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(
@@ -79,31 +79,22 @@ async def test_transcription_dispatches_to_soniox_for_user_choice():
             user=user,
         )
 
-    assert result == ["soniox-ok"]
-    mock_soniox.assert_awaited_once_with(
+    assert result == ["elevenlabs-ok"]
+    mock_elevenlabs.assert_awaited_once_with(
         b"audio",
-        model="stt-async-v4",
         language="en",
         content_type="audio/wav",
         channels=1,
+        model="scribe_v2",
     )
 
 
 @pytest.mark.asyncio
-async def test_transcription_normalizes_browser_audio_before_soniox_file_stt():
-    with (
-        patch(
-            "app.core.transcription._normalize_soniox_file_audio",
-            return_value=(b"wav-data", "audio/wav", 1),
-        ) as mock_normalize,
-        patch(
-            "app.core.transcription.soniox_transcribe_audio_file",
-            new=AsyncMock(return_value=["soniox-ok"]),
-        ) as mock_soniox,
-    ):
-        from app.core.transcription import transcribe_audio_file
+async def test_transcription_rejects_explicit_soniox_file_stt():
+    from app.core.transcription import transcribe_audio_file
 
-        result = await transcribe_audio_file(
+    with pytest.raises(ValueError, match="Unsupported file_stt option"):
+        await transcribe_audio_file(
             b"webm-data",
             language="en",
             content_type="audio/webm",
@@ -111,26 +102,13 @@ async def test_transcription_normalizes_browser_audio_before_soniox_file_stt():
             model="stt-async-v4",
         )
 
-    assert result == ["soniox-ok"]
-    mock_normalize.assert_called_once_with(b"webm-data", "audio/webm", None)
-    mock_soniox.assert_awaited_once_with(
-        b"wav-data",
-        model="stt-async-v4",
-        language="en",
-        content_type="audio/wav",
-        channels=1,
-    )
-
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_explicit_provider_and_model_without_user():
-    with patch(
-        "app.core.transcription.deepgram_transcribe_audio_file",
-        new=AsyncMock(return_value=["deepgram-ok"]),
-    ) as mock_deepgram:
-        from app.core.transcription import transcribe_audio_file
+async def test_transcription_rejects_explicit_deepgram_file_stt():
+    from app.core.transcription import transcribe_audio_file
 
-        result = await transcribe_audio_file(
+    with pytest.raises(ValueError, match="Unsupported file_stt option"):
+        await transcribe_audio_file(
             b"audio",
             language="en",
             content_type="audio/wav",
@@ -138,37 +116,38 @@ async def test_transcription_dispatches_to_explicit_provider_and_model_without_u
             model="nova-3",
         )
 
-    assert result == ["deepgram-ok"]
-    mock_deepgram.assert_awaited_once_with(
-        b"audio",
-        model="nova-3",
-        language="en",
-        content_type="audio/wav",
-        channels=None,
-    )
-
 
 @pytest.mark.asyncio
-async def test_transcription_rejects_dropped_openai_models():
-    """OpenAI file transcription is no longer a valid file STT choice."""
+async def test_transcription_ignores_dropped_openai_user_choice():
+    """User-persisted file STT choices no longer select the runtime model."""
     user = type(
         "User",
         (),
         {"file_stt_provider": "openai", "file_stt_model": "retired-batch-stt"},
     )()
-    from app.core.transcription import transcribe_audio_file
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["elevenlabs-ok"]),
+    ):
+        from app.core.transcription import transcribe_audio_file
 
-    with pytest.raises(ValueError, match="Unsupported file_stt option"):
-        await transcribe_audio_file(b"audio", user=user)
+        result = await transcribe_audio_file(b"audio", user=user)
+
+    assert result == ["elevenlabs-ok"]
 
 
 @pytest.mark.asyncio
-async def test_transcription_rejects_unsupported_user_choice():
+async def test_transcription_ignores_unsupported_user_choice():
     user = type("User", (), {"file_stt_provider": "elevenlabs", "file_stt_model": "bad-model"})()
-    from app.core.transcription import transcribe_audio_file
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["elevenlabs-ok"]),
+    ):
+        from app.core.transcription import transcribe_audio_file
 
-    with pytest.raises(ValueError, match="Unsupported file_stt option"):
-        await transcribe_audio_file(b"audio", user=user)
+        result = await transcribe_audio_file(b"audio", user=user)
+
+    assert result == ["elevenlabs-ok"]
 
 
 def test_normalize_soniox_file_audio_leaves_non_browser_audio_unchanged():

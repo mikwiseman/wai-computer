@@ -118,11 +118,9 @@ async def test_dictation_benchmark_battle_runs_configured_file_providers(
     assert data["language"] == "ru"
     assert {(candidate["provider"], candidate["model"]) for candidate in data["candidates"]} == {
         ("elevenlabs", "scribe_v2"),
-        ("soniox", "stt-async-v4"),
     }
     assert {(provider, model) for provider, model in calls} == {
         ("elevenlabs", "scribe_v2"),
-        ("soniox", "stt-async-v4"),
     }
     assert all(candidate["status"] == "ok" for candidate in data["candidates"])
     assert all("transcript" in candidate["transcript"] for candidate in data["candidates"])
@@ -172,10 +170,10 @@ async def test_dictation_benchmark_vote_persists_metadata_only(
         json={
             "battle_id": "battle-1",
             "selected_candidate_id": "candidate-a",
-            "selected_provider": "Soniox",
-            "selected_model": "stt-async-v4",
+            "selected_provider": "ElevenLabs",
+            "selected_model": "scribe_v2",
             "language": " RU ",
-            "candidate_count": 3,
+            "candidate_count": 1,
         },
     )
 
@@ -188,10 +186,10 @@ async def test_dictation_benchmark_vote_persists_metadata_only(
     vote = result.scalar_one()
     assert vote.battle_id == "battle-1"
     assert vote.selected_candidate_id == "candidate-a"
-    assert vote.selected_provider == "soniox"
-    assert vote.selected_model == "stt-async-v4"
+    assert vote.selected_provider == "elevenlabs"
+    assert vote.selected_model == "scribe_v2"
     assert vote.language == "ru"
-    assert vote.candidate_count == 3
+    assert vote.candidate_count == 1
     assert vote.user_id is not None
 
 
@@ -205,10 +203,10 @@ async def test_dictation_benchmark_vote_accepts_anonymous_visitors(
         json={
             "battle_id": "battle-1",
             "selected_candidate_id": "candidate-a",
-            "selected_provider": "Soniox",
-            "selected_model": "stt-async-v4",
+            "selected_provider": "ElevenLabs",
+            "selected_model": "scribe_v2",
             "language": "multi",
-            "candidate_count": 3,
+            "candidate_count": 1,
         },
     )
 
@@ -220,7 +218,7 @@ async def test_dictation_benchmark_vote_accepts_anonymous_visitors(
     )
     vote = result.scalar_one()
     assert vote.user_id is None
-    assert vote.selected_provider == "soniox"
+    assert vote.selected_provider == "elevenlabs"
 
 
 @pytest.mark.asyncio
@@ -233,10 +231,10 @@ async def test_dictation_benchmark_vote_accepts_live_models(
         json={
             "battle_id": "live-battle-1",
             "selected_candidate_id": "candidate-c",
-            "selected_provider": "deepgram",
-            "selected_model": "flux-general-multi",
+            "selected_provider": "inworld",
+            "selected_model": "inworld/inworld-stt-1",
             "language": "ru",
-            "candidate_count": 3,
+            "candidate_count": 1,
         },
     )
 
@@ -246,8 +244,8 @@ async def test_dictation_benchmark_vote_accepts_live_models(
         select(DictationBenchmarkVote).where(DictationBenchmarkVote.id == vote_id)
     )
     vote = result.scalar_one()
-    assert vote.selected_provider == "deepgram"
-    assert vote.selected_model == "flux-general-multi"
+    assert vote.selected_provider == "inworld"
+    assert vote.selected_model == "inworld/inworld-stt-1"
 
 
 @pytest.mark.asyncio
@@ -281,11 +279,7 @@ def test_configured_live_benchmark_models_uses_live_provider_pool():
 
     models = configured_live_benchmark_models(settings=settings)
 
-    assert [(model.provider, model.model) for model in models] == [
-        ("soniox", "stt-rt-v4"),
-        ("deepgram", "flux-general-multi"),
-        ("elevenlabs", "scribe_v2_realtime"),
-    ]
+    assert models == []
 
 
 def test_configured_live_benchmark_models_skips_unconfigured_and_unsupported_providers():
@@ -293,7 +287,7 @@ def test_configured_live_benchmark_models_skips_unconfigured_and_unsupported_pro
 
     models = configured_live_benchmark_models(settings=settings)
 
-    assert [(model.provider, model.model) for model in models] == [("soniox", "stt-rt-v4")]
+    assert models == []
     assert live_benchmark._language_hints(" auto ") == []
     assert live_benchmark._language_for_elevenlabs("multi") == [
         ("include_language_detection", "true")

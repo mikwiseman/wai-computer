@@ -1,6 +1,6 @@
 """Curated transcription and dictation processing settings.
 
-Three scenarios, three model pools:
+Three scenarios, three fixed model slots:
 
 - **Dictation realtime** favours low latency, turn detection, and short
   push-to-talk sessions.
@@ -53,33 +53,7 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         provider="inworld",
         model="inworld/inworld-stt-1",
         label="Inworld STT-1",
-        description=(
-            "Default for dictation. Inworld first-party model for configurable "
-            "turn-taking and voice-profile-aware transcription."
-        ),
-    ),
-    ModelOption(
-        provider="soniox",
-        model="stt-rt-v4",
-        label="Soniox v4 Realtime",
-        description=(
-            "Fast realtime option with semantic endpointing and broad multilingual support."
-        ),
-    ),
-    ModelOption(
-        provider="deepgram",
-        model="flux-general-multi",
-        label="Deepgram Flux Multilingual",
-        description=(
-            "Fastest realtime first-text candidate. Model-native turn detection; "
-            "best for voice-agent style experiments."
-        ),
-    ),
-    ModelOption(
-        provider="elevenlabs",
-        model="scribe_v2_realtime",
-        label="ElevenLabs Scribe v2 Realtime",
-        description="High-accuracy multilingual realtime model with slower finalization.",
+        description="Fixed low-latency model for live dictation.",
     ),
 )
 
@@ -88,34 +62,7 @@ _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         provider="inworld",
         model="inworld/inworld-stt-1",
         label="Inworld STT-1",
-        description=(
-            "Default for live recording. Inworld first-party model for configurable "
-            "turn-taking and voice-profile-aware transcription."
-        ),
-    ),
-    ModelOption(
-        provider="soniox",
-        model="stt-rt-v4",
-        label="Soniox v4 Realtime",
-        description=(
-            "Best value long realtime option. 60+ languages, semantic endpointing, "
-            "up to 5-hour streams."
-        ),
-    ),
-    ModelOption(
-        provider="elevenlabs",
-        model="scribe_v2_realtime",
-        label="ElevenLabs Scribe v2 Realtime",
-        description="High-accuracy multilingual realtime model with slower finalization.",
-    ),
-    ModelOption(
-        provider="deepgram",
-        model="flux-general-multi",
-        label="Deepgram Flux Multilingual",
-        description=(
-            "Realtime turn-taking model for live notes and short interactive "
-            "recording sessions."
-        ),
+        description="Fixed realtime model for live recording.",
     ),
 )
 
@@ -128,28 +75,7 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             provider="elevenlabs",
             model="scribe_v2",
             label="ElevenLabs Scribe v2",
-            description=(
-                "Default. Best accuracy in our supported file providers, "
-                "90+ languages, diarization."
-            ),
-        ),
-        ModelOption(
-            provider="soniox",
-            model="stt-async-v4",
-            label="Soniox v4 Async",
-            description=(
-                "Best value file option. 60+ languages, strong long-form "
-                "diarization, up to 5-hour files."
-            ),
-        ),
-        ModelOption(
-            provider="deepgram",
-            model="nova-3",
-            label="Deepgram Nova-3",
-            description=(
-                "Fast high-throughput file transcription with smart formatting "
-                "and diarization."
-            ),
+            description="Fixed file transcription model with diarization.",
         ),
     ),
     "dictation_post_filter": (

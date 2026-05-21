@@ -156,6 +156,40 @@ def test_inworld_realtime_default_migration(monkeypatch):
     assert defaults["recording_live_stt_model"] == "inworld/inworld-stt-1"
 
 
+def test_lock_transcription_models_migration_resets_all_users(monkeypatch):
+    """May 21 lock should overwrite all persisted model preferences."""
+    migration = _load_migration("20260521_210000_lock_transcription_models.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 1
+    statement = str(executed[0])
+    assert "dictation_live_stt_provider = :dictation_provider" in statement
+    assert "recording_live_stt_provider = :recording_provider" in statement
+    assert "file_stt_provider = :file_provider" in statement
+    assert "dictation_post_filter_provider = :post_filter_provider" in statement
+    assert "WHERE" not in statement
+
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["dictation_live_stt_provider"] == "inworld"
+    assert defaults["dictation_live_stt_model"] == "inworld/inworld-stt-1"
+    assert defaults["recording_live_stt_provider"] == "inworld"
+    assert defaults["recording_live_stt_model"] == "inworld/inworld-stt-1"
+    assert defaults["file_stt_provider"] == "elevenlabs"
+    assert defaults["file_stt_model"] == "scribe_v2"
+    assert defaults["dictation_post_filter_provider"] == "openai"
+    assert defaults["dictation_post_filter_model"] == "gpt-5.5"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

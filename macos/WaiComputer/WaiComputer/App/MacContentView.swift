@@ -321,7 +321,7 @@ struct MacMainView: View {
             VStack(spacing: Spacing.md) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Importing", "Импорт") + " \(importViewModel.currentFilename)...")
+                Text(t("Importing", "Импортируем") + " \(importViewModel.currentFilename)...")
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
@@ -1285,7 +1285,7 @@ private struct CompletedRecordingTransitionView: View {
                     .controlSize(.small)
                     .frame(width: 12, height: 12)
 
-                Text(t("Saving transcript...", "Сохраняем транскрипт..."))
+                Text(t("Saving transcript...", "Сохраняем расшифровку..."))
                     .font(Typography.displaySmall)
                     .foregroundStyle(Palette.textSecondary)
 
@@ -1316,7 +1316,7 @@ private struct CompletedRecordingTransitionView: View {
             } else {
                 VStack {
                     Spacer()
-                    ProgressView(t("Finalizing transcript...", "Завершаем транскрипт..."))
+                    ProgressView(t("Finalizing transcript...", "Завершаем расшифровку..."))
                         .foregroundStyle(Palette.textSecondary)
                     Spacer()
                 }

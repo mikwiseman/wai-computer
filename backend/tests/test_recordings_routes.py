@@ -1082,8 +1082,8 @@ async def test_upload_success_with_mocked_services(
     assert data["segments"][0]["content"] == "Hello world"
     transcribe_audio.assert_awaited_once()
     _, transcribe_kwargs = transcribe_audio.await_args
-    assert transcribe_kwargs["provider"] == "elevenlabs"
-    assert transcribe_kwargs["model"] == "scribe_v2"
+    assert "provider" not in transcribe_kwargs
+    assert "model" not in transcribe_kwargs
     assert "user" not in transcribe_kwargs
 
 

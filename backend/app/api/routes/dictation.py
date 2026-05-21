@@ -24,7 +24,11 @@ from app.core.openai_responses import (
     ensure_response_completed,
     response_output_text,
 )
-from app.core.transcription_options import validate_option
+from app.core.transcription_options import (
+    DEFAULT_DICTATION_POST_FILTER_MODEL,
+    DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+    validate_option,
+)
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
@@ -126,8 +130,8 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
 
     provider, model = validate_option(
         "dictation_post_filter",
-        user.dictation_post_filter_provider,
-        user.dictation_post_filter_model,
+        DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+        DEFAULT_DICTATION_POST_FILTER_MODEL,
     )
     if provider != "openai":
         raise HTTPException(

@@ -2564,8 +2564,6 @@ async def upload_audio_file(
     # Validate recording exists and belongs to user
     user_id = user.id
     user_default_language = user.default_language
-    file_stt_provider = user.file_stt_provider
-    file_stt_model = user.file_stt_model
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
@@ -2703,8 +2701,6 @@ async def upload_audio_file(
                 staged_file.read(),
                 language=recording_language,
                 content_type=content_type,
-                provider=file_stt_provider,
-                model=file_stt_model,
             )
 
         speech_transcript_results = [

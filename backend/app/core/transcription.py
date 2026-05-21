@@ -53,12 +53,8 @@ async def transcribe_audio_file(
     provider: str | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime."""
-    provider = provider or (
-        user.file_stt_provider if user is not None else DEFAULT_FILE_STT_PROVIDER
-    )
-    selected_model = model or (
-        user.file_stt_model if user is not None else DEFAULT_FILE_STT_MODEL
-    )
+    provider = provider or DEFAULT_FILE_STT_PROVIDER
+    selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
 
     if provider == "deepgram":

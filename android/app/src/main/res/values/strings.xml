@@ -176,9 +176,9 @@
     <string name="settings_dictation_live_model">Dictation live model</string>
     <string name="settings_recording_live_model">Recording live model</string>
     <string name="settings_file_model">Full session model</string>
-    <string name="settings_dictation_post_filter">Post-filter dictated text</string>
+    <string name="settings_dictation_post_filter">Clean up dictated text before insertion</string>
     <string name="settings_dictation_post_filter_model">Post-filter model</string>
-    <string name="settings_loading_account_models">Loading account model settings…</string>
+    <string name="settings_loading_account_settings">Loading account settings…</string>
     <string name="settings_storage_clear">Clear local cache</string>
     <string name="settings_storage_clear_confirm">Delete all local recordings and cached transcript files?</string>
     <string name="settings_storage_count">Local recordings: %1$d</string>

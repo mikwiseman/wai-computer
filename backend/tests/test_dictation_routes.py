@@ -56,11 +56,7 @@ async def _enable_post_filter(client: AsyncClient, headers: dict) -> None:
     response = await client.patch(
         "/api/settings",
         headers=headers,
-        json={
-            "dictation_post_filter_enabled": True,
-            "dictation_post_filter_provider": "openai",
-            "dictation_post_filter_model": "gpt-5.5",
-        },
+        json={"dictation_post_filter_enabled": True},
     )
     assert response.status_code == 200
 
@@ -115,7 +111,7 @@ async def test_cleanup_dictation_skips_when_post_filter_disabled(
 
 
 @pytest.mark.asyncio
-async def test_cleanup_dictation_uses_selected_post_filter_model(
+async def test_cleanup_dictation_uses_fixed_post_filter_model(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,

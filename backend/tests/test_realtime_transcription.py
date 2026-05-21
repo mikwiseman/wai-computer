@@ -101,7 +101,7 @@ async def test_create_realtime_transcription_session_uses_inworld_recording_defa
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_uses_soniox_recording_choice():
+async def test_create_realtime_transcription_session_ignores_user_recording_choice():
     user = type(
         "User",
         (),
@@ -112,23 +112,20 @@ async def test_create_realtime_transcription_session_uses_soniox_recording_choic
     )()
     from app.core.realtime_transcription import create_realtime_transcription_session
 
-    fake_soniox = type(
-        "SonioxSession",
+    fake_jwt = type(
+        "InworldJwt",
         (),
-        {
-            "temporary_api_key": "sx-temp",
-            "expires_in_seconds": 60,
-            "sample_rate": 16_000,
-            "language": "ru",
-            "channels": 2,
-            "model": "stt-rt-v4",
-            "websocket_url": "wss://stt-rt.soniox.com/transcribe-websocket",
-        },
+        {"token": "iw-jwt", "expires_in_seconds": 850},
     )()
-    with patch(
-        "app.core.realtime_transcription.mint_soniox_realtime_session",
-        new=AsyncMock(return_value=fake_soniox),
+    with (
+        patch("app.core.realtime_transcription.get_settings") as mock_settings,
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
     ):
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
         session = await create_realtime_transcription_session(
             language="ru",
             channels=2,
@@ -136,13 +133,12 @@ async def test_create_realtime_transcription_session_uses_soniox_recording_choic
             user=user,
         )
 
-    assert session.provider == "soniox"
-    assert session.model == "stt-rt-v4"
+    assert session.provider == "inworld"
+    assert session.model == "inworld/inworld-stt-1"
     assert session.language == "ru"
     assert session.channels == 2
-    assert session.token == "sx-temp"
-    assert session.auth_scheme == "message_api_key"
-    assert session.websocket_url == "wss://stt-rt.soniox.com/transcribe-websocket"
+    assert session.token == "iw-jwt"
+    assert session.auth_scheme == "bearer"
 
 
 @pytest.mark.asyncio
@@ -190,7 +186,7 @@ async def test_create_realtime_transcription_session_uses_inworld_bearer_jwt():
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_rejects_bad_recording_model():
+async def test_create_realtime_transcription_session_ignores_bad_recording_model():
     user = type(
         "User",
         (),
@@ -198,12 +194,28 @@ async def test_create_realtime_transcription_session_rejects_bad_recording_model
     )()
     from app.core.realtime_transcription import create_realtime_transcription_session
 
-    with pytest.raises(ValueError, match="Unsupported recording_live_stt option"):
-        await create_realtime_transcription_session(user=user)
+    fake_jwt = type(
+        "InworldJwt",
+        (),
+        {"token": "iw-jwt", "expires_in_seconds": 850},
+    )()
+    with (
+        patch("app.core.realtime_transcription.get_settings") as mock_settings,
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
+    ):
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
+        session = await create_realtime_transcription_session(user=user)
+
+    assert session.provider == "inworld"
+    assert session.model == "inworld/inworld-stt-1"
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_rejects_removed_openai_realtime_model():
+async def test_create_dictation_session_ignores_removed_openai_realtime_model():
     user = type(
         "User",
         (),
@@ -214,13 +226,29 @@ async def test_create_dictation_session_rejects_removed_openai_realtime_model():
     )()
     from app.core.realtime_transcription import create_realtime_transcription_session
 
-    with pytest.raises(ValueError, match="Unsupported dictation_live_stt option"):
-        await create_realtime_transcription_session(
+    fake_jwt = type(
+        "InworldJwt",
+        (),
+        {"token": "iw-jwt", "expires_in_seconds": 850},
+    )()
+    with (
+        patch("app.core.realtime_transcription.get_settings") as mock_settings,
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
+    ):
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
+        session = await create_realtime_transcription_session(
             language="en",
             channels=1,
             purpose="dictation",
             user=user,
         )
+
+    assert session.provider == "inworld"
+    assert session.model == "inworld/inworld-stt-1"
 
 
 @pytest.mark.asyncio
@@ -370,7 +398,7 @@ async def test_build_inworld_realtime_session_requires_api_key():
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_uses_deepgram_proxy_for_authenticated_user():
+async def test_create_dictation_session_ignores_deepgram_user_choice():
     user = type(
         "User",
         (),
@@ -383,11 +411,17 @@ async def test_create_dictation_session_uses_deepgram_proxy_for_authenticated_us
 
     with (
         patch("app.core.realtime_transcription.get_settings") as mock_settings,
-        patch("app.core.realtime_transcription.create_access_token", return_value="proxy-jwt"),
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=type(
+                "InworldJwt",
+                (),
+                {"token": "iw-jwt", "expires_in_seconds": 850},
+            )()),
+        ),
     ):
-        mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        mock_settings.return_value.deepgram_realtime_proxy_token_ttl_seconds = 60
-        mock_settings.return_value.frontend_url = "https://wai.computer"
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
         session = await create_realtime_transcription_session(
             language=" RU ",
             channels=0,
@@ -395,14 +429,14 @@ async def test_create_dictation_session_uses_deepgram_proxy_for_authenticated_us
             user=user,
         )
 
-    assert session.provider == "deepgram"
+    assert session.provider == "inworld"
     assert session.language == "ru"
     assert session.channels == 1
-    assert session.token == "proxy-jwt"
+    assert session.token == "iw-jwt"
 
 
 @pytest.mark.asyncio
-async def test_create_recording_session_uses_elevenlabs_when_selected():
+async def test_create_recording_session_ignores_elevenlabs_user_choice():
     user = type(
         "User",
         (),
@@ -415,11 +449,16 @@ async def test_create_recording_session_uses_elevenlabs_when_selected():
     with (
         patch("app.core.realtime_transcription.get_settings") as mock_settings,
         patch(
-            "app.core.realtime_transcription._create_elevenlabs_realtime_token",
-            new=AsyncMock(return_value=("sutkn", 900)),
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=type(
+                "InworldJwt",
+                (),
+                {"token": "iw-jwt", "expires_in_seconds": 850},
+            )()),
         ),
     ):
-        mock_settings.return_value.elevenlabs_no_verbatim = False
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
         session = await create_realtime_transcription_session(
             language="EN",
             channels=2,
@@ -427,11 +466,11 @@ async def test_create_recording_session_uses_elevenlabs_when_selected():
             user=user,
         )
 
-    assert session.provider == "elevenlabs"
+    assert session.provider == "inworld"
     assert session.language == "en"
     assert session.channels == 2
     assert session.no_verbatim is False
-    assert session.auth_scheme == "query_token"
+    assert session.auth_scheme == "bearer"
 
 
 class _ProxyWebSocket:
@@ -520,7 +559,7 @@ async def test_deepgram_proxy_rejects_missing_or_invalid_bearer_token():
 
 
 @pytest.mark.asyncio
-async def test_deepgram_proxy_rejects_invalid_model_and_missing_api_key():
+async def test_deepgram_proxy_rejects_invalid_and_removed_models():
     from app.api.routes.realtime_transcription import deepgram_realtime_proxy
 
     with patch(
@@ -531,17 +570,9 @@ async def test_deepgram_proxy_rejects_invalid_model_and_missing_api_key():
         await deepgram_realtime_proxy(invalid_model, model="not-a-model")
         assert invalid_model.closed == [1008]
 
-    with (
-        patch(
-            "app.api.routes.realtime_transcription.decode_access_token",
-            return_value={"sub": "u"},
-        ),
-        patch("app.api.routes.realtime_transcription.get_settings") as mock_settings,
-    ):
-        mock_settings.return_value.deepgram_api_key = ""
-        missing_key = _ProxyWebSocket()
-        await deepgram_realtime_proxy(missing_key, model="flux-general-multi")
-        assert missing_key.closed == [1011]
+        removed_model = _ProxyWebSocket()
+        await deepgram_realtime_proxy(removed_model, model="flux-general-multi")
+        assert removed_model.closed == [1008]
 
 
 @pytest.mark.asyncio
@@ -559,6 +590,7 @@ async def test_deepgram_proxy_relays_audio_control_and_upstream_messages(monkeyp
     upstream = _ProxyUpstream(messages=[b"binary-from-upstream", "text-from-upstream"])
     connector = _ProxyConnect(upstream)
     monkeypatch.setattr("app.api.routes.realtime_transcription.websockets.connect", connector)
+    monkeypatch.setattr("app.api.routes.realtime_transcription.is_valid_option", lambda *args: True)
 
     with (
         patch(
@@ -591,6 +623,7 @@ async def test_deepgram_proxy_closes_on_upstream_failure(monkeypatch):
         "app.api.routes.realtime_transcription.websockets.connect",
         _ProxyConnect(_ProxyUpstream(), fail=True),
     )
+    monkeypatch.setattr("app.api.routes.realtime_transcription.is_valid_option", lambda *args: True)
 
     with (
         patch(

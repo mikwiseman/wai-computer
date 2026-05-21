@@ -7,8 +7,15 @@ from app.api.deps import CurrentUser, Database
 from app.config import get_settings as get_app_settings
 from app.core.security import hash_password, verify_password
 from app.core.transcription_options import (
+    DEFAULT_DICTATION_LIVE_STT_MODEL,
+    DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+    DEFAULT_DICTATION_POST_FILTER_MODEL,
+    DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+    DEFAULT_FILE_STT_MODEL,
+    DEFAULT_FILE_STT_PROVIDER,
+    DEFAULT_RECORDING_LIVE_STT_MODEL,
+    DEFAULT_RECORDING_LIVE_STT_PROVIDER,
     options_response,
-    validate_configured_option,
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -57,6 +64,17 @@ class SettingsResponse(BaseModel):
 
 
 VALID_REGIONS = {"global", "ru"}
+
+MANAGED_TRANSCRIPTION_FIELDS = (
+    "dictation_live_stt_provider",
+    "dictation_live_stt_model",
+    "recording_live_stt_provider",
+    "recording_live_stt_model",
+    "file_stt_provider",
+    "file_stt_model",
+    "dictation_post_filter_provider",
+    "dictation_post_filter_model",
+)
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -171,14 +189,11 @@ class UpdateSettingsRequest(BaseModel):
         for group, provider, model in pairs:
             if (provider is None) != (model is None):
                 raise ValueError(f"{group} provider and model must be updated together")
-            if provider is not None and model is not None:
-                validate_configured_option(
-                    group,
-                    provider,
-                    model,
-                    settings=get_app_settings(),
-                )  # type: ignore[arg-type]
         return self
+
+    @property
+    def has_managed_transcription_patch(self) -> bool:
+        return any(getattr(self, field) is not None for field in MANAGED_TRANSCRIPTION_FIELDS)
 
 
 class TranscriptionOptionResponse(BaseModel):
@@ -205,15 +220,15 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         summary_language=user.summary_language,
         summary_style=user.summary_style,
         summary_instructions=user.summary_instructions,
-        dictation_live_stt_provider=user.dictation_live_stt_provider,
-        dictation_live_stt_model=user.dictation_live_stt_model,
-        recording_live_stt_provider=user.recording_live_stt_provider,
-        recording_live_stt_model=user.recording_live_stt_model,
-        file_stt_provider=user.file_stt_provider,
-        file_stt_model=user.file_stt_model,
+        dictation_live_stt_provider=DEFAULT_DICTATION_LIVE_STT_PROVIDER,
+        dictation_live_stt_model=DEFAULT_DICTATION_LIVE_STT_MODEL,
+        recording_live_stt_provider=DEFAULT_RECORDING_LIVE_STT_PROVIDER,
+        recording_live_stt_model=DEFAULT_RECORDING_LIVE_STT_MODEL,
+        file_stt_provider=DEFAULT_FILE_STT_PROVIDER,
+        file_stt_model=DEFAULT_FILE_STT_MODEL,
         dictation_post_filter_enabled=user.dictation_post_filter_enabled,
-        dictation_post_filter_provider=user.dictation_post_filter_provider,
-        dictation_post_filter_model=user.dictation_post_filter_model,
+        dictation_post_filter_provider=DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+        dictation_post_filter_model=DEFAULT_DICTATION_POST_FILTER_MODEL,
         region=user.region,
     )
 
@@ -241,6 +256,11 @@ async def update_settings(
     db: Database,
 ) -> SettingsResponse:
     """Update user settings."""
+    if request.has_managed_transcription_patch:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transcription models are managed by WaiComputer.",
+        )
     if request.default_language is not None:
         user.default_language = request.default_language
     if request.summary_language is not None:
@@ -250,29 +270,8 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
-    if (
-        request.dictation_live_stt_provider is not None
-        and request.dictation_live_stt_model is not None
-    ):
-        user.dictation_live_stt_provider = request.dictation_live_stt_provider
-        user.dictation_live_stt_model = request.dictation_live_stt_model
-    if (
-        request.recording_live_stt_provider is not None
-        and request.recording_live_stt_model is not None
-    ):
-        user.recording_live_stt_provider = request.recording_live_stt_provider
-        user.recording_live_stt_model = request.recording_live_stt_model
-    if request.file_stt_provider is not None and request.file_stt_model is not None:
-        user.file_stt_provider = request.file_stt_provider
-        user.file_stt_model = request.file_stt_model
     if request.dictation_post_filter_enabled is not None:
         user.dictation_post_filter_enabled = request.dictation_post_filter_enabled
-    if (
-        request.dictation_post_filter_provider is not None
-        and request.dictation_post_filter_model is not None
-    ):
-        user.dictation_post_filter_provider = request.dictation_post_filter_provider
-        user.dictation_post_filter_model = request.dictation_post_filter_model
     if request.region is not None:
         user.region = request.region
     await db.flush()

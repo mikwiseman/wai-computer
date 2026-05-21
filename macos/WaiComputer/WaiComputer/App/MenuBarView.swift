@@ -17,7 +17,7 @@ struct MenuBarView: View {
 
     private var menuStatusText: String {
         if appState.completedRecordingContext != nil {
-            return t("Saving transcript", "Сохраняем транскрипт")
+            return t("Saving transcript", "Сохраняем расшифровку")
         }
 
         return recordingVM.shouldPresentLiveView ? recordingVM.statusText : t("Ready", "Готово")
@@ -101,7 +101,7 @@ struct MenuBarView: View {
                     HStack {
                         Image(systemName: "hourglass.circle")
                             .foregroundStyle(Palette.textSecondary)
-                        Text(t("Saving Transcript", "Сохраняем транскрипт"))
+                        Text(t("Saving Transcript", "Сохраняем расшифровку"))
                             .font(Typography.body)
                         Spacer()
                     }
