@@ -267,18 +267,23 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
     raw_payload = raw.get("payload", {})
 
     # Persist audit row regardless of dispatch outcome.
-    db.add(
-        BillingEvent(
-            subscription_id=None,
-            type=f"tinkoff.{(raw.get('status') or 'unknown').lower()}",
-            payload=raw_payload if isinstance(raw_payload, dict) else {"payload": raw_payload},
-        )
+    billing_event = BillingEvent(
+        subscription_id=None,
+        type=f"tinkoff.{(raw.get('status') or 'unknown').lower()}",
+        payload=raw_payload if isinstance(raw_payload, dict) else {"payload": raw_payload},
     )
+    db.add(billing_event)
     await db.flush()
 
     if not order_id and not rebill_id:
         logger.info("Tinkoff event without OrderId/RebillId — skipping dispatch")
         return
+
+    customer_user: User | None = None
+    if customer_key:
+        customer_user = (
+            await db.execute(select(User).where(User.id == customer_key))
+        ).scalar_one_or_none()
 
     # Locate subscription: prefer matching RebillId, then user via CustomerKey.
     sub: Subscription | None = None
@@ -289,14 +294,40 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             )
         ).scalar_one_or_none()
     if sub is None and customer_key:
-        sub = (
+        candidates = (
             await db.execute(
                 select(Subscription).where(
                     Subscription.tinkoff_customer_key == customer_key,
                     Subscription.provider == "tinkoff",
                 )
+                .order_by(Subscription.updated_at.desc(), Subscription.created_at.desc())
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
+        if customer_user is not None and customer_user.current_subscription_id is not None:
+            sub = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.id == customer_user.current_subscription_id
+                ),
+                None,
+            )
+        if sub is None:
+            sub = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.status
+                    in {
+                        SubscriptionStatus.ACTIVE.value,
+                        SubscriptionStatus.TRIALING.value,
+                        SubscriptionStatus.INCOMPLETE.value,
+                    }
+                ),
+                None,
+            )
+        if sub is None and candidates:
+            sub = candidates[0]
 
     plan_code = str(raw.get("plan_code") or "pro").strip().lower() or "pro"
     pro_plan = (
@@ -320,11 +351,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
         if pro_plan is None:
             logger.warning("Plan %s missing; cannot create Tinkoff subscription", plan_code)
             return
-        from app.models.user import User
-
-        user = (
-            await db.execute(select(User).where(User.id == customer_key))
-        ).scalar_one_or_none()
+        user = customer_user
         if user is None:
             logger.warning("Tinkoff event references unknown user_id=%s", customer_key)
             return
@@ -353,6 +380,14 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                 plan=existing_plan,
                 existing_subscription=sub,
             )
+        if should_activate:
+            user = customer_user
+            if user is None or user.id != sub.user_id:
+                user = await db.get(User, sub.user_id)
+            if user is not None and user.current_subscription_id != sub.id:
+                user.current_subscription_id = sub.id
+
+    billing_event.subscription_id = sub.id
 
     # Update sub state.
     if event.status:

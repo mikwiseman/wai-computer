@@ -12,11 +12,18 @@ struct NewRecordingView: View {
             Spacer()
 
             VStack(spacing: Spacing.md) {
-                Image("BrandIcon")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 64, height: 64)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Palette.surfaceSubtle)
+                        .frame(width: 64, height: 64)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Palette.border, lineWidth: 1)
+                        )
+                    Image(systemName: "waveform")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                }
 
                 Text(t("New Recording", "Новая запись"))
                     .font(Typography.displaySmall)

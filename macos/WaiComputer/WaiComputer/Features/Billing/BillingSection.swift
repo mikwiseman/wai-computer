@@ -50,8 +50,19 @@ struct BillingSection: View {
     @State private var checkoutInFlight = false
     @State private var cancelInFlight = false
     @State private var regionUpdateInFlight = false
+    @State private var checkoutRefreshTask: Task<Void, Never>?
     @State private var period: BillingDisplayPeriod = .month
     @AppStorage("billingRegionUserSelectedRussian") private var billingRegionUserSelectedRussian = false
+    @AppStorage(BillingCheckoutRefreshStore.pendingKey) private var checkoutRefreshPending = false
+
+    private static let checkoutRefreshDelaysNanoseconds: [UInt64] = [
+        2_000_000_000,
+        3_000_000_000,
+        5_000_000_000,
+        10_000_000_000,
+        20_000_000_000,
+        30_000_000_000,
+    ]
 
     private var isRussianUI: Bool {
         languageManager.preferredLocale.language.languageCode?.identifier == "ru"
@@ -93,6 +104,9 @@ struct BillingSection: View {
         .task { await loadAll() }
         .onChange(of: languageManager.current) { _, _ in
             Task { await applyRegionForCurrentLanguage() }
+        }
+        .onDisappear {
+            stopCheckoutRefreshPolling()
         }
     }
 
@@ -325,6 +339,9 @@ struct BillingSection: View {
                 self.billingRegion = displayRegion
                 self.loadError = nil
                 self.actionError = nil
+                if s.isPro {
+                    self.checkoutRefreshPending = false
+                }
             }
             if shouldPersistRussianDefault(storedRegion: region) {
                 await persistDefaultRussianRegion()
@@ -428,6 +445,10 @@ struct BillingSection: View {
             guard opened else {
                 throw BillingSectionError.checkoutOpenRejected
             }
+            await MainActor.run {
+                checkoutRefreshPending = true
+                startCheckoutRefreshPolling()
+            }
         } catch {
             await MainActor.run {
                 actionError = error.localizedDescription
@@ -436,6 +457,36 @@ struct BillingSection: View {
         await MainActor.run {
             checkoutInFlight = false
         }
+    }
+
+    @MainActor
+    private func startCheckoutRefreshPolling() {
+        checkoutRefreshTask?.cancel()
+        checkoutRefreshTask = Task { @MainActor in
+            for delay in Self.checkoutRefreshDelaysNanoseconds {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+                guard checkoutRefreshPending else {
+                    checkoutRefreshTask = nil
+                    return
+                }
+                await loadAll()
+                if subscription?.isPro == true {
+                    checkoutRefreshTask = nil
+                    return
+                }
+            }
+            checkoutRefreshTask = nil
+        }
+    }
+
+    @MainActor
+    private func stopCheckoutRefreshPolling() {
+        checkoutRefreshTask?.cancel()
+        checkoutRefreshTask = nil
     }
 
     private func cancelSubscription() async {

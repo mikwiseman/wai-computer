@@ -539,6 +539,11 @@ public actor APIClient {
         return try await self.request(.POST, path: "/api/auth/magic-link", body: request)
     }
 
+    public func requestPasswordReset(email: String, locale: String? = nil) async throws -> MessageResponse {
+        let request = PasswordResetRequest(email: email, locale: locale)
+        return try await self.request(.POST, path: "/api/auth/forgot-password", body: request)
+    }
+
     public func verifyMagicLink(token: String) async throws -> AuthResponse {
         let request = VerifyMagicLinkRequest(token: token)
         return try await self.request(.POST, path: "/api/auth/verify-magic", body: request)

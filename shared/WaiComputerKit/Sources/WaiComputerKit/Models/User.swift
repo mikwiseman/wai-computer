@@ -123,6 +123,16 @@ public struct MagicLinkRequest: Codable, Sendable {
     }
 }
 
+public struct PasswordResetRequest: Codable, Sendable {
+    public let email: String
+    public let locale: String?
+
+    public init(email: String, locale: String? = nil) {
+        self.email = email
+        self.locale = locale
+    }
+}
+
 public struct VerifyMagicLinkRequest: Codable, Sendable {
     public let token: String
 

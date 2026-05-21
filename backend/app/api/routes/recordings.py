@@ -421,6 +421,7 @@ def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
 def _resolve_summary_language_preference(
     preferred_language: str | None,
     recording_language: str | None,
+    default_language: str | None,
 ) -> str:
     """Choose the summary language, defaulting to the transcript language."""
     normalized_preference = (preferred_language or "").strip().lower()
@@ -430,6 +431,10 @@ def _resolve_summary_language_preference(
     normalized_recording_language = (recording_language or "").strip().lower()
     if normalized_recording_language and normalized_recording_language != "multi":
         return normalized_recording_language
+
+    normalized_default_language = (default_language or "").strip().lower()
+    if normalized_default_language and normalized_default_language not in {"auto", "multi"}:
+        return normalized_default_language
 
     return "auto"
 
@@ -792,8 +797,14 @@ NO_SPEECH_PLACEHOLDERS = {
 }
 
 
-def _copy_locale_from_recording_language(language: str | None) -> str:
-    return "ru" if (language or "").strip().lower().startswith("ru") else "en"
+def _copy_locale_from_recording_language(
+    language: str | None,
+    fallback_language: str | None = None,
+) -> str:
+    normalized = (language or "").strip().lower()
+    if normalized in {"", "auto", "multi"}:
+        normalized = (fallback_language or "").strip().lower()
+    return "ru" if normalized.startswith("ru") else "en"
 
 
 def _is_no_speech_placeholder(text: str) -> bool:
@@ -802,10 +813,15 @@ def _is_no_speech_placeholder(text: str) -> bool:
     return normalized in NO_SPEECH_PLACEHOLDERS
 
 
-def _apply_no_speech_fallback(recording: Recording) -> None:
+def _apply_no_speech_fallback(
+    recording: Recording,
+    fallback_language: str | None = None,
+) -> None:
     if recording.title:
         return
-    copy = NO_SPEECH_COPY[_copy_locale_from_recording_language(recording.language)]
+    copy = NO_SPEECH_COPY[
+        _copy_locale_from_recording_language(recording.language, fallback_language)
+    ]
     recording.title = copy["title"]
     recording.failure_message = copy["message"]
 
@@ -833,6 +849,7 @@ async def _persist_client_segments(
     db: Database,
     segments: list[TranscriptSegmentPayload],
     duration_seconds: int | None = None,
+    fallback_language: str | None = None,
 ) -> str:
     nonempty_segments = [segment for segment in segments if segment.text.strip()]
     normalized_segments = [
@@ -852,7 +869,7 @@ async def _persist_client_segments(
         if recording.title:
             recording.failure_message = None
         else:
-            _apply_no_speech_fallback(recording)
+            _apply_no_speech_fallback(recording, fallback_language)
         await db.commit()
         return ""
 
@@ -2165,6 +2182,7 @@ async def save_transcript(
             db,
             request.segments,
             duration_seconds=request.duration_seconds,
+            fallback_language=user.default_language,
         )
     except HTTPException as error:
         await db.rollback()
@@ -2379,6 +2397,7 @@ async def generate_summary(
     summary_language = _resolve_summary_language_preference(
         user.summary_language,
         recording.language,
+        user.default_language,
     )
     summary_style = _resolve_summary_style_preference(user.summary_style)
 
@@ -2544,6 +2563,7 @@ async def upload_audio_file(
     )
     # Validate recording exists and belongs to user
     user_id = user.id
+    user_default_language = user.default_language
     file_stt_provider = user.file_stt_provider
     file_stt_model = user.file_stt_model
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
@@ -2701,7 +2721,7 @@ async def upload_audio_file(
             if recording.title:
                 recording.failure_message = None
             else:
-                _apply_no_speech_fallback(recording)
+                _apply_no_speech_fallback(recording, user_default_language)
             recording.status = RecordingStatus.READY.value
             recording.failure_code = None
             await db.commit()

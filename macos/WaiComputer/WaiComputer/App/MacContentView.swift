@@ -238,25 +238,26 @@ struct MacMainView: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private var mainToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
+    private var listHeaderActions: some View {
+        HStack(spacing: Spacing.sm) {
             Button {
                 startRecording(type: .meeting, inputSource: .dual)
             } label: {
                 MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "plus")
             }
+            .buttonStyle(.plain)
             .disabled(isRecordingHandoffActive || !appState.isAuthenticated)
             .help(t("New Recording", "Новая запись"))
             .accessibilityIdentifier("new-recording-toolbar-button")
 
-            if hasListColumn && !isTrashSection {
+            if !isTrashSection {
                 Button {
                     shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
                     isShowingCreateFolderSheet = true
                 } label: {
                     MainToolbarIconLabel(title: t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
                 }
+                .buttonStyle(.plain)
                 .help(t("New Folder", "Новая папка"))
                 .accessibilityIdentifier("new-folder-toolbar-button")
 
@@ -277,6 +278,7 @@ struct MacMainView: View {
                 } label: {
                     MainToolbarIconLabel(title: t("Move to Folder", "Переместить в папку"), systemImage: "folder")
                 }
+                .buttonStyle(.plain)
                 .help(t("Move to Folder", "Переместить в папку"))
                 .accessibilityIdentifier("move-to-folder-toolbar-button")
                 .disabled(selectedRecordingIds.isEmpty || (!canMoveSelectedRecordingsToUnfiled && libraryViewModel.folders.isEmpty))
@@ -286,6 +288,7 @@ struct MacMainView: View {
                 } label: {
                     MainToolbarIconLabel(title: t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
                 }
+                .buttonStyle(.plain)
                 .help(t("Move to Trash", "Переместить в корзину"))
                 .disabled(selectedRecordingIds.isEmpty)
             }
@@ -296,6 +299,7 @@ struct MacMainView: View {
                 } label: {
                     MainToolbarIconLabel(title: t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                 }
+                .buttonStyle(.plain)
                 .help(t("Restore", "Восстановить"))
                 .disabled(selectedRecordingIds.isEmpty)
 
@@ -304,6 +308,7 @@ struct MacMainView: View {
                 } label: {
                     MainToolbarIconLabel(title: t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash", color: Palette.recording)
                 }
+                .buttonStyle(.plain)
                 .help(t("Delete Permanently", "Удалить навсегда"))
                 .disabled(selectedRecordingIds.isEmpty)
             }
@@ -368,9 +373,6 @@ struct MacMainView: View {
                         updateColumnVisibility(for: width)
                     }
             }
-        }
-        .toolbar {
-            mainToolbar
         }
         .overlay {
             importOverlay
@@ -619,7 +621,7 @@ struct MacMainView: View {
                     folderSidebarRow(folder)
                 }
             } header: {
-                Text(t("Folders", "Папки"))
+                Text(t("Recording Folders", "Папки записей"))
                     .waiSectionHeader()
             }
 
@@ -681,6 +683,7 @@ struct MacMainView: View {
                 HStack(spacing: Spacing.sm) {
                     Text(currentListTitle)
                         .font(Typography.displaySmall)
+                        .lineLimit(1)
                         .accessibilityIdentifier("library-list-title")
 
                     Text("\(displayedRecordings.count)")
@@ -693,6 +696,9 @@ struct MacMainView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
+
+                    listHeaderActions
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.md)
@@ -1242,7 +1248,7 @@ private struct BulkSelectionDetailView: View {
                 description: Text(
                     isTrash
                         ? t("Restore them or delete them permanently.", "Восстанови их или удали навсегда.")
-                        : t("Use the toolbar to move them into folders or send them to trash.", "Используй панель сверху, чтобы переместить их в папку или корзину.")
+                        : t("Use the list header buttons to move them into folders or send them to trash.", "Используй кнопки в заголовке списка, чтобы переместить их в папку или корзину.")
                 )
             )
 
@@ -1348,6 +1354,10 @@ private struct CompletedRecordingTransitionView: View {
 
 struct MacAuthView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var languageManager: LanguageManager
+
+    private static let privacyPolicyURL = URL(string: "https://wai.computer/privacy")!
+    private static let termsOfServiceURL = URL(string: "https://wai.computer/terms")!
 
     enum AuthMode: String, CaseIterable, Hashable {
         case login = "Login"
@@ -1359,6 +1369,7 @@ struct MacAuthView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var acceptedLegalTerms = false
     @FocusState private var focusedField: Field?
 
     enum Field: Hashable {
@@ -1378,16 +1389,16 @@ struct MacAuthView: View {
                 Text("WaiComputer")
                     .font(Typography.displayLarge)
 
-                Text("YOUR SECOND BRAIN")
+                Text(t("YOUR SECOND BRAIN", "ТВОЙ ВТОРОЙ МОЗГ"))
                     .waiSectionHeader()
             }
 
             // Tab bar
             WaiTabBar(
                 tabs: [
-                    ("Login", AuthMode.login),
-                    ("Register", AuthMode.register),
-                    ("Magic Link", AuthMode.magicLink),
+                    (t("Login", "Вход"), AuthMode.login),
+                    (t("Register", "Регистрация"), AuthMode.register),
+                    (t("Magic Link", "Ссылка на email"), AuthMode.magicLink),
                 ],
                 selection: $authMode
             )
@@ -1397,6 +1408,18 @@ struct MacAuthView: View {
                 magicLinkSentView
             } else {
                 formView
+            }
+
+            if authMode == .login, appState.passwordResetSent {
+                Text(t(
+                    "If this email is registered, we sent a password reset link.",
+                    "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+                .accessibilityIdentifier("auth-password-reset-sent-text")
             }
 
             if let error = appState.error {
@@ -1425,14 +1448,19 @@ struct MacAuthView: View {
         .padding(Spacing.huge)
         .onChange(of: authMode) {
             appState.magicLinkSent = false
+            appState.passwordResetSent = false
             appState.error = nil
+            acceptedLegalTerms = false
+        }
+        .onChange(of: email) {
+            appState.passwordResetSent = false
         }
     }
 
     @ViewBuilder
     private var formView: some View {
         VStack(spacing: Spacing.md) {
-            TextField("Email", text: $email)
+            TextField(t("Email", "Email"), text: $email)
                 .textFieldStyle(.plain)
                 .waiTextField(isActive: focusedField == .email)
                 .focused($focusedField, equals: .email)
@@ -1440,7 +1468,7 @@ struct MacAuthView: View {
                 .accessibilityIdentifier("auth-email-field")
 
             if authMode != .magicLink {
-                SecureField("Password", text: $password)
+                SecureField(t("Password", "Пароль"), text: $password)
                     .textFieldStyle(.plain)
                     .waiTextField(isActive: focusedField == .password)
                     .focused($focusedField, equals: .password)
@@ -1448,15 +1476,56 @@ struct MacAuthView: View {
                     .accessibilityIdentifier("auth-password-field")
 
                 if authMode == .register {
-                    SecureField("Confirm Password", text: $confirmPassword)
+                    SecureField(t("Confirm Password", "Повтори пароль"), text: $confirmPassword)
                         .textFieldStyle(.plain)
                         .waiTextField(isActive: focusedField == .confirmPassword)
                         .focused($focusedField, equals: .confirmPassword)
                         .frame(maxWidth: 380)
                         .accessibilityIdentifier("auth-confirm-password-field")
+
+                    legalConsentRow
+                }
+
+                if authMode == .login {
+                    Button(t("Forgot password?", "Забыли пароль?")) {
+                        Task {
+                            await appState.requestPasswordReset(
+                                email: email,
+                                locale: authLocale
+                            )
+                        }
+                    }
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .disabled(!emailLooksValid || appState.isLoading)
+                    .accessibilityIdentifier("auth-forgot-password-button")
                 }
             }
         }
+    }
+
+    private var legalConsentRow: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Toggle("", isOn: $acceptedLegalTerms)
+                .labelsHidden()
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("auth-legal-consent-toggle")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(t("I agree to WaiComputer's legal terms.", "Я принимаю юридические условия WaiComputer."))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+
+                HStack(spacing: 6) {
+                    Link(t("Terms of Service", "Условия сервиса"), destination: Self.termsOfServiceURL)
+                    Text("·")
+                        .foregroundStyle(Palette.textTertiary)
+                    Link(t("Privacy Policy", "Политика конфиденциальности"), destination: Self.privacyPolicyURL)
+                }
+                .font(Typography.caption)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: 380, alignment: .leading)
     }
 
     private var magicLinkSentView: some View {
@@ -1465,14 +1534,14 @@ struct MacAuthView: View {
                 .font(.system(size: Spacing.xxxl))
                 .foregroundStyle(Palette.textSecondary)
 
-            Text("Check your email")
+            Text(t("Check your email", "Проверь email"))
                 .font(Typography.displaySmall)
 
-            Text("We sent a sign-in link to \(email)")
+            Text(String(format: t("We sent a sign-in link to %@", "Мы отправили ссылку для входа на %@"), email))
                 .font(Typography.body)
                 .foregroundStyle(Palette.textSecondary)
 
-            Button("Send again") {
+            Button(t("Send again", "Отправить ещё раз")) {
                 appState.magicLinkSent = false
             }
             .buttonStyle(WaiGhostButtonStyle())
@@ -1481,9 +1550,9 @@ struct MacAuthView: View {
 
     private var buttonTitle: String {
         switch authMode {
-        case .login: return "Login"
-        case .register: return "Create Account"
-        case .magicLink: return "Send Magic Link"
+        case .login: return t("Login", "Войти")
+        case .register: return t("Create Account", "Создать аккаунт")
+        case .magicLink: return t("Send Magic Link", "Отправить ссылку")
         }
     }
 
@@ -1492,16 +1561,22 @@ struct MacAuthView: View {
             return false
         }
 
-        let emailValid = email.contains("@") && email.contains(".")
-
         switch authMode {
         case .login:
-            return emailValid && password.count >= 6
+            return emailLooksValid && password.count >= 6
         case .register:
-            return emailValid && password.count >= 6 && password == confirmPassword
+            return emailLooksValid && password.count >= 6 && password == confirmPassword && acceptedLegalTerms
         case .magicLink:
-            return emailValid
+            return emailLooksValid
         }
+    }
+
+    private var emailLooksValid: Bool {
+        email.contains("@") && email.contains(".")
+    }
+
+    private var authLocale: String {
+        languageManager.current == .russian ? "ru" : "en"
     }
 
     private func submit() {
@@ -1515,6 +1590,10 @@ struct MacAuthView: View {
                 await appState.requestMagicLink(email: email)
             }
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

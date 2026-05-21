@@ -33,11 +33,11 @@ extension DictationHotkey {
     func onboardingLabel(language selection: LanguageManager.SupportedLanguage) -> String {
         switch self {
         case .rightOption:
-            return OnboardingL10n.text("Right Option (\u{2325})", "Правый Option (\u{2325})", language: selection)
+            return OnboardingL10n.text("Right Option (\u{2325})", "Правая клавиша Option (\u{2325})", language: selection)
         case .leftOption:
-            return OnboardingL10n.text("Left Option (\u{2325})", "Левый Option (\u{2325})", language: selection)
+            return OnboardingL10n.text("Left Option (\u{2325})", "Левая клавиша Option (\u{2325})", language: selection)
         case .rightCommand:
-            return OnboardingL10n.text("Right Command (\u{2318})", "Правый Command (\u{2318})", language: selection)
+            return OnboardingL10n.text("Right Command (\u{2318})", "Правая клавиша Command (\u{2318})", language: selection)
         case .fn:
             return OnboardingL10n.text("Fn (Globe)", "Fn (Глобус)", language: selection)
         case .controlOption:

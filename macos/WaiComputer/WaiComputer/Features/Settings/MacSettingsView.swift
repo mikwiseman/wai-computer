@@ -115,7 +115,18 @@ struct MacSettingsView: View {
     @State private var dictationPostFilterEnabled = false
     @State private var dictationPostFilterSelection = ""
     @State private var billingRefreshID = 0
+    @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
+    @AppStorage(BillingCheckoutRefreshStore.pendingKey) private var billingCheckoutRefreshPending = false
+
+    private static let billingReturnRefreshDelaysNanoseconds: [UInt64] = [
+        2_000_000_000,
+        3_000_000_000,
+        5_000_000_000,
+        10_000_000_000,
+        20_000_000_000,
+        30_000_000_000,
+    ]
 
     private var summaryLanguageOptions: [(label: String, value: String)] {
         [
@@ -166,18 +177,20 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-account-header")
             }
 
-            Section {
-                PaymentModeToggle()
-            } header: {
-                Text("settings.payments.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-payment-mode-header")
-            }
+            #if DEBUG
+                Section {
+                    PaymentModeToggle()
+                } header: {
+                    Text("settings.payments.title", bundle: .main)
+                        .waiSectionHeader()
+                        .accessibilityIdentifier("settings-payment-mode-header")
+                }
 
-            if paymentModeEnabled {
-                BillingSection()
-                    .id(billingRefreshID)
-            }
+                if paymentModeEnabled {
+                    BillingSection()
+                        .id(billingRefreshID)
+                }
+            #endif
 
             Section {
                 AppLanguagePicker()
@@ -513,7 +526,10 @@ struct MacSettingsView: View {
             await loadSummarySettings()
         }
         .onAppear(perform: refreshPermissions)
-        .onDisappear(perform: stopPermissionPolling)
+        .onDisappear {
+            stopPermissionPolling()
+            stopBillingReturnRefresh()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
@@ -1059,8 +1075,29 @@ struct MacSettingsView: View {
     }
 
     private func refreshBillingOnReturnIfNeeded() {
-        guard paymentModeEnabled else { return }
+        guard paymentModeEnabled, billingCheckoutRefreshPending else { return }
+        billingReturnRefreshTask?.cancel()
         billingRefreshID += 1
+        billingReturnRefreshTask = Task { @MainActor in
+            for delay in Self.billingReturnRefreshDelaysNanoseconds {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+                guard paymentModeEnabled, billingCheckoutRefreshPending else {
+                    billingReturnRefreshTask = nil
+                    return
+                }
+                billingRefreshID += 1
+            }
+            billingReturnRefreshTask = nil
+        }
+    }
+
+    private func stopBillingReturnRefresh() {
+        billingReturnRefreshTask?.cancel()
+        billingReturnRefreshTask = nil
     }
 
     private func requestMicrophonePermission() {
@@ -1070,18 +1107,21 @@ struct MacSettingsView: View {
             refreshPermissions()
         case .notDetermined:
             Task {
-                _ = await AVAudioApplication.requestRecordPermission()
+                let granted = await AVCaptureDevice.requestAccess(for: .audio)
                 await MainActor.run {
                     refreshPermissions()
-                    if !hasMicrophonePermission {
+                    if !granted {
+                        MacInputPermission.revealAppInFinder()
                         MacPrivacySettings.openMicrophone()
                     }
                 }
             }
         case .denied, .restricted:
+            MacInputPermission.revealAppInFinder()
             MacPrivacySettings.openMicrophone()
             refreshPermissions()
         @unknown default:
+            MacInputPermission.revealAppInFinder()
             MacPrivacySettings.openMicrophone()
             refreshPermissions()
         }
