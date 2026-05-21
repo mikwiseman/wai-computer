@@ -260,6 +260,19 @@ struct WaiGhostButtonStyle: ButtonStyle {
     }
 }
 
+enum MacMainLayoutMetrics {
+    static let sidebarMinWidth: CGFloat = 236
+    static let sidebarIdealWidth: CGFloat = 264
+    static let sidebarMaxWidth: CGFloat = 320
+    static let listMinWidth: CGFloat = 360
+    static let listIdealWidth: CGFloat = 420
+    static let listMaxWidth: CGFloat = 560
+    static let toolbarIconFrame: CGFloat = 28
+    static let folderNameSheetWidth: CGFloat = 600
+    static let folderNameSheetActionWidth: CGFloat = 168
+    static let searchContentMaxWidth: CGFloat = 880
+}
+
 /// Uppercase, tracked, tertiary section header
 struct WaiSectionHeaderModifier: ViewModifier {
     func body(content: Content) -> some View {

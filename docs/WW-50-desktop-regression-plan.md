@@ -16,11 +16,11 @@ These items were already handled in the previous pass, but must be regression-ch
 
 - [x] P01. Onboarding voice screen: mention minimum useful recording length and dictation context. Screenshot: earlier Image #1. Fixed in onboarding voice setup copy.
 - [x] P02. New Recording screen: remove the "recordings shorter than 5 seconds" hint. Screenshot: earlier Image #2. Current audit confirmed the old short-recording hint is gone from the New Recording surface.
-- [ ] P03. Toolbar icon consistency. Screenshot: earlier Image #3.
+- [x] P03. Toolbar icon consistency. Screenshot: earlier Image #3. Toolbar actions now use one stable icon-only label with a fixed 28pt frame, shared symbol styling, help text, and accessibility labels; covered by `MacMainLayoutMetricsTests`.
 - [x] P04. Move Search near Wai in the sidebar. Screenshot: earlier Image #4. Current audit confirmed the sidebar order has Search near Wai.
 - [x] P05. Remove Meetings, Notes, Reflections from the sidebar. Screenshot: earlier Image #5. Current audit confirmed those legacy sidebar sections are removed.
 - [x] P06. New Folder modal: fix button sizing. Screenshot: earlier Image #6. Covered by the widened folder name sheet and stable action sizing.
-- [ ] P07. Fix shifted layout in folder/recording views. Screenshot: earlier Image #7.
+- [x] P07. Fix shifted layout in folder/recording views. Screenshot: earlier Image #7. Folder/recording lists now keep a real list column only for library sections, remove the empty middle column from non-list sections, and center empty states within the available list area; covered by `MacMainLayoutMetricsTests` plus the macOS non-UI unit gate.
 - [x] P08. Do not pin the main window to the top edge on launch/reopen. Screenshot: earlier Image #8. Current audit confirmed the launch/reopen placement no longer pins to the top edge.
 - [x] P09. Make the recording-title column wider by default. Screenshots: earlier Images #9 and #10. Current audit confirmed the default library title column width was expanded.
 - [x] P10. Simplify New Recording choices to recording and file import; Cmd+N should start recording. Screenshot: earlier Image #11. Current audit confirmed the simplified choices and Cmd+N recording path.
@@ -31,8 +31,8 @@ These items were already handled in the previous pass, but must be regression-ch
 - [x] P15. Audit translations across all supported app languages, not only Russian. Screenshots: earlier Images #16, #22-#26. EN/RU copy pass completed for the affected macOS/shared surfaces; manual visual language pass remains tracked in V05/V10/V11.
 - [x] P16. Russian app language should default billing to RUB. Screenshot: earlier Image #17. Covered by PricingCards tests.
 - [x] P17. Billing region labels should be simple: "USD via Stripe" and "RUB via T-Bank"; no World/Russia phrasing. Screenshot: earlier Image #18. Covered by PricingCards tests.
-- [ ] P18. 15-inch sidebar collapse icon must not overlap. Screenshot: earlier Image #19.
-- [ ] P19. Rename popover layout must fit and use consistent button sizing. Screenshot: earlier Image #20.
+- [x] P18. 15-inch sidebar collapse icon must not overlap. Screenshot: earlier Image #19. Sidebar/list column widths are centralized in `MacMainLayoutMetrics` with a wider sidebar min/ideal width so native split-view chrome has room on laptop widths.
+- [x] P19. Rename popover layout must fit and use consistent button sizing. Screenshot: earlier Image #20. Folder rename/create sheets are now 600pt wide with matching 168pt cancel/primary actions.
 - [x] P20. Add folder rename. Current audit confirmed folder rename exists in the backend/shared client/macOS flow.
 - [x] P21. Folder delete must exist and work. Screenshot: earlier Image #27. Current audit confirmed folder delete exists and is covered by backend/shared client/macOS flow evidence.
 - [x] P22. Keep rename/create popover buttons visually consistent. Screenshot: earlier Image #21. Covered by the widened folder rename/create sheets and stable action button widths.
@@ -56,7 +56,7 @@ These items were already handled in the previous pass, but must be regression-ch
 - [x] C35. System audio permission appears green even when the app cannot actually record meeting/system sound; fix real permission detection and onboarding state. Screenshots: current Images #7 and #8. System Audio now reports ready only after a current-process runtime preflight and shows setup/restart/unsupported states explicitly; real-device prompt verification remains in V05.
 - [x] C36. Localize hotkey labels/icons for Russian. Screenshot: current Image #9.
 - [x] C37. Onboarding dictation sandbox duplicates text from one utterance. Screenshot: current Image #10. Added deterministic transcript merge policy so the sandbox does not append a duplicate when TextInserter already wrote into the focused field; manual dictation pass remains in V09.
-- [ ] C38. Search layout has a large shifted empty top area. Screenshot: current Image #11.
+- [x] C38. Search layout has a large shifted empty top area. Screenshot: current Image #11. Search now renders as a two-column sidebar/detail destination instead of carrying an empty middle content column; the header/results content is constrained and centered with shared layout metrics.
 - [x] C39. Search view text is still English in Russian UI. Screenshot: current Image #12. Search copy now resolves through EN/RU localization.
 - [x] C40. Wai section text is still English in Russian UI. Screenshot: current Image #13. Wai/Companion copy now resolves through EN/RU localization.
 - [x] C41. Dictionary view text is still English in Russian UI. Screenshot: current Image #14. Dictionary copy now resolves through EN/RU localization.
@@ -83,7 +83,7 @@ These items were already handled in the previous pass, but must be regression-ch
 - [x] C62. While a new recording is still processing, the detail view says "No transcript"; show an explicit processing/preparing state instead. Screenshot: current Image #60. Fixed in web and macOS transcript empty states.
 - [x] C63. Public shared note page still shows the old logo; replace it with the current brand mark. Screenshot: current Image #61. Fixed by serving the current brand mark and masking web shared/new-recording marks from it.
 - [x] C64. Rename modal/popover is too narrow on macOS; widen it and keep the field/actions readable. Screenshot: latest user item 63. Fixed by widening speaker assignment popover and folder rename/create sheets, including readable text fields and stable action button widths.
-- [ ] C65. After T-Bank payment, the subscription status does not update to Pro in the macOS settings view. Screenshot: latest user item 62. Partial: macOS settings now refreshes BillingSection when the app becomes active after checkout; still needs live valid T-Bank payment/status verification.
+- [ ] C65. After T-Bank payment, the subscription status does not update to Pro in the macOS settings view. Screenshot: latest user item 62. Partial: macOS settings now refreshes `BillingSection` by changing `billingRefreshID` when the app becomes active after checkout, and `BillingSection` is keyed by that refresh id; still needs live valid T-Bank payment/status verification.
 - [x] C66. T-Bank success/cancel pages must be Russian and polished even if the browser lands on `/billing/success` or `/billing/cancel`. Screenshots: latest user items 59 and 61. Fixed with `provider=tinkoff&lang=ru` return URLs plus localized result pages.
 - [x] C67. Stripe checkout must not offer or mention a 14-day trial; the free weekly word quota is the free tier. Screenshot: latest checkout trial image. Fixed by sending no trial period to Stripe checkout.
 - [x] C68. T-Bank test-card failures, including the Stripe test card `4242 4242 4242 4242`, must show a clear Russian failed-payment page instead of generic English cancel copy. Screenshot: latest user item 59. Fixed by using Russian T-Bank cancel copy that explains card/provider mismatch.
@@ -118,7 +118,7 @@ These items were already handled in the previous pass, but must be regression-ch
 - [ ] V05. Manual macOS pass in English and Russian: onboarding, permissions, new recording, import, search, dictionary, history, Wai, settings, recording detail.
 - [ ] V06. Manual auth pass: login, magic link, new email, password reset, app-open/browser fallback.
 - [ ] V07. Manual billing pass: Stripe USD, T-Bank RUB, success/cancel pages, free weekly word limit display.
-- [ ] V08. Stable macOS release and production URL/appcast verification.
+- [ ] V08. Stable macOS release and production URL/appcast verification. Beta `1.0.19 (122)` was signed, notarized, uploaded, and verified in the production beta appcast; stable release stays open until the full checklist is green.
 - [ ] V09. Manual dictation startup pass: Right Command push-to-talk, hands-free, buffered startup, Soniox/Inworld/ElevenLabs model routing, and first-word retention.
 - [ ] V10. Theme pass: each app color option in light/dark mode, Russian/English UI, narrow/wide windows, and all primary screens.
 - [ ] V11. Full end-to-end regression pass after all fixes: onboarding, auth, billing, recording, import, dictation, transcription models, summaries, search, dictionary, folders, shared notes, settings, theme, narrow windows, release/update, and production web callbacks.
@@ -147,6 +147,11 @@ These items were already handled in the previous pass, but must be regression-ch
 - 2026-05-20: C64 macOS UI build passed with `xcodebuild -project macos/WaiComputer/WaiComputer.xcodeproj -scheme WaiComputer -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build` after widening the speaker assignment popover and folder name sheets.
 - 2026-05-21: UI automations disabled for this session at user request; remaining UI-only/manual checks stay open in V05-V12.
 - 2026-05-21: UI automation/Playwright/Browser/XCUITest disabled for this session by user request; manual/live-dependent items stay open in V05-V12.
+- 2026-05-21: Beta macOS release `1.0.19 (122)` uploaded with `VPS_USER=<release-user> scripts/release-macos.sh beta`; global and RU app/DMG notarization passed, and production beta appcast points to `https://wai.computer/releases/macos/1.0.19-122-beta/WaiComputer-1.0.19-122.dmg` with `sparkle:version` 122.
+- 2026-05-21: Live beta DMG verification passed: `curl -fsSI https://wai.computer/releases/macos/1.0.19-122-beta/WaiComputer-1.0.19-122.dmg` returned HTTP 200 with `content-length: 8581491`, and the published SHA-256 is `e45b9d9551bc99869a68e2b0c54ac3e6b08fc977de8f45e160c8ace0828e2f9b`.
+- 2026-05-21: Layout regression gate `xcodebuild test -project macos/WaiComputer/WaiComputer.xcodeproj -scheme WaiComputer -destination 'platform=macOS' -derivedDataPath /tmp/wai-computer-layout-unit-dd CODE_SIGNING_ALLOWED=NO -only-testing:WaiComputerTests` passed, 25 non-UI tests.
+- 2026-05-21: Billing non-UI recheck `cd backend && pytest -q tests/test_billing_tinkoff.py tests/test_billing_plans_api.py --no-cov` passed, 26 tests.
+- 2026-05-21: Billing client decode recheck `swift test --package-path shared/WaiComputerKit --filter 'APIClientNewEndpointsTests/testGetBillingSubscriptionDecodesActiveTinkoffProStatus|BillingModelsTests'` passed, 4 tests.
 - 2026-05-21: `cd backend && pytest -q tests/test_auth.py tests/test_auth_flows.py tests/test_auth_edge_cases.py tests/test_core_email.py tests/test_billing_tinkoff.py tests/test_billing_stripe.py tests/test_billing_plans_api.py --no-cov` passed, 86 tests.
 - 2026-05-21: `cd backend && ruff check .` passed.
 - 2026-05-21: `cd backend && pytest --no-cov -x -q` passed, 1275 tests, 1 skipped, 20 deselected.

@@ -172,20 +172,39 @@ struct MacMainView: View {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 
+    @ViewBuilder
     private var mainSplitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 248, max: 300)
-        } content: {
-            listColumn
-                .navigationSplitViewColumnWidth(
-                    min: hasListColumn ? 340 : 0,
-                    ideal: hasListColumn ? 410 : 0,
-                    max: hasListColumn ? 560 : 0
-                )
-        } detail: {
-            detailColumn
-                .id(detailPhaseKey)
+        if hasListColumn {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebar
+                    .navigationSplitViewColumnWidth(
+                        min: MacMainLayoutMetrics.sidebarMinWidth,
+                        ideal: MacMainLayoutMetrics.sidebarIdealWidth,
+                        max: MacMainLayoutMetrics.sidebarMaxWidth
+                    )
+            } content: {
+                listColumn
+                    .navigationSplitViewColumnWidth(
+                        min: MacMainLayoutMetrics.listMinWidth,
+                        ideal: MacMainLayoutMetrics.listIdealWidth,
+                        max: MacMainLayoutMetrics.listMaxWidth
+                    )
+            } detail: {
+                detailColumn
+                    .id(detailPhaseKey)
+            }
+        } else {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                sidebar
+                    .navigationSplitViewColumnWidth(
+                        min: MacMainLayoutMetrics.sidebarMinWidth,
+                        ideal: MacMainLayoutMetrics.sidebarIdealWidth,
+                        max: MacMainLayoutMetrics.sidebarMaxWidth
+                    )
+            } detail: {
+                detailColumn
+                    .id(detailPhaseKey)
+            }
         }
     }
 
@@ -195,9 +214,7 @@ struct MacMainView: View {
             Button {
                 startRecording(type: .meeting, inputSource: .dual)
             } label: {
-                Label(t("New Recording", "Новая запись"), systemImage: "plus")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(Palette.textSecondary)
+                MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "plus")
             }
             .disabled(isRecordingHandoffActive || !appState.isAuthenticated)
             .help(t("New Recording", "Новая запись"))
@@ -208,9 +225,7 @@ struct MacMainView: View {
                     shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
                     isShowingCreateFolderSheet = true
                 } label: {
-                    Label(t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(Palette.textSecondary)
+                    MainToolbarIconLabel(title: t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
                 }
                 .help(t("New Folder", "Новая папка"))
                 .accessibilityIdentifier("new-folder-toolbar-button")
@@ -230,8 +245,7 @@ struct MacMainView: View {
                         .disabled(selectedRecordingIds.isEmpty)
                     }
                 } label: {
-                    Label(t("Move to Folder", "Переместить в папку"), systemImage: "folder")
-                        .foregroundStyle(Palette.textSecondary)
+                    MainToolbarIconLabel(title: t("Move to Folder", "Переместить в папку"), systemImage: "folder")
                 }
                 .help(t("Move to Folder", "Переместить в папку"))
                 .accessibilityIdentifier("move-to-folder-toolbar-button")
@@ -240,8 +254,7 @@ struct MacMainView: View {
                 Button {
                     moveSelectedRecordingsToTrash()
                 } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(Palette.textSecondary)
+                    MainToolbarIconLabel(title: t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
                 }
                 .help(t("Move to Trash", "Переместить в корзину"))
                 .disabled(selectedRecordingIds.isEmpty)
@@ -251,8 +264,7 @@ struct MacMainView: View {
                 Button {
                     restoreSelectedRecordings()
                 } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .foregroundStyle(Palette.textSecondary)
+                    MainToolbarIconLabel(title: t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                 }
                 .help(t("Restore", "Восстановить"))
                 .disabled(selectedRecordingIds.isEmpty)
@@ -260,8 +272,7 @@ struct MacMainView: View {
                 Button {
                     permanentlyDeleteSelectedRecordings()
                 } label: {
-                    Image(systemName: "trash.slash")
-                        .foregroundStyle(Palette.recording)
+                    MainToolbarIconLabel(title: t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash", color: Palette.recording)
                 }
                 .help(t("Delete Permanently", "Удалить навсегда"))
                 .disabled(selectedRecordingIds.isEmpty)
@@ -636,15 +647,12 @@ struct MacMainView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if displayedRecordings.isEmpty {
-                    VStack {
-                        Spacer().frame(height: Spacing.xxxl)
-                        ContentUnavailableView(
-                            isTrashSection ? t("Trash is Empty", "Корзина пуста") : t("No Recordings", "Нет записей"),
-                            systemImage: isTrashSection ? "trash" : "waveform",
-                            description: Text(emptyStateDescription)
-                        )
-                        Spacer()
-                    }
+                    ContentUnavailableView(
+                        isTrashSection ? t("Trash is Empty", "Корзина пуста") : t("No Recordings", "Нет записей"),
+                        systemImage: isTrashSection ? "trash" : "waveform",
+                        description: Text(emptyStateDescription)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     RecordingListView(
                         recordings: displayedRecordings,
@@ -669,6 +677,7 @@ struct MacMainView: View {
                             pendingTitleEditId = id
                         }
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         } else {
@@ -1122,17 +1131,38 @@ private struct FolderNameSheet: View {
                 Spacer()
 
                 Button(cancelTitle, action: onCancel)
-                    .frame(minWidth: 112)
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
 
                 Button(primaryTitle, action: onSubmit)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .frame(minWidth: 144)
+                    .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
             }
         }
         .padding(Spacing.xl)
-        .frame(width: 560)
+        .frame(width: MacMainLayoutMetrics.folderNameSheetWidth)
         .accessibilityIdentifier("folder-name-sheet")
+    }
+}
+
+private struct MainToolbarIconLabel: View {
+    let title: String
+    let systemImage: String
+    var color: Color = Palette.textSecondary
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.iconOnly)
+            .font(.system(size: 15, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(color)
+            .frame(
+                width: MacMainLayoutMetrics.toolbarIconFrame,
+                height: MacMainLayoutMetrics.toolbarIconFrame
+            )
+            .contentShape(Rectangle())
+            .accessibilityLabel(title)
     }
 }
 

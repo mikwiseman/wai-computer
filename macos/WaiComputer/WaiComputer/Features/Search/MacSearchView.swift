@@ -8,93 +8,104 @@ struct MacSearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: Spacing.md) {
-                // Large search input
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(Palette.textTertiary)
-
-                    TextField(t("Search recordings...", "Искать в записях..."), text: $viewModel.query)
-                        .textFieldStyle(.plain)
-                        .font(Typography.headingMedium)
-                        .onSubmit {
-                            performSearch()
-                        }
-
-                    if !viewModel.query.isEmpty {
-                        Button {
-                            viewModel.query = ""
-                            viewModel.results = []
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Palette.textTertiary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(t("Clear search", "Очистить поиск"))
-                    }
-                }
-                .padding(Spacing.md)
-                .background(Palette.surfaceSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .accessibilityIdentifier("search-bar")
-
-                // Mode tabs (text-based)
-                WaiTabBar(
-                    tabs: [
-                        (t("Hybrid", "Гибридный"), MacSearchViewModel.SearchMode.hybrid),
-                        (t("Semantic", "Смысловой"), MacSearchViewModel.SearchMode.semantic),
-                        (t("Full Text", "Точный текст"), MacSearchViewModel.SearchMode.fts),
-                    ],
-                    selection: $viewModel.searchMode
-                )
-            }
-            .padding(Spacing.lg)
+            searchHeader
 
             WaiDivider()
 
-            // Re-trigger search when mode changes and there's an existing query
-            .onChange(of: viewModel.searchMode) { _, _ in
-                performSearch()
-            }
+            searchResults
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onChange(of: viewModel.searchMode) { _, _ in
+            performSearch()
+        }
+    }
 
-            // Results
-            if viewModel.isLoading {
-                Spacer()
-                ProgressView(t("Searching...", "Ищем..."))
-                Spacer()
-            } else if viewModel.results.isEmpty && !viewModel.query.isEmpty && viewModel.hasSearched {
-                ContentUnavailableView(
-                    t("No Results", "Ничего не найдено"),
-                    systemImage: "magnifyingglass",
-                    description: Text(t(
-                        "No recordings match \"\(viewModel.query)\".",
-                        "По запросу \"\(viewModel.query)\" записей не найдено."
-                    ))
-                )
-            } else if viewModel.results.isEmpty {
-                ContentUnavailableView(
-                    t("Search Your Recordings", "Поиск по записям"),
-                    systemImage: "magnifyingglass",
-                    description: Text(t(
-                        "Search across all your recording transcripts.",
-                        "Ищи по всем транскриптам записей."
-                    ))
-                )
-                .accessibilityIdentifier("search-empty-state")
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text(resultsCountText(viewModel.totalResults))
-                            .font(Typography.label)
-                            .foregroundStyle(Palette.textTertiary)
-                            .padding(.horizontal, Spacing.lg)
+    private var searchHeader: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Palette.textTertiary)
 
-                        ForEach(viewModel.results) { result in
-                            SearchResultRow(result: result)
-                        }
+                TextField(t("Search recordings...", "Искать в записях..."), text: $viewModel.query)
+                    .textFieldStyle(.plain)
+                    .font(Typography.headingMedium)
+                    .onSubmit {
+                        performSearch()
                     }
-                    .padding(.vertical, Spacing.lg)
+
+                if !viewModel.query.isEmpty {
+                    Button {
+                        viewModel.query = ""
+                        viewModel.results = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(t("Clear search", "Очистить поиск"))
                 }
+            }
+            .padding(Spacing.md)
+            .background(Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityIdentifier("search-bar")
+
+            WaiTabBar(
+                tabs: [
+                    (t("Hybrid", "Гибридный"), MacSearchViewModel.SearchMode.hybrid),
+                    (t("Semantic", "Смысловой"), MacSearchViewModel.SearchMode.semantic),
+                    (t("Full Text", "Точный текст"), MacSearchViewModel.SearchMode.fts),
+                ],
+                selection: $viewModel.searchMode
+            )
+        }
+        .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        if viewModel.isLoading {
+            VStack {
+                ProgressView(t("Searching...", "Ищем..."))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.results.isEmpty && !viewModel.query.isEmpty && viewModel.hasSearched {
+            ContentUnavailableView(
+                t("No Results", "Ничего не найдено"),
+                systemImage: "magnifyingglass",
+                description: Text(t(
+                    "No recordings match \"\(viewModel.query)\".",
+                    "По запросу \"\(viewModel.query)\" записей не найдено."
+                ))
+            )
+        } else if viewModel.results.isEmpty {
+            ContentUnavailableView(
+                t("Search Your Recordings", "Поиск по записям"),
+                systemImage: "magnifyingglass",
+                description: Text(t(
+                    "Search across all your recording transcripts.",
+                    "Ищи по всем транскриптам записей."
+                ))
+            )
+            .accessibilityIdentifier("search-empty-state")
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text(resultsCountText(viewModel.totalResults))
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.horizontal, Spacing.lg)
+
+                    ForEach(viewModel.results) { result in
+                        SearchResultRow(result: result)
+                    }
+                }
+                .padding(.vertical, Spacing.lg)
+                .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
     }
