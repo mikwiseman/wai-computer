@@ -70,7 +70,7 @@ struct MacRecordingDetailView: View {
                     WaiTabBar(
                         tabs: [
                             (t("Transcript", "Транскрипт"), MacRecordingDetailViewModel.Tab.transcript),
-                            (t("Summary", "Саммари"), MacRecordingDetailViewModel.Tab.summary),
+                            (t("Summary", "Сводка"), MacRecordingDetailViewModel.Tab.summary),
                         ],
                         selection: $viewModel.selectedTab
                     )
@@ -499,11 +499,11 @@ struct MacRecordingDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack {
-                        Text(t("Summary", "Саммари"))
+                        Text(t("Summary", "Сводка"))
                             .waiSectionHeader()
                         Spacer()
                         copyActionButton(
-                            title: t("Copy Summary", "Скопировать саммари"),
+                            title: t("Copy Summary", "Скопировать сводку"),
                             copiedTitle: t("Copied", "Скопировано"),
                             text: fullSummaryText(summary),
                             section: "summary-all"
@@ -569,9 +569,9 @@ struct MacRecordingDetailView: View {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
                 ContentUnavailableView(
-                    t("No Summary", "Нет саммари"),
+                    t("No Summary", "Нет сводки"),
                     systemImage: "doc.text",
-                    description: Text(t("Generate a summary to see key points and insights.", "Сгенерируй саммари, чтобы увидеть ключевые пункты."))
+                    description: Text(t("Generate a summary to see key points and insights.", "Сгенерируй сводку, чтобы увидеть ключевые пункты."))
                 )
 
                 Button(action: {
@@ -579,13 +579,13 @@ struct MacRecordingDetailView: View {
                         await viewModel.generateSummary(apiClient: appState.getAPIClient())
                     }
                 }) {
-                    Text(t("Generate Summary", "Сгенерировать саммари"))
+                    Text(t("Generate Summary", "Сгенерировать сводку"))
                 }
                 .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
                 .disabled(isGeneratingSummary)
 
                 if isGeneratingSummary {
-                    ProgressView(t("Generating summary...", "Генерируем саммари..."))
+                    ProgressView(t("Generating summary...", "Генерируем сводку..."))
                 }
                 Spacer()
             }

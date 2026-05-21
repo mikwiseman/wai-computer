@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "WaiComputer нужен доступ к микрофону, чтобы записывать встречи, заметки и живую диктовку.";
+"NSAudioCaptureUsageDescription" = "WaiComputer нужен доступ к захвату аудио, чтобы записывать системный звук из встреч и звонков.";

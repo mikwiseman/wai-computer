@@ -210,17 +210,7 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("positive")).toBeTruthy();
   });
 
-  // Actions tab
-  it("shows empty actions message", async () => {
-    const user = userEvent.setup();
-    render(<RecordingDetailPanel recording={makeRecording()} />);
-
-    const actionsTab = screen.getByRole("tab", { name: /Action Items/ });
-    await user.click(actionsTab);
-    expect(screen.getByText("No Action Items")).toBeTruthy();
-  });
-
-  it("renders action items with priority and status", async () => {
+  it("does not render the removed actions tab", () => {
     const recording = makeRecording({
       action_items: [
         {
@@ -234,51 +224,11 @@ describe("RecordingDetailPanel", () => {
           source: "ai",
           created_at: "2026-04-01T10:00:00Z",
         },
-        {
-          id: "ai2",
-          recording_id: "rec-1",
-          task: "Review Q1 results",
-          owner: null,
-          due_date: null,
-          priority: "medium",
-          status: "completed",
-          source: "ai",
-          created_at: "2026-04-01T10:00:00Z",
-        },
-      ],
-    });
-
-    const user = userEvent.setup();
-    render(<RecordingDetailPanel recording={recording} />);
-
-    const actionsTab = screen.getByRole("tab", { name: /Action Items/ });
-    await user.click(actionsTab);
-    expect(screen.getByText("Send budget proposal")).toBeTruthy();
-    expect(screen.getByText("Alice")).toBeTruthy();
-    expect(screen.getByText("2026-04-15")).toBeTruthy();
-    expect(screen.getByText("high")).toBeTruthy();
-    expect(screen.getByText("Review Q1 results")).toBeTruthy();
-    expect(screen.getByText("medium")).toBeTruthy();
-  });
-
-  it("shows action items count in tab label", () => {
-    const recording = makeRecording({
-      action_items: [
-        {
-          id: "ai1",
-          recording_id: "rec-1",
-          task: "Task 1",
-          owner: null,
-          due_date: null,
-          priority: null,
-          status: "pending",
-          source: "ai",
-          created_at: "2026-04-01T10:00:00Z",
-        },
       ],
     });
     render(<RecordingDetailPanel recording={recording} />);
-    expect(screen.getByText("Action Items (1)")).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Action Items/ })).toBeNull();
+    expect(screen.queryByText("Send budget proposal")).toBeNull();
   });
 
   it("creates and copies a web share link", async () => {

@@ -45,11 +45,37 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("passes register locale hints when provided", async () => {
+    await api.register("a@example.com", "p", { locale: "ru", region: "ru" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "a@example.com",
+        password: "p",
+        locale: "ru",
+        region: "ru",
+      }),
+    });
+  });
+
   it("calls login", async () => {
     await api.login("a@example.com", "p");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: "a@example.com", password: "p" }),
+    });
+  });
+
+  it("passes login locale hints when provided", async () => {
+    await api.login("a@example.com", "p", { locale: "ru", region: "ru" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "a@example.com",
+        password: "p",
+        locale: "ru",
+        region: "ru",
+      }),
     });
   });
 
@@ -64,6 +90,22 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/auth/verify-magic", {
       method: "POST",
       body: JSON.stringify({ token: "token" }),
+    });
+  });
+
+  it("passes magic-link locale hints when provided", async () => {
+    await api.requestMagicLink("a@example.com", { locale: "ru", region: "ru" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/magic-link", {
+      method: "POST",
+      body: JSON.stringify({ email: "a@example.com", locale: "ru", region: "ru" }),
+    });
+  });
+
+  it("passes verify magic-link locale when provided", async () => {
+    await api.verifyMagicLink("token", { locale: "ru" });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/verify-magic", {
+      method: "POST",
+      body: JSON.stringify({ token: "token", locale: "ru" }),
     });
   });
 

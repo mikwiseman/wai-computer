@@ -101,7 +101,8 @@ struct RecordingRowView: View {
                 Spacer(minLength: Spacing.sm)
 
                 if let statusText = recording.statusDisplayText(
-                    hasLocalRecoveryBackup: hasLocalRecoveryBackup
+                    hasLocalRecoveryBackup: hasLocalRecoveryBackup,
+                    languageCode: recording.language ?? languageManager.current.rawValue
                 ) {
                     Text(statusText)
                         .font(Typography.label)

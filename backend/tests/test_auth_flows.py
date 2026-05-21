@@ -350,6 +350,41 @@ async def test_forgot_password_sends_reset_link_without_creating_unknown_user(
 
 
 @pytest.mark.asyncio
+async def test_forgot_password_email_failure_keeps_non_enumerating_response(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Email delivery errors must not reveal whether a reset email exists."""
+
+    async def fake_send_password_reset_email(*args, **kwargs) -> None:
+        raise RuntimeError("email provider unavailable")
+
+    monkeypatch.setattr(
+        "app.core.email.send_password_reset_email",
+        fake_send_password_reset_email,
+        raising=False,
+    )
+
+    await client.post(
+        "/api/auth/register",
+        json={"email": "reset.fail@example.com", "password": "password123"},
+    )
+
+    existing_response = await client.post(
+        "/api/auth/forgot-password",
+        json={"email": "reset.fail@example.com", "locale": "ru"},
+    )
+    missing_response = await client.post(
+        "/api/auth/forgot-password",
+        json={"email": "reset.fail.missing@example.com", "locale": "ru"},
+    )
+
+    assert existing_response.status_code == 200
+    assert missing_response.status_code == 200
+    assert existing_response.json() == missing_response.json()
+
+
+@pytest.mark.asyncio
 async def test_reset_password_accepts_only_reset_tokens(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -386,6 +421,16 @@ async def test_reset_password_accepts_only_reset_tokens(
     assert reset_user.password_hash is not None
     assert reset_user.magic_link_token is None
     assert reset_user.magic_link_expires is None
+
+
+@pytest.mark.asyncio
+async def test_reset_password_errors_are_localized(client: AsyncClient):
+    invalid_response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "magic_token", "password": "password1234", "locale": "ru"},
+    )
+    assert invalid_response.status_code == 401
+    assert invalid_response.json()["detail"] == "Недействительная ссылка для сброса пароля"
 
 
 @pytest.mark.asyncio

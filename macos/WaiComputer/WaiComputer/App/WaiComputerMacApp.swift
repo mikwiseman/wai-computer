@@ -21,6 +21,8 @@ struct WaiComputerMacApp: App {
     @StateObject private var dictionaryStore: DictationDictionaryStore
     @StateObject private var languageStore: DictationLanguageStore
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
+    @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
+    @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     // Sparkle weakly references delegates, so keep this instance alive for the app lifetime.
     private let updaterDelegate: BetaChannelUpdaterDelegate?
     private let updaterController: SPUStandardUpdaterController?
@@ -69,6 +71,14 @@ struct WaiComputerMacApp: App {
 
     @StateObject private var languageManager = LanguageManager.shared
 
+    private var selectedAppearanceMode: MacAppearanceMode {
+        MacAppearanceMode(rawValue: appearanceModeRawValue) ?? MacThemePreferences.defaultAppearance
+    }
+
+    private var selectedAccentChoice: MacAccentChoice {
+        MacAccentChoice(rawValue: accentChoiceRawValue) ?? MacThemePreferences.defaultAccent
+    }
+
     var body: some Scene {
         WindowGroup("WaiComputer", id: MacPresentationCoordinator.mainWindowID) {
             MacContentView()
@@ -80,6 +90,8 @@ struct WaiComputerMacApp: App {
                 .environmentObject(historyStore)
                 .environmentObject(dictionaryStore)
                 .environmentObject(languageStore)
+                .preferredColorScheme(selectedAppearanceMode.preferredColorScheme)
+                .tint(selectedAccentChoice.tintColor)
                 .onAppear {
                     MacPresentationCoordinator.shared.mainWindowDidAppear()
                 }
@@ -211,6 +223,8 @@ struct WaiComputerMacApp: App {
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
                 .environmentObject(languageManager)
+                .preferredColorScheme(selectedAppearanceMode.preferredColorScheme)
+                .tint(selectedAccentChoice.tintColor)
         } label: {
             if isRecordingActivityVisible {
                 Image(systemName: "waveform.circle.fill")

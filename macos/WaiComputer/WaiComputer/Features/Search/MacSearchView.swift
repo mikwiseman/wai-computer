@@ -3,6 +3,7 @@ import WaiComputerKit
 
 struct MacSearchView: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = MacSearchViewModel()
 
     var body: some View {
@@ -13,7 +14,7 @@ struct MacSearchView: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Palette.textTertiary)
 
-                    TextField("Search recordings...", text: $viewModel.query)
+                    TextField(t("Search recordings...", "Искать в записях..."), text: $viewModel.query)
                         .textFieldStyle(.plain)
                         .font(Typography.headingMedium)
                         .onSubmit {
@@ -29,6 +30,7 @@ struct MacSearchView: View {
                                 .foregroundStyle(Palette.textTertiary)
                         }
                         .buttonStyle(.plain)
+                        .help(t("Clear search", "Очистить поиск"))
                     }
                 }
                 .padding(Spacing.md)
@@ -39,9 +41,9 @@ struct MacSearchView: View {
                 // Mode tabs (text-based)
                 WaiTabBar(
                     tabs: [
-                        ("Hybrid", MacSearchViewModel.SearchMode.hybrid),
-                        ("Semantic", MacSearchViewModel.SearchMode.semantic),
-                        ("Full Text", MacSearchViewModel.SearchMode.fts),
+                        (t("Hybrid", "Гибридный"), MacSearchViewModel.SearchMode.hybrid),
+                        (t("Semantic", "Смысловой"), MacSearchViewModel.SearchMode.semantic),
+                        (t("Full Text", "Точный текст"), MacSearchViewModel.SearchMode.fts),
                     ],
                     selection: $viewModel.searchMode
                 )
@@ -58,21 +60,31 @@ struct MacSearchView: View {
             // Results
             if viewModel.isLoading {
                 Spacer()
-                ProgressView("Searching...")
+                ProgressView(t("Searching...", "Ищем..."))
                 Spacer()
             } else if viewModel.results.isEmpty && !viewModel.query.isEmpty && viewModel.hasSearched {
-                ContentUnavailableView.search(text: viewModel.query)
+                ContentUnavailableView(
+                    t("No Results", "Ничего не найдено"),
+                    systemImage: "magnifyingglass",
+                    description: Text(t(
+                        "No recordings match \"\(viewModel.query)\".",
+                        "По запросу \"\(viewModel.query)\" записей не найдено."
+                    ))
+                )
             } else if viewModel.results.isEmpty {
                 ContentUnavailableView(
-                    "Search Your Recordings",
+                    t("Search Your Recordings", "Поиск по записям"),
                     systemImage: "magnifyingglass",
-                    description: Text("Search across all your recording transcripts.")
+                    description: Text(t(
+                        "Search across all your recording transcripts.",
+                        "Ищи по всем транскриптам записей."
+                    ))
                 )
                 .accessibilityIdentifier("search-empty-state")
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("\(viewModel.totalResults) result\(viewModel.totalResults == 1 ? "" : "s")")
+                        Text(resultsCountText(viewModel.totalResults))
                             .font(Typography.label)
                             .foregroundStyle(Palette.textTertiary)
                             .padding(.horizontal, Spacing.lg)
@@ -87,21 +99,33 @@ struct MacSearchView: View {
         }
     }
 
+    private func resultsCountText(_ count: Int) -> String {
+        if OnboardingL10n.language(for: languageManager.current) == .russian {
+            return "Найдено: \(count)"
+        }
+        return "\(count) result\(count == 1 ? "" : "s")"
+    }
+
     private func performSearch() {
         guard !viewModel.query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         Task {
             await viewModel.search(apiClient: appState.getAPIClient())
         }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 struct SearchResultRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let result: SearchResult
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
-                Text(result.recordingTitle ?? "Untitled")
+                Text(result.recordingTitle ?? t("Untitled", "Без названия"))
                     .font(Typography.headingMedium)
                     .lineLimit(1)
 
@@ -126,6 +150,10 @@ struct SearchResultRow: View {
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 

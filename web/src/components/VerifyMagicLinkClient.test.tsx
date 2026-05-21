@@ -26,6 +26,7 @@ describe("VerifyMagicLinkClient", () => {
   beforeEach(() => {
     mockVerifyMagicLink.mockReset();
     mockReplace.mockReset();
+    setNavigatorLanguages(["en-US"]);
     localStorageValues = {};
     Object.defineProperty(window, "localStorage", {
       configurable: true,
@@ -41,6 +42,17 @@ describe("VerifyMagicLinkClient", () => {
     });
   });
 
+  function setNavigatorLanguages(languages: string[], language = languages[0] ?? "en-US") {
+    Object.defineProperty(window.navigator, "languages", {
+      configurable: true,
+      value: languages,
+    });
+    Object.defineProperty(window.navigator, "language", {
+      configurable: true,
+      value: language,
+    });
+  }
+
   it("shows missing token state and does not verify", () => {
     render(<VerifyMagicLinkClient token={null} />);
     expect(screen.getByTestId("verify-message")).toHaveTextContent("Missing token.");
@@ -52,7 +64,7 @@ describe("VerifyMagicLinkClient", () => {
     render(<VerifyMagicLinkClient token="token-123" />);
 
     await waitFor(() => {
-      expect(mockVerifyMagicLink).toHaveBeenCalledWith("token-123");
+      expect(mockVerifyMagicLink).toHaveBeenCalledWith("token-123", { locale: "en" });
       expect(mockReplace).toHaveBeenCalledWith("/onboarding");
     });
 
@@ -65,7 +77,7 @@ describe("VerifyMagicLinkClient", () => {
     render(<VerifyMagicLinkClient token="token-123" />);
 
     await waitFor(() => {
-      expect(mockVerifyMagicLink).toHaveBeenCalledWith("token-123");
+      expect(mockVerifyMagicLink).toHaveBeenCalledWith("token-123", { locale: "en" });
       expect(mockReplace).toHaveBeenCalledWith("/dashboard");
     });
 
@@ -99,6 +111,30 @@ describe("VerifyMagicLinkClient", () => {
 
     expect(screen.getByTestId("verify-message")).toHaveTextContent("Verifying token...");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Magic Link Verification");
+  });
+
+  it("passes Russian locale and renders Russian chrome", async () => {
+    mockVerifyMagicLink.mockRejectedValueOnce(new ApiError(401, "Недействительная ссылка для входа"));
+    render(<VerifyMagicLinkClient token="ru-token" locale="ru" />);
+
+    await waitFor(() => {
+      expect(mockVerifyMagicLink).toHaveBeenCalledWith("ru-token", { locale: "ru" });
+      expect(screen.getByTestId("verify-message")).toHaveTextContent("Недействительная ссылка для входа");
+    });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Проверка ссылки для входа");
+    expect(screen.getByRole("link", { name: "Вернуться ко входу" })).toHaveAttribute("href", "/login");
+  });
+
+  it("falls back to browser Russian locale when link locale is absent", async () => {
+    setNavigatorLanguages(["ru-RU", "en-US"]);
+    mockVerifyMagicLink.mockRejectedValueOnce(new ApiError(401, "Недействительная ссылка для входа"));
+
+    render(<VerifyMagicLinkClient token="ru-browser-token" />);
+
+    await waitFor(() => {
+      expect(mockVerifyMagicLink).toHaveBeenCalledWith("ru-browser-token", { locale: "ru" });
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Проверка ссылки для входа");
+    });
   });
 
   it("shows error message from ApiError and does not redirect", async () => {

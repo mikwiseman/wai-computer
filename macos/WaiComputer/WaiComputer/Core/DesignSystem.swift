@@ -54,13 +54,118 @@ enum Typography {
     static let monoLarge: Font = .system(size: 15, weight: .medium, design: .monospaced)
 }
 
+// MARK: - Theme
+
+enum MacAppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+enum MacAccentChoice: String, CaseIterable, Identifiable {
+    case system
+    case amber
+    case blue
+    case green
+    case violet
+    case rose
+    case graphite
+
+    var id: String { rawValue }
+
+    var tintColor: Color? {
+        self == .system ? nil : color
+    }
+
+    var previewColor: Color {
+        self == .system ? Color(nsColor: .controlAccentColor) : color
+    }
+
+    var color: Color {
+        switch self {
+        case .system:
+            return Color(nsColor: .controlAccentColor)
+        case .amber:
+            return Color(nsColor: .systemOrange)
+        case .blue:
+            return Color(nsColor: .systemBlue)
+        case .green:
+            return Color(nsColor: .systemGreen)
+        case .violet:
+            return Color(nsColor: .systemPurple)
+        case .rose:
+            return Color(nsColor: .systemPink)
+        case .graphite:
+            return Color(nsColor: .systemGray)
+        }
+    }
+}
+
+struct MacThemePreferences {
+    static let appearanceKey = "waiAppearanceMode"
+    static let accentKey = "waiAccentChoice"
+    static let defaultAppearance: MacAppearanceMode = .system
+    static let defaultAccent: MacAccentChoice = .amber
+
+    var defaults: UserDefaults = .standard
+
+    var appearance: MacAppearanceMode {
+        get {
+            guard
+                let rawValue = defaults.string(forKey: Self.appearanceKey),
+                let appearance = MacAppearanceMode(rawValue: rawValue)
+            else {
+                return Self.defaultAppearance
+            }
+            return appearance
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Self.appearanceKey)
+        }
+    }
+
+    var accent: MacAccentChoice {
+        get {
+            guard
+                let rawValue = defaults.string(forKey: Self.accentKey),
+                let accent = MacAccentChoice(rawValue: rawValue)
+            else {
+                return Self.defaultAccent
+            }
+            return accent
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Self.accentKey)
+        }
+    }
+
+    static var currentAppearance: MacAppearanceMode {
+        MacThemePreferences().appearance
+    }
+
+    static var currentAccent: MacAccentChoice {
+        MacThemePreferences().accent
+    }
+}
+
 // MARK: - Palette
 
 enum Palette {
-    /// Warm amber accent — replaces system .blue (darkened for WCAG AA on white)
-    static let accent = Color(red: 0.82, green: 0.49, blue: 0.18)
+    /// App-wide accent. The concrete color is selected in Settings and sourced
+    /// from AppKit system colors so light, dark, and increased contrast stay adaptive.
+    static var accent: Color { MacThemePreferences.currentAccent.color }
     /// Accent at 10% opacity — subtle backgrounds
-    static let accentSubtle = accent.opacity(0.10)
+    static var accentSubtle: Color { accent.opacity(0.10) }
 
     /// Primary text
     static let textPrimary = Color.primary
@@ -85,7 +190,7 @@ enum Palette {
     static let priorityLow = Color(nsColor: .tertiaryLabelColor)
 
     /// Accent color for recordings (type-neutral)
-    static let typeReflection = accent
+    static var typeReflection: Color { accent }
     static func typeColor(_ type: WaiComputerKit.RecordingType) -> Color { accent }
 }
 

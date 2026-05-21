@@ -508,7 +508,7 @@ async def test_generate_summary_defaults_to_recording_language(
         captured["style"] = kwargs.get("style")
         return SummaryResult(
             title="План запуска",
-            summary="Краткое саммари.",
+            summary="Краткая сводка.",
             key_points=[],
             decisions=[],
             action_items=[],
@@ -527,6 +527,61 @@ async def test_generate_summary_defaults_to_recording_language(
     assert response.status_code == 200
     assert captured["language"] == "ru"
     assert captured["style"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_auto_language_persists_russian_title(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Russian transcript + auto preference should let the Russian title persist."""
+    recording = await _create_recording(client, auth_headers, title=None, language="ru")
+    recording_id = UUID(recording["id"])
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Обсудили план запуска и следующие шаги.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_summarize_transcript(_: str, **kwargs) -> SummaryResult:
+        captured["language"] = kwargs.get("language")
+        return SummaryResult(
+            title="План запуска",
+            summary="Краткое резюме на русском.",
+            key_points=["Запуск согласован"],
+            decisions=[],
+            action_items=[],
+            topics=["запуск"],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+        )
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", fake_summarize_transcript)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert captured["language"] == "ru"
+
+    detail_response = await client.get(f"/api/recordings/{recording_id}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["title"] == "План запуска"
+    assert detail["summary"]["summary"] == "Краткое резюме на русском."
 
 
 @pytest.mark.asyncio
@@ -773,7 +828,7 @@ async def test_upload_accepts_audio_content_type_without_extension(
         assert content_type == "audio/mpeg"
         return fake_transcripts
 
-    async def fake_generate_title(text: str) -> str:
+    async def fake_generate_title(text: str, **kwargs) -> str:
         return "Recovered from MIME"
 
     monkeypatch.setattr(
@@ -797,6 +852,83 @@ async def test_upload_accepts_audio_content_type_without_extension(
     assert payload["status"] == "ready"
     assert payload["title"] == "Recovered from MIME"
     assert payload["segments"][0]["content"] == "Recovered from MIME type"
+
+
+@pytest.mark.asyncio
+async def test_upload_no_speech_fallback_uses_russian_recording_language(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Noise/no-speech provider placeholders should not create English UI copy."""
+    recording = await _create_recording(client, auth_headers, title=None, language="ru")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(
+            return_value=[
+                TranscriptResult(
+                    text="[noise]",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1200,
+                    confidence=0.1,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+    title_mock = AsyncMock(return_value="No Speech Detected")
+    monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("noise.wav", b"noise", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
+    assert data["title"] == "Без речи"
+    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
+    title_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_no_speech_fallback_stays_english_for_english_recordings(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None, language="en")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("silence.wav", b"silence", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
+    assert data["title"] == "No speech detected"
+    assert data["failure_message"] == "We could not detect clear speech in this recording."
 
 
 @pytest.mark.asyncio

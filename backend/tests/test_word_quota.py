@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.billing.quota import WordQuota, count_words, current_week_start, next_week_start
-from app.models.billing import Plan, UsageWeek
+from app.models.billing import Plan, Subscription, UsageWeek
 from app.models.user import User
 
 
@@ -199,6 +199,29 @@ async def test_pro_user_uses_higher_weekly_cap(db_session):
     check = await WordQuota.check(db_session, user, estimated_words=1_001)
     assert check.allowed is False
     assert check.words_cap == 50_000
+
+
+@pytest.mark.asyncio
+async def test_past_due_subscription_uses_free_weekly_cap(db_session):
+    await _seed_free_plan(db_session)
+    pro = await _seed_pro_plan(db_session)
+    user = await _make_user(db_session, "pastdue@example.test")
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="past_due",
+        provider="tinkoff",
+        billing_period="month",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    result = await WordQuota.check(db_session, user, estimated_words=3_001)
+
+    assert result.allowed is False
+    assert result.words_cap == 3_000
 
 
 @pytest.mark.asyncio

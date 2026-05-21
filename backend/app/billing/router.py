@@ -135,12 +135,13 @@ async def get_subscription(
     plan: Plan | None = None
     sub: Subscription | None = None
     if user.current_subscription_id is not None:
-        sub = (
+        candidate_sub = (
             await db.execute(
                 select(Subscription).where(Subscription.id == user.current_subscription_id)
             )
         ).scalar_one_or_none()
-        if sub is not None:
+        if candidate_sub is not None and candidate_sub.status in {"active", "trialing"}:
+            sub = candidate_sub
             plan = (
                 await db.execute(select(Plan).where(Plan.id == sub.plan_id))
             ).scalar_one_or_none()

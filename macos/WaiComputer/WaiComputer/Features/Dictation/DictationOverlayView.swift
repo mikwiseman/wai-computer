@@ -1,9 +1,11 @@
 import SwiftUI
+import WaiComputerKit
 
 /// The SwiftUI content displayed inside the floating dictation overlay panel.
 /// Shows a compact bar with recording indicator, status, and transcript preview.
 struct DictationOverlayView: View {
     @ObservedObject var manager: DictationManager
+    @ObservedObject private var languageManager = LanguageManager.shared
 
     var body: some View {
         HStack(spacing: Spacing.md) {
@@ -36,7 +38,7 @@ struct DictationOverlayView: View {
 
             // Mode badge
             if manager.isHandsFree {
-                Text("Hands-free")
+                Text(DictationCopy.handsFreeBadge(language: languageManager.current))
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
@@ -96,18 +98,20 @@ struct DictationOverlayView: View {
     // MARK: - Computed
 
     private var statusText: String {
+        let status: DictationCopy.OverlayStatus
         switch manager.state {
         case .idle:
-            return "Ready"
+            status = .idle
         case .connecting:
-            return "Connecting..."
+            status = .connecting
         case .listening:
-            return "Listening..."
+            status = .listening
         case .processing:
-            return "Processing..."
+            status = .processing
         case .inserting:
-            return "Inserting..."
+            status = .inserting
         }
+        return DictationCopy.overlayStatus(status, language: languageManager.current)
     }
 
     private var dotColor: Color {

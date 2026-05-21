@@ -34,7 +34,7 @@ struct OnboardingValuePropsSlide: View {
                     primary: t("Capture meetings & notes", "Сохраняй встречи и голосовые заметки"),
                     detail: t(
                         "Hit record in WaiComputer. Get a full transcript, AI summary, and action items when you're done.",
-                        "Нажми запись в WaiComputer. После встречи появятся расшифровка, краткое саммари и список задач."
+                        "Нажми запись в WaiComputer. После встречи появятся расшифровка, краткая сводка и список задач."
                     )
                 )
             }

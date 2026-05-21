@@ -13,6 +13,10 @@ const mockedCheckout = vi.mocked(createBillingCheckout);
 describe("PricingCards", () => {
   beforeEach(() => {
     mockedCheckout.mockReset();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { href: "" },
+    });
   });
 
   it("renders English pricing and toggles annual price", async () => {
@@ -25,10 +29,20 @@ describe("PricingCards", () => {
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(screen.queryByText(/World|Russia/i)).not.toBeInTheDocument();
     expect(screen.getByText("$12 / month")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in to upgrade" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: /Yearly/i }));
 
     expect(screen.getByText("$96 / year")).toBeInTheDocument();
+  });
+
+  it("sends signed-out upgrades through login with returnTo billing", async () => {
+    render(<PricingCards locale="en" currency="usd" loginPath="/login" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign in to upgrade" }));
+
+    expect(window.location.href).toBe("/login?returnTo=/billing");
+    expect(mockedCheckout).not.toHaveBeenCalled();
   });
 
   it("defaults Russian billing to T-Bank RUB with simple provider labels", async () => {

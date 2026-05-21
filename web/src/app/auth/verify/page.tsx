@@ -5,7 +5,7 @@ export const metadata = {
 };
 
 interface VerifyPageProps {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string; locale?: string; lang?: string }>;
 }
 
 export default async function VerifyMagicLinkPage({ searchParams }: VerifyPageProps) {
@@ -13,7 +13,10 @@ export default async function VerifyMagicLinkPage({ searchParams }: VerifyPagePr
 
   return (
     <main className="container auth-page">
-      <VerifyMagicLinkClient token={params.token ?? null} />
+      <VerifyMagicLinkClient
+        token={params.token ?? null}
+        locale={params.locale ?? params.lang ?? null}
+      />
     </main>
   );
 }

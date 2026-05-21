@@ -54,7 +54,7 @@ async def test_register_rejects_unknown_region(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient):
-    """Test registration with duplicate email."""
+    """Duplicate password registration should not reveal account existence by status."""
     # First registration
     await client.post(
         "/api/auth/register",
@@ -66,11 +66,32 @@ async def test_register_duplicate_email(client: AsyncClient):
         "/api/auth/register",
         json={"email": "duplicate@example.com", "password": "password456"},
     )
-    assert response.status_code == 400
-    assert (
-        response.json()["detail"]
-        == "Unable to create account. Try signing in or request a magic link."
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Unable to create account. Try signing in or request a magic link."
+    }
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_email_localizes_generic_error(client: AsyncClient):
+    """Duplicate registration keeps the same 2xx status and returns localized copy."""
+    await client.post(
+        "/api/auth/register",
+        json={"email": "duplicate.ru@example.com", "password": "password123"},
     )
+
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "duplicate.ru@example.com",
+            "password": "password456",
+            "locale": "ru",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Не получилось создать аккаунт. Попробуй войти или запросить ссылку для входа."
+    }
 
 
 @pytest.mark.asyncio
@@ -128,6 +149,20 @@ async def test_login_nonexistent_user(client: AsyncClient):
     )
     assert response.status_code == 401
     assert "Invalid email or password" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_credentials_localized_without_enumeration(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/login",
+        json={
+            "email": "nobody.ru@example.com",
+            "password": "password123",
+            "locale": "ru",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Неверный email или пароль"
 
 
 @pytest.mark.asyncio

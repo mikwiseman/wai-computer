@@ -58,6 +58,9 @@ targets:
     platform: macOS
     sources:
       - path: WaiComputerTests
+      - path: WaiComputer/Core/DesignSystem.swift
+      - path: WaiComputer/Features/Dictation/DictationCopy.swift
+      - path: WaiComputer/Features/Settings/DictationSettingsCopy.swift
       - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
       - path: WaiComputer/Features/Updates/BetaChannelStore.swift
     settings:

@@ -1,7 +1,9 @@
 import SwiftUI
+import WaiComputerKit
 
 struct DictationHistoryView: View {
     @EnvironmentObject private var historyStore: DictationHistoryStore
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var searchText = ""
 
     private var filteredEntries: [DictationHistoryEntry] {
@@ -16,9 +18,9 @@ struct DictationHistoryView: View {
             // Header with stats
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("Dictation History")
+                    Text(t("Dictation History", "История диктовки"))
                         .font(Typography.displaySmall)
-                    Text("\(historyStore.entries.count) dictations")
+                    Text(dictationsCountText(historyStore.entries.count))
                         .font(Typography.bodySmall)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -26,9 +28,9 @@ struct DictationHistoryView: View {
                 Spacer()
 
                 HStack(spacing: Spacing.xl) {
-                    statBadge(value: formatNumber(historyStore.totalWords), label: "total words")
-                    statBadge(value: "\(historyStore.averageWPM)", label: "wpm")
-                    statBadge(value: "\(historyStore.streakDays)", label: "day streak")
+                    statBadge(value: formatNumber(historyStore.totalWords), label: t("total words", "всего слов"))
+                    statBadge(value: "\(historyStore.averageWPM)", label: t("wpm", "слов/мин"))
+                    statBadge(value: "\(historyStore.streakDays)", label: t("day streak", "дней подряд"))
                 }
             }
             .padding(Spacing.xl)
@@ -39,7 +41,7 @@ struct DictationHistoryView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Palette.textTertiary)
-                TextField("Search dictations...", text: $searchText)
+                TextField(t("Search dictations...", "Искать в диктовках..."), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(Typography.body)
             }
@@ -52,11 +54,11 @@ struct DictationHistoryView: View {
             if filteredEntries.isEmpty {
                 Spacer()
                 ContentUnavailableView(
-                    searchText.isEmpty ? "No Dictations Yet" : "No Results",
+                    searchText.isEmpty ? t("No Dictations Yet", "Пока нет диктовок") : t("No Results", "Ничего не найдено"),
                     systemImage: searchText.isEmpty ? "mic.badge.plus" : "magnifyingglass",
                     description: Text(searchText.isEmpty
-                        ? "Press your dictation hotkey to start. Your transcriptions will appear here."
-                        : "No dictations match your search.")
+                        ? t("Press your dictation hotkey to start. Your transcriptions will appear here.", "Нажми клавишу диктовки, чтобы начать. Транскрипты появятся здесь.")
+                        : t("No dictations match your search.", "По этому запросу диктовок нет."))
                 )
                 Spacer()
             } else {
@@ -87,7 +89,7 @@ struct DictationHistoryView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if !historyStore.entries.isEmpty {
-                    Button("Clear All") {
+                    Button(t("Clear All", "Очистить все")) {
                         Task { await historyStore.deleteAll() }
                     }
                     .foregroundStyle(.red)
@@ -112,9 +114,9 @@ struct DictationHistoryView: View {
         return grouped.keys.sorted(by: >).map { date in
             let label: String
             if calendar.isDateInToday(date) {
-                label = "Today"
+                label = t("Today", "Сегодня")
             } else if calendar.isDateInYesterday(date) {
-                label = "Yesterday"
+                label = t("Yesterday", "Вчера")
             } else {
                 label = date.formatted(date: .abbreviated, time: .omitted)
             }
@@ -141,11 +143,23 @@ struct DictationHistoryView: View {
         }
         return "\(n)"
     }
+
+    private func dictationsCountText(_ count: Int) -> String {
+        if OnboardingL10n.language(for: languageManager.current) == .russian {
+            return "Диктовок: \(count)"
+        }
+        return "\(count) dictation\(count == 1 ? "" : "s")"
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 // MARK: - Entry Row
 
 private struct HistoryEntryRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let entry: DictationHistoryEntry
     let onDelete: () -> Void
     @State private var isCopied = false
@@ -174,18 +188,22 @@ private struct HistoryEntryRow: View {
                         .foregroundStyle(isCopied ? .green : Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("Copy to clipboard")
+                .help(t("Copy to clipboard", "Скопировать в буфер"))
 
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help("Delete")
+                .help(t("Delete", "Удалить"))
             }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.md)
         .contentShape(Rectangle())
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

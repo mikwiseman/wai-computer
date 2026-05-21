@@ -342,20 +342,24 @@ public extension Recording {
         UserFacingErrorFormatter.previewMessage(failureMessage, context: .recording)
     }
 
-    func statusDisplayText(hasLocalRecoveryBackup: Bool = false) -> String? {
+    func statusDisplayText(
+        hasLocalRecoveryBackup: Bool = false,
+        languageCode: String? = nil
+    ) -> String? {
+        let useRussian = Self.prefersRussian(languageCode: languageCode)
         if hasLocalRecoveryBackup && !isFailedUpload {
-            return "Saved locally"
+            return useRussian ? "Сохранено локально" : "Saved locally"
         }
 
         switch status {
         case .failed:
-            return "Needs attention"
+            return useRussian ? "Нужно внимание" : "Needs attention"
         case .pendingUpload:
-            return "Waiting to sync"
+            return useRussian ? "Ждет синхронизации" : "Waiting to sync"
         case .uploading:
-            return "Syncing in background"
+            return useRussian ? "Синхронизируется в фоне" : "Syncing in background"
         case .processing:
-            return "Processing"
+            return useRussian ? "Обрабатывается" : "Processing"
         case .ready:
             return nil
         }
@@ -363,5 +367,14 @@ public extension Recording {
 
     var statusDisplayText: String? {
         statusDisplayText()
+    }
+
+    private static func prefersRussian(languageCode: String?) -> Bool {
+        guard let languageCode, !languageCode.isEmpty else { return false }
+        if languageCode == "system" {
+            let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+            return preferred.hasPrefix("ru")
+        }
+        return languageCode.lowercased().hasPrefix("ru")
     }
 }

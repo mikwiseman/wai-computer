@@ -217,13 +217,13 @@ async def test_auth_lifecycle():
 
 
 # ---------------------------------------------------------------------------
-# 3. Duplicate registration -> 400
+# 3. Duplicate registration -> generic 200
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_duplicate_registration():
-    """Registering the same email twice returns 400."""
+    """Registering the same email twice avoids account enumeration by status."""
     email = make_test_email("dup_reg")
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15) as client:
@@ -233,11 +233,10 @@ async def test_duplicate_registration():
             "/api/auth/register",
             json={"email": email, "password": TEST_PASSWORD},
         )
-        assert resp.status_code == 400
-        assert (
-            resp.json()["detail"]
-            == "Unable to create account. Try signing in or request a magic link."
-        )
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "message": "Unable to create account. Try signing in or request a magic link."
+        }
 
 
 # ---------------------------------------------------------------------------

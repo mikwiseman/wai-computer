@@ -36,23 +36,38 @@ from app.models.user import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
-GENERIC_REGISTER_ERROR = "Unable to create account. Try signing in or request a magic link."
 VALID_REGIONS = {"global", "ru"}
 MAGIC_LINK_TOKEN_PREFIX = "magic_"
 PASSWORD_RESET_TOKEN_PREFIX = "reset_"
 AUTH_MESSAGES = {
     "en": {
+        "register_unavailable": (
+            "Unable to create account. Try signing in or request a magic link."
+        ),
+        "invalid_credentials": "Invalid email or password",
         "magic_link_sent": "Magic link sent to your email",
+        "invalid_magic_link": "Invalid magic link",
+        "magic_link_expired": "Magic link expired",
         "forgot_password_sent": (
             "If this email is registered, we sent a password reset link."
         ),
+        "invalid_password_reset": "Invalid password reset link",
+        "password_reset_expired": "Password reset link expired",
         "password_reset_success": "Password reset successfully",
     },
     "ru": {
+        "register_unavailable": (
+            "Не получилось создать аккаунт. Попробуй войти или запросить ссылку для входа."
+        ),
+        "invalid_credentials": "Неверный email или пароль",
         "magic_link_sent": "Мы отправили ссылку для входа на твою почту.",
+        "invalid_magic_link": "Недействительная ссылка для входа",
+        "magic_link_expired": "Срок действия ссылки для входа истек",
         "forgot_password_sent": (
             "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."
         ),
+        "invalid_password_reset": "Недействительная ссылка для сброса пароля",
+        "password_reset_expired": "Срок действия ссылки для сброса пароля истек",
         "password_reset_success": "Пароль успешно сброшен",
     },
 }
@@ -122,6 +137,7 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+    locale: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -152,6 +168,7 @@ class VerifyMagicLinkRequest(BaseModel):
     """Request body for verifying magic link."""
 
     token: str
+    locale: str | None = None
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -318,10 +335,12 @@ async def _create_auth_tokens(
 
 @router.post(
     "/register",
-    response_model=AuthResponse,
+    response_model=AuthResponse | MessageResponse,
     dependencies=[Depends(check_register_rate_limit)],
 )
-async def register(request: RegisterRequest, response: Response, db: Database) -> AuthResponse:
+async def register(
+    request: RegisterRequest, response: Response, db: Database
+) -> AuthResponse | MessageResponse:
     """Register a new user."""
     add_sentry_breadcrumb(category="auth", message="User registration attempt")
     password_hash = hash_password(request.password)
@@ -350,10 +369,8 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
             "registration rejected reason=duplicate_email email=%s",
             safe_text_digest(request.email, label="email"),
         )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=GENERIC_REGISTER_ERROR,
-        )
+        locale = _normalize_locale(request.locale, request.region)
+        return MessageResponse(message=AUTH_MESSAGES[locale]["register_unavailable"])
 
     # Create user
     user = User(
@@ -376,6 +393,7 @@ async def register(request: RegisterRequest, response: Response, db: Database) -
 @router.post("/login", response_model=AuthResponse, dependencies=[Depends(check_login_rate_limit)])
 async def login(request: LoginRequest, response: Response, db: Database) -> AuthResponse:
     """Login with email and password."""
+    locale = _normalize_locale(request.locale)
     add_sentry_breadcrumb(
         category="auth",
         message="User login attempt",
@@ -391,7 +409,7 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Auth
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail=AUTH_MESSAGES[locale]["invalid_credentials"],
         )
 
     if not verify_password(request.password, user.password_hash):
@@ -401,7 +419,7 @@ async def login(request: LoginRequest, response: Response, db: Database) -> Auth
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail=AUTH_MESSAGES[locale]["invalid_credentials"],
         )
 
     access_token, refresh_token = await _create_auth_tokens(user.id, db)
@@ -481,7 +499,13 @@ async def forgot_password(request: ForgotPasswordRequest, db: Database) -> Messa
         user.magic_link_token = token
         user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         await db.flush()
-        await send_password_reset_email(user.email, token, locale=locale)
+        try:
+            await send_password_reset_email(user.email, token, locale=locale)
+        except Exception:
+            logger.exception(
+                "password_reset email delivery failed email=%s",
+                safe_text_digest(request.email, label="email"),
+            )
         logger.info(
             "password_reset requested email=%s",
             safe_text_digest(request.email, label="email"),
@@ -502,11 +526,12 @@ async def verify_magic_link(
     db: Database,
 ) -> AuthResponse:
     """Verify a magic link token and return JWT."""
+    locale = _normalize_locale(request.locale)
     add_sentry_breadcrumb(category="auth", message="Magic link verification")
     if _is_password_reset_token(request.token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid magic link",
+            detail=AUTH_MESSAGES[locale]["invalid_magic_link"],
         )
 
     result = await db.execute(
@@ -517,13 +542,13 @@ async def verify_magic_link(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid magic link",
+            detail=AUTH_MESSAGES[locale]["invalid_magic_link"],
         )
 
     if user.magic_link_expires is None or user.magic_link_expires < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Magic link expired",
+            detail=AUTH_MESSAGES[locale]["magic_link_expired"],
         )
 
     # Clear magic link
@@ -550,7 +575,7 @@ async def reset_password(
     if not _is_password_reset_token(request.token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid password reset link",
+            detail=AUTH_MESSAGES[locale]["invalid_password_reset"],
         )
 
     result = await db.execute(select(User).where(User.magic_link_token == request.token))
@@ -559,7 +584,7 @@ async def reset_password(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid password reset link",
+            detail=AUTH_MESSAGES[locale]["invalid_password_reset"],
         )
 
     if user.magic_link_expires is None or user.magic_link_expires < datetime.now(timezone.utc):
@@ -568,7 +593,7 @@ async def reset_password(
         await db.flush()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Password reset link expired",
+            detail=AUTH_MESSAGES[locale]["password_reset_expired"],
         )
 
     user.password_hash = hash_password(request.password)

@@ -28,4 +28,101 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
             )
         )
     }
+
+    func testHeaderIndicatorDoesNotCallSystemAudioSetupAMicrophoneWarning() {
+        XCTAssertEqual(
+            SystemAudioWarningPolicy.headerIndicator(
+                requestedSystemAudio: true,
+                hasSystemAudio: false,
+                warning: nil
+            ),
+            .systemAudioStarting
+        )
+    }
+
+    func testHeaderIndicatorDistinguishesDegradedSystemAudioFromMicrophonePermission() {
+        XCTAssertEqual(
+            SystemAudioWarningPolicy.headerIndicator(
+                requestedSystemAudio: true,
+                hasSystemAudio: true,
+                warning: "system audio stalled"
+            ),
+            .systemAudioDegraded
+        )
+    }
+
+    func testSystemAudioReadinessNeverReportsReadyWhenUnsupported() {
+        XCTAssertEqual(
+            SystemAudioReadinessPolicy.status(
+                isSupported: false,
+                preflightPassedInCurrentProcess: true,
+                openedSettingsDuringCurrentAttempt: false
+            ),
+            .unsupported
+        )
+    }
+
+    func testSystemAudioReadinessRequiresCurrentProcessPreflight() {
+        XCTAssertEqual(
+            SystemAudioReadinessPolicy.status(
+                isSupported: true,
+                preflightPassedInCurrentProcess: false,
+                openedSettingsDuringCurrentAttempt: false
+            ),
+            .setupNeeded
+        )
+
+        XCTAssertEqual(
+            SystemAudioReadinessPolicy.status(
+                isSupported: true,
+                preflightPassedInCurrentProcess: true,
+                openedSettingsDuringCurrentAttempt: false
+            ),
+            .ready
+        )
+    }
+
+    func testSystemAudioReadinessMarksSettingsRoundTripAsRestartRequired() {
+        XCTAssertEqual(
+            SystemAudioReadinessPolicy.status(
+                isSupported: true,
+                preflightPassedInCurrentProcess: false,
+                openedSettingsDuringCurrentAttempt: true
+            ),
+            .restartRequired
+        )
+    }
+
+    func testSandboxFinalTranscriptAppendsWhenTextInserterDidNotChangeField() {
+        XCTAssertEqual(
+            OnboardingDictationSandboxPolicy.textAfterFinalTranscript(
+                currentText: "Draft",
+                textBeforeUtterance: "Draft",
+                finalTranscript: "hello world"
+            ),
+            "Draft hello world"
+        )
+    }
+
+    func testSandboxFinalTranscriptSkipsWhenTextInserterAlreadyInsertedIntoFocusedField() {
+        XCTAssertEqual(
+            OnboardingDictationSandboxPolicy.textAfterFinalTranscript(
+                currentText: "Draft hello world",
+                textBeforeUtterance: "Draft",
+                finalTranscript: "hello world"
+            ),
+            "Draft hello world"
+        )
+    }
+
+    func testSandboxFinalTranscriptStillAllowsRepeatedUtteranceWhenFieldDidNotChange() {
+        XCTAssertEqual(
+            OnboardingDictationSandboxPolicy.textAfterFinalTranscript(
+                currentText: "hello world",
+                textBeforeUtterance: "hello world",
+                finalTranscript: "hello world"
+            ),
+            "hello world hello world"
+        )
+    }
 }

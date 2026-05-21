@@ -1,7 +1,9 @@
 import SwiftUI
+import WaiComputerKit
 
 struct DictationDictionaryView: View {
     @EnvironmentObject private var dictionaryStore: DictationDictionaryStore
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var newWord = ""
     @State private var newReplacement = ""
     @State private var searchText = ""
@@ -24,7 +26,7 @@ struct DictationDictionaryView: View {
         VStack(spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: Spacing.md) {
-                Text("Dictionary")
+                Text(t("Dictionary", "Словарь"))
                     .font(Typography.displaySmall)
 
                 explainerCopy
@@ -44,7 +46,7 @@ struct DictationDictionaryView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Palette.textTertiary)
-                    TextField("Search dictionary…", text: $searchText)
+                    TextField(t("Search dictionary...", "Искать в словаре..."), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(Typography.body)
                 }
@@ -58,17 +60,20 @@ struct DictationDictionaryView: View {
             if dictionaryStore.words.isEmpty {
                 Spacer()
                 ContentUnavailableView(
-                    "No Words Yet",
+                    t("No Words Yet", "Пока нет слов"),
                     systemImage: "book",
-                    description: Text("Add words dictation often misspells — names, acronyms, technical terms.")
+                    description: Text(t(
+                        "Add words dictation often misspells — names, acronyms, technical terms.",
+                        "Добавь слова, которые диктовка часто путает: имена, аббревиатуры, термины."
+                    ))
                 )
                 Spacer()
             } else if filteredWords.isEmpty {
                 Spacer()
                 ContentUnavailableView(
-                    "No Results",
+                    t("No Results", "Ничего не найдено"),
                     systemImage: "magnifyingglass",
-                    description: Text("No words match your search.")
+                    description: Text(t("No words match your search.", "По этому запросу слов нет."))
                 )
                 Spacer()
             } else {
@@ -85,12 +90,15 @@ struct DictationDictionaryView: View {
     @ViewBuilder
     private var explainerCopy: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Each entry biases the recognizer toward your spelling. Add an optional replacement to also auto-correct a known misspelling after transcription.")
+            Text(t(
+                "Each entry biases the recognizer toward your spelling. Add an optional replacement to also auto-correct a known misspelling after transcription.",
+                "Каждая запись подсказывает распознавателю нужное написание. Добавь замену, чтобы автоматически исправлять известную ошибку после транскрипции."
+            ))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
             HStack(spacing: 12) {
-                badgeLegend(label: "BIAS", color: Palette.accent, hint: "Word boosts recognition")
-                badgeLegend(label: "REPLACE", color: .orange, hint: "Auto-corrects to replacement")
+                badgeLegend(label: biasBadgeLabel, color: Palette.accent, hint: t("Word boosts recognition", "Помогает распознаванию"))
+                badgeLegend(label: replaceBadgeLabel, color: .orange, hint: t("Auto-corrects to replacement", "Автоматически заменяет"))
             }
         }
     }
@@ -101,7 +109,10 @@ struct DictationDictionaryView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.orange)
-            Text("\(dictionaryStore.words.count) entries — long vocabulary lists can confuse the recognizer and slow language detection. Keep entries focused on words that genuinely get misheard.")
+            Text(t(
+                "\(dictionaryStore.words.count) entries — long vocabulary lists can confuse the recognizer and slow language detection. Keep entries focused on words that genuinely get misheard.",
+                "\(dictionaryStore.words.count) записей — длинные словари могут путать распознаватель и замедлять определение языка. Оставляй только слова, которые действительно часто слышатся неверно."
+            ))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +128,7 @@ struct DictationDictionaryView: View {
     private var addRow: some View {
         VStack(spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
-                TextField("Word or phrase…", text: $newWord)
+                TextField(t("Word or phrase...", "Слово или фраза..."), text: $newWord)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
                     .onSubmit { addWord() }
@@ -126,16 +137,19 @@ struct DictationDictionaryView: View {
                     .font(.caption)
                     .foregroundStyle(Palette.textTertiary)
 
-                TextField("Replace with… (optional)", text: $newReplacement)
+                TextField(t("Replace with... (optional)", "Заменять на... (необязательно)"), text: $newReplacement)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
                     .onSubmit { addWord() }
 
-                Button("Add") { addWord() }
+                Button(t("Add", "Добавить")) { addWord() }
                     .disabled(newWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack(spacing: 6) {
-                Text("Leave the right field empty to add a vocabulary booster only.")
+                Text(t(
+                    "Leave the right field empty to add a vocabulary booster only.",
+                    "Оставь правое поле пустым, если нужна только подсказка для распознавания."
+                ))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                 Spacer()
@@ -157,9 +171,9 @@ struct DictationDictionaryView: View {
                 Text(replacement)
                     .font(Typography.body)
                     .foregroundStyle(Palette.textSecondary)
-                badge(label: "REPLACE", color: .orange)
+                badge(label: replaceBadgeLabel, color: .orange)
             } else {
-                badge(label: "BIAS", color: Palette.accent)
+                badge(label: biasBadgeLabel, color: Palette.accent)
             }
 
             Spacer()
@@ -172,7 +186,7 @@ struct DictationDictionaryView: View {
                     .foregroundStyle(Palette.textTertiary)
             }
             .buttonStyle(.plain)
-            .help("Remove word")
+            .help(t("Remove word", "Удалить слово"))
         }
         .padding(.vertical, Spacing.xs)
     }
@@ -209,5 +223,17 @@ struct DictationDictionaryView: View {
         dictionaryStore.add(word: trimmed, replacement: replacement)
         newWord = ""
         newReplacement = ""
+    }
+
+    private var biasBadgeLabel: String {
+        t("BIAS", "СЛОВО")
+    }
+
+    private var replaceBadgeLabel: String {
+        t("REPLACE", "ЗАМЕНА")
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }

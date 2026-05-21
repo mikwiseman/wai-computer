@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "WaiComputer needs microphone access to record meetings, notes, and live dictation.";
+"NSAudioCaptureUsageDescription" = "WaiComputer needs audio capture access to record system audio from meetings and calls.";

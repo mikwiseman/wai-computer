@@ -69,8 +69,8 @@ vi.mock("@/components/DashboardClient", () => ({
 }));
 
 vi.mock("@/components/VerifyMagicLinkClient", () => ({
-  VerifyMagicLinkClient: ({ token }: { token: string | null }) => {
-    verifyClientMock(token);
+  VerifyMagicLinkClient: ({ token, locale }: { token: string | null; locale?: string | null }) => {
+    verifyClientMock(token, locale ?? null);
     return <div data-testid="verify-client-mock">{token ?? "null-token"}</div>;
   },
 }));
@@ -100,7 +100,19 @@ describe("app pages", () => {
     requestHeaderMock.acceptLanguage = null;
     requestHeaderMock.referer = null;
     mockSearchParams = new URLSearchParams();
+    setNavigatorLanguages(["en-US"]);
   });
+
+  function setNavigatorLanguages(languages: string[], language = languages[0] ?? "en-US") {
+    Object.defineProperty(window.navigator, "languages", {
+      configurable: true,
+      value: languages,
+    });
+    Object.defineProperty(window.navigator, "language", {
+      configurable: true,
+      value: language,
+    });
+  }
 
   it("renders login page and wires onSuccess to router", () => {
     render(<LoginPage />);
@@ -155,12 +167,13 @@ describe("app pages", () => {
   });
 
   it("resolves verify token from searchParams", async () => {
-    render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token" }) }));
+    render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", locale: "ru" }) }));
     expect(screen.getByTestId("verify-client-mock")).toHaveTextContent("abc-token");
 
     render(await VerifyMagicLinkPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getAllByTestId("verify-client-mock")[1]).toHaveTextContent("null-token");
-    expect(verifyClientMock).toHaveBeenCalledWith(null);
+    expect(verifyClientMock).toHaveBeenCalledWith("abc-token", "ru");
+    expect(verifyClientMock).toHaveBeenCalledWith(null, null);
   });
 
   it("resolves app magic-link token and client from searchParams", async () => {
@@ -188,6 +201,18 @@ describe("app pages", () => {
     render(await ResetPasswordPage({ searchParams: Promise.resolve({ token: "reset-token", locale: "ru" }) }));
     expect(screen.getByRole("heading", { name: "Сброс пароля" })).toBeInTheDocument();
     expect(screen.getByTestId("reset-password-submit")).toHaveTextContent("Сбросить пароль");
+  });
+
+  it("falls back to browser Russian locale for app-open links without locale query", async () => {
+    setNavigatorLanguages(["ru-RU", "en-US"]);
+
+    render(await AppMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", client: "macos" }) }));
+
+    expect(screen.getByRole("heading", { name: "Открыть приложение WaiComputer" })).toBeInTheDocument();
+    expect(screen.getByTestId("browser-sign-in-link")).toHaveAttribute(
+      "href",
+      "/auth/verify?token=abc-token&locale=ru",
+    );
   });
 
   it("passes shared recording token from route params", async () => {
