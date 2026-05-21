@@ -4,6 +4,7 @@ import WaiComputerKit
 struct MacContentView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
+    @EnvironmentObject var dictationManager: DictationManager
     @EnvironmentObject private var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
 
@@ -28,6 +29,29 @@ struct MacContentView: View {
             if newPhase == .active {
                 appState.refreshPermissionStatus(rearmDismissed: true)
             }
+        }
+        .alert(
+            t("Dictation Error", "Ошибка диктовки"),
+            isPresented: Binding(
+                get: { dictationManager.error != nil },
+                set: { if !$0 { dictationManager.clearError() } }
+            )
+        ) {
+            if (dictationManager.error ?? "").contains("Microphone permission") {
+                Button(t("Open Microphone Settings", "Открыть настройки микрофона")) {
+                    MacPrivacySettings.openMicrophone()
+                    dictationManager.clearError()
+                }
+                Button(t("Cancel", "Отмена"), role: .cancel) {
+                    dictationManager.clearError()
+                }
+            } else {
+                Button(t("OK", "ОК")) {
+                    dictationManager.clearError()
+                }
+            }
+        } message: {
+            Text(dictationManager.error ?? t("Dictation could not continue.", "Диктовка не может продолжаться."))
         }
     }
 
