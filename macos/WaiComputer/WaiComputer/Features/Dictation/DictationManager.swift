@@ -46,8 +46,6 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let enabledDefaultsKey = "dictationEnabled"
-    private static let startupCaptureSampleRate = 16_000
-    private static let startupCaptureChannels: UInt32 = 1
 
     @Published var hotkeyChoice: String {
         didSet {
@@ -253,6 +251,10 @@ final class DictationManager: ObservableObject {
         applyHotkeyAvailability()
     }
 
+    func clearError() {
+        error = nil
+    }
+
     // MARK: - Hotkey Callbacks
 
     private func setupHotkeyCallbacks() {
@@ -377,16 +379,7 @@ final class DictationManager: ObservableObject {
         // Play start sound (subtle, non-alarming)
         NSSound(named: NSSound.Name("Morse"))?.play()
 
-        var startupCapture: MicrophoneCapture?
         do {
-            let capture = makeStartupCapture()
-            startupCapture = capture
-            try await capture.startRecording()
-            session.event(.armingStarted, data: [
-                "captureSampleRate": Self.startupCaptureSampleRate,
-                "captureChannels": Int(Self.startupCaptureChannels),
-            ])
-
             let settings = try await currentSettings(apiClient: apiClient)
             SentryHelper.addBreadcrumb(
                 category: "dictation.session",
@@ -406,19 +399,14 @@ final class DictationManager: ObservableObject {
             )
 
             if sessionConfig.provider == "openai" {
-                startupCapture = nil
-                await startOpenAIDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig, capture: capture)
+                await startOpenAIDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
                 return
             }
 
             if sessionConfig.provider == "elevenlabs" {
-                startupCapture = nil
-                await startElevenLabsDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig, capture: capture)
+                await startElevenLabsDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
                 return
             }
-
-            providerCapture = capture
-            startupCapture = nil
 
             let keyTerms = dictionaryStore?.vocabularyList ?? []
             let provider = ProviderBackedRealtimeSession(
@@ -440,8 +428,18 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            let startupBuffer = RealtimeAudioStartupBuffer()
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
+            try await provider.open()
+            session.event(.providerOpened)
+
+            if deferredStop && !isHandsFree {
+                deferredStop = false
+                await cancelDictation()
+                return
+            }
+
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            providerCapture = capture
             providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
@@ -449,9 +447,7 @@ final class DictationManager: ObservableObject {
                     guard !Task.isCancelled else { return }
                     guard let data = encoder.encode(buffer) else { continue }
                     do {
-                        try await startupBuffer.append(data) { chunk in
-                            try await provider.send(pcm16: chunk)
-                        }
+                        try await provider.send(pcm16: data)
                         liveSent += 1
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, data.count, sessionConfig.provider)
@@ -464,11 +460,7 @@ final class DictationManager: ObservableObject {
                 NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", sessionConfig.provider, liveSent)
             }
 
-            try await provider.open()
-            try await startupBuffer.connectAndFlush { chunk in
-                try await provider.send(pcm16: chunk)
-            }
-            session.event(.providerOpened)
+            try await capture.startRecording()
 
             startTimer()
             setState(.listening)
@@ -484,9 +476,6 @@ final class DictationManager: ObservableObject {
             self.error = error.userFacingMessage(context: .dictation)
             instrumentationSession?.failure(error, extras: ["stage": "start"])
             instrumentationSession = nil
-            if let startupCapture {
-                await startupCapture.stopRecording()
-            }
             await resetAfterStartFailure()
         }
     }
@@ -499,7 +488,7 @@ final class DictationManager: ObservableObject {
         // Drain the active provider: direct provider session, OpenAI, or
         // ElevenLabs via WebSocketManager.
         await finishProviderAudioPumpBeforeFinalizing()
-        let providerSegments = (try? await providerSession?.close(timeout: .seconds(7))) ?? []
+        let providerSegments = (try? await providerSession?.close(timeout: .seconds(2))) ?? []
         await finishOpenAIAudioPumpBeforeFinalizing()
         let openAIOutcome = try? await openAISession?.close(timeout: .seconds(3))
         if let ws = elevenLabsWebSocket {
@@ -674,12 +663,12 @@ final class DictationManager: ObservableObject {
         return UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
     }
 
-    private func makeStartupCapture() -> MicrophoneCapture {
+    private func makeCapture(sampleRate: Int) -> MicrophoneCapture {
         MicrophoneCapture(
             config: AudioCaptureConfig(
-                sampleRate: Double(Self.startupCaptureSampleRate),
-                channelCount: Self.startupCaptureChannels,
-                bufferSize: UInt32(Self.startupCaptureSampleRate / 10)
+                sampleRate: Double(sampleRate),
+                channelCount: 1,
+                bufferSize: UInt32(max(sampleRate / 10, 1))
             )
         )
     }
@@ -778,16 +767,13 @@ final class DictationManager: ObservableObject {
     private func startOpenAIDictation(
         apiClient: APIClient,
         session: DictationInstrumentation.Session,
-        sessionConfig: RealtimeTranscriptionSessionConfig,
-        capture: MicrophoneCapture
+        sessionConfig: RealtimeTranscriptionSessionConfig
     ) async {
         do {
             guard let urlString = sessionConfig.websocketURL,
                   let url = URL(string: urlString) else {
                 throw DictationInstrumentationError.unknown("missing OpenAI websocket URL in session config")
             }
-
-            openAICapture = capture
 
             let provider = OpenAIRealtimeTranscriptionSession(
                 websocketURL: url,
@@ -811,8 +797,17 @@ final class DictationManager: ObservableObject {
                 "language": sessionConfig.language,
             ])
 
-            let startupBuffer = RealtimeAudioStartupBuffer()
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
+            try await provider.open()
+
+            if deferredStop && !isHandsFree {
+                deferredStop = false
+                await cancelDictation()
+                return
+            }
+
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            openAICapture = capture
             openAIAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
@@ -820,9 +815,7 @@ final class DictationManager: ObservableObject {
                     guard !Task.isCancelled else { return }
                     guard let data = encoder.encode(buffer) else { continue }
                     do {
-                        try await startupBuffer.append(data) { chunk in
-                            try await provider.send(pcm16: chunk)
-                        }
+                        try await provider.send(pcm16: data)
                         liveSent += 1
                     } catch {
                         NSLog("[Dictation/OpenAI] send #%d failed: %@", liveSent, String(describing: error))
@@ -831,10 +824,7 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            try await provider.open()
-            try await startupBuffer.connectAndFlush { chunk in
-                try await provider.send(pcm16: chunk)
-            }
+            try await capture.startRecording()
 
             startTimer()
             setState(.listening)
@@ -856,8 +846,7 @@ final class DictationManager: ObservableObject {
     private func startElevenLabsDictation(
         apiClient: APIClient,
         session: DictationInstrumentation.Session,
-        sessionConfig: RealtimeTranscriptionSessionConfig,
-        capture: MicrophoneCapture
+        sessionConfig: RealtimeTranscriptionSessionConfig
     ) async {
         do {
             // Read from the multi-select language store. wireLanguageTag returns
@@ -865,15 +854,7 @@ final class DictationManager: ObservableObject {
             // a single-language selection.
             let language = sessionConfig.language
 
-            // 1. Mic capture — fresh MicrophoneCapture per session. EXACTLY
-            //    what pre-Phase-4 (build ≤56) shipped working. The Phase-4
-            //    AudioEngineHost.lease() path never produced audio that the
-            //    ElevenLabs WebSocket would transcribe in the build-67/68
-            //    rollback test (zero bytes ever sent). Going back to the
-            //    proven class side-steps that incompatibility.
-            elevenLabsCapture = capture
-
-            // 2. WebSocketManager.connect(using:) receives the already-minted
+            // 1. WebSocketManager.connect(using:) receives the already-minted
             //    config so the hotkey path does not pay a second backend
             //    round-trip. The config contains only a temporary credential;
             //    no provider socket is opened until connect() below.
@@ -902,10 +883,20 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            // 3. Audio pump — encode each MicrophoneCapture buffer and forward
-            //    to ws.sendAudio. Mirrors pre-Phase-4 audioTask exactly.
-            let startupBuffer = RealtimeAudioStartupBuffer()
+            // 2. Audio pump — encode each MicrophoneCapture buffer and forward
+            //    to ws.sendAudio after the provider socket is open.
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
+            try await ws.connect(using: sessionConfig)
+            session.event(.providerOpened)
+
+            if deferredStop && !isHandsFree {
+                deferredStop = false
+                await cancelDictation()
+                return
+            }
+
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            elevenLabsCapture = capture
             NSLog("[Dictation/EL] audio task starting (MicrophoneCapture)")
             elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture] in
                 guard let ws, let capture else {
@@ -923,9 +914,7 @@ final class DictationManager: ObservableObject {
                         continue
                     }
                     do {
-                        try await startupBuffer.append(data) { chunk in
-                            try await ws.sendAudio(data: chunk)
-                        }
+                        try await ws.sendAudio(data: data)
                         liveSent += 1
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/EL] sent #%d %d bytes", liveSent, data.count)
@@ -938,11 +927,7 @@ final class DictationManager: ObservableObject {
                 NSLog("[Dictation/EL] audio stream ended (sent=%d)", liveSent)
             }
 
-            try await ws.connect(using: sessionConfig)
-            try await startupBuffer.connectAndFlush { chunk in
-                try await ws.sendAudio(data: chunk)
-            }
-            session.event(.providerOpened)
+            try await capture.startRecording()
 
             startTimer()
             setState(.listening)

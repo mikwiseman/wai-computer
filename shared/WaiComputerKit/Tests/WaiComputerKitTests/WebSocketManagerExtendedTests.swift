@@ -443,6 +443,39 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.first?.endMs, 800)
     }
 
+    func testProviderBackedSonioxFinalMarkerIsFinalizationOnly() async {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        ))
+
+        await session.testingHandleSonioxMessage("""
+        {
+            "tokens": [
+                {"text":"Привет","is_final":true,"start_ms":0,"end_ms":400,"confidence":0.93},
+                {"text":"<fin>","is_final":true,"start_ms":400,"end_ms":400,"confidence":1.0}
+            ],
+            "finished": false
+        }
+        """)
+
+        let segments = await session.testingCollectedSegments()
+        let sawTranscript = await session.testingHasTranscriptActivity()
+        let sawFinalMarker = await session.testingHasFinalizationMarker()
+
+        XCTAssertEqual(segments.map(\.text), ["Привет"])
+        XCTAssertTrue(sawTranscript)
+        XCTAssertTrue(sawFinalMarker)
+    }
+
     func testProviderBackedInworldAudioChunkerBuffersSub20MsFrames() {
         var pending = Data()
 

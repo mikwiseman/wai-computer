@@ -4,6 +4,8 @@ import SwiftUI
 /// A floating, non-activating panel that shows dictation state.
 /// Positioned at the top-center of the screen, doesn't steal focus from other apps.
 final class DictationOverlayPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
 
     init() {
         super.init(
@@ -14,13 +16,15 @@ final class DictationOverlayPanel: NSPanel {
         )
 
         // Panel behavior
-        self.level = .floating
+        self.level = .statusBar
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
         self.isMovableByWindowBackground = true
         self.hidesOnDeactivate = false
+        self.isReleasedWhenClosed = false
+        self.setAccessibilityIdentifier("dictation-overlay-panel")
         self.animationBehavior = .utilityWindow
 
         positionAtTopCenter()

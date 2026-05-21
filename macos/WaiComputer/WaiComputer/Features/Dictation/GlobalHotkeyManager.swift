@@ -551,10 +551,17 @@ final class GlobalHotkeyManager: ObservableObject {
         otherKeyPressed = false
 
         holdTimer?.cancel()
-        holdTimer = nil
-        isInPushToTalk = true
-        log.info("Push-to-talk started")
-        onPushToTalkStart?()
+        isInPushToTalk = false
+
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.isHotkeyHeld, !self.otherKeyPressed, !self.isInPushToTalk else { return }
+            self.isInPushToTalk = true
+            log.info("Push-to-talk started")
+            self.onPushToTalkStart?()
+        }
+        holdTimer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: timer)
     }
 
     private func hotkeyUp() {
@@ -599,6 +606,16 @@ final class GlobalHotkeyManager: ObservableObject {
             onSingleTap?()
         }
     }
+
+    #if DEBUG
+    func testingPressHotkey() {
+        hotkeyDown()
+    }
+
+    func testingReleaseHotkey() {
+        hotkeyUp()
+    }
+    #endif
 
     deinit {
         if let m = globalFlagsMonitor { NSEvent.removeMonitor(m) }

@@ -18,6 +18,8 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private var inworldPendingAudio = Data()
     private var isClosing = false
     private var didSendEndTurn = false
+    private var lastTranscriptEventAt: ContinuousClock.Instant?
+    private var finalizationMarkerReceived = false
 
     public init(
         config: RealtimeTranscriptionSessionConfig,
@@ -103,8 +105,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             try await flushInworldPendingAudio(to: webSocket)
             try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
         case "deepgram":
-            let silenceBytes = max(1, config.sampleRate / 5) * 2
-            try await webSocket.send(.data(Data(repeating: 0, count: silenceBytes)))
             try await webSocket.send(.string(Self.encodeJSON(["type": "CloseStream"])))
         case "soniox":
             let silenceBytes = max(1, config.sampleRate / 5) * 2
@@ -125,6 +125,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     public func close(timeout: Duration = .seconds(5)) async throws -> [LiveTranscriptSegment] {
         guard !isClosing else { return collectedSegments }
         isClosing = true
+        guard webSocket != nil else {
+            eventContinuation.finish()
+            return collectedSegments
+        }
         try? await endTurn()
         if config.provider == "inworld" {
             try? await webSocket?.send(.string(Self.encodeJSON(["closeStream": [String: Any]()])))
@@ -132,9 +136,26 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             try? await webSocket?.send(.string(""))
         }
 
-        let deadline = ContinuousClock().now + timeout
-        while ContinuousClock().now < deadline, webSocket?.closeCode == .invalid {
-            try? await Task.sleep(for: .milliseconds(100))
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let deadline = startedAt + timeout
+        let minimumWaitUntil = startedAt + .milliseconds(250)
+        let noTranscriptWaitUntil = startedAt + .milliseconds(900)
+        let quietWindow: Duration = .milliseconds(500)
+
+        while clock.now < deadline {
+            let now = clock.now
+            if finalizationMarkerReceived, now >= minimumWaitUntil {
+                break
+            }
+            if let lastTranscriptEventAt {
+                if now >= minimumWaitUntil && now - lastTranscriptEventAt >= quietWindow {
+                    break
+                }
+            } else if now >= noTranscriptWaitUntil {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
         }
 
         webSocket?.cancel(with: .normalClosure, reason: nil)
@@ -398,6 +419,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             guard !delta.isEmpty else { return }
             let current = (interimByItem[itemId] ?? "") + delta
             interimByItem[itemId] = current
+            markTranscriptEvent()
             eventContinuation.yield(.interim(text: current, language: nil))
         case "conversation.item.input_audio_transcription.completed":
             let itemId = json["item_id"] as? String ?? "unknown"
@@ -432,6 +454,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         guard !transcript.isEmpty else { return }
         let isFinal = (payload["is_final"] as? Bool) ?? (payload["isFinal"] as? Bool) ?? false
         if !isFinal {
+            markTranscriptEvent()
             eventContinuation.yield(.interim(text: transcript, language: nil))
             return
         }
@@ -472,6 +495,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let transcript = (payload["transcript"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return }
         if !isFinal {
+            markTranscriptEvent()
             eventContinuation.yield(.interim(text: transcript, language: nil))
             return
         }
@@ -495,11 +519,16 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let tokens = json["tokens"] as? [[String: Any]] ?? []
         let finalTokens = tokens.filter { ($0["is_final"] as? Bool) == true }
         let nonFinalTokens = tokens.filter { ($0["is_final"] as? Bool) != true }
+        if finalTokens.contains(where: { (($0["text"] as? String) ?? "").hasPrefix("<") }) {
+            markTranscriptEvent(finalizationMarker: true)
+        }
         if let segment = sonioxSegment(from: finalTokens, isFinal: true) {
             collectedSegments.append(segment)
+            markTranscriptEvent()
             eventContinuation.yield(.committed(segment))
         }
         if let segment = sonioxSegment(from: nonFinalTokens, isFinal: false) {
+            markTranscriptEvent()
             eventContinuation.yield(.interim(text: segment.text, language: nil))
         }
     }
@@ -510,6 +539,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         case "partial_transcript":
             let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
+                markTranscriptEvent()
                 eventContinuation.yield(.interim(text: text, language: nil))
             }
         case "committed_transcript", "committed_transcript_with_timestamps":
@@ -557,6 +587,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     ) {
         let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return }
+        markTranscriptEvent()
         let fallbackStart = collectedSegments.last?.endMs ?? 0
         let segment = LiveTranscriptSegment(
             text: transcript,
@@ -568,6 +599,13 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         )
         collectedSegments.append(segment)
         eventContinuation.yield(.committed(segment))
+    }
+
+    private func markTranscriptEvent(finalizationMarker: Bool = false) {
+        lastTranscriptEventAt = ContinuousClock().now
+        if finalizationMarker {
+            finalizationMarkerReceived = true
+        }
     }
 
     private func handleSocketError(_ error: Error) {
@@ -680,8 +718,23 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         handleDeepgram(json)
     }
 
+    func testingHandleSonioxMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        handleSoniox(json)
+    }
+
     func testingCollectedSegments() -> [LiveTranscriptSegment] {
         collectedSegments
+    }
+
+    func testingHasTranscriptActivity() -> Bool {
+        lastTranscriptEventAt != nil
+    }
+
+    func testingHasFinalizationMarker() -> Bool {
+        finalizationMarkerReceived
     }
 
     func testingRequest() throws -> URLRequest {
