@@ -33,10 +33,19 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 }
 
 final class APIClientTests: XCTestCase {
+    private let paymentModeDefaultsKey = "paymentModeEnabled"
+
     override func setUp() {
         super.setUp()
         MockURLProtocol.requestHandler = nil
         SentryHelper.resetCapturedFingerprints()
+        UserDefaults.standard.removeObject(forKey: paymentModeDefaultsKey)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: paymentModeDefaultsKey)
+        MockURLProtocol.requestHandler = nil
+        super.tearDown()
     }
 
     private func makeClient(baseURL: URL = URL(string: "https://api.example.com")!) -> APIClient {
@@ -98,6 +107,45 @@ final class APIClientTests: XCTestCase {
         let result = try await client.fulltextSearch(query: "roadmap", limit: 10, offset: 5)
         XCTAssertEqual(result.total, 0)
         XCTAssertTrue(result.results.isEmpty)
+    }
+
+    func testRequestsDoNotSendPaymentModeHeaderByDefault() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-WaiComputer-Payment-Mode"))
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("[]".utf8))
+        }
+
+        _ = try await client.listRecordings()
+    }
+
+    func testPaymentModeHeaderIsDebugOnly() async throws {
+        UserDefaults.standard.set(true, forKey: paymentModeDefaultsKey)
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            #if DEBUG
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-WaiComputer-Payment-Mode"), "enforce")
+            #else
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-WaiComputer-Payment-Mode"))
+            #endif
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("[]".utf8))
+        }
+
+        _ = try await client.listRecordings()
     }
 
     func testUnauthorizedResponseMapsToUnauthorizedError() async {

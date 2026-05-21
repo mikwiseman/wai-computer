@@ -139,22 +139,13 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let clock = ContinuousClock()
         let startedAt = clock.now
         let deadline = startedAt + timeout
-        let minimumWaitUntil = startedAt + .milliseconds(250)
-        let noTranscriptWaitUntil = startedAt + .milliseconds(900)
-        let quietWindow: Duration = .milliseconds(500)
-
-        while clock.now < deadline {
-            let now = clock.now
-            if finalizationMarkerReceived, now >= minimumWaitUntil {
-                break
-            }
-            if let lastTranscriptEventAt {
-                if now >= minimumWaitUntil && now - lastTranscriptEventAt >= quietWindow {
-                    break
-                }
-            } else if now >= noTranscriptWaitUntil {
-                break
-            }
+        while RealtimeCloseDrainPolicy.shouldKeepWaiting(
+            now: clock.now,
+            deadline: deadline,
+            startedAt: startedAt,
+            lastTranscriptEventAt: lastTranscriptEventAt,
+            finalizationMarkerReceived: finalizationMarkerReceived
+        ) {
             try? await Task.sleep(for: .milliseconds(50))
         }
 

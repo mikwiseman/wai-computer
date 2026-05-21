@@ -467,18 +467,24 @@ public actor APIClient {
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        // Opt-in billing enforcement for testers. When the user flips the
-        // Payment-mode toggle in Settings, every request advertises that
-        // intent so the backend enforces the word cap for *this* user only,
-        // independent of the global BILLING_ENFORCEMENT_ENABLED env flag.
-        if UserDefaults.standard.bool(forKey: "paymentModeEnabled") {
+        #if DEBUG
+        // Debug-only billing enforcement for testers. Release builds must
+        // ignore stale local flags because the Settings toggle is not shipped.
+        if Self.debugPaymentModeOverrideEnabled {
             request.setValue("enforce", forHTTPHeaderField: "X-WaiComputer-Payment-Mode")
         }
+        #endif
         if let body = body {
             request.httpBody = try encoder.encode(AnyEncodable(body))
         }
         return request
     }
+
+    #if DEBUG
+    private static var debugPaymentModeOverrideEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "paymentModeEnabled")
+    }
+    #endif
 
     // MARK: - Request methods
 
