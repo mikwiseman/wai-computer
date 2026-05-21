@@ -69,6 +69,21 @@ def test_defaults_are_registered_options() -> None:
             f"Default {provider}/{model} for {group} is not in TRANSCRIPTION_OPTIONS"
 
 
+def test_default_stt_model_set_matches_stable_release_choice() -> None:
+    assert (DEFAULT_DICTATION_LIVE_STT_PROVIDER, DEFAULT_DICTATION_LIVE_STT_MODEL) == (
+        "inworld",
+        "inworld/inworld-stt-1",
+    )
+    assert (DEFAULT_RECORDING_LIVE_STT_PROVIDER, DEFAULT_RECORDING_LIVE_STT_MODEL) == (
+        "inworld",
+        "inworld/inworld-stt-1",
+    )
+    assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
+        "elevenlabs",
+        "scribe_v2",
+    )
+
+
 # ---------------------------------------------------------------------------
 # normalize_provider / normalize_model
 # ---------------------------------------------------------------------------

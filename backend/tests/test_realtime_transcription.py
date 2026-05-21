@@ -56,42 +56,40 @@ async def test_create_elevenlabs_realtime_token_requires_api_key():
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_uses_soniox_recording_defaults():
-    fake_soniox = type(
-        "SonioxSession",
+async def test_create_realtime_transcription_session_uses_inworld_recording_defaults():
+    fake_jwt = type(
+        "InworldJwt",
         (),
-        {
-            "temporary_api_key": "sx-temp",
-            "expires_in_seconds": 60,
-            "sample_rate": 16_000,
-            "language": "multi",
-            "channels": 1,
-            "model": "stt-rt-v4",
-            "websocket_url": "wss://stt-rt.soniox.com/transcribe-websocket",
-        },
+        {"token": "iw-jwt", "expires_in_seconds": 850},
     )()
-    with patch(
-        "app.core.realtime_transcription.mint_soniox_realtime_session",
-        new=AsyncMock(return_value=fake_soniox),
+
+    with (
+        patch("app.core.realtime_transcription.get_settings") as mock_settings,
+        patch(
+            "app.core.realtime_transcription.mint_inworld_client_jwt",
+            new=AsyncMock(return_value=fake_jwt),
+        ),
     ):
+        mock_settings.return_value.inworld_api_key = "user:pass"
+        mock_settings.return_value.inworld_workspace = ""
         from app.core.realtime_transcription import create_realtime_transcription_session
 
         session = await create_realtime_transcription_session(language="multi", channels=1)
 
     assert session == RealtimeTranscriptionSession(
-        provider="soniox",
-        token="sx-temp",
-        expires_in_seconds=60,
+        provider="inworld",
+        token="iw-jwt",
+        expires_in_seconds=850,
         sample_rate=16_000,
         audio_format="linear16_16000",
         language="multi",
         channels=1,
-        model="stt-rt-v4",
+        model="inworld/inworld-stt-1",
         keep_alive_interval_seconds=None,
         commit_strategy="vad",
         no_verbatim=False,
-        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
-        auth_scheme="message_api_key",
+        websocket_url="wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+        auth_scheme="bearer",
     )
 
 

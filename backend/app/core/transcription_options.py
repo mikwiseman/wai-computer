@@ -22,10 +22,10 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "soniox"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "stt-rt-v4"
-DEFAULT_RECORDING_LIVE_STT_PROVIDER = "soniox"
-DEFAULT_RECORDING_LIVE_STT_MODEL = "stt-rt-v4"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "inworld"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "inworld/inworld-stt-1"
+DEFAULT_RECORDING_LIVE_STT_PROVIDER = "inworld"
+DEFAULT_RECORDING_LIVE_STT_MODEL = "inworld/inworld-stt-1"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
@@ -50,12 +50,20 @@ class ModelOption:
 
 _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
+        provider="inworld",
+        model="inworld/inworld-stt-1",
+        label="Inworld STT-1",
+        description=(
+            "Default for dictation. Inworld first-party model for configurable "
+            "turn-taking and voice-profile-aware transcription."
+        ),
+    ),
+    ModelOption(
         provider="soniox",
         model="stt-rt-v4",
         label="Soniox v4 Realtime",
         description=(
-            "Default for dictation. Best measured balance of fast startup, "
-            "manual finalization, and Russian dictation accuracy."
+            "Fast realtime option with semantic endpointing and broad multilingual support."
         ),
     ),
     ModelOption(
@@ -73,24 +81,24 @@ _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         label="ElevenLabs Scribe v2 Realtime",
         description="High-accuracy multilingual realtime model with slower finalization.",
     ),
+)
+
+_RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
         provider="inworld",
         model="inworld/inworld-stt-1",
         label="Inworld STT-1",
         description=(
-            "Inworld first-party model for voice-profile and configurable "
-            "turn-taking experiments."
+            "Default for live recording. Inworld first-party model for configurable "
+            "turn-taking and voice-profile-aware transcription."
         ),
     ),
-)
-
-_RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
         provider="soniox",
         model="stt-rt-v4",
         label="Soniox v4 Realtime",
         description=(
-            "Default. Best value long realtime option. 60+ languages, semantic endpointing, "
+            "Best value long realtime option. 60+ languages, semantic endpointing, "
             "up to 5-hour streams."
         ),
     ),
@@ -107,15 +115,6 @@ _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
         description=(
             "Realtime turn-taking model for live notes and short interactive "
             "recording sessions."
-        ),
-    ),
-    ModelOption(
-        provider="inworld",
-        model="inworld/inworld-stt-1",
-        label="Inworld STT-1",
-        description=(
-            "Inworld first-party model for voice-profile and configurable "
-            "turn-taking experiments."
         ),
     ),
 )
