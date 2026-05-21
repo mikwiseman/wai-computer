@@ -5,7 +5,7 @@
     under coverage/ on success.
 
     By default runs:
-      - WaiComputer.Core.Tests         (portable, works on Linux/macOS too)
+      - ../desktop/WaiComputer.Core.Tests (portable, works on Linux/macOS too)
       - WaiComputer.Native.Tests       (Windows-only)
       - WaiComputer.UITests            (Windows-only, requires built app)
 
@@ -22,14 +22,14 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
-    $projects = @("WaiComputer.Core.Tests")
+    $projects = @("../desktop/WaiComputer.Core.Tests/WaiComputer.Core.Tests.csproj")
     if (-not $PortableOnly) {
-        $projects += "WaiComputer.Native.Tests"
-        $projects += "WaiComputer.UITests"
+        $projects += "WaiComputer.Native.Tests/WaiComputer.Native.Tests.csproj"
+        $projects += "WaiComputer.UITests/WaiComputer.UITests.csproj"
     }
 
     foreach ($project in $projects) {
-        $args = @("test", "$project/$project.csproj", "-c", $Configuration)
+        $args = @("test", $project, "-c", $Configuration)
         if (-not $NoCoverage) {
             $args += @("--collect:XPlat Code Coverage")
         }

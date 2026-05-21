@@ -97,7 +97,7 @@ dotnet run --project WaiComputer
 **Tests** (inside Win VM — runs every test project):
 ```powershell
 dotnet test                                # all projects
-dotnet test WaiComputer.Core.Tests         # portable only
+dotnet test ../desktop/WaiComputer.Core.Tests         # portable only
 dotnet test WaiComputer.Native.Tests       # Win-only
 dotnet test WaiComputer.UITests            # launches the built app
 ```
