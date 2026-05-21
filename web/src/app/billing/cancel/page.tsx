@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import {
   BillingResultCard,
   type BillingResultSearchParams,
@@ -23,6 +24,15 @@ export default async function BillingCancelPage({
   searchParams,
 }: BillingResultPageProps = {}) {
   const params = await resolveSearchParams(searchParams);
+  const requestHeaders = await headers();
 
-  return <BillingResultCard kind="cancel" locale={resolveBillingResultLocale(params)} />;
+  return (
+    <BillingResultCard
+      kind="cancel"
+      locale={resolveBillingResultLocale(params, {
+        acceptLanguage: requestHeaders.get("accept-language"),
+        referer: requestHeaders.get("referer"),
+      })}
+    />
+  );
 }

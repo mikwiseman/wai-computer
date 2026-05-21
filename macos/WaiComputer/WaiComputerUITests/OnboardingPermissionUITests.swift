@@ -98,6 +98,80 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertEqual(primaryButton.label, "Restart WaiComputer")
     }
 
+    @MainActor
+    func testOnboardingBackButtonReturnsToPreviousSlide() throws {
+        let app = launchOnboarding(currentPage: 1, permissionMock: "missing")
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Two ways to use WaiComputer"], in: app, timeout: 8))
+
+        app.buttons.matching(identifier: "onboarding-back-button").firstMatch.click()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Welcome to WaiComputer"], in: app, timeout: 3))
+    }
+
+    @MainActor
+    func testOnboardingWelcomeCanSwitchToRussianImmediately() throws {
+        let app = launchOnboarding(
+            currentPage: 0,
+            permissionMock: "missing",
+            launchArguments: ["-waiUserLanguage", "en"]
+        )
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Welcome to WaiComputer"], in: app, timeout: 8))
+
+        let russianButton = app.buttons.matching(identifier: "onboarding-language-russian").firstMatch
+        XCTAssertTrue(waitForElement(russianButton, in: app, timeout: 3))
+        russianButton.click()
+
+        XCTAssertTrue(russianButton.isSelected)
+    }
+
+    @MainActor
+    func testRussianPermissionSlideDoesNotMixEnglishMicrophoneCopy() throws {
+        let app = launchOnboarding(
+            currentPage: 2,
+            permissionMock: "missing",
+            launchArguments: ["-waiUserLanguage", "ru"]
+        )
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Разрешения для WaiComputer"], in: app, timeout: 8))
+        XCTAssertTrue(waitForElement(app.staticTexts["Микрофон нужен для диктовки, заметок и встреч"], in: app, timeout: 3))
+        XCTAssertFalse(app.staticTexts["access the microphone."].exists)
+    }
+
+    @MainActor
+    func testHotkeySelectionUpdatesWithoutLeavingHotkeySlide() throws {
+        let app = launchOnboarding(currentPage: 4, permissionMock: "missing")
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Pick your dictation key"], in: app, timeout: 8))
+
+        let leftOption = app.buttons.matching(identifier: "onboarding-hotkey-left_option").firstMatch
+        XCTAssertTrue(waitForElement(leftOption, in: app, timeout: 3))
+        leftOption.click()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Pick your dictation key"], in: app, timeout: 2))
+        XCTAssertEqual(leftOption.value as? String, "Selected")
+    }
+
+    @MainActor
+    private func launchOnboarding(
+        currentPage: Int,
+        permissionMock: String,
+        launchArguments extraLaunchArguments: [String] = []
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
+        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
+        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
+        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = permissionMock
+        app.launchArguments = extraLaunchArguments + [
+            "-nativeOnboardingV4CurrentPage", "\(currentPage)",
+        ]
+        app.launch()
+        app.activate()
+        return app
+    }
+
     private func waitForElement(_ element: XCUIElement, in app: XCUIApplication, timeout: TimeInterval) -> Bool {
         let exists = element.waitForExistence(timeout: timeout)
         if !exists {

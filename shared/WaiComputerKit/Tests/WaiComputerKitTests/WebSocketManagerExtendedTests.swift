@@ -230,6 +230,71 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
     }
 
+    func testProviderBackedSonioxRequiresServerMintedMessageApiKeySession() async throws {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        ))
+
+        do {
+            _ = try await session.testingRequest()
+            XCTFail("Expected missing Soniox token to throw")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("Soniox realtime session is missing server-minted token"))
+        }
+    }
+
+    func testProviderBackedInworldRequiresServerMintedWebSocketURL() async throws {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "inworld",
+            token: "jwt-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "multi",
+            channels: 1,
+            model: "inworld/inworld-stt-1",
+            websocketURL: nil,
+            authScheme: "bearer"
+        ))
+
+        do {
+            _ = try await session.testingRequest()
+            XCTFail("Expected missing Inworld websocket URL to throw")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("Inworld realtime session is missing server-minted websocket URL"))
+        }
+    }
+
+    func testProviderBackedElevenLabsUsesQueryTokenWithoutAuthorizationHeader() async throws {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "elevenlabs",
+            token: "sutkn_server_minted",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "multi",
+            channels: 1,
+            model: "scribe_v2_realtime",
+            websocketURL: nil,
+            authScheme: "query_token"
+        ))
+
+        let request = try await session.testingRequest()
+
+        XCTAssertEqual(request.url?.host, "api.elevenlabs.io")
+        XCTAssertEqual(request.url?.query?.contains("token=sutkn_server_minted"), true)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
     func testSonioxRealtimeConfigUsesTemporaryApiKeyMessageShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)

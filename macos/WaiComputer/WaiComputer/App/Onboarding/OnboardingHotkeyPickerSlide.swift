@@ -51,12 +51,9 @@ struct OnboardingHotkeyPickerSlide: View {
         let selected = dictationManager.selectedHotkey == hotkey
         Button {
             dictationManager.updateHotkey(hotkey)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                onSelect()
-            }
         } label: {
             VStack(spacing: 10) {
-                Text(hotkey.shortLabel)
+                Text(hotkey.onboardingShortLabel(language: languageManager.current))
                     .font(.system(size: 18, weight: .semibold, design: .monospaced))
                     .foregroundStyle(selected ? .white : Palette.textPrimary)
                     .padding(.horizontal, 14)
@@ -66,7 +63,7 @@ struct OnboardingHotkeyPickerSlide: View {
                             .fill(selected ? Palette.accent : Color.gray.opacity(0.12))
                     )
 
-                Text(hotkey.label)
+                Text(hotkey.onboardingLabel(language: languageManager.current))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
             }
@@ -84,6 +81,7 @@ struct OnboardingHotkeyPickerSlide: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("onboarding-hotkey-\(hotkey.rawValue)")
+        .accessibilityValue(selected ? t("Selected", "Выбрано") : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

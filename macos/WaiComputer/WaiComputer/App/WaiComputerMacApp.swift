@@ -1208,6 +1208,9 @@ class MacAppState: ObservableObject {
         if testingMode.isRecordingFlow, id == MacUITestFixtures.completedRecording.id {
             return MacUITestFixtures.completedRecordingDetail
         }
+        if id == MacUITestFixtures.processingRecording.id {
+            return MacUITestFixtures.processingRecordingDetail
+        }
         if id == MacUITestFixtures.recording.id {
             return MacUITestFixtures.recordingDetail
         }

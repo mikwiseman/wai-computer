@@ -29,9 +29,7 @@ def test_token_excludes_nested_structures():
     """Receipt, DATA, Token itself must NOT contribute to the signature."""
     base = {"TerminalKey": "k", "Amount": 100}
     sig_a = generate_tinkoff_token(base, "pw")
-    sig_b = generate_tinkoff_token(
-        {**base, "DATA": {"x": 1}, "Receipt": {"Items": []}}, "pw"
-    )
+    sig_b = generate_tinkoff_token({**base, "DATA": {"x": 1}, "Receipt": {"Items": []}}, "pw")
     assert sig_a == sig_b
 
 
@@ -202,6 +200,9 @@ async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
 
     assert calls[0][0] == "Init"
     payload = calls[0][1]
+    assert payload["PayType"] == "O"
+    assert payload["SuccessURL"] == "https://wai.computer/billing/success"
+    assert payload["FailURL"] == "https://wai.computer/billing/cancel"
     assert payload["Recurrent"] == "Y"
     assert payload["OperationInitiatorType"] == "1"
     assert payload["CustomerKey"] == "user-uuid"
@@ -231,6 +232,7 @@ async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
 
     assert calls[0][0] == "Init"
     init_payload = calls[0][1]
+    assert init_payload["PayType"] == "O"
     assert init_payload["OperationInitiatorType"] == "R"
     assert "Recurrent" not in init_payload
     assert "CustomerKey" not in init_payload

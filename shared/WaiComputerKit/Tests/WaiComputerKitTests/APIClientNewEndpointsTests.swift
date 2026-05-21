@@ -36,6 +36,95 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    // MARK: - Billing
+
+    func testCreateBillingCheckoutSendsExplicitTinkoffProvider() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/billing/checkout")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["plan"] as? String, "pro")
+            XCTAssertEqual(body["period"] as? String, "month")
+            XCTAssertEqual(body["provider"] as? String, "tinkoff")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "provider": "tinkoff",
+              "checkout_url": "https://securepay.tinkoff.ru/test-checkout"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let checkout = try await client.createBillingCheckout(
+            plan: "pro",
+            period: "month",
+            provider: "tinkoff"
+        )
+
+        XCTAssertEqual(checkout.provider, "tinkoff")
+        XCTAssertEqual(checkout.checkoutUrl, "https://securepay.tinkoff.ru/test-checkout")
+    }
+
+    func testGetBillingSubscriptionDecodesActiveTinkoffProStatus() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/billing/subscription")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "plan": {
+                "code": "pro",
+                "name": "Pro",
+                "description": null,
+                "usd_amount_monthly": 12,
+                "usd_amount_yearly": 96,
+                "rub_amount_monthly": 999,
+                "rub_amount_yearly": 7999,
+                "word_cap_per_week": null,
+                "memory_retention_days": null,
+                "features": {
+                  "billing": true
+                }
+              },
+              "status": "active",
+              "provider": "tinkoff",
+              "billing_period": "month",
+              "current_period_end": "2026-06-21T12:00:00Z",
+              "cancel_at_period_end": false,
+              "trial_end": null,
+              "enforcement_enabled": true
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let subscription = try await client.getBillingSubscription()
+
+        XCTAssertTrue(subscription.isPro)
+        XCTAssertEqual(subscription.status, "active")
+        XCTAssertEqual(subscription.provider, "tinkoff")
+        XCTAssertEqual(subscription.billingPeriod, "month")
+        XCTAssertTrue(subscription.enforcementEnabled)
+    }
+
     // MARK: - Star Recording
 
     func testStarRecordingSendsPostToCorrectPath() async throws {

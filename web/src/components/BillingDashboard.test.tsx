@@ -84,6 +84,14 @@ describe("BillingDashboard", () => {
     });
   });
 
+  it("does not show multiple payment provider choices outside Russian RUB billing", async () => {
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    expect(await screen.findByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(screen.queryByText(/World|Russia/i)).not.toBeInTheDocument();
+  });
+
   it("cancels active pro subscriptions", async () => {
     mockedSubscription.mockResolvedValueOnce(proSub).mockResolvedValueOnce({
       ...proSub,

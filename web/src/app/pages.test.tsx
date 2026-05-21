@@ -5,6 +5,7 @@ import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 import AppMagicLinkPage from "./auth/app/page";
+import ResetPasswordPage from "./auth/reset/page";
 import VerifyMagicLinkPage from "./auth/verify/page";
 import OnboardingPage from "./onboarding/page";
 import SharedRecordingPage from "./share/[token]/page";
@@ -20,12 +21,15 @@ import RootLayout, { metadata } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
 
+const requestHeaderMock = vi.hoisted(() => ({
+  acceptLanguage: null as string | null,
+  referer: null as string | null,
+}));
 const mockReplace = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
 const onboardingClientMock = vi.fn();
-const appMagicLinkClientMock = vi.fn();
 const sharedRecordingClientMock = vi.fn();
 let mockSearchParams = new URLSearchParams();
 
@@ -33,6 +37,17 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
   useSearchParams: () => mockSearchParams,
   usePathname: () => "/",
+}));
+
+vi.mock("next/headers", () => ({
+  headers: async () => ({
+    get: (name: string) => {
+      const key = name.toLowerCase();
+      if (key === "accept-language") return requestHeaderMock.acceptLanguage;
+      if (key === "referer") return requestHeaderMock.referer;
+      return null;
+    },
+  }),
 }));
 
 vi.mock("next/font/google", () => ({
@@ -67,16 +82,6 @@ vi.mock("@/components/OnboardingClient", () => ({
   },
 }));
 
-vi.mock("@/components/OpenWaiComputerAppClient", () => ({
-  normalizeWaiComputerAppClient: (client: string | null | undefined) => (
-    client === "android" || client === "ios" || client === "macos" ? client : null
-  ),
-  OpenWaiComputerAppClient: ({ token, client }: { token: string | null; client: string | null }) => {
-    appMagicLinkClientMock({ token, client });
-    return <div data-testid="open-app-client-mock">{`${client}:${token ?? "null-token"}`}</div>;
-  },
-}));
-
 vi.mock("@/components/SharedRecordingClient", () => ({
   SharedRecordingClient: ({ token }: { token: string }) => {
     sharedRecordingClientMock(token);
@@ -91,8 +96,9 @@ describe("app pages", () => {
     dashboardClientMock.mockClear();
     verifyClientMock.mockClear();
     onboardingClientMock.mockClear();
-    appMagicLinkClientMock.mockClear();
     sharedRecordingClientMock.mockClear();
+    requestHeaderMock.acceptLanguage = null;
+    requestHeaderMock.referer = null;
     mockSearchParams = new URLSearchParams();
   });
 
@@ -160,8 +166,28 @@ describe("app pages", () => {
   it("resolves app magic-link token and client from searchParams", async () => {
     render(await AppMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", client: "macos" }) }));
 
-    expect(screen.getByTestId("open-app-client-mock")).toHaveTextContent("macos:abc-token");
-    expect(appMagicLinkClientMock).toHaveBeenCalledWith({ token: "abc-token", client: "macos" });
+    expect(screen.getByTestId("open-app-message")).toHaveTextContent("Opening WaiComputer");
+    expect(screen.getByTestId("open-app-link")).toHaveAttribute(
+      "href",
+      "waicomputer://auth/verify?token=abc-token",
+    );
+  });
+
+  it("renders localized app-open and reset pages", async () => {
+    render(
+      await AppMagicLinkPage({
+        searchParams: Promise.resolve({ token: "abc-token", client: "macos", locale: "ru" }),
+      }),
+    );
+    expect(screen.getByRole("heading", { name: "Открыть приложение WaiComputer" })).toBeInTheDocument();
+    expect(screen.getByTestId("browser-sign-in-link")).toHaveAttribute(
+      "href",
+      "/auth/verify?token=abc-token&locale=ru",
+    );
+
+    render(await ResetPasswordPage({ searchParams: Promise.resolve({ token: "reset-token", locale: "ru" }) }));
+    expect(screen.getByRole("heading", { name: "Сброс пароля" })).toBeInTheDocument();
+    expect(screen.getByTestId("reset-password-submit")).toHaveTextContent("Сбросить пароль");
   });
 
   it("passes shared recording token from route params", async () => {
@@ -292,6 +318,11 @@ describe("app pages", () => {
     cleanup();
     render(await BillingSuccessPage());
     expect(screen.getByRole("heading", { level: 1, name: "Billing updated" })).toBeInTheDocument();
+
+    cleanup();
+    requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9,en;q=0.7";
+    render(await BillingSuccessPage());
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата обновлена" })).toBeInTheDocument();
 
     cleanup();
     render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));

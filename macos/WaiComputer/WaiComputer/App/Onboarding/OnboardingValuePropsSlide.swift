@@ -10,10 +10,10 @@ struct OnboardingValuePropsSlide: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 8) {
-                Text(t("Two ways to use WaiComputer", "Два способа использовать WaiComputer"))
+                Text(t("Two ways to use WaiComputer", "WaiComputer помогает в двух сценариях"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text(t("Pick either or use both. You can change anytime.", "Выбери один или используй оба. Это можно изменить позже."))
+                Text(t("Pick either or use both. You can change anytime.", "Можно включить один сценарий или оба. Настройки всегда можно изменить."))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -22,19 +22,19 @@ struct OnboardingValuePropsSlide: View {
                 valueCard(
                     icon: "keyboard.badge.eye",
                     title: t("Dictate", "Диктовка"),
-                    primary: t("Voice-type into any app", "Голосом вводи текст в любом приложении"),
+                    primary: t("Voice-type into any app", "Пиши голосом в любом приложении"),
                     detail: t(
                         "Hold a hotkey, speak, release. Text appears at your cursor — in Slack, Notion, Mail, anywhere.",
-                        "Зажми горячую клавишу, скажи фразу, отпусти. Текст появится у курсора — в Slack, Notion, Mail и где угодно."
+                        "Зажми горячую клавишу, произнеси фразу и отпусти. Текст появится там, где стоит курсор: в Slack, Notion, Mail и других приложениях."
                     )
                 )
                 valueCard(
                     icon: "waveform",
                     title: t("Record", "Запись"),
-                    primary: t("Capture meetings & notes", "Записывай встречи и заметки"),
+                    primary: t("Capture meetings & notes", "Сохраняй встречи и голосовые заметки"),
                     detail: t(
                         "Hit record in WaiComputer. Get a full transcript, AI summary, and action items when you're done.",
-                        "Нажми запись в WaiComputer. После встречи получишь полный транскрипт, AI-саммари и задачи."
+                        "Нажми запись в WaiComputer. После встречи появятся расшифровка, краткое саммари и список задач."
                     )
                 )
             }

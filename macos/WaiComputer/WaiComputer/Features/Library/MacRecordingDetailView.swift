@@ -71,12 +71,6 @@ struct MacRecordingDetailView: View {
                         tabs: [
                             (t("Transcript", "Транскрипт"), MacRecordingDetailViewModel.Tab.transcript),
                             (t("Summary", "Саммари"), MacRecordingDetailViewModel.Tab.summary),
-                            (
-                                detail.actionItems.isEmpty
-                                    ? t("Action Items", "Действия")
-                                    : t("Action Items", "Действия") + " (\(detail.actionItems.count))",
-                                MacRecordingDetailViewModel.Tab.actions
-                            ),
                         ],
                         selection: $viewModel.selectedTab
                     )
@@ -95,8 +89,6 @@ struct MacRecordingDetailView: View {
                         )
                     case .summary:
                         summaryTab(detail)
-                    case .actions:
-                        actionsTab(detail)
                     }
                 }
                 .accessibilityElement(children: .contain)
@@ -116,9 +108,8 @@ struct MacRecordingDetailView: View {
         .onAppear {
             loadTask?.cancel()
             loadTask = Task {
-                await viewModel.load(
+                await loadRecordingDetail(
                     recordingId: recordingId,
-                    apiClient: appState.getAPIClient(),
                     showLoading: viewModel.recordingDetail?.id != recordingId
                 )
             }
@@ -129,9 +120,8 @@ struct MacRecordingDetailView: View {
         .onChange(of: recordingId) { _, newId in
             loadTask?.cancel()
             loadTask = Task {
-                await viewModel.load(
+                await loadRecordingDetail(
                     recordingId: newId,
-                    apiClient: appState.getAPIClient(),
                     showLoading: viewModel.recordingDetail?.id != newId
                 )
             }
@@ -139,7 +129,8 @@ struct MacRecordingDetailView: View {
         .task(id: detailRefreshKey) {
             await viewModel.refreshPendingDetailIfNeeded(
                 recordingId: recordingId,
-                apiClient: appState.getAPIClient()
+                apiClient: appState.getAPIClient(),
+                fixtureDetail: { await appState.uiTestRecordingDetail(id: recordingId) }
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { notification in
@@ -149,11 +140,7 @@ struct MacRecordingDetailView: View {
             }
             loadTask?.cancel()
             loadTask = Task {
-                await viewModel.load(
-                    recordingId: recordingId,
-                    apiClient: appState.getAPIClient(),
-                    showLoading: false
-                )
+                await loadRecordingDetail(recordingId: recordingId, showLoading: false)
             }
         }
         .onChange(of: pendingTitleEditId) { _, requested in
@@ -169,6 +156,15 @@ struct MacRecordingDetailView: View {
         DispatchQueue.main.async {
             titleFieldFocused = true
         }
+    }
+
+    private func loadRecordingDetail(recordingId: String, showLoading: Bool) async {
+        await viewModel.load(
+            recordingId: recordingId,
+            apiClient: appState.getAPIClient(),
+            fixtureDetail: { await appState.uiTestRecordingDetail(id: recordingId) },
+            showLoading: showLoading
+        )
     }
 
     private func commitTitleEdit(originalTitle: String?) {
@@ -261,185 +257,223 @@ struct MacRecordingDetailView: View {
     }
 
     private func detailHeader(_ detail: RecordingDetail) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                if isEditingTitle && mode == .active {
-                    TextField(t("Title", "Название"), text: $titleDraft)
-                        .textFieldStyle(.plain)
-                        .font(Typography.displayMedium)
-                        .lineLimit(2)
-                        .focused($titleFieldFocused)
-                        .onSubmit { commitTitleEdit(originalTitle: detail.title) }
-                        .onKeyPress(.escape) {
-                            isEditingTitle = false
-                            return .handled
-                        }
-                        .onChange(of: titleFieldFocused) { _, focused in
-                            if !focused && isEditingTitle {
-                                commitTitleEdit(originalTitle: detail.title)
-                            }
-                        }
-                        .accessibilityIdentifier("recording-title-edit")
-                } else {
-                    Text(detail.title ?? t("Untitled", "Без названия"))
-                        .font(Typography.displayMedium)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityIdentifier("recording-title")
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            guard mode == .active else { return }
-                            startTitleEdit(currentTitle: detail.title)
-                        }
-                        .help(mode == .active ? t("Double-click to rename", "Двойной клик для переименования") : "")
-                }
-
-                HStack(spacing: Spacing.sm) {
-                    Text(recordingTypeLabel(detail.type))
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.typeColor(detail.type))
-
-                    Text(detail.createdAt.formatted(date: .long, time: .shortened))
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textSecondary)
-
-                    if let duration = detail.durationSeconds, duration > 0 {
-                        let mins = duration / 60
-                        let secs = duration % 60
-                        Text(String(format: "%d:%02d", mins, secs))
-                            .font(Typography.mono)
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: Spacing.lg) {
+                detailHeaderTitle(detail)
+                Spacer(minLength: Spacing.md)
+                detailHeaderActions(detail)
             }
 
-            Spacer()
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                detailHeaderTitle(detail)
+                detailHeaderActions(detail)
+            }
+        }
+        .padding(Spacing.lg)
+    }
 
-            HStack(spacing: Spacing.md) {
-                // Export dropdown
-                if mode == .active {
-                    Menu {
-                        Button(t("Export Markdown (.md)", "Экспорт Markdown (.md)")) {
-                            Task { await exportRecording(format: "markdown") }
-                        }
-                        Button(t("Export Plain Text (.txt)", "Экспорт TXT (.txt)")) {
-                            Task { await exportRecording(format: "txt") }
-                        }
-                        Button(t("Export Subtitles (.srt)", "Экспорт субтитров (.srt)")) {
-                            Task { await exportRecording(format: "srt") }
-                        }
-                    } label: {
-                        Label(t("Export", "Экспорт"), systemImage: "square.and.arrow.down")
+    private func detailHeaderTitle(_ detail: RecordingDetail) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            if isEditingTitle && mode == .active {
+                TextField(t("Title", "Название"), text: $titleDraft)
+                    .textFieldStyle(.plain)
+                    .font(Typography.displayMedium)
+                    .lineLimit(2)
+                    .focused($titleFieldFocused)
+                    .onSubmit { commitTitleEdit(originalTitle: detail.title) }
+                    .onKeyPress(.escape) {
+                        isEditingTitle = false
+                        return .handled
                     }
-                    .buttonStyle(WaiGhostButtonStyle())
-                    .help(t("Export Recording", "Экспортировать запись"))
-                }
-
-                if mode == .active {
-                    Button {
-                        Task {
-                            await shareRecording(detail)
+                    .onChange(of: titleFieldFocused) { _, focused in
+                        if !focused && isEditingTitle {
+                            commitTitleEdit(originalTitle: detail.title)
                         }
-                    } label: {
+                    }
+                    .accessibilityIdentifier("recording-title-edit")
+            } else {
+                Text(detail.title ?? t("Untitled", "Без названия"))
+                    .font(Typography.displayMedium)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityIdentifier("recording-title")
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard mode == .active else { return }
+                        startTitleEdit(currentTitle: detail.title)
+                    }
+                    .help(mode == .active ? t("Double-click to rename", "Двойной клик для переименования") : "")
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Text(recordingTypeLabel(detail.type))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.typeColor(detail.type))
+
+                Text(detail.createdAt.formatted(date: .long, time: .shortened))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+
+                if let duration = detail.durationSeconds, duration > 0 {
+                    let mins = duration / 60
+                    let secs = duration % 60
+                    Text(String(format: "%d:%02d", mins, secs))
+                        .font(Typography.mono)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
+            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detailHeaderActions(_ detail: RecordingDetail) -> some View {
+        ViewThatFits(in: .horizontal) {
+            detailHeaderActionRow(detail, showsLabels: true)
+            detailHeaderActionRow(detail, showsLabels: false)
+        }
+    }
+
+    private func detailHeaderActionRow(_ detail: RecordingDetail, showsLabels: Bool) -> some View {
+        HStack(spacing: Spacing.md) {
+            if mode == .active {
+                Menu {
+                    Button(t("Export Markdown (.md)", "Экспорт Markdown (.md)")) {
+                        Task { await exportRecording(format: "markdown") }
+                    }
+                    Button(t("Export Plain Text (.txt)", "Экспорт TXT (.txt)")) {
+                        Task { await exportRecording(format: "txt") }
+                    }
+                    Button(t("Export Subtitles (.srt)", "Экспорт субтитров (.srt)")) {
+                        Task { await exportRecording(format: "srt") }
+                    }
+                } label: {
+                    if showsLabels {
+                        Label(t("Export", "Экспорт"), systemImage: "square.and.arrow.down")
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Export Recording", "Экспортировать запись"))
+
+                Button {
+                    Task {
+                        await shareRecording(detail)
+                    }
+                } label: {
+                    if showsLabels {
                         Label(
                             copiedSection == "share-link" ? t("Copied", "Скопировано") : t("Share", "Поделиться"),
                             systemImage: copiedSection == "share-link" ? "checkmark" : "square.and.arrow.up"
                         )
+                    } else {
+                        Image(systemName: copiedSection == "share-link" ? "checkmark" : "square.and.arrow.up")
                     }
-                    .buttonStyle(WaiGhostButtonStyle())
-                    .help(t("Create a web share link", "Создать ссылку для просмотра"))
-                    .disabled(isSharing)
                 }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Create a web share link", "Создать ссылку для просмотра"))
+                .disabled(isSharing)
 
-                if mode == .active {
-                    Menu {
-                        if detail.folderId != nil {
-                            Button(t("Remove from Folder", "Убрать из папки")) {
-                                Task {
-                                    let didMove = await viewModel.moveRecording(
-                                        to: nil,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                    if didMove {
-                                        onMoveToFolder?(nil)
-                                    }
-                                }
-                            }
-                        }
+                moveToFolderMenu(detail, showsLabel: showsLabels)
+            }
 
-                        ForEach(folders) { folder in
-                            Button(folder.name) {
-                                Task {
-                                    let didMove = await viewModel.moveRecording(
-                                        to: folder.id,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                    if didMove {
-                                        onMoveToFolder?(folder.id)
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "folder")
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(t("Move to Folder", "Переместить в папку"))
-                    .disabled(detail.folderId == nil && folders.isEmpty)
-                }
-
-                if mode == .trash {
-                    Button {
-                        Task {
-                            let restored = await viewModel.restoreRecording(apiClient: appState.getAPIClient())
-                            if restored {
-                                onRestore?()
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(t("Restore Recording", "Восстановить запись"))
-                }
-
+            if mode == .trash {
                 Button {
-                    showDeleteConfirmation = true
+                    Task {
+                        let restored = await viewModel.restoreRecording(apiClient: appState.getAPIClient())
+                        if restored {
+                            onRestore?()
+                        }
+                    }
                 } label: {
-                    Image(systemName: mode == .trash ? "trash.slash" : "trash")
-                        .foregroundStyle(mode == .trash ? Palette.recording : Palette.textSecondary)
+                    Image(systemName: "arrow.uturn.backward")
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
-                .help(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"))
-                .confirmationDialog(
-                    mode == .trash ? t("Delete this recording permanently?", "Удалить запись навсегда?") : t("Move this recording to trash?", "Переместить запись в корзину?"),
-                    isPresented: $showDeleteConfirmation
-                ) {
-                    Button(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"), role: .destructive) {
-                        Task {
-                            let didDelete = await viewModel.deleteRecording(
-                                apiClient: appState.getAPIClient(),
-                                permanent: mode == .trash
-                            )
-                            if didDelete {
-                                onDelete?()
-                            }
+                .help(t("Restore Recording", "Восстановить запись"))
+            }
+
+            deleteRecordingButton
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func moveToFolderMenu(_ detail: RecordingDetail, showsLabel: Bool) -> some View {
+        Menu {
+            if detail.folderId != nil {
+                Button(t("Remove from Folder", "Убрать из папки")) {
+                    Task {
+                        let didMove = await viewModel.moveRecording(
+                            to: nil,
+                            apiClient: appState.getAPIClient()
+                        )
+                        if didMove {
+                            onMoveToFolder?(nil)
                         }
                     }
-                    Button(t("Cancel", "Отмена"), role: .cancel) {}
-                } message: {
-                    Text(
-                        mode == .trash
-                            ? t("This action cannot be undone.", "Это действие нельзя отменить.")
-                            : t("You can restore it later from Trash.", "Позже запись можно восстановить из корзины.")
-                    )
                 }
             }
+
+            ForEach(folders) { folder in
+                Button(folder.name) {
+                    Task {
+                        let didMove = await viewModel.moveRecording(
+                            to: folder.id,
+                            apiClient: appState.getAPIClient()
+                        )
+                        if didMove {
+                            onMoveToFolder?(folder.id)
+                        }
+                    }
+                }
+            }
+        } label: {
+            if showsLabel {
+                Label(t("Move to Folder", "Переместить в папку"), systemImage: "folder")
+            } else {
+                Image(systemName: "folder")
+            }
         }
-        .padding(Spacing.lg)
+        .buttonStyle(WaiGhostButtonStyle())
+        .help(t("Move to Folder", "Переместить в папку"))
+        .disabled(detail.folderId == nil && folders.isEmpty)
+        .accessibilityIdentifier("recording-detail-move-to-folder-menu")
+    }
+
+    private var deleteRecordingButton: some View {
+        Button {
+            showDeleteConfirmation = true
+        } label: {
+            Image(systemName: mode == .trash ? "trash.slash" : "trash")
+                .foregroundStyle(mode == .trash ? Palette.recording : Palette.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .help(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"))
+        .confirmationDialog(
+            mode == .trash ? t("Delete this recording permanently?", "Удалить запись навсегда?") : t("Move this recording to trash?", "Переместить запись в корзину?"),
+            isPresented: $showDeleteConfirmation
+        ) {
+            Button(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"), role: .destructive) {
+                Task {
+                    let didDelete = await viewModel.deleteRecording(
+                        apiClient: appState.getAPIClient(),
+                        permanent: mode == .trash
+                    )
+                    if didDelete {
+                        onDelete?()
+                    }
+                }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(
+                mode == .trash
+                    ? t("This action cannot be undone.", "Это действие нельзя отменить.")
+                    : t("You can restore it later from Trash.", "Позже запись можно восстановить из корзины.")
+            )
+        }
     }
 
     private func fullSummaryText(_ summary: Summary) -> String {
@@ -457,41 +491,10 @@ struct MacRecordingDetailView: View {
         return parts.joined(separator: "\n")
     }
 
-    private func actionItemsText(_ items: [ActionItem]) -> String {
-        items.enumerated().map { index, item in
-            var lines = ["\(index + 1). \(item.task)"]
-            lines.append("\(t("Status", "Статус")): \(actionItemStatusLabel(item.status))")
-
-            if let owner = item.owner, !owner.isEmpty {
-                lines.append("\(t("Owner", "Ответственный")): \(owner)")
-            }
-            if let dueDate = item.dueDate, !dueDate.isEmpty {
-                lines.append("\(t("Due", "Срок")): \(dueDate)")
-            }
-            if let priority = item.priority {
-                lines.append("\(t("Priority", "Приоритет")): \(priorityLabel(priority))")
-            }
-
-            return lines.joined(separator: "\n")
-        }
-        .joined(separator: "\n\n")
-    }
-
-    private func actionItemStatusLabel(_ status: ActionItem.Status) -> String {
-        switch status {
-        case .pending:
-            return t("Pending", "Ожидает")
-        case .inProgress:
-            return t("In Progress", "В работе")
-        case .completed:
-            return t("Completed", "Готово")
-        case .cancelled:
-            return t("Cancelled", "Отменено")
-        }
-    }
-
     @ViewBuilder
     private func summaryTab(_ detail: RecordingDetail) -> some View {
+        let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id)
+
         if let summary = detail.summary {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
@@ -578,83 +581,15 @@ struct MacRecordingDetailView: View {
                 }) {
                     Text(t("Generate Summary", "Сгенерировать саммари"))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
-                .disabled(viewModel.isGeneratingSummary)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+                .disabled(isGeneratingSummary)
 
-                if viewModel.isGeneratingSummary {
+                if isGeneratingSummary {
                     ProgressView(t("Generating summary...", "Генерируем саммари..."))
                 }
                 Spacer()
             }
             .accessibilityIdentifier("summary-empty-state")
-        }
-    }
-
-    @ViewBuilder
-    private func actionsTab(_ detail: RecordingDetail) -> some View {
-        if !detail.actionItems.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.xl) {
-                    HStack {
-                        Text(t("Action Items", "Действия"))
-                            .waiSectionHeader()
-                        Spacer()
-                        copyActionButton(
-                            title: t("Copy Action Items", "Скопировать действия"),
-                            copiedTitle: t("Copied", "Скопировано"),
-                            text: actionItemsText(detail.actionItems),
-                            section: "action-items"
-                        )
-                    }
-
-                    ForEach(detail.actionItems) { item in
-                        ActionItemCard(item: item) { newStatus in
-                            Task {
-                                await viewModel.updateActionItemStatus(
-                                    id: item.id,
-                                    status: newStatus,
-                                    apiClient: appState.getAPIClient()
-                                )
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Spacing.lg)
-            }
-            .accessibilityIdentifier("actions-content")
-        } else if detail.summary != nil {
-            VStack {
-                Spacer().frame(height: Spacing.xxxl)
-                ContentUnavailableView(
-                    t("No Action Items Found", "Действий не найдено"),
-                    systemImage: "checklist",
-                    description: Text(t("This summary did not include any concrete follow-ups.", "В саммари нет конкретных следующих шагов."))
-                )
-                Spacer()
-            }
-            .accessibilityIdentifier("actions-empty-state")
-        } else {
-            VStack(spacing: Spacing.lg) {
-                Spacer().frame(height: Spacing.xxxl)
-                ContentUnavailableView(
-                    t("No Action Items", "Нет действий"),
-                    systemImage: "checklist",
-                    description: Text(t("Generate a summary first to extract action items.", "Сначала сгенерируй саммари, чтобы выделить действия."))
-                )
-
-                Button(action: {
-                    Task {
-                        await viewModel.generateSummary(apiClient: appState.getAPIClient())
-                    }
-                }) {
-                    Text(t("Generate Summary", "Сгенерировать саммари"))
-                }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: viewModel.isGeneratingSummary))
-                .disabled(viewModel.isGeneratingSummary)
-                Spacer()
-            }
-            .accessibilityIdentifier("actions-empty-state")
         }
     }
 
@@ -666,17 +601,6 @@ struct MacRecordingDetailView: View {
             return t("Note", "Заметка")
         case .reflection:
             return t("Reflection", "Рефлексия")
-        }
-    }
-
-    private func priorityLabel(_ priority: ActionItem.Priority) -> String {
-        switch priority {
-        case .high:
-            return t("High", "Высокий")
-        case .medium:
-            return t("Medium", "Средний")
-        case .low:
-            return t("Low", "Низкий")
         }
     }
 
@@ -708,126 +632,19 @@ private struct SharePickerPresenter: NSViewRepresentable {
     }
 }
 
-struct ActionItemCard: View {
-    let item: ActionItem
-    let onStatusChange: (ActionItem.Status) -> Void
-    @EnvironmentObject private var languageManager: LanguageManager
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Spacing.md) {
-            Button {
-                let newStatus: ActionItem.Status = item.status == .completed ? .pending : .completed
-                onStatusChange(newStatus)
-            } label: {
-                Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(item.status == .completed ? Palette.accent : Palette.textSecondary)
-                    .font(Typography.headingLarge)
-                    .padding(.top, Spacing.xxs)
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                Text(item.task)
-                    .font(Typography.reading)
-                    .lineSpacing(5)
-                    .strikethrough(item.status == .completed)
-                    .foregroundStyle(item.status == .completed ? Palette.textSecondary : Palette.textPrimary)
-                    .textSelection(.enabled)
-
-                HStack(spacing: Spacing.sm) {
-                    if let owner = item.owner, !owner.isEmpty {
-                        metadataBadge(owner, color: Palette.textSecondary)
-                    }
-
-                    if let dueDate = item.dueDate, !dueDate.isEmpty {
-                        metadataBadge(dueDate, color: Palette.textSecondary)
-                    }
-
-                    if let priority = item.priority {
-                        metadataBadge(priorityLabel(priority), color: priorityColor(priority))
-                    }
-
-                    metadataBadge(statusLabel, color: statusColor)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .waiCard()
-    }
-
-    private func priorityColor(_ priority: ActionItem.Priority) -> Color {
-        switch priority {
-        case .high: return Palette.priorityHigh
-        case .medium: return Palette.priorityMedium
-        case .low: return Palette.priorityLow
-        }
-    }
-
-    private var statusLabel: String {
-        switch item.status {
-        case .pending:
-            return t("Pending", "Ожидает")
-        case .inProgress:
-            return t("In Progress", "В работе")
-        case .completed:
-            return t("Completed", "Готово")
-        case .cancelled:
-            return t("Cancelled", "Отменено")
-        }
-    }
-
-    private var statusColor: Color {
-        switch item.status {
-        case .completed:
-            return Palette.accent
-        case .inProgress:
-            return Palette.priorityMedium
-        case .cancelled:
-            return Palette.textTertiary
-        case .pending:
-            return Palette.textSecondary
-        }
-    }
-
-    private func metadataBadge(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(Typography.label)
-            .foregroundStyle(color)
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, Spacing.xs)
-            .background(Palette.surfaceSubtle)
-            .clipShape(Capsule())
-    }
-
-    private func priorityLabel(_ priority: ActionItem.Priority) -> String {
-        switch priority {
-        case .high:
-            return t("High", "Высокий")
-        case .medium:
-            return t("Medium", "Средний")
-        case .low:
-            return t("Low", "Низкий")
-        }
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
 // MARK: - ViewModel
 
 @MainActor
 class MacRecordingDetailViewModel: ObservableObject {
     enum Tab: Hashable {
-        case transcript, summary, actions
+        case transcript, summary
     }
 
     @Published var recordingDetail: RecordingDetail?
     @Published var isLoading = false
     @Published var error: String?
     @Published var selectedTab: Tab = .transcript
-    @Published var isGeneratingSummary = false
+    @Published private var generatingSummaryRecordingId: String?
 
     private var loadGeneration = 0
 
@@ -835,7 +652,16 @@ class MacRecordingDetailViewModel: ObservableObject {
         recordingDetail = initialDetail
     }
 
-    func load(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
+    func isGeneratingSummary(for recordingId: String) -> Bool {
+        generatingSummaryRecordingId == recordingId
+    }
+
+    func load(
+        recordingId: String,
+        apiClient: APIClient,
+        fixtureDetail: (() async -> RecordingDetail?)? = nil,
+        showLoading: Bool = true
+    ) async {
         loadGeneration += 1
         let generation = loadGeneration
         if showLoading {
@@ -850,7 +676,12 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
 
         do {
-            let detail = try await apiClient.getRecording(id: recordingId)
+            let detail: RecordingDetail
+            if let fixture = await fixtureDetail?() {
+                detail = fixture
+            } else {
+                detail = try await apiClient.getRecording(id: recordingId)
+            }
             guard generation == loadGeneration else { return }
             recordingDetail = detail
         } catch {
@@ -861,7 +692,11 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
     }
 
-    func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {
+    func refreshPendingDetailIfNeeded(
+        recordingId: String,
+        apiClient: APIClient,
+        fixtureDetail: (() async -> RecordingDetail?)? = nil
+    ) async {
         guard recordingDetail?.id == recordingId else { return }
         guard shouldAutoRefresh(for: recordingDetail?.status) else { return }
 
@@ -870,24 +705,34 @@ class MacRecordingDetailViewModel: ObservableObject {
               shouldAutoRefresh(for: recordingDetail?.status) {
             try? await Task.sleep(for: .seconds(recordingDetail?.status == .processing ? 4 : 2))
             guard !Task.isCancelled else { return }
-            await load(recordingId: recordingId, apiClient: apiClient, showLoading: false)
+            await load(
+                recordingId: recordingId,
+                apiClient: apiClient,
+                fixtureDetail: fixtureDetail,
+                showLoading: false
+            )
         }
     }
 
     func generateSummary(apiClient: APIClient) async {
         guard let id = recordingDetail?.id else { return }
-        isGeneratingSummary = true
+        generatingSummaryRecordingId = id
+        defer {
+            if generatingSummaryRecordingId == id {
+                generatingSummaryRecordingId = nil
+            }
+        }
 
         do {
             _ = try await apiClient.generateSummary(recordingId: id)
             let detail = try await apiClient.getRecording(id: id)
-            recordingDetail = detail
-            selectedTab = detail.actionItems.isEmpty ? .summary : .actions
+            if recordingDetail?.id == id {
+                recordingDetail = detail
+                selectedTab = .summary
+            }
         } catch {
             self.error = error.userFacingMessage(context: .library)
         }
-
-        isGeneratingSummary = false
     }
 
     func deleteRecording(apiClient: APIClient, permanent: Bool = false) async -> Bool {
@@ -935,17 +780,6 @@ class MacRecordingDetailViewModel: ObservableObject {
         } catch {
             self.error = error.userFacingMessage(context: .library)
             return false
-        }
-    }
-
-    func updateActionItemStatus(id: String, status: ActionItem.Status, apiClient: APIClient) async {
-        do {
-            _ = try await apiClient.updateActionItem(id: id, status: status)
-            if let recordingId = recordingDetail?.id {
-                recordingDetail = try await apiClient.getRecording(id: recordingId)
-            }
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
         }
     }
 

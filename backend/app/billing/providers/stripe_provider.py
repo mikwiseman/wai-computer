@@ -89,13 +89,6 @@ class StripeProvider(PaymentProvider):
         }
         if settings.stripe_automatic_tax:
             params["automatic_tax"] = {"enabled": True}
-        if trial_days and trial_days > 0:
-            params["subscription_data"]["trial_period_days"] = trial_days
-            params["subscription_data"]["trial_settings"] = {
-                "end_behavior": {"missing_payment_method": "cancel"}
-            }
-            params["payment_method_collection"] = "if_required"
-
         session = await client.v1.checkout.sessions.create_async(params=params)
         return CheckoutResult(
             checkout_url=session.url,  # type: ignore[arg-type]
@@ -110,9 +103,7 @@ class StripeProvider(PaymentProvider):
             params={"cancel_at_period_end": True},
         )
 
-    async def parse_webhook(
-        self, *, raw_body: bytes, headers: dict[str, str]
-    ) -> ProviderEvent:
+    async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]) -> ProviderEvent:
         if not self._webhook_secret:
             raise ProviderUnavailableError("STRIPE_WEBHOOK_SECRET not configured")
         sig = headers.get("stripe-signature") or headers.get("Stripe-Signature")
@@ -158,9 +149,7 @@ class StripeProvider(PaymentProvider):
             ).scalar_one_or_none()
         if plan is None:
             raise ProviderUnavailableError(f"Plan '{plan_code}' not found")
-        price_id = (
-            plan.stripe_price_id_yearly if period == "year" else plan.stripe_price_id_monthly
-        )
+        price_id = plan.stripe_price_id_yearly if period == "year" else plan.stripe_price_id_monthly
         if not price_id:
             raise ProviderUnavailableError(
                 f"Plan '{plan_code}' has no Stripe price id for period '{period}'"

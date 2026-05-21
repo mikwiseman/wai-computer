@@ -120,6 +120,7 @@ struct OnboardingView: View {
                         }
                     }
                     .frame(width: geo.size.width)
+                    .accessibilityHidden(index != currentPage)
                 }
             }
             .frame(width: geo.size.width * CGFloat(pages.count), alignment: .leading)
@@ -321,7 +322,7 @@ struct OnboardingView: View {
         guard #available(macOS 14.2, *) else {
             return .granted
         }
-        return UserDefaults.standard.bool(forKey: MacAppState.onboardingSystemAudioSetupKey) ? .granted : .denied
+        return .denied
     }
 
     private func refreshPermissions() {
@@ -490,91 +491,142 @@ private struct OnboardingPermissionSlide: View {
     let restartForPermissionRefresh: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left pane — title, body, permission cards
-            VStack(alignment: .leading, spacing: 24) {
-                Spacer(minLength: 0)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(t("Give WaiComputer permissions", "Дай WaiComputer нужные разрешения"))
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(Palette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(t("on your computer", "на этом Mac"))
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(Palette.textPrimary)
-                }
-                Text(permissionBody)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.textSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(spacing: 12) {
-                    microphoneRow
-                    accessibilityRow
-                    systemAudioRow
-                }
-
-                if showSettingsRestartHint {
-                    Button(action: restartForPermissionRefresh) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise.circle.fill")
-                                .font(.system(size: 13))
-                            Text(t(
-                                "Already granted? Restart WaiComputer to apply",
-                                "Уже разрешено? Перезапусти WaiComputer"
-                            ))
-                                .font(.system(size: 12, weight: .medium))
-                                .underline()
-                        }
-                        .foregroundStyle(Palette.accent)
+        HStack(alignment: .center, spacing: 36) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(t("Give WaiComputer permissions", "Разрешения для WaiComputer"))
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(Palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(t("on this Mac", "на этом Mac"))
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(Palette.textPrimary)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("onboarding-permission-restart-hint")
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: 480, alignment: .leading)
-            .padding(.horizontal, 48)
-            .frame(maxHeight: .infinity)
 
-            // Right pane — illustrated visual aid (warm beige)
-            currentPermissionPreview
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(red: 0.98, green: 0.96, blue: 0.92))
+                    VStack(spacing: 12) {
+                        microphoneRow
+                        accessibilityRow
+                        systemAudioRow
+                    }
+
+                    if showSettingsRestartHint {
+                        Button(action: restartForPermissionRefresh) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise.circle.fill")
+                                    .font(.system(size: 13))
+                                Text(t(
+                                    "Already granted? Restart WaiComputer to apply",
+                                    "Уже разрешено? Перезапусти WaiComputer"
+                                ))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .underline()
+                            }
+                            .foregroundStyle(Palette.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("onboarding-permission-restart-hint")
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+            }
+            .frame(maxWidth: 500, maxHeight: 510, alignment: .center)
+            .scrollBounceBehavior(.basedOnSize)
+
+            permissionExplanationPanel
+                .frame(maxWidth: 360, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 48)
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
     }
 
     @ViewBuilder
-    private var currentPermissionPreview: some View {
-        // Show the visual aid for whichever permission row is currently active
-        if !hasMicrophonePermission {
-            PermissionPreviewMicrophone()
-        } else if accessibilityStatus != .granted {
-            PermissionPreviewSettings(
-                paneTitle: t("Accessibility", "Универсальный доступ"),
-                rowLabel: "WaiComputer"
-            )
-        } else if systemAudioStatus != .granted {
-            PermissionPreviewSettings(
-                paneTitle: t("Screen & System Audio Recording", "Запись экрана и звука Mac"),
-                rowLabel: "WaiComputer"
-            )
-        } else {
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.green)
-                Text(t("All set", "Все готово"))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.black.opacity(0.82))
+    private var permissionExplanationPanel: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Palette.accent.opacity(0.12))
+                    .frame(width: 64, height: 64)
+                Image(systemName: permissionPanelIcon)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(permissionPanelTitle)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(permissionBody)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                explanationRow(
+                    icon: "mic.fill",
+                    text: t("Your voice for dictation, notes, and meetings", "Твой голос для диктовки, заметок и встреч")
+                )
+                explanationRow(
+                    icon: "keyboard",
+                    text: t("Global push-to-talk and text insertion", "Глобальная клавиша диктовки и вставка текста")
+                )
+                explanationRow(
+                    icon: "waveform",
+                    text: t("Other speakers and app audio in meeting recordings", "Голоса других участников и звук приложений в записях встреч")
+                )
             }
         }
+        .padding(22)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Palette.surfaceSubtle)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func explanationRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 18, height: 18)
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var permissionPanelIcon: String {
+        if !hasMicrophonePermission { return "mic.fill" }
+        if accessibilityStatus != .granted { return "keyboard" }
+        if systemAudioStatus != .granted { return "waveform" }
+        return "checkmark.circle.fill"
+    }
+
+    private var permissionPanelTitle: String {
+        if !hasMicrophonePermission {
+            return t("Start with Microphone", "Сначала микрофон")
+        }
+        if accessibilityStatus != .granted {
+            return t("Then Accessibility", "Затем Универсальный доступ")
+        }
+        if systemAudioStatus != .granted {
+            return t("Finish with System Audio", "И звук Mac")
+        }
+        return t("All permissions are ready", "Все разрешения готовы")
     }
 
     private var permissionBody: String {
@@ -592,7 +644,7 @@ private struct OnboardingPermissionSlide: View {
         }
         return t(
             "Grant Microphone for your voice, Accessibility for the global dictation hotkey and text insertion, and System Audio so meeting recordings capture other speakers and audio playing on your Mac.",
-            "Разреши микрофон для твоего голоса, универсальный доступ для глобальной клавиши диктовки и вставки текста, а звук Mac — чтобы записи встреч слышали других участников и аудио из приложений."
+            "Разреши микрофон для своего голоса, Универсальный доступ для глобальной клавиши и вставки текста, а звук Mac — чтобы записи встреч сохраняли других участников и аудио из приложений."
         )
     }
 
@@ -600,7 +652,7 @@ private struct OnboardingPermissionSlide: View {
     private var microphoneRow: some View {
         PermissionRow(
             title: t("Microphone", "Микрофон"),
-            detail: t("Record your voice for dictation, notes, and meetings", "Запись твоего голоса для диктовки, заметок и встреч"),
+            detail: t("Record your voice for dictation, notes, and meetings", "Микрофон нужен для диктовки, заметок и встреч"),
             status: hasMicrophonePermission ? .granted : .denied,
             identifierBase: "onboarding-permission-microphone",
             primaryAction: PermissionRow.Action(label: t("Grant", "Разрешить"), identifier: "grant", run: requestMicrophonePermission),
@@ -760,214 +812,6 @@ private struct PermissionRow: View {
                 }
             }
         }
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
-// MARK: - Permission preview illustrations (right pane)
-
-/// Stylized macOS system dialog asking for Microphone access. Acts as a
-/// visual hint so the user knows exactly what window appears after pressing
-/// Allow on the left card. Pure SwiftUI — no PNG asset required.
-private struct PermissionPreviewMicrophone: View {
-    @EnvironmentObject private var languageManager: LanguageManager
-    @State private var pulse = false
-
-    var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                // Window chrome (looks like a system alert)
-                VStack(spacing: 14) {
-                    HStack(spacing: 6) {
-                        Spacer()
-                        Image(systemName: "questionmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.gray.opacity(0.5))
-                    }
-
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.blue.opacity(0.85))
-                            .frame(width: 56, height: 56)
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-
-                    VStack(spacing: 6) {
-                        Text(t("\u{201C}WaiComputer\u{201D} would like to", "«WaiComputer» хочет"))
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(t("access the microphone.", "получить доступ к микрофону."))
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(t("WaiComputer needs access to your", "Микрофон нужен WaiComputer"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.gray)
-                            .padding(.top, 4)
-                        Text(t("microphone to record dictation!", "для диктовки и записи встреч."))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.gray)
-                    }
-                    .multilineTextAlignment(.center)
-
-                    HStack(spacing: 6) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.gray.opacity(0.18))
-                            Text(t("Don\u{2019}t Allow", "Не разрешать"))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.black.opacity(0.75))
-                        }
-                        .frame(height: 28)
-
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.gray.opacity(0.28))
-                            Text("OK")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.black.opacity(0.85))
-                        }
-                        .frame(height: 28)
-                        .overlay(
-                            // Cursor + hand pointing to OK
-                            HStack {
-                                Spacer()
-                                Image(systemName: "hand.point.up.left.fill")
-                                    .font(.system(size: 18))
-                                    .rotationEffect(.degrees(-25))
-                                    .foregroundStyle(.black.opacity(0.85))
-                                    .offset(x: 18, y: 10)
-                                    .scaleEffect(pulse ? 1.05 : 1.0)
-                                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
-                            }
-                        )
-                    }
-                }
-                .padding(20)
-                .frame(width: 270)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.white)
-                )
-                .shadow(color: .black.opacity(0.18), radius: 22, y: 10)
-            }
-        }
-        .onAppear { pulse = true }
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
-/// Stylized macOS System Settings window (Privacy & Security pane) showing
-/// a list with the current app's row toggled ON. Used for Input Monitoring
-/// and Accessibility steps so the user sees exactly what to look for.
-private struct PermissionPreviewSettings: View {
-    @EnvironmentObject private var languageManager: LanguageManager
-
-    let paneTitle: String
-    let rowLabel: String
-    @State private var pulse = false
-
-    var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                // Title bar
-                HStack(spacing: 6) {
-                    Circle().fill(Color.red.opacity(0.85)).frame(width: 9, height: 9)
-                    Circle().fill(Color.yellow.opacity(0.85)).frame(width: 9, height: 9)
-                    Circle().fill(Color.green.opacity(0.85)).frame(width: 9, height: 9)
-                    Spacer()
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.gray.opacity(0.5))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.gray.opacity(0.4))
-                    Text(paneTitle)
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                }
-                .padding(10)
-                .background(Color.gray.opacity(0.07))
-
-                Divider()
-
-                // Settings rows
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(t(
-                            "Allow the applications below to control your computer.",
-                            "Разреши приложениям ниже управлять компьютером."
-                        ))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.gray)
-                        Spacer()
-                    }
-                    .padding(.bottom, 2)
-
-                    settingsRow(name: "Screen Studio", on: true)
-                    settingsRow(name: "Terminal", on: true)
-                    settingsRow(name: rowLabel, on: true, highlight: true)
-                    HStack {
-                        Text("+")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.gray)
-                        Text("\u{2013}")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.gray.opacity(0.5))
-                        Spacer()
-                    }
-                    .padding(.top, 2)
-                }
-                .padding(14)
-            }
-            .frame(width: 320)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white)
-            )
-            .shadow(color: .black.opacity(0.18), radius: 22, y: 10)
-            .overlay(alignment: .topTrailing) {
-                // Cursor pointing at the toggle
-                Image(systemName: "cursorarrow")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(.black)
-                    .rotationEffect(.degrees(-15))
-                    .offset(x: -18, y: 92)
-                    .scaleEffect(pulse ? 1.08 : 1.0)
-                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
-            }
-        }
-        .onAppear { pulse = true }
-    }
-
-    @ViewBuilder
-    private func settingsRow(name: String, on: Bool, highlight: Bool = false) -> some View {
-        HStack {
-            ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 18, height: 18)
-            }
-            Text(name)
-                .font(.system(size: 12, weight: highlight ? .semibold : .regular))
-            Spacer()
-            ZStack(alignment: on ? .trailing : .leading) {
-                Capsule()
-                    .fill(on ? Color.blue.opacity(0.9) : Color.gray.opacity(0.3))
-                    .frame(width: 28, height: 16)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 12, height: 12)
-                    .padding(2)
-                    .shadow(color: .black.opacity(0.2), radius: 1)
-            }
-        }
-        .padding(.vertical, 3)
     }
 
     private func t(_ english: String, _ russian: String) -> String {

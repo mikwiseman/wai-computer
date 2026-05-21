@@ -549,17 +549,10 @@ final class GlobalHotkeyManager: ObservableObject {
         otherKeyPressed = false
 
         holdTimer?.cancel()
-        let timer = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                guard self.isHotkeyHeld, !self.otherKeyPressed else { return }
-                self.isInPushToTalk = true
-                log.info("Push-to-talk started")
-                self.onPushToTalkStart?()
-            }
-        }
-        holdTimer = timer
-        DispatchQueue.main.asyncAfter(deadline: .now() + holdThreshold, execute: timer)
+        holdTimer = nil
+        isInPushToTalk = true
+        log.info("Push-to-talk started")
+        onPushToTalkStart?()
     }
 
     private func hotkeyUp() {
@@ -574,27 +567,35 @@ final class GlobalHotkeyManager: ObservableObject {
             if otherKeyPressed {
                 log.info("Push-to-talk cancelled after modifier use")
                 onCancelled?()
-            } else {
+            } else if holdDuration >= holdThreshold {
                 log.info("Push-to-talk stopped (held \(String(format: "%.2f", holdDuration))s)")
                 onPushToTalkStop?()
+            } else {
+                log.info("Push-to-talk cancelled before hold threshold")
+                onCancelled?()
+                registerTap()
             }
         } else if !otherKeyPressed && holdDuration < holdThreshold {
-            if let lastTap = lastTapTime,
-               Date().timeIntervalSince(lastTap) < doubleTapInterval {
-                lastTapTime = nil
-                log.info("Double-tap detected — hands-free toggle")
-                onHandsFreeToggle?()
-            } else {
-                lastTapTime = Date()
-                log.info("Single tap")
-                onSingleTap?()
-            }
+            registerTap()
         } else if otherKeyPressed {
             onCancelled?()
         }
 
         hotkeyDownTime = nil
         otherKeyPressed = false
+    }
+
+    private func registerTap() {
+        if let lastTap = lastTapTime,
+           Date().timeIntervalSince(lastTap) < doubleTapInterval {
+            lastTapTime = nil
+            log.info("Double-tap detected — hands-free toggle")
+            onHandsFreeToggle?()
+        } else {
+            lastTapTime = Date()
+            log.info("Single tap")
+            onSingleTap?()
+        }
     }
 
     deinit {
