@@ -123,6 +123,7 @@ These items were already handled in the previous pass, but must be regression-ch
 - [ ] V10. Theme pass: each app color option in light/dark mode, Russian/English UI, narrow/wide windows, and all primary screens.
 - [ ] V11. Full end-to-end regression pass after all fixes: onboarding, auth, billing, recording, import, dictation, transcription models, summaries, search, dictionary, folders, shared notes, settings, theme, narrow windows, release/update, and production web callbacks.
 - [ ] V12. Exhaustive final scenario/evaluation pass before stable release: run every offered transcription model through dictation, realtime recording, file import/full transcript, long recording, speaker diarization, summary/title generation, auth, billing, folders, shared notes, language/theme changes, update/release, and production callback paths; record every failure in this plan before shipping.
+- [ ] V13. Strict backend coverage gate: `cd backend && pytest -x -q` must pass the repository coverage threshold before release. Last logged run passed functionally but failed coverage at 88.74% against `fail-under=95`.
 
 ## Verification Log
 

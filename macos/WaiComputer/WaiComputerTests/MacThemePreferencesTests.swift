@@ -55,4 +55,24 @@ final class MacThemePreferencesTests: XCTestCase {
         XCTAssertNil(MacAccentChoice.system.tintColor)
         XCTAssertNotNil(MacAccentChoice.amber.tintColor)
     }
+
+    func testDateFormattingUsesSelectedAppLanguage() {
+        let date = Date(timeIntervalSince1970: 1_709_292_000)
+
+        let english = MacDateFormatting.string(
+            from: date,
+            dateStyle: .medium,
+            timeStyle: .short,
+            language: .english
+        )
+        let russian = MacDateFormatting.string(
+            from: date,
+            dateStyle: .medium,
+            timeStyle: .short,
+            language: .russian
+        )
+
+        XCTAssertTrue(english.lowercased().contains("mar"), english)
+        XCTAssertTrue(russian.lowercased().contains("мар"), russian)
+    }
 }

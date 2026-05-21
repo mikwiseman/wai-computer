@@ -46,7 +46,7 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let enabledDefaultsKey = "dictationEnabled"
-    private static let startupCaptureSampleRate = 24_000
+    private static let startupCaptureSampleRate = 16_000
     private static let startupCaptureChannels: UInt32 = 1
 
     @Published var hotkeyChoice: String {
@@ -86,7 +86,7 @@ final class DictationManager: ObservableObject {
     }
 
     var selectedHotkey: DictationHotkey {
-        DictationHotkey(rawValue: hotkeyChoice) ?? .rightOption
+        DictationHotkey(rawValue: hotkeyChoice) ?? .defaultPushToTalk
     }
 
     /// Optional dedicated hotkey for toggling hands-free mode. Empty string
@@ -160,7 +160,7 @@ final class DictationManager: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.rightOption.rawValue
+        self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.defaultPushToTalk.rawValue
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
         // Dictation STT providers already return polished text in the common
         // case. Keep AI cleanup opt-in so dictation stays fast and predictable.
@@ -498,12 +498,12 @@ final class DictationManager: ObservableObject {
 
         // Drain the active provider: direct provider session, OpenAI, or
         // ElevenLabs via WebSocketManager.
-        providerAudioTask?.cancel()
+        await finishProviderAudioPumpBeforeFinalizing()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(7))) ?? []
-        openAIAudioTask?.cancel()
+        await finishOpenAIAudioPumpBeforeFinalizing()
         let openAIOutcome = try? await openAISession?.close(timeout: .seconds(3))
         if let ws = elevenLabsWebSocket {
-            elevenLabsAudioTask?.cancel()
+            await finishElevenLabsAudioPumpBeforeFinalizing()
             _ = try? await ws.finishStreaming(timeout: .seconds(3))
         }
 
@@ -525,14 +525,11 @@ final class DictationManager: ObservableObject {
             .map(\.text)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let transcriptCandidates = [
+        let trimmedText = RealtimeTranscriptCandidateSelector.select([
             providerTranscript.isEmpty ? nil : providerTranscript,
             openAITranscript,
             buildTranscript(),
-        ]
-        let trimmedText = transcriptCandidates
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? ""
+        ])
 
         guard !trimmedText.isEmpty else {
             log.info("No text transcribed — nothing to insert")
@@ -638,6 +635,33 @@ final class DictationManager: ObservableObject {
         timerTask = nil
 
         await cleanup()
+    }
+
+    private func finishProviderAudioPumpBeforeFinalizing() async {
+        if let capture = providerCapture {
+            await capture.stopRecording()
+            providerCapture = nil
+        }
+        await providerAudioTask?.value
+        providerAudioTask = nil
+    }
+
+    private func finishOpenAIAudioPumpBeforeFinalizing() async {
+        if let capture = openAICapture {
+            await capture.stopRecording()
+            openAICapture = nil
+        }
+        await openAIAudioTask?.value
+        openAIAudioTask = nil
+    }
+
+    private func finishElevenLabsAudioPumpBeforeFinalizing() async {
+        if let capture = elevenLabsCapture {
+            await capture.stopRecording()
+            elevenLabsCapture = nil
+        }
+        await elevenLabsAudioTask?.value
+        elevenLabsAudioTask = nil
     }
 
     // MARK: - ElevenLabs rollback path

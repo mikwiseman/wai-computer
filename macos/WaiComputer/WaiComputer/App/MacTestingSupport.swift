@@ -70,6 +70,22 @@ enum MacTestingMode: Equatable {
 
         return false
     }
+
+    #if DEBUG
+    func prepareProcessForUITesting() {
+        guard case .uiTest(let scenario) = self else { return }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaiComputerUITests-\(scenario.rawValue)-\(getpid())", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        } catch {
+            preconditionFailure("Unable to prepare isolated UI test home at \(root.path): \(error)")
+        }
+        precondition(setenv("HOME", root.path, 1) == 0, "Unable to set HOME for UI testing")
+        precondition(setenv("CFFIXED_USER_HOME", root.path, 1) == 0, "Unable to set CFFIXED_USER_HOME for UI testing")
+    }
+    #endif
 }
 
 struct CompletedRecordingContext: Equatable {
@@ -195,9 +211,13 @@ enum MacUITestFixtures {
 
 #if DEBUG
 struct MacPermissionTestingSnapshot {
-    let hasMicrophonePermission: Bool
+    let microphoneStatus: OnboardingPermissionPrimaryActionPolicy.MicrophoneStatus
     let accessibilityStatus: MacInputPermission.Status
     let systemAudioStatus: MacInputPermission.Status
+
+    var hasMicrophonePermission: Bool {
+        microphoneStatus == .granted
+    }
 }
 
 enum MacPermissionTesting {
@@ -209,7 +229,13 @@ enum MacPermissionTesting {
         switch permissionMock {
         case "missing":
             return MacPermissionTestingSnapshot(
-                hasMicrophonePermission: false,
+                microphoneStatus: .settingsRequired,
+                accessibilityStatus: .denied,
+                systemAudioStatus: .denied
+            )
+        case "missing_not_determined":
+            return MacPermissionTestingSnapshot(
+                microphoneStatus: .requestable,
                 accessibilityStatus: .denied,
                 systemAudioStatus: .denied
             )
@@ -218,13 +244,13 @@ enum MacPermissionTesting {
             // the app no longer requires individually). All map to the
             // single Accessibility-stale state under the unified model.
             return MacPermissionTestingSnapshot(
-                hasMicrophonePermission: true,
+                microphoneStatus: .granted,
                 accessibilityStatus: .staleNeedsRestart,
                 systemAudioStatus: .granted
             )
         case "all_granted":
             return MacPermissionTestingSnapshot(
-                hasMicrophonePermission: true,
+                microphoneStatus: .granted,
                 accessibilityStatus: .granted,
                 systemAudioStatus: .granted
             )

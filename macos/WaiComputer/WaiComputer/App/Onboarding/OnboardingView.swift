@@ -9,7 +9,7 @@ struct OnboardingView: View {
     @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentPage: Int
-    @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
+    @State private var microphonePermissionStatus = OnboardingView.initialMicrophonePermissionStatus
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
     @State private var systemAudioReadiness = OnboardingView.initialSystemAudioReadiness
     @State private var systemAudioPreflightPassedInCurrentProcess = false
@@ -84,6 +84,7 @@ struct OnboardingView: View {
                             OnboardingPermissionSlide(
                                 isActive: index == currentPage,
                                 hasMicrophonePermission: hasMicrophonePermission,
+                                microphoneStatus: microphonePermissionStatus,
                                 accessibilityStatus: accessibilityStatus,
                                 systemAudioStatus: systemAudioStatus,
                                 systemAudioReadiness: systemAudioReadiness,
@@ -208,18 +209,13 @@ struct OnboardingView: View {
 
     private var primaryButtonTitle: String {
         if isPermissionPage {
-            if dictationPermissionsReady {
-                return t("Continue", "Продолжить")
-            }
-            if permissionRestartRecommended {
-                return t("Restart WaiComputer", "Перезапустить WaiComputer")
-            }
-            if hasMicrophonePermission,
-               accessibilityStatus == .granted,
-               systemAudioReadiness == .setupNeeded {
-                return t("Set Up System Audio", "Настроить звук Mac")
-            }
-            return t("Open Settings", "Открыть настройки")
+            return OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: microphonePermissionStatus,
+                accessibilityStatus: Self.permissionActionStatus(for: accessibilityStatus),
+                systemAudioReadiness: systemAudioReadiness,
+                restartRecommended: permissionRestartRecommended,
+                language: languageManager.current
+            )
         }
         return t("Continue", "Продолжить")
     }
@@ -292,6 +288,10 @@ struct OnboardingView: View {
             && (systemAudioStatus == .granted || systemAudioReadiness == .unsupported)
     }
 
+    private var hasMicrophonePermission: Bool {
+        microphonePermissionStatus == .granted
+    }
+
     private var systemAudioStatus: MacInputPermission.Status {
         Self.permissionStatus(for: systemAudioReadiness)
     }
@@ -311,13 +311,41 @@ struct OnboardingView: View {
         accessibilityStatus == .staleNeedsRestart || systemAudioStatus == .staleNeedsRestart
     }
 
-    private static var hasMicrophonePermission: Bool {
+    private static var initialMicrophonePermissionStatus: OnboardingPermissionPrimaryActionPolicy.MicrophoneStatus {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
-            return snapshot.hasMicrophonePermission
+            return snapshot.microphoneStatus
         }
         #endif
-        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        return permissionStatus(for: AVCaptureDevice.authorizationStatus(for: .audio))
+    }
+
+    private static func permissionStatus(
+        for authorizationStatus: AVAuthorizationStatus
+    ) -> OnboardingPermissionPrimaryActionPolicy.MicrophoneStatus {
+        switch authorizationStatus {
+        case .authorized:
+            return .granted
+        case .notDetermined:
+            return .requestable
+        case .denied, .restricted:
+            return .settingsRequired
+        @unknown default:
+            return .settingsRequired
+        }
+    }
+
+    private static func permissionActionStatus(
+        for status: MacInputPermission.Status
+    ) -> OnboardingPermissionPrimaryActionPolicy.AccessibilityStatus {
+        switch status {
+        case .granted:
+            return .granted
+        case .denied:
+            return .denied
+        case .staleNeedsRestart:
+            return .staleNeedsRestart
+        }
     }
 
     private static var initialSystemAudioReadiness: SystemAudioReadinessPolicy.Status {
@@ -376,14 +404,14 @@ struct OnboardingView: View {
     private func refreshPermissions() {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
-            hasMicrophonePermission = snapshot.hasMicrophonePermission
+            microphonePermissionStatus = snapshot.microphoneStatus
             accessibilityStatus = snapshot.accessibilityStatus
             systemAudioReadiness = Self.readiness(from: snapshot.systemAudioStatus)
             return
         }
         #endif
 
-        hasMicrophonePermission = Self.hasMicrophonePermission
+        microphonePermissionStatus = Self.permissionStatus(for: AVCaptureDevice.authorizationStatus(for: .audio))
         accessibilityStatus = MacInputPermission.accessibilityStatus()
         systemAudioReadiness = Self.currentSystemAudioReadiness(
             preflightPassedInCurrentProcess: systemAudioPreflightPassedInCurrentProcess,
@@ -543,6 +571,7 @@ private struct OnboardingPermissionSlide: View {
 
     let isActive: Bool
     let hasMicrophonePermission: Bool
+    let microphoneStatus: OnboardingPermissionPrimaryActionPolicy.MicrophoneStatus
     let accessibilityStatus: MacInputPermission.Status
     let systemAudioStatus: MacInputPermission.Status
     let systemAudioReadiness: SystemAudioReadinessPolicy.Status
@@ -723,12 +752,18 @@ private struct OnboardingPermissionSlide: View {
 
     @ViewBuilder
     private var microphoneRow: some View {
+        let actionLabel = OnboardingPermissionPrimaryActionPolicy.microphoneRowActionLabel(
+            microphoneStatus: microphoneStatus,
+            language: languageManager.current
+        )
         PermissionRow(
             title: t("Microphone", "Микрофон"),
             detail: t("Record your voice for dictation, notes, and meetings", "Микрофон нужен для диктовки, заметок и встреч"),
             status: hasMicrophonePermission ? .granted : .denied,
             identifierBase: "onboarding-permission-microphone",
-            primaryAction: PermissionRow.Action(label: t("Grant", "Разрешить"), identifier: "grant", run: requestMicrophonePermission),
+            primaryAction: actionLabel.map {
+                PermissionRow.Action(label: $0, identifier: "grant", run: requestMicrophonePermission)
+            },
             restartAction: nil
         )
     }

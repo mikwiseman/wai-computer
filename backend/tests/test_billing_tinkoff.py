@@ -104,6 +104,76 @@ def test_provider_requires_credentials(monkeypatch):
         provider._require_creds()
 
 
+class _FakeTinkoffHTTPResponse:
+    def __init__(self, *, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeTinkoffHTTPClient:
+    def __init__(self, response: _FakeTinkoffHTTPResponse, calls: list[tuple[str, dict, dict]]):
+        self.response = response
+        self.calls = calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url: str, *, json: dict, headers: dict):
+        self.calls.append((url, json, headers))
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_call_posts_json_and_returns_parsed_response(monkeypatch):
+    calls: list[tuple[str, dict, dict]] = []
+    response = _FakeTinkoffHTTPResponse(status_code=200, text='{"Success": true}')
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
+        lambda timeout: _FakeTinkoffHTTPClient(response, calls),
+    )
+    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+
+    parsed = await provider._call("Init", {"TerminalKey": "terminal"})
+
+    assert parsed == {"Success": True}
+    assert calls == [
+        (
+            "https://pay.test/v2/Init",
+            {"TerminalKey": "terminal"},
+            {"Content-Type": "application/json"},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_call_rejects_non_json_response(monkeypatch):
+    response = _FakeTinkoffHTTPResponse(status_code=502, text="<html>bad gateway</html>")
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
+        lambda timeout: _FakeTinkoffHTTPClient(response, []),
+    )
+    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+
+    with pytest.raises(RuntimeError, match="non-JSON response HTTP 502"):
+        await provider._call("Init", {"TerminalKey": "terminal"})
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_call_rejects_http_error_json_response(monkeypatch):
+    response = _FakeTinkoffHTTPResponse(status_code=400, text='{"Success": false}')
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.httpx.AsyncClient",
+        lambda timeout: _FakeTinkoffHTTPClient(response, []),
+    )
+    provider = TinkoffProvider(terminal_key="terminal", password="pw", api_url="https://pay.test/v2")
+
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        await provider._call("Init", {"TerminalKey": "terminal"})
+
+
 def test_tinkoff_checkout_result_urls_tag_tinkoff_provider_for_russian_pages():
     assert _checkout_result_urls("https://wai.computer/", "tinkoff") == (
         "https://wai.computer/billing/success?provider=tinkoff&lang=ru",

@@ -149,7 +149,12 @@ struct MacSettingsView: View {
                     }
                     .font(Typography.body)
                     LabeledContent {
-                        Text(user.createdAt.formatted(date: .long, time: .omitted))
+                        Text(MacDateFormatting.string(
+                            from: user.createdAt,
+                            dateStyle: .long,
+                            timeStyle: .none,
+                            language: languageManager.current
+                        ))
                     } label: {
                         Text("settings.account.memberSince", bundle: .main)
                     }
@@ -457,23 +462,7 @@ struct MacSettingsView: View {
                 } label: {
                     Text("settings.about.version", bundle: .main)
                 }
-                #if !DEBUG
-                Toggle(isOn: $receiveBetaUpdates) {
-                    Text("settings.about.receiveBeta", bundle: .main)
-                }
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-receive-beta-updates-toggle")
-                Text("settings.about.betaHint", bundle: .main)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                Button {
-                    NotificationCenter.default.post(name: .waicomputerCheckForUpdates, object: nil)
-                } label: {
-                    Text("settings.about.checkUpdates", bundle: .main)
-                }
-                .font(Typography.body)
-                .accessibilityIdentifier("settings-check-for-updates-button")
-                #endif
+                updateControls
             } header: {
                 Text("settings.about.title", bundle: .main)
                     .waiSectionHeader()
@@ -581,6 +570,36 @@ struct MacSettingsView: View {
         } message: {
             Text(deleteAccountError ?? "")
         }
+    }
+
+    @ViewBuilder
+    private var updateControls: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WAI_ENABLE_UI_TEST_MODE"] == "1" {
+            updateControlsContent
+        }
+        #else
+        updateControlsContent
+        #endif
+    }
+
+    @ViewBuilder
+    private var updateControlsContent: some View {
+        Toggle(isOn: $receiveBetaUpdates) {
+            Text("settings.about.receiveBeta", bundle: .main)
+        }
+            .font(Typography.body)
+            .accessibilityIdentifier("settings-receive-beta-updates-toggle")
+        Text("settings.about.betaHint", bundle: .main)
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+        Button {
+            NotificationCenter.default.post(name: .waicomputerCheckForUpdates, object: nil)
+        } label: {
+            Text("settings.about.checkUpdates", bundle: .main)
+        }
+        .font(Typography.body)
+        .accessibilityIdentifier("settings-check-for-updates-button")
     }
 
     @ViewBuilder

@@ -13,6 +13,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import (
     TinkoffProvider,
@@ -277,3 +278,53 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     assert payload["status"] == "active"
     assert payload["provider"] == "tinkoff"
     assert payload["billing_period"] == "year"
+
+
+@pytest.mark.asyncio
+async def test_stripe_webhook_maps_provider_and_validation_errors(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnavailableStripeProvider:
+        async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]):
+            raise ProviderUnavailableError("stripe not configured")
+
+    class InvalidStripeProvider:
+        async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]):
+            raise ValueError("bad stripe signature")
+
+    monkeypatch.setattr("app.billing.webhooks.StripeProvider", UnavailableStripeProvider)
+    unavailable = await client.post("/api/webhooks/stripe", content=b"{}")
+
+    monkeypatch.setattr("app.billing.webhooks.StripeProvider", InvalidStripeProvider)
+    invalid = await client.post("/api/webhooks/stripe", content=b"{}")
+
+    assert unavailable.status_code == 503
+    assert unavailable.json()["detail"] == "stripe not configured"
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"] == "bad stripe signature"
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_webhook_maps_provider_and_validation_errors(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnavailableTinkoffProvider:
+        async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]):
+            raise ProviderUnavailableError("tinkoff not configured")
+
+    class InvalidTinkoffProvider:
+        async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]):
+            raise ValueError("bad tinkoff token")
+
+    monkeypatch.setattr("app.billing.webhooks.TinkoffProvider", UnavailableTinkoffProvider)
+    unavailable = await client.post("/api/webhooks/tinkoff", content=b"{}")
+
+    monkeypatch.setattr("app.billing.webhooks.TinkoffProvider", InvalidTinkoffProvider)
+    invalid = await client.post("/api/webhooks/tinkoff", content=b"{}")
+
+    assert unavailable.status_code == 503
+    assert unavailable.json()["detail"] == "tinkoff not configured"
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"] == "bad tinkoff token"

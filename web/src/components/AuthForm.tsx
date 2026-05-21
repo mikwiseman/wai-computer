@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { login, register, requestMagicLink, requestPasswordReset } from "@/lib/api";
+import type { AuthLocale } from "@/lib/auth-locale";
 import { ApiError } from "@/lib/http";
 
 type Mode = "login" | "register";
-type Locale = "en" | "ru";
+type Locale = AuthLocale;
 type PendingAction = "magic" | "password" | "forgot";
 
 const COPY: Record<
@@ -92,6 +93,7 @@ const COPY: Record<
 interface AuthFormProps {
   mode: Mode;
   onSuccess: () => void;
+  initialLocale?: Locale;
 }
 
 function detectLocale(): Locale {
@@ -129,8 +131,8 @@ function describeError(error: unknown, locale: Locale): string {
   return message;
 }
 
-export function AuthForm({ mode, onSuccess }: AuthFormProps) {
-  const [locale] = useState<Locale>(() => detectLocale());
+export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
+  const [locale, setLocale] = useState<Locale>(initialLocale ?? "en");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -139,6 +141,10 @@ export function AuthForm({ mode, onSuccess }: AuthFormProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const copy = COPY[locale];
   const loading = pendingAction !== null;
+
+  useEffect(() => {
+    setLocale(initialLocale ?? detectLocale());
+  }, [initialLocale]);
 
   async function onPasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

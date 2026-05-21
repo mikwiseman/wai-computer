@@ -8,19 +8,18 @@ final class OnboardingPermissionUITests: XCTestCase {
     @MainActor
     func testOnboardingPermissionSlideShowsGrantControlsForRequiredPermissions() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
-        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
-        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
-        app.launchArguments = [
-            "-nativeOnboardingV4CurrentPage", "2",
-        ]
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: "missing",
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+        )
         app.launch()
         app.activate()
 
         let primaryActionButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
         XCTAssertTrue(waitForElement(primaryActionButton, in: app, timeout: 5))
-        XCTAssertEqual(primaryActionButton.label, "Open Settings")
+        XCTAssertEqual(primaryActionButton.label, "Open Microphone Settings")
 
         XCTAssertTrue(app.staticTexts["Give WaiComputer permissions"].exists)
         XCTAssertTrue(waitForElement(app.staticTexts["Microphone"], in: app, timeout: 3))
@@ -37,17 +36,41 @@ final class OnboardingPermissionUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingPermissionSlidePromptsFreshMicrophonePermissionBeforeSettings() throws {
+        let app = XCUIApplication()
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: "missing_not_determined",
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+        )
+        app.launch()
+        app.activate()
+
+        let primaryActionButton = app.buttons.matching(identifier: "onboarding-get-started-button").firstMatch
+        XCTAssertTrue(waitForElement(primaryActionButton, in: app, timeout: 5))
+        XCTAssertEqual(primaryActionButton.label, "Grant Microphone")
+
+        let microphoneAction = app.buttons.matching(identifier: "onboarding-permission-microphone-grant").firstMatch
+        XCTAssertTrue(waitForElement(microphoneAction, in: app, timeout: 3))
+        XCTAssertEqual(microphoneAction.label, "Grant")
+    }
+
+    @MainActor
     func testLegacyCompletedOnboardingFlagDoesNotSkipUpdatedPermissionOnboarding() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
-        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "missing"
-        app.launchArguments = [
-            "-nativeOnboardingV4CurrentPage", "0",
-            "-nativeOnboardingV2Completed", "YES",
-            "-nativeOnboardingV3Completed", "YES",
-            "-nativeOnboardingV4Completed", "NO",
-        ]
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: "missing",
+            launchArguments: [
+                "-waiUserLanguage", "en",
+                "-nativeOnboardingV4CurrentPage", "0",
+                "-nativeOnboardingV2Completed", "YES",
+                "-nativeOnboardingV3Completed", "YES",
+                "-nativeOnboardingV4Completed", "NO",
+            ]
+        )
         app.launch()
         app.activate()
 
@@ -58,14 +81,16 @@ final class OnboardingPermissionUITests: XCTestCase {
     @MainActor
     func testOnboardingResumesPersistedPermissionStepAfterRestart() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
-        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
-        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
-        app.launchArguments = [
-            "-nativeOnboardingV4CurrentPage", "2",
-            "-nativeOnboardingV4Completed", "NO",
-        ]
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: "needs_restart_accessibility",
+            launchArguments: [
+                "-waiUserLanguage", "en",
+                "-nativeOnboardingV4CurrentPage", "2",
+                "-nativeOnboardingV4Completed", "NO",
+            ]
+        )
         app.launch()
         app.activate()
 
@@ -78,13 +103,12 @@ final class OnboardingPermissionUITests: XCTestCase {
     @MainActor
     func testOnboardingShowsRestartRequiredForAccessibilityPermissionRefresh() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
-        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
-        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = "needs_restart_accessibility"
-        app.launchArguments = [
-            "-nativeOnboardingV4CurrentPage", "2",
-        ]
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: "needs_restart_accessibility",
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+        )
         app.launch()
         app.activate()
 
@@ -123,7 +147,7 @@ final class OnboardingPermissionUITests: XCTestCase {
         XCTAssertTrue(waitForElement(russianButton, in: app, timeout: 3))
         russianButton.click()
 
-        XCTAssertTrue(russianButton.isSelected)
+        XCTAssertTrue(waitForElement(app.staticTexts["Добро пожаловать в WaiComputer"], in: app, timeout: 3))
     }
 
     @MainActor
@@ -160,13 +184,20 @@ final class OnboardingPermissionUITests: XCTestCase {
         launchArguments extraLaunchArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "onboarding_flow"
-        app.launchEnvironment["WAI_FORCE_ONBOARDING"] = "1"
-        app.launchEnvironment["WAI_MOCK_DICTATION_PERMISSIONS"] = permissionMock
-        app.launchArguments = extraLaunchArguments + [
-            "-nativeOnboardingV4CurrentPage", "\(currentPage)",
-        ]
+        let defaultLanguageArguments: [String]
+        if extraLaunchArguments.contains("-waiUserLanguage") {
+            defaultLanguageArguments = []
+        } else {
+            defaultLanguageArguments = ["-waiUserLanguage", "en"]
+        }
+        app.configureWaiComputerUITestLaunch(
+            scenario: "onboarding_flow",
+            forceOnboarding: true,
+            permissionMock: permissionMock,
+            launchArguments: defaultLanguageArguments + extraLaunchArguments + [
+                "-nativeOnboardingV4CurrentPage", "\(currentPage)",
+            ]
+        )
         app.launch()
         app.activate()
         return app

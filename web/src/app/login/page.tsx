@@ -1,12 +1,19 @@
 import { Suspense } from "react";
+import { headers } from "next/headers";
+import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 import { LoginClient, resolveLoginRedirect } from "./LoginClient";
 
 export { resolveLoginRedirect };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const requestHeaders = await headers();
+  const initialLocale = resolveAuthLocaleFromAcceptLanguage(
+    requestHeaders.get("accept-language"),
+  );
+
   return (
     <Suspense fallback={null}>
-      <LoginClient />
+      <LoginClient initialLocale={initialLocale} />
     </Suspense>
   );
 }

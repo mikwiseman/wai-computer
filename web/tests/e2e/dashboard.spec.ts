@@ -318,6 +318,7 @@ test("web dashboard flow covers core features", async ({ page }) => {
 
   await page.goto("/login");
   await page.getByTestId("auth-email").fill("qa@example.com");
+  await page.getByTestId("password-mode-button").click();
   await page.getByTestId("auth-password").fill("password123");
   await page.getByTestId("auth-submit").click();
 

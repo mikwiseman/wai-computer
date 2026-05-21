@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -401,3 +402,207 @@ async def test_unknown_subscription_event_is_ignored(db_session):
         )
     ).scalar_one_or_none()
     assert audit is not None
+
+
+@pytest.mark.asyncio
+async def test_unknown_stripe_event_is_audited_and_ignored(db_session):
+    await _seed_plans(db_session)
+    event = ProviderEvent(
+        type="customer.created",
+        subscription_id_provider=None,
+        customer_id_provider="cus_ignored",
+        status=None,
+        raw={"type": "customer.created", "data": {"object": {"id": "cus_ignored"}}},
+    )
+
+    await apply_stripe_event(db_session, event)
+
+    audit = (
+        await db_session.execute(
+            select(BillingEvent).where(BillingEvent.type == "stripe.customer.created")
+        )
+    ).scalar_one()
+    assert audit.payload["type"] == "customer.created"
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_ignores_missing_references(db_session):
+    await _seed_plans(db_session)
+    missing_user_id = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider=None,
+        customer_id_provider="cus_x",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {"object": {"subscription": "sub_missing_user"}},
+        },
+    )
+    missing_subscription = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider=None,
+        customer_id_provider="cus_x",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {"object": {"client_reference_id": "user-missing-sub"}},
+        },
+    )
+
+    await apply_stripe_event(db_session, missing_user_id)
+    await apply_stripe_event(db_session, missing_subscription)
+
+    subscriptions = (await db_session.execute(select(Subscription))).scalars().all()
+    assert subscriptions == []
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_for_unknown_user_is_ignored(db_session):
+    await _seed_plans(db_session)
+    event = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider="sub_unknown_user",
+        customer_id_provider="cus_x",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": str(uuid.uuid4()),
+                    "subscription": "sub_unknown_user",
+                    "customer": "cus_x",
+                }
+            },
+        },
+    )
+
+    await apply_stripe_event(db_session, event)
+
+    subscriptions = (await db_session.execute(select(Subscription))).scalars().all()
+    assert subscriptions == []
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_uses_free_plan_when_metadata_plan_missing(db_session):
+    free, _ = await _seed_plans(db_session)
+    user = User(email="checkout.free-fallback@example.test")
+    db_session.add(user)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider="sub_free_fallback",
+        customer_id_provider="cus_free",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": str(user.id),
+                    "subscription": "sub_free_fallback",
+                    "customer": "cus_free",
+                    "metadata": {"plan_code": "missing", "period": "year"},
+                }
+            },
+        },
+    )
+
+    await apply_stripe_event(db_session, event)
+
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.stripe_subscription_id == "sub_free_fallback")
+        )
+    ).scalar_one()
+    assert sub.plan_id == free.id
+    assert sub.billing_period == "year"
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_reuses_existing_subscription(db_session):
+    _, pro = await _seed_plans(db_session)
+    user = User(email="checkout.existing@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_existing",
+        stripe_customer_id="cus_old",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider="sub_existing",
+        customer_id_provider="cus_new",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": str(user.id),
+                    "subscription": "sub_existing",
+                    "customer": "cus_new",
+                }
+            },
+        },
+    )
+
+    await apply_stripe_event(db_session, event)
+    await db_session.refresh(user)
+
+    subscriptions = (await db_session.execute(select(Subscription))).scalars().all()
+    assert subscriptions == [sub]
+    assert user.current_subscription_id == sub.id
+
+
+@pytest.mark.asyncio
+async def test_invoice_events_ignore_missing_or_unknown_subscriptions(db_session):
+    await _seed_plans(db_session)
+    events = [
+        ProviderEvent(
+            type="invoice.paid",
+            subscription_id_provider=None,
+            customer_id_provider=None,
+            status=None,
+            raw={"type": "invoice.paid", "data": {"object": {"id": "in_no_sub"}}},
+        ),
+        ProviderEvent(
+            type="invoice.paid",
+            subscription_id_provider="sub_unknown",
+            customer_id_provider=None,
+            status=None,
+            raw={
+                "type": "invoice.paid",
+                "data": {"object": {"id": "in_unknown", "subscription": "sub_unknown"}},
+            },
+        ),
+        ProviderEvent(
+            type="invoice.payment_failed",
+            subscription_id_provider=None,
+            customer_id_provider=None,
+            status=None,
+            raw={"type": "invoice.payment_failed", "data": {"object": {"id": "in_fail_no_sub"}}},
+        ),
+        ProviderEvent(
+            type="invoice.payment_failed",
+            subscription_id_provider="sub_unknown",
+            customer_id_provider=None,
+            status=None,
+            raw={
+                "type": "invoice.payment_failed",
+                "data": {"object": {"id": "in_fail_unknown", "subscription": "sub_unknown"}},
+            },
+        ),
+    ]
+
+    for event in events:
+        await apply_stripe_event(db_session, event)
+
+    invoices = (await db_session.execute(select(Invoice))).scalars().all()
+    assert invoices == []

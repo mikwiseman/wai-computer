@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/AuthForm";
+import type { AuthLocale } from "@/lib/auth-locale";
 
 export function resolveLoginRedirect(
   searchParams: URLSearchParams | { get: (name: string) => string | null },
@@ -28,14 +29,22 @@ export function resolveLoginRedirect(
   return "/dashboard";
 }
 
-export function LoginClient() {
+interface LoginClientProps {
+  initialLocale?: AuthLocale;
+}
+
+export function LoginClient({ initialLocale }: LoginClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = resolveLoginRedirect(searchParams);
 
   return (
     <main className="container auth-page">
-      <AuthForm mode="login" onSuccess={() => router.replace(redirectTo)} />
+      <AuthForm
+        mode="login"
+        initialLocale={initialLocale}
+        onSuccess={() => router.replace(redirectTo)}
+      />
     </main>
   );
 }

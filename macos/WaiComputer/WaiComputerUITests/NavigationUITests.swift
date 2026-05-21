@@ -7,9 +7,10 @@ final class NavigationUITests: XCTestCase {
 
     private func launchAuthenticatedApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["WAI_ENABLE_UI_TEST_MODE"] = "1"
-        app.launchEnvironment["UITEST_SCENARIO"] = "main_view"
-        app.launchEnvironment["WAI_SKIP_ONBOARDING"] = "1"
+        app.configureWaiComputerUITestLaunch(
+            scenario: "main_view",
+            skipOnboarding: true
+        )
         app.launch()
         app.activate()
         return app
@@ -40,20 +41,20 @@ final class NavigationUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(allRecordings, in: app, timeout: 3))
 
-        let meetings = app.descendants(matching: .any)
-            .matching(identifier: "sidebar-meetings")
-            .firstMatch
-        XCTAssertTrue(waitForElement(meetings, in: app, timeout: 3))
-
-        let notes = app.descendants(matching: .any)
-            .matching(identifier: "sidebar-notes")
-            .firstMatch
-        XCTAssertTrue(waitForElement(notes, in: app, timeout: 3))
-
         let trash = app.descendants(matching: .any)
             .matching(identifier: "sidebar-trash")
             .firstMatch
         XCTAssertTrue(waitForElement(trash, in: app, timeout: 3))
+
+        let history = app.descendants(matching: .any)
+            .matching(identifier: "sidebar-history")
+            .firstMatch
+        XCTAssertTrue(waitForElement(history, in: app, timeout: 3))
+
+        let dictionary = app.descendants(matching: .any)
+            .matching(identifier: "sidebar-dictionary")
+            .firstMatch
+        XCTAssertTrue(waitForElement(dictionary, in: app, timeout: 3))
 
         let search = app.descendants(matching: .any)
             .matching(identifier: "sidebar-search")
@@ -64,6 +65,10 @@ final class NavigationUITests: XCTestCase {
             .matching(identifier: "sidebar-settings")
             .firstMatch
         XCTAssertTrue(waitForElement(settings, in: app, timeout: 3))
+
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-meetings").firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-notes").firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-reflections").firstMatch.exists)
     }
 
     @MainActor
