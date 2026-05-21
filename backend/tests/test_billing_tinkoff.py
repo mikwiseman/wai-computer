@@ -224,6 +224,21 @@ async def test_parse_webhook_rejected_status_maps_to_past_due():
 
 
 @pytest.mark.asyncio
+async def test_parse_webhook_auth_fail_status_maps_to_past_due():
+    provider = TinkoffProvider(terminal_key="k", password="pw")
+    payload = {
+        "TerminalKey": "k",
+        "OrderId": "order-auth-fail",
+        "Status": "AUTH_FAIL",
+        "PaymentId": "p-auth-fail",
+    }
+    token = generate_tinkoff_token(payload, "pw")
+    body = json.dumps({**payload, "Token": token}).encode()
+    event = await provider.parse_webhook(raw_body=body, headers={})
+    assert event.status == "past_due"
+
+
+@pytest.mark.asyncio
 async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
     provider = TinkoffProvider(terminal_key="terminal", password="pw")
     calls: list[tuple[str, dict]] = []
@@ -377,6 +392,49 @@ async def test_apply_tinkoff_rejected_initial_payment_does_not_create_subscripti
 
     assert user.current_subscription_id is None
     assert (await db_session.execute(select(Subscription))).scalars().all() == []
+    assert (await db_session.execute(select(Invoice))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_auth_fail_marks_existing_subscription_past_due(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.auth-fail-existing@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_customer_key=str(user.id),
+        tinkoff_rebill_id="rebill-auth-fail",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="tinkoff.auth_fail",
+        subscription_id_provider="order-auth-fail",
+        customer_id_provider=str(user.id),
+        status="past_due",
+        raw={
+            "order_id": "order-auth-fail",
+            "status": "AUTH_FAIL",
+            "payment_id": "payment-auth-fail",
+            "amount": 99900,
+            "plan_code": "pro",
+            "period": "month",
+            "payload": {"Status": "AUTH_FAIL"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(sub)
+
+    assert sub.status == "past_due"
     assert (await db_session.execute(select(Invoice))).scalars().all() == []
 
 
