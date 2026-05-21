@@ -218,6 +218,11 @@ describe("app pages", () => {
     expect(winLink).toHaveAttribute("download");
     expect(winLink).toHaveTextContent("Windows 10/11");
 
+    const linuxLink = screen.getByTestId("download-linux");
+    expect(linuxLink).toHaveAttribute("href", "/releases/linux/is.waiwai.computer.AppImage");
+    expect(linuxLink).toHaveAttribute("download");
+    expect(linuxLink).toHaveTextContent("AppImage");
+
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
       "href",
@@ -253,6 +258,11 @@ describe("app pages", () => {
     expect(macLink).toHaveAttribute("href", "/releases/macos/WaiComputer-ru-latest.dmg");
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("Скачать для Mac");
+
+    const linuxLink = screen.getByTestId("download-linux-ru");
+    expect(linuxLink).toHaveAttribute("href", "/releases/linux/is.waiwai.computer.AppImage");
+    expect(linuxLink).toHaveAttribute("download");
+    expect(linuxLink).toHaveTextContent("AppImage");
 
     const iosLink = screen.getByTestId("download-ios-ru");
     expect(iosLink).toHaveAttribute(
