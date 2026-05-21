@@ -19,6 +19,8 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
     private var collectedSegments: [LiveTranscriptSegment] = []
     private var interimByItem: [String: String] = [:]
     private var isClosing = false
+    private var lastTranscriptEventAt: ContinuousClock.Instant?
+    private var finalizationMarkerReceived = false
 
     public init(
         websocketURL: URL,
@@ -76,9 +78,18 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
         isClosing = true
         try? await endTurn()
 
-        let deadline = ContinuousClock().now + timeout
-        while ContinuousClock().now < deadline, webSocket?.closeCode == .invalid {
-            try? await Task.sleep(for: .milliseconds(100))
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let deadline = startedAt + timeout
+
+        while RealtimeCloseDrainPolicy.shouldKeepWaiting(
+            now: clock.now,
+            deadline: deadline,
+            startedAt: startedAt,
+            lastTranscriptEventAt: lastTranscriptEventAt,
+            finalizationMarkerReceived: finalizationMarkerReceived
+        ) {
+            try? await Task.sleep(for: .milliseconds(50))
         }
 
         webSocket?.cancel(with: .normalClosure, reason: nil)
@@ -163,6 +174,7 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
             guard !delta.isEmpty else { return }
             let current = (interimByItem[itemId] ?? "") + delta
             interimByItem[itemId] = current
+            markTranscriptEvent()
             eventContinuation.yield(.interim(text: current, language: nil))
         case "conversation.item.input_audio_transcription.completed":
             let itemId = json["item_id"] as? String ?? "unknown"
@@ -179,6 +191,7 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
                 confidence: 0.0
             )
             collectedSegments.append(segment)
+            markTranscriptEvent(finalizationMarker: true)
             eventContinuation.yield(.committed(segment))
         case "error":
             let message = (json["error"] as? [String: Any])?["message"] as? String
@@ -192,6 +205,13 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
         openAILog.error("[OpenAI] WebSocket error: \(error.localizedDescription, privacy: .public)")
         eventContinuation.yield(.closed(reason: .networkLost))
         eventContinuation.finish()
+    }
+
+    private func markTranscriptEvent(finalizationMarker: Bool = false) {
+        lastTranscriptEventAt = ContinuousClock().now
+        if finalizationMarker {
+            finalizationMarkerReceived = true
+        }
     }
 
     static func encodeJSON(_ payload: [String: Any]) -> String {
