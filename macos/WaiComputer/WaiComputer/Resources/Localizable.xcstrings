@@ -852,7 +852,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Summary" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "AI-саммари" } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "AI-сводка" } }
       }
     },
     "settings.summary.language" : {
@@ -1027,7 +1027,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Clears your session, preferences, dictation history, and onboarding state on this device. Server-side recordings and summaries stay intact. WaiComputer will restart so the next launch is a clean install." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистит сессию, настройки, историю диктовки и состояние онбординга на этом устройстве. Записи и саммари на сервере сохранятся. WaiComputer перезапустится, чтобы стартовать с чистого листа." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистит сессию, настройки, историю диктовки и состояние онбординга на этом устройстве. Записи и сводки на сервере сохранятся. WaiComputer перезапустится, чтобы стартовать с чистого листа." } }
       }
     },
     "settings.cancel" : {
@@ -1055,7 +1055,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Permanently erases your account, recordings, transcripts, and summaries from WaiComputer. This cannot be undone." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Безвозвратно удалит твой аккаунт, записи, транскрипции и саммари из WaiComputer. Восстановить нельзя." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Безвозвратно удалит твой аккаунт, записи, транскрипции и сводки из WaiComputer. Восстановить нельзя." } }
       }
     },
     "settings.deleteAccount.confirmTitle" : {
@@ -1069,7 +1069,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "This will permanently erase your account, recordings, transcripts, and summaries. WaiComputer will restart afterwards. This action cannot be undone." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это безвозвратно удалит твой аккаунт, записи, транскрипции и саммари. WaiComputer перезапустится. Восстановить нельзя." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это безвозвратно удалит твой аккаунт, записи, транскрипции и сводки. WaiComputer перезапустится. Восстановить нельзя." } }
       }
     },
     "settings.deleteAccount.errorTitle" : {
@@ -1104,7 +1104,7 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент — он получит доступ только на чтение к твоим записям, транскрипциям, саммари, задачам и метаданным. Подтверждение каждого клиента по имени на wai.computer, отозвать доступ можно в любой момент." } }
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент — он получит доступ только на чтение к твоим записям, транскрипциям, сводкам, задачам и метаданным. Подтверждение каждого клиента по имени на wai.computer, отозвать доступ можно в любой момент." } }
       }
     },
     "settings.mcp.client" : {

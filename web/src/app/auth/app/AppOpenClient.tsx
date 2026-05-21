@@ -34,8 +34,20 @@ const COPY = {
   },
 };
 
+function browserLocale(): Locale {
+  if (typeof navigator === "undefined") return "en";
+  const candidates = [
+    ...Array.from(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean);
+  return candidates.some((language) => language.toLowerCase().startsWith("ru")) ? "ru" : "en";
+}
+
 function normalizeLocale(locale: string | null | undefined): Locale {
-  return locale?.toLowerCase().startsWith("ru") ? "ru" : "en";
+  if (locale) {
+    return locale.toLowerCase().startsWith("ru") ? "ru" : "en";
+  }
+  return browserLocale();
 }
 
 function browserSignInUrl(token: string, locale: Locale): string {

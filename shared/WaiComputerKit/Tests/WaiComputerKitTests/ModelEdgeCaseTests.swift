@@ -338,6 +338,30 @@ final class ModelEdgeCaseTests: XCTestCase {
         }
     }
 
+    func testStatusDisplayTextUsesRussianWhenRequested() {
+        let cases: [(RecordingStatus, String?)] = [
+            (.failed, "Нужно внимание"),
+            (.pendingUpload, "Ждет синхронизации"),
+            (.uploading, "Синхронизируется в фоне"),
+            (.processing, "Обрабатывается"),
+            (.ready, nil),
+        ]
+
+        for (status, expectedText) in cases {
+            let recording = Recording(
+                id: "rec-display-ru-\(status.rawValue)",
+                type: .note,
+                status: status,
+                language: "ru"
+            )
+            XCTAssertEqual(
+                recording.statusDisplayText(languageCode: recording.language),
+                expectedText,
+                "Russian statusDisplayText mismatch for status \(status.rawValue)"
+            )
+        }
+    }
+
     func testStatusDisplayTextUsesSavedLocallyOnlyForRecoveryBackup() {
         let recording = Recording(
             id: "rec-local-recovery",
@@ -348,6 +372,10 @@ final class ModelEdgeCaseTests: XCTestCase {
         XCTAssertEqual(
             recording.statusDisplayText(hasLocalRecoveryBackup: true),
             "Saved locally"
+        )
+        XCTAssertEqual(
+            recording.statusDisplayText(hasLocalRecoveryBackup: true, languageCode: "ru"),
+            "Сохранено локально"
         )
     }
 

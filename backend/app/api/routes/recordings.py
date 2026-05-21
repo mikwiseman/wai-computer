@@ -767,6 +767,49 @@ def _normalize_failure_message(error: Exception | str, fallback: str) -> str:
     return message[:500]
 
 
+NO_SPEECH_COPY = {
+    "en": {
+        "title": "No speech detected",
+        "message": "We could not detect clear speech in this recording.",
+    },
+    "ru": {
+        "title": "Без речи",
+        "message": "Мы не обнаружили разборчивой речи в этой записи.",
+    },
+}
+
+NO_SPEECH_PLACEHOLDERS = {
+    "blank audio",
+    "background noise",
+    "inaudible",
+    "music",
+    "no audible speech",
+    "no speech",
+    "no speech detected",
+    "noise",
+    "silence",
+    "silent audio",
+}
+
+
+def _copy_locale_from_recording_language(language: str | None) -> str:
+    return "ru" if (language or "").strip().lower().startswith("ru") else "en"
+
+
+def _is_no_speech_placeholder(text: str) -> bool:
+    normalized = re.sub(r"[\[\]\(\)\{\}_\-.!?:;\"'`]+", " ", text.strip().lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized in NO_SPEECH_PLACEHOLDERS
+
+
+def _apply_no_speech_fallback(recording: Recording) -> None:
+    if recording.title:
+        return
+    copy = NO_SPEECH_COPY[_copy_locale_from_recording_language(recording.language)]
+    recording.title = copy["title"]
+    recording.failure_message = copy["message"]
+
+
 def _extension_from_upload(file_name: str, content_type: str) -> str:
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     if ext in ALLOWED_AUDIO_EXTENSIONS:
@@ -791,13 +834,25 @@ async def _persist_client_segments(
     segments: list[TranscriptSegmentPayload],
     duration_seconds: int | None = None,
 ) -> str:
-    normalized_segments = [segment for segment in segments if segment.text.strip()]
+    nonempty_segments = [segment for segment in segments if segment.text.strip()]
+    normalized_segments = [
+        segment
+        for segment in nonempty_segments
+        if not _is_no_speech_placeholder(segment.text)
+    ]
     if not normalized_segments:
         if duration_seconds is not None:
             recording.duration_seconds = duration_seconds
+        elif nonempty_segments:
+            recording.duration_seconds = (
+                max(segment.end_ms for segment in nonempty_segments) // 1000
+            )
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
-        recording.failure_message = None
+        if recording.title:
+            recording.failure_message = None
+        else:
+            _apply_no_speech_fallback(recording)
         await db.commit()
         return ""
 
@@ -837,7 +892,10 @@ async def _persist_client_segments(
     transcript_text = " ".join(transcript_chunks)
     if not recording.title and transcript_text:
         try:
-            recording.title = await generate_title(transcript_text)
+            recording.title = await generate_title(
+                transcript_text,
+                language=recording.language or "auto",
+            )
         except Exception as error:
             logger.warning("Title generation failed: %s", error)
 
@@ -2629,20 +2687,54 @@ async def upload_audio_file(
                 model=file_stt_model,
             )
 
+        speech_transcript_results = [
+            result
+            for result in transcript_results
+            if result.text.strip() and not _is_no_speech_placeholder(result.text)
+        ]
+
+        if not speech_transcript_results:
+            if transcript_results:
+                recording.duration_seconds = max(
+                    result.end_ms for result in transcript_results
+                ) // 1000
+            if recording.title:
+                recording.failure_message = None
+            else:
+                _apply_no_speech_fallback(recording)
+            recording.status = RecordingStatus.READY.value
+            recording.failure_code = None
+            await db.commit()
+            _delete_staged_file(str(staged_path))
+            db.expire_all()
+            recording = await _load_recording_detail(
+                recording_id,
+                user_id,
+                db,
+                include_deleted=True,
+            )
+            if recording is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Recording disappeared after upload",
+                )
+            logger.info("audio upload completed status=%s", recording.status)
+            return _serialize_recording_detail(recording)
+
         speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
         try:
             speaker_assignments = await identify_speakers_for_recording(
                 db=db,
-                user_id=user.id,
+                user_id=user_id,
                 staged_audio_path=staged_path,
-                transcript_results=transcript_results,
+                transcript_results=speech_transcript_results,
             )
         except Exception:
             logger.exception(
                 "Voice identification failed; segments will keep person_id=NULL"
             )
 
-        for tr in transcript_results:
+        for tr in speech_transcript_results:
             embedding = None
             if tr.text.strip():
                 try:
@@ -2670,14 +2762,19 @@ async def upload_audio_file(
                 )
             )
 
-        if transcript_results:
-            max_end_ms = max(tr.end_ms for tr in transcript_results)
+        if speech_transcript_results:
+            max_end_ms = max(tr.end_ms for tr in speech_transcript_results)
             recording.duration_seconds = max_end_ms // 1000
-            transcript_text = " ".join(tr.text for tr in transcript_results if tr.text.strip())
+            transcript_text = " ".join(
+                tr.text for tr in speech_transcript_results if tr.text.strip()
+            )
 
         if should_generate_title and transcript_text.strip():
             try:
-                recording.title = await generate_title(transcript_text)
+                recording.title = await generate_title(
+                    transcript_text,
+                    language=recording.language or "auto",
+                )
             except Exception as exc:
                 logger.warning("Title generation failed: %s", exc)
                 recording.title = None

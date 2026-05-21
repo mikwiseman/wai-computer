@@ -8,31 +8,81 @@ import { ApiError } from "@/lib/http";
 
 interface VerifyMagicLinkClientProps {
   token: string | null;
+  locale?: string | null;
 }
 
-export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
+type Locale = "en" | "ru";
+
+const COPY: Record<
+  Locale,
+  {
+    verifying: string;
+    missingToken: string;
+    genericFailure: string;
+    verified: string;
+    title: string;
+    backToLogin: string;
+  }
+> = {
+  en: {
+    verifying: "Verifying token...",
+    missingToken: "Missing token.",
+    genericFailure: "Verification failed.",
+    verified: "Magic link verified. Redirecting...",
+    title: "Magic Link Verification",
+    backToLogin: "Back to login",
+  },
+  ru: {
+    verifying: "Проверяем ссылку...",
+    missingToken: "Ссылка для входа отсутствует.",
+    genericFailure: "Не удалось проверить ссылку.",
+    verified: "Ссылка подтверждена. Перенаправляем...",
+    title: "Проверка ссылки для входа",
+    backToLogin: "Вернуться ко входу",
+  },
+};
+
+function browserLocale(): Locale {
+  if (typeof navigator === "undefined") return "en";
+  const candidates = [
+    ...Array.from(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean);
+  return candidates.some((language) => language.toLowerCase().startsWith("ru")) ? "ru" : "en";
+}
+
+function normalizeLocale(value?: string | null): Locale {
+  if (value) {
+    return value.toLowerCase().startsWith("ru") ? "ru" : "en";
+  }
+  return browserLocale();
+}
+
+export function VerifyMagicLinkClient({ token, locale: rawLocale }: VerifyMagicLinkClientProps) {
   const router = useRouter();
-  const [message, setMessage] = useState(token ? "Verifying token..." : "Missing token.");
+  const locale = normalizeLocale(rawLocale);
+  const copy = COPY[locale];
+  const [message, setMessage] = useState(token ? copy.verifying : copy.missingToken);
 
   useEffect(() => {
     if (!token) return;
 
     void (async () => {
       try {
-        await verifyMagicLink(token);
+        await verifyMagicLink(token, { locale });
       } catch (error: unknown) {
         if (error instanceof ApiError) {
           setMessage(error.message);
           return;
         }
-        setMessage("Verification failed.");
+        setMessage(copy.genericFailure);
         return;
       }
 
-      setMessage("Magic link verified. Redirecting...");
+      setMessage(copy.verified);
       router.replace(hasCompletedVoiceOnboarding() ? "/dashboard" : "/onboarding");
     })();
-  }, [router, token]);
+  }, [copy.genericFailure, copy.verified, locale, router, token]);
 
   return (
     <section className="auth-card auth-card--compact">
@@ -40,9 +90,9 @@ export function VerifyMagicLinkClient({ token }: VerifyMagicLinkClientProps) {
         <div className="brand-mark" aria-hidden="true" />
         <span>WaiComputer</span>
       </div>
-      <h1>Magic Link Verification</h1>
+      <h1>{copy.title}</h1>
       <p data-testid="verify-message">{message}</p>
-      <Link href="/login">Back to login</Link>
+      <Link href="/login">{copy.backToLogin}</Link>
     </section>
   );
 }

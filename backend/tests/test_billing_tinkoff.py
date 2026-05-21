@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.billing.providers.base import ProviderUnavailableError
+from app.billing.providers.base import ProviderEvent, ProviderUnavailableError
 from app.billing.providers.tinkoff_provider import (
     TinkoffProvider,
     build_receipt,
@@ -14,7 +16,10 @@ from app.billing.providers.tinkoff_provider import (
     verify_tinkoff_token,
 )
 from app.billing.router import _checkout_result_urls
+from app.billing.service import apply_tinkoff_event
 from app.billing.webhooks import _tinkoff_ack_response
+from app.models.billing import Invoice, Plan, Subscription
+from app.models.user import User
 
 
 def test_token_is_deterministic_and_sorted():
@@ -160,6 +165,50 @@ async def test_parse_webhook_normalizes_status():
 
 
 @pytest.mark.asyncio
+async def test_parse_webhook_extracts_checkout_data_period():
+    provider = TinkoffProvider(terminal_key="k", password="pw")
+    payload = {
+        "TerminalKey": "k",
+        "OrderId": "order-123",
+        "Status": "CONFIRMED",
+        "Amount": 799900,
+        "PaymentId": "p1",
+        "CustomerKey": "user-uuid",
+        "RebillId": "rb-1",
+        "DATA": {"user_id": "user-uuid", "plan_code": "pro", "period": "year"},
+    }
+    token = generate_tinkoff_token(payload, "pw")
+    body = json.dumps({**payload, "Token": token}).encode()
+
+    event = await provider.parse_webhook(raw_body=body, headers={})
+
+    assert event.raw["plan_code"] == "pro"
+    assert event.raw["period"] == "year"
+
+
+@pytest.mark.asyncio
+async def test_parse_webhook_accepts_title_case_data_period():
+    provider = TinkoffProvider(terminal_key="k", password="pw")
+    payload = {
+        "TerminalKey": "k",
+        "OrderId": "order-123",
+        "Status": "CONFIRMED",
+        "Amount": 799900,
+        "PaymentId": "p1",
+        "CustomerKey": "user-uuid",
+        "RebillId": "rb-1",
+        "Data": {"user_id": "user-uuid", "plan_code": "pro", "period": "year"},
+    }
+    token = generate_tinkoff_token(payload, "pw")
+    body = json.dumps({**payload, "Token": token}).encode()
+
+    event = await provider.parse_webhook(raw_body=body, headers={})
+
+    assert event.raw["plan_code"] == "pro"
+    assert event.raw["period"] == "year"
+
+
+@pytest.mark.asyncio
 async def test_parse_webhook_rejected_status_maps_to_past_due():
     provider = TinkoffProvider(terminal_key="k", password="pw")
     payload = {
@@ -206,6 +255,11 @@ async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
     assert payload["Recurrent"] == "Y"
     assert payload["OperationInitiatorType"] == "1"
     assert payload["CustomerKey"] == "user-uuid"
+    assert payload["DATA"] == {
+        "user_id": "user-uuid",
+        "plan_code": "pro",
+        "period": "month",
+    }
     assert verify_tinkoff_token(payload, "pw") is True
 
 
@@ -242,3 +296,203 @@ async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
     charge_payload = calls[1][1]
     assert charge_payload["RebillId"] == "rebill-1"
     assert verify_tinkoff_token(charge_payload, "pw") is True
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_confirmed_creates_pro_year_subscription(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.year@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="tinkoff.confirmed",
+        subscription_id_provider="order-year",
+        customer_id_provider=str(user.id),
+        status="active",
+        raw={
+            "order_id": "order-year",
+            "status": "CONFIRMED",
+            "rebill_id": "rebill-year",
+            "payment_id": "payment-year",
+            "amount": 799900,
+            "plan_code": "pro",
+            "period": "year",
+            "payload": {"Status": "CONFIRMED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(user)
+
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tinkoff_rebill_id == "rebill-year")
+        )
+    ).scalar_one()
+    plan = await db_session.get(Plan, sub.plan_id)
+    invoice = (
+        await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id))
+    ).scalar_one()
+
+    assert user.current_subscription_id == sub.id
+    assert plan is not None
+    assert plan.code == "pro"
+    assert sub.provider == "tinkoff"
+    assert sub.status == "active"
+    assert sub.billing_period == "year"
+    assert sub.current_period_end is not None
+    assert sub.tinkoff_next_charge_at is not None
+    assert invoice.amount == 7999
+    assert invoice.currency == "RUB"
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_rejected_initial_payment_does_not_create_subscription(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.rejected@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="tinkoff.rejected",
+        subscription_id_provider="order-rejected",
+        customer_id_provider=str(user.id),
+        status="past_due",
+        raw={
+            "order_id": "order-rejected",
+            "status": "REJECTED",
+            "payment_id": "payment-rejected",
+            "amount": 99900,
+            "plan_code": "pro",
+            "period": "month",
+            "payload": {"Status": "REJECTED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(user)
+
+    assert user.current_subscription_id is None
+    assert (await db_session.execute(select(Subscription))).scalars().all() == []
+    assert (await db_session.execute(select(Invoice))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_confirmed_updates_rebill_id_for_existing_customer(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.refresh-rebill@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_customer_key=str(user.id),
+        tinkoff_rebill_id="rebill-old",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="tinkoff.confirmed",
+        subscription_id_provider="order-new-rebill",
+        customer_id_provider=str(user.id),
+        status="active",
+        raw={
+            "order_id": "order-new-rebill",
+            "status": "CONFIRMED",
+            "rebill_id": "rebill-new",
+            "payment_id": "payment-new-rebill",
+            "amount": 99900,
+            "plan_code": "pro",
+            "period": "month",
+            "payload": {"Status": "CONFIRMED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(sub)
+
+    assert sub.tinkoff_rebill_id == "rebill-new"
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_confirmed_is_idempotent_by_payment_id(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.idempotent@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    event = ProviderEvent(
+        type="tinkoff.confirmed",
+        subscription_id_provider="order-idempotent",
+        customer_id_provider=str(user.id),
+        status="active",
+        raw={
+            "order_id": "order-idempotent",
+            "status": "CONFIRMED",
+            "rebill_id": "rebill-idempotent",
+            "payment_id": "payment-idempotent",
+            "amount": 99900,
+            "plan_code": "pro",
+            "period": "month",
+            "payload": {"Status": "CONFIRMED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tinkoff_rebill_id == "rebill-idempotent")
+        )
+    ).scalar_one()
+    original_period_end = sub.current_period_end
+
+    await apply_tinkoff_event(db_session, event)
+    await db_session.refresh(sub)
+    invoices = (
+        await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id))
+    ).scalars().all()
+
+    assert len(invoices) == 1
+    assert sub.current_period_end == original_period_end
+
+
+@pytest.mark.asyncio
+async def test_apply_tinkoff_confirmed_infers_year_period_from_amount(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.infer-year@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="tinkoff.confirmed",
+        subscription_id_provider="order-infer-year",
+        customer_id_provider=str(user.id),
+        status="active",
+        raw={
+            "order_id": "order-infer-year",
+            "status": "CONFIRMED",
+            "rebill_id": "rebill-infer-year",
+            "payment_id": "payment-infer-year",
+            "amount": 799900,
+            "payload": {"Status": "CONFIRMED"},
+        },
+    )
+
+    await apply_tinkoff_event(db_session, event)
+
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tinkoff_rebill_id == "rebill-infer-year")
+        )
+    ).scalar_one()
+    assert sub.billing_period == "year"

@@ -8,6 +8,7 @@ import { AuthForm } from "./AuthForm";
 const mockLogin = vi.fn();
 const mockRegister = vi.fn();
 const mockRequestMagicLink = vi.fn();
+const mockRequestPasswordReset = vi.fn();
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -19,6 +20,7 @@ vi.mock("@/lib/api", () => ({
   login: (...args: unknown[]) => mockLogin(...args),
   register: (...args: unknown[]) => mockRegister(...args),
   requestMagicLink: (...args: unknown[]) => mockRequestMagicLink(...args),
+  requestPasswordReset: (...args: unknown[]) => mockRequestPasswordReset(...args),
 }));
 
 describe("AuthForm", () => {
@@ -26,41 +28,65 @@ describe("AuthForm", () => {
     mockLogin.mockReset();
     mockRegister.mockReset();
     mockRequestMagicLink.mockReset();
+    mockRequestPasswordReset.mockReset();
+    setNavigatorLanguages(["en-US"]);
   });
 
-  it("submits login mode and calls onSuccess", async () => {
+  function setNavigatorLanguages(languages: string[], language = languages[0] ?? "en-US") {
+    Object.defineProperty(window.navigator, "languages", {
+      configurable: true,
+      value: languages,
+    });
+    Object.defineProperty(window.navigator, "language", {
+      configurable: true,
+      value: language,
+    });
+  }
+
+  it("uses magic link as the primary login flow", async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
-    mockLogin.mockResolvedValue({ access_token: "token", token_type: "bearer" });
+    mockRequestMagicLink.mockResolvedValue({ message: "Magic link sent" });
 
     render(<AuthForm mode="login" onSuccess={onSuccess} />);
 
+    expect(screen.queryByTestId("auth-password")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign in");
+
     await user.type(screen.getByTestId("auth-email"), "login@example.com");
-    await user.type(screen.getByTestId("auth-password"), "password123");
-    await user.click(screen.getByTestId("auth-submit"));
+    await user.click(screen.getByTestId("magic-link-button"));
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith("login@example.com", "password123");
+      expect(mockRequestMagicLink).toHaveBeenCalledWith("login@example.com", {
+        locale: "en",
+        region: "global",
+      });
     });
-    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(mockLogin).not.toHaveBeenCalled();
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByTestId("auth-message")).toHaveTextContent("Magic link sent");
     expect(screen.getByRole("link", { name: "Need an account?" })).toHaveAttribute("href", "/register");
   });
 
-  it("submits register mode and calls onSuccess", async () => {
+  it("uses magic link as the primary register flow for new emails", async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
-    mockRegister.mockResolvedValue({ access_token: "token", token_type: "bearer" });
+    mockRequestMagicLink.mockResolvedValue({ message: "Magic link sent" });
 
     render(<AuthForm mode="register" onSuccess={onSuccess} />);
 
     await user.type(screen.getByTestId("auth-email"), "register@example.com");
-    await user.type(screen.getByTestId("auth-password"), "password123");
-    await user.click(screen.getByTestId("auth-submit"));
+    await user.click(screen.getByTestId("magic-link-button"));
 
     await waitFor(() => {
-      expect(mockRegister).toHaveBeenCalledWith("register@example.com", "password123");
+      expect(mockRequestMagicLink).toHaveBeenCalledWith("register@example.com", {
+        locale: "en",
+        region: "global",
+      });
     });
-    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(mockRegister).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
   });
 
@@ -74,6 +100,7 @@ describe("AuthForm", () => {
     render(<AuthForm mode="login" onSuccess={onSuccess} />);
 
     await user.type(screen.getByTestId("auth-email"), "error@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
     await user.type(screen.getByTestId("auth-password"), "password123");
     await user.click(screen.getByTestId("auth-submit"));
 
@@ -114,30 +141,47 @@ describe("AuthForm", () => {
 
   it("renders login mode heading and register mode heading correctly", () => {
     const { unmount } = render(<AuthForm mode="login" onSuccess={vi.fn()} />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign In");
-    expect(screen.getByTestId("auth-submit")).toHaveTextContent("Sign In");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign in");
+    expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Email me a sign-in link");
     expect(screen.getByRole("link", { name: "Need an account?" })).toHaveAttribute("href", "/register");
     unmount();
 
     render(<AuthForm mode="register" onSuccess={vi.fn()} />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create Account");
-    expect(screen.getByTestId("auth-submit")).toHaveTextContent("Create Account");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create account");
+    expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Email me a sign-in link");
     expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
   });
 
-  it("always renders both email and password fields regardless of mode", () => {
-    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+  it("keeps password login as an explicit secondary mode", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    mockLogin.mockResolvedValue({ access_token: "token", token_type: "bearer" });
+
+    render(<AuthForm mode="login" onSuccess={onSuccess} />);
 
     const emailInput = screen.getByTestId("auth-email");
-    const passwordInput = screen.getByTestId("auth-password");
-
     expect(emailInput).toBeInTheDocument();
     expect(emailInput).toHaveAttribute("type", "email");
     expect(emailInput).toBeRequired();
+    expect(screen.queryByTestId("auth-password")).not.toBeInTheDocument();
 
+    await user.type(emailInput, "login@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
+    const passwordInput = screen.getByTestId("auth-password");
     expect(passwordInput).toBeInTheDocument();
     expect(passwordInput).toHaveAttribute("type", "password");
     expect(passwordInput).toBeRequired();
+
+    await user.type(passwordInput, "password123");
+    await user.click(screen.getByTestId("auth-submit"));
+
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith("login@example.com", "password123", {
+        locale: "en",
+        region: "global",
+      });
+    });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
   it("shows loading text on submit button while request is pending", async () => {
@@ -150,10 +194,11 @@ describe("AuthForm", () => {
     render(<AuthForm mode="login" onSuccess={vi.fn()} />);
 
     await user.type(screen.getByTestId("auth-email"), "load@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
     await user.type(screen.getByTestId("auth-password"), "password123");
 
     const submitButton = screen.getByTestId("auth-submit");
-    expect(submitButton).toHaveTextContent("Sign In");
+    expect(submitButton).toHaveTextContent("Sign in with password");
     expect(submitButton).not.toBeDisabled();
 
     await user.click(submitButton);
@@ -166,7 +211,7 @@ describe("AuthForm", () => {
     resolveLogin!({ access_token: "t", token_type: "bearer" });
 
     await waitFor(() => {
-      expect(submitButton).toHaveTextContent("Sign In");
+      expect(submitButton).toHaveTextContent("Sign in with password");
       expect(submitButton).not.toBeDisabled();
     });
   });
@@ -179,5 +224,73 @@ describe("AuthForm", () => {
 
     const emailInput = screen.getByTestId("auth-email");
     expect(emailInput).toHaveValue("");
+  });
+
+  it("uses Russian copy and locale when the browser language is Russian", async () => {
+    const user = userEvent.setup();
+    setNavigatorLanguages(["ru-RU", "en-US"]);
+    mockRequestMagicLink.mockResolvedValue({ message: "Мы отправили ссылку для входа на твою почту." });
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Войти");
+    expect(screen.getByText("Email")).toBeInTheDocument();
+    expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Отправить ссылку для входа");
+
+    await user.type(screen.getByTestId("auth-email"), "ru@example.com");
+    await user.click(screen.getByTestId("magic-link-button"));
+
+    await waitFor(() => {
+      expect(mockRequestMagicLink).toHaveBeenCalledWith("ru@example.com", {
+        locale: "ru",
+        region: "ru",
+      });
+    });
+  });
+
+  it("shows forgot-password request flow from password login without enumerating users", async () => {
+    const user = userEvent.setup();
+    mockRequestPasswordReset.mockResolvedValue({
+      message: "A reset link was sent to this existing account.",
+    });
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    await user.type(screen.getByTestId("auth-email"), "missing@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
+    await user.click(screen.getByTestId("forgot-password-button"));
+
+    expect(screen.getByTestId("forgot-password-panel")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("forgot-password-submit"));
+
+    await waitFor(() => {
+      expect(mockRequestPasswordReset).toHaveBeenCalledWith("missing@example.com", "en");
+    });
+    expect(screen.getByTestId("auth-message")).toHaveTextContent(
+      "If this email is registered, we sent a password reset link.",
+    );
+    expect(screen.getByTestId("auth-message")).not.toHaveTextContent("existing account");
+  });
+
+  it("uses Russian copy for forgot-password request flow", async () => {
+    const user = userEvent.setup();
+    setNavigatorLanguages(["ru"]);
+    mockRequestPasswordReset.mockResolvedValue({ message: "Подробный ответ сервера" });
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    await user.type(screen.getByTestId("auth-email"), "ru-reset@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
+    await user.click(screen.getByTestId("forgot-password-button"));
+    await user.click(screen.getByTestId("forgot-password-submit"));
+
+    await waitFor(() => {
+      expect(mockRequestPasswordReset).toHaveBeenCalledWith("ru-reset@example.com", "ru");
+    });
+    expect(screen.getByTestId("auth-message")).toHaveTextContent(
+      "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля.",
+    );
+    expect(screen.getByTestId("auth-message")).not.toHaveTextContent("Подробный ответ сервера");
   });
 });

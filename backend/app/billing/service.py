@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.providers.base import ProviderEvent
-from app.models.billing import BillingEvent, Plan, Subscription, SubscriptionStatus
+from app.models.billing import BillingEvent, BillingPeriod, Plan, Subscription, SubscriptionStatus
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,56 @@ def _ts(value: int | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromtimestamp(int(value), tz=timezone.utc)
+
+
+def _normalized_billing_period(value: object) -> str | None:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {p.value for p in BillingPeriod} else None
+
+
+def _amount_kopecks(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _plan_amount_kopecks(plan: Plan, period: str) -> int | None:
+    amount = (
+        plan.tinkoff_amount_rub_yearly
+        if period == BillingPeriod.YEAR.value
+        else plan.tinkoff_amount_rub_monthly
+    )
+    if amount is None:
+        return None
+    return int(Decimal(amount) * 100)
+
+
+def _resolve_tinkoff_period(
+    *,
+    raw: dict,
+    plan: Plan,
+    existing_subscription: Subscription | None,
+) -> str:
+    raw_period = _normalized_billing_period(raw.get("period"))
+    if raw_period is not None:
+        return raw_period
+
+    existing_period = _normalized_billing_period(
+        existing_subscription.billing_period if existing_subscription is not None else None
+    )
+    if existing_period is not None:
+        return existing_period
+
+    amount = _amount_kopecks(raw.get("amount"))
+    if amount is not None:
+        for period in (BillingPeriod.MONTH.value, BillingPeriod.YEAR.value):
+            if amount == _plan_amount_kopecks(plan, period):
+                return period
+
+    return BillingPeriod.MONTH.value
 
 
 async def apply_stripe_event(db: AsyncSession, event: ProviderEvent) -> None:
@@ -206,10 +257,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
     CONFIRMED notification carries a ``RebillId`` which becomes the long-term
     key for recurring charges.
     """
-    from datetime import datetime, timedelta, timezone
-    from decimal import Decimal
-
-    from app.models.billing import Invoice, Plan, Subscription
+    from app.models.billing import Invoice
 
     raw = event.raw  # dict shape from TinkoffProvider.parse_webhook
     order_id = raw.get("order_id")
@@ -250,9 +298,19 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             )
         ).scalar_one_or_none()
 
+    plan_code = str(raw.get("plan_code") or "pro").strip().lower() or "pro"
     pro_plan = (
-        await db.execute(select(Plan).where(Plan.code == "pro"))
+        await db.execute(select(Plan).where(Plan.code == plan_code))
     ).scalar_one_or_none()
+
+    should_activate = event.status == SubscriptionStatus.ACTIVE.value
+    if sub is None and not should_activate:
+        logger.info(
+            "Tinkoff %s event for unknown subscription/customer=%s skipped",
+            raw.get("status") or "unknown",
+            customer_key or "unknown",
+        )
+        return
 
     if sub is None:
         # First notification — create a Subscription tied to the user.
@@ -260,7 +318,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             logger.warning("Tinkoff CONFIRMED event without CustomerKey, cannot create sub")
             return
         if pro_plan is None:
-            logger.warning("Pro plan missing; cannot create Tinkoff subscription")
+            logger.warning("Plan %s missing; cannot create Tinkoff subscription", plan_code)
             return
         from app.models.user import User
 
@@ -270,26 +328,54 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
         if user is None:
             logger.warning("Tinkoff event references unknown user_id=%s", customer_key)
             return
+        billing_period = _resolve_tinkoff_period(
+            raw=raw,
+            plan=pro_plan,
+            existing_subscription=None,
+        )
         sub = Subscription(
             user_id=user.id,
             plan_id=pro_plan.id,
             status=event.status or SubscriptionStatus.INCOMPLETE.value,
             provider="tinkoff",
-            billing_period="month",  # T-Bank doesn't carry period in webhook; default month.
+            billing_period=billing_period,
             tinkoff_customer_key=customer_key,
             tinkoff_rebill_id=rebill_id,
         )
         db.add(sub)
         await db.flush()
         user.current_subscription_id = sub.id
+    else:
+        existing_plan = pro_plan or await db.get(Plan, sub.plan_id)
+        if existing_plan is not None:
+            sub.billing_period = _resolve_tinkoff_period(
+                raw=raw,
+                plan=existing_plan,
+                existing_subscription=sub,
+            )
 
     # Update sub state.
     if event.status:
         sub.status = event.status
-    if rebill_id and not sub.tinkoff_rebill_id:
+    if rebill_id and sub.tinkoff_rebill_id != rebill_id:
         sub.tinkoff_rebill_id = rebill_id
 
     if event.status == "active":
+        payment_id = raw.get("payment_id")
+        existing_invoice = None
+        if payment_id:
+            existing_invoice = (
+                await db.execute(
+                    select(Invoice).where(
+                        Invoice.subscription_id == sub.id,
+                        Invoice.provider_payment_id == payment_id,
+                    )
+                )
+            ).scalar_one_or_none()
+        if existing_invoice is not None:
+            await db.flush()
+            return
+
         now = datetime.now(timezone.utc)
         sub.current_period_start = sub.current_period_start or now
         # Default monthly cadence — adjust to billing_period when stored.
@@ -307,7 +393,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                     amount=Decimal(int(amount)) / Decimal(100),
                     currency="RUB",
                     status="paid",
-                    provider_payment_id=raw.get("payment_id"),
+                    provider_payment_id=payment_id,
                     paid_at=now,
                     receipt_url=None,
                 )

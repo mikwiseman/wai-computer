@@ -243,13 +243,26 @@ async def summarize_transcript(
     )
 
 
-async def generate_title(transcript: str) -> str:
+async def generate_title(
+    transcript: str,
+    *,
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+) -> str:
     """Generate a short descriptive title from transcript text via OpenAI."""
     add_sentry_breadcrumb(category="summarizer", message="Generating title")
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY not configured")
 
     snippet = transcript[:500]
+    language_instruction = (
+        f"Write the title in {language}."
+        if language and language not in {DEFAULT_SUMMARY_LANGUAGE, "multi"}
+        else (
+            "Write the title in the dominant language of the transcript. "
+            "If the transcript is primarily in Russian, output Russian. "
+            "If the transcript is primarily in English, output English."
+        )
+    )
     client = get_openai_client()
     response = await client.responses.create(
         model=settings.openai_llm_model,
@@ -257,7 +270,7 @@ async def generate_title(transcript: str) -> str:
             "Generate a short title (3-7 words) for this audio recording based on "
             "its transcript. Return ONLY the plain title text — no markdown "
             "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
-            "nothing else.\n\n"
+            f"nothing else. {language_instruction}\n\n"
             f"Transcript:\n{snippet}"
         ),
         reasoning={"effort": "low"},

@@ -7,7 +7,7 @@ import {
   generateSummary,
   getRecording,
 } from "@/lib/api";
-import type { ActionItem, RecordingDetail, Segment, Summary } from "@/lib/types";
+import type { RecordingDetail, Segment, Summary } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 
 function formatTimestamp(ms: number | null): string {
@@ -54,7 +54,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-type Tab = "transcript" | "summary" | "actions";
+type Tab = "transcript" | "summary";
 type DetailMode = "active" | "trash";
 
 export function RecordingDetailPanel({
@@ -81,14 +81,8 @@ export function RecordingDetailPanel({
       [
         ["transcript", "Transcript"],
         ["summary", "Summary"],
-        [
-          "actions",
-          recording.action_items.length > 0
-            ? `Action Items (${recording.action_items.length})`
-            : "Action Items",
-        ],
       ] as const,
-    [recording.action_items.length],
+    [],
   );
 
   const handleGenerateSummary = async () => {
@@ -272,7 +266,6 @@ export function RecordingDetailPanel({
         {tab === "summary" && (
           <SummaryTab summary={recording.summary} onGenerate={handleGenerateSummary} generating={generating} />
         )}
-        {tab === "actions" && <ActionsTab items={recording.action_items} />}
       </div>
     </section>
   );
@@ -433,44 +426,6 @@ function SummaryTab({
           <span className="status-pill">{summary.sentiment}</span>
         </section>
       ) : null}
-    </div>
-  );
-}
-
-function ActionsTab({ items }: { items: ActionItem[] }) {
-  if (items.length === 0) {
-    return (
-      <div className="empty-state">
-        <h3>No Action Items</h3>
-        <p>This note does not have extracted follow-ups yet.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="reading-stack">
-      <div className="section-heading-row">
-        <h3>Action Items</h3>
-        <CopyButton
-          text={items.map((item, index) => `${index + 1}. ${item.task} (${item.status})`).join("\n")}
-          label="Copy Actions"
-        />
-      </div>
-
-      {items.map((item) => (
-        <article key={item.id} className="action-card">
-          <span className={`action-card__status ${item.status === "completed" ? "is-complete" : ""}`} />
-          <div>
-            <p className={item.status === "completed" ? "is-complete-text" : ""}>{item.task}</p>
-            <div className="metadata-row">
-              {item.owner ? <span>{item.owner}</span> : null}
-              {item.due_date ? <span>{item.due_date}</span> : null}
-              {item.priority ? <span>{item.priority}</span> : null}
-              <span>{item.status.replace("_", " ")}</span>
-            </div>
-          </div>
-        </article>
-      ))}
     </div>
   );
 }

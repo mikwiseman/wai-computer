@@ -310,9 +310,13 @@ struct MenuBarView: View {
         if !dictationManager.isFeatureEnabled {
             return t("Dictation is disabled", "Диктовка выключена")
         }
+        let hotkey = DictationSettingsCopy.hotkeyShortLabel(
+            rawValue: dictationManager.selectedHotkey.rawValue,
+            language: languageManager.current
+        )
         return t(
-            "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate",
-            "Зажми \(dictationManager.selectedHotkey.shortLabel), чтобы диктовать"
+            "Hold \(hotkey) to dictate",
+            "Зажми \(hotkey), чтобы диктовать"
         )
     }
 

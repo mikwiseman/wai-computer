@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import WaiComputerKit
 
@@ -9,6 +10,7 @@ struct OnboardingDictationSandboxSlide: View {
 
     @State private var text: String = ""
     @State private var hasDictatedOnce: Bool = false
+    @State private var textBeforeCurrentUtterance: String?
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -59,16 +61,27 @@ struct OnboardingDictationSandboxSlide: View {
                 hasDictatedOnce = true
             }
         }
+        .onChange(of: dictationManager.state) { oldValue, newValue in
+            if textBeforeCurrentUtterance == nil,
+               (newValue == .connecting || newValue == .listening) {
+                textBeforeCurrentUtterance = text
+            }
+            if oldValue != .idle, newValue == .idle {
+                textBeforeCurrentUtterance = nil
+            }
+        }
         // The dictation overlay panel can grab window focus while recording,
-        // so TextInserter (⌘V into the previously-focused field) doesn't
-        // reliably land in our TextField. Bypass it: the moment
-        // DictationManager publishes a final transcript while the sandbox is
-        // active, append it ourselves. Works whether or not TextInserter also
-        // succeeded — duplicate inserts are harmless because TextInserter
-        // pastes outside our @State binding.
+        // so TextInserter (⌘V into the previously-focused field) may either
+        // miss this TextField or update it shortly after the final transcript
+        // publishes. Delay one run-loop slice, then append only if the sandbox
+        // field did not already get the same utterance from TextInserter.
         .onChange(of: dictationManager.lastFinalTranscript) { oldValue, newValue in
             guard isActive, let inserted = newValue, inserted != oldValue, !inserted.isEmpty else { return }
-            appendDictatedText(inserted)
+            let textBeforeUtterance = textBeforeCurrentUtterance
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                guard isActive, dictationManager.lastFinalTranscript == inserted else { return }
+                appendDictatedText(inserted, textBeforeUtterance: textBeforeUtterance)
+            }
         }
     }
 
@@ -180,17 +193,20 @@ struct OnboardingDictationSandboxSlide: View {
         }
     }
 
-    private func appendDictatedText(_ inserted: String) {
-        let trimmed = inserted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        if text.isEmpty {
-            text = trimmed
-        } else {
-            // Add a separator if the existing text doesn't already end with whitespace.
-            let needsSpace = !(text.last?.isWhitespace ?? true)
-            text += (needsSpace ? " " : "") + trimmed
+    private func appendDictatedText(_ inserted: String, textBeforeUtterance: String?) {
+        let nextText = OnboardingDictationSandboxPolicy.textAfterFinalTranscript(
+            currentText: text,
+            textBeforeUtterance: textBeforeUtterance,
+            finalTranscript: inserted
+        )
+        guard nextText != text else {
+            hasDictatedOnce = true
+            textBeforeCurrentUtterance = nil
+            return
         }
+        text = nextText
         hasDictatedOnce = true
+        textBeforeCurrentUtterance = nil
     }
 
     @ViewBuilder

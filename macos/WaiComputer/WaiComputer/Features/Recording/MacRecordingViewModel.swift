@@ -6,7 +6,6 @@ import Sentry
 import WaiComputerKit
 
 private let audioLog = Logger(subsystem: "is.waiwai.computer.app", category: "audio")
-private let systemAudioUnavailableWarning = "System audio is not reaching WaiComputer. Microphone audio is still being recorded."
 
 enum MacRecordingInputSource: String, CaseIterable, Equatable {
     case dual        // mic + system audio (default)
@@ -14,13 +13,17 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
     case systemAudio = "system_audio"
 
     var label: String {
+        localizedLabel(language: .english)
+    }
+
+    func localizedLabel(language: LanguageManager.SupportedLanguage) -> String {
         switch self {
         case .dual:
-            return "Mic + System Audio"
+            return OnboardingL10n.text("Mic + System Audio", "Микрофон + звук Mac", language: language)
         case .microphone:
-            return "Microphone"
+            return OnboardingL10n.text("Microphone", "Микрофон", language: language)
         case .systemAudio:
-            return "System Audio"
+            return OnboardingL10n.text("System Audio", "Звук Mac", language: language)
         }
     }
 
@@ -36,13 +39,17 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
     }
 
     var preparingText: String {
+        preparingText(language: .english)
+    }
+
+    func preparingText(language: LanguageManager.SupportedLanguage) -> String {
         switch self {
         case .dual:
-            return "Preparing audio capture..."
+            return OnboardingL10n.text("Preparing audio capture...", "Готовим захват аудио...", language: language)
         case .microphone:
-            return "Preparing microphone..."
+            return OnboardingL10n.text("Preparing microphone...", "Готовим микрофон...", language: language)
         case .systemAudio:
-            return "Preparing system audio..."
+            return OnboardingL10n.text("Preparing system audio...", "Готовим звук Mac...", language: language)
         }
     }
 
@@ -131,15 +138,19 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     var statusText: String {
+        statusText(language: LanguageManager.shared.current)
+    }
+
+    func statusText(language: LanguageManager.SupportedLanguage) -> String {
         switch phase {
         case .idle:
-            return "Ready to record"
+            return t("Ready to record", "Готово к записи", language: language)
         case .preparing:
-            return "Preparing recording"
+            return t("Preparing recording", "Готовим запись", language: language)
         case .recording:
-            return "Recording"
+            return t("Recording", "Идет запись", language: language)
         case .finalizing:
-            return "Saving transcript..."
+            return t("Saving transcript...", "Сохраняем транскрипт...", language: language)
         }
     }
 
@@ -167,15 +178,19 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     var emptyTranscriptText: String {
+        emptyTranscriptText(language: LanguageManager.shared.current)
+    }
+
+    func emptyTranscriptText(language: LanguageManager.SupportedLanguage) -> String {
         switch phase {
         case .idle:
-            return "Ready to record."
+            return t("Ready to record.", "Готово к записи.", language: language)
         case .preparing:
-            return recordingInputSource.preparingText
+            return recordingInputSource.preparingText(language: language)
         case .recording:
-            return "Listening..."
+            return t("Listening...", "Слушаем...", language: language)
         case .finalizing:
-            return "Saving..."
+            return t("Saving...", "Сохраняем...", language: language)
         }
     }
 
@@ -273,7 +288,10 @@ class MacRecordingViewModel: ObservableObject {
                         data: ["granted": granted]
                     )
                     guard granted else {
-                        error = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer."
+                        error = t(
+                            "Microphone permission denied. Open System Settings -> Privacy & Security -> Microphone and enable WaiComputer.",
+                            "Доступ к микрофону запрещен. Открой Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включи WaiComputer."
+                        )
                         await resetAfterStartFailure()
                         return
                     }
@@ -285,7 +303,7 @@ class MacRecordingViewModel: ObservableObject {
             recording = try await apiClient.createRecording(type: recordingType, language: language)
 
             guard let recordingId = recording?.id else {
-                error = "Failed to create recording"
+                error = t("Failed to create recording", "Не удалось создать запись")
                 await resetAfterStartFailure()
                 return
             }
@@ -894,7 +912,7 @@ class MacRecordingViewModel: ObservableObject {
                         systemAudioStalled: stalled,
                         systemAudioReceivedAny: receivedAny
                     ) {
-                        self.systemAudioWarning = systemAudioUnavailableWarning
+                        self.systemAudioWarning = self.systemAudioUnavailableWarningText
                         if !warnedOnce {
                             warnedOnce = true
                             SentryHelper.addBreadcrumb(
@@ -1245,7 +1263,10 @@ class MacRecordingViewModel: ObservableObject {
             if #available(macOS 14.2, *),
                let systemError = error as? SystemAudioCaptureError {
                 _ = systemError
-                return "System audio capture couldn't start. Check Audio Capture permission in System Settings and try again."
+                return t(
+                    "System audio capture couldn't start. Check Audio Capture permission in System Settings and try again.",
+                    "Не удалось запустить захват звука Mac. Проверь разрешение Audio Capture в Системных настройках и попробуй снова."
+                )
             }
             if #available(macOS 14.2, *),
                let dualError = error as? DualAudioCaptureError {
@@ -1254,7 +1275,10 @@ class MacRecordingViewModel: ObservableObject {
 
             switch error {
             case AudioCaptureError.invalidFormat:
-                return "System audio capture returned an unsupported format."
+                return t(
+                    "System audio capture returned an unsupported format.",
+                    "Захват звука Mac вернул неподдерживаемый формат."
+                )
             default:
                 break
             }
@@ -1264,14 +1288,23 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     private func transcriptRecoveredMessage() -> String {
-        "Connection was interrupted, but your transcript was saved successfully."
+        t(
+            "Connection was interrupted, but your transcript was saved successfully.",
+            "Соединение прервалось, но транскрипт успешно сохранен."
+        )
     }
 
     private func localTranscriptRecoveryMessage(segmentsCount: Int) -> String {
         if segmentsCount > 0 {
-            return "Connection was interrupted, but your recording is safe on this Mac. We'll keep syncing it automatically in the background."
+            return t(
+                "Connection was interrupted, but your recording is safe on this Mac. We'll keep syncing it automatically in the background.",
+                "Соединение прервалось, но запись сохранена на этом Mac. Мы продолжим автоматически синхронизировать ее в фоне."
+            )
         }
-        return "Connection was interrupted before speech could sync, but your recording is safe on this Mac."
+        return t(
+            "Connection was interrupted before speech could sync, but your recording is safe on this Mac.",
+            "Соединение прервалось до синхронизации речи, но запись сохранена на этом Mac."
+        )
     }
 
     private func reportLocalRecoveryFallback(
@@ -1298,6 +1331,25 @@ class MacRecordingViewModel: ObservableObject {
             object: nil,
             userInfo: ["message": message]
         )
+    }
+
+    private var systemAudioUnavailableWarningText: String {
+        t(
+            "System audio is not reaching WaiComputer. Microphone audio is still being recorded.",
+            "Звук Mac не доходит до WaiComputer. Микрофон продолжает записываться."
+        )
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        t(english, russian, language: LanguageManager.shared.current)
+    }
+
+    private func t(
+        _ english: String,
+        _ russian: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        OnboardingL10n.text(english, russian, language: language)
     }
 
     deinit {

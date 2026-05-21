@@ -353,7 +353,7 @@ final class DictationManager: ObservableObject {
             micGranted = false
         }
         guard micGranted else {
-            error = "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer."
+            error = DictationCopy.microphonePermissionDenied(language: LanguageManager.shared.current)
             session.failure(
                 DictationInstrumentationError.microphoneDenied,
                 extras: ["stage": "permission"]
@@ -592,9 +592,14 @@ final class DictationManager: ObservableObject {
                 ]
             )
             if recoveryURL != nil, let insertionError = error as? TextInsertionError {
-                self.error = "\(insertionError.localizedDescription) A recovery copy was kept on this Mac."
+                self.error = DictationCopy.recoveryCopyKept(
+                    insertionError: insertionError.localizedDescription,
+                    language: LanguageManager.shared.current
+                )
             } else if recoveryURL != nil {
-                self.error = "We couldn't insert the dictated text into the current app. A recovery copy was kept on this Mac."
+                self.error = DictationCopy.genericInsertionRecovery(
+                    language: LanguageManager.shared.current
+                )
             } else {
                 self.error = error.userFacingMessage(context: .dictation)
             }
@@ -1187,26 +1192,7 @@ final class DictationManager: ObservableObject {
     }
 
     private func userFacingMessage(for error: ProviderError) -> String {
-        switch error {
-        case .authError:
-            return "Authentication with the transcription service failed. Please try again."
-        case .quotaExceeded:
-            return "Dictation quota exceeded. Please try again later."
-        case .rateLimited:
-            return "Dictation service is busy. Please wait a moment and try again."
-        case .insufficientAudioActivity:
-            return "Hold the hotkey and speak clearly to dictate."
-        case .sessionTimeLimitExceeded:
-            return "Dictation session time limit reached. Please start a new session."
-        case .chunkSizeExceeded, .commitThrottled, .malformedFrame:
-            return "Live transcription was interrupted. Try again."
-        case .unsupportedModel(let model):
-            return "Dictation model \(model) is not supported."
-        case .transcriberInternal(let message):
-            return message.isEmpty
-                ? "The transcription service returned an error. Please try again."
-                : "Transcription error: \(message)"
-        }
+        DictationCopy.providerError(error, language: LanguageManager.shared.current)
     }
 
     private func buildTranscript() -> String {

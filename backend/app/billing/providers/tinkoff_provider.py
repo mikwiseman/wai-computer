@@ -279,6 +279,14 @@ class TinkoffProvider(PaymentProvider):
         status = str(payload.get("Status") or "")
         rebill_id = payload.get("RebillId")
         customer_key = payload.get("CustomerKey")
+        data = payload.get("Data")
+        if not isinstance(data, dict):
+            data = payload.get("DATA")
+        if not isinstance(data, dict):
+            data = {}
+
+        plan_code = data.get("plan_code")
+        period = data.get("period")
         return ProviderEvent(
             type=f"tinkoff.{status.lower() or 'unknown'}",
             subscription_id_provider=order_id,  # we key by OrderId on our side
@@ -290,6 +298,8 @@ class TinkoffProvider(PaymentProvider):
                 "rebill_id": str(rebill_id) if rebill_id is not None else None,
                 "payment_id": str(payload.get("PaymentId") or ""),
                 "amount": payload.get("Amount"),
+                "plan_code": str(plan_code).strip().lower() if plan_code else None,
+                "period": str(period).strip().lower() if period else None,
                 "payload": payload,
             },
         )

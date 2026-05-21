@@ -588,7 +588,7 @@ struct MacMainView: View {
         .accessibilityIdentifier("sidebar-\(identifier)")
         .listRowBackground(
             selectedSection == section
-                ? Color.accentColor.opacity(0.15)
+                ? Palette.accent.opacity(0.15)
                 : Color.clear
         )
     }

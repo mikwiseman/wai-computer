@@ -84,7 +84,7 @@ async def test_login_uppercase_after_lowercase_register(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_register_duplicate_different_case(client: AsyncClient):
-    """Registering same email with different case should fail."""
+    """Registering same email with different case should not leak via HTTP status."""
     await client.post(
         "/api/auth/register",
         json={"email": "dup@example.com", "password": "password123"},
@@ -94,11 +94,10 @@ async def test_register_duplicate_different_case(client: AsyncClient):
         "/api/auth/register",
         json={"email": "DUP@EXAMPLE.COM", "password": "password456"},
     )
-    assert response.status_code == 400
-    assert (
-        response.json()["detail"]
-        == "Unable to create account. Try signing in or request a magic link."
-    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "Unable to create account. Try signing in or request a magic link."
+    }
 
 
 @pytest.mark.asyncio

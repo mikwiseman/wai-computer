@@ -11,7 +11,8 @@ struct OnboardingView: View {
     @State private var currentPage: Int
     @State private var hasMicrophonePermission = OnboardingView.hasMicrophonePermission
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
-    @State private var systemAudioStatus = OnboardingView.systemAudioPermissionStatus
+    @State private var systemAudioReadiness = OnboardingView.initialSystemAudioReadiness
+    @State private var systemAudioPreflightPassedInCurrentProcess = false
     @State private var isRequestingSystemAudioPermission = false
     @State private var permissionPollTimer: Timer?
     /// Set when the user clicks Grant for a permission whose state is
@@ -85,6 +86,7 @@ struct OnboardingView: View {
                                 hasMicrophonePermission: hasMicrophonePermission,
                                 accessibilityStatus: accessibilityStatus,
                                 systemAudioStatus: systemAudioStatus,
+                                systemAudioReadiness: systemAudioReadiness,
                                 isRequestingSystemAudioPermission: isRequestingSystemAudioPermission,
                                 showSettingsRestartHint: showSettingsRestartHint,
                                 requestMicrophonePermission: requestMicrophonePermission,
@@ -214,7 +216,7 @@ struct OnboardingView: View {
             }
             if hasMicrophonePermission,
                accessibilityStatus == .granted,
-               systemAudioStatus == .denied {
+               systemAudioReadiness == .setupNeeded {
                 return t("Set Up System Audio", "Настроить звук Mac")
             }
             return t("Open Settings", "Открыть настройки")
@@ -285,7 +287,13 @@ struct OnboardingView: View {
     }
 
     private var dictationPermissionsReady: Bool {
-        hasMicrophonePermission && accessibilityStatus == .granted && systemAudioStatus == .granted
+        hasMicrophonePermission
+            && accessibilityStatus == .granted
+            && (systemAudioStatus == .granted || systemAudioReadiness == .unsupported)
+    }
+
+    private var systemAudioStatus: MacInputPermission.Status {
+        Self.permissionStatus(for: systemAudioReadiness)
     }
 
     /// True when the user clicked Grant for a denied permission (which
@@ -312,17 +320,57 @@ struct OnboardingView: View {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
-    private static var systemAudioPermissionStatus: MacInputPermission.Status {
+    private static var initialSystemAudioReadiness: SystemAudioReadinessPolicy.Status {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
-            return snapshot.systemAudioStatus
+            return readiness(from: snapshot.systemAudioStatus)
         }
         #endif
 
-        guard #available(macOS 14.2, *) else {
-            return .granted
+        return currentSystemAudioReadiness(
+            preflightPassedInCurrentProcess: false,
+            openedSettingsDuringCurrentAttempt: false
+        )
+    }
+
+    private static var isSystemAudioCaptureSupported: Bool {
+        if #available(macOS 14.2, *) {
+            return true
         }
-        return .denied
+        return false
+    }
+
+    private static func currentSystemAudioReadiness(
+        preflightPassedInCurrentProcess: Bool,
+        openedSettingsDuringCurrentAttempt: Bool
+    ) -> SystemAudioReadinessPolicy.Status {
+        SystemAudioReadinessPolicy.status(
+            isSupported: isSystemAudioCaptureSupported,
+            preflightPassedInCurrentProcess: preflightPassedInCurrentProcess,
+            openedSettingsDuringCurrentAttempt: openedSettingsDuringCurrentAttempt
+        )
+    }
+
+    private static func readiness(from status: MacInputPermission.Status) -> SystemAudioReadinessPolicy.Status {
+        switch status {
+        case .granted:
+            return .ready
+        case .denied:
+            return .setupNeeded
+        case .staleNeedsRestart:
+            return .restartRequired
+        }
+    }
+
+    private static func permissionStatus(for readiness: SystemAudioReadinessPolicy.Status) -> MacInputPermission.Status {
+        switch readiness {
+        case .ready:
+            return .granted
+        case .restartRequired:
+            return .staleNeedsRestart
+        case .setupNeeded, .unsupported:
+            return .denied
+        }
     }
 
     private func refreshPermissions() {
@@ -330,17 +378,17 @@ struct OnboardingView: View {
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
             accessibilityStatus = snapshot.accessibilityStatus
-            systemAudioStatus = snapshot.systemAudioStatus
+            systemAudioReadiness = Self.readiness(from: snapshot.systemAudioStatus)
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
         accessibilityStatus = MacInputPermission.accessibilityStatus()
-        let refreshedSystemAudioStatus = Self.systemAudioPermissionStatus
-        systemAudioStatus = triggeredOpenSystemAudioSettings && refreshedSystemAudioStatus != .granted
-            ? .staleNeedsRestart
-            : refreshedSystemAudioStatus
+        systemAudioReadiness = Self.currentSystemAudioReadiness(
+            preflightPassedInCurrentProcess: systemAudioPreflightPassedInCurrentProcess,
+            openedSettingsDuringCurrentAttempt: triggeredOpenSystemAudioSettings
+        )
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -408,8 +456,9 @@ struct OnboardingView: View {
         #endif
 
         guard #available(macOS 14.2, *) else {
-            UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
-            systemAudioStatus = .granted
+            UserDefaults.standard.set(false, forKey: MacAppState.onboardingSystemAudioSetupKey)
+            systemAudioPreflightPassedInCurrentProcess = false
+            systemAudioReadiness = .unsupported
             refreshPermissions()
             return
         }
@@ -420,27 +469,40 @@ struct OnboardingView: View {
             let capture = SystemAudioCapture()
             do {
                 try await capture.startRecording()
-                try? await Task.sleep(for: .milliseconds(250))
+                let receivedBuffers = await capture.waitForAudioBuffers(timeout: 2.0)
                 await capture.stopRecording()
+
+                guard receivedBuffers else {
+                    await MainActor.run {
+                        markSystemAudioSetupFailed()
+                    }
+                    return
+                }
+
                 await MainActor.run {
+                    systemAudioPreflightPassedInCurrentProcess = true
                     UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
                     triggeredOpenSystemAudioSettings = false
-                    systemAudioStatus = .granted
                     isRequestingSystemAudioPermission = false
                     refreshPermissions()
                 }
             } catch {
                 await capture.stopRecording()
                 await MainActor.run {
-                    UserDefaults.standard.set(false, forKey: MacAppState.onboardingSystemAudioSetupKey)
-                    triggeredOpenSystemAudioSettings = true
-                    systemAudioStatus = .staleNeedsRestart
-                    isRequestingSystemAudioPermission = false
-                    MacInputPermission.revealAppInFinder()
-                    MacPrivacySettings.openSystemAudio()
+                    markSystemAudioSetupFailed()
                 }
             }
         }
+    }
+
+    private func markSystemAudioSetupFailed() {
+        systemAudioPreflightPassedInCurrentProcess = false
+        UserDefaults.standard.set(false, forKey: MacAppState.onboardingSystemAudioSetupKey)
+        triggeredOpenSystemAudioSettings = true
+        isRequestingSystemAudioPermission = false
+        refreshPermissions()
+        MacInputPermission.revealAppInFinder()
+        MacPrivacySettings.openSystemAudio()
     }
 
     private func startPermissionPollingIfNeeded() {
@@ -483,6 +545,7 @@ private struct OnboardingPermissionSlide: View {
     let hasMicrophonePermission: Bool
     let accessibilityStatus: MacInputPermission.Status
     let systemAudioStatus: MacInputPermission.Status
+    let systemAudioReadiness: SystemAudioReadinessPolicy.Status
     let isRequestingSystemAudioPermission: Bool
     let showSettingsRestartHint: Bool
     let requestMicrophonePermission: () -> Void
@@ -612,6 +675,7 @@ private struct OnboardingPermissionSlide: View {
     private var permissionPanelIcon: String {
         if !hasMicrophonePermission { return "mic.fill" }
         if accessibilityStatus != .granted { return "keyboard" }
+        if systemAudioReadiness == .unsupported { return "exclamationmark.triangle.fill" }
         if systemAudioStatus != .granted { return "waveform" }
         return "checkmark.circle.fill"
     }
@@ -622,6 +686,9 @@ private struct OnboardingPermissionSlide: View {
         }
         if accessibilityStatus != .granted {
             return t("Then Accessibility", "Затем Универсальный доступ")
+        }
+        if systemAudioReadiness == .unsupported {
+            return t("System Audio unavailable", "Звук Mac недоступен")
         }
         if systemAudioStatus != .granted {
             return t("Finish with System Audio", "И звук Mac")
@@ -640,6 +707,12 @@ private struct OnboardingPermissionSlide: View {
             return t(
                 "Enable WaiComputer in System Settings, then restart so macOS applies System Audio Recording to this running app.",
                 "Включи WaiComputer в системных настройках, затем перезапусти приложение, чтобы macOS применила запись звука Mac."
+            )
+        }
+        if systemAudioReadiness == .unsupported {
+            return t(
+                "System Audio Recording requires macOS 14.2 or later. Microphone dictation can still work, but meeting recordings cannot capture app audio on this Mac.",
+                "Запись звука Mac требует macOS 14.2 или новее. Диктовка через микрофон может работать, но записи встреч не смогут сохранять звук приложений на этом Mac."
             )
         }
         return t(
@@ -683,7 +756,7 @@ private struct OnboardingPermissionSlide: View {
 
     @ViewBuilder
     private var systemAudioRow: some View {
-        let primary: PermissionRow.Action? = systemAudioStatus == .denied
+        let primary: PermissionRow.Action? = systemAudioReadiness == .setupNeeded
             ? PermissionRow.Action(
                 label: isRequestingSystemAudioPermission
                     ? t("Setting Up...", "Настраиваем...")
@@ -697,15 +770,37 @@ private struct OnboardingPermissionSlide: View {
             : nil
         PermissionRow(
             title: t("System Audio", "Звук Mac"),
-            detail: t(
-                "Capture other speakers and app audio in calls and meetings",
-                "Запись других участников и звука приложений во встречах"
-            ),
+            detail: systemAudioDetail,
             status: systemAudioStatus,
             identifierBase: "onboarding-permission-system-audio",
             primaryAction: primary,
             restartAction: restart
         )
+    }
+
+    private var systemAudioDetail: String {
+        switch systemAudioReadiness {
+        case .unsupported:
+            return t(
+                "Requires macOS 14.2 or later; app audio cannot be captured here",
+                "Требуется macOS 14.2 или новее; звук приложений здесь не записать"
+            )
+        case .setupNeeded:
+            return t(
+                "Run a short real capture check before meeting recordings",
+                "Короткая проверка реальной записи перед встречами"
+            )
+        case .restartRequired:
+            return t(
+                "Enable Audio Capture in System Settings, then restart WaiComputer",
+                "Включи запись аудио в системных настройках и перезапусти WaiComputer"
+            )
+        case .ready:
+            return t(
+                "Capture other speakers and app audio in calls and meetings",
+                "Запись других участников и звука приложений во встречах"
+            )
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

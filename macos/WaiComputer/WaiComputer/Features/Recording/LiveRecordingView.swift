@@ -196,32 +196,92 @@ struct LiveRecordingView: View {
 
             HStack(spacing: Spacing.sm) {
                 if recordingVM.recordingInputSource == .dual {
-                    let systemOk = recordingVM.hasSystemAudio && recordingVM.systemAudioWarning == nil
-                    HStack(spacing: 4) {
-                        Image(systemName: systemOk ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(systemOk ? .green : .yellow)
-                        Text(systemOk ? t("Mic + System", "Микрофон + Mac") : t("Microphone", "Микрофон"))
-                            .font(Typography.label)
-                            .foregroundStyle(systemOk ? Palette.textSecondary : .yellow)
-                    }
-                    .help(systemOk
-                        ? t("Recording mic and system audio (2 channels)", "Записывается микрофон и звук Mac (2 канала)")
-                        : t("Only microphone audio is being recorded", "Записывается только микрофон")
-                    )
+                    recordingAudioIndicator
                 } else {
-                    Label(recordingVM.recordingInputSource.label, systemImage: recordingVM.recordingInputSource.systemImage)
+                    Label(
+                        recordingVM.recordingInputSource.localizedLabel(language: languageManager.current),
+                        systemImage: recordingVM.recordingInputSource.systemImage
+                    )
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
                 }
 
-                Text(recordingVM.recordingType.rawValue.capitalized)
+                Text(recordingTypeLabel(recordingVM.recordingType))
                     .font(Typography.label)
                     .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
             }
         }
         .padding(.horizontal, Spacing.xxl)
         .padding(.vertical, Spacing.xl)
+    }
+
+    @ViewBuilder
+    private var recordingAudioIndicator: some View {
+        let indicator = SystemAudioWarningPolicy.headerIndicator(
+            requestedSystemAudio: recordingVM.recordingInputSource == .dual,
+            hasSystemAudio: recordingVM.hasSystemAudio,
+            warning: recordingVM.systemAudioWarning
+        )
+        HStack(spacing: 4) {
+            Image(systemName: indicatorIcon(indicator))
+                .font(.system(size: 10))
+                .foregroundStyle(indicatorColor(indicator))
+            Text(indicatorLabel(indicator))
+                .font(Typography.label)
+                .foregroundStyle(indicatorColor(indicator))
+        }
+        .help(indicatorHelp(indicator))
+    }
+
+    private func indicatorIcon(_ indicator: SystemAudioWarningPolicy.HeaderIndicator) -> String {
+        switch indicator {
+        case .micAndSystem:
+            return "checkmark.circle.fill"
+        case .systemAudioStarting:
+            return "waveform"
+        case .systemAudioDegraded:
+            return "exclamationmark.triangle.fill"
+        case .microphoneOnly:
+            return recordingVM.recordingInputSource.systemImage
+        }
+    }
+
+    private func indicatorColor(_ indicator: SystemAudioWarningPolicy.HeaderIndicator) -> Color {
+        switch indicator {
+        case .micAndSystem, .systemAudioStarting, .microphoneOnly:
+            return Palette.textSecondary
+        case .systemAudioDegraded:
+            return .yellow
+        }
+    }
+
+    private func indicatorLabel(_ indicator: SystemAudioWarningPolicy.HeaderIndicator) -> String {
+        switch indicator {
+        case .micAndSystem:
+            return t("Mic + System", "Микрофон + Mac")
+        case .systemAudioStarting:
+            return t("Starting Mac Audio", "Подключаем звук Mac")
+        case .systemAudioDegraded:
+            return t("Mac Audio Issue", "Проблема со звуком Mac")
+        case .microphoneOnly:
+            return recordingVM.recordingInputSource.label
+        }
+    }
+
+    private func indicatorHelp(_ indicator: SystemAudioWarningPolicy.HeaderIndicator) -> String {
+        switch indicator {
+        case .micAndSystem:
+            return t("Recording mic and system audio (2 channels)", "Записывается микрофон и звук Mac (2 канала)")
+        case .systemAudioStarting:
+            return t("Waiting for the system-audio tap to start.", "Ждем запуска записи звука Mac.")
+        case .systemAudioDegraded:
+            return t(
+                "Microphone is recording. System audio capture is degraded; check Audio Capture permission in System Settings.",
+                "Микрофон записывается. Запись звука Mac нарушена; проверь доступ к записи аудио в системных настройках."
+            )
+        case .microphoneOnly:
+            return t("Only microphone audio is being recorded", "Записывается только микрофон")
+        }
     }
 
     private func stopRecording() {
@@ -238,6 +298,17 @@ struct LiveRecordingView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private func recordingTypeLabel(_ type: RecordingType) -> String {
+        switch type {
+        case .meeting:
+            return t("Meeting", "Встреча")
+        case .note:
+            return t("Note", "Заметка")
+        case .reflection:
+            return t("Reflection", "Рефлексия")
+        }
     }
 }
 

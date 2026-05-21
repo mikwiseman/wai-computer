@@ -1,4 +1,5 @@
 import {
+  ApiError,
   apiFetch,
   apiFetchResponse,
   apiUpload,
@@ -58,6 +59,13 @@ function asQuery(params: Record<string, string | number | boolean | undefined | 
 
 async function withLocalhostAuth<T extends TokenResponse>(promise: Promise<T>): Promise<T> {
   const response = await promise;
+  if (
+    (!("access_token" in response) || typeof response.access_token !== "string")
+    && "message" in response
+    && typeof (response as { message?: unknown }).message === "string"
+  ) {
+    throw new ApiError(200, (response as { message: string }).message, response);
+  }
   if (typeof response.access_token === "string" && response.access_token.length > 0) {
     syncLocalhostAuthCookie(response.access_token);
   }
@@ -67,36 +75,82 @@ async function withLocalhostAuth<T extends TokenResponse>(promise: Promise<T>): 
   return response;
 }
 
-export function register(email: string, password: string): Promise<TokenResponse> {
+interface AuthLocaleOptions {
+  locale?: "en" | "ru";
+  region?: "global" | "ru";
+}
+
+export function register(
+  email: string,
+  password: string,
+  options: AuthLocaleOptions = {},
+): Promise<TokenResponse> {
   return withLocalhostAuth(
     apiFetch<TokenResponse>("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+        ...(options.locale ? { locale: options.locale } : {}),
+        ...(options.region ? { region: options.region } : {}),
+      }),
     }),
   );
 }
 
-export function login(email: string, password: string): Promise<TokenResponse> {
+export function login(
+  email: string,
+  password: string,
+  options: AuthLocaleOptions = {},
+): Promise<TokenResponse> {
   return withLocalhostAuth(
     apiFetch<TokenResponse>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+        ...(options.locale ? { locale: options.locale } : {}),
+        ...(options.region ? { region: options.region } : {}),
+      }),
     }),
   );
 }
 
-export function requestMagicLink(email: string): Promise<MessageResponse> {
+export function requestMagicLink(
+  email: string,
+  options: AuthLocaleOptions = {},
+): Promise<MessageResponse> {
   return apiFetch<MessageResponse>("/api/auth/magic-link", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({
+      email,
+      ...(options.locale ? { locale: options.locale } : {}),
+      ...(options.region ? { region: options.region } : {}),
+    }),
   });
 }
 
-export function verifyMagicLink(token: string): Promise<TokenResponse> {
+export function requestPasswordReset(
+  email: string,
+  locale: AuthLocaleOptions["locale"],
+): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email, locale }),
+  });
+}
+
+export function verifyMagicLink(
+  token: string,
+  options: Pick<AuthLocaleOptions, "locale"> = {},
+): Promise<TokenResponse> {
   return withLocalhostAuth(
     apiFetch<TokenResponse>("/api/auth/verify-magic", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({
+        token,
+        ...(options.locale ? { locale: options.locale } : {}),
+      }),
     }),
   );
 }

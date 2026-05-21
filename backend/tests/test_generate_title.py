@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core.summarizer import generate_title
+from app.core.summarizer import build_summary_prompt, generate_title
 
 
 def _make_response(text: str):
@@ -68,3 +68,29 @@ async def test_generate_title_uses_first_500_chars():
         content = mock_client.responses.create.await_args.kwargs["input"]
         assert long_transcript[:500] in content
         assert long_transcript[:501] not in content
+
+
+@pytest.mark.asyncio
+async def test_generate_title_injects_explicit_language():
+    """Title generation should respect the recording/user language when known."""
+    mock_client = MagicMock()
+    mock_client.responses.create = AsyncMock(return_value=_make_response("План запуска"))
+
+    with (
+        patch("app.core.summarizer.settings") as mock_settings,
+        patch("app.core.summarizer.get_openai_client", return_value=mock_client),
+    ):
+        mock_settings.openai_api_key = "test-key"
+        mock_settings.openai_llm_model = "gpt-5.5"
+
+        title = await generate_title("Обсудили запуск продукта", language="ru")
+
+    assert title == "План запуска"
+    content = mock_client.responses.create.await_args.kwargs["input"]
+    assert "Write the title in ru." in content
+
+
+def test_summary_auto_language_prompt_mentions_title_and_russian_output():
+    prompt = build_summary_prompt(language="auto")
+    assert "title, summary, key_points" in prompt
+    assert "If the transcript is primarily in Russian, output Russian." in prompt

@@ -101,7 +101,7 @@ class WordQuota:
                     select(Subscription).where(Subscription.id == user.current_subscription_id)
                 )
             ).scalar_one_or_none()
-            if sub is not None and sub.status in {"active", "trialing", "past_due"}:
+            if sub is not None and sub.status in {"active", "trialing"}:
                 plan = (
                     await db.execute(select(Plan).where(Plan.id == sub.plan_id))
                 ).scalar_one_or_none()

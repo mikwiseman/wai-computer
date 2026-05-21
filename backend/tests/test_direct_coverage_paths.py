@@ -212,13 +212,12 @@ async def test_auth_route_direct_paths(
     assert registered.access_token
     assert settings_obj.auth_cookie_name in register_response.headers.get("set-cookie", "")
 
-    with pytest.raises(HTTPException) as duplicate:
-        await auth.register(
-            auth.RegisterRequest(email="auth.register@example.com", password="password-123"),
-            Response(),
-            db_session,
-        )
-    assert duplicate.value.status_code == status.HTTP_400_BAD_REQUEST
+    duplicate = await auth.register(
+        auth.RegisterRequest(email="auth.register@example.com", password="password-123"),
+        Response(),
+        db_session,
+    )
+    assert duplicate.message == "Unable to create account. Try signing in or request a magic link."
 
     login_response = Response()
     logged_in = await auth.login(

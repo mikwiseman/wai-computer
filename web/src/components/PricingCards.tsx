@@ -83,7 +83,7 @@ const COPY: Record<
       features: [
         "3 000 транскрибированных слов в неделю",
         "Память с поиском за 30 дней",
-        "AI-саммари к каждой записи",
+        "AI-сводка к каждой записи",
         "Живая диктовка и запись встреч",
       ],
     },
@@ -143,7 +143,7 @@ export function PricingCards({
   async function handleUpgrade() {
     setError(null);
     if (!signedIn) {
-      window.location.href = loginPath + "?next=/billing";
+      window.location.href = `${loginPath}?returnTo=/billing`;
       return;
     }
     setInFlight(true);
@@ -243,7 +243,7 @@ export function PricingCards({
             onClick={handleUpgrade}
             disabled={inFlight}
           >
-            {inFlight ? copy.pro.ctaInFlight : copy.pro.cta}
+            {inFlight ? copy.pro.ctaInFlight : signedIn ? copy.pro.cta : copy.signInPrompt}
           </button>
           {error ? <p className="pricing-error">{error}</p> : null}
         </article>

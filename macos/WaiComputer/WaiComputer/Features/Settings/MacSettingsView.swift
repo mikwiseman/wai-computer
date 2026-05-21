@@ -96,6 +96,8 @@ struct MacSettingsView: View {
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
+    @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
+    @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
@@ -180,6 +182,8 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-app-language-header")
             }
 
+            appearanceSection
+
             Section {
                 LanguagePickerView(store: languageStore)
                     .padding(.vertical, 4)
@@ -199,6 +203,7 @@ struct MacSettingsView: View {
                         String(localized: "settings.transcription.dictationLive", bundle: .main),
                         selection: $dictationLiveSTTSelection,
                         options: transcriptionOptions.dictationLiveSTT,
+                        context: .dictationLiveSTT,
                         identifier: "settings-dictation-live-stt-picker",
                         save: { await saveDictationLiveSTT(selection: $0) }
                     )
@@ -207,6 +212,7 @@ struct MacSettingsView: View {
                         String(localized: "settings.transcription.recordingLive", bundle: .main),
                         selection: $recordingLiveSTTSelection,
                         options: transcriptionOptions.recordingLiveSTT,
+                        context: .recordingLiveSTT,
                         identifier: "settings-recording-live-stt-picker",
                         save: { await saveRecordingLiveSTT(selection: $0) }
                     )
@@ -215,6 +221,7 @@ struct MacSettingsView: View {
                         String(localized: "settings.transcription.fullSession", bundle: .main),
                         selection: $fileSTTSelection,
                         options: transcriptionOptions.fileSTT,
+                        context: .fileSTT,
                         identifier: "settings-file-stt-picker",
                         save: { await saveFileSTT(selection: $0) }
                     )
@@ -326,7 +333,7 @@ struct MacSettingsView: View {
                     set: { dictationManager.updateHotkey($0) }
                 )) {
                     ForEach(DictationHotkey.allCases) { hotkey in
-                        Text(hotkey.label).tag(hotkey)
+                        Text(dictationHotkeyLabel(hotkey)).tag(hotkey)
                     }
                 } label: {
                     Text("settings.dictation.pushToTalk", bundle: .main)
@@ -341,7 +348,7 @@ struct MacSettingsView: View {
                 )) {
                     Text("settings.dictation.handsFreeDoubleTap", bundle: .main).tag(DictationHotkey?.none)
                     ForEach(DictationHotkey.allCases) { hotkey in
-                        Text(hotkey.label).tag(DictationHotkey?.some(hotkey))
+                        Text(dictationHotkeyLabel(hotkey)).tag(DictationHotkey?.some(hotkey))
                     }
                 } label: {
                     Text("settings.dictation.handsFree", bundle: .main)
@@ -366,6 +373,7 @@ struct MacSettingsView: View {
                         String(localized: "settings.transcription.postFilterModel", bundle: .main),
                         selection: $dictationPostFilterSelection,
                         options: transcriptionOptions.dictationPostFilter,
+                        context: .dictationPostFilter,
                         identifier: "settings-dictation-post-filter-model-picker",
                         save: { await saveDictationPostFilter(selection: $0) }
                     )
@@ -576,6 +584,169 @@ struct MacSettingsView: View {
     }
 
     @ViewBuilder
+    private var appearanceSection: some View {
+        Section {
+            Picker(selection: appearanceModeBinding) {
+                ForEach(MacAppearanceMode.allCases) { mode in
+                    Text(appearanceTitle(mode)).tag(mode.rawValue)
+                }
+            } label: {
+                Text(t("Theme", "Тема"))
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings-appearance-mode-picker")
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Accent color", "Акцентный цвет"))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 132), spacing: Spacing.sm)],
+                    alignment: .leading,
+                    spacing: Spacing.sm
+                ) {
+                    ForEach(MacAccentChoice.allCases) { choice in
+                        accentChoiceButton(choice)
+                    }
+                }
+            }
+
+            themePreview
+
+            Text(t(
+                "Uses macOS adaptive system colors so the accent works in Light, Dark, and increased contrast modes.",
+                "Использует адаптивные системные цвета macOS, чтобы акцент работал в светлой, тёмной и контрастной темах."
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+        } header: {
+            Text(t("Appearance", "Внешний вид"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-appearance-header")
+        }
+    }
+
+    private var selectedAccentChoice: MacAccentChoice {
+        MacAccentChoice(rawValue: accentChoiceRawValue) ?? MacThemePreferences.defaultAccent
+    }
+
+    private var appearanceModeBinding: Binding<String> {
+        Binding(
+            get: { selectedAppearanceMode.rawValue },
+            set: { appearanceModeRawValue = $0 }
+        )
+    }
+
+    private var themePreview: some View {
+        HStack(spacing: Spacing.md) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(selectedAccentChoice.previewColor)
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Image(systemName: "paintpalette.fill")
+                        .foregroundStyle(.white)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(t("Preview", "Предпросмотр"))
+                    .font(Typography.headingSmall)
+                Text("\(appearanceTitle(selectedAppearanceMode)) · \(accentTitle(selectedAccentChoice))")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+
+            Spacer()
+
+            Button(t("Primary", "Основная")) {}
+                .buttonStyle(.borderedProminent)
+                .tint(selectedAccentChoice.previewColor)
+                .disabled(true)
+                .accessibilityHidden(true)
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var selectedAppearanceMode: MacAppearanceMode {
+        MacAppearanceMode(rawValue: appearanceModeRawValue) ?? MacThemePreferences.defaultAppearance
+    }
+
+    private func accentChoiceButton(_ choice: MacAccentChoice) -> some View {
+        let isSelected = selectedAccentChoice == choice
+        return Button {
+            accentChoiceRawValue = choice.rawValue
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Circle()
+                    .fill(choice.previewColor)
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().strokeBorder(Palette.border, lineWidth: 1))
+                    .accessibilityHidden(true)
+
+                Text(accentTitle(choice))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+
+                Spacer(minLength: Spacing.xs)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(selectedAccentChoice.previewColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? selectedAccentChoice.previewColor.opacity(0.12) : Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? selectedAccentChoice.previewColor : Palette.border, lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accentTitle(choice))
+        .accessibilityValue(isSelected ? t("Selected", "Выбрано") : t("Not selected", "Не выбрано"))
+        .accessibilityIdentifier("settings-accent-\(choice.rawValue)")
+    }
+
+    private func appearanceTitle(_ mode: MacAppearanceMode) -> String {
+        switch mode {
+        case .system:
+            return t("System", "Системная")
+        case .light:
+            return t("Light", "Светлая")
+        case .dark:
+            return t("Dark", "Тёмная")
+        }
+    }
+
+    private func accentTitle(_ choice: MacAccentChoice) -> String {
+        switch choice {
+        case .system:
+            return t("System", "Системный")
+        case .amber:
+            return t("Amber", "Янтарный")
+        case .blue:
+            return t("Blue", "Синий")
+        case .green:
+            return t("Green", "Зелёный")
+        case .violet:
+            return t("Violet", "Фиолетовый")
+        case .rose:
+            return t("Rose", "Розовый")
+        case .graphite:
+            return t("Graphite", "Графит")
+        }
+    }
+
+    @ViewBuilder
     private var mcpConnectSection: some View {
         Section {
             HStack {
@@ -686,9 +857,10 @@ struct MacSettingsView: View {
                 "Дай доступ к Универсальному доступу для глобальной клавиши и автоматической вставки."
             )
         }
+        let hotkey = dictationHotkeyShortLabel(dictationManager.selectedHotkey)
         return t(
-            "Hold \(dictationManager.selectedHotkey.shortLabel) to dictate. Release to paste. Double-tap to start hands-free; double-tap again to stop.",
-            "Зажми \(dictationManager.selectedHotkey.shortLabel), чтобы диктовать. Отпусти, чтобы вставить. Двойное нажатие включает режим без рук, ещё одно двойное нажатие останавливает."
+            "Hold \(hotkey) to dictate. Release to paste. Double-tap to start hands-free; double-tap again to stop.",
+            "Зажми \(hotkey), чтобы диктовать. Отпусти, чтобы вставить. Двойное нажатие включает режим без рук, ещё одно двойное нажатие останавливает."
         )
     }
 
@@ -761,7 +933,7 @@ struct MacSettingsView: View {
             }
 
             if status == .staleNeedsRestart {
-                Text(MacPrivacySettings.permissionRestartHint + " " + MacPrivacySettings.duplicatePermissionHint)
+                Text(DictationSettingsCopy.stalePermissionHint(language: languageManager.current))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -792,6 +964,7 @@ struct MacSettingsView: View {
         _ title: String,
         selection: Binding<String>,
         options: [TranscriptionModelOption],
+        context: TranscriptionModelOptionContext,
         identifier: String,
         save: @escaping (String) async -> Void
     ) -> some View {
@@ -809,7 +982,7 @@ struct MacSettingsView: View {
                 Task { await save(newValue) }
             }
 
-            if let description = selectedOptionDescription(selection.wrappedValue, in: options) {
+            if let description = selectedOptionDescription(selection.wrappedValue, in: options, context: context) {
                 Text(description)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
@@ -818,8 +991,17 @@ struct MacSettingsView: View {
         }
     }
 
-    private func selectedOptionDescription(_ selection: String, in options: [TranscriptionModelOption]) -> String? {
-        options.first { $0.id == selection }?.description
+    private func selectedOptionDescription(
+        _ selection: String,
+        in options: [TranscriptionModelOption],
+        context: TranscriptionModelOptionContext
+    ) -> String? {
+        guard let option = options.first(where: { $0.id == selection }) else { return nil }
+        return TranscriptionModelDescriptionCopy.description(
+            for: option,
+            context: context,
+            language: languageManager.current
+        )
     }
 
     private func splitSelection(_ selection: String) -> (provider: String, model: String)? {
@@ -1016,5 +1198,13 @@ struct MacSettingsView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private func dictationHotkeyLabel(_ hotkey: DictationHotkey) -> String {
+        DictationSettingsCopy.hotkeyLabel(rawValue: hotkey.rawValue, language: languageManager.current)
+    }
+
+    private func dictationHotkeyShortLabel(_ hotkey: DictationHotkey) -> String {
+        DictationSettingsCopy.hotkeyShortLabel(rawValue: hotkey.rawValue, language: languageManager.current)
     }
 }

@@ -7,6 +7,7 @@ import SwiftUI
 public struct CompanionView: View {
     public let apiClient: APIClient
     public let recordings: [Recording]
+    @Environment(\.locale) private var locale
 
     @State private var chats: [CompanionConversation] = []
     @State private var activeChatId: String?
@@ -49,19 +50,19 @@ public struct CompanionView: View {
 
     private var header: some View {
         HStack {
-            Text("Ask Wai")
+            Text(t("Ask Wai", "Спроси Wai"))
                 .font(.title3.bold())
             Spacer()
             Button {
                 showChats.toggle()
             } label: {
-                Text(showChats ? "Hide chats" : "Chats (\(chats.count))")
+                Text(showChats ? t("Hide chats", "Скрыть чаты") : chatsCountLabel)
             }
             .buttonStyle(.bordered)
             Button {
                 Task { await newChat() }
             } label: {
-                Text("+ New chat")
+                Text(t("+ New chat", "+ Новый чат"))
             }
             .buttonStyle(.borderedProminent)
         }
@@ -132,9 +133,9 @@ public struct CompanionView: View {
 
     private var emptyState: some View {
         VStack(alignment: .center, spacing: 12) {
-            Text("What do you want to know?")
+            Text(t("What do you want to know?", "Что хочешь узнать?"))
                 .font(.title2)
-            Text("Wai answers from your recordings.")
+            Text(t("Wai answers from your recordings.", "Wai отвечает по твоим записям."))
                 .foregroundStyle(.secondary)
             ForEach(starterPrompts, id: \.self) { prompt in
                 Button(prompt) { input = prompt }
@@ -147,7 +148,7 @@ public struct CompanionView: View {
 
     private func bubble(for message: CompanionMessage) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(message.role == .user ? "You" : "Wai")
+            Text(message.role == .user ? t("You", "Ты") : "Wai")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Text(message.plainText)
@@ -174,7 +175,7 @@ public struct CompanionView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if stage == .searching && streamingText.isEmpty {
-                Text("Searching recordings…")
+                Text(t("Searching recordings...", "Ищем по записям..."))
                     .italic()
                     .foregroundStyle(.secondary)
             }
@@ -231,7 +232,7 @@ public struct CompanionView: View {
                 Button {
                     cancelTurn()
                 } label: {
-                    Text("Stop")
+                    Text(t("Stop", "Стоп"))
                         .frame(minWidth: 60)
                 }
                 .buttonStyle(.bordered)
@@ -239,7 +240,7 @@ public struct CompanionView: View {
                 Button {
                     Task { await send() }
                 } label: {
-                    Text("Ask")
+                    Text(t("Ask", "Спросить"))
                         .frame(minWidth: 60)
                 }
                 .buttonStyle(.borderedProminent)
@@ -417,12 +418,19 @@ public struct CompanionView: View {
 
     private var isStreaming: Bool { stage != .idle }
 
+    private var chatsCountLabel: String {
+        if isRussian {
+            return "Чаты: \(chats.count)"
+        }
+        return "Chats (\(chats.count))"
+    }
+
     private var starterPrompts: [String] {
         [
-            "What did I commit to this week?",
-            "Summarize my last meeting.",
-            "What patterns show up in my reflections?",
-            "When did I first mention pricing?",
+            t("What did I commit to this week?", "Что я обещал сделать на этой неделе?"),
+            t("Summarize my last meeting.", "Сделай сводку последней встречи."),
+            t("What patterns show up in my reflections?", "Какие повторяющиеся темы есть в моих рефлексиях?"),
+            t("When did I first mention pricing?", "Когда я впервые упомянул цены?"),
         ]
     }
 
@@ -432,11 +440,11 @@ public struct CompanionView: View {
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         let when = chat.lastMessageAt ?? chat.createdAt
-        return "Chat · \(formatter.string(from: when))"
+        return "\(t("Chat", "Чат")) · \(formatter.string(from: when))"
     }
 
     private func formattedCitation(_ c: CitationDisplay) -> String {
-        let title = recordings.first(where: { $0.id == c.recordingId })?.title ?? "Recording"
+        let title = recordings.first(where: { $0.id == c.recordingId })?.title ?? t("Recording", "Запись")
         if let ms = c.startMs {
             return "[\(c.index)] \(title) · \(formatMs(ms))"
         }
@@ -446,6 +454,14 @@ public struct CompanionView: View {
     private func formatMs(_ ms: Int) -> String {
         let total = ms / 1000
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private var isRussian: Bool {
+        locale.identifier.lowercased().hasPrefix("ru")
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        isRussian ? russian : english
     }
 }
 
