@@ -5,6 +5,7 @@ import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
 const WINDOWS_EXE_URL = "/releases/windows/WaiComputer-Setup.exe";
+const LINUX_APPIMAGE_URL = "/releases/linux/is.waiwai.computer.AppImage";
 const ANDROID_APK_URL = "/releases/android/WaiComputer-latest.apk";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
@@ -51,8 +52,8 @@ export default function Home() {
           An AI second brain for everything you say.
         </h1>
         <p className={styles.subhead}>
-          Record on Mac, Windows, iPhone, or Android. Transcribed in real time.
-          Search across everything. Ask Wai anything.
+          Record on Mac, Windows, Linux, iPhone, or Android. Transcribed in
+          real time. Search across everything. Ask Wai anything.
         </p>
 
         <div className={styles.downloads}>
@@ -86,6 +87,15 @@ export default function Home() {
               <span className={styles.downloadMeta}>Coming soon</span>
             </span>
           )}
+          <a
+            className={styles.downloadGhost}
+            href={LINUX_APPIMAGE_URL}
+            download
+            data-testid="download-linux"
+          >
+            <span className={styles.downloadTitle}>Linux</span>
+            <span className={styles.downloadMeta}>AppImage · x64</span>
+          </a>
           <a
             className={styles.downloadGhost}
             href={TESTFLIGHT_URL}
