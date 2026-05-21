@@ -123,6 +123,39 @@ def test_soniox_recording_live_default_migration(monkeypatch):
     assert defaults["recording_live_stt_model"] == "stt-rt-v4"
 
 
+def test_inworld_realtime_default_migration(monkeypatch):
+    """May 21 stable release should move only Soniox-default live users to Inworld."""
+    migration = _load_migration("20260521_090000_inworld_realtime_defaults.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 2
+    dictation_statement = str(executed[0])
+    recording_statement = str(executed[1])
+    assert "dictation_live_stt_provider = :new_provider" in dictation_statement
+    assert "dictation_live_stt_model = :new_model" in dictation_statement
+    assert "dictation_live_stt_provider = :old_provider" in dictation_statement
+    assert "dictation_live_stt_model = :old_model" in dictation_statement
+    assert "recording_live_stt_provider = :new_provider" in recording_statement
+    assert "recording_live_stt_model = :new_model" in recording_statement
+    assert "recording_live_stt_provider = :old_provider" in recording_statement
+    assert "recording_live_stt_model = :old_model" in recording_statement
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["dictation_live_stt_provider"] == "inworld"
+    assert defaults["dictation_live_stt_model"] == "inworld/inworld-stt-1"
+    assert defaults["recording_live_stt_provider"] == "inworld"
+    assert defaults["recording_live_stt_model"] == "inworld/inworld-stt-1"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

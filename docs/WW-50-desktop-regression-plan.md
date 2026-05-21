@@ -87,11 +87,27 @@ These items were already handled in the previous pass, but must be regression-ch
 - [x] C66. T-Bank success/cancel pages must be Russian and polished even if the browser lands on `/billing/success` or `/billing/cancel`. Screenshots: latest user items 59 and 61. Fixed with `provider=tinkoff&lang=ru` return URLs plus localized result pages.
 - [x] C67. Stripe checkout must not offer or mention a 14-day trial; the free weekly word quota is the free tier. Screenshot: latest checkout trial image. Fixed by sending no trial period to Stripe checkout.
 - [x] C68. T-Bank test-card failures, including the Stripe test card `4242 4242 4242 4242`, must show a clear Russian failed-payment page instead of generic English cancel copy. Screenshot: latest user item 59. Fixed by using Russian T-Bank cancel copy that explains card/provider mismatch.
+- [ ] C69. Bare `/billing/cancel` after failed T-Bank card entry is still English/generic when the provider query params are absent. Detect Russian browser/app context and show the polished Russian T-Bank failure copy. Screenshot: latest user item 59 with invalid `4242 4242 4242 4242`.
+- [ ] C70. A processing recording in macOS still shows "Нет транскрипта". Show an explicit processing/transcribing state in list/detail until transcript arrives. Screenshot: latest selected "Без названия / Processing" recording.
+- [ ] C71. Shared/public note pages still show the old logo. Replace remaining public/shared/onboarding/new-recording old-logo references with the current mark. Screenshot: latest shared note old-logo image.
+- [ ] C72. Rename modal/popover remains too narrow in at least one recording context. Find all rename controls and widen them for narrow and wide windows. Screenshot: latest item 63.
+- [ ] C73. T-Bank success/cancel pages need proper Russian placeholders/copy for bare `/billing/success` and `/billing/cancel`, not plain English cards. Screenshots: latest items 59 and 61.
+- [ ] C74. After successful T-Bank payment, the macOS app did not reflect Pro status. Verify webhook payload mapping, subscription creation/update, and client refresh after return. Screenshot: latest item 62.
+- [ ] C75. Hosted checkout still shows "14 days free" in at least one Stripe path. Remove trial completely from checkout/product flow; free tier is the weekly word quota. Screenshot: latest hosted checkout image.
+- [ ] C76. T-Bank failed-card flow must say the payment/card was declined and that `4242 4242 4242 4242` is a Stripe test card, not a T-Bank test card.
+- [ ] C77. Keep T-Bank integration aligned with official docs: one-stage `PayType=O`, `SuccessURL`/`FailURL`, and webhook ACK exactly `200 OK` body `OK`.
+- [x] C78. Add the Inworld `inworld/inworld-stt-1` option to dictation and realtime recording model choices, backed by a server-side secret only. Screenshot: latest Inworld model picker. Do not expose provider keys to the client. Stable default now uses Inworld for dictation/live recording and keeps full-session file transcription on ElevenLabs.
+- [ ] C79. Dictation startup should capture audio immediately on hotkey down, buffer local PCM while the provider session connects, flush that buffer when connected, then continue live streaming so first words are not lost. Screenshots: latest Connecting/Listening dictation overlay.
+- [ ] C80. Right Command as the press-to-talk hotkey must work on a single hold/release, not only double-press hands-free. Screenshot: latest Settings hotkey image.
+- [ ] C81. Re-test dictation/realtime model routing after adding Inworld: settings list, backend session creation, macOS dictation, and realtime recording should all use server-side keys and explicit failures.
+- [ ] C82. Add app color/theme selection in Settings after researching macOS color/theme best practices: accessible accent choices, clear previews, persistence, and no one-off hardcoded color drift.
+- [ ] C83. Theme verification pass: test every supported app theme across onboarding, library, recording, dictation overlay, settings, auth, billing, shared notes, narrow windows, light/dark appearance, and high-contrast/accessibility scenarios.
 
 ## Research Notes
 
 - [ ] R01. Confirm passwordless/new-user email auth best practices against official guidance.
 - [ ] R02. Confirm macOS microphone/system-audio permission behavior and best practices for explaining/requesting permissions.
+- [ ] R03. Confirm macOS app theme/accent color best practices against current Apple HIG/accessibility guidance.
 
 ## Verification Matrix
 
@@ -103,6 +119,10 @@ These items were already handled in the previous pass, but must be regression-ch
 - [ ] V06. Manual auth pass: login, magic link, new email, password reset, app-open/browser fallback.
 - [ ] V07. Manual billing pass: Stripe USD, T-Bank RUB, success/cancel pages, free weekly word limit display.
 - [ ] V08. Stable macOS release and production URL/appcast verification.
+- [ ] V09. Manual dictation startup pass: Right Command push-to-talk, hands-free, buffered startup, Soniox/Inworld/ElevenLabs model routing, and first-word retention.
+- [ ] V10. Theme pass: each app color option in light/dark mode, Russian/English UI, narrow/wide windows, and all primary screens.
+- [ ] V11. Full end-to-end regression pass after all fixes: onboarding, auth, billing, recording, import, dictation, transcription models, summaries, search, dictionary, folders, shared notes, settings, theme, narrow windows, release/update, and production web callbacks.
+- [ ] V12. Exhaustive final scenario/evaluation pass before stable release: run every offered transcription model through dictation, realtime recording, file import/full transcript, long recording, speaker diarization, summary/title generation, auth, billing, folders, shared notes, language/theme changes, update/release, and production callback paths; record every failure in this plan before shipping.
 
 ## Verification Log
 

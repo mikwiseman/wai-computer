@@ -39,6 +39,35 @@ def _patch_soniox_mint(
     return mock
 
 
+def _patch_inworld_mint(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    language: str = "multi",
+    channels: int = 1,
+) -> None:
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.get_settings",
+        lambda: SimpleNamespace(inworld_api_key="iw-key:iw-secret", inworld_workspace=""),
+    )
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.mint_inworld_client_jwt",
+        AsyncMock(return_value=SimpleNamespace(token="iw-jwt", expires_in_seconds=840)),
+    )
+    monkeypatch.setattr(
+        "app.core.realtime_transcription.build_inworld_session",
+        lambda **kw: SimpleNamespace(
+            auth_header="Bearer iw-jwt",
+            websocket_url="wss://iw/x",
+            model_id="inworld/inworld-stt-1",
+            language=language,
+            audio_encoding="LINEAR16",
+            sample_rate_hertz=16000,
+            number_of_channels=channels,
+            expires_in_seconds=840,
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_build_deepgram_realtime_session() -> None:
     fake = SimpleNamespace(
@@ -362,19 +391,32 @@ async def test_dispatch_recording_soniox(
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_soniox_mint(monkeypatch)
+    _patch_inworld_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="recording", user=None,
     )
-    assert session.provider == "soniox"
-    assert session.auth_scheme == "message_api_key"
+    assert session.provider == "inworld"
+    assert session.auth_scheme == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_dictation_with_no_user_uses_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_inworld_mint(monkeypatch)
+    session = await create_realtime_transcription_session(
+        purpose="dictation", user=None,
+    )
+    assert session.provider == "inworld"
+    assert session.model == "inworld/inworld-stt-1"
+    assert session.auth_scheme == "bearer"
 
 
 @pytest.mark.asyncio
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_soniox_mint(monkeypatch, language="en")
+    _patch_inworld_mint(monkeypatch, language="en")
     session = await create_realtime_transcription_session(
         language="  EN  ", purpose="recording", user=None,
     )
@@ -385,7 +427,7 @@ async def test_resolved_language_lower_strip(
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_soniox_mint(monkeypatch)
+    _patch_inworld_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         language="   ", purpose="recording", user=None,
     )
