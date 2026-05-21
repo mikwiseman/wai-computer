@@ -47,6 +47,7 @@ _STATUS_MAP = {
     "AUTHORIZED": "active",
     "CONFIRMING": "active",
     "CONFIRMED": "active",
+    "AUTH_FAIL": "past_due",
     "REJECTED": "past_due",
     "CANCELED": "canceled",
     "REVERSED": "canceled",
