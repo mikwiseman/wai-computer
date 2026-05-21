@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import WaiComputerKit
 
 struct OnboardingWelcomeSlide: View {
@@ -9,9 +10,8 @@ struct OnboardingWelcomeSlide: View {
         VStack(spacing: 24) {
             Spacer(minLength: 0)
 
-            Image("BrandIcon")
+            Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .interpolation(.high)
                 .scaledToFit()
                 .frame(width: 104, height: 104)
                 .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 8)
@@ -23,6 +23,7 @@ struct OnboardingWelcomeSlide: View {
                 Text(t("Welcome to WaiComputer", "Добро пожаловать в WaiComputer"))
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
+                    .accessibilityIdentifier("onboarding-welcome-title")
                 Text(t(
                     "Voice-type into any app and capture meetings — set up in 90 seconds.",
                     "Диктуй текст в любом приложении и записывай встречи — настройка займет около 90 секунд."
@@ -55,17 +56,18 @@ struct OnboardingWelcomeSlide: View {
                 .foregroundStyle(Palette.textTertiary)
                 .textCase(.uppercase)
                 .tracking(0.8)
+                .accessibilityIdentifier("onboarding-language-prompt")
 
-            Picker("", selection: Binding(
-                get: { selectedOnboardingLanguage },
-                set: { languageManager.setLanguage($0) }
-            )) {
-                Text("English").tag(LanguageManager.SupportedLanguage.english)
-                Text("Русский").tag(LanguageManager.SupportedLanguage.russian)
+            HStack(spacing: 0) {
+                languageButton("English", language: .english, identifier: "onboarding-language-english")
+                languageButton("Русский", language: .russian, identifier: "onboarding-language-russian")
             }
-            .pickerStyle(.segmented)
             .frame(width: 240)
-            .accessibilityIdentifier("onboarding-app-language-picker")
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+            )
 
             Text(t(
                 "You can change this anytime in Settings.",
@@ -83,6 +85,30 @@ struct OnboardingWelcomeSlide: View {
         case .russian:
             return .russian
         }
+    }
+
+    @ViewBuilder
+    private func languageButton(
+        _ title: String,
+        language: LanguageManager.SupportedLanguage,
+        identifier: String
+    ) -> some View {
+        let selected = selectedOnboardingLanguage == language
+        Button(title) {
+            languageManager.setLanguage(language)
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 13, weight: .medium))
+        .foregroundStyle(selected ? Palette.textPrimary : Palette.textSecondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(selected ? Color(NSColor.windowBackgroundColor) : Color.clear)
+        )
+        .accessibilityIdentifier(identifier)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func t(_ english: String, _ russian: String) -> String {

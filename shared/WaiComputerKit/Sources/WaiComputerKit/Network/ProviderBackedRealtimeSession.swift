@@ -155,6 +155,8 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     }
 
     private func makeRequest() throws -> URLRequest {
+        try validateServerMintedRouting()
+
         let url: URL
         if config.provider == "elevenlabs" {
             url = try elevenLabsURL()
@@ -179,6 +181,43 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             throw ProviderError.transcriberInternal(message: "Unsupported auth scheme: \(scheme)")
         }
         return request
+    }
+
+    private func validateServerMintedRouting() throws {
+        let token = config.token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let websocketURL = config.websocketURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch config.provider {
+        case "inworld":
+            guard websocketURL?.isEmpty == false else {
+                throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted websocket URL")
+            }
+            guard !token.isEmpty else {
+                throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted token")
+            }
+            guard config.authScheme == "bearer" || config.authScheme == "basic" else {
+                throw ProviderError.transcriberInternal(message: "Inworld realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
+            }
+        case "soniox":
+            guard websocketURL?.isEmpty == false else {
+                throw ProviderError.transcriberInternal(message: "Soniox realtime session is missing server-minted websocket URL")
+            }
+            guard !token.isEmpty else {
+                throw ProviderError.transcriberInternal(message: "Soniox realtime session is missing server-minted token")
+            }
+            guard config.authScheme == "message_api_key" else {
+                throw ProviderError.transcriberInternal(message: "Soniox realtime session must use server-minted message_api_key auth")
+            }
+        case "elevenlabs":
+            guard !token.isEmpty else {
+                throw ProviderError.transcriberInternal(message: "ElevenLabs realtime session is missing server-minted query token")
+            }
+            guard config.authScheme == nil || config.authScheme == "query_token" else {
+                throw ProviderError.transcriberInternal(message: "ElevenLabs realtime session must use server-minted query_token auth")
+            }
+        default:
+            break
+        }
     }
 
     private func flushInworldPendingAudio(to webSocket: URLSessionWebSocketTask) async throws {
@@ -643,5 +682,9 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     func testingCollectedSegments() -> [LiveTranscriptSegment] {
         collectedSegments
+    }
+
+    func testingRequest() throws -> URLRequest {
+        try makeRequest()
     }
 }

@@ -112,6 +112,7 @@ struct MacSettingsView: View {
     @State private var fileSTTSelection = ""
     @State private var dictationPostFilterEnabled = false
     @State private var dictationPostFilterSelection = ""
+    @State private var billingRefreshID = 0
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
 
     private var summaryLanguageOptions: [(label: String, value: String)] {
@@ -168,6 +169,7 @@ struct MacSettingsView: View {
 
             if paymentModeEnabled {
                 BillingSection()
+                    .id(billingRefreshID)
             }
 
             Section {
@@ -518,6 +520,7 @@ struct MacSettingsView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
+                refreshBillingOnReturnIfNeeded()
             }
         }
         .confirmationDialog(
@@ -852,6 +855,11 @@ struct MacSettingsView: View {
         if dictationPermissionsReady {
             stopPermissionPolling()
         }
+    }
+
+    private func refreshBillingOnReturnIfNeeded() {
+        guard paymentModeEnabled else { return }
+        billingRefreshID += 1
     }
 
     private func requestMicrophonePermission() {

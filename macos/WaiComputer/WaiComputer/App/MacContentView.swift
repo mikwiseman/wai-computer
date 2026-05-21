@@ -208,10 +208,12 @@ struct MacMainView: View {
                     shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
                     isShowingCreateFolderSheet = true
                 } label: {
-                    Image(systemName: "folder.badge.plus")
+                    Label(t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
+                        .labelStyle(.iconOnly)
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .help(t("New Folder", "Новая папка"))
+                .accessibilityIdentifier("new-folder-toolbar-button")
 
                 Menu {
                     if canMoveSelectedRecordingsToUnfiled {
@@ -228,10 +230,11 @@ struct MacMainView: View {
                         .disabled(selectedRecordingIds.isEmpty)
                     }
                 } label: {
-                    Image(systemName: "folder")
+                    Label(t("Move to Folder", "Переместить в папку"), systemImage: "folder")
                         .foregroundStyle(Palette.textSecondary)
                 }
                 .help(t("Move to Folder", "Переместить в папку"))
+                .accessibilityIdentifier("move-to-folder-toolbar-button")
                 .disabled(selectedRecordingIds.isEmpty || (!canMoveSelectedRecordingsToUnfiled && libraryViewModel.folders.isEmpty))
 
                 Button {
@@ -1128,7 +1131,8 @@ private struct FolderNameSheet: View {
             }
         }
         .padding(Spacing.xl)
-        .frame(minWidth: 560, idealWidth: 600)
+        .frame(width: 560)
+        .accessibilityIdentifier("folder-name-sheet")
     }
 }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import ApplicationServices
+import WaiComputerKit
 
 /// Wispr Flow-style toast banner that appears at the bottom of the main window
 /// when a required permission is missing. Non-blocking — the main UI stays
@@ -14,6 +15,7 @@ struct PermissionBanner: View {
     let kind: Kind
     let onPrimaryTap: () -> Void
     let onDismiss: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(alignment: .center, spacing: Spacing.md) {
@@ -33,7 +35,8 @@ struct PermissionBanner: View {
                 Text(subtitle)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.white.opacity(0.55))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: Spacing.lg)
@@ -64,7 +67,7 @@ struct PermissionBanner: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel(t("Dismiss", "Закрыть"))
             .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)-dismiss")
         }
         .padding(.horizontal, 16)
@@ -83,15 +86,25 @@ struct PermissionBanner: View {
 
     private var title: String {
         switch kind {
-        case .microphone: return "Microphone permission required"
-        case .accessibility: return "Accessibility permission required"
+        case .microphone:
+            return t("Microphone permission required", "Нужен доступ к микрофону")
+        case .accessibility:
+            return t("Accessibility permission required", "Нужен Универсальный доступ")
         }
     }
 
     private var subtitle: String {
         switch kind {
-        case .microphone: return "WaiComputer needs microphone access to record."
-        case .accessibility: return "WaiComputer needs accessibility access for the global hotkey and text insertion."
+        case .microphone:
+            return t(
+                "WaiComputer needs microphone access to record.",
+                "WaiComputer нужен микрофон для диктовки и записей."
+            )
+        case .accessibility:
+            return t(
+                "WaiComputer needs accessibility access for the global hotkey and text insertion.",
+                "Универсальный доступ нужен для глобальной клавиши и вставки текста."
+            )
         }
     }
 
@@ -99,11 +112,17 @@ struct PermissionBanner: View {
         switch kind {
         case .microphone:
             return AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
-                ? "Grant Permission"
-                : "Open Settings"
+                ? t("Grant Permission", "Разрешить")
+                : t("Open Settings", "Открыть настройки")
         case .accessibility:
-            return AXIsProcessTrusted() ? "Open Settings" : "Grant Permission"
+            return AXIsProcessTrusted()
+                ? t("Open Settings", "Открыть настройки")
+                : t("Grant Permission", "Разрешить")
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -124,4 +143,5 @@ extension PermissionBanner.Kind {
     .padding()
     .frame(width: 600)
     .background(Color.gray.opacity(0.1))
+    .environmentObject(LanguageManager.shared)
 }

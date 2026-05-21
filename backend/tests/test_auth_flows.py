@@ -215,6 +215,48 @@ async def test_magic_link_creates_user_with_region(
 
 
 @pytest.mark.asyncio
+async def test_register_sets_password_for_existing_magic_link_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A passwordless magic-link account can later set a password via registration."""
+
+    async def fake_send_magic_link_email(to_email: str, token: str, **kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
+
+    email = "magic.then.password@example.com"
+    magic_response = await client.post(
+        "/api/auth/magic-link",
+        json={"email": email, "region": "ru"},
+    )
+    assert magic_response.status_code == 200
+
+    register_response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "new-password-123", "region": "global"},
+    )
+    assert register_response.status_code == 200
+    token = register_response.json()["access_token"]
+
+    me_response = await client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["has_password"] is True
+    assert me_response.json()["region"] == "ru"
+
+    user_result = await db_session.execute(select(User).where(User.email == email))
+    user = user_result.scalar_one()
+    assert user.password_hash is not None
+    assert user.magic_link_token is None
+    assert user.magic_link_expires is None
+
+
+@pytest.mark.asyncio
 async def test_verify_magic_link_success_clears_token(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -251,6 +293,99 @@ async def test_verify_magic_link_success_clears_token(
     user = user_result.scalar_one()
     assert user.magic_link_token is None
     assert user.magic_link_expires is None
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_sends_reset_link_without_creating_unknown_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Forgot-password is explicit, localized, and non-enumerating."""
+    captured: dict[str, str] = {}
+
+    async def fake_send_password_reset_email(
+        to_email: str,
+        token: str,
+        **kwargs,
+    ) -> None:
+        captured["to_email"] = to_email
+        captured["token"] = token
+        captured["locale"] = kwargs["locale"]
+
+    monkeypatch.setattr(
+        "app.core.email.send_password_reset_email",
+        fake_send_password_reset_email,
+        raising=False,
+    )
+
+    await client.post(
+        "/api/auth/register",
+        json={"email": "reset.existing@example.com", "password": "password123"},
+    )
+
+    existing_response = await client.post(
+        "/api/auth/forgot-password",
+        json={"email": "reset.existing@example.com", "locale": "ru"},
+    )
+    assert existing_response.status_code == 200
+    assert existing_response.json()["message"] == (
+        "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."
+    )
+    assert captured["to_email"] == "reset.existing@example.com"
+    assert captured["token"].startswith("reset_")
+    assert captured["locale"] == "ru"
+
+    missing_response = await client.post(
+        "/api/auth/forgot-password",
+        json={"email": "reset.missing@example.com", "locale": "ru"},
+    )
+    assert missing_response.status_code == 200
+    assert missing_response.json() == existing_response.json()
+
+    missing_result = await db_session.execute(
+        select(User).where(User.email == "reset.missing@example.com")
+    )
+    assert missing_result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_reset_password_accepts_only_reset_tokens(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Password reset tokens must not be interchangeable with login magic links."""
+    magic_user = User(
+        email="reset.magic-token@example.com",
+        magic_link_token="magic_token",
+        magic_link_expires=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
+    reset_user = User(
+        email="reset.valid-token@example.com",
+        magic_link_token="reset_token",
+        magic_link_expires=datetime.now(timezone.utc) + timedelta(minutes=15),
+    )
+    db_session.add_all([magic_user, reset_user])
+    await db_session.flush()
+
+    magic_response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "magic_token", "password": "password1234"},
+    )
+    assert magic_response.status_code == 401
+    assert magic_response.json()["detail"] == "Invalid password reset link"
+
+    reset_response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "reset_token", "password": "password1234"},
+    )
+    assert reset_response.status_code == 200
+    assert reset_response.json()["message"] == "Password reset successfully"
+
+    await db_session.refresh(reset_user)
+    assert reset_user.password_hash is not None
+    assert reset_user.magic_link_token is None
+    assert reset_user.magic_link_expires is None
 
 
 @pytest.mark.asyncio

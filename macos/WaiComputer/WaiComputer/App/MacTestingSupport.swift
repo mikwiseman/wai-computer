@@ -90,6 +90,7 @@ enum MacUITestFixtures {
     )
 
     static let recordings: [Recording] = [
+        Recording(id: "rec-processing", title: "Processing Recording", type: .meeting, status: .processing, durationSeconds: 121, createdAt: createdAt.addingTimeInterval(3600)),
         Recording(id: "rec-1", title: "Weekly Team Standup", type: .meeting, status: .ready, durationSeconds: 1847, createdAt: createdAt),
         Recording(id: "rec-2", title: "Product Strategy Meeting", type: .meeting, status: .ready, durationSeconds: 3621, createdAt: createdAt.addingTimeInterval(-86400)),
         Recording(id: "rec-3", title: "Design Review: New Dashboard", type: .meeting, status: .ready, durationSeconds: 2456, createdAt: createdAt.addingTimeInterval(-172800)),
@@ -99,7 +100,9 @@ enum MacUITestFixtures {
         Recording(id: "rec-7", title: "Morning Reflection — April", type: .reflection, status: .ready, durationSeconds: 367, createdAt: createdAt.addingTimeInterval(-518400)),
     ]
 
-    static let recording = recordings[0]
+    static let processingRecording = recordings[0]
+    static let readyRecording = recordings[1]
+    static let recording = readyRecording
 
     static let completedRecording = Recording(
         id: "ui-test-completed-recording",
@@ -113,12 +116,12 @@ enum MacUITestFixtures {
     static let recordingFlowRecordings: [Recording] = [completedRecording] + recordings
 
     static let recordingDetail = RecordingDetail(
-        id: recording.id,
-        title: recording.title,
-        type: recording.type,
-        durationSeconds: recording.durationSeconds,
+        id: readyRecording.id,
+        title: readyRecording.title,
+        type: readyRecording.type,
+        durationSeconds: readyRecording.durationSeconds,
         language: "en",
-        createdAt: recording.createdAt,
+        createdAt: readyRecording.createdAt,
         segments: [
             Segment(id: "s1", speaker: "Alex", content: "Good morning everyone. Let us go through our updates for this week.", startMs: 0, endMs: 5200, confidence: 0.95),
             Segment(id: "s2", speaker: "Sarah", content: "Sure. The new dashboard is almost ready. We completed the API integration yesterday and it passed all tests.", startMs: 5500, endMs: 12800, confidence: 0.93),
@@ -155,6 +158,17 @@ enum MacUITestFixtures {
             """.data(using: .utf8)!
             return try! JSONDecoder().decode([ActionItem].self, from: json)
         }()
+    )
+
+    static let processingRecordingDetail = RecordingDetail(
+        id: processingRecording.id,
+        title: processingRecording.title,
+        type: processingRecording.type,
+        status: processingRecording.status,
+        durationSeconds: processingRecording.durationSeconds,
+        language: "en",
+        createdAt: processingRecording.createdAt,
+        segments: []
     )
 
     static let completedRecordingDetail = RecordingDetail(

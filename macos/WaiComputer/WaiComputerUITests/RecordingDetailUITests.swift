@@ -96,19 +96,10 @@ final class RecordingDetailUITests: XCTestCase {
     }
 
     @MainActor
-    func testRecordingDetailShowsActionItems() throws {
+    func testRecordingDetailDoesNotShowActionItemsSection() throws {
         let app = launchToRecordingDetail()
 
-        // Switch to Action Items tab
         let actionsTab = app.buttons.matching(identifier: "tab-action-items").firstMatch
-        XCTAssertTrue(waitForElement(actionsTab, in: app, timeout: 3))
-        app.activate()
-        actionsTab.tap()
-
-        // The fixture has no action items or summary — verify empty state appears
-        let actionsEmptyState = app.descendants(matching: .any)
-            .matching(identifier: "actions-empty-state")
-            .firstMatch
-        XCTAssertTrue(waitForElement(actionsEmptyState, in: app, timeout: 5))
+        XCTAssertFalse(actionsTab.exists)
     }
 }

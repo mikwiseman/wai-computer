@@ -145,3 +145,33 @@ class TestSendMagicLinkEmail:
             call_args = mock_resend.Emails.send.call_args[0][0]
             assert "https://wai.computer/auth/verify?token=token789" in call_args["html"]
             assert "waicomputer://" not in call_args["html"]
+
+    async def test_magic_link_email_uses_russian_copy(self):
+        """Russian magic-link emails should localize subject and body."""
+        mock_settings = _mock_settings()
+
+        with patch("app.core.email.get_settings", return_value=mock_settings), \
+             patch("app.core.email.resend") as mock_resend:
+            from app.core.email import send_magic_link_email
+
+            await send_magic_link_email("user@example.com", "token789", locale="ru")
+
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert call_args["subject"] == "Вход в WaiComputer"
+            assert "Войти в WaiComputer" in call_args["html"]
+            assert "Ссылка действует 15 минут" in call_args["html"]
+
+    async def test_password_reset_email_uses_reset_page_and_russian_copy(self):
+        """Password reset emails should use reset URLs, not login verify URLs."""
+        mock_settings = _mock_settings()
+
+        with patch("app.core.email.get_settings", return_value=mock_settings), \
+             patch("app.core.email.resend") as mock_resend:
+            from app.core.email import send_password_reset_email
+
+            await send_password_reset_email("user@example.com", "reset-token", locale="ru")
+
+            call_args = mock_resend.Emails.send.call_args[0][0]
+            assert call_args["subject"] == "Сброс пароля WaiComputer"
+            assert "https://wai.computer/auth/reset?token=reset-token" in call_args["html"]
+            assert "https://wai.computer/auth/verify" not in call_args["html"]

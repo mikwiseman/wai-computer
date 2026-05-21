@@ -191,7 +191,7 @@ async def test_create_checkout_without_trial_does_not_add_trial_params(monkeypat
         user_id="user-1",
         success_url="https://wai.computer/billing/success",
         cancel_url="https://wai.computer/billing/cancel",
-        trial_days=0,
+        trial_days=14,
     )
 
     assert result.checkout_url == "https://checkout.stripe.test/session"
@@ -341,9 +341,7 @@ async def test_invoice_paid_creates_invoice_row(db_session):
     await apply_stripe_event(db_session, event)
 
     invoice = (
-        await db_session.execute(
-            select(Invoice).where(Invoice.provider_payment_id == "in_test123")
-        )
+        await db_session.execute(select(Invoice).where(Invoice.provider_payment_id == "in_test123"))
     ).scalar_one()
     assert invoice.amount == Decimal("12.00")
     assert invoice.currency == "USD"

@@ -21,14 +21,14 @@ struct OnboardingVoiceSetupSlide: View {
             Text(
                 t(
                     "Record a short sample so WaiComputer can recognize you in future meetings without manual speaker tagging. Takes about 20 seconds.",
-                    "Запиши короткий образец, чтобы WaiComputer узнавал тебя на будущих встречах без ручной разметки спикеров. Это займет около 20 секунд."
+                    "Запиши короткий образец: WaiComputer будет узнавать твой голос во встречах без ручной разметки спикеров. Это займет около 20 секунд."
                 )
             )
             .font(Typography.body)
             .foregroundStyle(Palette.textSecondary)
             Text(t(
                 "Record at least 5 seconds. This also checks the same microphone path used for dictation.",
-                "Запиши минимум 5 секунд. Заодно мы проверим тот же микрофонный путь, который используется для диктовки."
+                "Запиши минимум 5 секунд. Так мы проверим тот же микрофонный путь, который потом используется для диктовки."
             ))
             .font(Typography.label)
             .foregroundStyle(Palette.textTertiary)
@@ -107,10 +107,6 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .buttonStyle(.plain)
         .disabled(!hasMicrophonePermission || recorder.state == .uploading)
-        .help(hasMicrophonePermission
-            ? t("Tap to record", "Нажми, чтобы записать")
-            : t("Allow microphone in the previous step", "Сначала разреши микрофон")
-        )
     }
 
     @ViewBuilder

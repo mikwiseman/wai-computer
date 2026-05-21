@@ -1,6 +1,11 @@
 import SwiftUI
 import WaiComputerKit
 
+private enum SpeakerAssignmentPopoverLayout {
+    static let width: CGFloat = 500
+    static let listMaxHeight: CGFloat = 220
+}
+
 struct SpeakerChipView: View {
     let segment: Segment
     let recordingId: String
@@ -35,7 +40,7 @@ struct SpeakerChipView: View {
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             popoverContent
                 .padding(Spacing.md)
-                .frame(minWidth: 460, idealWidth: 500, maxWidth: 560)
+                .frame(width: SpeakerAssignmentPopoverLayout.width, alignment: .leading)
         }
         .task(id: isPopoverPresented) {
             if isPopoverPresented && people.isEmpty {
@@ -98,7 +103,7 @@ struct SpeakerChipView: View {
                     }
                 }
             }
-            .frame(maxHeight: 220)
+            .frame(maxHeight: SpeakerAssignmentPopoverLayout.listMaxHeight)
         }
     }
 

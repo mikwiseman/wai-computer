@@ -172,6 +172,7 @@ class TinkoffProvider(PaymentProvider):
             "TerminalKey": terminal_key,
             "Amount": amount_kopecks,
             "OrderId": order_id,
+            "PayType": "O",
             "Description": f"{plan_code.upper()} {period}"[:64],
             "CustomerKey": user_id,
             "Recurrent": "Y",
@@ -228,6 +229,7 @@ class TinkoffProvider(PaymentProvider):
             "TerminalKey": terminal_key,
             "Amount": amount_kopecks,
             "OrderId": order_id,
+            "PayType": "O",
             "Description": description[:64],
             "OperationInitiatorType": "R",
             "NotificationURL": _notification_url(),
@@ -264,9 +266,7 @@ class TinkoffProvider(PaymentProvider):
         """No-op for T-Bank: cancel happens by ceasing to schedule the next Charge."""
         return None
 
-    async def parse_webhook(
-        self, *, raw_body: bytes, headers: dict[str, str]
-    ) -> ProviderEvent:
+    async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]) -> ProviderEvent:
         _, password = self._require_creds()
         try:
             payload = json.loads(raw_body.decode("utf-8"))

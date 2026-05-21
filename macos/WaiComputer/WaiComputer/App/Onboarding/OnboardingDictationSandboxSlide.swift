@@ -79,7 +79,7 @@ struct OnboardingDictationSandboxSlide: View {
                 Text(t("You can dictate from any app the same way.", "Так же можно диктовать в любом приложении."))
             } else {
                 Text(t("Hold", "Зажми"))
-                keyChip(dictationManager.selectedHotkey.shortLabel)
+                keyChip(dictationManager.selectedHotkey.onboardingShortLabel(language: languageManager.current))
                 Text(t("and speak. Release to insert.", "и говори. Отпусти, чтобы вставить текст."))
             }
         }
