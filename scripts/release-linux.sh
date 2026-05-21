@@ -43,13 +43,6 @@ if ! vpk -H 2>/dev/null | grep -q "Velopack CLI 0.0.1298"; then
   exit 1
 fi
 
-for tool in pactl parec secret-tool busctl xdg-mime; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "ERROR: required runtime/package tool '$tool' is missing." >&2
-    exit 1
-  fi
-done
-
 VERSION=$(awk -F'[<>]' '/<Version>/{print $3; exit}' linux/Directory.Build.props)
 if [[ -z "$VERSION" ]]; then
   echo "ERROR: could not read <Version> from linux/Directory.Build.props" >&2
@@ -97,6 +90,15 @@ vpk pack \
   --outputDir "$PACKAGE_DIR"
 
 sha256sum "$PACKAGE_DIR"/*.AppImage > "$PACKAGE_DIR/SHA256SUMS"
+cat > "$PACKAGE_DIR/runtime-dependencies.txt" <<'EOF'
+WaiComputer Linux runtime dependencies:
+
+- FUSE/libfuse2 or distro-equivalent AppImage support
+- PipeWire or PulseAudio with PulseAudio protocol tools (`pactl`, `parec`)
+- xdg-desktop-portal backend with GNOME/KDE GlobalShortcuts, RemoteDesktop, and Clipboard portals on Wayland
+- Secret Service keyring with `secret-tool`
+- XDG desktop tools (`xdg-mime`)
+EOF
 
 cat > "$RELEASE_ROOT/latest-release-metadata.txt" <<EOF
 version=$VERSION
