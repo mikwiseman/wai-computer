@@ -8,6 +8,6 @@
     <PackageReference Include="BenchmarkDotNet" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\WaiComputer.Core\WaiComputer.Core.csproj" />
+    <ProjectReference Include="..\..\desktop\WaiComputer.Core\WaiComputer.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -40,7 +40,7 @@
     <PackageReference Include="Markdig" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\WaiComputer.Core\WaiComputer.Core.csproj" />
+    <ProjectReference Include="..\..\desktop\WaiComputer.Core\WaiComputer.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json">

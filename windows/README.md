@@ -23,9 +23,9 @@ Velopack.
 
 | Project | What |
 |---|---|
-| `WaiComputer.Core` | Portable `net9.0` business logic — API client, auth, audio writers, realtime sessions, recording VM, monitoring. Builds on Win / macOS / Linux. |
+| `../desktop/WaiComputer.Core` | Portable `net9.0` business logic — API client, auth, audio writers, realtime sessions, recording VM, monitoring. Builds on Win / macOS / Linux. |
 | `WaiComputer` | The actual WinUI 3 app — `net9.0-windows10.0.19041.0`. Win-only. |
-| `WaiComputer.Core.Tests` | Portable unit tests. Runs on any platform with the .NET 9 SDK. |
+| `../desktop/WaiComputer.Core.Tests` | Portable unit tests. Runs on any platform with the .NET 9 SDK. |
 | `WaiComputer.Native.Tests` | Tests for Windows-native impls (WASAPI / hotkey / DPAPI / Velopack). Win-only. |
 | `WaiComputer.UITests` | FlaUI end-to-end tests driving the built app. Win-only. |
 | `WaiComputer.Bench` | BenchmarkDotNet perf benchmarks. |
@@ -43,7 +43,7 @@ Either:
 cd windows
 dotnet restore
 dotnet build -c Debug
-dotnet test WaiComputer.Core.Tests   # portable tests (also runs on Mac)
+dotnet test ../desktop/WaiComputer.Core.Tests   # portable tests (also runs on Mac)
 dotnet test WaiComputer.Native.Tests # Win-only
 dotnet run --project WaiComputer
 ```

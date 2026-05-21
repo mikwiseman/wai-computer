@@ -22,6 +22,10 @@ backend/*.sqlite3
 # Temp files
 .tmp_*
 
+# .NET
+**/bin/
+**/obj/
+
 # macOS
 .DS_Store
 *.swp

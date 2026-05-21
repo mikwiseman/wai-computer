@@ -24,12 +24,7 @@ public sealed class FakeWebSocketTransport : IWebSocketTransport
     public Task ConnectAsync(Uri uri, Action<ClientWebSocketOptions>? configure, CancellationToken ct)
     {
         ConnectedTo = uri;
-        if (configure is not null)
-        {
-            var opts = new ClientWebSocketOptions();
-            try { configure(opts); } catch { /* ignore — options are private setters */ }
-            // Header capture trick: use Reflection? Simpler — provide a wrapper.
-        }
+        _ = configure;
         State = WebSocketState.Open;
         return Task.CompletedTask;
     }

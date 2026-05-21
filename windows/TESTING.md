@@ -23,7 +23,7 @@ installed the .NET 9 SDK on the Mac side):
 
 ```bash
 cd windows
-dotnet test WaiComputer.Core.Tests/WaiComputer.Core.Tests.csproj
+dotnet test ../desktop/WaiComputer.Core.Tests/WaiComputer.Core.Tests.csproj
 ```
 
 ## Manual QA checklist (must all pass before promotion to stable)

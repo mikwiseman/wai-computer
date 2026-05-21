@@ -90,7 +90,7 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 ## Windows
 
 - Tech: `.NET 9` + `WinUI 3` (Windows App SDK 1.6+); targets Win10 1809+ and Win11; x64-only in v1.0.
-- Layout: `windows/WaiComputer.Core/` (portable `net9.0` business logic — builds on any OS) and `windows/WaiComputer/` (the WinUI 3 app — Win-only). Tests under `windows/WaiComputer.{Core,Native,UI}.Tests/`.
+- Layout: `desktop/WaiComputer.Core/` (portable `net9.0` business logic — builds on any OS), `desktop/WaiComputer.Core.Tests/` (portable tests), and `windows/WaiComputer/` (the WinUI 3 app — Win-only). Native/UI tests remain under `windows/WaiComputer.{Native,UI}.Tests/`.
 - Local dev: macOS users run a Parallels Win 11 VM with VS 2022 + Windows App SDK workload; mount `windows/` via Parallels Shared Folders. See `windows/PARALLELS.md`.
 - Audio: `NAudio.Wasapi` for mic + `WasapiLoopbackCapture` for system audio; 16 kHz mono int16, frame size 1600 samples.
 - Hotkey: `SetWindowsHookEx WH_KEYBOARD_LL` for global push-to-talk (default RightAlt). No Accessibility-equivalent privacy permission required on Windows.
@@ -105,10 +105,32 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 
 Native builds:
 ```powershell
-cd windows && dotnet restore && dotnet build -c Release
-cd windows && dotnet test WaiComputer.Core.Tests
-cd windows && dotnet test WaiComputer.Native.Tests
-cd windows && dotnet test WaiComputer.UITests
+dotnet test desktop/WaiComputer.Core.Tests
+cd windows
+dotnet restore
+dotnet build -c Release
+dotnet test WaiComputer.Native.Tests
+dotnet test WaiComputer.UITests
+```
+
+## Linux
+
+- Tech: `.NET 9` + Avalonia; x64-only in v1.
+- Layout: `linux/WaiComputer.Linux/` (Avalonia app), `linux/WaiComputer.Linux.Tests/` (Linux platform tests), shared portable code in `desktop/WaiComputer.Core/`.
+- Audio: user-space PulseAudio protocol on PipeWire/PulseAudio via `pactl` and `parec`; system audio requires an exposed monitor source for the active sink.
+- Hotkey: Wayland requires `org.freedesktop.portal.GlobalShortcuts`; X11 uses the XGrabKey path. Unsupported sessions must show an explicit disabled state.
+- Text insertion: Wayland requires RemoteDesktop + Clipboard portals; X11 requires clipboard + XTest-compatible tools. Recovery copy message: "Text is on your clipboard - press Ctrl+V to paste manually."
+- Session storage: freedesktop Secret Service via `secret-tool`; never store Linux auth tokens in plaintext files.
+- Magic link: `waicomputer://auth/verify?token=...` through `x-scheme-handler/waicomputer` in the `.desktop` file.
+- Auto-update: Velopack AppImage, channels `linux` (stable) and `linux-beta` (beta), feed root `https://wai.computer/releases/linux/`.
+- Release: `scripts/release-linux.sh stable|beta` on a Linux x64 host with .NET 9 SDK and Velopack CLI `0.0.1298`; set `LINUX_RELEASE_PUBLISH=1 VPS_USER=<release-user>` to upload to the VPS.
+
+Native builds:
+```bash
+cd linux
+dotnet restore WaiComputer.Linux.sln
+dotnet test WaiComputer.Linux.Tests
+dotnet publish WaiComputer.Linux/WaiComputer.Linux.csproj -c Release -r linux-x64 --self-contained true
 ```
 
 ## Debugging Production

@@ -3,6 +3,7 @@ using FluentAssertions;
 using WaiComputer.Core.Api;
 using WaiComputer.Core.Api.Models;
 using Xunit;
+using RecordingModel = WaiComputer.Core.Api.Models.Recording;
 
 namespace WaiComputer.Core.Tests.Api;
 
@@ -50,7 +51,7 @@ public class ModelSerializationTests
           "failure_message": null
         }
         """;
-        var rec = JsonSerializer.Deserialize<Recording>(body, WaiJson.Options)!;
+        var rec = JsonSerializer.Deserialize<RecordingModel>(body, WaiJson.Options)!;
         rec.Id.Should().Be("rec-1");
         rec.Type.Should().Be(RecordingType.Meeting);
         rec.Status.Should().Be(RecordingStatus.Ready);
