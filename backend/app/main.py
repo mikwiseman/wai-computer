@@ -12,6 +12,7 @@ from starlette.routing import Route
 
 from app.api.routes import (
     action_items,
+    admin,
     api_keys,
     auth,
     benchmarks,
@@ -145,7 +146,12 @@ app.add_middleware(
     allow_origins=app_settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Mcp-Protocol-Version"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Mcp-Protocol-Version",
+        "X-Wai-Admin-Password",
+    ],
 )
 
 # Include routers
@@ -157,6 +163,7 @@ app.include_router(search.router, prefix="/api")
 app.include_router(telegram.router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(people.router, prefix="/api")

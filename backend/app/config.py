@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     billing_trial_days: int = 0
     billing_refund_window_days: int = 7
     billing_default_region: str = "global"
+    admin_password: str = ""
     # Master switch. When false (the default) the backend ignores word caps
     # entirely and /api/billing/subscription advertises enforcement_enabled
     # so clients can hide every billing UI surface. Flip to true at the
