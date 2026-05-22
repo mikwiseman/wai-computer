@@ -2,6 +2,11 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest.mark.asyncio
@@ -9,7 +14,13 @@ async def test_register(client: AsyncClient):
     """Test user registration."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "test@example.com", "password": "password123"},
+        json={
+            "email": "test@example.com",
+            "password": "password123",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2026-05-22",
+            "legal_privacy_version": "2026-05-22",
+        },
     )
     assert response.status_code == 200
     data = response.json()
@@ -26,6 +37,9 @@ async def test_register_accepts_region_and_me_returns_region(client: AsyncClient
             "email": "region@example.com",
             "password": "password123",
             "region": "ru",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2026-05-22",
+            "legal_privacy_version": "2026-05-22",
         },
     )
     assert response.status_code == 200
@@ -47,9 +61,51 @@ async def test_register_rejects_unknown_region(client: AsyncClient):
             "email": "bad-region@example.com",
             "password": "password123",
             "region": "mars",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2026-05-22",
+            "legal_privacy_version": "2026-05-22",
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_requires_current_legal_acceptance(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": "terms-required@example.com", "password": "password123"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Legal acceptance required"
+
+
+@pytest.mark.asyncio
+async def test_register_persists_legal_acceptance(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "terms-persisted@example.com",
+            "password": "password123",
+            "locale": "ru",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2026-05-22",
+            "legal_privacy_version": "2026-05-22",
+        },
+    )
+
+    assert response.status_code == 200
+    user = (
+        await db_session.execute(select(User).where(User.email == "terms-persisted@example.com"))
+    ).scalar_one()
+    assert user.legal_terms_accepted_at is not None
+    assert user.legal_terms_version == "2026-05-22"
+    assert user.legal_privacy_version == "2026-05-22"
+    assert user.legal_acceptance_locale == "ru"
+    assert user.legal_acceptance_source == "password"
 
 
 @pytest.mark.asyncio
@@ -58,7 +114,7 @@ async def test_register_duplicate_email(client: AsyncClient):
     # First registration
     await client.post(
         "/api/auth/register",
-        json={"email": "duplicate@example.com", "password": "password123"},
+        json={"email": "duplicate@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     # Second registration with same email
@@ -77,7 +133,7 @@ async def test_register_duplicate_email_localizes_generic_error(client: AsyncCli
     """Duplicate registration keeps the same 2xx status and returns localized copy."""
     await client.post(
         "/api/auth/register",
-        json={"email": "duplicate.ru@example.com", "password": "password123"},
+        json={"email": "duplicate.ru@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     response = await client.post(
@@ -100,7 +156,7 @@ async def test_login(client: AsyncClient):
     # Register first
     await client.post(
         "/api/auth/register",
-        json={"email": "login@example.com", "password": "password123"},
+        json={"email": "login@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     # Login
@@ -119,7 +175,7 @@ async def test_login_invalid_password(client: AsyncClient):
     # Register first
     await client.post(
         "/api/auth/register",
-        json={"email": "invalid@example.com", "password": "password123"},
+        json={"email": "invalid@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     # Login with wrong password
@@ -170,7 +226,7 @@ async def test_me_endpoint_returns_user(client: AsyncClient):
     """Test GET /api/auth/me returns full user data with valid token."""
     reg_response = await client.post(
         "/api/auth/register",
-        json={"email": "medata@example.com", "password": "password123"},
+        json={"email": "medata@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     token = reg_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -199,7 +255,7 @@ async def test_delete_me_removes_account(client: AsyncClient):
     """DELETE /api/auth/me permanently removes the user and blocks future access."""
     reg = await client.post(
         "/api/auth/register",
-        json={"email": "delete-me@example.com", "password": "password123"},
+        json={"email": "delete-me@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert reg.status_code == 200
     token = reg.json()["access_token"]
@@ -216,7 +272,7 @@ async def test_delete_me_removes_account(client: AsyncClient):
     # The email is free again — we can re-register with it
     re_reg = await client.post(
         "/api/auth/register",
-        json={"email": "delete-me@example.com", "password": "password123"},
+        json={"email": "delete-me@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert re_reg.status_code == 200
 

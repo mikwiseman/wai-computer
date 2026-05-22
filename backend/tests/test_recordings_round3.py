@@ -23,6 +23,7 @@ from app.core.summarizer import SummaryResult
 from app.core.transcript_utils import TranscriptResult
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Recording, Segment, Summary
+from tests.conftest import LEGAL_ACCEPTANCE
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,7 +57,7 @@ async def _register_user(client: AsyncClient, email: str) -> dict:
     """Register a new user and return auth headers."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}

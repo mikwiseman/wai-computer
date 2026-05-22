@@ -366,12 +366,16 @@ class AppState: ObservableObject {
         isLoading = false
     }
 
-    func register(email: String, password: String) async {
+    func register(email: String, password: String, acceptedLegalTerms: Bool) async {
         isLoading = true
         error = nil
 
         do {
-            let response = try await apiClient.register(email: email, password: password)
+            let response = try await apiClient.register(
+                email: email,
+                password: password,
+                acceptedLegalTerms: acceptedLegalTerms
+            )
             await apiClient.setAccessToken(response.accessToken)
             KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
             if let rt = response.refreshToken {

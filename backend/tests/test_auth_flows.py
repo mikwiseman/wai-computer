@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 settings = get_settings()
 
@@ -56,7 +57,8 @@ async def test_refresh_with_valid_token_returns_tokens(client: AsyncClient):
     # Register to get a refresh token
     email = f"refresh-test-{uuid4().hex}@example.com"
     reg_resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     reg_data = reg_resp.json()
     refresh_token = reg_data["refresh_token"]
@@ -79,7 +81,8 @@ async def test_refresh_accepts_refresh_cookie_when_body_missing(client: AsyncCli
     """Browser refresh should work from the refresh cookie without a JSON body."""
     email = f"refresh-cookie-{uuid4().hex}@example.com"
     reg_resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     assert reg_resp.status_code == 200
 
@@ -99,7 +102,11 @@ async def test_register_sets_auth_cookie(client: AsyncClient):
     """Register should also set the HTTP-only auth cookie for browser clients."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "cookie.register@example.com", "password": "password123"},
+        json={
+            "email": "cookie.register@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
@@ -116,7 +123,7 @@ async def test_me_accepts_cookie_auth(client: AsyncClient):
     """Current-user endpoint should authenticate from auth cookie when bearer is absent."""
     register_response = await client.post(
         "/api/auth/register",
-        json={"email": "cookie.me@example.com", "password": "password123"},
+        json={"email": "cookie.me@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert register_response.status_code == 200
     cookie = register_response.cookies.get(settings.auth_cookie_name)
@@ -144,7 +151,8 @@ async def test_logout_revokes_refresh_cookie_without_request_body(client: AsyncC
     """Browser logout should revoke the cookie-backed refresh token."""
     email = f"logout-cookie-{uuid4().hex}@example.com"
     reg_resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     refresh_token = reg_resp.cookies.get(settings.auth_refresh_cookie_name)
     assert refresh_token
@@ -177,7 +185,7 @@ async def test_magic_link_creates_user_and_stores_token(
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
 
     email = "magic.new@example.com"
-    response = await client.post("/api/auth/magic-link", json={"email": email})
+    response = await client.post("/api/auth/magic-link", json={"email": email, **LEGAL_ACCEPTANCE})
     assert response.status_code == 200
     assert response.json()["message"] == "Magic link sent to your email"
     assert captured["to_email"] == email
@@ -205,7 +213,7 @@ async def test_magic_link_creates_user_with_region(
     email = "magic.region@example.com"
     response = await client.post(
         "/api/auth/magic-link",
-        json={"email": email, "region": "ru"},
+        json={"email": email, "region": "ru", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 200
 
@@ -241,6 +249,7 @@ async def test_magic_link_passes_client_and_locale_to_email(
             "client": "macos",
             "locale": "ru-RU",
             "region": "global",
+            **LEGAL_ACCEPTANCE,
         },
     )
 
@@ -268,13 +277,18 @@ async def test_register_sets_password_for_existing_magic_link_user(
     email = "magic.then.password@example.com"
     magic_response = await client.post(
         "/api/auth/magic-link",
-        json={"email": email, "region": "ru"},
+        json={"email": email, "region": "ru", **LEGAL_ACCEPTANCE},
     )
     assert magic_response.status_code == 200
 
     register_response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "new-password-123", "region": "global"},
+        json={
+            "email": email,
+            "password": "new-password-123",
+            "region": "global",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert register_response.status_code == 200
     token = register_response.json()["access_token"]
@@ -309,7 +323,10 @@ async def test_verify_magic_link_success_clears_token(
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
 
     email = "magic.verify@example.com"
-    request_response = await client.post("/api/auth/magic-link", json={"email": email})
+    request_response = await client.post(
+        "/api/auth/magic-link",
+        json={"email": email, **LEGAL_ACCEPTANCE},
+    )
     assert request_response.status_code == 200
 
     verify_response = await client.post(
@@ -359,7 +376,7 @@ async def test_forgot_password_sends_reset_link_without_creating_unknown_user(
 
     await client.post(
         "/api/auth/register",
-        json={"email": "reset.existing@example.com", "password": "password123"},
+        json={"email": "reset.existing@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     existing_response = await client.post(
@@ -405,7 +422,7 @@ async def test_forgot_password_email_failure_keeps_non_enumerating_response(
 
     await client.post(
         "/api/auth/register",
-        json={"email": "reset.fail@example.com", "password": "password123"},
+        json={"email": "reset.fail.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     existing_response = await client.post(

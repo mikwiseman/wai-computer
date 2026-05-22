@@ -806,7 +806,7 @@ class MacAppState: ObservableObject {
         isLoading = false
     }
 
-    func register(email: String, password: String) async {
+    func register(email: String, password: String, acceptedLegalTerms: Bool) async {
         isLoading = true
         error = nil
 
@@ -814,7 +814,8 @@ class MacAppState: ObservableObject {
             let response = try await apiClient.register(
                 email: email,
                 password: password,
-                region: installedBillingRegion()?.rawValue
+                region: installedBillingRegion()?.rawValue,
+                acceptedLegalTerms: acceptedLegalTerms
             )
             await apiClient.setAccessToken(response.accessToken)
             if let rt = response.refreshToken {

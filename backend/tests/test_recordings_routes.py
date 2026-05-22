@@ -14,6 +14,7 @@ from app.core.summarizer import SummaryResult
 from app.core.transcript_utils import TranscriptResult
 from app.models.recording import ActionItem, Recording, RecordingShare, Segment, Summary
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _create_recording(
@@ -35,7 +36,7 @@ async def _create_recording(
 async def _register_headers(client: AsyncClient, email: str) -> dict:
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 200
     data = response.json()

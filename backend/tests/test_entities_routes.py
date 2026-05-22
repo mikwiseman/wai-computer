@@ -7,12 +7,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entity import EntityRelation
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _register(client: AsyncClient, email: str) -> dict:
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

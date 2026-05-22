@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 # --- helpers ---
 
@@ -30,7 +31,7 @@ async def _register(
         email = _unique_email()
     resp = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert resp.status_code == 200
     token = resp.json()["access_token"]
@@ -58,4 +59,3 @@ async def _create_recording(
     )
     assert resp.status_code == 201
     return resp.json()
-

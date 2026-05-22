@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import Person, User, Voiceprint
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 def _wav_bytes(duration_s: float, freq_hz: float = 220.0, sr: int = 16_000) -> bytes:
@@ -30,7 +31,8 @@ def _wav_bytes(duration_s: float, freq_hz: float = 220.0, sr: int = 16_000) -> b
 async def _register(client) -> dict[str, str]:
     email = f"voice-{uuid4().hex}@example.com"
     resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 

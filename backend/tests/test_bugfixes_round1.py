@@ -12,6 +12,7 @@ from httpx import AsyncClient
 
 from app.core.embeddings import format_embedding
 from app.core.summarizer import resolve_highlight_timestamps
+from tests.conftest import LEGAL_ACCEPTANCE
 
 # ---------------------------------------------------------------------------
 # 1. format_embedding — consistent vector string formatting
@@ -71,7 +72,11 @@ async def test_change_password_rejects_whitespace_only_new_password(client: Asyn
     """New password that is only whitespace should be rejected."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "bugfix.whitespace@example.com", "password": "valid-password-123"},
+        json={
+            "email": "bugfix.whitespace@example.com",
+            "password": "valid-password-123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 200
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -89,7 +94,11 @@ async def test_change_password_rejects_padded_short_password(client: AsyncClient
     """Password that is 8+ chars but only 3 non-space chars should be rejected."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "bugfix.padded@example.com", "password": "valid-password-123"},
+        json={
+            "email": "bugfix.padded@example.com",
+            "password": "valid-password-123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 200
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -107,7 +116,11 @@ async def test_change_password_accepts_valid_long_password(client: AsyncClient):
     """A valid 8+ char non-whitespace password should be accepted."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "bugfix.validpw@example.com", "password": "valid-password-123"},
+        json={
+            "email": "bugfix.validpw@example.com",
+            "password": "valid-password-123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 200
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}

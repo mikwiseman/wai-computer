@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from httpx import AsyncClient
 
 from app.core.rate_limit import RateLimiter, get_rate_limiter
+from tests.conftest import LEGAL_ACCEPTANCE
 
 # --- Unit tests for RateLimiter class ---
 
@@ -288,7 +289,7 @@ async def test_login_rate_limit_allows_normal_usage(client: AsyncClient):
     email = f"ratelimit-login-{uuid4().hex[:8]}@example.com"
     await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     # 5 login attempts should all be allowed (even if credentials are wrong)
@@ -306,7 +307,7 @@ async def test_login_rate_limit_blocks_after_exceeded(client: AsyncClient):
     email = f"ratelimit-block-{uuid4().hex[:8]}@example.com"
     await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     # Use up the 5 allowed attempts
@@ -332,7 +333,7 @@ async def test_register_rate_limit_allows_normal_usage(client: AsyncClient):
         email = f"ratelimit-reg-{uuid4().hex[:8]}@example.com"
         response = await client.post(
             "/api/auth/register",
-            json={"email": email, "password": "password123"},
+            json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
         )
         assert response.status_code == 200, f"Request {i+1} was blocked unexpectedly"
 
@@ -345,14 +346,14 @@ async def test_register_rate_limit_blocks_after_exceeded(client: AsyncClient):
         email = f"ratelimit-regblock-{uuid4().hex[:8]}@example.com"
         await client.post(
             "/api/auth/register",
-            json={"email": email, "password": "password123"},
+            json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
         )
 
     # 4th attempt should be blocked
     email = f"ratelimit-regblock-extra-{uuid4().hex[:8]}@example.com"
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 429
     assert "Too many requests" in response.json()["detail"]
@@ -366,13 +367,16 @@ async def test_magic_link_rate_limit_blocks_after_exceeded(client: AsyncClient):
         email = f"ratelimit-magic-{uuid4().hex[:8]}@example.com"
         await client.post(
             "/api/auth/magic-link",
-            json={"email": email},
+            json={"email": email, **LEGAL_ACCEPTANCE},
         )
 
     # 4th attempt should be blocked before even reaching the handler
     response = await client.post(
         "/api/auth/magic-link",
-        json={"email": f"ratelimit-magic-extra-{uuid4().hex[:8]}@example.com"},
+        json={
+            "email": f"ratelimit-magic-extra-{uuid4().hex[:8]}@example.com",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 429
     assert "Too many requests" in response.json()["detail"]
@@ -386,7 +390,7 @@ async def test_rate_limits_are_per_endpoint(client: AsyncClient):
         email = f"ratelimit-cross-reg-{uuid4().hex[:8]}@example.com"
         await client.post(
             "/api/auth/register",
-            json={"email": email, "password": "password123"},
+            json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
         )
 
     # Login should still work (different rate limit key)
@@ -406,12 +410,16 @@ async def test_rate_limit_response_format(client: AsyncClient):
         email = f"ratelimit-format-{uuid4().hex[:8]}@example.com"
         await client.post(
             "/api/auth/register",
-            json={"email": email, "password": "password123"},
+            json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
         )
 
     response = await client.post(
         "/api/auth/register",
-        json={"email": f"extra-{uuid4().hex[:8]}@example.com", "password": "password123"},
+        json={
+            "email": f"extra-{uuid4().hex[:8]}@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert response.status_code == 429
     body = response.json()

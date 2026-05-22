@@ -1543,7 +1543,11 @@ struct MacAuthView: View {
             case .login:
                 await appState.login(email: email, password: password)
             case .register:
-                await appState.register(email: email, password: password)
+                await appState.register(
+                    email: email,
+                    password: password,
+                    acceptedLegalTerms: acceptedLegalTerms
+                )
             case .magicLink:
                 await appState.requestMagicLink(email: email)
             }

@@ -57,6 +57,9 @@ struct BillingSection: View {
     @State private var checkoutInFlight = false
     @State private var cancelInFlight = false
     @State private var regionUpdateInFlight = false
+    @State private var promoCode = ""
+    @State private var promoInFlight = false
+    @State private var promoMessage: String?
     @State private var checkoutRefreshTask: Task<Void, Never>?
     @State private var period: BillingDisplayPeriod = .month
     @AppStorage("billingRegionUserSelectedRussian") private var billingRegionUserSelectedRussian = false
@@ -223,7 +226,7 @@ struct BillingSection: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .disabled(checkoutInFlight || regionUpdateInFlight)
+        .disabled(checkoutInFlight || regionUpdateInFlight || promoInFlight)
 
         if let pro = currentProPlan() {
             let label = priceLabel(for: pro, region: region)
@@ -248,13 +251,55 @@ struct BillingSection: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(checkoutInFlight || regionUpdateInFlight || label == nil)
+                .disabled(checkoutInFlight || regionUpdateInFlight || promoInFlight || label == nil)
                 .accessibilityIdentifier("settings-billing-upgrade")
             }
         } else {
             Text(BillingSectionError.missingProPlan.localizedDescription)
                 .font(Typography.caption)
                 .foregroundStyle(.red)
+        }
+
+        promoControls
+    }
+
+    private var promoControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            LabeledContent {
+                HStack(spacing: 8) {
+                    TextField("", text: $promoCode)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                        .help(String(localized: "billing.promo.placeholder", bundle: .main))
+                        .accessibilityIdentifier("settings-billing-promo-code")
+                    Button {
+                        Task { await claimPromoCode() }
+                    } label: {
+                        if promoInFlight {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("billing.promo.apply", bundle: .main)
+                        }
+                    }
+                    .disabled(
+                        promoInFlight
+                        || checkoutInFlight
+                        || regionUpdateInFlight
+                        || promoCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                    .accessibilityIdentifier("settings-billing-promo-apply")
+                }
+            } label: {
+                Text("billing.promo.title", bundle: .main)
+            }
+            if let promoMessage {
+                Text(promoMessage)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings-billing-promo-message")
+            }
         }
     }
 
@@ -469,6 +514,35 @@ struct BillingSection: View {
         }
         await MainActor.run {
             checkoutInFlight = false
+        }
+    }
+
+    private func claimPromoCode() async {
+        let code = promoCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return }
+        await MainActor.run {
+            promoInFlight = true
+            actionError = nil
+            promoMessage = nil
+        }
+        do {
+            let fresh = try await appState.getAPIClient().claimBillingPromoCode(code)
+            await MainActor.run {
+                subscription = fresh
+                promoCode = ""
+                promoMessage = String(localized: "billing.promo.applied", bundle: .main)
+                if fresh.isPro {
+                    checkoutRefreshPending = false
+                }
+            }
+            await loadAll()
+        } catch {
+            await MainActor.run {
+                actionError = error.localizedDescription
+            }
+        }
+        await MainActor.run {
+            promoInFlight = false
         }
     }
 

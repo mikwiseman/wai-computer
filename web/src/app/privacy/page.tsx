@@ -16,52 +16,67 @@ export default function PrivacyPage() {
 
         <header className={styles.legalHeader}>
           <h1>Privacy Policy</h1>
-          <p className={styles.updated}>Last updated: May 17, 2026</p>
+          <p className={styles.updated}>Last updated: May 22, 2026</p>
         </header>
 
         <div className={styles.legalContent}>
           <section>
             <h2>Who we are</h2>
             <p>
-              WaiComputer is operated by WaiWai. This policy explains what data
-              we process when you use the WaiComputer apps, website, API, and
-              connected services.
+              WaiComputer is operated by WaiWai. This Policy explains how we
+              process data when you use the WaiComputer apps, website, API,
+              Telegram bot, MCP server, and connected services.
             </p>
           </section>
 
           <section>
             <h2>Data we process</h2>
             <ul>
-              <li>Account details such as your email address and authentication state.</li>
-              <li>Recordings, transcripts, summaries, search indexes, and related metadata you create.</li>
-              <li>Device, app, and diagnostic events needed to keep the service reliable and secure.</li>
+              <li>Account details such as email address, authentication state, billing region, and legal acceptance records.</li>
+              <li>Recordings, audio, video, transcripts, summaries, search indexes, action items, and related metadata you create or upload.</li>
+              <li>Telegram account identifiers and messages sent to the WaiComputer bot when you connect Telegram.</li>
+              <li>Billing events, plan status, promo code redemptions, and payment provider references.</li>
+              <li>Device, app, server, and diagnostic events needed for reliability, security, and abuse prevention.</li>
             </ul>
           </section>
 
           <section>
             <h2>How data is used</h2>
             <p>
-              We use your data to provide transcription, search, summaries,
-              synchronization, account access, support, abuse prevention, and
-              service diagnostics. We do not sell your recordings or transcripts.
+              We use data to provide transcription, summaries, search, Wai
+              answers, synchronization, Telegram processing, billing, account
+              access, support, security, diagnostics, and service improvement.
+              We do not sell your recordings or transcripts.
             </p>
           </section>
 
           <section>
             <h2>Service providers</h2>
             <p>
-              WaiComputer may use infrastructure, transcription, AI, email,
-              analytics, and crash-reporting providers to operate the product.
-              Providers are used only for service delivery, security, support,
-              and reliability.
+              WaiComputer may use infrastructure, transcription, AI, payment,
+              email, analytics, and crash-reporting providers. Providers are
+              used only to operate, secure, support, and improve the service.
+            </p>
+          </section>
+
+          <section>
+            <h2>Retention and deletion</h2>
+            <p>
+              Account and service records are kept while needed to provide the
+              product, meet legal obligations, resolve disputes, prevent abuse,
+              and maintain security. You can delete local app data from your
+              device and request account or server-side data deletion by
+              contacting support.
             </p>
           </section>
 
           <section>
             <h2>Your choices</h2>
             <p>
-              You can delete local app data from your device and request account
-              or server-side data deletion by contacting{" "}
+              You can choose what to record or upload, disconnect Telegram,
+              delete recordings where supported, cancel subscriptions, and
+              request access, correction, export, or deletion of your data by
+              contacting{" "}
               <a href="mailto:support@waiwai.is">support@waiwai.is</a>.
             </p>
           </section>

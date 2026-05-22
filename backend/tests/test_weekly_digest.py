@@ -9,13 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Recording, Segment, Summary
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _create_user(client: AsyncClient) -> tuple[dict, str]:
     """Create a user and return (auth_headers, user_email)."""
     email = f"digest-{uuid4().hex}@example.com"
     resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpass123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpass123", **LEGAL_ACCEPTANCE},
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}, email

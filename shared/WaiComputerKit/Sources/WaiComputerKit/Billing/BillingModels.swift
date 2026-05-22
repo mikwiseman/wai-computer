@@ -211,6 +211,14 @@ public struct BillingCheckoutRequest: Encodable, Sendable {
     }
 }
 
+public struct BillingPromoClaimRequest: Encodable, Sendable {
+    public let code: String
+
+    public init(code: String) {
+        self.code = code
+    }
+}
+
 public struct BillingCheckoutResponse: Codable, Sendable {
     public let provider: String
     public let checkoutUrl: String

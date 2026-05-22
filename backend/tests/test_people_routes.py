@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 
 async def _register(client) -> dict:
     email = f"people-{uuid4().hex}@example.com"
     resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 

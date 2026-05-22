@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -34,6 +35,7 @@ class BillingProvider(str, enum.Enum):
 
     STRIPE = "stripe"
     TINKOFF = "tinkoff"
+    PROMO = "promo"
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -88,6 +90,9 @@ class Plan(Base, UUIDMixin, TimestampMixin):
 
     subscriptions: Mapped[list["Subscription"]] = relationship(
         "Subscription", back_populates="plan"
+    )
+    promo_codes: Mapped[list["BillingPromoCode"]] = relationship(
+        "BillingPromoCode", back_populates="plan"
     )
 
 
@@ -205,4 +210,79 @@ class UsageWeek(Base, UUIDMixin):
         nullable=False,
         server_default="now()",
         onupdate=datetime.utcnow,
+    )
+
+
+class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
+    """Hash-only promo code grant for non-renewing Pro access."""
+
+    __tablename__ = "billing_promo_codes"
+    __table_args__ = (
+        CheckConstraint("duration_days > 0", name="ck_billing_promo_codes_duration_positive"),
+        CheckConstraint(
+            "max_redemptions > 0",
+            name="ck_billing_promo_codes_max_redemptions_positive",
+        ),
+        CheckConstraint(
+            "redeemed_count >= 0",
+            name="ck_billing_promo_codes_redeemed_non_negative",
+        ),
+        CheckConstraint(
+            "redeemed_count <= max_redemptions",
+            name="ck_billing_promo_codes_redeemed_within_max",
+        ),
+    )
+
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("billing_plans.id", ondelete="RESTRICT"), nullable=False
+    )
+    billing_period: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=BillingPeriod.MONTH.value, server_default="month"
+    )
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_redemptions: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    redeemed_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    note: Mapped[str | None] = mapped_column(Text)
+
+    plan: Mapped["Plan"] = relationship("Plan", back_populates="promo_codes")
+    redemptions: Mapped[list["BillingPromoRedemption"]] = relationship(
+        "BillingPromoRedemption", back_populates="promo_code", cascade="all, delete-orphan"
+    )
+
+
+class BillingPromoRedemption(Base, UUIDMixin, TimestampMixin):
+    """One user redemption of one promo code."""
+
+    __tablename__ = "billing_promo_redemptions"
+    __table_args__ = (
+        UniqueConstraint("promo_code_id", "user_id", name="uq_billing_promo_redemptions_code_user"),
+    )
+
+    promo_code_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("billing_promo_codes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subscription_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("billing_subscriptions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    promo_code: Mapped["BillingPromoCode"] = relationship(
+        "BillingPromoCode", back_populates="redemptions"
     )

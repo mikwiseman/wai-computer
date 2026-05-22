@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   cancelBillingSubscription,
+  claimBillingPromoCode,
   createBillingCheckout,
   getBillingSubscription,
   getBillingUsage,
@@ -34,6 +35,11 @@ const COPY: Record<
     payWith: string;
     providerTinkoff: string;
     providerStripe: string;
+    promoLabel: string;
+    promoPlaceholder: string;
+    promoApply: string;
+    promoApplying: string;
+    promoApplied: string;
   }
 > = {
   en: {
@@ -54,6 +60,11 @@ const COPY: Record<
     payWith: "Pay with",
     providerTinkoff: "RUB via T-Bank",
     providerStripe: "USD via Stripe",
+    promoLabel: "Promo code",
+    promoPlaceholder: "Enter promo code",
+    promoApply: "Apply",
+    promoApplying: "Applying...",
+    promoApplied: "Promo code applied.",
   },
   ru: {
     heading: "Подписка",
@@ -73,6 +84,11 @@ const COPY: Record<
     payWith: "Оплата через",
     providerTinkoff: "RUB через Т-Банк",
     providerStripe: "USD через Stripe",
+    promoLabel: "Промокод",
+    promoPlaceholder: "Введи промокод",
+    promoApply: "Применить",
+    promoApplying: "Применяем...",
+    promoApplied: "Промокод применён.",
   },
 };
 
@@ -87,6 +103,10 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [usage, setUsage] = useState<BillingUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoInFlight, setPromoInFlight] = useState(false);
+  const [promoMessage, setPromoMessage] = useState<string | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
   // RU UI users choose T-Bank or Stripe; other locales lock to Stripe.
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
@@ -141,6 +161,27 @@ export function BillingDashboard({ locale, currency }: Props) {
       setError(copy.loadError);
     } finally {
       setInFlight(false);
+    }
+  }
+
+  async function handlePromoApply() {
+    const code = promoCode.trim();
+    if (!code) return;
+    setPromoInFlight(true);
+    setError(null);
+    setPromoMessage(null);
+    setPromoError(null);
+    try {
+      const fresh = await claimBillingPromoCode(code);
+      setSub(fresh);
+      const freshUsage = await getBillingUsage();
+      setUsage(freshUsage);
+      setPromoCode("");
+      setPromoMessage(copy.promoApplied);
+    } catch (error: unknown) {
+      setPromoError(error instanceof Error ? error.message : copy.loadError);
+    } finally {
+      setPromoInFlight(false);
     }
   }
 
@@ -221,10 +262,35 @@ export function BillingDashboard({ locale, currency }: Props) {
           <button
             className="billing-upgrade"
             onClick={handleUpgrade}
-            disabled={inFlight}
+            disabled={inFlight || promoInFlight}
           >
             {copy.upgrade}
           </button>
+          <form
+            className="billing-promo"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handlePromoApply();
+            }}
+          >
+            <label>
+              <span>{copy.promoLabel}</span>
+              <input
+                value={promoCode}
+                onChange={(event) => setPromoCode(event.target.value)}
+                placeholder={copy.promoPlaceholder}
+                disabled={inFlight || promoInFlight}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={inFlight || promoInFlight || promoCode.trim().length === 0}
+            >
+              {promoInFlight ? copy.promoApplying : copy.promoApply}
+            </button>
+            {promoMessage ? <p className="billing-notice">{promoMessage}</p> : null}
+            {promoError ? <p className="billing-error">{promoError}</p> : null}
+          </form>
         </>
       )}
     </section>

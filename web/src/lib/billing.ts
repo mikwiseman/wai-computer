@@ -59,6 +59,13 @@ export async function createBillingCheckout(input: {
   });
 }
 
+export async function claimBillingPromoCode(code: string): Promise<BillingSubscription> {
+  return apiFetch<BillingSubscription>("/api/billing/promo/claim", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
 export async function cancelBillingSubscription(): Promise<void> {
   await apiFetch<unknown>("/api/billing/cancel", { method: "POST" });
 }

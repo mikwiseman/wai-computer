@@ -22,6 +22,7 @@ from app.billing.providers.tinkoff_provider import (
 )
 from app.models.billing import Plan, Subscription
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 class BillingTestSettings:
@@ -38,7 +39,7 @@ class BillingTestSettings:
 async def _register(client: AsyncClient, email: str) -> tuple[str, str]:
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 200
     payload = response.json()

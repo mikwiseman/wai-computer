@@ -89,6 +89,11 @@ public struct LogoutRequest: Codable, Sendable {
 }
 
 /// Auth request payloads
+public enum LegalDocumentVersions {
+    public static let terms = "2026-05-22"
+    public static let privacy = "2026-05-22"
+}
+
 public struct LoginRequest: Codable, Sendable {
     public let email: String
     public let password: String
@@ -103,11 +108,33 @@ public struct RegisterRequest: Codable, Sendable {
     public let email: String
     public let password: String
     public let region: String?
+    public let acceptedLegalTerms: Bool
+    public let legalTermsVersion: String
+    public let legalPrivacyVersion: String
 
-    public init(email: String, password: String, region: String? = nil) {
+    public init(
+        email: String,
+        password: String,
+        region: String? = nil,
+        acceptedLegalTerms: Bool,
+        legalTermsVersion: String = LegalDocumentVersions.terms,
+        legalPrivacyVersion: String = LegalDocumentVersions.privacy
+    ) {
         self.email = email
         self.password = password
         self.region = region
+        self.acceptedLegalTerms = acceptedLegalTerms
+        self.legalTermsVersion = legalTermsVersion
+        self.legalPrivacyVersion = legalPrivacyVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+        case password
+        case region
+        case acceptedLegalTerms = "accepted_legal_terms"
+        case legalTermsVersion = "legal_terms_version"
+        case legalPrivacyVersion = "legal_privacy_version"
     }
 }
 
@@ -115,11 +142,33 @@ public struct MagicLinkRequest: Codable, Sendable {
     public let email: String
     public let client: String?
     public let region: String?
+    public let acceptedLegalTerms: Bool?
+    public let legalTermsVersion: String?
+    public let legalPrivacyVersion: String?
 
-    public init(email: String, client: String? = nil, region: String? = nil) {
+    public init(
+        email: String,
+        client: String? = nil,
+        region: String? = nil,
+        acceptedLegalTerms: Bool? = nil,
+        legalTermsVersion: String? = nil,
+        legalPrivacyVersion: String? = nil
+    ) {
         self.email = email
         self.client = client
         self.region = region
+        self.acceptedLegalTerms = acceptedLegalTerms
+        self.legalTermsVersion = legalTermsVersion
+        self.legalPrivacyVersion = legalPrivacyVersion
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+        case client
+        case region
+        case acceptedLegalTerms = "accepted_legal_terms"
+        case legalTermsVersion = "legal_terms_version"
+        case legalPrivacyVersion = "legal_privacy_version"
     }
 }
 

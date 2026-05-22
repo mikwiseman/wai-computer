@@ -8,7 +8,7 @@ const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
 const LINUX_APPIMAGE_URL = "/releases/linux/is.waiwai.computer.AppImage";
 const ANDROID_APK_URL = "/releases/android/WaiComputer-latest.apk";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
-const PRIVACY_URL = "/privacy";
+const PRIVACY_URL = "/ru/privacy";
 
 export const metadata: Metadata = {
   title: "WaiComputer — AI second brain для голоса",
@@ -115,6 +115,7 @@ export default function RuHome() {
       <footer className={styles.footer}>
         <span>© WaiWai</span>
         <a href={PRIVACY_URL}>Конфиденциальность</a>
+        <a href="/ru/terms">Условия</a>
       </footer>
     </main>
   );

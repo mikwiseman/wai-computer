@@ -3,9 +3,14 @@
 import pytest
 from httpx import AsyncClient
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 
 async def _register(client: AsyncClient, email: str, password: str) -> dict:
-    response = await client.post("/api/auth/register", json={"email": email, "password": password})
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, **LEGAL_ACCEPTANCE},
+    )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
@@ -67,7 +72,10 @@ async def test_magic_link_user_can_set_password(
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
 
     email = "settings.magic@example.com"
-    magic_response = await client.post("/api/auth/magic-link", json={"email": email})
+    magic_response = await client.post(
+        "/api/auth/magic-link",
+        json={"email": email, **LEGAL_ACCEPTANCE},
+    )
     assert magic_response.status_code == 200
 
     verify_response = await client.post("/api/auth/verify-magic", json={"token": captured["token"]})

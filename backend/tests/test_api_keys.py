@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.core.mcp_oauth import override_mcp_db_context, reset_mcp_db_context
 from app.mcp_server import create_mcp_app
 from app.models.recording import Recording
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -129,7 +130,11 @@ async def test_keys_are_user_scoped(client: AsyncClient, auth_headers: dict) -> 
 
     other = await client.post(
         "/api/auth/register",
-        json={"email": f"other-{uuid4().hex}@example.com", "password": "password123"},
+        json={
+            "email": f"other-{uuid4().hex}@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
 

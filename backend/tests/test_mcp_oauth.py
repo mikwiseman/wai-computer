@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.core.mcp_oauth import override_mcp_db_context, reset_mcp_db_context
 from app.core.mcp_tools import fetch_recording_for_mcp, search_recordings_for_mcp
 from app.mcp_server import create_mcp_app
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -202,7 +203,7 @@ async def test_mcp_search_and_fetch_are_user_scoped(
 
     other_headers_response = await client.post(
         "/api/auth/register",
-        json={"email": "other-mcp-user@example.com", "password": "password123"},
+        json={"email": "other-mcp-user@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     other_headers = {"Authorization": f"Bearer {other_headers_response.json()['access_token']}"}
     second = await client.post(

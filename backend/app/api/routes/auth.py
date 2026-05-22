@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 VALID_REGIONS = {"global", "ru"}
 MAGIC_LINK_TOKEN_PREFIX = "magic_"
 PASSWORD_RESET_TOKEN_PREFIX = "reset_"
+LEGAL_TERMS_VERSION = "2026-05-22"
+LEGAL_PRIVACY_VERSION = "2026-05-22"
 AUTH_MESSAGES = {
     "en": {
         "register_unavailable": (
@@ -54,6 +56,8 @@ AUTH_MESSAGES = {
         "invalid_password_reset": "Invalid password reset link",
         "password_reset_expired": "Password reset link expired",
         "password_reset_success": "Password reset successfully",
+        "legal_acceptance_required": "Legal acceptance required",
+        "legal_acceptance_current_required": "Current legal documents must be accepted",
     },
     "ru": {
         "register_unavailable": (
@@ -69,6 +73,8 @@ AUTH_MESSAGES = {
         "invalid_password_reset": "Недействительная ссылка для сброса пароля",
         "password_reset_expired": "Срок действия ссылки для сброса пароля истек",
         "password_reset_success": "Пароль успешно сброшен",
+        "legal_acceptance_required": "Нужно принять юридические документы",
+        "legal_acceptance_current_required": "Нужно принять актуальные юридические документы",
     },
 }
 
@@ -115,6 +121,9 @@ class RegisterRequest(BaseModel):
     password: str
     region: str = "global"
     locale: str | None = None
+    accepted_legal_terms: bool = False
+    legal_terms_version: str | None = None
+    legal_privacy_version: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -152,6 +161,9 @@ class MagicLinkRequest(BaseModel):
     client: str | None = None
     region: str = "global"
     locale: str | None = None
+    accepted_legal_terms: bool = False
+    legal_terms_version: str | None = None
+    legal_privacy_version: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -300,6 +312,33 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
     _set_refresh_cookie(response, refresh_token)
 
 
+def _require_current_legal_acceptance(
+    *,
+    accepted: bool,
+    terms_version: str | None,
+    privacy_version: str | None,
+    locale: str,
+) -> None:
+    if not accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=AUTH_MESSAGES[locale]["legal_acceptance_required"],
+        )
+    if terms_version != LEGAL_TERMS_VERSION or privacy_version != LEGAL_PRIVACY_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=AUTH_MESSAGES[locale]["legal_acceptance_current_required"],
+        )
+
+
+def _record_legal_acceptance(user: User, *, locale: str, source: str) -> None:
+    user.legal_terms_accepted_at = datetime.now(timezone.utc)
+    user.legal_terms_version = LEGAL_TERMS_VERSION
+    user.legal_privacy_version = LEGAL_PRIVACY_VERSION
+    user.legal_acceptance_locale = locale
+    user.legal_acceptance_source = source
+
+
 def _extract_refresh_token(
     request_body: RefreshRequest | LogoutRequest | None,
     raw_request: Request,
@@ -343,6 +382,7 @@ async def register(
 ) -> AuthResponse | MessageResponse:
     """Register a new user."""
     add_sentry_breadcrumb(category="auth", message="User registration attempt")
+    locale = _normalize_locale(request.locale, request.region)
     password_hash = hash_password(request.password)
 
     # Check if email already exists
@@ -351,9 +391,16 @@ async def register(
 
     if existing_user:
         if existing_user.password_hash is None:
+            _require_current_legal_acceptance(
+                accepted=request.accepted_legal_terms,
+                terms_version=request.legal_terms_version,
+                privacy_version=request.legal_privacy_version,
+                locale=locale,
+            )
             existing_user.password_hash = password_hash
             existing_user.magic_link_token = None
             existing_user.magic_link_expires = None
+            _record_legal_acceptance(existing_user, locale=locale, source="password")
             await db.flush()
 
             access_token, refresh_token = await _create_auth_tokens(existing_user.id, db)
@@ -369,8 +416,14 @@ async def register(
             "registration rejected reason=duplicate_email email=%s",
             safe_text_digest(request.email, label="email"),
         )
-        locale = _normalize_locale(request.locale, request.region)
         return MessageResponse(message=AUTH_MESSAGES[locale]["register_unavailable"])
+
+    _require_current_legal_acceptance(
+        accepted=request.accepted_legal_terms,
+        terms_version=request.legal_terms_version,
+        privacy_version=request.legal_privacy_version,
+        locale=locale,
+    )
 
     # Create user
     user = User(
@@ -378,6 +431,7 @@ async def register(
         password_hash=password_hash,
         region=request.region,
     )
+    _record_legal_acceptance(user, locale=locale, source="password")
     db.add(user)
     await db.flush()
 
@@ -443,10 +497,18 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     )
     result = await db.execute(select(User).where(User.email == request.email))
     user = result.scalar_one_or_none()
+    locale = _normalize_locale(request.locale, request.region)
 
     if user is None:
+        _require_current_legal_acceptance(
+            accepted=request.accepted_legal_terms,
+            terms_version=request.legal_terms_version,
+            privacy_version=request.legal_privacy_version,
+            locale=locale,
+        )
         # Create user without password for magic link auth
         user = User(email=request.email, region=request.region)
+        _record_legal_acceptance(user, locale=locale, source="magic_link")
         db.add(user)
         await db.flush()
 
@@ -459,7 +521,6 @@ async def request_magic_link(request: MagicLinkRequest, db: Database) -> Message
     # Send magic link email via Resend
     from app.core.email import send_magic_link_email
 
-    locale = _normalize_locale(request.locale, request.region)
     await send_magic_link_email(
         user.email,
         token,

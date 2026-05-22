@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recording import Recording
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _create_recording(
@@ -167,7 +168,7 @@ async def test_bulk_skips_other_users_recordings(
     # Create another user and recording
     reg_resp = await client.post(
         "/api/auth/register",
-        json={"email": "bulk.other@example.com", "password": "password123"},
+        json={"email": "bulk.other@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
     other_headers = {"Authorization": f"Bearer {reg_resp.json()['access_token']}"}
     other_rec = await _create_recording(client, other_headers, title="Other Rec")

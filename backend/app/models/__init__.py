@@ -6,6 +6,8 @@ from app.models.benchmark import DictationBenchmarkVote
 from app.models.billing import (
     BillingEvent,
     BillingPeriod,
+    BillingPromoCode,
+    BillingPromoRedemption,
     BillingProvider,
     Invoice,
     Plan,
@@ -44,6 +46,8 @@ __all__ = [
     "DictationBenchmarkVote",
     "BillingEvent",
     "BillingPeriod",
+    "BillingPromoCode",
+    "BillingPromoRedemption",
     "BillingProvider",
     "Invoice",
     "Plan",

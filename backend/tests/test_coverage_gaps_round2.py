@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Recording, Segment, Summary
+from tests.conftest import LEGAL_ACCEPTANCE
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -335,7 +336,7 @@ async def test_cookie_based_auth_accesses_protected_endpoint(
     email = f"cookie-test-{uuid4().hex[:8]}@example.com"
     reg_response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert reg_response.status_code == 200
     token = reg_response.json()["access_token"]
@@ -878,7 +879,11 @@ async def test_delete_other_users_recording_returns_404(
     # Create another user
     other_resp = await client.post(
         "/api/auth/register",
-        json={"email": f"other-del-{uuid4().hex[:8]}@example.com", "password": "password123"},
+        json={
+            "email": f"other-del-{uuid4().hex[:8]}@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     other_headers = {"Authorization": f"Bearer {other_resp.json()['access_token']}"}
 

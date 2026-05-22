@@ -5,6 +5,8 @@ from uuid import uuid4
 import pytest_asyncio
 from httpx import AsyncClient
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 
 @pytest_asyncio.fixture
 async def second_auth_headers(client: AsyncClient) -> dict:
@@ -12,7 +14,7 @@ async def second_auth_headers(client: AsyncClient) -> dict:
     email = f"other-{uuid4().hex}@example.com"
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

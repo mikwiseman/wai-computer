@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.subscriptions import subscription_is_entitled
 from app.config import get_settings
 from app.models.billing import Plan, Subscription, UsageWeek
 from app.models.recording import Recording
@@ -107,7 +108,7 @@ class WordQuota:
                     select(Subscription).where(Subscription.id == current_subscription_id)
                 )
             ).scalar_one_or_none()
-            if sub is not None and sub.status in {"active", "trialing"}:
+            if sub is not None and subscription_is_entitled(sub):
                 plan = (
                     await db.execute(select(Plan).where(Plan.id == sub.plan_id))
                 ).scalar_one_or_none()

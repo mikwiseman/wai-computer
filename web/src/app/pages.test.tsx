@@ -20,6 +20,8 @@ import RuBillingSuccessPage from "./ru/billing/success/page";
 import RootLayout, { metadata, viewport } from "./layout";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
+import RuPrivacyPage from "./ru/privacy/page";
+import RuTermsPage from "./ru/terms/page";
 
 const requestHeaderMock = vi.hoisted(() => ({
   acceptLanguage: null as string | null,
@@ -332,7 +334,7 @@ describe("app pages", () => {
     );
     expect(
       screen.getByRole("link", { name: /конфиденциальность/i }),
-    ).toHaveAttribute("href", "/privacy");
+    ).toHaveAttribute("href", "/ru/privacy");
     expect(screen.getByRole("link", { name: "Бенчмарк" })).toHaveAttribute(
       "href",
       "/ru/benchmarks/dictation",
@@ -403,7 +405,13 @@ describe("app pages", () => {
 
     render(<TermsPage />);
     expect(screen.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeInTheDocument();
-    expect(screen.getByText(/By using WaiComputer/i)).toBeInTheDocument();
+    expect(screen.getByText(/By creating an account/i)).toBeInTheDocument();
+
+    render(<RuPrivacyPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Политика конфиденциальности" })).toBeInTheDocument();
+
+    render(<RuTermsPage />);
+    expect(screen.getByRole("heading", { level: 1, name: "Условия сервиса" })).toBeInTheDocument();
   });
 });
 

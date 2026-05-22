@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelBillingSubscription,
+  claimBillingPromoCode,
   createBillingCheckout,
   getBillingSubscription,
   getBillingUsage,
@@ -11,6 +12,7 @@ import { BillingDashboard } from "./BillingDashboard";
 
 vi.mock("@/lib/billing", () => ({
   cancelBillingSubscription: vi.fn(),
+  claimBillingPromoCode: vi.fn(),
   createBillingCheckout: vi.fn(),
   getBillingSubscription: vi.fn(),
   getBillingUsage: vi.fn(),
@@ -20,6 +22,7 @@ const mockedSubscription = vi.mocked(getBillingSubscription);
 const mockedUsage = vi.mocked(getBillingUsage);
 const mockedCheckout = vi.mocked(createBillingCheckout);
 const mockedCancel = vi.mocked(cancelBillingSubscription);
+const mockedPromo = vi.mocked(claimBillingPromoCode);
 
 const freeSub = {
   plan: {
@@ -64,6 +67,7 @@ describe("BillingDashboard", () => {
     mockedUsage.mockReset();
     mockedCheckout.mockReset();
     mockedCancel.mockReset();
+    mockedPromo.mockReset();
     mockedSubscription.mockResolvedValue(freeSub);
     mockedUsage.mockResolvedValue(usage);
   });
@@ -106,5 +110,18 @@ describe("BillingDashboard", () => {
 
     await waitFor(() => expect(mockedCancel).toHaveBeenCalled());
     expect(await screen.findByText(/Pro is active through/i)).toBeInTheDocument();
+  });
+
+  it("applies promo codes for free users", async () => {
+    mockedPromo.mockResolvedValue({ ...proSub, provider: "promo", cancel_at_period_end: true });
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "WAI-TEST-30");
+    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+    await waitFor(() => expect(mockedPromo).toHaveBeenCalledWith("WAI-TEST-30"));
+    expect(await screen.findByText(/Pro активен до/i)).toBeInTheDocument();
   });
 });

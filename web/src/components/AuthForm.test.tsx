@@ -77,12 +77,15 @@ describe("AuthForm", () => {
     render(<AuthForm mode="register" onSuccess={onSuccess} />);
 
     await user.type(screen.getByTestId("auth-email"), "register@example.com");
+    expect(screen.getByTestId("magic-link-button")).toBeDisabled();
+    await user.click(screen.getByTestId("legal-consent-checkbox"));
     await user.click(screen.getByTestId("magic-link-button"));
 
     await waitFor(() => {
       expect(mockRequestMagicLink).toHaveBeenCalledWith("register@example.com", {
         locale: "en",
         region: "global",
+        acceptedLegalTerms: true,
       });
     });
     expect(mockRegister).not.toHaveBeenCalled();
@@ -149,7 +152,37 @@ describe("AuthForm", () => {
     render(<AuthForm mode="register" onSuccess={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create account");
     expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Email me a sign-in link");
+    expect(screen.getByTestId("legal-consent-checkbox")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/privacy");
     expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
+  });
+
+  it("passes legal acceptance when creating password accounts", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    mockRegister.mockResolvedValue({ access_token: "token", token_type: "bearer" });
+
+    render(<AuthForm mode="register" initialLocale="ru" onSuccess={onSuccess} />);
+
+    await user.type(screen.getByTestId("auth-email"), "register-password@example.com");
+    await user.click(screen.getByTestId("password-mode-button"));
+    await user.type(screen.getByTestId("auth-password"), "password123");
+    expect(screen.getByTestId("auth-submit")).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Условия сервиса" })).toHaveAttribute("href", "/ru/terms");
+    expect(screen.getByRole("link", { name: "Политика конфиденциальности" })).toHaveAttribute("href", "/ru/privacy");
+
+    await user.click(screen.getByTestId("legal-consent-checkbox"));
+    await user.click(screen.getByTestId("auth-submit"));
+
+    await waitFor(() => {
+      expect(mockRegister).toHaveBeenCalledWith("register-password@example.com", "password123", {
+        locale: "ru",
+        region: "ru",
+        acceptedLegalTerms: true,
+      });
+    });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
   it("keeps password login as an explicit secondary mode", async () => {

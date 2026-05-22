@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "./http";
 import {
   cancelBillingSubscription,
+  claimBillingPromoCode,
   createBillingCheckout,
   getBillingSubscription,
   getBillingUsage,
@@ -32,13 +33,18 @@ describe("billing api wrappers", () => {
 
   it("calls checkout and cancel endpoints", async () => {
     await createBillingCheckout({ plan: "pro", period: "month", provider: "stripe" });
+    await claimBillingPromoCode("WAI-TEST-30");
     await cancelBillingSubscription();
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/billing/checkout", {
       method: "POST",
       body: JSON.stringify({ plan: "pro", period: "month", provider: "stripe" }),
     });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/billing/cancel", {
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/billing/promo/claim", {
+      method: "POST",
+      body: JSON.stringify({ code: "WAI-TEST-30" }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/billing/cancel", {
       method: "POST",
     });
   });

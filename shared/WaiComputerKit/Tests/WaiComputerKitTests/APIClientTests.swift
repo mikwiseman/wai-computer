@@ -310,6 +310,9 @@ final class APIClientTests: XCTestCase {
             let body = bodyJSON(from: request)
             XCTAssertEqual(body?["email"] as? String, "test@example.com")
             XCTAssertEqual(body?["password"] as? String, "secret123")
+            XCTAssertEqual(body?["accepted_legal_terms"] as? Bool, true)
+            XCTAssertEqual(body?["legal_terms_version"] as? String, "2026-05-22")
+            XCTAssertEqual(body?["legal_privacy_version"] as? String, "2026-05-22")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -323,7 +326,11 @@ final class APIClientTests: XCTestCase {
             return (response, payload)
         }
 
-        let result = try await client.register(email: "test@example.com", password: "secret123")
+        let result = try await client.register(
+            email: "test@example.com",
+            password: "secret123",
+            acceptedLegalTerms: true
+        )
         XCTAssertEqual(result.accessToken, "tok-abc")
         XCTAssertEqual(result.tokenType, "bearer")
     }

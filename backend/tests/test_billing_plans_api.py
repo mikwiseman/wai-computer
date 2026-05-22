@@ -5,14 +5,18 @@ be numbers (not strings), otherwise `Swift.Decimal` decode fails with
 `typeMismatch(NSDecimal, …)`.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.promo_codes import hash_promo_code
 from app.billing.providers.base import CheckoutResult, ProviderUnavailableError
-from app.models.billing import Plan, Subscription
+from app.models.billing import BillingPromoCode, BillingPromoRedemption, Plan, Subscription
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest.mark.asyncio
@@ -52,7 +56,11 @@ async def test_subscription_endpoint_ignores_past_due_subscription(
 ):
     register = await client.post(
         "/api/auth/register",
-        json={"email": "pastdue.subscription@example.com", "password": "password123"},
+        json={
+            "email": "pastdue.subscription@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     assert register.status_code == 200
     token = register.json()["access_token"]
@@ -86,6 +94,42 @@ async def test_subscription_endpoint_ignores_past_due_subscription(
     assert payload["provider"] is None
 
 
+@pytest.mark.asyncio
+async def test_subscription_endpoint_ignores_expired_promo_subscription(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "expired.promo.subscription@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="promo",
+        billing_period="month",
+        current_period_start=datetime.now(timezone.utc) - timedelta(days=31),
+        current_period_end=datetime.now(timezone.utc) - timedelta(days=1),
+        cancel_at_period_end=True,
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/billing/subscription",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan"]["code"] == "free"
+    assert payload["status"] == "free"
+    assert payload["provider"] is None
+
+
 class _BillingRouteSettings:
     frontend_url = "https://wai.computer"
     billing_enforcement_enabled = False
@@ -94,7 +138,7 @@ class _BillingRouteSettings:
 async def _register_for_billing(client: AsyncClient, db_session: AsyncSession, email: str):
     register = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "password123"},
+        json={"email": email, "password": "password123", **LEGAL_ACCEPTANCE},
     )
     assert register.status_code == 200
     user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
@@ -229,6 +273,145 @@ async def test_checkout_surfaces_provider_unavailable_errors(
     assert tinkoff_response.json()["detail"] == (
         "T-Bank checkout unavailable: missing terminal"
     )
+
+
+@pytest.mark.asyncio
+async def test_claim_promo_code_creates_non_renewing_pro_subscription(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(client, db_session, "promo.claim@example.com")
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    promo = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-TEST-30"),
+        plan_id=pro.id,
+        billing_period="month",
+        duration_days=30,
+        max_redemptions=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        note="test promo",
+    )
+    db_session.add(promo)
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "wai test 30"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["plan"]["code"] == "pro"
+    assert payload["status"] == "active"
+    assert payload["provider"] == "promo"
+    assert payload["billing_period"] == "month"
+    assert payload["cancel_at_period_end"] is True
+    assert payload["current_period_end"] is not None
+
+    await db_session.refresh(user)
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.id == user.current_subscription_id)
+        )
+    ).scalar_one()
+    assert sub.provider == "promo"
+    assert sub.cancel_at_period_end is True
+    assert promo.redeemed_count == 1
+
+    redemption = (
+        await db_session.execute(
+            select(BillingPromoRedemption).where(BillingPromoRedemption.user_id == user.id)
+        )
+    ).scalar_one()
+    assert redemption.subscription_id == sub.id
+
+
+@pytest.mark.asyncio
+async def test_claim_promo_code_rejects_existing_active_promo_subscription(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(client, db_session, "promo.double@example.com")
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    active_sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="promo",
+        billing_period="month",
+        current_period_start=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=10),
+        cancel_at_period_end=True,
+    )
+    second_promo = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-SECOND"),
+        plan_id=pro.id,
+        duration_days=30,
+        max_redemptions=1,
+    )
+    db_session.add_all([active_sub, second_promo])
+    await db_session.flush()
+    user.current_subscription_id = active_sub.id
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "WAI-SECOND"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Active subscription already exists"
+    assert second_promo.redeemed_count == 0
+
+
+@pytest.mark.asyncio
+async def test_claim_promo_code_rejects_invalid_expired_and_exhausted_codes(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, _ = await _register_for_billing(client, db_session, "promo.invalid@example.com")
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    expired = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-EXPIRED"),
+        plan_id=pro.id,
+        duration_days=30,
+        max_redemptions=10,
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    exhausted = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-USED"),
+        plan_id=pro.id,
+        duration_days=30,
+        max_redemptions=1,
+        redeemed_count=1,
+    )
+    db_session.add_all([expired, exhausted])
+    await db_session.flush()
+
+    invalid_response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "missing"},
+    )
+    expired_response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "WAI-EXPIRED"},
+    )
+    exhausted_response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "WAI-USED"},
+    )
+
+    assert invalid_response.status_code == 404
+    assert invalid_response.json()["detail"] == "Promo code not found"
+    assert expired_response.status_code == 400
+    assert expired_response.json()["detail"] == "Promo code expired"
+    assert exhausted_response.status_code == 409
+    assert exhausted_response.json()["detail"] == "Promo code exhausted"
 
 
 @pytest.mark.asyncio

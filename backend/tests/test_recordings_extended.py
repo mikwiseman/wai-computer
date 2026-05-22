@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.api.routes import recordings
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _create_recording(
@@ -28,7 +29,7 @@ async def _register_user(client: AsyncClient, email: str) -> dict:
     """Register a new user and return auth headers."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}

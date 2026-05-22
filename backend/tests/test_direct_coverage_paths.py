@@ -205,7 +205,13 @@ async def test_auth_route_direct_paths(
 ):
     register_response = Response()
     registered = await auth.register(
-        auth.RegisterRequest(email="auth.register@example.com", password="password-123"),
+        auth.RegisterRequest(
+            email="auth.register@example.com",
+            password="password-123",
+            accepted_legal_terms=True,
+            legal_terms_version=auth.LEGAL_TERMS_VERSION,
+            legal_privacy_version=auth.LEGAL_PRIVACY_VERSION,
+        ),
         register_response,
         db_session,
     )
@@ -265,7 +271,12 @@ async def test_auth_route_direct_paths(
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
 
     first_magic = await auth.request_magic_link(
-        auth.MagicLinkRequest(email="auth.magic@example.com"),
+        auth.MagicLinkRequest(
+            email="auth.magic@example.com",
+            accepted_legal_terms=True,
+            legal_terms_version=auth.LEGAL_TERMS_VERSION,
+            legal_privacy_version=auth.LEGAL_PRIVACY_VERSION,
+        ),
         db_session,
     )
     second_magic = await auth.request_magic_link(
