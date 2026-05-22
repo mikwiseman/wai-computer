@@ -184,7 +184,7 @@ struct MacSettingsView: View {
                 BillingSection(mode: paymentModeEnabled ? .fullManagement : .statusOnly)
                     .id(billingRefreshID)
             #else
-                BillingSection(mode: .statusOnly)
+                BillingSection(mode: .fullManagement)
                     .id(billingRefreshID)
             #endif
 

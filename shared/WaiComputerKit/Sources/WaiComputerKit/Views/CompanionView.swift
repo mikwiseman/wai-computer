@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Cross-platform Wai chat view used by both the macOS sidebar `.wai` section
@@ -20,6 +21,7 @@ public struct CompanionView: View {
     @State private var errorMessage: String?
     @State private var showChats: Bool = false
     @State private var turnTask: Task<Void, Never>?
+    private let contentMaxWidth: CGFloat = 880
 
     private enum TurnStage {
         case idle
@@ -35,13 +37,15 @@ public struct CompanionView: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
+            CompanionDivider()
             if showChats {
                 chatList
-                    .frame(maxHeight: 180)
+                CompanionDivider()
             }
             messageList
             composer
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await initialLoad() }
         .onDisappear { turnTask?.cancel() }
     }
@@ -49,58 +53,91 @@ public struct CompanionView: View {
     // MARK: - Sections
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             Text(t("Ask Wai", "Спроси Wai"))
-                .font(.title3.bold())
-            Spacer()
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+                .layoutPriority(1)
+
+            Spacer(minLength: 12)
+
             Button {
                 showChats.toggle()
             } label: {
-                Text(showChats ? t("Hide chats", "Скрыть чаты") : chatsCountLabel)
+                Label(showChats ? t("Hide chats", "Скрыть чаты") : chatsCountLabel, systemImage: "bubble.left.and.bubble.right")
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.bordered)
+            .help(showChats ? t("Hide chats", "Скрыть чаты") : t("Show chats", "Показать чаты"))
+            .accessibilityIdentifier("wai-toggle-chats-button")
+
             Button {
                 Task { await newChat() }
             } label: {
-                Text(t("+ New chat", "+ Новый чат"))
+                Label(t("New chat", "Новый чат"), systemImage: "plus")
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.borderedProminent)
+            .help(t("New chat", "Новый чат"))
+            .accessibilityIdentifier("wai-new-chat-button")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .frame(maxWidth: contentMaxWidth, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var chatList: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(chats) { chat in
-                    chatChip(chat)
+                    chatRow(chat)
                 }
             }
-            .padding(.horizontal)
+            .frame(maxWidth: contentMaxWidth, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .frame(maxHeight: 220)
     }
 
-    private func chatChip(_ chat: CompanionConversation) -> some View {
+    private func chatRow(_ chat: CompanionConversation) -> some View {
         let isActive = chat.id == activeChatId
         return Button {
             Task { await loadChat(chat.id) }
         } label: {
-            Text(chatLabel(chat))
-                .font(.callout)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isActive ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
-                .clipShape(Capsule())
+            HStack(spacing: 10) {
+                Image(systemName: "bubble.left")
+                    .foregroundStyle(isActive ? Color.accentColor : .secondary)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(chatLabel(chat))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(relativeDate(chat.lastMessageAt ?? chat.createdAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(isActive ? Color.accentColor.opacity(0.14) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("wai-chat-row")
     }
 
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if messages.isEmpty && streamingText.isEmpty {
                         emptyState
                     }
@@ -115,10 +152,14 @@ public struct CompanionView: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .foregroundStyle(.red)
-                            .padding(.horizontal)
+                            .font(.callout)
+                            .padding(.vertical, 12)
                     }
                 }
-                .padding(.vertical)
+                .frame(maxWidth: contentMaxWidth, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
             .onChange(of: messages.count) {
                 withAnimation {
@@ -129,125 +170,178 @@ public struct CompanionView: View {
                 proxy.scrollTo("streaming", anchor: .bottom)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
-        VStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(t("What do you want to know?", "Что хочешь узнать?"))
-                .font(.title2)
+                .font(.system(size: 22, weight: .semibold, design: .serif))
             Text(t("Wai answers from your recordings.", "Wai отвечает по твоим записям."))
+                .font(.callout)
                 .foregroundStyle(.secondary)
-            ForEach(starterPrompts, id: \.self) { prompt in
-                Button(prompt) { input = prompt }
-                    .buttonStyle(.bordered)
+
+            FlowLayoutCompat {
+                ForEach(starterPrompts, id: \.self) { prompt in
+                    Button(prompt) { input = prompt }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding()
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("wai-empty-state")
     }
 
     private func bubble(for message: CompanionMessage) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(message.role == .user ? t("You", "Ты") : "Wai")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(message.plainText)
-                .textSelection(.enabled)
-            if !message.citations.isEmpty {
-                citationStrip(
-                    citations: message.citations.map { cit in
-                        CitationDisplay(
-                            index: cit.citationIndex,
-                            segmentId: cit.segmentId ?? "",
-                            recordingId: cit.recordingId ?? "",
-                            startMs: nil
-                        )
-                    }
+        MessageRow(
+            role: message.role == .user ? t("You", "Ты") : "Wai",
+            text: message.plainText,
+            dateText: relativeDate(message.createdAt),
+            citations: message.citations.map { cit in
+                CitationDisplay(
+                    index: cit.citationIndex,
+                    segmentId: cit.segmentId ?? "",
+                    recordingId: cit.recordingId ?? "",
+                    startMs: nil
                 )
-            }
-        }
-        .padding(.horizontal)
+            },
+            formattedCitation: formattedCitation
+        )
     }
 
     private var streamingBubble: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Wai")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            if stage == .searching && streamingText.isEmpty {
-                Text(t("Searching recordings...", "Ищем по записям..."))
-                    .italic()
-                    .foregroundStyle(.secondary)
-            }
-            if !streamingToolNotes.isEmpty && streamingText.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(streamingToolNotes, id: \.self) { note in
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        let text: String = {
+            if !streamingText.isEmpty { return streamingText }
+            if stage == .searching { return t("Searching recordings...", "Ищем по записям...") }
+            return streamingToolNotes.joined(separator: "\n")
+        }()
+
+        return MessageRow(
+            role: "Wai",
+            text: text,
+            dateText: t("Now", "Сейчас"),
+            isMuted: streamingText.isEmpty,
+            citations: streamingCitations.map {
+                CitationDisplay(
+                    index: $0.index,
+                    segmentId: $0.segmentId,
+                    recordingId: $0.recordingId,
+                    startMs: $0.startMs
+                )
+            },
+            formattedCitation: formattedCitation
+        )
+    }
+
+    private struct MessageRow: View {
+        let role: String
+        let text: String
+        let dateText: String
+        var isMuted = false
+        let citations: [CitationDisplay]
+        let formattedCitation: (CitationDisplay) -> String
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(role)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(dateText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary.opacity(0.8))
+                    Spacer()
+                }
+
+                Text(text)
+                    .font(.system(size: 15))
+                    .lineSpacing(5)
+                    .foregroundStyle(isMuted ? .secondary : .primary)
+                    .italicIfNeeded(isMuted)
+                    .textSelection(.enabled)
+
+                if !citations.isEmpty {
+                    FlowLayoutCompat {
+                        ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
+                            Text(formattedCitation(citation))
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.accentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
             }
-            if !streamingText.isEmpty {
-                Text(streamingText)
-                    .textSelection(.enabled)
-            }
-            if !streamingCitations.isEmpty {
-                citationStrip(
-                    citations: streamingCitations.map {
-                        CitationDisplay(
-                            index: $0.index,
-                            segmentId: $0.segmentId,
-                            recordingId: $0.recordingId,
-                            startMs: $0.startMs
-                        )
-                    }
-                )
-            }
-        }
-        .padding(.horizontal)
-    }
-
-    private func citationStrip(citations: [CitationDisplay]) -> some View {
-        FlowLayoutCompat {
-            ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
-                Text(formattedCitation(citation))
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.12))
-                    .clipShape(Capsule())
+            .padding(.vertical, 14)
+            .overlay(alignment: .bottom) {
+                Color.primary.opacity(0.08)
+                    .frame(height: 1)
             }
         }
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextEditor(text: $input)
-                .frame(minHeight: 44, maxHeight: 120)
-                .padding(8)
-                .background(Color.secondary.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            if isStreaming {
-                Button {
-                    cancelTurn()
-                } label: {
-                    Text(t("Stop", "Стоп"))
-                        .frame(minWidth: 60)
+        VStack(spacing: 0) {
+            CompanionDivider()
+
+            HStack(alignment: .bottom, spacing: 10) {
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+
+                    if input.isEmpty {
+                        Text(t("Ask Wai about your recordings...", "Спроси Wai о своих записях..."))
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 11)
+                            .allowsHitTesting(false)
+                    }
+
+                    TextEditor(text: $input)
+                        .font(.system(size: 14))
+                        .scrollContentBackgroundCompatHidden()
+                        .padding(6)
+                        .frame(minHeight: 56, maxHeight: 96)
+                        .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
+                        .accessibilityIdentifier("wai-message-editor")
                 }
-                .buttonStyle(.bordered)
-            } else {
-                Button {
-                    Task { await send() }
-                } label: {
-                    Text(t("Ask", "Спросить"))
-                        .frame(minWidth: 60)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                )
+
+                if isStreaming {
+                    Button {
+                        cancelTurn()
+                    } label: {
+                        Label(t("Stop", "Стоп"), systemImage: "stop.fill")
+                            .labelStyle(.titleAndIcon)
+                            .frame(minWidth: 88)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("wai-stop-button")
+                } else {
+                    Button {
+                        Task { await send() }
+                    } label: {
+                        Label(t("Ask", "Спросить"), systemImage: "paperplane.fill")
+                            .labelStyle(.titleAndIcon)
+                            .frame(minWidth: 96)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("wai-send-button")
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            .frame(maxWidth: contentMaxWidth, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding()
     }
 
     // MARK: - Loading + sending
@@ -443,6 +537,13 @@ public struct CompanionView: View {
         return "\(t("Chat", "Чат")) · \(formatter.string(from: when))"
     }
 
+    private func relativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
     private func formattedCitation(_ c: CitationDisplay) -> String {
         let title = recordings.first(where: { $0.id == c.recordingId })?.title ?? t("Recording", "Запись")
         if let ms = c.startMs {
@@ -471,6 +572,33 @@ private struct CitationDisplay: Identifiable {
     let recordingId: String
     let startMs: Int?
     var id: String { "\(segmentId)-\(index)" }
+}
+
+private struct CompanionDivider: View {
+    var body: some View {
+        Color.primary.opacity(0.08)
+            .frame(height: 1)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func scrollContentBackgroundCompatHidden() -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            self.scrollContentBackground(.hidden)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func italicIfNeeded(_ active: Bool) -> some View {
+        if active {
+            self.italic()
+        } else {
+            self
+        }
+    }
 }
 
 /// A minimal wrapping `HStack` substitute used for citation chips. Real `FlowLayout`

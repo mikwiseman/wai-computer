@@ -339,6 +339,52 @@ async def resolve_mcp_access_token_user_id(token: str) -> UUID | None:
         return db_token.user_id
 
 
+async def issue_companion_mcp_access_token(
+    db: AsyncSession,
+    user_id: UUID,
+) -> str:
+    """Issue a short-lived first-party MCP access token for Wai Companion.
+
+    The token is stored like any other MCP OAuth access token and is only
+    returned to OpenAI as the remote MCP tool authorization credential. It is
+    not exposed to clients and should never be persisted in chat history.
+    """
+    settings = get_settings()
+    client_id = "wai-companion-internal"
+    client = await db.get(McpOAuthClient, client_id)
+    if client is None:
+        now_ts = int(time.time())
+        client = McpOAuthClient(
+            client_id=client_id,
+            client_secret=None,
+            client_id_issued_at=now_ts,
+            client_secret_expires_at=None,
+            redirect_uris=[],
+            token_endpoint_auth_method="none",
+            grant_types=["client_credentials"],
+            response_types=[],
+            scope=MCP_READ_SCOPE,
+            client_name="Wai Companion",
+        )
+        db.add(client)
+
+    access_token = secrets.token_urlsafe(48)
+    db.add(
+        McpOAuthToken(
+            token_hash=token_hash(access_token),
+            token_type=ACCESS_TOKEN_TYPE,
+            client_id=client_id,
+            user_id=user_id,
+            scopes=[MCP_READ_SCOPE],
+            resource=settings.mcp_resource_url_resolved,
+            expires_at=_now()
+            + timedelta(minutes=settings.mcp_access_token_expire_minutes),
+        )
+    )
+    await db.flush()
+    return access_token
+
+
 class WaiComputerMcpOAuthProvider(
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
 ):

@@ -46,54 +46,22 @@ final class SearchUITests: XCTestCase {
         let searchField = app.textFields["Search recordings..."]
         XCTAssertTrue(waitForElement(searchField, in: app, timeout: 5))
 
-        // Mode tabs — Hybrid, Semantic, Full Text (found by identifier)
-        let hybridTab = app.buttons.matching(identifier: "tab-hybrid").firstMatch
-        XCTAssertTrue(waitForElement(hybridTab, in: app, timeout: 3))
-
-        let semanticTab = app.buttons.matching(identifier: "tab-semantic").firstMatch
-        XCTAssertTrue(waitForElement(semanticTab, in: app, timeout: 3))
-
-        let ftsTab = app.buttons.matching(identifier: "tab-full-text").firstMatch
-        XCTAssertTrue(waitForElement(ftsTab, in: app, timeout: 3))
-
         // Empty state text
         let emptyStateText = app.staticTexts.matching(identifier: "search-empty-state").firstMatch
         XCTAssertTrue(waitForElement(emptyStateText, in: app, timeout: 3))
     }
 
     @MainActor
-    func testSearchModeSwitch() throws {
+    func testSearchViewKeepsUniversalSearchField() throws {
         let app = launchToSearch()
 
         // Verify search field appears (confirms we're on the search screen)
         let searchField = app.textFields["Search recordings..."]
         XCTAssertTrue(waitForElement(searchField, in: app, timeout: 5))
 
-        // Verify Hybrid tab exists (default selected)
-        let hybridTab = app.buttons.matching(identifier: "tab-hybrid").firstMatch
-        XCTAssertTrue(waitForElement(hybridTab, in: app, timeout: 3))
-
-        // Switch to Semantic
-        let semanticTab = app.buttons.matching(identifier: "tab-semantic").firstMatch
-        XCTAssertTrue(waitForElement(semanticTab, in: app, timeout: 3))
-        semanticTab.tap()
-
-        // Verify the tab is still visible (view didn't crash)
-        XCTAssertTrue(semanticTab.exists, "Semantic tab should still exist after tapping")
-
-        // Switch to Full Text
-        let ftsTab = app.buttons.matching(identifier: "tab-full-text").firstMatch
-        XCTAssertTrue(waitForElement(ftsTab, in: app, timeout: 3))
-        ftsTab.tap()
-
-        // Verify the tab is still visible
-        XCTAssertTrue(ftsTab.exists, "Full Text tab should still exist after tapping")
-
-        // Switch back to Hybrid
-        hybridTab.tap()
-        XCTAssertTrue(hybridTab.exists, "Hybrid tab should still exist after tapping")
-
-        // Verify search field is still intact (view didn't break)
+        XCTAssertFalse(app.buttons.matching(identifier: "tab-hybrid").firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(identifier: "tab-semantic").firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(identifier: "tab-full-text").firstMatch.exists)
         XCTAssertTrue(searchField.exists, "Search field should remain after switching modes")
     }
 }

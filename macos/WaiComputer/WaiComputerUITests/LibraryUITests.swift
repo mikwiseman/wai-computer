@@ -80,7 +80,7 @@ final class LibraryUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        let newFolderButton = app.buttons.matching(identifier: "new-folder-toolbar-button").firstMatch
+        let newFolderButton = app.buttons.matching(identifier: "sidebar-new-folder").firstMatch
         XCTAssertTrue(waitForElement(newFolderButton, in: app, timeout: 5))
         newFolderButton.tap()
 
@@ -88,7 +88,7 @@ final class LibraryUITests: XCTestCase {
             .matching(identifier: "folder-name-sheet")
             .firstMatch
         XCTAssertTrue(waitForElement(folderSheet, in: app, timeout: 5))
-        XCTAssertGreaterThanOrEqual(folderSheet.frame.width, 540)
-        XCTAssertLessThanOrEqual(folderSheet.frame.width, 620)
+        XCTAssertGreaterThanOrEqual(folderSheet.frame.width, 700)
+        XCTAssertLessThanOrEqual(folderSheet.frame.width, 740)
     }
 }
