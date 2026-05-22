@@ -278,6 +278,27 @@ enum MacInputPermission {
 
 // MARK: - Hotkey Configuration
 
+enum DeferredDictationStopPolicy {
+    enum Action: Equatable {
+        case continueListening
+        case finishAfterReady
+    }
+
+    static func action(deferredStop: Bool, isHandsFree: Bool) -> Action {
+        guard deferredStop, !isHandsFree else { return .continueListening }
+        return .finishAfterReady
+    }
+}
+
+enum DictationFinalizationPolicy {
+    /// Keep capture alive briefly after the user releases push-to-talk.
+    ///
+    /// AVAudioEngine taps deliver audio in chunks. If we stop the engine
+    /// immediately on key-up, the last syllables can still be sitting in the
+    /// current tap buffer and never reach the realtime STT provider.
+    static let captureTailDelay: Duration = .milliseconds(450)
+}
+
 enum DictationHotkey: String, CaseIterable, Identifiable {
     case rightOption = "right_option"
     case leftOption = "left_option"

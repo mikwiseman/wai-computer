@@ -1,5 +1,6 @@
 """Database session configuration."""
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ settings = get_settings()
 _engine = None
 _session_maker = None
 _runtime_pid: int | None = None
+_runtime_loop_id: int | None = None
 
 
 def _create_engine():
@@ -26,14 +28,23 @@ def _create_engine():
     )
 
 
+def _current_loop_id() -> int | None:
+    try:
+        return id(asyncio.get_running_loop())
+    except RuntimeError:
+        return None
+
+
 def _ensure_runtime(force: bool = False) -> None:
-    global _engine, _session_maker, _runtime_pid
+    global _engine, _session_maker, _runtime_pid, _runtime_loop_id
 
     current_pid = os.getpid()
+    current_loop_id = _current_loop_id()
     runtime_ready = (
         _engine is not None
         and _session_maker is not None
         and _runtime_pid == current_pid
+        and _runtime_loop_id == current_loop_id
     )
     if not force and runtime_ready:
         return
@@ -51,6 +62,7 @@ def _ensure_runtime(force: bool = False) -> None:
         autoflush=False,
     )
     _runtime_pid = current_pid
+    _runtime_loop_id = current_loop_id
 
 
 class _AsyncSessionMakerProxy:

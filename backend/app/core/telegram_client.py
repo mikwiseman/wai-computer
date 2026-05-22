@@ -76,6 +76,9 @@ class TelegramBotClient:
             },
         )
 
+    async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        await self._post("sendChatAction", {"chat_id": chat_id, "action": action})
+
     async def get_file(self, file_id: str) -> TelegramFile:
         result = await self._post("getFile", {"file_id": file_id})
         file_path = result.get("file_path")

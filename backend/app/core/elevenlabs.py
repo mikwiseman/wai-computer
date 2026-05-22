@@ -15,6 +15,23 @@ logger = logging.getLogger(__name__)
 
 ELEVENLABS_API_BASE = "https://api.elevenlabs.io"
 SIGNED_URL_TTL_SECONDS = 15 * 60
+STT_FILENAME_EXTENSIONS = {
+    "audio/aac": "aac",
+    "audio/flac": "flac",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+    "audio/opus": "opus",
+    "audio/raw": "raw",
+    "audio/wav": "wav",
+    "audio/wave": "wav",
+    "audio/webm": "webm",
+    "audio/x-m4a": "m4a",
+    "audio/x-wav": "wav",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+}
 
 
 @dataclass(frozen=True)
@@ -231,6 +248,14 @@ def _results_from_transcript(
     return results
 
 
+def _stt_upload_filename(content_type: str) -> str:
+    normalized = content_type.split(";", 1)[0].strip().lower()
+    extension = STT_FILENAME_EXTENSIONS.get(normalized)
+    if not extension:
+        raise ValueError(f"Unsupported ElevenLabs STT content type: {content_type}")
+    return f"recording.{extension}"
+
+
 async def transcribe_audio_file(
     audio_data: bytes,
     *,
@@ -262,7 +287,7 @@ async def transcribe_audio_file(
         form_data["file_format"] = "pcm_s16le_16"
 
     files = {
-        "file": ("recording", audio_data, content_type),
+        "file": (_stt_upload_filename(content_type), audio_data, content_type),
     }
 
     async with httpx.AsyncClient(base_url=ELEVENLABS_API_BASE, timeout=300.0) as client:

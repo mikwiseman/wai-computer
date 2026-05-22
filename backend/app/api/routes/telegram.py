@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import string
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any
@@ -45,6 +47,7 @@ PAIRING_PREFIX = "link_"
 BOT_LINK_CODE_TTL = timedelta(minutes=15)
 BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
+CHAT_ACTION_INTERVAL_SECONDS = 4.0
 
 
 class TelegramLinkStatus(BaseModel):
@@ -144,6 +147,35 @@ async def _send_chunks(
             chunk,
             reply_to_message_id=reply_to_message_id if idx == 0 else None,
         )
+
+
+async def _send_chat_action_until_cancelled(
+    client: TelegramBotClient,
+    chat_id: int,
+    *,
+    action: str = "typing",
+) -> None:
+    while True:
+        try:
+            await client.send_chat_action(chat_id, action)
+        except TelegramClientError as exc:
+            logger.warning(
+                "telegram chat action failed action=%s error=%s",
+                action,
+                type(exc).__name__,
+            )
+        except Exception:
+            logger.exception("telegram chat action crashed action=%s", action)
+            return
+        await asyncio.sleep(CHAT_ACTION_INTERVAL_SECONDS)
+
+
+async def _stop_chat_action_task(task: asyncio.Task[None] | None) -> None:
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 @router.get("/link", response_model=TelegramLinkStatus)
@@ -523,6 +555,7 @@ async def _handle_text_message(
         return
     conversation = await _ensure_telegram_conversation(db, account)
     chunks: list[str] = []
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
         async for event in run_turn(
             db,
@@ -543,6 +576,8 @@ async def _handle_text_message(
             reply_to_message_id=message.get("message_id"),
         )
         return
+    finally:
+        await _stop_chat_action_task(action_task)
 
     answer = "".join(chunks).strip()
     if not answer:
@@ -603,6 +638,7 @@ async def _handle_media_message(
         return
     caption = str(message.get("caption") or "").strip()
     title = caption[:500] if caption else f"Telegram {media.get('kind', 'media')}"
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
         result = await import_media_as_recording(
             db=db,
@@ -622,6 +658,8 @@ async def _handle_media_message(
         )
         await client.send_message(chat_id, exc.message)
         return
+    finally:
+        await _stop_chat_action_task(action_task)
 
     summary_text = result.summary.summary if result.summary else None
     parts = [f"Готово. Запись сохранена в библиотеку: {result.recording.title or 'Без названия'}"]

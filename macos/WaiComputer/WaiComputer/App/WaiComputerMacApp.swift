@@ -673,9 +673,16 @@ class MacAppState: ObservableObject {
             currentUser = MacUITestFixtures.user
             isAuthenticated = true
             isCheckingAuth = false
-            dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
-                recordingViewModel?.phase == .idle
-            }
+            dictationManager.configure(
+                apiClient: apiClient,
+                canStart: { [weak recordingViewModel] in
+                    recordingViewModel?.phase == .idle
+                },
+                canStartReason: { [weak recordingViewModel] in
+                    guard let recordingViewModel else { return "recording_view_model_unavailable" }
+                    return "recording_phase_\(String(describing: recordingViewModel.phase))"
+                }
+            )
             return
         }
         #endif
@@ -1023,9 +1030,16 @@ class MacAppState: ObservableObject {
             SentryHelper.setUser(id: user.id)
             await syncDownloadRegionToServerIfNeeded()
             await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
-            dictationManager.configure(apiClient: apiClient) { [weak recordingViewModel] in
-                recordingViewModel?.phase == .idle
-            }
+            dictationManager.configure(
+                apiClient: apiClient,
+                canStart: { [weak recordingViewModel] in
+                    recordingViewModel?.phase == .idle
+                },
+                canStartReason: { [weak recordingViewModel] in
+                    guard let recordingViewModel else { return "recording_view_model_unavailable" }
+                    return "recording_phase_\(String(describing: recordingViewModel.phase))"
+                }
+            )
             dictationManager.historyStore?.attach(apiClient: apiClient)
             dictationManager.dictionaryStore?.attach(apiClient: apiClient)
             Task { [dictationManager] in

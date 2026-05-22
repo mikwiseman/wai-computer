@@ -34,6 +34,43 @@ def test_configure_logging_is_idempotent():
         if isinstance(flt, observability.RequestContextFilter)
     ]
     assert len(filters) == 1
+    redacting_filters = [
+        flt
+        for flt in handler.filters
+        if isinstance(flt, observability.RedactingLogFilter)
+    ]
+    assert len(redacting_filters) == 1
+
+
+def test_redact_text_removes_telegram_bot_tokens_and_secret_queries():
+    redacted = observability.redact_text(
+        "POST https://api.telegram.org/bot123456:ABC-SECRET/sendMessage "
+        "GET https://api.telegram.org/file/bot123456:ABC-SECRET/voice/file.oga "
+        "https://wai.computer/auth/app?token=secret&client=macos"
+    )
+
+    assert "123456:ABC-SECRET" not in redacted
+    assert "token=secret" not in redacted
+    assert "https://api.telegram.org/bot[redacted-token]/sendMessage" in redacted
+    assert "https://api.telegram.org/file/bot[redacted-token]/voice/file.oga" in redacted
+    assert "token=[redacted-secret]" in redacted
+
+
+def test_redacting_log_filter_sanitizes_message_and_arguments():
+    record = logging.LogRecord(
+        "test",
+        logging.INFO,
+        __file__,
+        1,
+        "telegram url %s",
+        ("https://api.telegram.org/bot123456:ABC-SECRET/sendMessage",),
+        None,
+    )
+
+    assert observability.RedactingLogFilter().filter(record)
+
+    assert "ABC-SECRET" not in record.getMessage()
+    assert "bot[redacted-token]" in record.getMessage()
 
 
 def test_safe_metadata_helpers_do_not_expose_raw_values():

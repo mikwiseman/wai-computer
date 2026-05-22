@@ -2,19 +2,19 @@ import XCTest
 @testable import WaiComputerKit
 
 final class RealtimeCloseDrainPolicyTests: XCTestCase {
-    func testStopsAfterShortNoTranscriptWindowBeforeDeadline() {
+    func testStopsAfterNoTranscriptWindowBeforeDeadline() {
         let clock = ContinuousClock()
         let startedAt = clock.now
 
         XCTAssertTrue(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(899),
+            now: startedAt + .milliseconds(1499),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,
             finalizationMarkerReceived: false
         ))
         XCTAssertFalse(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(900),
+            now: startedAt + .milliseconds(1500),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,
@@ -27,14 +27,14 @@ final class RealtimeCloseDrainPolicyTests: XCTestCase {
         let startedAt = clock.now
 
         XCTAssertTrue(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(249),
+            now: startedAt + .milliseconds(649),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,
             finalizationMarkerReceived: true
         ))
         XCTAssertFalse(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(250),
+            now: startedAt + .milliseconds(650),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,
@@ -48,14 +48,14 @@ final class RealtimeCloseDrainPolicyTests: XCTestCase {
         let transcriptAt = startedAt + .milliseconds(600)
 
         XCTAssertTrue(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: transcriptAt + .milliseconds(499),
+            now: transcriptAt + .milliseconds(899),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: transcriptAt,
             finalizationMarkerReceived: false
         ))
         XCTAssertFalse(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: transcriptAt + .milliseconds(500),
+            now: transcriptAt + .milliseconds(900),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: transcriptAt,

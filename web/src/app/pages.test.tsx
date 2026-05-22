@@ -85,8 +85,14 @@ vi.mock("@/components/OnboardingClient", () => ({
 }));
 
 vi.mock("@/components/SharedRecordingClient", () => ({
-  SharedRecordingClient: ({ token }: { token: string }) => {
-    sharedRecordingClientMock(token);
+  SharedRecordingClient: ({
+    token,
+    locale,
+  }: {
+    token: string;
+    locale?: string;
+  }) => {
+    sharedRecordingClientMock({ token, locale });
     return <div data-testid="shared-recording-client-mock">{token}</div>;
   },
 }));
@@ -240,9 +246,13 @@ describe("app pages", () => {
   });
 
   it("passes shared recording token from route params", async () => {
+    requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9";
     render(await SharedRecordingPage({ params: Promise.resolve({ token: "share-token" }) }));
     expect(screen.getByTestId("shared-recording-client-mock")).toHaveTextContent("share-token");
-    expect(sharedRecordingClientMock).toHaveBeenCalledWith("share-token");
+    expect(sharedRecordingClientMock).toHaveBeenCalledWith({
+      token: "share-token",
+      locale: "ru",
+    });
   });
 
   it("renders landing with download links and sign-in", () => {

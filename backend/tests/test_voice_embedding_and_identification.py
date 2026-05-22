@@ -5,6 +5,7 @@ tested directly."""
 
 from __future__ import annotations
 
+import time
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -184,6 +185,57 @@ async def test_identify_handles_embedding_failure() -> None:
             db=db, user_id=uuid.uuid4(), staged_audio_path=Path("/tmp/x.wav"),
             transcript_results=results,
         )
+    assert out == {"Speaker 1": None}
+
+
+@pytest.mark.asyncio
+async def test_identify_disabled_returns_unassigned_without_loading_model() -> None:
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    db = MagicMock(spec=AsyncSession)
+    results = [_tr("Speaker 1", 0, 10_000)]
+
+    with patch("app.core.voice_identification.compute_voice_embedding") as compute:
+        out = await identify_speakers_for_recording(
+            db=db,
+            user_id=uuid.uuid4(),
+            staged_audio_path=Path("/tmp/x.wav"),
+            transcript_results=results,
+            enabled=False,
+        )
+
+    compute.assert_not_called()
+    assert out == {"Speaker 1": None}
+
+
+@pytest.mark.asyncio
+async def test_identify_times_out_embedding_and_continues() -> None:
+    """Embedding timeout is non-fatal: import/transcription must still finish."""
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    db = MagicMock(spec=AsyncSession)
+    results = [_tr("Speaker 1", 0, 10_000)]
+
+    def slow_embedding(*_: object) -> list[float]:
+        time.sleep(0.05)
+        return [0.5] * EMBEDDING_DIM
+
+    with patch(
+        "app.core.voice_identification.compute_voice_embedding",
+        side_effect=slow_embedding,
+    ):
+        out = await identify_speakers_for_recording(
+            db=db,
+            user_id=uuid.uuid4(),
+            staged_audio_path=Path("/tmp/x.wav"),
+            transcript_results=results,
+            embedding_timeout_seconds=0.001,
+        )
+
     assert out == {"Speaker 1": None}
 
 
