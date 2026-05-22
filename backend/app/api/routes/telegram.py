@@ -615,6 +615,11 @@ async def _handle_media_message(
             language=user.default_language,
         )
     except RecordingImportError as exc:
+        logger.warning(
+            "telegram media import failed code=%s kind=%s",
+            exc.code,
+            media.get("kind"),
+        )
         await client.send_message(chat_id, exc.message)
         return
 
@@ -689,9 +694,18 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     account=account,
                     media=media,
                 )
+            elif command:
+                await client.send_message(
+                    chat_id,
+                    (
+                        "Команды в боте не нужны. Просто пришли голосовое, "
+                        "видео или текстовый вопрос."
+                    ),
+                    reply_to_message_id=message.get("message_id"),
+                )
             else:
                 text = _message_text(message)
-                if not text or text.startswith("/"):
+                if not text:
                     await client.send_message(
                         chat_id,
                         "Пришли голосовое, видео или вопрос текстом.",

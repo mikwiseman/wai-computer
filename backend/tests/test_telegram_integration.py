@@ -235,9 +235,9 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
     result = await import_media_as_recording(
         db=db_session,
         user=user,
-        data=b"fake ogg",
-        filename="voice.ogg",
-        content_type="audio/ogg",
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
         title=None,
         source_label="telegram",
         language="ru",
@@ -869,7 +869,7 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     assert (await db_session.get(TelegramUpdate, 102)).status == "completed"
     assert (await db_session.get(TelegramUpdate, 103)).status == "completed"
     assert "Сначала привяжи" in capture.messages[0]["text"]
-    assert "Пришли голосовое" in capture.messages[1]["text"]
+    assert "Команды в боте не нужны" in capture.messages[1]["text"]
     failed = await db_session.get(TelegramUpdate, 106)
     assert failed.status == "failed"
     assert failed.error_code == "TelegramClientError"
@@ -1103,6 +1103,92 @@ async def test_import_media_continues_when_title_generation_fails(
 
 
 @pytest.mark.asyncio
+async def test_telegram_ogg_audio_import_normalizes_before_transcription(
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    user = await _user(db_session)
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+
+    class FakeSegment:
+        def set_frame_rate(self, value):
+            assert value == 16_000
+            return self
+
+        def set_channels(self, value):
+            assert value == 1
+            return self
+
+        def set_sample_width(self, value):
+            assert value == 2
+            return self
+
+        def export(self, output, format):
+            assert format == "wav"
+            output.write(b"wav from telegram")
+
+    def fake_from_file(file_obj, *, format=None):
+        assert format == "ogg"
+        return FakeSegment()
+
+    monkeypatch.setattr("pydub.AudioSegment.from_file", fake_from_file)
+
+    async def fake_transcribe(data: bytes, **kwargs):
+        assert data == b"wav from telegram"
+        assert kwargs["content_type"] == "audio/wav"
+        return [
+            TranscriptResult(
+                text="Голосовое расшифровано",
+                speaker=None,
+                is_final=True,
+                start_ms=0,
+                end_ms=1000,
+                confidence=0.9,
+            )
+        ]
+
+    async def fake_summary(*args, **kwargs):
+        return SummaryResult(
+            title="Голосовое",
+            summary="Саммари голосового",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr(
+        "app.core.recording_import.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_import.generate_title",
+        AsyncMock(return_value="Голосовое"),
+    )
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"telegram ogg",
+        filename="voice.oga",
+        content_type="audio/ogg",
+        title=None,
+        source_label="telegram",
+        language="ru",
+    )
+
+    assert result.recording.title == "Голосовое"
+    assert result.transcript == "Голосовое расшифровано"
+
+
+@pytest.mark.asyncio
 async def test_video_import_normalizes_audio_before_transcription(
     db_session: AsyncSession,
     monkeypatch,
@@ -1207,6 +1293,7 @@ async def test_video_import_surfaces_audio_extract_failure(
 
 def test_import_extension_resolution_and_rejections():
     assert resolve_import_extension(None, "audio/mpeg") == "mp3"
+    assert resolve_import_extension("voice.OGA", None) == "oga"
     assert resolve_import_extension("clip.MOV", None) == "mov"
     with pytest.raises(RecordingImportError):
         resolve_import_extension("file.pdf", "application/pdf")
@@ -1282,6 +1369,21 @@ async def test_telegram_client_send_get_and_download():
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
     assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
     assert client_mock.get.await_args.args[0].endswith("/voice/file.ogg")
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_can_clear_bot_commands():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": True}),
+        ],
+    )
+
+    with patcher:
+        await TelegramBotClient("token").delete_my_commands()
+
+    assert client_mock.post.await_args.args[0].endswith("/deleteMyCommands")
+    assert client_mock.post.await_args.kwargs["json"] == {}
 
 
 @pytest.mark.asyncio

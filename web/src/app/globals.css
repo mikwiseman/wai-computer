@@ -736,6 +736,12 @@ a.primary-button:hover {
   gap: 0.35rem;
 }
 
+.telegram-code-form small {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .settings-checkbox-field {
   display: flex;
   align-items: center;

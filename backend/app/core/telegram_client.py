@@ -88,6 +88,9 @@ class TelegramBotClient:
             file_size=file_size if isinstance(file_size, int) else None,
         )
 
+    async def delete_my_commands(self) -> None:
+        await self._post("deleteMyCommands", {})
+
     async def download_file(self, file: TelegramFile) -> bytes:
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:

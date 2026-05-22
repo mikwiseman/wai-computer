@@ -197,9 +197,11 @@ export function DashboardClient() {
     function refreshTelegramStatus() {
       void handleRefreshTelegramStatus({ silent: true });
     }
+    const interval = window.setInterval(refreshTelegramStatus, 2000);
     window.addEventListener("focus", refreshTelegramStatus);
     document.addEventListener("visibilitychange", refreshTelegramStatus);
     return () => {
+      window.clearInterval(interval);
       window.removeEventListener("focus", refreshTelegramStatus);
       document.removeEventListener("visibilitychange", refreshTelegramStatus);
     };
@@ -379,7 +381,7 @@ export function DashboardClient() {
       const response = await startTelegramLink();
       setTelegramPairing(response);
       window.location.href = response.deep_link;
-      setMessage("Telegram открыт. Нажмите Start в боте, затем вернитесь в WaiComputer.");
+      setMessage("Telegram открыт. Нажмите Start в боте — WaiComputer завершит привязку автоматически.");
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -388,18 +390,22 @@ export function DashboardClient() {
   }
 
   async function handleRefreshTelegramStatus(options: { silent?: boolean } = {}) {
-    setTelegramLoading(true);
+    if (!options.silent) setTelegramLoading(true);
     if (!options.silent) setMessage(null);
     try {
       const status = await getTelegramLinkStatus();
       setTelegramStatus(status);
       if (status.linked || !options.silent) {
         setTelegramPairing(null);
+        if (status.linked) {
+          setTelegramLinkCode("");
+          setMessage("Telegram привязан.");
+        }
       }
     } catch (error: unknown) {
       if (!options.silent) setMessage(formatError(error));
     } finally {
-      setTelegramLoading(false);
+      if (!options.silent) setTelegramLoading(false);
     }
   }
 
@@ -882,8 +888,7 @@ export function DashboardClient() {
           ) : (
             <div className="telegram-link-card">
               <p className="settings-note">
-                Нажмите «Привязать Telegram» — откроется бот. В Telegram нажмите Start, затем вернитесь в
-                WaiComputer.
+                Нажмите «Привязать Telegram» — откроется бот. После Start привязка завершится автоматически.
               </p>
               <button
                 type="button"
@@ -894,11 +899,12 @@ export function DashboardClient() {
                 {telegramLoading ? "Открываем..." : "Привязать Telegram"}
               </button>
               {telegramPairing ? (
-                <p className="settings-note">Telegram открыт. Нажмите Start в боте, чтобы завершить привязку.</p>
+                <p className="settings-note">Ждем Start в Telegram. Возвращаться и копировать код не нужно.</p>
               ) : null}
               <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
                 <label>
                   <span>Код из Telegram</span>
+                  <small>Только если вы начали привязку из Telegram.</small>
                   <input
                     type="text"
                     value={telegramLinkCode}
