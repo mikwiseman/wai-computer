@@ -1894,3 +1894,153 @@ a.primary-button:hover {
 .locale-switcher__sep {
   opacity: 0.3;
 }
+
+.admin-page {
+  min-height: 100vh;
+  padding: 4rem 1.25rem;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.admin-panel {
+  max-width: 720px;
+  margin: 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 2rem;
+}
+
+.admin-heading {
+  margin: 0 0 1.5rem;
+}
+
+.admin-heading p {
+  margin: 0 0 0.35rem;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-heading h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.admin-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-form label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.admin-form label span {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+.admin-form input,
+.admin-form select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font: inherit;
+  padding: 0.75rem 0.85rem;
+}
+
+.admin-primary {
+  justify-self: start;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.8rem 1.2rem;
+  cursor: pointer;
+}
+
+.admin-primary:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.admin-error {
+  margin: 1rem 0 0;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.admin-result {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1.25rem;
+}
+
+.admin-result > span {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.admin-result strong {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 1.5rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.admin-result p {
+  color: var(--color-text-secondary);
+}
+
+.admin-result dl {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+
+.admin-result dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.5rem 0;
+}
+
+.admin-result dt {
+  color: var(--color-text-secondary);
+}
+
+.admin-result dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .admin-panel {
+    padding: 1.25rem;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
