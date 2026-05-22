@@ -176,6 +176,11 @@ RESEND_API_KEY=your-resend-api-key
 EMAIL_FROM=WaiComputer <noreply@mail.waiwai.is>
 FRONTEND_URL=https://wai.computer
 AUTH_COOKIE_DOMAIN=wai.computer
+
+# Optional - Telegram bot integration
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_BOT_USERNAME=waicomputer_bot
+TELEGRAM_WEBHOOK_SECRET_TOKEN=your-random-webhook-secret
 ```
 
 ## API Endpoints

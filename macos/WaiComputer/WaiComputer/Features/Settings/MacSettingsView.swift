@@ -109,6 +109,10 @@ struct MacSettingsView: View {
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var dictationPostFilterEnabled = false
+    @State private var telegramStatus: TelegramLinkStatus?
+    @State private var telegramPairing: TelegramPairing?
+    @State private var telegramLoading = false
+    @State private var telegramError: String?
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -171,6 +175,8 @@ struct MacSettingsView: View {
                     .waiSectionHeader()
                     .accessibilityIdentifier("settings-account-header")
             }
+
+            telegramSection
 
             #if DEBUG
                 Section {
@@ -467,6 +473,7 @@ struct MacSettingsView: View {
         .formStyle(.grouped)
         .task {
             await loadSummarySettings()
+            await loadTelegramStatus()
         }
         .onAppear(perform: refreshPermissions)
         .onDisappear {
@@ -476,6 +483,7 @@ struct MacSettingsView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
+                Task { await loadTelegramStatus() }
                 refreshBillingOnReturnIfNeeded()
             }
         }
@@ -529,6 +537,122 @@ struct MacSettingsView: View {
         } message: {
             Text(deleteAccountError ?? "")
         }
+    }
+
+    private var telegramSection: some View {
+        Section {
+            if telegramLoading && telegramStatus == nil {
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(t("Loading Telegram status...", "Загружаем статус Telegram..."))
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            } else if telegramStatus?.linked == true {
+                LabeledContent {
+                    Text(telegramDisplayName)
+                        .foregroundStyle(.green)
+                } label: {
+                    Text("Telegram")
+                }
+                .font(Typography.body)
+
+                Button(role: .destructive) {
+                    Task { await unlinkTelegram() }
+                } label: {
+                    Text(t("Disconnect Telegram", "Отключить Telegram"))
+                }
+                .disabled(telegramLoading)
+                .accessibilityIdentifier("settings-telegram-unlink-button")
+            } else {
+                Text(t(
+                    "Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai.",
+                    "Подключи @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы Wai."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Button {
+                        Task { await startTelegramLink() }
+                    } label: {
+                        Text(t("Connect Telegram", "Привязать Telegram"))
+                    }
+                    .disabled(telegramLoading)
+                    .accessibilityIdentifier("settings-telegram-link-button")
+
+                    if telegramLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if let telegramPairing {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(t(
+                            "Open this link to finish pairing:",
+                            "Открой ссылку, чтобы завершить привязку:"
+                        ))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+
+                        HStack {
+                            Text(telegramPairing.webLink)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+
+                            Button {
+                                openTelegramPairing(telegramPairing)
+                            } label: {
+                                Text(t("Open", "Открыть"))
+                            }
+                            .accessibilityIdentifier("settings-telegram-open-link-button")
+
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(telegramPairing.webLink, forType: .string)
+                            } label: {
+                                Text(t("Copy", "Копировать"))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let telegramError {
+                Text(telegramError)
+                    .font(Typography.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Telegram")
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-telegram-header")
+        } footer: {
+            Text(t(
+                "Media sent to the bot is transcribed, summarized, and saved to your Library. Text messages are handled as Wai questions.",
+                "Медиа из бота расшифровываются, суммаризируются и сохраняются в Библиотеку. Текстовые сообщения обрабатываются как вопросы Wai."
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+        }
+    }
+
+    private var telegramDisplayName: String {
+        guard let status = telegramStatus else { return t("Connected", "Подключено") }
+        if let username = status.username, !username.isEmpty {
+            return "@\(username)"
+        }
+        let fullName = [status.firstName, status.lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return fullName.isEmpty ? t("Connected", "Подключено") : fullName
     }
 
     @ViewBuilder
@@ -1058,6 +1182,66 @@ struct MacSettingsView: View {
                 "Не удалось загрузить настройки аккаунта: \(error.localizedDescription)"
             )
             return
+        }
+    }
+
+    private func loadTelegramStatus() async {
+        guard !telegramLoading else { return }
+        telegramLoading = true
+        do {
+            telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
+            telegramError = nil
+        } catch {
+            telegramError = t(
+                "Couldn't load Telegram status: \(error.localizedDescription)",
+                "Не удалось загрузить статус Telegram: \(error.localizedDescription)"
+            )
+        }
+        telegramLoading = false
+    }
+
+    private func startTelegramLink() async {
+        guard !telegramLoading else { return }
+        telegramLoading = true
+        do {
+            telegramPairing = try await appState.getAPIClient().startTelegramLink()
+            telegramError = nil
+            if let telegramPairing {
+                openTelegramPairing(telegramPairing)
+            }
+        } catch {
+            telegramError = t(
+                "Couldn't start Telegram pairing: \(error.localizedDescription)",
+                "Не удалось начать привязку Telegram: \(error.localizedDescription)"
+            )
+        }
+        telegramLoading = false
+    }
+
+    private func unlinkTelegram() async {
+        guard !telegramLoading else { return }
+        telegramLoading = true
+        do {
+            try await appState.getAPIClient().unlinkTelegram()
+            telegramPairing = nil
+            telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
+            telegramError = nil
+        } catch {
+            telegramError = t(
+                "Couldn't disconnect Telegram: \(error.localizedDescription)",
+                "Не удалось отключить Telegram: \(error.localizedDescription)"
+            )
+        }
+        telegramLoading = false
+    }
+
+    private func openTelegramPairing(_ pairing: TelegramPairing) {
+        if let deepURL = URL(string: pairing.deepLink),
+           NSWorkspace.shared.open(deepURL) {
+            return
+        }
+        if let webURL = URL(string: pairing.webLink) {
+            NSWorkspace.shared.open(webURL)
         }
     }
 

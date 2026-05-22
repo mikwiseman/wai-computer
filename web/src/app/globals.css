@@ -695,6 +695,15 @@ a.primary-button:hover {
   line-height: 1.35;
 }
 
+.telegram-link-card {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.telegram-link-card p {
+  margin: 0;
+}
+
 .settings-checkbox-field {
   display: flex;
   align-items: center;

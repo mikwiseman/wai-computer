@@ -36,6 +36,8 @@ import type {
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
+  TelegramLinkStatus,
+  TelegramPairing,
   TokenResponse,
   TranscriptionOptions,
   TranscriptSearchResponse,
@@ -495,6 +497,18 @@ export function updateSettings(settings: Partial<UserSettings>): Promise<UserSet
     method: "PATCH",
     body: JSON.stringify(settings),
   });
+}
+
+export function getTelegramLinkStatus(): Promise<TelegramLinkStatus> {
+  return apiFetch<TelegramLinkStatus>("/api/telegram/link");
+}
+
+export function startTelegramLink(): Promise<TelegramPairing> {
+  return apiFetch<TelegramPairing>("/api/telegram/link/start", { method: "POST" });
+}
+
+export function unlinkTelegram(): Promise<void> {
+  return apiFetch<void>("/api/telegram/link", { method: "DELETE" });
 }
 
 export function getWeeklyDigest(): Promise<WeeklyDigestResponse> {

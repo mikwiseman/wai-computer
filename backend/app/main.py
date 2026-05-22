@@ -24,6 +24,7 @@ from app.api.routes import (
     realtime_voice,
     recordings,
     search,
+    telegram,
     voice_enrollment,
 )
 from app.api.routes import settings as settings_routes
@@ -137,6 +138,7 @@ app.include_router(api_keys.router, prefix="/api")
 app.include_router(benchmarks.router, prefix="/api")
 app.include_router(recordings.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(telegram.router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")

@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
 
+    # Telegram bot integration. Token and webhook secret are backend-only.
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = "waicomputer_bot"
+    telegram_webhook_secret_token: str = ""
+    # Telegram Bot API file downloads are limited to 20 MB.
+    telegram_download_max_bytes: int = 20 * 1024 * 1024
+
     # Email (Resend)
     resend_api_key: str = ""
     email_from: str = "WaiComputer <noreply@mail.waiwai.is>"
