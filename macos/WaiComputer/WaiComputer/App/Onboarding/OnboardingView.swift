@@ -728,8 +728,8 @@ private struct OnboardingPermissionSlide: View {
         }
         if systemAudioStatus == .staleNeedsRestart {
             return t(
-                "Enable WaiComputer in System Settings, then restart so macOS applies System Audio Recording to this running app.",
-                "Включи WaiComputer в системных настройках, затем перезапусти приложение, чтобы macOS применила запись звука Mac."
+                "Enable WaiComputer in the System Audio Recording Only section of System Settings, then restart so macOS applies the permission.",
+                "Включи WaiComputer в нижнем разделе «Только запись системного звука», затем перезапусти приложение."
             )
         }
         if systemAudioReadiness == .unsupported {
@@ -821,8 +821,8 @@ private struct OnboardingPermissionSlide: View {
             )
         case .restartRequired:
             return t(
-                "Enable Audio Capture in System Settings, then restart WaiComputer",
-                "Включи запись аудио в системных настройках и перезапусти WaiComputer"
+                "Enable WaiComputer under System Audio Recording Only, then restart",
+                "Включи WaiComputer в «Только запись системного звука» и перезапусти"
             )
         case .ready:
             return t(
