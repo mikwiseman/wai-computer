@@ -190,14 +190,6 @@ struct MacMainView: View {
         recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 
-    private var selectedRecordingsForActions: [Recording] {
-        libraryViewModel.recordings.filter { selectedRecordingIds.contains($0.id) }
-    }
-
-    private var canMoveSelectedRecordingsToUnfiled: Bool {
-        selectedRecordingsForActions.contains { $0.folderId != nil }
-    }
-
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
@@ -251,38 +243,6 @@ struct MacMainView: View {
             .accessibilityIdentifier("new-recording-toolbar-button")
 
             if !isTrashSection {
-                Button {
-                    shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
-                    isShowingCreateFolderSheet = true
-                } label: {
-                    MainToolbarIconLabel(title: t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
-                }
-                .buttonStyle(.plain)
-                .help(t("New Folder", "Новая папка"))
-                .accessibilityIdentifier("new-folder-toolbar-button")
-
-                Menu {
-                    if canMoveSelectedRecordingsToUnfiled {
-                        Button(t("Remove from Folder", "Убрать из папки")) {
-                            moveSelectedRecordings(to: nil)
-                        }
-                        .disabled(selectedRecordingIds.isEmpty)
-                    }
-
-                    ForEach(libraryViewModel.folders) { folder in
-                        Button(folder.name) {
-                            moveSelectedRecordings(to: folder.id)
-                        }
-                        .disabled(selectedRecordingIds.isEmpty)
-                    }
-                } label: {
-                    MainToolbarIconLabel(title: t("Move to Folder", "Переместить в папку"), systemImage: "folder")
-                }
-                .buttonStyle(.plain)
-                .help(t("Move to Folder", "Переместить в папку"))
-                .accessibilityIdentifier("move-to-folder-toolbar-button")
-                .disabled(selectedRecordingIds.isEmpty || (!canMoveSelectedRecordingsToUnfiled && libraryViewModel.folders.isEmpty))
-
                 Button {
                     moveSelectedRecordingsToTrash()
                 } label: {
@@ -616,6 +576,7 @@ struct MacMainView: View {
                         .font(Typography.body)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("sidebar-new-folder")
 
                 ForEach(libraryViewModel.folders) { folder in
                     folderSidebarRow(folder)
@@ -856,6 +817,7 @@ struct MacMainView: View {
                 apiClient: appState.getAPIClient(),
                 recordings: libraryViewModel.recordings
             )
+            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .settings:
             MacSettingsView()
         }
@@ -1083,10 +1045,6 @@ struct MacMainView: View {
         }
     }
 
-    private func moveSelectedRecordings(to folderId: String?) {
-        moveRecordings(Array(selectedRecordingIds), to: folderId)
-    }
-
     private func trashRecordings(_ ids: [String]) {
         guard !ids.isEmpty else { return }
         Task {
@@ -1248,7 +1206,7 @@ private struct BulkSelectionDetailView: View {
                 description: Text(
                     isTrash
                         ? t("Restore them or delete them permanently.", "Восстанови их или удали навсегда.")
-                        : t("Use the list header buttons to move them into folders or send them to trash.", "Используй кнопки в заголовке списка, чтобы переместить их в папку или корзину.")
+                        : t("Use the context menu to move them into folders, or the header button to send them to trash.", "Перемести записи в папку через контекстное меню или отправь в корзину кнопкой в заголовке.")
                 )
             )
 

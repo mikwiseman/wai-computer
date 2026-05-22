@@ -361,13 +361,11 @@ final class GlobalHotkeyManager: ObservableObject {
 
     private var handsFreeKeyHeld = false
 
-    /// How long the key must be held before starting push-to-talk (ms)
-    // Press-and-hold becomes push-to-talk after this many seconds. Wispr Flow
-    // feels essentially instant; this lower bound (150 ms) cuts ~100 ms of
-    // perceived start latency vs the prior 250 ms while still cleanly
-    // separating intentional taps (typically <100 ms) from intentional holds
-    // (typically >200 ms).
-    private let holdThreshold: TimeInterval = 0.15
+    /// How long the key must be held before starting push-to-talk.
+    ///
+    /// Keep this below the threshold where the hotkey feels laggy, but above a
+    /// quick tap so double-tap hands-free remains reliable.
+    private let holdThreshold: TimeInterval = 0.08
 
     // State tracking
     private var hotkeyDownTime: Date?
@@ -614,6 +612,10 @@ final class GlobalHotkeyManager: ObservableObject {
 
     func testingReleaseHotkey() {
         hotkeyUp()
+    }
+
+    func testingHandleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        handleFlagsChanged(keyCode: keyCode, flags: flags)
     }
     #endif
 

@@ -22,12 +22,17 @@ from app.core.companion import (
     TurnContext,
     TurnStartEvent,
     _build_session_developer_message,
+    _extract_mcp_context_items,
+    _extract_text,
+    _extract_tool_calls,
     _format_scope_for_session,
     _format_weekday,
+    _get_usage,
     _history_to_responses_input,
     _intersect_recording_ids,
     _render_memory_section,
     _render_user_profile,
+    _response_item_to_dict,
     _scope_recording_uuids,
     _summary_one_line,
     final_answer_schema,
@@ -435,6 +440,43 @@ def test_history_assistant_json_content() -> None:
     assert parsed == {"answer": "hi", "citations": []}
 
 
+def test_history_assistant_text_blocks_become_plain_text() -> None:
+    class M:
+        role = "assistant"
+        tool_calls = None
+        content = [{"type": "text", "text": "hello"}, {"type": "text", "text": " world"}]
+
+    out = _history_to_responses_input([M()])
+    assert out == [{"role": "assistant", "content": "hello world"}]
+
+
+def test_history_dict_text_content_becomes_plain_text() -> None:
+    class M:
+        role = "assistant"
+        tool_calls = None
+        content = {"text": "plain answer"}
+
+    out = _history_to_responses_input([M()])
+    assert out == [{"role": "assistant", "content": "plain answer"}]
+
+
+def test_history_includes_latest_cached_mcp_list_tools() -> None:
+    cached = {"type": "mcp_list_tools", "server_label": "wai", "tools": []}
+
+    class Older:
+        role = "assistant"
+        tool_calls = [{"type": "mcp_list_tools", "server_label": "old", "tools": []}]
+        content = "old"
+
+    class Newer:
+        role = "assistant"
+        tool_calls = [cached]
+        content = "new"
+
+    out = _history_to_responses_input([Older(), Newer()])
+    assert out[0] == cached
+
+
 def test_history_skips_tool_role() -> None:
     class U:
         role = "user"
@@ -448,3 +490,124 @@ def test_history_skips_tool_role() -> None:
     # Only user (and assistant) roles are mapped; tool role dropped
     assert len(out) == 1
     assert out[0]["role"] == "user"
+
+
+# ---------------------------------------------------------------------------
+# Response helpers
+# ---------------------------------------------------------------------------
+
+
+def test_extract_mcp_context_items_from_dict_response() -> None:
+    cached = {"type": "mcp_list_tools", "server_label": "wai", "tools": []}
+    response = {"output": [{"type": "message"}, cached]}
+    assert _extract_mcp_context_items(response) == [cached]
+
+
+def test_response_item_to_dict_uses_model_dump_when_available() -> None:
+    class Item:
+        def model_dump(self, *, mode: str, exclude_none: bool) -> dict:
+            assert mode == "json"
+            assert exclude_none is True
+            return {"type": "mcp_list_tools", "server_label": "wai"}
+
+    assert _response_item_to_dict(Item()) == {
+        "type": "mcp_list_tools",
+        "server_label": "wai",
+    }
+
+
+def test_response_item_to_dict_reads_plain_object_attrs() -> None:
+    class Item:
+        id = "i1"
+        type = "mcp_list_tools"
+        server_label = "wai"
+        tools = [{"name": "search"}]
+
+    assert _response_item_to_dict(Item()) == {
+        "id": "i1",
+        "type": "mcp_list_tools",
+        "server_label": "wai",
+        "tools": [{"name": "search"}],
+    }
+
+
+def test_extract_text_from_output_blocks() -> None:
+    response = {
+        "output": [
+            {"content": [{"type": "output_text", "text": "hello"}]},
+            {"content": [{"type": "output_text", "text": " world"}]},
+        ]
+    }
+    assert _extract_text(response) == "hello world"
+
+
+def test_extract_text_prefers_output_text_field() -> None:
+    assert _extract_text({"output_text": "direct"}) == "direct"
+
+
+def test_extract_tool_calls_from_dict_and_object_items() -> None:
+    class Call:
+        type = "function_call"
+        call_id = "c2"
+        name = "fetch"
+        arguments = '{"id": "r1"}'
+
+    response = {
+        "output": [
+            {"type": "message"},
+            {
+                "type": "function_call",
+                "call_id": "c1",
+                "name": "search",
+                "arguments": '{"query": "x"}',
+            },
+            Call(),
+        ]
+    }
+
+    assert _extract_tool_calls(response) == [
+        {"id": "c1", "name": "search", "arguments": {"query": "x"}},
+        {"id": "c2", "name": "fetch", "arguments": {"id": "r1"}},
+    ]
+
+
+def test_extract_tool_calls_rejects_invalid_json_args() -> None:
+    response = {
+        "output": [
+            {
+                "type": "function_call",
+                "call_id": "bad",
+                "name": "search",
+                "arguments": "{",
+            }
+        ]
+    }
+    with pytest.raises(CompanionError) as exc:
+        _extract_tool_calls(response)
+    assert exc.value.code == "invalid_tool_args"
+
+
+def test_get_usage_reads_cached_tokens_from_details() -> None:
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 4,
+        "input_tokens_details": {"cached_tokens": 7},
+    }
+    assert _get_usage(usage, "input_tokens") == 10
+    assert _get_usage(usage, "output_tokens") == 4
+    assert _get_usage(usage, "cached_tokens") == 7
+
+
+def test_get_usage_reads_cached_tokens_from_object_details() -> None:
+    class Details:
+        cached_tokens = 3
+
+    class Usage:
+        input_tokens = 8
+        output_tokens = 5
+        input_tokens_details = Details()
+
+    assert _get_usage(Usage(), "input_tokens") == 8
+    assert _get_usage(Usage(), "output_tokens") == 5
+    assert _get_usage(Usage(), "cached_tokens") == 3
+    assert _get_usage(None, "input_tokens") == 0

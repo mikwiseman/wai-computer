@@ -16,9 +16,6 @@ struct MacSearchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onChange(of: viewModel.searchMode) { _, _ in
-            performSearch()
-        }
     }
 
     private var searchHeader: some View {
@@ -51,14 +48,6 @@ struct MacSearchView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("search-bar")
 
-            WaiTabBar(
-                tabs: [
-                    (t("Hybrid", "Комбинированный"), MacSearchViewModel.SearchMode.hybrid),
-                    (t("Semantic", "По смыслу"), MacSearchViewModel.SearchMode.semantic),
-                    (t("Full Text", "По тексту"), MacSearchViewModel.SearchMode.fts),
-                ],
-                selection: $viewModel.searchMode
-            )
         }
         .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
         .padding(Spacing.lg)
@@ -172,12 +161,7 @@ struct SearchResultRow: View {
 
 @MainActor
 class MacSearchViewModel: ObservableObject {
-    enum SearchMode: Hashable {
-        case hybrid, semantic, fts
-    }
-
     @Published var query = ""
-    @Published var searchMode: SearchMode = .hybrid
     @Published var results: [SearchResult] = []
     @Published var totalResults: Int = 0
     @Published var isLoading = false
@@ -193,15 +177,7 @@ class MacSearchViewModel: ObservableObject {
         hasSearched = true
 
         do {
-            let response: SearchResponse
-            switch searchMode {
-            case .hybrid:
-                response = try await apiClient.search(query: trimmed)
-            case .semantic:
-                response = try await apiClient.semanticSearch(query: trimmed)
-            case .fts:
-                response = try await apiClient.fulltextSearch(query: trimmed)
-            }
+            let response = try await apiClient.search(query: trimmed)
             results = response.results
             totalResults = response.total
         } catch {

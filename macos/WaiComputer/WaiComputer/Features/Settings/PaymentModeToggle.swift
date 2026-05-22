@@ -2,9 +2,8 @@ import SwiftUI
 
 /// Reveals billing management controls while paid billing is dogfooded.
 ///
-/// The release UI always shows the current plan and weekly word counter.
-/// This debug-only switch reveals upgrade/cancel/region controls so we can
-/// dogfood paid billing against the sandbox before announcing it.
+/// Release builds always show billing management. This debug-only switch keeps
+/// local sandbox dogfooding explicit without affecting the production UI.
 struct PaymentModeToggle: View {
     @AppStorage(PaymentModeStore.userDefaultsKey) private var enabled = false
 

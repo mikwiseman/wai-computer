@@ -1,16 +1,4 @@
-"""Wai Companion service: agentic tool loop + streaming structured synthesis.
-
-Phase A: the model is given `search_transcripts`, `get_recording_summary`,
-and `list_recordings` tools. It drives retrieval freely (up to TOOL_CALL_CAP
-calls) and then emits a text-only response signalling the search is done.
-
-Phase B: a single streaming Responses API call with `response_format` set to
-a strict JSON schema asks the model to write the final answer plus citations.
-The server emits markdown deltas as `TokenEvent`s, validates every citation's
-`segment_id` against the allowlist (the union of segment_ids returned by every
-`search_transcripts` call in Phase A) and drops any that don't match — no
-retry, no fallback.
-"""
+"""Wai Companion service: one streaming Responses call with Wai MCP attached."""
 
 from __future__ import annotations
 
@@ -28,10 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import user_memory as user_memory_module
+from app.core.mcp_oauth import issue_companion_mcp_access_token
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 from app.core.qa import SourceSegment, retrieve_context
-from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.companion import ChatMessage, Conversation
 from app.models.recording import ActionItem, Folder, Recording, Summary
 from app.models.user import User
 from app.models.user_memory import UserMemoryBlock
@@ -52,29 +41,19 @@ _IDENTITY_SECTION = (
 
 _TOOL_GUIDANCE_SECTION = (
     "<tool_guidance>\n"
-    "Navigation pattern: shortlist via metadata tools first, then drill "
-    "into transcripts. Never jump straight to search_transcripts for a "
-    "date-range / person / 'what's important' question.\n"
-    "- list_recordings — call FIRST for relative time words (today, "
-    "yesterday, last week, вчера, сегодня, на прошлой неделе) or when "
-    "the user didn't name a recording. Pass date_from/date_to using "
-    "<session>.date. Returns title + folder + one-line summary + topics; "
-    "lets you pick the right recording without a second call.\n"
-    "- get_recording_summary — dense view of ONE recording. Use after "
-    "list_recordings narrowed things down.\n"
-    "- get_action_items — for 'what do I owe', 'что я должен', "
-    "'commitments'.\n"
-    "- get_highlights — for 'key moments', 'что важного', filterable "
-    "by category and importance.\n"
-    "- search_people — find recordings featuring a person; follow up "
-    "with search_transcripts(recording_ids=...) for quotes.\n"
-    "- search_transcripts — verbatim quotes. The ONLY tool that returns "
-    "citable segment_ids. Use AFTER you know which recording(s) to "
-    "search; do not use it for date-range or person-name lookups.\n"
-    "- remember — write a durable fact about the user to <memory>. Use "
-    "sparingly; not for single-turn context. Preferred operation is "
-    "append (a new bullet). replace_line when correcting one prior "
-    "claim; rewrite only for a full block reset.\n"
+    "Use the WaiComputer MCP server whenever the user asks about their "
+    "recordings, folders, transcript content, summaries, decisions, or "
+    "action items. Treat MCP as the only source of truth for library data.\n"
+    "- search — use for content questions and specific topics.\n"
+    "- fetch — use after search/list_recordings when one recording needs "
+    "closer reading.\n"
+    "- list_recordings — use for browsing, latest recordings, folder/date "
+    "questions, and relative time questions.\n"
+    "- list_folders — use before folder-scoped browse/search.\n"
+    "- list_action_items — use for commitments, TODOs, promises, and "
+    "follow-ups.\n"
+    "If MCP returns no relevant data, say that directly. Do not invent facts "
+    "or mention internal tool mechanics.\n"
     "</tool_guidance>"
 )
 
@@ -83,8 +62,6 @@ _ANSWER_FORMAT_SECTION = (
     "- Match the language of the user's most recent message. If they "
     "wrote in Russian, answer in Russian.\n"
     "- One paragraph default. Bullets only when the answer is a list.\n"
-    "- Inline [1] [2] citation markers. Cite ONLY segment_ids returned by "
-    "search_transcripts. No fabricated ids.\n"
     "- Do not start with 'Sure!', 'I'd be happy to', or any "
     "acknowledgement. Do not narrate your reasoning or say 'based on the "
     "transcripts'. Do not use emojis unless the user does first.\n"
@@ -1226,14 +1203,48 @@ async def _load_history(
 
 def _history_to_responses_input(messages: list[ChatMessage]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    cached_mcp_list_tools = _latest_mcp_list_tools_item(messages)
+    if cached_mcp_list_tools is not None:
+        out.append(cached_mcp_list_tools)
+
     for m in messages:
         if m.role == "user":
-            text = m.content if isinstance(m.content, str) else json.dumps(m.content)
+            text = _message_content_to_text(m.content)
             out.append({"role": "user", "content": text})
         elif m.role == "assistant":
-            text = m.content if isinstance(m.content, str) else json.dumps(m.content)
+            text = _message_content_to_text(m.content)
             out.append({"role": "assistant", "content": text})
     return out
+
+
+def _latest_mcp_list_tools_item(messages: list[ChatMessage]) -> dict[str, Any] | None:
+    for message in reversed(messages):
+        tool_calls = getattr(message, "tool_calls", None)
+        if message.role != "assistant" or not isinstance(tool_calls, list):
+            continue
+        for item in tool_calls:
+            if isinstance(item, dict) and item.get("type") == "mcp_list_tools":
+                return item
+    return None
+
+
+def _message_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        if parts:
+            return "".join(parts)
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+    return json.dumps(content)
 
 
 def _format_weekday(iso_date: str) -> str:
@@ -1299,6 +1310,23 @@ def _build_session_developer_message(
     return {"role": "developer", "content": "\n".join(lines)}
 
 
+def _companion_mcp_tool(settings, access_token: str) -> dict[str, Any]:
+    return {
+        "type": "mcp",
+        "server_label": "wai",
+        "server_url": settings.mcp_resource_url_resolved,
+        "authorization": access_token,
+        "require_approval": "never",
+        "allowed_tools": [
+            "search",
+            "fetch",
+            "list_folders",
+            "list_recordings",
+            "list_action_items",
+        ],
+    }
+
+
 async def run_turn(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -1336,125 +1364,26 @@ async def run_turn(
     session_message = _build_session_developer_message(
         turn_context, conv.scope
     )
-    tool_definitions_payload = tool_definitions()
-    citable_allowlist: dict[str, SourceSegment] = {}
-    raw_tool_calls: list[dict[str, Any]] = []
-
-    a_input: list[dict[str, Any]] = []
+    response_input: list[dict[str, Any]] = []
     if session_message is not None:
-        a_input.append(session_message)
-    a_input.extend(base_input)
-    tool_calls_made = 0
-    response = None
+        response_input.append(session_message)
+    response_input.extend(base_input)
 
-    while True:
-        if tool_calls_made >= TOOL_CALL_CAP:
-            break
+    access_token = await issue_companion_mcp_access_token(db, user_id)
+    # OpenAI calls the remote MCP server from outside this DB transaction.
+    # Commit the just-issued token (and the user turn) before the stream starts
+    # so `/mcp` can resolve the presented token on its own connection.
+    await db.commit()
+    mcp_tool = _companion_mcp_tool(settings, access_token)
 
-        response = await client.responses.create(
-            model=settings.openai_llm_model,
-            instructions=instructions,
-            input=a_input,
-            tools=tool_definitions_payload,
-            parallel_tool_calls=False,
-            prompt_cache_key=f"wai-companion-{user_id}",
-        )
-        try:
-            ensure_response_completed(response, operation="Companion tool planning")
-        except OpenAIResponseError as exc:
-            raise CompanionError("phase_a_model_incomplete", str(exc)) from exc
-
-        tool_calls = _extract_tool_calls(response)
-        if not tool_calls:
-            break
-
-        for call in tool_calls:
-            if tool_calls_made >= TOOL_CALL_CAP:
-                break
-            tool_calls_made += 1
-            raw_tool_calls.append(
-                {
-                    "id": call["id"],
-                    "name": call["name"],
-                    "arguments": call["arguments"],
-                }
-            )
-            yield ToolCallEvent(
-                call_id=call["id"], tool=call["name"], args=call["arguments"]
-            )
-            result = await _execute_tool(
-                call["name"],
-                call["arguments"],
-                db,
-                user_id,
-                conv.scope,
-                conversation_id=conv.id,
-            )
-            citable_allowlist.update(result.citable_segments)
-            yield ToolResultEvent(
-                call_id=call["id"], summary=result.summary_for_event
-            )
-            # Surface successful memory writes as a typed event so the
-            # client can render "Wai remembered X" without inspecting
-            # tool names.
-            if call["name"] == "remember" and result.payload_for_model.get(
-                "ok"
-            ):
-                yield MemoryUpdatedEvent(
-                    block=str(result.payload_for_model.get("block", "")),
-                    operation=str(
-                        result.payload_for_model.get("operation", "")
-                    ),
-                )
-            a_input.append(
-                {
-                    "type": "function_call",
-                    "call_id": call["id"],
-                    "name": call["name"],
-                    "arguments": json.dumps(call["arguments"]),
-                }
-            )
-            a_input.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": call["id"],
-                    "output": json.dumps(result.payload_for_model),
-                }
-            )
-
-    # Phase B — streaming structured synthesis.
-    allowlist_note = (
-        "Allowed citation segment_ids (others will be rejected): "
-        + ", ".join(sorted(citable_allowlist.keys()))
-        if citable_allowlist
-        else "No citable segments — answer that you found nothing."
-    )
-    b_input = a_input + [
-        {
-            "role": "user",
-            "content": (
-                "Now write the final answer for the user. "
-                "Use inline [1] [2] markers and emit citations only for "
-                "segment_ids from the search results above. "
-                f"{allowlist_note}"
-            ),
-        }
-    ]
-
-    extractor = _MarkdownDeltaExtractor()
-    raw_b_text = ""
-    b_usage: Any = None
-
+    assistant_text = ""
+    usage: Any = None
+    completed_response_obj: Any = None
     stream = await client.responses.create(
         model=settings.openai_llm_model,
-        instructions=SYSTEM_PROMPT,
-        input=b_input,
-        text={
-            "format": {
-                "type": "json_schema",
-                **final_answer_schema(),
-            }
-        },
+        instructions=instructions,
+        input=response_input,
+        tools=[mcp_tool],
         prompt_cache_key=f"wai-companion-{user_id}",
         stream=True,
     )
@@ -1468,24 +1397,26 @@ async def run_turn(
             if delta is None and isinstance(event, dict):
                 delta = event.get("delta", "")
             delta = delta or ""
-            raw_b_text += delta
-            new_md = extractor.feed(delta)
-            if new_md:
-                yield TokenEvent(text=new_md)
+            assistant_text += delta
+            if delta:
+                yield TokenEvent(text=delta)
         elif event_type in ("response.completed", "response.done"):
             response_obj = getattr(event, "response", None)
             if response_obj is None and isinstance(event, dict):
                 response_obj = event.get("response")
             if response_obj is not None:
+                completed_response_obj = response_obj
                 try:
-                    ensure_response_completed(response_obj, operation="Companion final answer")
+                    ensure_response_completed(response_obj, operation="Companion response")
                 except OpenAIResponseError as exc:
-                    raise CompanionError("phase_b_model_incomplete", str(exc)) from exc
-                b_usage = getattr(response_obj, "usage", None)
-                if b_usage is None and isinstance(response_obj, dict):
-                    b_usage = response_obj.get("usage")
-                if not raw_b_text:
-                    raw_b_text = _extract_text(response_obj)
+                    raise CompanionError("model_incomplete", str(exc)) from exc
+                usage = getattr(response_obj, "usage", None)
+                if usage is None and isinstance(response_obj, dict):
+                    usage = response_obj.get("usage")
+                if not assistant_text:
+                    assistant_text = _extract_text(response_obj)
+                    if assistant_text:
+                        yield TokenEvent(text=assistant_text)
         elif event_type == "response.error" or event_type == "error":
             err = getattr(event, "error", None)
             if err is None and isinstance(event, dict):
@@ -1493,81 +1424,29 @@ async def run_turn(
             err_msg = (
                 getattr(err, "message", None)
                 or (err.get("message") if isinstance(err, dict) else None)
-                or "Phase-B stream failed"
+                or "Companion stream failed"
             )
-            raise CompanionError("phase_b_stream_error", str(err_msg))
+            raise CompanionError("stream_error", str(err_msg))
 
-    if not raw_b_text:
+    assistant_text = assistant_text.strip()
+    if not assistant_text:
         raise CompanionError(
-            "invalid_structured_output",
-            "Phase-B stream completed without emitting any output text.",
+            "empty_model_output",
+            "Companion stream completed without emitting any text.",
         )
 
-    try:
-        parsed = json.loads(raw_b_text)
-    except json.JSONDecodeError as exc:
-        raise CompanionError(
-            "invalid_structured_output",
-            f"Model returned non-JSON final answer: {exc}",
-        ) from exc
-
-    try:
-        markdown = parsed["markdown"]
-        raw_citations = parsed["citations"]
-    except (KeyError, TypeError) as exc:
-        raise CompanionError(
-            "invalid_structured_output",
-            f"Phase-B JSON missing required fields: {exc}",
-        ) from exc
-
-    valid_citations: list[dict[str, Any]] = []
-    dropped = 0
-    for cit in raw_citations:
-        seg = citable_allowlist.get(cit.get("segment_id", ""))
-        if seg is None:
-            dropped += 1
-            continue
-        valid_citations.append(
-            {
-                "index": cit["index"],
-                "segment_id": seg.segment_id,
-                "recording_id": seg.recording_id,
-                "start_ms": seg.start_ms,
-                "end_ms": seg.end_ms,
-                "span_start": cit["span_start"],
-                "span_end": cit["span_end"],
-            }
-        )
-
-    for cit in valid_citations:
-        yield CitationEvent(
-            index=cit["index"],
-            segment_id=cit["segment_id"],
-            recording_id=cit["recording_id"],
-            start_ms=cit["start_ms"],
-            end_ms=cit["end_ms"],
-            span_start=cit["span_start"],
-            span_end=cit["span_end"],
-        )
-
-    a_usage = getattr(response, "usage", None) if response is not None else None
-    input_tokens = _get_usage(a_usage, "input_tokens") + _get_usage(
-        b_usage, "input_tokens"
-    )
-    output_tokens = _get_usage(a_usage, "output_tokens") + _get_usage(
-        b_usage, "output_tokens"
-    )
-    cached_tokens = _get_usage(a_usage, "cached_tokens") + _get_usage(
-        b_usage, "cached_tokens"
-    )
+    input_tokens = _get_usage(usage, "input_tokens")
+    output_tokens = _get_usage(usage, "output_tokens")
+    cached_tokens = _get_usage(usage, "cached_tokens")
     latency_ms = int((time.monotonic() - started) * 1000)
 
-    assistant_content = [{"type": "text", "text": markdown}]
+    assistant_content = [{"type": "text", "text": assistant_text}]
+    mcp_context_items = _extract_mcp_context_items(completed_response_obj)
     assistant_msg = ChatMessage(
         conversation_id=conv.id,
         role="assistant",
         content=assistant_content,
-        tool_calls=raw_tool_calls or None,
+        tool_calls=mcp_context_items or None,
         cached_tokens=cached_tokens or None,
         input_tokens=input_tokens or None,
         output_tokens=output_tokens or None,
@@ -1578,27 +1457,8 @@ async def run_turn(
     await db.flush()
     await db.refresh(assistant_msg)
 
-    for cit in valid_citations:
-        db.add(
-            MessageCitation(
-                message_id=assistant_msg.id,
-                segment_id=uuid.UUID(cit["segment_id"]),
-                recording_id=uuid.UUID(cit["recording_id"]),
-                span_start=cit["span_start"],
-                span_end=cit["span_end"],
-                citation_index=cit["index"],
-            )
-        )
-
     conv.last_message_at = datetime.now(timezone.utc)
     await db.flush()
-
-    if dropped:
-        logger.warning(
-            "companion citation_drop_count=%d conversation_id=%s",
-            dropped,
-            conv.id,
-        )
 
     yield DoneEvent(
         message_id=str(assistant_msg.id),
@@ -1632,6 +1492,33 @@ async def _load_conversation_locked(
             status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
         )
     return conv
+
+
+def _extract_mcp_context_items(response_obj: Any) -> list[dict[str, Any]]:
+    output = getattr(response_obj, "output", None)
+    if output is None and isinstance(response_obj, dict):
+        output = response_obj.get("output")
+    output = output or []
+    items: list[dict[str, Any]] = []
+    for item in output:
+        data = _response_item_to_dict(item)
+        if data.get("type") == "mcp_list_tools":
+            items.append(data)
+    return items
+
+
+def _response_item_to_dict(item: Any) -> dict[str, Any]:
+    if isinstance(item, dict):
+        return item
+    model_dump = getattr(item, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json", exclude_none=True)
+    data: dict[str, Any] = {}
+    for key in ("id", "type", "server_label", "tools"):
+        value = getattr(item, key, None)
+        if value is not None:
+            data[key] = value
+    return data
 
 
 def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
