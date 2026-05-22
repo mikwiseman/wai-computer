@@ -18,6 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.observability import (
@@ -919,6 +920,7 @@ async def _persist_client_segments(
     recording.status = RecordingStatus.READY.value
     recording.failure_code = None
     recording.failure_message = None
+    await record_recording_transcript_words(db, recording, transcript_text)
     await db.commit()
     return transcript_text
 
@@ -2798,6 +2800,7 @@ async def upload_audio_file(
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
         recording.failure_message = None
+        await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
         _delete_staged_file(str(staged_path))
     except Exception as exc:

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.models.billing import Plan, Subscription, UsageWeek
+from app.models.recording import Recording
 from app.models.user import User
 
 # Whitespace tokenizer — close enough to "words" for billing purposes.
@@ -93,12 +94,17 @@ class WordQuota:
     """
 
     @staticmethod
-    async def _resolve_plan(db: AsyncSession, user: User) -> Plan:
+    async def _resolve_plan_for_user_id(db: AsyncSession, user_id) -> Plan:
         """Resolve the user's effective plan (active subscription or free)."""
-        if user.current_subscription_id is not None:
+        current_subscription_id = (
+            await db.execute(
+                select(User.current_subscription_id).where(User.id == user_id)
+            )
+        ).scalar_one_or_none()
+        if current_subscription_id is not None:
             sub = (
                 await db.execute(
-                    select(Subscription).where(Subscription.id == user.current_subscription_id)
+                    select(Subscription).where(Subscription.id == current_subscription_id)
                 )
             ).scalar_one_or_none()
             if sub is not None and sub.status in {"active", "trialing"}:
@@ -114,6 +120,10 @@ class WordQuota:
         if plan is None:
             raise RuntimeError("Free plan row missing — seed migration not applied?")
         return plan
+
+    @classmethod
+    async def _resolve_plan(cls, db: AsyncSession, user: User) -> Plan:
+        return await cls._resolve_plan_for_user_id(db, user.id)
 
     @staticmethod
     async def _current_usage(db: AsyncSession, user_id, week_start: date) -> int:
@@ -180,6 +190,17 @@ class WordQuota:
         *,
         now: datetime | None = None,
     ) -> QuotaCheckResult:
+        return await cls.record_for_user_id(db, user.id, words=words, now=now)
+
+    @classmethod
+    async def record_for_user_id(
+        cls,
+        db: AsyncSession,
+        user_id,
+        words: int,
+        *,
+        now: datetime | None = None,
+    ) -> QuotaCheckResult:
         """Atomically increment the user's weekly counter and return the new state.
 
         Always records — quota enforcement happens via ``check`` before the
@@ -189,13 +210,13 @@ class WordQuota:
         """
         if words < 0:
             words = 0
-        plan = await cls._resolve_plan(db, user)
+        plan = await cls._resolve_plan_for_user_id(db, user_id)
         week_start = current_week_start(now)
         reset_at = next_week_start(now)
 
         stmt = (
             pg_insert(UsageWeek)
-            .values(user_id=user.id, week_start_utc=week_start, words_used=words)
+            .values(user_id=user_id, week_start_utc=week_start, words_used=words)
             .on_conflict_do_update(
                 constraint="uq_billing_usage_user_week",
                 set_={"words_used": UsageWeek.words_used + words},
@@ -211,3 +232,27 @@ class WordQuota:
         return QuotaCheckResult(
             allowed=allowed, words_used=new_total, words_cap=cap, reset_at=reset_at
         )
+
+
+async def record_recording_transcript_words(
+    db: AsyncSession,
+    recording: Recording,
+    transcript_text: str,
+) -> QuotaCheckResult | None:
+    """Record only the newly observed word delta for a recording transcript.
+
+    Recording transcript saves can be retried or replaced. The billing ledger is
+    append-only, so each recording stores the largest transcript word count that
+    has already been billed and only increments the weekly usage by the delta.
+    """
+    actual_words = count_words(transcript_text)
+    previous_words = max(recording.billed_word_count or 0, 0)
+    if actual_words <= previous_words:
+        return None
+    recorded = await WordQuota.record_for_user_id(
+        db,
+        recording.user_id,
+        words=actual_words - previous_words,
+    )
+    recording.billed_word_count = actual_words
+    return recorded

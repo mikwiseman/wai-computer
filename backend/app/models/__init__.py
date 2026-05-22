@@ -29,7 +29,12 @@ from app.models.mcp_oauth import (
 from app.models.person import Person, Voiceprint
 from app.models.recording import ActionItem, Folder, Recording, RecordingShare, Segment, Summary
 from app.models.refresh_token import RefreshToken
-from app.models.telegram import TelegramAccount, TelegramPairing, TelegramUpdate
+from app.models.telegram import (
+    TelegramAccount,
+    TelegramBotLinkCode,
+    TelegramPairing,
+    TelegramUpdate,
+)
 from app.models.user import User
 from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 
@@ -62,6 +67,7 @@ __all__ = [
     "RecordingTag",
     "RefreshToken",
     "TelegramAccount",
+    "TelegramBotLinkCode",
     "TelegramPairing",
     "TelegramUpdate",
     "Commitment",

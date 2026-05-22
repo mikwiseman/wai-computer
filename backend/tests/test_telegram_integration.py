@@ -28,9 +28,15 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.core.transcript_utils import TranscriptResult
+from app.models.billing import UsageWeek
 from app.models.companion import Conversation
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
-from app.models.telegram import TelegramAccount, TelegramPairing, TelegramUpdate
+from app.models.telegram import (
+    TelegramAccount,
+    TelegramBotLinkCode,
+    TelegramPairing,
+    TelegramUpdate,
+)
 from app.models.user import User
 
 
@@ -266,6 +272,11 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
     assert action_items[1].due_date is None
     assert len(highlights) == 1
     assert highlights[0].importance == "medium"
+    usage = (
+        await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
+    ).scalar_one()
+    assert usage.words_used == 3
+    assert recording.billed_word_count == 3
 
 
 @pytest.mark.asyncio
@@ -400,7 +411,12 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
     )
 
     assert "уже привязан" in capture.messages[0]["text"]
-    assert "Настройки" in capture.messages[1]["text"]
+    assert "код" in capture.messages[1]["text"]
+    assert (
+        await db_session.execute(
+            select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 999)
+        )
+    ).scalar_one()
 
 
 @pytest.mark.asyncio
@@ -444,6 +460,45 @@ async def test_handle_start_command_consumes_pairing_and_ignores_invalid_message
 
     assert "Готово" in capture.messages[0]["text"]
     assert await telegram_routes._load_account(db_session, 321) is not None
+
+
+@pytest.mark.asyncio
+async def test_bot_link_code_claims_telegram_account(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    monkeypatch.setattr(telegram_routes.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(telegram_routes.settings, "telegram_webhook_secret_token", "secret")
+    user = await _user(db_session)
+    raw_code = "ABCD2345"
+    db_session.add(
+        TelegramBotLinkCode(
+            token_hash=telegram_routes._token_hash(raw_code),
+            telegram_user_id=444,
+            telegram_chat_id=444,
+            username="anna",
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    status = await telegram_routes.claim_link_code(
+        telegram_routes.TelegramLinkCodeClaimRequest(code="ABCD-2345"),
+        user,
+        db_session,
+    )
+
+    assert status.linked is True
+    assert status.telegram_user_id == 444
+    assert status.username == "anna"
+    account = await telegram_routes._load_account(db_session, 444)
+    assert account is not None
+    code = (
+        await db_session.execute(
+            select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 444)
+        )
+    ).scalar_one()
+    assert code.consumed_at is not None
 
 
 @pytest.mark.asyncio

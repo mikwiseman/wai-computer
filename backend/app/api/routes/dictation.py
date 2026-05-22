@@ -289,11 +289,7 @@ async def create_dictation_entry(
         response.status_code = status.HTTP_200_OK
         return _serialize_entry(found)
 
-    # Trust the client's word_count when present; otherwise derive from the
-    # text we actually persist (cleaned > raw).
-    words = request.word_count
-    if words <= 0:
-        words = count_words(request.cleaned_text or request.raw_text)
+    words = count_words(request.cleaned_text or request.raw_text)
 
     quota = await WordQuota.check(
         db, user, estimated_words=words, enforce_override=enforce_payment
@@ -315,7 +311,7 @@ async def create_dictation_entry(
         raw_text=request.raw_text,
         cleaned_text=request.cleaned_text,
         duration_seconds=request.duration_seconds,
-        word_count=request.word_count,
+        word_count=words,
         occurred_at=request.occurred_at,
     )
     db.add(entry)
@@ -332,7 +328,7 @@ async def create_dictation_entry(
         len(request.raw_text),
         len(request.cleaned_text) if request.cleaned_text is not None else "null",
         request.duration_seconds,
-        request.word_count,
+        words,
     )
     response.status_code = status.HTTP_201_CREATED
     return _serialize_entry(entry)

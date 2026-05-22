@@ -111,6 +111,7 @@ struct MacSettingsView: View {
     @State private var dictationPostFilterEnabled = false
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
+    @State private var telegramLinkCode = ""
     @State private var telegramLoading = false
     @State private var telegramError: String?
     @State private var billingRefreshID = 0
@@ -567,8 +568,8 @@ struct MacSettingsView: View {
                 .accessibilityIdentifier("settings-telegram-unlink-button")
             } else {
                 Text(t(
-                    "Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai.",
-                    "Подключи @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы Wai."
+                    "Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai. You can start from WaiComputer or enter a code from the bot.",
+                    "Подключи @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы Wai. Можно начать здесь или ввести код из бота."
                 ))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
@@ -589,36 +590,31 @@ struct MacSettingsView: View {
                     }
                 }
 
-                if let telegramPairing {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text(t(
-                            "Open this link to finish pairing:",
-                            "Открой ссылку, чтобы завершить привязку:"
-                        ))
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textSecondary)
+                if telegramPairing != nil {
+                    Text(t(
+                        "Telegram opened. Press Start in the bot, then return to WaiComputer.",
+                        "Telegram открыт. Нажми Start в боте, затем вернись в WaiComputer."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
 
-                        HStack {
-                            Text(telegramPairing.webLink)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .textSelection(.enabled)
-
-                            Button {
-                                openTelegramPairing(telegramPairing)
-                            } label: {
-                                Text(t("Open", "Открыть"))
-                            }
-                            .accessibilityIdentifier("settings-telegram-open-link-button")
-
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(telegramPairing.webLink, forType: .string)
-                            } label: {
-                                Text(t("Copy", "Копировать"))
-                            }
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t("Code from Telegram", "Код из Telegram"))
+                        .font(Typography.caption.weight(.semibold))
+                    HStack {
+                        TextField("ABCD-2345", text: $telegramLinkCode)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(telegramLoading)
+                            .accessibilityIdentifier("settings-telegram-code-field")
+                        Button {
+                            Task { await claimTelegramLinkCode() }
+                        } label: {
+                            Text(t("Link by code", "Привязать по коду"))
                         }
+                        .disabled(telegramLoading || telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("settings-telegram-claim-code-button")
                     }
                 }
             }
@@ -1218,12 +1214,32 @@ struct MacSettingsView: View {
         telegramLoading = false
     }
 
+    private func claimTelegramLinkCode() async {
+        guard !telegramLoading else { return }
+        let code = telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return }
+        telegramLoading = true
+        do {
+            telegramStatus = try await appState.getAPIClient().claimTelegramLinkCode(code)
+            telegramPairing = nil
+            telegramLinkCode = ""
+            telegramError = nil
+        } catch {
+            telegramError = t(
+                "Couldn't link Telegram with this code: \(error.localizedDescription)",
+                "Не удалось привязать Telegram по коду: \(error.localizedDescription)"
+            )
+        }
+        telegramLoading = false
+    }
+
     private func unlinkTelegram() async {
         guard !telegramLoading else { return }
         telegramLoading = true
         do {
             try await appState.getAPIClient().unlinkTelegram()
             telegramPairing = nil
+            telegramLinkCode = ""
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
             telegramError = nil
         } catch {
@@ -1240,9 +1256,10 @@ struct MacSettingsView: View {
            NSWorkspace.shared.open(deepURL) {
             return
         }
-        if let webURL = URL(string: pairing.webLink) {
-            NSWorkspace.shared.open(webURL)
-        }
+        telegramError = t(
+            "Couldn't open Telegram. Open @waicomputer_bot in Telegram and enter the code here.",
+            "Не удалось открыть Telegram. Открой @waicomputer_bot в Telegram и введи код здесь."
+        )
     }
 
     private func saveDictationPostFilterEnabled(_ enabled: Bool) async {

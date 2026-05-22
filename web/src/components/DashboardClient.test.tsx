@@ -19,6 +19,12 @@ const mockListEntities = vi.fn();
 const mockCreateEntity = vi.fn();
 const mockDeleteEntity = vi.fn();
 const mockChangePassword = vi.fn();
+const mockGetSettings = vi.fn();
+const mockUpdateSettings = vi.fn();
+const mockGetTelegramLinkStatus = vi.fn();
+const mockStartTelegramLink = vi.fn();
+const mockClaimTelegramLinkCode = vi.fn();
+const mockUnlinkTelegram = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
 const mockRevokeMcpConnection = vi.fn();
@@ -47,6 +53,12 @@ vi.mock("@/lib/api", () => ({
   createEntity: (...args: unknown[]) => mockCreateEntity(...args),
   deleteEntity: (...args: unknown[]) => mockDeleteEntity(...args),
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
+  getSettings: (...args: unknown[]) => mockGetSettings(...args),
+  updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
+  getTelegramLinkStatus: (...args: unknown[]) => mockGetTelegramLinkStatus(...args),
+  startTelegramLink: (...args: unknown[]) => mockStartTelegramLink(...args),
+  claimTelegramLinkCode: (...args: unknown[]) => mockClaimTelegramLinkCode(...args),
+  unlinkTelegram: (...args: unknown[]) => mockUnlinkTelegram(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
   revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
@@ -108,6 +120,32 @@ const baseActionItems = [
   },
 ];
 
+const baseSettings = {
+  default_language: "ru",
+  summary_language: "ru",
+  summary_style: "medium",
+  summary_instructions: null,
+  dictation_live_stt_provider: "inworld",
+  dictation_live_stt_model: "stt-1",
+  recording_live_stt_provider: "inworld",
+  recording_live_stt_model: "stt-1",
+  file_stt_provider: "elevenlabs",
+  file_stt_model: "scribe_v2",
+  dictation_post_filter_enabled: false,
+  dictation_post_filter_provider: "openai",
+  dictation_post_filter_model: "gpt-5.5",
+};
+
+const baseTelegramStatus = {
+  linked: false,
+  bot_username: "waicomputer_bot",
+  telegram_user_id: null,
+  username: null,
+  first_name: null,
+  last_name: null,
+  linked_at: null,
+};
+
 const baseEntities = [
   {
     id: "e1",
@@ -134,6 +172,23 @@ function arrangeHappyPathMocks() {
   mockCreateEntity.mockResolvedValue(baseEntities[0]);
   mockDeleteEntity.mockResolvedValue(undefined);
   mockChangePassword.mockResolvedValue({ message: "Password changed successfully" });
+  mockGetSettings.mockResolvedValue(baseSettings);
+  mockUpdateSettings.mockResolvedValue(baseSettings);
+  mockGetTelegramLinkStatus.mockResolvedValue(baseTelegramStatus);
+  mockStartTelegramLink.mockResolvedValue({
+    bot_username: "waicomputer_bot",
+    deep_link: "tg://resolve?domain=waicomputer_bot&start=link_token",
+    web_link: "https://t.me/waicomputer_bot?start=link_token",
+    expires_at: "2026-05-22T09:00:00Z",
+  });
+  mockClaimTelegramLinkCode.mockResolvedValue({
+    ...baseTelegramStatus,
+    linked: true,
+    telegram_user_id: 123,
+    username: "mik",
+    linked_at: "2026-05-22T09:00:00Z",
+  });
+  mockUnlinkTelegram.mockResolvedValue(undefined);
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
   mockRevokeMcpConnection.mockResolvedValue(undefined);
@@ -196,6 +251,12 @@ describe("DashboardClient", () => {
       mockCreateEntity,
       mockDeleteEntity,
       mockChangePassword,
+      mockGetSettings,
+      mockUpdateSettings,
+      mockGetTelegramLinkStatus,
+      mockStartTelegramLink,
+      mockClaimTelegramLinkCode,
+      mockUnlinkTelegram,
       mockLogout,
       mockListMcpConnections,
       mockRevokeMcpConnection,
@@ -674,6 +735,26 @@ describe("DashboardClient", () => {
     });
 
     expect(screen.getByTestId("current-password")).toBeInTheDocument();
+  });
+
+  it("claims Telegram bot link code from settings", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    await waitFor(() => {
+      expect(screen.getByText("Код из Telegram")).toBeInTheDocument();
+    });
+    await user.type(screen.getByPlaceholderText("ABCD-2345"), "ABCD-2345");
+    await user.click(screen.getByRole("button", { name: "Привязать по коду" }));
+
+    await waitFor(() => {
+      expect(mockClaimTelegramLinkCode).toHaveBeenCalledWith("ABCD-2345");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Telegram привязан.");
+    });
   });
 
   // --- Password change does NOT clear fields on failure ---

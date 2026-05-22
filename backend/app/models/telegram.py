@@ -67,6 +67,34 @@ class TelegramPairing(Base, UUIDMixin, TimestampMixin):
     user: Mapped["User"] = relationship("User")
 
 
+class TelegramBotLinkCode(Base, UUIDMixin, TimestampMixin):
+    """One-time human code generated from Telegram before a user signs in."""
+
+    __tablename__ = "telegram_bot_link_codes"
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255))
+    first_name: Mapped[str | None] = mapped_column(String(255))
+    last_name: Mapped[str | None] = mapped_column(String(255))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    user: Mapped["User | None"] = relationship("User")
+
+
 class TelegramUpdate(Base):
     """Idempotency record for Telegram webhook updates."""
 

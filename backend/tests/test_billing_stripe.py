@@ -350,6 +350,54 @@ async def test_invoice_paid_creates_invoice_row(db_session):
 
 
 @pytest.mark.asyncio
+async def test_invoice_paid_is_idempotent_by_invoice_id(db_session):
+    _, pro = await _seed_plans(db_session)
+    user = User(email="inv-idempotent@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status=SubscriptionStatus.PAST_DUE.value,
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_inv_idempotent",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="invoice.paid",
+        subscription_id_provider="sub_inv_idempotent",
+        customer_id_provider="cus_inv_idempotent",
+        status=None,
+        raw={
+            "type": "invoice.paid",
+            "data": {
+                "object": {
+                    "id": "in_idempotent",
+                    "subscription": "sub_inv_idempotent",
+                    "amount_paid": 1200,
+                    "currency": "usd",
+                }
+            },
+        },
+    )
+
+    await apply_stripe_event(db_session, event)
+    await apply_stripe_event(db_session, event)
+    await db_session.refresh(sub)
+
+    invoices = (
+        await db_session.execute(
+            select(Invoice).where(Invoice.provider_payment_id == "in_idempotent")
+        )
+    ).scalars().all()
+    assert len(invoices) == 1
+    assert sub.status == SubscriptionStatus.ACTIVE.value
+
+
+@pytest.mark.asyncio
 async def test_invoice_failed_marks_past_due(db_session):
     free, pro = await _seed_plans(db_session)
     user = User(email="fail@example.test")

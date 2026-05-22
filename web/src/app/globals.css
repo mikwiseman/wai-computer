@@ -704,6 +704,18 @@ a.primary-button:hover {
   margin: 0;
 }
 
+.telegram-code-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.6rem;
+}
+
+.telegram-code-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .settings-checkbox-field {
   display: flex;
   align-items: center;

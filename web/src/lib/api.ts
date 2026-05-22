@@ -507,6 +507,13 @@ export function startTelegramLink(): Promise<TelegramPairing> {
   return apiFetch<TelegramPairing>("/api/telegram/link/start", { method: "POST" });
 }
 
+export function claimTelegramLinkCode(code: string): Promise<TelegramLinkStatus> {
+  return apiFetch<TelegramLinkStatus>("/api/telegram/link/claim", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
 export function unlinkTelegram(): Promise<void> {
   return apiFetch<void>("/api/telegram/link", { method: "DELETE" });
 }

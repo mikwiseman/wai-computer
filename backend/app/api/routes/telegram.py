@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import secrets
+import string
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -26,7 +27,12 @@ from app.core.telegram_client import (
 )
 from app.db.session import get_db_context
 from app.models.companion import Conversation
-from app.models.telegram import TelegramAccount, TelegramPairing, TelegramUpdate
+from app.models.telegram import (
+    TelegramAccount,
+    TelegramBotLinkCode,
+    TelegramPairing,
+    TelegramUpdate,
+)
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -36,6 +42,9 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 PAIRING_TTL = timedelta(minutes=15)
 PAIRING_PREFIX = "link_"
+BOT_LINK_CODE_TTL = timedelta(minutes=15)
+BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+BOT_LINK_CODE_LENGTH = 8
 
 
 class TelegramLinkStatus(BaseModel):
@@ -53,6 +62,10 @@ class TelegramPairingResponse(BaseModel):
     deep_link: str
     web_link: str
     expires_at: datetime
+
+
+class TelegramLinkCodeClaimRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
 
 
 def _token_hash(token: str) -> str:
@@ -90,11 +103,32 @@ def _message_command(message: dict[str, Any]) -> tuple[str, str] | None:
     return command, rest.strip()
 
 
+def _normalize_bot_link_code(code: str) -> str:
+    return "".join(ch for ch in code.upper() if ch in string.ascii_uppercase + string.digits)
+
+
+def _format_bot_link_code(code: str) -> str:
+    normalized = _normalize_bot_link_code(code)
+    return f"{normalized[:4]}-{normalized[4:]}"
+
+
 async def _load_account(db: AsyncSession, telegram_user_id: int) -> TelegramAccount | None:
     result = await db.execute(
         select(TelegramAccount).where(TelegramAccount.telegram_user_id == telegram_user_id)
     )
     return result.scalar_one_or_none()
+
+
+def _status_from_account(account: TelegramAccount | None) -> TelegramLinkStatus:
+    return TelegramLinkStatus(
+        linked=account is not None,
+        bot_username=_bot_username(),
+        telegram_user_id=account.telegram_user_id if account else None,
+        username=account.username if account else None,
+        first_name=account.first_name if account else None,
+        last_name=account.last_name if account else None,
+        linked_at=account.created_at if account else None,
+    )
 
 
 async def _send_chunks(
@@ -118,15 +152,7 @@ async def get_link_status(user: CurrentUser, db: Database) -> TelegramLinkStatus
         select(TelegramAccount).where(TelegramAccount.user_id == user.id)
     )
     account = result.scalar_one_or_none()
-    return TelegramLinkStatus(
-        linked=account is not None,
-        bot_username=_bot_username(),
-        telegram_user_id=account.telegram_user_id if account else None,
-        username=account.username if account else None,
-        first_name=account.first_name if account else None,
-        last_name=account.last_name if account else None,
-        linked_at=account.created_at if account else None,
-    )
+    return _status_from_account(account)
 
 
 @router.post("/link/start", response_model=TelegramPairingResponse)
@@ -163,6 +189,50 @@ async def unlink(user: CurrentUser, db: Database) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+async def _apply_telegram_link(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    telegram_user_id: int,
+    telegram_chat_id: int,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+) -> TelegramAccount:
+    now = datetime.now(timezone.utc)
+    existing_result = await db.execute(
+        select(TelegramAccount).where(
+            TelegramAccount.telegram_user_id == telegram_user_id
+        )
+    )
+    existing_by_telegram = existing_result.scalar_one_or_none()
+    if existing_by_telegram is not None and existing_by_telegram.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот Telegram уже привязан к другому аккаунту WaiComputer.",
+        )
+
+    account_result = await db.execute(
+        select(TelegramAccount).where(TelegramAccount.user_id == user_id)
+    )
+    account = account_result.scalar_one_or_none()
+    if account is None:
+        account = TelegramAccount(
+            user_id=user_id,
+            telegram_user_id=telegram_user_id,
+        )
+        db.add(account)
+
+    account.telegram_user_id = telegram_user_id
+    account.telegram_chat_id = telegram_chat_id
+    account.username = username
+    account.first_name = first_name
+    account.last_name = last_name
+    account.last_seen_at = now
+    await db.flush()
+    return account
+
+
 async def _consume_pairing(
     db: AsyncSession,
     *,
@@ -190,32 +260,20 @@ async def _consume_pairing(
             "Создай новую ссылку в настройках WaiComputer."
         )
 
-    existing_result = await db.execute(
-        select(TelegramAccount).where(
-            TelegramAccount.telegram_user_id == telegram_user_id
-        )
-    )
-    existing_by_telegram = existing_result.scalar_one_or_none()
-    if existing_by_telegram is not None and existing_by_telegram.user_id != pairing.user_id:
-        return "Этот Telegram уже привязан к другому аккаунту WaiComputer."
-
-    account_result = await db.execute(
-        select(TelegramAccount).where(TelegramAccount.user_id == pairing.user_id)
-    )
-    account = account_result.scalar_one_or_none()
-    if account is None:
-        account = TelegramAccount(
+    try:
+        await _apply_telegram_link(
+            db,
             user_id=pairing.user_id,
             telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
         )
-        db.add(account)
-
-    account.telegram_user_id = telegram_user_id
-    account.telegram_chat_id = telegram_chat_id
-    account.username = username
-    account.first_name = first_name
-    account.last_name = last_name
-    account.last_seen_at = now
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_409_CONFLICT:
+            raise
+        return "Этот Telegram уже привязан к другому аккаунту WaiComputer."
     pairing.telegram_user_id = telegram_user_id
     pairing.consumed_at = now
     await db.commit()
@@ -223,6 +281,132 @@ async def _consume_pairing(
         "Готово. Telegram привязан к WaiComputer. "
         "Теперь можно присылать голосовые, видео и вопросы текстом."
     )
+
+
+async def _create_bot_link_code(
+    db: AsyncSession,
+    *,
+    telegram_user_id: int,
+    telegram_chat_id: int,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+) -> str:
+    expires_at = datetime.now(timezone.utc) + BOT_LINK_CODE_TTL
+    for _ in range(10):
+        code = "".join(secrets.choice(BOT_LINK_CODE_ALPHABET) for _ in range(BOT_LINK_CODE_LENGTH))
+        existing = (
+            await db.execute(
+                select(TelegramBotLinkCode).where(
+                    TelegramBotLinkCode.token_hash == _token_hash(code)
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+        db.add(
+            TelegramBotLinkCode(
+                token_hash=_token_hash(code),
+                telegram_user_id=telegram_user_id,
+                telegram_chat_id=telegram_chat_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                expires_at=expires_at,
+            )
+        )
+        await db.commit()
+        return code
+    raise TelegramClientError("Telegram link code collision")
+
+
+async def _send_bot_link_code(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    intro: str,
+) -> None:
+    from_user = _telegram_user(message)
+    chat_id = _telegram_chat_id(message)
+    if from_user is None or chat_id is None:
+        return
+    telegram_user_id = from_user.get("id")
+    if not isinstance(telegram_user_id, int):
+        return
+    code = await _create_bot_link_code(
+        db,
+        telegram_user_id=telegram_user_id,
+        telegram_chat_id=chat_id,
+        username=from_user.get("username"),
+        first_name=from_user.get("first_name"),
+        last_name=from_user.get("last_name"),
+    )
+    await client.send_message(
+        chat_id,
+        (
+            f"{intro}\n\n"
+            "Открой WaiComputer -> Настройки -> Telegram и введи код:\n"
+            f"{_format_bot_link_code(code)}\n\n"
+            "Код действует 15 минут."
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _consume_bot_link_code(
+    db: AsyncSession,
+    *,
+    code: str,
+    user_id: Any,
+) -> TelegramAccount:
+    normalized = _normalize_bot_link_code(code)
+    if len(normalized) != BOT_LINK_CODE_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Код привязки неверный или устарел.",
+        )
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TelegramBotLinkCode).where(
+            and_(
+                TelegramBotLinkCode.token_hash == _token_hash(normalized),
+                TelegramBotLinkCode.consumed_at.is_(None),
+                TelegramBotLinkCode.expires_at > now,
+            )
+        )
+    )
+    link_code = result.scalar_one_or_none()
+    if link_code is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Код привязки неверный или устарел.",
+        )
+
+    account = await _apply_telegram_link(
+        db,
+        user_id=user_id,
+        telegram_user_id=link_code.telegram_user_id,
+        telegram_chat_id=link_code.telegram_chat_id,
+        username=link_code.username,
+        first_name=link_code.first_name,
+        last_name=link_code.last_name,
+    )
+    link_code.user_id = user_id
+    link_code.consumed_at = now
+    await db.commit()
+    return account
+
+
+@router.post("/link/claim", response_model=TelegramLinkStatus)
+async def claim_link_code(
+    request: TelegramLinkCodeClaimRequest,
+    user: CurrentUser,
+    db: Database,
+) -> TelegramLinkStatus:
+    _require_bot_runtime()
+    account = await _consume_bot_link_code(db, code=request.code, user_id=user.id)
+    return _status_from_account(account)
 
 
 def _telegram_user(message: dict[str, Any]) -> dict[str, Any] | None:
@@ -286,10 +470,15 @@ async def _handle_start_command(
     elif await _load_account(db, telegram_user_id):
         text = "WaiComputer уже привязан. Пришли голосовое, видео или вопрос текстом."
     else:
-        text = (
-            "Открой WaiComputer -> Настройки -> Telegram и нажми «Привязать». "
-            "После этого я смогу сохранять голосовые и видео в библиотеку."
+        await _send_bot_link_code(
+            db,
+            client,
+            message=message,
+            intro=(
+                "Чтобы привязать Telegram к WaiComputer, введи этот код в настройках."
+            ),
         )
+        return
     await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
 
 
@@ -464,7 +653,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 return
 
             command = _message_command(message)
-            if command and command[0] == "/start":
+            if command and command[0] in {"/start", "/link"}:
                 await _handle_start_command(
                     db,
                     client,
@@ -476,10 +665,11 @@ async def _handle_update(update: dict[str, Any]) -> None:
 
             account = await _load_account(db, telegram_user_id)
             if account is None:
-                await client.send_message(
-                    chat_id,
-                    "Сначала привяжи Telegram в настройках WaiComputer.",
-                    reply_to_message_id=message.get("message_id"),
+                await _send_bot_link_code(
+                    db,
+                    client,
+                    message=message,
+                    intro="Сначала привяжи Telegram к WaiComputer.",
                 )
                 await _mark_update(db, update_id, "completed")
                 return
