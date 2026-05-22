@@ -748,7 +748,7 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(screen.getByText("Код из Telegram")).toBeInTheDocument();
     });
-    await user.type(screen.getByPlaceholderText("ABCD-2345"), "ABCD-2345");
+    await user.type(screen.getByPlaceholderText("Введите код из бота"), "ABCD-2345");
     await user.click(screen.getByRole("button", { name: "Привязать по коду" }));
 
     await waitFor(() => {
