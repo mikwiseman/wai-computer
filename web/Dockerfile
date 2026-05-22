@@ -11,6 +11,7 @@ ARG API_BASE_URL
 ARG NEXT_PUBLIC_API_BASE_URL
 ENV API_BASE_URL=${API_BASE_URL}
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ ./
 RUN pnpm build
@@ -20,6 +21,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 RUN corepack enable
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
