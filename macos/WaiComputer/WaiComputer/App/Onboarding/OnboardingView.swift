@@ -474,7 +474,9 @@ struct OnboardingView: View {
 
     /// Triggers the macOS System Audio Recording prompt before the first real
     /// meeting recording. Apple exposes no standalone authorization API for Core
-    /// Audio taps, so the supported preflight is a short tap start/stop.
+    /// Audio taps, so the supported preflight is a short tap start/stop. A
+    /// silent output device is still a valid authorization path; actual audio
+    /// flow is checked later by the recording runtime monitor.
     private func requestSystemAudioPermission() {
         startPermissionPolling()
         #if DEBUG
@@ -497,15 +499,7 @@ struct OnboardingView: View {
             let capture = SystemAudioCapture()
             do {
                 try await capture.startRecording()
-                let receivedBuffers = await capture.waitForAudioBuffers(timeout: 2.0)
                 await capture.stopRecording()
-
-                guard receivedBuffers else {
-                    await MainActor.run {
-                        markSystemAudioSetupFailed()
-                    }
-                    return
-                }
 
                 await MainActor.run {
                     systemAudioPreflightPassedInCurrentProcess = true

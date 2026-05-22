@@ -41,6 +41,7 @@ rsync \
   --no-group \
   --exclude '.git/' \
   --exclude '.github/' \
+  --exclude '.codex/' \
   --exclude '.venv/' \
   --exclude '.venv312/' \
   --exclude '.pytest_cache/' \

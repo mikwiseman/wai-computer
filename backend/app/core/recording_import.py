@@ -58,6 +58,7 @@ CONTENT_TYPE_TO_EXTENSION = {
     "audio/m4a": "m4a",
     "audio/aac": "aac",
     "audio/ogg": "ogg",
+    "audio/oga": "oga",
     "audio/opus": "opus",
     "audio/webm": "webm",
     "audio/flac": "flac",
@@ -71,6 +72,7 @@ EXTENSION_TO_CONTENT_TYPE = {
     "m4a": "audio/mp4",
     "aac": "audio/aac",
     "ogg": "audio/ogg",
+    "oga": "audio/ogg",
     "opus": "audio/opus",
     "webm": "audio/webm",
     "flac": "audio/flac",
@@ -78,8 +80,9 @@ EXTENSION_TO_CONTENT_TYPE = {
     "mov": "video/quicktime",
     "mkv": "video/x-matroska",
 }
-SUPPORTED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "ogg", "opus", "webm", "flac"}
+SUPPORTED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "ogg", "oga", "opus", "webm", "flac"}
 SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mov", "webm", "mkv"}
+AUDIO_EXTENSIONS_REQUIRING_NORMALIZATION = {"ogg", "oga", "opus", "webm"}
 
 
 def resolve_import_extension(filename: str | None, content_type: str | None) -> str:
@@ -102,7 +105,26 @@ def resolve_import_extension(filename: str | None, content_type: str | None) -> 
 
 def _is_video_media(ext: str, content_type: str | None) -> bool:
     normalized_content_type = (content_type or "").split(";")[0].strip().lower()
-    return ext in SUPPORTED_VIDEO_EXTENSIONS or normalized_content_type.startswith("video/")
+    if normalized_content_type.startswith("video/"):
+        return True
+    if normalized_content_type.startswith("audio/"):
+        return False
+    return ext in SUPPORTED_VIDEO_EXTENSIONS
+
+
+def _is_audio_media_requiring_normalization(ext: str, content_type: str | None) -> bool:
+    normalized_content_type = (content_type or "").split(";")[0].strip().lower()
+    if ext in AUDIO_EXTENSIONS_REQUIRING_NORMALIZATION:
+        return True
+    return normalized_content_type in {"audio/ogg", "audio/oga", "audio/opus", "audio/webm"}
+
+
+def _pydub_format(ext: str) -> str | None:
+    if ext == "mov":
+        return None
+    if ext == "oga":
+        return "ogg"
+    return ext
 
 
 async def _normalize_media_for_transcription(
@@ -111,14 +133,17 @@ async def _normalize_media_for_transcription(
     ext: str,
     content_type: str,
 ) -> tuple[bytes, str, str]:
-    """Extract audio from videos and normalize browser containers when needed."""
-    if not _is_video_media(ext, content_type):
+    """Extract audio from videos and normalize containers STT providers reject."""
+    if not _is_video_media(ext, content_type) and not _is_audio_media_requiring_normalization(
+        ext,
+        content_type,
+    ):
         return data, content_type, ext
 
     def convert() -> bytes:
         from pydub import AudioSegment
 
-        segment = AudioSegment.from_file(BytesIO(data), format=ext if ext != "mov" else None)
+        segment = AudioSegment.from_file(BytesIO(data), format=_pydub_format(ext))
         segment = segment.set_frame_rate(16_000).set_channels(1).set_sample_width(2)
         output = BytesIO()
         segment.export(output, format="wav")
@@ -127,9 +152,14 @@ async def _normalize_media_for_transcription(
     try:
         wav_data = await asyncio.to_thread(convert)
     except Exception as exc:
+        if _is_video_media(ext, content_type):
+            raise RecordingImportError(
+                "video_audio_extract_failed",
+                "Не получилось извлечь звук из видео.",
+            ) from exc
         raise RecordingImportError(
-            "video_audio_extract_failed",
-            "Не получилось извлечь звук из видео.",
+            "audio_decode_failed",
+            "Не получилось прочитать аудио.",
         ) from exc
     return wav_data, "audio/wav", "wav"
 

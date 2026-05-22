@@ -114,6 +114,7 @@ struct MacSettingsView: View {
     @State private var telegramLinkCode = ""
     @State private var telegramLoading = false
     @State private var telegramError: String?
+    @State private var telegramLinkPollTask: Task<Void, Never>?
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -479,6 +480,7 @@ struct MacSettingsView: View {
         .onAppear(perform: refreshPermissions)
         .onDisappear {
             stopPermissionPolling()
+            stopTelegramLinkPolling()
             stopBillingReturnRefresh()
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -591,10 +593,14 @@ struct MacSettingsView: View {
                 }
 
                 if telegramPairing != nil {
-                    Text(t(
-                        "Telegram opened. Press Start in the bot, then return to WaiComputer.",
-                        "Telegram открыт. Нажми Start в боте, затем вернись в WaiComputer."
-                    ))
+                    HStack(spacing: Spacing.xs) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(t(
+                            "Telegram opened. Press Start in the bot; WaiComputer will finish linking automatically.",
+                            "Telegram открыт. Нажми Start в боте — WaiComputer завершит привязку автоматически."
+                        ))
+                    }
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -603,6 +609,12 @@ struct MacSettingsView: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(t("Code from Telegram", "Код из Telegram"))
                         .font(Typography.caption.weight(.semibold))
+                    Text(t(
+                        "Use this only if you started linking from Telegram.",
+                        "Это нужно только если ты начал привязку из Telegram."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
                     HStack {
                         TextField("", text: $telegramLinkCode)
                             .textFieldStyle(.roundedBorder)
@@ -1183,29 +1195,43 @@ struct MacSettingsView: View {
         }
     }
 
-    private func loadTelegramStatus() async {
-        guard !telegramLoading else { return }
-        telegramLoading = true
+    private func loadTelegramStatus(silent: Bool = false) async {
+        guard !telegramLoading || silent else { return }
+        if !silent {
+            telegramLoading = true
+        }
         do {
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
+            if telegramStatus?.linked == true {
+                telegramPairing = nil
+                telegramLinkCode = ""
+                stopTelegramLinkPolling()
+            }
             telegramError = nil
         } catch {
-            telegramError = t(
-                "Couldn't load Telegram status: \(error.localizedDescription)",
-                "Не удалось загрузить статус Telegram: \(error.localizedDescription)"
-            )
+            if !silent {
+                telegramError = t(
+                    "Couldn't load Telegram status: \(error.localizedDescription)",
+                    "Не удалось загрузить статус Telegram: \(error.localizedDescription)"
+                )
+            }
         }
-        telegramLoading = false
+        if !silent {
+            telegramLoading = false
+        }
     }
 
     private func startTelegramLink() async {
         guard !telegramLoading else { return }
+        stopTelegramLinkPolling()
         telegramLoading = true
         do {
             telegramPairing = try await appState.getAPIClient().startTelegramLink()
             telegramError = nil
             if let telegramPairing {
-                openTelegramPairing(telegramPairing)
+                if openTelegramPairing(telegramPairing) {
+                    startTelegramLinkPolling(until: telegramPairing.expiresAt)
+                }
             }
         } catch {
             telegramError = t(
@@ -1225,6 +1251,7 @@ struct MacSettingsView: View {
             telegramStatus = try await appState.getAPIClient().claimTelegramLinkCode(code)
             telegramPairing = nil
             telegramLinkCode = ""
+            stopTelegramLinkPolling()
             telegramError = nil
         } catch {
             telegramError = t(
@@ -1242,6 +1269,7 @@ struct MacSettingsView: View {
             try await appState.getAPIClient().unlinkTelegram()
             telegramPairing = nil
             telegramLinkCode = ""
+            stopTelegramLinkPolling()
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
             telegramError = nil
         } catch {
@@ -1253,15 +1281,33 @@ struct MacSettingsView: View {
         telegramLoading = false
     }
 
-    private func openTelegramPairing(_ pairing: TelegramPairing) {
+    private func openTelegramPairing(_ pairing: TelegramPairing) -> Bool {
         if let deepURL = URL(string: pairing.deepLink),
            NSWorkspace.shared.open(deepURL) {
-            return
+            return true
         }
         telegramError = t(
-            "Couldn't open Telegram. Open @waicomputer_bot in Telegram and enter the code here.",
-            "Не удалось открыть Telegram. Открой @waicomputer_bot в Telegram и введи код здесь."
+            "Couldn't open Telegram.",
+            "Не удалось открыть Telegram."
         )
+        return false
+    }
+
+    private func startTelegramLinkPolling(until expiresAt: Date) {
+        stopTelegramLinkPolling()
+        telegramLinkPollTask = Task { @MainActor in
+            while !Task.isCancelled && Date() < expiresAt {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if Task.isCancelled { break }
+                await loadTelegramStatus(silent: true)
+                if telegramStatus?.linked == true { break }
+            }
+        }
+    }
+
+    private func stopTelegramLinkPolling() {
+        telegramLinkPollTask?.cancel()
+        telegramLinkPollTask = nil
     }
 
     private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
