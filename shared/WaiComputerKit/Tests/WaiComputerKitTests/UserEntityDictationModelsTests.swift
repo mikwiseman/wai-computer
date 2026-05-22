@@ -98,11 +98,14 @@ final class UserEntityDictationModelsTests: XCTestCase {
     }
 
     func testRegisterRequestEncodes() throws {
-        let req = RegisterRequest(email: "a@b.com", password: "pw")
+        let req = RegisterRequest(email: "a@b.com", password: "pw", acceptedLegalTerms: true)
         let data = try encoder.encode(req)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"email\":\"a@b.com\""))
         XCTAssertTrue(json.contains("\"password\":\"pw\""))
+        XCTAssertTrue(json.contains("\"accepted_legal_terms\":true"))
+        XCTAssertTrue(json.contains("\"legal_terms_version\":\"2026-05-22\""))
+        XCTAssertTrue(json.contains("\"legal_privacy_version\":\"2026-05-22\""))
     }
 
     func testMagicLinkRequest() throws {

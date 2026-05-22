@@ -8,6 +8,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 # ---------------------------------------------------------------------------
 # list_chats: before cursor
 # ---------------------------------------------------------------------------
@@ -131,7 +133,7 @@ async def test_get_chat_per_user_isolation(
     # Create a second user and ensure they can't see the chat
     other_reg = await client.post(
         "/api/auth/register",
-        json={"email": "other-user@example.com", "password": "TestPass!123"},
+        json={"email": "other-user@example.com", "password": "TestPass!123", **LEGAL_ACCEPTANCE},
     )
     assert other_reg.status_code in (200, 201)
     other_token = other_reg.json()["access_token"]
@@ -283,7 +285,11 @@ async def test_post_message_per_user_isolation(
 
     other_reg = await client.post(
         "/api/auth/register",
-        json={"email": "other-poster@example.com", "password": "TestPass!123"},
+        json={
+            "email": "other-poster@example.com",
+            "password": "TestPass!123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     other_token = other_reg.json()["access_token"]
 

@@ -6,7 +6,7 @@ providers fill them in (Phases 2 and 3 of the v1.0 sprint).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated
 from urllib.parse import urlencode
@@ -16,13 +16,17 @@ from pydantic import BaseModel, PlainSerializer
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database, PaymentModeOverride
+from app.billing.promo_codes import hash_promo_code, normalize_promo_code
 from app.billing.providers.base import ProviderUnavailableError
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.billing.quota import WordQuota
+from app.billing.subscriptions import subscription_is_entitled
 from app.config import get_settings
 from app.models.billing import (
     BillingPeriod,
+    BillingPromoCode,
+    BillingPromoRedemption,
     BillingProvider,
     Plan,
     Subscription,
@@ -86,6 +90,10 @@ class CheckoutRequest(BaseModel):
     provider: str | None = None  # optional override: "stripe" | "tinkoff"
 
 
+class PromoClaimRequest(BaseModel):
+    code: str
+
+
 @router.get("/usage", response_model=UsageResponse)
 async def get_usage(
     user: CurrentUser, db: Database, enforce_payment: PaymentModeOverride
@@ -141,7 +149,7 @@ async def get_subscription(
                 select(Subscription).where(Subscription.id == user.current_subscription_id)
             )
         ).scalar_one_or_none()
-        if candidate_sub is not None and candidate_sub.status in {"active", "trialing"}:
+        if candidate_sub is not None and subscription_is_entitled(candidate_sub):
             sub = candidate_sub
             plan = (
                 await db.execute(select(Plan).where(Plan.id == sub.plan_id))
@@ -153,27 +161,10 @@ async def get_subscription(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Free plan missing"
         )
 
-    plan_payload = PlanResponse(
-        code=plan.code,
-        name=plan.name,
-        description=plan.description,
-        usd_amount_monthly=plan.usd_amount_monthly,
-        usd_amount_yearly=plan.usd_amount_yearly,
-        rub_amount_monthly=plan.tinkoff_amount_rub_monthly,
-        rub_amount_yearly=plan.tinkoff_amount_rub_yearly,
-        word_cap_per_week=plan.word_cap_per_week,
-        memory_retention_days=plan.memory_retention_days,
-        features=plan.features or {},
-    )
     settings = get_settings()
-    return SubscriptionResponse(
-        plan=plan_payload,
-        status=sub.status if sub is not None else "free",
-        provider=sub.provider if sub is not None else None,
-        billing_period=sub.billing_period if sub is not None else None,
-        current_period_end=sub.current_period_end if sub is not None else None,
-        cancel_at_period_end=bool(sub and sub.cancel_at_period_end),
-        trial_end=sub.trial_end if sub is not None else None,
+    return _subscription_payload(
+        plan=plan,
+        sub=sub,
         enforcement_enabled=settings.billing_enforcement_enabled or enforce_payment,
     )
 
@@ -200,6 +191,39 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
+def _plan_payload(plan: Plan) -> PlanResponse:
+    return PlanResponse(
+        code=plan.code,
+        name=plan.name,
+        description=plan.description,
+        usd_amount_monthly=plan.usd_amount_monthly,
+        usd_amount_yearly=plan.usd_amount_yearly,
+        rub_amount_monthly=plan.tinkoff_amount_rub_monthly,
+        rub_amount_yearly=plan.tinkoff_amount_rub_yearly,
+        word_cap_per_week=plan.word_cap_per_week,
+        memory_retention_days=plan.memory_retention_days,
+        features=plan.features or {},
+    )
+
+
+def _subscription_payload(
+    *,
+    plan: Plan,
+    sub: Subscription | None,
+    enforcement_enabled: bool,
+) -> SubscriptionResponse:
+    return SubscriptionResponse(
+        plan=_plan_payload(plan),
+        status=sub.status if sub is not None else "free",
+        provider=sub.provider if sub is not None else None,
+        billing_period=sub.billing_period if sub is not None else None,
+        current_period_end=sub.current_period_end if sub is not None else None,
+        cancel_at_period_end=bool(sub and sub.cancel_at_period_end),
+        trial_end=sub.trial_end if sub is not None else None,
+        enforcement_enabled=enforcement_enabled,
+    )
+
+
 @router.post("/checkout", response_model=CheckoutResponse)
 async def create_checkout(
     payload: CheckoutRequest,
@@ -211,7 +235,8 @@ async def create_checkout(
         raise HTTPException(status_code=400, detail="Unknown plan")
     if payload.period not in {p.value for p in BillingPeriod}:
         raise HTTPException(status_code=400, detail="Unknown period")
-    if payload.provider is not None and payload.provider not in {p.value for p in BillingProvider}:
+    checkout_providers = {BillingProvider.STRIPE.value, BillingProvider.TINKOFF.value}
+    if payload.provider is not None and payload.provider not in checkout_providers:
         raise HTTPException(status_code=400, detail="Unknown provider")
 
     settings = get_settings()
@@ -278,6 +303,92 @@ async def create_checkout(
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
     raise HTTPException(status_code=400, detail="Unknown provider")
+
+
+@router.post("/promo/claim", response_model=SubscriptionResponse)
+async def claim_promo_code(
+    payload: PromoClaimRequest,
+    user: CurrentUser,
+    db: Database,
+    enforce_payment: PaymentModeOverride,
+) -> SubscriptionResponse:
+    """Redeem a hash-stored promo code for non-renewing Pro access."""
+    normalized = normalize_promo_code(payload.code)
+    if not normalized:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+
+    promo = (
+        await db.execute(
+            select(BillingPromoCode)
+            .where(BillingPromoCode.code_hash == hash_promo_code(normalized))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if promo is None or not promo.active:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+
+    now = datetime.now(timezone.utc)
+    expires_at = promo.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at is not None and expires_at <= now:
+        raise HTTPException(status_code=400, detail="Promo code expired")
+    if promo.redeemed_count >= promo.max_redemptions:
+        raise HTTPException(status_code=409, detail="Promo code exhausted")
+
+    existing_redemption = (
+        await db.execute(
+            select(BillingPromoRedemption).where(
+                BillingPromoRedemption.promo_code_id == promo.id,
+                BillingPromoRedemption.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_redemption is not None:
+        raise HTTPException(status_code=409, detail="Promo code already redeemed")
+
+    plan = (await db.execute(select(Plan).where(Plan.id == promo.plan_id))).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=500, detail="Promo code plan missing")
+
+    if user.current_subscription_id is not None:
+        current_sub = (
+            await db.execute(
+                select(Subscription).where(Subscription.id == user.current_subscription_id)
+            )
+        ).scalar_one_or_none()
+        if current_sub is not None and subscription_is_entitled(current_sub):
+            raise HTTPException(status_code=409, detail="Active subscription already exists")
+
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status=SubscriptionStatus.ACTIVE.value,
+        provider=BillingProvider.PROMO.value,
+        billing_period=promo.billing_period,
+        current_period_start=now,
+        current_period_end=now + timedelta(days=promo.duration_days),
+        cancel_at_period_end=True,
+    )
+    db.add(sub)
+    await db.flush()
+    db.add(
+        BillingPromoRedemption(
+            promo_code_id=promo.id,
+            user_id=user.id,
+            subscription_id=sub.id,
+        )
+    )
+    promo.redeemed_count += 1
+    user.current_subscription_id = sub.id
+    await db.flush()
+
+    settings = get_settings()
+    return _subscription_payload(
+        plan=plan,
+        sub=sub,
+        enforcement_enabled=settings.billing_enforcement_enabled or enforce_payment,
+    )
 
 
 @router.post("/cancel")

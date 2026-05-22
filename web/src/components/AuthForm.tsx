@@ -29,6 +29,9 @@ const COPY: Record<
     unexpectedError: string;
     invalidCredentials: string;
     registerError: string;
+    legalConsent: string;
+    terms: string;
+    privacy: string;
     switchLink: Record<Mode, string>;
   }
 > = {
@@ -55,6 +58,9 @@ const COPY: Record<
     unexpectedError: "Unexpected error",
     invalidCredentials: "Invalid email or password",
     registerError: "Unable to create account. Try signing in or request a magic link.",
+    legalConsent: "I agree to the Terms of Service and Privacy Policy.",
+    terms: "Terms of Service",
+    privacy: "Privacy Policy",
     switchLink: {
       login: "Need an account?",
       register: "Have an account?",
@@ -83,6 +89,9 @@ const COPY: Record<
     unexpectedError: "Неожиданная ошибка",
     invalidCredentials: "Неверный email или пароль",
     registerError: "Не удалось создать аккаунт. Попробуйте войти или запросить ссылку на email.",
+    legalConsent: "Я принимаю Условия сервиса и Политику конфиденциальности.",
+    terms: "Условия сервиса",
+    privacy: "Политика конфиденциальности",
     switchLink: {
       login: "Нужен аккаунт?",
       register: "Уже есть аккаунт?",
@@ -138,6 +147,7 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [passwordMode, setPasswordMode] = useState(false);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const copy = COPY[locale];
   const loading = pendingAction !== null;
@@ -148,6 +158,7 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
 
   async function onPasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "register" && !acceptedLegalTerms) return;
     setMessage(null);
     setPendingAction("password");
 
@@ -156,7 +167,11 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
       if (mode === "login") {
         await login(trimmedEmail, password, { locale, region: authRegion(locale) });
       } else {
-        await register(trimmedEmail, password, { locale, region: authRegion(locale) });
+        await register(trimmedEmail, password, {
+          locale,
+          region: authRegion(locale),
+          acceptedLegalTerms,
+        });
       }
       onSuccess();
     } catch (error: unknown) {
@@ -168,10 +183,15 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
 
   async function onSendMagicLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "register" && !acceptedLegalTerms) return;
     setMessage(null);
     setPendingAction("magic");
     try {
-      const response = await requestMagicLink(email.trim(), { locale, region: authRegion(locale) });
+      const response = await requestMagicLink(email.trim(), {
+        locale,
+        region: authRegion(locale),
+        ...(mode === "register" ? { acceptedLegalTerms } : {}),
+      });
       setMessage(response.message);
     } catch (error: unknown) {
       setMessage(describeError(error, locale));
@@ -219,15 +239,35 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
           />
         </label>
 
-        <button
-          className="primary-button"
-          data-testid="magic-link-button"
-          type="submit"
-          disabled={loading || email.trim().length === 0}
-        >
-          {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
-        </button>
+        {mode === "login" ? (
+          <button
+            className="primary-button"
+            data-testid="magic-link-button"
+            type="submit"
+            disabled={loading || email.trim().length === 0}
+          >
+            {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
+          </button>
+        ) : null}
       </form>
+
+      {mode === "register" ? (
+        <label className="auth-legal-consent">
+          <input
+            data-testid="legal-consent-checkbox"
+            type="checkbox"
+            checked={acceptedLegalTerms}
+            onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
+            disabled={loading}
+          />
+          <span>
+            {copy.legalConsent}{" "}
+            <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>
+            {" · "}
+            <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>
+          </span>
+        </label>
+      ) : null}
 
       {passwordMode ? (
         <form onSubmit={onPasswordSubmit} className="auth-form">
@@ -244,7 +284,12 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
             />
           </label>
 
-          <button className="primary-button" data-testid="auth-submit" type="submit" disabled={loading}>
+          <button
+            className="primary-button"
+            data-testid="auth-submit"
+            type="submit"
+            disabled={loading || (mode === "register" && !acceptedLegalTerms)}
+          >
             {pendingAction === "password" ? copy.passwordLoading : copy.passwordSubmit[mode]}
           </button>
 
@@ -271,6 +316,19 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
           {copy.passwordMode}
         </button>
       )}
+
+      {mode === "register" ? (
+        <form onSubmit={onSendMagicLink} className="auth-form">
+          <button
+            className="primary-button"
+            data-testid="magic-link-button"
+            type="submit"
+            disabled={loading || email.trim().length === 0 || !acceptedLegalTerms}
+          >
+            {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
+          </button>
+        </form>
+      ) : null}
 
       {forgotPasswordMode && mode === "login" ? (
         <form

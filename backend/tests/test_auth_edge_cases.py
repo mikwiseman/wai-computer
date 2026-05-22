@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest.mark.asyncio
@@ -34,7 +35,7 @@ async def test_register_password_exactly_8_chars(client: AsyncClient):
     """Registration with exactly 8-char password should succeed."""
     response = await client.post(
         "/api/auth/register",
-        json={"email": "exact8@example.com", "password": "abcdefgh"},
+        json={"email": "exact8@example.com", "password": "abcdefgh", **LEGAL_ACCEPTANCE},
     )
     assert response.status_code == 200
     assert "access_token" in response.json()
@@ -55,7 +56,7 @@ async def test_login_with_different_case_email(client: AsyncClient):
     """Login with different case email should work (Pydantic normalizes)."""
     await client.post(
         "/api/auth/register",
-        json={"email": "CaseTest@Example.COM", "password": "password123"},
+        json={"email": "CaseTest@Example.COM", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     response = await client.post(
@@ -71,7 +72,7 @@ async def test_login_uppercase_after_lowercase_register(client: AsyncClient):
     """Login with uppercase email after lowercase registration should work."""
     await client.post(
         "/api/auth/register",
-        json={"email": "lower@example.com", "password": "password123"},
+        json={"email": "lower@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     response = await client.post(
@@ -87,7 +88,7 @@ async def test_register_duplicate_different_case(client: AsyncClient):
     """Registering same email with different case should not leak via HTTP status."""
     await client.post(
         "/api/auth/register",
-        json={"email": "dup@example.com", "password": "password123"},
+        json={"email": "dup@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     response = await client.post(
@@ -135,7 +136,10 @@ async def test_verify_magic_link_cannot_be_reused(
 
     monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send)
 
-    await client.post("/api/auth/magic-link", json={"email": "reuse@example.com"})
+    await client.post(
+        "/api/auth/magic-link",
+        json={"email": "reuse@example.com", **LEGAL_ACCEPTANCE},
+    )
 
     # First verification succeeds
     first = await client.post(

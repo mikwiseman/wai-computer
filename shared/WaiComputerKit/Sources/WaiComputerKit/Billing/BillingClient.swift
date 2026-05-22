@@ -24,6 +24,12 @@ extension APIClient {
         return try await request(.POST, path: "/api/billing/checkout", body: body)
     }
 
+    /// `POST /api/billing/promo/claim` — redeem a non-renewing promo grant.
+    public func claimBillingPromoCode(_ code: String) async throws -> BillingSubscription {
+        let body = BillingPromoClaimRequest(code: code)
+        return try await request(.POST, path: "/api/billing/promo/claim", body: body)
+    }
+
     /// `POST /api/billing/cancel` — mark the active subscription as
     /// cancel-at-period-end. The user keeps Pro until the period actually ends.
     public func cancelBillingSubscription() async throws {

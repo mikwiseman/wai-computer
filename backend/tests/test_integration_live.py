@@ -15,6 +15,8 @@ import time
 import httpx
 import pytest
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 BASE_URL = os.getenv("LIVE_API_URL", "https://wai.computer")
 REGISTER_INTERVAL_SECONDS = float(os.getenv("LIVE_REGISTER_INTERVAL_SECONDS", "21.5"))
 REGISTER_LIMIT_WINDOW_SECONDS = float(os.getenv("LIVE_REGISTER_LIMIT_WINDOW_SECONDS", "61.0"))
@@ -52,7 +54,7 @@ async def register_user(
         await wait_for_register_slot()
         resp = await client.post(
             "/api/auth/register",
-            json={"email": email, "password": password},
+            json={"email": email, "password": password, **LEGAL_ACCEPTANCE},
         )
         if resp.status_code != 429 or attempt == 1:
             break
@@ -276,7 +278,7 @@ async def test_magic_link_and_invalid_verify():
         # 500 here since the email delivery is external and not under test.
         resp = await client.post(
             "/api/auth/magic-link",
-            json={"email": email},
+            json={"email": email, **LEGAL_ACCEPTANCE},
         )
         # We primarily test that the endpoint exists and handles the request.
         # A 200 means it succeeded; a 500 means email delivery failed but the

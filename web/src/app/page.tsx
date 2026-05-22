@@ -119,6 +119,7 @@ export default function Home() {
       <footer className={styles.footer}>
         <span>© WaiWai</span>
         <a href={PRIVACY_URL}>Privacy</a>
+        <a href="/terms">Terms</a>
       </footer>
     </main>
   );

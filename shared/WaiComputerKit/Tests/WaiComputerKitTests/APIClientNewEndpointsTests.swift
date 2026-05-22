@@ -75,6 +75,57 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(checkout.checkoutUrl, "https://securepay.tinkoff.ru/test-checkout")
     }
 
+    func testClaimBillingPromoCodeSendsCodeAndDecodesSubscription() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/billing/promo/claim")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["code"] as? String, "WAI-TEST-30")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "plan": {
+                "code": "pro",
+                "name": "Pro",
+                "description": null,
+                "usd_amount_monthly": 12,
+                "usd_amount_yearly": 96,
+                "rub_amount_monthly": 999,
+                "rub_amount_yearly": 7999,
+                "word_cap_per_week": 50000,
+                "memory_retention_days": null,
+                "features": {
+                  "billing": true
+                }
+              },
+              "status": "active",
+              "provider": "promo",
+              "billing_period": "month",
+              "current_period_end": "2026-06-21T12:00:00Z",
+              "cancel_at_period_end": true,
+              "trial_end": null,
+              "enforcement_enabled": true
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let subscription = try await client.claimBillingPromoCode("WAI-TEST-30")
+
+        XCTAssertTrue(subscription.isPro)
+        XCTAssertEqual(subscription.provider, "promo")
+        XCTAssertTrue(subscription.cancelAtPeriodEnd)
+    }
+
     func testGetBillingSubscriptionDecodesActiveTinkoffProStatus() async throws {
         let client = makeClient()
 

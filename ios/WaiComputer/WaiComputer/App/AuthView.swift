@@ -7,6 +7,7 @@ struct AuthView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var acceptedLegalTerms = false
 
     var body: some View {
         NavigationStack {
@@ -51,6 +52,21 @@ struct AuthView: View {
                         SecureField("Confirm Password", text: $confirmPassword)
                             .textContentType(.newPassword)
                             .textFieldStyle(.roundedBorder)
+
+                        Toggle(isOn: $acceptedLegalTerms) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("I agree to WaiComputer's Terms and Privacy Policy.")
+                                HStack(spacing: 8) {
+                                    Link("Terms", destination: URL(string: "https://wai.computer/terms")!)
+                                    Text("·")
+                                    Link("Privacy", destination: URL(string: "https://wai.computer/privacy")!)
+                                }
+                                .font(.caption)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        .toggleStyle(.switch)
                     }
                 }
                 .padding(.horizontal)
@@ -93,7 +109,7 @@ struct AuthView: View {
         if isLoginMode {
             return emailValid && passwordValid
         } else {
-            return emailValid && passwordValid && password == confirmPassword
+            return emailValid && passwordValid && password == confirmPassword && acceptedLegalTerms
         }
     }
 
@@ -102,7 +118,11 @@ struct AuthView: View {
             if isLoginMode {
                 await appState.login(email: email, password: password)
             } else {
-                await appState.register(email: email, password: password)
+                await appState.register(
+                    email: email,
+                    password: password,
+                    acceptedLegalTerms: acceptedLegalTerms
+                )
             }
         }
     }

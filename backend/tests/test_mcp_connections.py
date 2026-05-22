@@ -25,6 +25,7 @@ from app.core.mcp_oauth import (
     token_hash,
 )
 from app.models.mcp_oauth import McpOAuthClient, McpOAuthConsent, McpOAuthToken
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -179,7 +180,11 @@ async def test_connections_are_user_scoped(
 
     other = await client.post(
         "/api/auth/register",
-        json={"email": f"other-{uuid4().hex}@example.com", "password": "password123"},
+        json={
+            "email": f"other-{uuid4().hex}@example.com",
+            "password": "password123",
+            **LEGAL_ACCEPTANCE,
+        },
     )
     other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
 

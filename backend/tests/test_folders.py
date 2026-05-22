@@ -5,6 +5,8 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from tests.conftest import LEGAL_ACCEPTANCE
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -17,7 +19,8 @@ async def _register_user(client: AsyncClient, email: str | None = None) -> dict:
     """Register a new user and return auth headers."""
     email = email or f"folder-test-{uuid4().hex}@example.com"
     resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": "testpassword123"}
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

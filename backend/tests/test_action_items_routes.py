@@ -9,10 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recording import ActionItem, Recording
 from app.models.user import User
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 async def _register(client: AsyncClient, email: str, password: str = "password123") -> dict:
-    response = await client.post("/api/auth/register", json={"email": email, "password": password})
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, **LEGAL_ACCEPTANCE},
+    )
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

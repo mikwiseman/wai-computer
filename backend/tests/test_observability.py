@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from app.api.routes import search as search_routes
 from app.core import observability
 from app.db import session as db_session_module
+from tests.conftest import LEGAL_ACCEPTANCE
 
 
 def test_configure_logging_is_idempotent():
@@ -395,7 +396,7 @@ async def test_auth_logs_do_not_expose_email(client: AsyncClient, caplog: pytest
 
     await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     caplog.clear()
 

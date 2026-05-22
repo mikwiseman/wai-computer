@@ -96,6 +96,13 @@ class User(Base, UUIDMixin, TimestampMixin):
         nullable=True,
     )
 
+    # Legal acceptance captured at account creation or password completion.
+    legal_terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    legal_privacy_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    legal_acceptance_locale: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    legal_acceptance_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Relationships
     recordings: Mapped[list["Recording"]] = relationship(
         "Recording", back_populates="user", cascade="all, delete-orphan"

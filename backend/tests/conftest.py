@@ -26,6 +26,12 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer_test"
 )
 
+LEGAL_ACCEPTANCE = {
+    "accepted_legal_terms": True,
+    "legal_terms_version": "2026-05-22",
+    "legal_privacy_version": "2026-05-22",
+}
+
 
 async def _seed_default_billing_plans(session: AsyncSession) -> None:
     """Mirror the billing migration seed for metadata-created test schemas."""
@@ -137,7 +143,7 @@ async def auth_headers(client: AsyncClient) -> dict:
     email = f"testuser-{uuid4().hex}@example.com"
     response = await client.post(
         "/api/auth/register",
-        json={"email": email, "password": "testpassword123"},
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
     )
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}

@@ -82,10 +82,17 @@ interface AuthLocaleOptions {
   region?: "global" | "ru";
 }
 
+export const LEGAL_TERMS_VERSION = "2026-05-22";
+export const LEGAL_PRIVACY_VERSION = "2026-05-22";
+
+interface LegalAcceptanceOptions {
+  acceptedLegalTerms?: boolean;
+}
+
 export function register(
   email: string,
   password: string,
-  options: AuthLocaleOptions = {},
+  options: AuthLocaleOptions & LegalAcceptanceOptions = {},
 ): Promise<TokenResponse> {
   return withLocalhostAuth(
     apiFetch<TokenResponse>("/api/auth/register", {
@@ -95,6 +102,9 @@ export function register(
         password,
         ...(options.locale ? { locale: options.locale } : {}),
         ...(options.region ? { region: options.region } : {}),
+        accepted_legal_terms: options.acceptedLegalTerms === true,
+        legal_terms_version: LEGAL_TERMS_VERSION,
+        legal_privacy_version: LEGAL_PRIVACY_VERSION,
       }),
     }),
   );
@@ -120,7 +130,7 @@ export function login(
 
 export function requestMagicLink(
   email: string,
-  options: AuthLocaleOptions = {},
+  options: AuthLocaleOptions & LegalAcceptanceOptions = {},
 ): Promise<MessageResponse> {
   return apiFetch<MessageResponse>("/api/auth/magic-link", {
     method: "POST",
@@ -128,6 +138,13 @@ export function requestMagicLink(
       email,
       ...(options.locale ? { locale: options.locale } : {}),
       ...(options.region ? { region: options.region } : {}),
+      ...(options.acceptedLegalTerms !== undefined
+        ? {
+            accepted_legal_terms: options.acceptedLegalTerms,
+            legal_terms_version: LEGAL_TERMS_VERSION,
+            legal_privacy_version: LEGAL_PRIVACY_VERSION,
+          }
+        : {}),
     }),
   });
 }

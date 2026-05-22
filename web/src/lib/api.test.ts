@@ -41,12 +41,22 @@ describe("api client wrappers", () => {
     await api.register("a@example.com", "p");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email: "a@example.com", password: "p" }),
+      body: JSON.stringify({
+        email: "a@example.com",
+        password: "p",
+        accepted_legal_terms: false,
+        legal_terms_version: api.LEGAL_TERMS_VERSION,
+        legal_privacy_version: api.LEGAL_PRIVACY_VERSION,
+      }),
     });
   });
 
   it("passes register locale hints when provided", async () => {
-    await api.register("a@example.com", "p", { locale: "ru", region: "ru" });
+    await api.register("a@example.com", "p", {
+      locale: "ru",
+      region: "ru",
+      acceptedLegalTerms: true,
+    });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
@@ -54,6 +64,9 @@ describe("api client wrappers", () => {
         password: "p",
         locale: "ru",
         region: "ru",
+        accepted_legal_terms: true,
+        legal_terms_version: api.LEGAL_TERMS_VERSION,
+        legal_privacy_version: api.LEGAL_PRIVACY_VERSION,
       }),
     });
   });
@@ -94,10 +107,21 @@ describe("api client wrappers", () => {
   });
 
   it("passes magic-link locale hints when provided", async () => {
-    await api.requestMagicLink("a@example.com", { locale: "ru", region: "ru" });
+    await api.requestMagicLink("a@example.com", {
+      locale: "ru",
+      region: "ru",
+      acceptedLegalTerms: true,
+    });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/auth/magic-link", {
       method: "POST",
-      body: JSON.stringify({ email: "a@example.com", locale: "ru", region: "ru" }),
+      body: JSON.stringify({
+        email: "a@example.com",
+        locale: "ru",
+        region: "ru",
+        accepted_legal_terms: true,
+        legal_terms_version: api.LEGAL_TERMS_VERSION,
+        legal_privacy_version: api.LEGAL_PRIVACY_VERSION,
+      }),
     });
   });
 
