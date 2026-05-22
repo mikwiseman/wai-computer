@@ -44,6 +44,8 @@ async def _user(db: AsyncSession, email: str = "telegram@example.com") -> User:
 @pytest.mark.asyncio
 async def test_start_link_returns_waicomputer_bot_deep_link(client, auth_headers, monkeypatch):
     monkeypatch.setattr(telegram_routes.settings, "telegram_bot_username", "waicomputer_bot")
+    monkeypatch.setattr(telegram_routes.settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(telegram_routes.settings, "telegram_webhook_secret_token", "secret")
 
     response = await client.post("/api/telegram/link/start", headers=auth_headers)
 
@@ -52,6 +54,16 @@ async def test_start_link_returns_waicomputer_bot_deep_link(client, auth_headers
     assert body["bot_username"] == "waicomputer_bot"
     assert body["deep_link"].startswith("tg://resolve?domain=waicomputer_bot&start=link_")
     assert body["web_link"].startswith("https://t.me/waicomputer_bot?start=link_")
+
+
+@pytest.mark.asyncio
+async def test_start_link_requires_runtime_configuration(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(telegram_routes.settings, "telegram_bot_token", "")
+    monkeypatch.setattr(telegram_routes.settings, "telegram_webhook_secret_token", "")
+
+    response = await client.post("/api/telegram/link/start", headers=auth_headers)
+
+    assert response.status_code == 503
 
 
 @pytest.mark.asyncio

@@ -69,6 +69,14 @@ def _bot_username() -> str:
     return username
 
 
+def _require_bot_runtime() -> None:
+    if not settings.telegram_bot_token or not settings.telegram_webhook_secret_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram bot is not configured",
+        )
+
+
 def _message_text(message: dict[str, Any]) -> str:
     return str(message.get("text") or message.get("caption") or "").strip()
 
@@ -123,6 +131,7 @@ async def get_link_status(user: CurrentUser, db: Database) -> TelegramLinkStatus
 
 @router.post("/link/start", response_model=TelegramPairingResponse)
 async def start_link(user: CurrentUser, db: Database) -> TelegramPairingResponse:
+    _require_bot_runtime()
     bot_username = _bot_username()
     token = secrets.token_urlsafe(32)
     start_payload = f"{PAIRING_PREFIX}{token}"
@@ -569,11 +578,7 @@ async def telegram_webhook(
     background_tasks: BackgroundTasks,
     db: Database,
 ) -> dict[str, bool]:
-    if not settings.telegram_bot_token or not settings.telegram_webhook_secret_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Telegram webhook is not configured",
-        )
+    _require_bot_runtime()
     header_secret = request.headers.get("x-telegram-bot-api-secret-token")
     if not secrets.compare_digest(header_secret or "", settings.telegram_webhook_secret_token):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid webhook secret")
