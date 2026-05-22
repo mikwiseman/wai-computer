@@ -26,6 +26,7 @@ from app.models.billing import (
     BillingProvider,
     Plan,
     Subscription,
+    SubscriptionStatus,
 )
 
 # Decimal values land on the wire as JSON numbers, not strings. The Apple
@@ -253,6 +254,27 @@ async def create_checkout(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"T-Bank checkout unavailable: {exc}",
             ) from exc
+        if not result.provider_order_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="T-Bank checkout unavailable: Init returned no OrderId",
+            )
+        plan = (
+            await db.execute(select(Plan).where(Plan.code == payload.plan))
+        ).scalar_one_or_none()
+        if plan is None:
+            raise HTTPException(status_code=400, detail="Unknown plan")
+        db.add(
+            Subscription(
+                user_id=user.id,
+                plan_id=plan.id,
+                status=SubscriptionStatus.INCOMPLETE.value,
+                provider=BillingProvider.TINKOFF.value,
+                billing_period=payload.period,
+                tinkoff_order_id=result.provider_order_id,
+                tinkoff_customer_key=str(user.id),
+            )
+        )
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)
 
     raise HTTPException(status_code=400, detail="Unknown provider")

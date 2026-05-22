@@ -155,6 +155,7 @@ async def test_checkout_defaults_ru_region_to_tinkoff_provider(
                 provider="tinkoff",
                 checkout_url="https://pay.tbank.test/session",
                 provider_session_id="payment-1",
+                provider_order_id="order-1",
             )
 
     monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
@@ -179,6 +180,14 @@ async def test_checkout_defaults_ru_region_to_tinkoff_provider(
     )
     assert captured["user_email"] == "checkout.ru-region@example.com"
     assert captured["trial_days"] is None
+
+    pending = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tinkoff_order_id == "order-1")
+        )
+    ).scalar_one()
+    assert pending.status == "incomplete"
+    assert pending.user_id == user.id
 
 
 @pytest.mark.asyncio

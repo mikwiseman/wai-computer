@@ -30,4 +30,11 @@ describe("BillingResultCard", () => {
       /Stripe test card, а не тестовая карта Т-Банка/i,
     );
   });
+
+  it("does not link unauthenticated browser returns back to billing", () => {
+    render(<BillingResultCard kind="success" locale="ru" />);
+
+    expect(screen.queryByRole("link", { name: /подписк/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /billing/i })).not.toBeInTheDocument();
+  });
 });

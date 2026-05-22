@@ -209,6 +209,7 @@ class TinkoffProvider(PaymentProvider):
             checkout_url=payment_url,
             provider=self.name,
             provider_session_id=str(payment_id),
+            provider_order_id=order_id,
         )
 
     async def charge_rebill(

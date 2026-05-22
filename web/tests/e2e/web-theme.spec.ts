@@ -140,22 +140,22 @@ test.describe("web-facing theme and responsive pass", () => {
     expect(maskImage).toContain("brand-mark.svg");
   });
 
-  test("billing result action renders as a real button link", async ({ page }) => {
+  test("billing result page does not send external checkout returns back to billing", async ({ page }) => {
     await page.goto("/billing/cancel?provider=tinkoff&lang=ru");
 
-    const styles = await page.getByRole("link", { name: "Вернуться к подписке" }).evaluate((element) => {
+    await expect(page.getByRole("link", { name: "Вернуться к подписке" })).toHaveCount(0);
+
+    const styles = await page.getByRole("heading", { name: "Оплата не прошла" }).evaluate((element) => {
       const style = getComputedStyle(element);
       return {
         display: style.display,
         color: style.color,
-        paddingLeft: Number.parseFloat(style.paddingLeft),
-        borderRadius: Number.parseFloat(style.borderRadius),
+        fontSize: Number.parseFloat(style.fontSize),
       };
     });
 
-    expect(["inline-flex", "flex"]).toContain(styles.display);
-    expect(styles.paddingLeft).toBeGreaterThanOrEqual(14);
+    expect(styles.display).toBe("block");
+    expect(styles.fontSize).toBeGreaterThan(24);
     expect(luminance(styles.color)).toBeGreaterThan(210);
-    expect(styles.borderRadius).toBeLessThanOrEqual(8);
   });
 });

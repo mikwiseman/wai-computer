@@ -23,6 +23,7 @@ class CheckoutResult:
     checkout_url: str
     provider: str
     provider_session_id: str | None = None
+    provider_order_id: str | None = None
 
 
 @dataclass(frozen=True)
