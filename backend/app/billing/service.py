@@ -214,6 +214,21 @@ async def _handle_invoice_paid(db: AsyncSession, obj: dict) -> None:
 
     from app.models.billing import Invoice
 
+    provider_payment_id = obj.get("id")
+    if provider_payment_id:
+        existing_invoice = (
+            await db.execute(
+                select(Invoice).where(
+                    Invoice.subscription_id == sub.id,
+                    Invoice.provider_payment_id == provider_payment_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_invoice is not None:
+            sub.status = SubscriptionStatus.ACTIVE.value
+            await db.flush()
+            return
+
     amount = obj.get("amount_paid") or obj.get("amount_due") or 0
     db.add(
         Invoice(
@@ -221,7 +236,7 @@ async def _handle_invoice_paid(db: AsyncSession, obj: dict) -> None:
             amount=Decimal(amount) / Decimal(100),
             currency=(obj.get("currency") or "usd").upper(),
             status="paid",
-            provider_payment_id=obj.get("id"),
+            provider_payment_id=provider_payment_id,
             paid_at=_ts(obj.get("status_transitions", {}).get("paid_at")),
             receipt_url=obj.get("hosted_invoice_url"),
         )

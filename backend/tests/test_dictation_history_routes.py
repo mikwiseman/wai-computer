@@ -12,6 +12,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.billing import UsageWeek
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.user import User
 
@@ -70,6 +71,30 @@ async def test_post_entry_creates_and_list_returns_it(client: AsyncClient):
     items = listed.json()
     assert len(items) == 1
     assert items[0]["client_entry_id"] == payload["client_entry_id"]
+
+
+@pytest.mark.asyncio
+async def test_post_entry_counts_words_on_backend(client: AsyncClient, db_session: AsyncSession):
+    headers = await _register(client, "entries.backend-count@example.com")
+    payload = _entry_payload(
+        raw_text="one two three",
+        cleaned_text=None,
+        word_count=1,
+    )
+
+    create = await client.post("/api/dictation/entries", headers=headers, json=payload)
+
+    assert create.status_code == 201
+    assert create.json()["word_count"] == 3
+    user = (
+        await db_session.execute(
+            select(User).where(User.email == "entries.backend-count@example.com")
+        )
+    ).scalar_one()
+    usage = (
+        await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
+    ).scalar_one()
+    assert usage.words_used == 3
 
 
 @pytest.mark.asyncio

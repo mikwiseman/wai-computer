@@ -67,6 +67,12 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     failure_message: Mapped[str | None] = mapped_column(Text)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    billed_word_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     language: Mapped[str | None] = mapped_column(String(10))
     folder_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -5,8 +5,13 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.transcript_utils import TranscriptResult
+from app.models.billing import UsageWeek
+from app.models.recording import Recording
+from app.models.user import User
 
 
 async def _create_recording(
@@ -62,6 +67,7 @@ async def _save_transcript(
 async def test_upload_wav_file_with_correct_mime(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Uploading a .wav file with audio/wav content type should succeed."""
@@ -100,6 +106,15 @@ async def test_upload_wav_file_with_correct_mime(
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ready"
+    user = (await db_session.execute(select(User))).scalars().first()
+    assert user is not None
+    usage = (
+        await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
+    ).scalar_one()
+    assert usage.words_used == 2
+    stored = await db_session.get(Recording, recording_id)
+    assert stored is not None
+    assert stored.billed_word_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +467,35 @@ async def test_upload_transcribes_multichannel(
 # ---------------------------------------------------------------------------
 # 10. Save transcript with empty segments array
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_records_weekly_usage_without_double_counting(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    recording = await _create_recording(client, auth_headers)
+    recording_id = recording["id"]
+    segments = [
+        {"speaker": "A", "text": "one two", "start_ms": 0, "end_ms": 1000, "confidence": 0.9},
+        {"speaker": "B", "text": "three four", "start_ms": 1000, "end_ms": 2000, "confidence": 0.9},
+    ]
+
+    first_status = await _save_transcript(client, auth_headers, recording_id, segments)
+    second_status = await _save_transcript(client, auth_headers, recording_id, segments)
+
+    assert first_status == 200
+    assert second_status == 200
+    user = (await db_session.execute(select(User))).scalars().first()
+    assert user is not None
+    usage = (
+        await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
+    ).scalar_one()
+    assert usage.words_used == 4
+    stored = await db_session.get(Recording, recording_id)
+    assert stored is not None
+    assert stored.billed_word_count == 4
 
 
 @pytest.mark.asyncio

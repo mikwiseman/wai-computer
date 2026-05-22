@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.summarizer import (
@@ -458,6 +459,7 @@ async def import_media_as_recording(
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
         recording.failure_message = None
+        await record_recording_transcript_words(db, recording, transcript)
         await db.commit()
         await db.refresh(recording)
         await db.refresh(summary)

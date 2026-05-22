@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   changePassword,
+  claimTelegramLinkCode,
   createEntity,
   createRecording,
   deleteEntity,
@@ -109,6 +110,7 @@ export function DashboardClient() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState<TelegramLinkStatus | null>(null);
   const [telegramPairing, setTelegramPairing] = useState<TelegramPairing | null>(null);
+  const [telegramLinkCode, setTelegramLinkCode] = useState("");
   const [telegramLoading, setTelegramLoading] = useState(false);
 
   const activeRecordingCount = recordings.length;
@@ -189,6 +191,19 @@ export function DashboardClient() {
     if (view !== "settings" || settingsLoadedOnce || settingsLoading) return;
     void loadAccountSettings();
   }, [view, settingsLoadedOnce, settingsLoading]);
+
+  useEffect(() => {
+    if (view !== "settings" || telegramStatus?.linked || !telegramPairing) return;
+    function refreshTelegramStatus() {
+      void handleRefreshTelegramStatus({ silent: true });
+    }
+    window.addEventListener("focus", refreshTelegramStatus);
+    document.addEventListener("visibilitychange", refreshTelegramStatus);
+    return () => {
+      window.removeEventListener("focus", refreshTelegramStatus);
+      document.removeEventListener("visibilitychange", refreshTelegramStatus);
+    };
+  }, [view, telegramStatus?.linked, telegramPairing]);
 
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -363,7 +378,8 @@ export function DashboardClient() {
     try {
       const response = await startTelegramLink();
       setTelegramPairing(response);
-      window.open(response.web_link, "_blank", "noopener,noreferrer");
+      window.location.href = response.deep_link;
+      setMessage("Telegram открыт. Нажмите Start в боте, затем вернитесь в WaiComputer.");
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -371,12 +387,36 @@ export function DashboardClient() {
     }
   }
 
-  async function handleRefreshTelegramStatus() {
+  async function handleRefreshTelegramStatus(options: { silent?: boolean } = {}) {
+    setTelegramLoading(true);
+    if (!options.silent) setMessage(null);
+    try {
+      const status = await getTelegramLinkStatus();
+      setTelegramStatus(status);
+      if (status.linked || !options.silent) {
+        setTelegramPairing(null);
+      }
+    } catch (error: unknown) {
+      if (!options.silent) setMessage(formatError(error));
+    } finally {
+      setTelegramLoading(false);
+    }
+  }
+
+  async function handleClaimTelegramLinkCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const code = telegramLinkCode.trim();
+    if (!code) {
+      setMessage("Введите код из Telegram.");
+      return;
+    }
     setTelegramLoading(true);
     setMessage(null);
     try {
-      setTelegramStatus(await getTelegramLinkStatus());
+      setTelegramStatus(await claimTelegramLinkCode(code));
       setTelegramPairing(null);
+      setTelegramLinkCode("");
+      setMessage("Telegram привязан.");
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -390,6 +430,7 @@ export function DashboardClient() {
     try {
       await unlinkTelegram();
       setTelegramPairing(null);
+      setTelegramLinkCode("");
       setTelegramStatus(await getTelegramLinkStatus());
     } catch (error: unknown) {
       setMessage(formatError(error));
@@ -816,13 +857,13 @@ export function DashboardClient() {
         <div className="settings-form">
           <h3>Telegram</h3>
           <p className="settings-note">
-            Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai. Media is
-            transcribed, summarized, and saved to your Library.
+            Привяжите @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы текстом. Медиа
+            расшифровываются, суммаризируются и сохраняются в Библиотеку.
           </p>
           {telegramStatus?.linked ? (
             <div className="telegram-link-card">
               <p>
-                Connected as{" "}
+                Привязан как{" "}
                 <strong>
                   {telegramStatus.username
                     ? `@${telegramStatus.username}`
@@ -835,40 +876,42 @@ export function DashboardClient() {
                 disabled={telegramLoading}
                 onClick={() => void handleUnlinkTelegram()}
               >
-                Disconnect
+                Отключить
               </button>
             </div>
           ) : (
             <div className="telegram-link-card">
+              <p className="settings-note">
+                Нажмите «Привязать Telegram» — откроется бот. В Telegram нажмите Start, затем вернитесь в
+                WaiComputer.
+              </p>
               <button
                 type="button"
                 className="ghost-button compact-button"
                 disabled={telegramLoading}
                 onClick={() => void handleStartTelegramLink()}
               >
-                {telegramLoading ? "Preparing..." : "Connect Telegram"}
+                {telegramLoading ? "Открываем..." : "Привязать Telegram"}
               </button>
               {telegramPairing ? (
-                <div className="mcp-endpoint-row">
-                  <code className="mcp-endpoint-url">{telegramPairing.web_link}</code>
-                  <a
-                    className="ghost-button compact-button"
-                    href={telegramPairing.web_link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open
-                  </a>
-                </div>
+                <p className="settings-note">Telegram открыт. Нажмите Start в боте, чтобы завершить привязку.</p>
               ) : null}
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                disabled={telegramLoading}
-                onClick={() => void handleRefreshTelegramStatus()}
-              >
-                Refresh status
-              </button>
+              <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
+                <label>
+                  <span>Код из Telegram</span>
+                  <input
+                    type="text"
+                    value={telegramLinkCode}
+                    onChange={(event) => setTelegramLinkCode(event.target.value)}
+                    placeholder="ABCD-2345"
+                    autoComplete="one-time-code"
+                    disabled={telegramLoading}
+                  />
+                </label>
+                <button type="submit" className="ghost-button compact-button" disabled={telegramLoading}>
+                  Привязать по коду
+                </button>
+              </form>
             </div>
           )}
         </div>

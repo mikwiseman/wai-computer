@@ -40,6 +40,7 @@ const freeSub = {
   current_period_end: null,
   cancel_at_period_end: false,
   trial_end: null,
+  enforcement_enabled: false,
 };
 
 const proSub = {

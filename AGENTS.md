@@ -5,6 +5,7 @@ AI second brain for recordings, transcription, search, and summaries.
 ## Code style
 
 - No fallbacks. Trust the prompt and the schema; fix the source, not the response.
+- Do not add extra fallback paths. Add one only when it is required for a critical user recovery path, and make it explicit to the user.
 
 ## Production
 

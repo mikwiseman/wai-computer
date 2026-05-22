@@ -21,6 +21,7 @@ export interface BillingSubscription {
   current_period_end: string | null;
   cancel_at_period_end: boolean;
   trial_end: string | null;
+  enforcement_enabled: boolean;
 }
 
 export interface BillingUsage {

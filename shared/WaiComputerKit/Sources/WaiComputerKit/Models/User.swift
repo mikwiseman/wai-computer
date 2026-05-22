@@ -357,3 +357,11 @@ public struct TelegramPairing: Codable, Sendable {
         case expiresAt = "expires_at"
     }
 }
+
+public struct TelegramLinkCodeClaimRequest: Codable, Sendable {
+    public let code: String
+
+    public init(code: String) {
+        self.code = code
+    }
+}
