@@ -32,6 +32,23 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+private final class RequestPathRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths: [String] = []
+
+    func append(_ path: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        paths.append(path)
+    }
+
+    var snapshot: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return paths
+    }
+}
+
 final class APIClientTests: XCTestCase {
     private let paymentModeDefaultsKey = "paymentModeEnabled"
 
@@ -200,6 +217,61 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(user.id, "u1")
         XCTAssertEqual(user.email, "user@example.com")
         XCTAssertTrue(user.hasPassword)
+    }
+
+    func testTelegramLinkEndpoints() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { request in
+            seenPaths.append(request.url!.path)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: request.url!.path == "/api/telegram/link" && request.httpMethod == "DELETE" ? 204 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            if request.url!.path == "/api/telegram/link/start" {
+                return (response, Data("""
+                {
+                  "bot_username": "waicomputer_bot",
+                  "deep_link": "tg://resolve?domain=waicomputer_bot&start=link_token",
+                  "web_link": "https://t.me/waicomputer_bot?start=link_token",
+                  "expires_at": "2026-05-22T09:00:00Z"
+                }
+                """.utf8))
+            }
+            if request.url!.path == "/api/telegram/link" && request.httpMethod == "GET" {
+                return (response, Data("""
+                {
+                  "linked": true,
+                  "bot_username": "waicomputer_bot",
+                  "telegram_user_id": 123,
+                  "username": "mik",
+                  "first_name": "Mik",
+                  "last_name": null,
+                  "linked_at": "2026-05-22T08:00:00Z"
+                }
+                """.utf8))
+            }
+            return (response, Data())
+        }
+
+        let status = try await client.getTelegramLinkStatus()
+        XCTAssertTrue(status.linked)
+        XCTAssertEqual(status.botUsername, "waicomputer_bot")
+        XCTAssertEqual(status.telegramUserID, 123)
+        XCTAssertEqual(status.username, "mik")
+
+        let pairing = try await client.startTelegramLink()
+        XCTAssertEqual(pairing.botUsername, "waicomputer_bot")
+        XCTAssertTrue(pairing.webLink.contains("waicomputer_bot"))
+
+        try await client.unlinkTelegram()
+        XCTAssertEqual(
+            seenPaths.snapshot,
+            ["/api/telegram/link", "/api/telegram/link/start", "/api/telegram/link"]
+        )
     }
 
     // MARK: - Auth Endpoint Tests

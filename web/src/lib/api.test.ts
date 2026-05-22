@@ -189,6 +189,20 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls Telegram link endpoints", async () => {
+    await api.getTelegramLinkStatus();
+    await api.startTelegramLink();
+    await api.unlinkTelegram();
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/telegram/link");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/telegram/link/start", {
+      method: "POST",
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/telegram/link", {
+      method: "DELETE",
+    });
+  });
+
   it("calls search endpoints", async () => {
     await api.search({ q: "roadmap", limit: 5, offset: 2 });
     await api.semanticSearch({ q: "roadmap", limit: 7, threshold: 0.4 });

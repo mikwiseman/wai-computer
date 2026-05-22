@@ -593,6 +593,21 @@ public actor APIClient {
         return try await request(.PATCH, path: "/api/settings", body: settings)
     }
 
+    // MARK: - Telegram
+
+    public func getTelegramLinkStatus() async throws -> TelegramLinkStatus {
+        return try await request(.GET, path: "/api/telegram/link")
+    }
+
+    public func startTelegramLink() async throws -> TelegramPairing {
+        struct EmptyBody: Encodable {}
+        return try await request(.POST, path: "/api/telegram/link/start", body: EmptyBody())
+    }
+
+    public func unlinkTelegram() async throws {
+        try await requestNoContent(.DELETE, path: "/api/telegram/link")
+    }
+
     // MARK: - Recording Endpoints
 
     public func listRecordings(

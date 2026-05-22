@@ -23,6 +23,23 @@ export interface UserSettings {
   dictation_post_filter_model: string;
 }
 
+export interface TelegramLinkStatus {
+  linked: boolean;
+  bot_username: string;
+  telegram_user_id: number | null;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  linked_at: string | null;
+}
+
+export interface TelegramPairing {
+  bot_username: string;
+  deep_link: string;
+  web_link: string;
+  expires_at: string;
+}
+
 export interface TranscriptionModelOption {
   provider: string;
   model: string;

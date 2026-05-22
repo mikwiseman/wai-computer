@@ -321,3 +321,39 @@ public struct TranscriptionOptions: Codable, Sendable {
         case dictationPostFilter = "dictation_post_filter"
     }
 }
+
+// MARK: - Telegram
+
+public struct TelegramLinkStatus: Codable, Sendable {
+    public let linked: Bool
+    public let botUsername: String
+    public let telegramUserID: Int?
+    public let username: String?
+    public let firstName: String?
+    public let lastName: String?
+    public let linkedAt: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case linked
+        case botUsername = "bot_username"
+        case telegramUserID = "telegram_user_id"
+        case username
+        case firstName = "first_name"
+        case lastName = "last_name"
+        case linkedAt = "linked_at"
+    }
+}
+
+public struct TelegramPairing: Codable, Sendable {
+    public let botUsername: String
+    public let deepLink: String
+    public let webLink: String
+    public let expiresAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case botUsername = "bot_username"
+        case deepLink = "deep_link"
+        case webLink = "web_link"
+        case expiresAt = "expires_at"
+    }
+}

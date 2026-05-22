@@ -13,6 +13,7 @@ import {
   getCurrentUser,
   getRecording,
   getSettings,
+  getTelegramLinkStatus,
   listActionItems,
   listEntities,
   listRecordings,
@@ -20,8 +21,10 @@ import {
   restoreRecording,
   search,
   semanticSearch,
+  startTelegramLink,
   updateActionItem,
   updateSettings,
+  unlinkTelegram,
 } from "@/lib/api";
 import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
@@ -37,6 +40,8 @@ import type {
   RecordingDetail,
   RecordingType,
   SearchResponse,
+  TelegramLinkStatus,
+  TelegramPairing,
   User,
   UserSettings,
 } from "@/lib/types";
@@ -102,6 +107,9 @@ export function DashboardClient() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsLoadedOnce, setSettingsLoadedOnce] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramLinkStatus | null>(null);
+  const [telegramPairing, setTelegramPairing] = useState<TelegramPairing | null>(null);
+  const [telegramLoading, setTelegramLoading] = useState(false);
 
   const activeRecordingCount = recordings.length;
   const pendingActionCount = useMemo(
@@ -133,8 +141,12 @@ export function DashboardClient() {
   async function loadAccountSettings() {
     setSettingsLoading(true);
     try {
-      const settingsResponse = await getSettings();
+      const [settingsResponse, telegramResponse] = await Promise.all([
+        getSettings(),
+        getTelegramLinkStatus(),
+      ]);
       setAccountSettings(settingsResponse);
+      setTelegramStatus(telegramResponse);
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     } catch (error: unknown) {
@@ -342,6 +354,47 @@ export function DashboardClient() {
       setMessage(formatError(error));
     } finally {
       setSettingsSaving(false);
+    }
+  }
+
+  async function handleStartTelegramLink() {
+    setTelegramLoading(true);
+    setMessage(null);
+    try {
+      const response = await startTelegramLink();
+      setTelegramPairing(response);
+      window.open(response.web_link, "_blank", "noopener,noreferrer");
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    } finally {
+      setTelegramLoading(false);
+    }
+  }
+
+  async function handleRefreshTelegramStatus() {
+    setTelegramLoading(true);
+    setMessage(null);
+    try {
+      setTelegramStatus(await getTelegramLinkStatus());
+      setTelegramPairing(null);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    } finally {
+      setTelegramLoading(false);
+    }
+  }
+
+  async function handleUnlinkTelegram() {
+    setTelegramLoading(true);
+    setMessage(null);
+    try {
+      await unlinkTelegram();
+      setTelegramPairing(null);
+      setTelegramStatus(await getTelegramLinkStatus());
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    } finally {
+      setTelegramLoading(false);
     }
   }
 
@@ -759,6 +812,66 @@ export function DashboardClient() {
             {accountHasPassword ? "Change password" : "Set password"}
           </button>
         </form>
+
+        <div className="settings-form">
+          <h3>Telegram</h3>
+          <p className="settings-note">
+            Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai. Media is
+            transcribed, summarized, and saved to your Library.
+          </p>
+          {telegramStatus?.linked ? (
+            <div className="telegram-link-card">
+              <p>
+                Connected as{" "}
+                <strong>
+                  {telegramStatus.username
+                    ? `@${telegramStatus.username}`
+                    : [telegramStatus.first_name, telegramStatus.last_name].filter(Boolean).join(" ") || "Telegram"}
+                </strong>
+              </p>
+              <button
+                type="button"
+                className="ghost-button compact-button danger-button"
+                disabled={telegramLoading}
+                onClick={() => void handleUnlinkTelegram()}
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div className="telegram-link-card">
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={telegramLoading}
+                onClick={() => void handleStartTelegramLink()}
+              >
+                {telegramLoading ? "Preparing..." : "Connect Telegram"}
+              </button>
+              {telegramPairing ? (
+                <div className="mcp-endpoint-row">
+                  <code className="mcp-endpoint-url">{telegramPairing.web_link}</code>
+                  <a
+                    className="ghost-button compact-button"
+                    href={telegramPairing.web_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open
+                  </a>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={telegramLoading}
+                onClick={() => void handleRefreshTelegramStatus()}
+              >
+                Refresh status
+              </button>
+            </div>
+          )}
+        </div>
 
         <McpConnectSection />
         <ApiKeysSection />
