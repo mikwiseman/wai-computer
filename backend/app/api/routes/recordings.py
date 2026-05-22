@@ -1,5 +1,6 @@
 """Recording CRUD routes."""
 
+import asyncio
 import logging
 import re
 import secrets
@@ -2746,6 +2747,7 @@ async def upload_audio_file(
                 user_id=user_id,
                 staged_audio_path=staged_path,
                 transcript_results=speech_transcript_results,
+                enabled=app_settings.voice_identification_enabled,
             )
         except Exception:
             logger.exception(
@@ -2803,6 +2805,17 @@ async def upload_audio_file(
         await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
         _delete_staged_file(str(staged_path))
+    except asyncio.CancelledError:
+        logger.warning("Recording processing cancelled for %s", recording_id)
+        await db.rollback()
+        await _mark_recording_failed_by_id(
+            recording_id,
+            db,
+            "processing_cancelled",
+            "Обработка была прервана. Импортируй файл ещё раз.",
+        )
+        _delete_staged_file(str(staged_path))
+        raise
     except Exception as exc:
         logger.exception("Recording processing failed for %s", recording_id)
         await db.rollback()

@@ -6,6 +6,32 @@ import WaiComputerKit
 
 private let log = Logger(subsystem: "is.waiwai.computer.app", category: "dictation")
 
+private final class DictationAudioSendCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var chunks = 0
+    private var bytes = 0
+
+    func reset() {
+        lock.lock()
+        chunks = 0
+        bytes = 0
+        lock.unlock()
+    }
+
+    func record(bytes byteCount: Int) {
+        lock.lock()
+        chunks += 1
+        bytes += byteCount
+        lock.unlock()
+    }
+
+    func snapshot() -> (chunks: Int, bytes: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (chunks, bytes)
+    }
+}
+
 /// Orchestrates the complete dictation flow:
 /// Hotkey → mic capture → provider-backed streaming → text delivery.
 @MainActor
@@ -99,6 +125,7 @@ final class DictationManager: ObservableObject {
     private var apiClient: APIClient?
     private var sessionConfigVault: RealtimeTranscriptionSessionConfigVault?
     private var canStartDictation: (() -> Bool)?
+    private var canStartDictationReason: (() -> String)?
     private var cachedSettings: UserSettings?
     private var cachedSettingsLoadedAt: Date?
     private let settingsCacheTTL: TimeInterval = 60
@@ -153,6 +180,7 @@ final class DictationManager: ObservableObject {
     private var currentInterim = ""
     private var isConfigured = false
     private var deferredStop = false
+    private let audioSendCounter = DictationAudioSendCounter()
 
     // MARK: - Lifecycle
 
@@ -181,7 +209,11 @@ final class DictationManager: ObservableObject {
     }
 
     /// Called when user authenticates and provides the API client used to mint realtime STT sessions.
-    func configure(apiClient: APIClient, canStart: @escaping () -> Bool) {
+    func configure(
+        apiClient: APIClient,
+        canStart: @escaping () -> Bool,
+        canStartReason: @escaping () -> String = { "external_gate" }
+    ) {
         self.apiClient = apiClient
         self.sessionConfigVault = RealtimeTranscriptionSessionConfigVault { key in
             try await apiClient.createRealtimeTranscriptionSession(
@@ -191,6 +223,7 @@ final class DictationManager: ObservableObject {
             )
         }
         self.canStartDictation = canStart
+        self.canStartDictationReason = canStartReason
         isConfigured = true
         applyHotkeyAvailability()
         refreshSettingsAndPrefetch(apiClient: apiClient, reason: "configure")
@@ -201,6 +234,7 @@ final class DictationManager: ObservableObject {
     func disable() {
         isConfigured = false
         canStartDictation = nil
+        canStartDictationReason = nil
         applyHotkeyAvailability()
         Task { await cancelDictation() }
         apiClient = nil
@@ -262,10 +296,32 @@ final class DictationManager: ObservableObject {
             guard let self else { return }
             guard self.isEnabled else {
                 log.warning("Dictation hotkey pressed but not enabled (not authenticated?)")
+                SentryHelper.addBreadcrumb(
+                    category: "dictation.session",
+                    message: "hotkey start ignored",
+                    level: .warning,
+                    data: ["reason": "disabled"]
+                )
                 return
             }
             guard self.canBeginExternalDictation() else { return }
-            guard self.state == .idle else { return }
+            guard self.state == .idle else {
+                SentryHelper.addBreadcrumb(
+                    category: "dictation.session",
+                    message: "hotkey start ignored",
+                    level: .warning,
+                    data: ["reason": "busy", "state": String(describing: self.state)]
+                )
+                SentryHelper.captureErrorOnce(
+                    DictationInstrumentationError.unknown("hotkey start ignored while busy"),
+                    fingerprint: "dictation.hotkey_start_ignored.\(String(describing: self.state))",
+                    extras: [
+                        "stage": "hotkey.start",
+                        "state": String(describing: self.state),
+                    ]
+                )
+                return
+            }
             self.isHandsFree = false
             Task { await self.startDictation() }
         }
@@ -275,6 +331,11 @@ final class DictationManager: ObservableObject {
             guard !self.isHandsFree else { return } // Don't stop if in hands-free mode
             if self.state == .connecting {
                 self.deferredStop = true
+                SentryHelper.addBreadcrumb(
+                    category: "dictation.session",
+                    message: "stop deferred until provider ready",
+                    data: ["state": String(describing: self.state)]
+                )
             } else if self.state == .listening {
                 Task { await self.stopAndInsert() }
             }
@@ -315,6 +376,20 @@ final class DictationManager: ObservableObject {
     func startDictation() async {
         guard state == .idle else {
             log.warning("Cannot start dictation — state is \(String(describing: self.state))")
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "start ignored",
+                level: .warning,
+                data: ["state": String(describing: state)]
+            )
+            SentryHelper.captureErrorOnce(
+                DictationInstrumentationError.unknown("start called while busy"),
+                fingerprint: "dictation.start_ignored.\(String(describing: state))",
+                extras: [
+                    "stage": "start.guard",
+                    "state": String(describing: state),
+                ]
+            )
             return
         }
 
@@ -370,6 +445,7 @@ final class DictationManager: ObservableObject {
         interimTranscript = ""
         dictationDuration = 0
         deferredStop = false
+        audioSendCounter.reset()
         setState(.connecting)
         session.event(.providerConnecting, data: ["isHandsFree": isHandsFree])
 
@@ -428,18 +504,15 @@ final class DictationManager: ObservableObject {
                 }
             }
 
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            providerCapture = capture
+            try await capture.startRecording()
+
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
             try await provider.open()
             session.event(.providerOpened)
 
-            if deferredStop && !isHandsFree {
-                deferredStop = false
-                await cancelDictation()
-                return
-            }
-
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            providerCapture = capture
+            let audioCounter = audioSendCounter
             providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
@@ -449,6 +522,7 @@ final class DictationManager: ObservableObject {
                     do {
                         try await provider.send(pcm16: data)
                         liveSent += 1
+                        audioCounter.record(bytes: data.count)
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, data.count, sessionConfig.provider)
                         }
@@ -460,15 +534,12 @@ final class DictationManager: ObservableObject {
                 NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", sessionConfig.provider, liveSent)
             }
 
-            try await capture.startRecording()
-
             startTimer()
             setState(.listening)
             session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
-            if deferredStop && !isHandsFree {
-                deferredStop = false
+            if consumeDeferredStopAction() == .finishAfterReady {
                 await stopAndInsert()
             }
         } catch {
@@ -481,19 +552,35 @@ final class DictationManager: ObservableObject {
     }
 
     func stopAndInsert() async {
-        guard state == .listening else { return }
+        guard state == .listening else {
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "stop ignored",
+                level: .warning,
+                data: ["state": String(describing: state)]
+            )
+            SentryHelper.captureErrorOnce(
+                DictationInstrumentationError.unknown("stop called while not listening"),
+                fingerprint: "dictation.stop_ignored.\(String(describing: state))",
+                extras: [
+                    "stage": "stop.guard",
+                    "state": String(describing: state),
+                ]
+            )
+            return
+        }
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
         // Drain the active provider: direct provider session, OpenAI, or
         // ElevenLabs via WebSocketManager.
         await finishProviderAudioPumpBeforeFinalizing()
-        let providerSegments = (try? await providerSession?.close(timeout: .seconds(2))) ?? []
+        let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
         await finishOpenAIAudioPumpBeforeFinalizing()
-        let openAIOutcome = try? await openAISession?.close(timeout: .seconds(3))
+        let openAIOutcome = try? await openAISession?.close(timeout: .seconds(4))
         if let ws = elevenLabsWebSocket {
             await finishElevenLabsAudioPumpBeforeFinalizing()
-            _ = try? await ws.finishStreaming(timeout: .seconds(3))
+            _ = try? await ws.finishStreaming(timeout: .seconds(4))
         }
 
         // If cancelDictation ran during finalization, bail out cleanly.
@@ -514,14 +601,39 @@ final class DictationManager: ObservableObject {
             .map(\.text)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let liveTranscript = buildTranscript()
         let trimmedText = RealtimeTranscriptCandidateSelector.select([
             providerTranscript.isEmpty ? nil : providerTranscript,
             openAITranscript,
-            buildTranscript(),
+            liveTranscript,
+        ])
+        let audioSnapshot = audioSendCounter.snapshot()
+        instrumentationSession?.event(.transcriptFinalized, data: [
+            "durationMs": Int(dictationDuration * 1000),
+            "audioChunksSent": audioSnapshot.chunks,
+            "audioBytesSent": audioSnapshot.bytes,
+            "providerSegmentCount": providerSegments.count,
+            "providerChars": providerTranscript.count,
+            "openAIChars": openAITranscript?.count ?? 0,
+            "liveChars": liveTranscript.count,
+            "selectedChars": trimmedText.count,
         ])
 
         guard !trimmedText.isEmpty else {
             log.info("No text transcribed — nothing to insert")
+            if dictationDuration >= 1.0 {
+                instrumentationSession?.failure(
+                    DictationInstrumentationError.unknown("no transcript after finalization"),
+                    extras: [
+                        "stage": "finalize",
+                        "durationMs": Int(dictationDuration * 1000),
+                        "audioChunksSent": audioSnapshot.chunks,
+                        "audioBytesSent": audioSnapshot.bytes,
+                        "providerSegmentCount": providerSegments.count,
+                    ]
+                )
+                instrumentationSession = nil
+            }
             await cleanup()
             return
         }
@@ -628,6 +740,7 @@ final class DictationManager: ObservableObject {
 
     private func finishProviderAudioPumpBeforeFinalizing() async {
         if let capture = providerCapture {
+            await waitForFinalCaptureTail()
             await capture.stopRecording()
             providerCapture = nil
         }
@@ -637,6 +750,7 @@ final class DictationManager: ObservableObject {
 
     private func finishOpenAIAudioPumpBeforeFinalizing() async {
         if let capture = openAICapture {
+            await waitForFinalCaptureTail()
             await capture.stopRecording()
             openAICapture = nil
         }
@@ -646,11 +760,17 @@ final class DictationManager: ObservableObject {
 
     private func finishElevenLabsAudioPumpBeforeFinalizing() async {
         if let capture = elevenLabsCapture {
+            await waitForFinalCaptureTail()
             await capture.stopRecording()
             elevenLabsCapture = nil
         }
         await elevenLabsAudioTask?.value
         elevenLabsAudioTask = nil
+    }
+
+    private func waitForFinalCaptureTail() async {
+        guard !Task.isCancelled else { return }
+        try? await Task.sleep(for: DictationFinalizationPolicy.captureTailDelay)
     }
 
     // MARK: - ElevenLabs rollback path
@@ -797,17 +917,14 @@ final class DictationManager: ObservableObject {
                 "language": sessionConfig.language,
             ])
 
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            openAICapture = capture
+            try await capture.startRecording()
+
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
             try await provider.open()
 
-            if deferredStop && !isHandsFree {
-                deferredStop = false
-                await cancelDictation()
-                return
-            }
-
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            openAICapture = capture
+            let audioCounter = audioSendCounter
             openAIAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
@@ -817,6 +934,7 @@ final class DictationManager: ObservableObject {
                     do {
                         try await provider.send(pcm16: data)
                         liveSent += 1
+                        audioCounter.record(bytes: data.count)
                     } catch {
                         NSLog("[Dictation/OpenAI] send #%d failed: %@", liveSent, String(describing: error))
                         return
@@ -824,14 +942,11 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            try await capture.startRecording()
-
             startTimer()
             setState(.listening)
             session.event(.audioFirstChunkSent)
 
-            if deferredStop && !isHandsFree {
-                deferredStop = false
+            if consumeDeferredStopAction() == .finishAfterReady {
                 await stopAndInsert()
             }
         } catch {
@@ -885,19 +1000,16 @@ final class DictationManager: ObservableObject {
 
             // 2. Audio pump — encode each MicrophoneCapture buffer and forward
             //    to ws.sendAudio after the provider socket is open.
+            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
+            elevenLabsCapture = capture
+            try await capture.startRecording()
+
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
             try await ws.connect(using: sessionConfig)
             session.event(.providerOpened)
 
-            if deferredStop && !isHandsFree {
-                deferredStop = false
-                await cancelDictation()
-                return
-            }
-
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            elevenLabsCapture = capture
             NSLog("[Dictation/EL] audio task starting (MicrophoneCapture)")
+            let audioCounter = audioSendCounter
             elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture] in
                 guard let ws, let capture else {
                     NSLog("[Dictation/EL] audio task exit — ws or capture nil")
@@ -916,6 +1028,7 @@ final class DictationManager: ObservableObject {
                     do {
                         try await ws.sendAudio(data: data)
                         liveSent += 1
+                        audioCounter.record(bytes: data.count)
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/EL] sent #%d %d bytes", liveSent, data.count)
                         }
@@ -927,15 +1040,12 @@ final class DictationManager: ObservableObject {
                 NSLog("[Dictation/EL] audio stream ended (sent=%d)", liveSent)
             }
 
-            try await capture.startRecording()
-
             startTimer()
             setState(.listening)
             session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
-            if deferredStop && !isHandsFree {
-                deferredStop = false
+            if consumeDeferredStopAction() == .finishAfterReady {
                 await stopAndInsert()
             }
         } catch {
@@ -956,7 +1066,7 @@ final class DictationManager: ObservableObject {
         case .reconnecting(let attempt, let max):
             NSLog("[Dictation/EL] WebSocket reconnecting %d/%d", attempt, max)
         case .transcript(let segment):
-            NSLog("[Dictation/EL] transcript isFinal=%d text=%@", segment.isFinal ? 1 : 0, segment.text.prefix(80) as NSString)
+            NSLog("[Dictation/EL] transcript isFinal=%d chars=%d", segment.isFinal ? 1 : 0, segment.text.count)
             if !firstTokenReported {
                 firstTokenReported = true
                 instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": segment.isFinal])
@@ -1001,6 +1111,22 @@ final class DictationManager: ObservableObject {
         withAnimation(.easeInOut(duration: 0.15)) {
             state = newState
         }
+    }
+
+    private func consumeDeferredStopAction() -> DeferredDictationStopPolicy.Action {
+        let action = DeferredDictationStopPolicy.action(
+            deferredStop: deferredStop,
+            isHandsFree: isHandsFree
+        )
+        if action == .finishAfterReady {
+            deferredStop = false
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "deferred stop applied",
+                data: ["state": String(describing: state)]
+            )
+        }
+        return action
     }
 
     private func cleanup() async {
@@ -1216,8 +1342,35 @@ final class DictationManager: ObservableObject {
     }
 
     private func canBeginExternalDictation() -> Bool {
-        guard let canStartDictation else { return false }
-        return canStartDictation()
+        guard let canStartDictation else {
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "external dictation denied",
+                level: .warning,
+                data: ["reason": "not_configured"]
+            )
+            return false
+        }
+        guard canStartDictation() else {
+            let reason = canStartDictationReason?() ?? "external_gate"
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "external dictation denied",
+                level: .warning,
+                data: ["reason": reason]
+            )
+            SentryHelper.captureErrorOnce(
+                DictationInstrumentationError.unknown("external dictation gate denied"),
+                fingerprint: "dictation.external_gate_denied.\(reason)",
+                extras: [
+                    "stage": "hotkey.external_gate",
+                    "reason": reason,
+                    "state": String(describing: state),
+                ]
+            )
+            return false
+        }
+        return true
     }
 
     private func applyHotkeyAvailability() {

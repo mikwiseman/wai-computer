@@ -284,6 +284,34 @@ async def test_transcribe_audio_file_handles_single_payload_and_raw_audio():
     assert len(results) == 1
     assert results[0].text == "hello raw"
     assert post.await_args.kwargs["data"]["no_verbatim"] == "true"
+    assert post.await_args.kwargs["files"]["file"][0] == "recording.raw"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_sends_filename_matching_content_type():
+    response = httpx.Response(
+        200,
+        json={"text": "hello wav"},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+    post = AsyncMock(return_value=response)
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=post),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = True
+        results = await transcribe_audio_file(b"wav-data", content_type="audio/wav")
+
+    assert results[0].text == "hello wav"
+    assert post.await_args.kwargs["files"]["file"] == (
+        "recording.wav",
+        b"wav-data",
+        "audio/wav",
+    )
 
 
 @pytest.mark.asyncio

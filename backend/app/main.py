@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import timedelta
 from time import perf_counter
 from uuid import uuid4
 
@@ -37,6 +38,8 @@ from app.core.observability import (
     end_request_context,
     initialize_sentry,
 )
+from app.core.recording_recovery import mark_stale_processing_recordings
+from app.db.session import async_session_maker
 from app.mcp_server import create_mcp_app
 
 logging.basicConfig(
@@ -81,6 +84,19 @@ async def lifespan(app: FastAPI):
         logger.warning("RESEND_API_KEY is not configured — magic link emails will not work")
     if not app_settings.redis_url:
         logger.warning("REDIS_URL is not configured — agent scheduling will not work")
+    if app_settings.recording_processing_stale_after_minutes > 0:
+        async with async_session_maker() as session:
+            recovered_count = await mark_stale_processing_recordings(
+                session,
+                stale_after=timedelta(
+                    minutes=app_settings.recording_processing_stale_after_minutes
+                ),
+            )
+        if recovered_count:
+            logger.warning(
+                "marked stale processing recordings as failed count=%s",
+                recovered_count,
+            )
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(mcp_asgi_app.router.lifespan_context(mcp_asgi_app))
         yield

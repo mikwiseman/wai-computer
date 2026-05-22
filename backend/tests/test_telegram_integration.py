@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -357,6 +358,7 @@ async def test_expired_pairing_and_command_helpers(db_session: AsyncSession):
 class _TelegramCapture:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
+        self.actions: list[dict[str, Any]] = []
         self.file = TelegramFile("file-id", "voice/file.ogg", 12)
         self.data = b"telegram audio"
 
@@ -374,6 +376,9 @@ class _TelegramCapture:
                 "reply_to_message_id": reply_to_message_id,
             }
         )
+
+    async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        self.actions.append({"chat_id": chat_id, "action": action})
 
     async def get_file(self, file_id: str) -> TelegramFile:
         assert file_id == "file-id"
@@ -514,6 +519,11 @@ async def test_handle_text_message_reuses_wai_conversation(
 
     async def fake_run_turn(*args, **kwargs):
         assert kwargs["turn_context"].client_timezone is None
+        for _ in range(20):
+            if capture.actions:
+                break
+            await asyncio.sleep(0.01)
+        assert capture.actions == [{"chat_id": 42, "action": "typing"}]
         yield telegram_routes.TokenEvent(text="Ответ ")
         yield telegram_routes.TokenEvent(text="Wai")
 
@@ -610,6 +620,11 @@ async def test_handle_media_message_imports_and_replies(
     async def fake_import(**kwargs):
         assert kwargs["filename"] == "voice/file.ogg"
         assert kwargs["source_label"] == "telegram"
+        for _ in range(20):
+            if capture.actions:
+                break
+            await asyncio.sleep(0.01)
+        assert capture.actions == [{"chat_id": 44, "action": "typing"}]
         return SimpleNamespace(
             recording=SimpleNamespace(title="Telegram запись"),
             summary=SimpleNamespace(summary="Короткое саммари"),
@@ -1369,6 +1384,24 @@ async def test_telegram_client_send_get_and_download():
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
     assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
     assert client_mock.get.await_args.args[0].endswith("/voice/file.ogg")
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_send_chat_action():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": True}),
+        ],
+    )
+
+    with patcher:
+        await TelegramBotClient("token").send_chat_action(123)
+
+    assert client_mock.post.await_args.args[0].endswith("/sendChatAction")
+    assert client_mock.post.await_args.kwargs["json"] == {
+        "chat_id": 123,
+        "action": "typing",
+    }
 
 
 @pytest.mark.asyncio

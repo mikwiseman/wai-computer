@@ -73,6 +73,11 @@ class Settings(BaseSettings):
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
+    # Optional speaker-to-person matching is CPU/RAM heavy because it loads a
+    # SpeechBrain ECAPA model. Keep it off on the main API path until it runs
+    # in an isolated worker with enough memory.
+    voice_identification_enabled: bool = False
+    recording_processing_stale_after_minutes: int = 15
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""

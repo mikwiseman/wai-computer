@@ -474,9 +474,9 @@ struct OnboardingView: View {
 
     /// Triggers the macOS System Audio Recording prompt before the first real
     /// meeting recording. Apple exposes no standalone authorization API for Core
-    /// Audio taps, so the supported preflight is a short tap start/stop. A
-    /// silent output device is still a valid authorization path; actual audio
-    /// flow is checked later by the recording runtime monitor.
+    /// Audio taps, so the supported preflight is a short tap start plus a buffer
+    /// delivery check. A silent buffer is accepted; no buffers means the process
+    /// still cannot receive system audio and the user must grant/restart.
     private func requestSystemAudioPermission() {
         startPermissionPolling()
         #if DEBUG
@@ -499,18 +499,38 @@ struct OnboardingView: View {
             let capture = SystemAudioCapture()
             do {
                 try await capture.startRecording()
+                let receivedBuffers = await capture.waitForAudioBuffers(timeout: 3.0)
                 await capture.stopRecording()
 
                 await MainActor.run {
-                    systemAudioPreflightPassedInCurrentProcess = true
-                    UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
-                    triggeredOpenSystemAudioSettings = false
-                    isRequestingSystemAudioPermission = false
-                    refreshPermissions()
+                    if receivedBuffers {
+                        SentryHelper.addBreadcrumb(
+                            category: "permission",
+                            message: "system audio preflight received buffers",
+                            data: ["timeoutMs": 3000]
+                        )
+                        systemAudioPreflightPassedInCurrentProcess = true
+                        UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
+                        triggeredOpenSystemAudioSettings = false
+                        isRequestingSystemAudioPermission = false
+                        refreshPermissions()
+                    } else {
+                        SentryHelper.addBreadcrumb(
+                            category: "permission",
+                            message: "system audio preflight produced no buffers",
+                            level: .warning,
+                            data: ["timeoutMs": 3000]
+                        )
+                        markSystemAudioSetupFailed()
+                    }
                 }
             } catch {
                 await capture.stopRecording()
                 await MainActor.run {
+                    SentryHelper.captureError(
+                        error,
+                        extras: ["action": "systemAudioPreflight"]
+                    )
                     markSystemAudioSetupFailed()
                 }
             }
@@ -821,8 +841,8 @@ private struct OnboardingPermissionSlide: View {
             )
         case .restartRequired:
             return t(
-                "Enable WaiComputer under System Audio Recording Only, then restart",
-                "Включи WaiComputer в «Только запись системного звука» и перезапусти"
+                "Enable WaiComputer in Screen & System Audio Recording, then restart",
+                "Включи WaiComputer в «Запись экрана и системного звука» и перезапусти"
             )
         case .ready:
             return t(

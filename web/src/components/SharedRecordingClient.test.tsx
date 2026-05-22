@@ -133,6 +133,20 @@ describe("SharedRecordingClient", () => {
     expect(screen.getByText("Shared note not found")).toBeInTheDocument();
   });
 
+  it("renders unavailable state in Russian", async () => {
+    mockGetSharedRecording.mockRejectedValue("network error");
+
+    render(<SharedRecordingClient token="missing-token" locale="ru" />);
+
+    expect(screen.getByText("Открываем общую запись...")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+        "Общая запись недоступна",
+      );
+    });
+    expect(screen.getByText("Общая запись недоступна.")).toBeInTheDocument();
+  });
+
   it("renders a transcript empty state", async () => {
     mockGetSharedRecording.mockResolvedValue({
       ...sharedRecording,
@@ -143,11 +157,13 @@ describe("SharedRecordingClient", () => {
       duration_seconds: null,
     });
 
-    render(<SharedRecordingClient token="empty-token" />);
+    render(<SharedRecordingClient token="empty-token" locale="ru" />);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Untitled recording");
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+        "Запись без названия",
+      );
     });
-    expect(screen.getByText("No transcript is available for this note.")).toBeInTheDocument();
+    expect(screen.getByText("Для этой записи нет транскрипта.")).toBeInTheDocument();
   });
 });

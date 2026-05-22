@@ -76,6 +76,41 @@ def test_async_session_maker_proxy_refreshes_after_pid_change(monkeypatch):
     assert second_session["engine_label"] == 2
 
 
+def test_async_session_maker_proxy_refreshes_after_loop_change(monkeypatch):
+    counter = {"value": 0}
+
+    def fake_create_engine():
+        counter["value"] += 1
+        return DummyEngine(counter["value"])
+
+    def fake_sessionmaker(engine, **_kwargs):
+        return DummySessionFactory(engine)
+
+    class DummyLoop:
+        def __init__(self, label: int):
+            self.label = label
+
+    loop = {"value": DummyLoop(1)}
+
+    monkeypatch.setattr(session_module, "_create_engine", fake_create_engine)
+    monkeypatch.setattr(session_module, "async_sessionmaker", fake_sessionmaker)
+    monkeypatch.setattr(session_module, "_engine", None)
+    monkeypatch.setattr(session_module, "_session_maker", None)
+    monkeypatch.setattr(session_module, "_runtime_pid", None)
+    monkeypatch.setattr(session_module, "_runtime_loop_id", None)
+    monkeypatch.setattr(session_module.os, "getpid", lambda: 301)
+    monkeypatch.setattr(session_module.asyncio, "get_running_loop", lambda: loop["value"])
+
+    first_session = session_module.async_session_maker()
+    first_engine = session_module._engine
+    loop["value"] = DummyLoop(2)
+    second_session = session_module.async_session_maker()
+
+    assert first_session["engine_label"] == 1
+    assert second_session["engine_label"] == 2
+    assert first_engine.dispose_calls == 1
+
+
 def test_celery_worker_init_resets_db_runtime(monkeypatch):
     called = {"value": 0}
 

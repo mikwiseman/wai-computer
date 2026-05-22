@@ -247,6 +247,7 @@ async def _persist_segments(
             user_id=user_id,
             staged_audio_path=staged_path,
             transcript_results=transcript_results,
+            enabled=settings.voice_identification_enabled,
         )
     except Exception:
         logger.exception("voice identification failed for imported recording")
@@ -507,6 +508,18 @@ async def import_media_as_recording(
             message=exc.message,
         )
         raise RecordingImportError(exc.code, exc.message) from exc
+    except asyncio.CancelledError:
+        logger.warning("external recording import cancelled")
+        await db.rollback()
+        failed = await _mark_failed(
+            db=db,
+            recording_id=recording_id,
+            code="processing_cancelled",
+            message="Обработка была прервана. Отправь файл ещё раз.",
+        )
+        if failed is not None:
+            recording = failed
+        raise
     except Exception as exc:
         logger.exception("external recording import failed")
         await db.rollback()

@@ -22,6 +22,12 @@ _sentry_initialized = False
 
 EMAIL_PATTERN = re.compile(r"(?P<email>[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})", re.IGNORECASE)
 JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+TELEGRAM_BOT_URL_PATTERN = re.compile(
+    r"(https://api\.telegram\.org/(?:file/)?bot)[^/\s\"']+"
+)
+SECRET_QUERY_PATTERN = re.compile(
+    r"(?i)([?&](?:token|api_key|key|secret|authorization|password)=)[^&#\s\"']+"
+)
 SECRET_KEY_FRAGMENTS = ("token", "password", "secret", "authorization", "cookie")
 EMAIL_KEY_FRAGMENTS = ("email",)
 TEXT_KEY_FRAGMENTS = (
@@ -50,13 +56,25 @@ class RequestContextFilter(logging.Filter):
         return True
 
 
+class RedactingLogFilter(logging.Filter):
+    """Redact sensitive values before log records reach stdout or Sentry."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact_text(record.msg)
+        if record.args:
+            record.args = _sanitize_log_args(record.args)
+        return True
+
+
 def configure_logging() -> None:
-    """Attach request-context filtering to the root logger once."""
+    """Attach request-context and redaction filtering to the root logger once."""
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
-        if any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
-            continue
-        handler.addFilter(RequestContextFilter())
+        if not any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
+            handler.addFilter(RequestContextFilter())
+        if not any(isinstance(existing, RedactingLogFilter) for existing in handler.filters):
+            handler.addFilter(RedactingLogFilter())
 
 
 def fingerprint_text(value: str | None) -> str:
@@ -121,7 +139,21 @@ def redact_text(value: str) -> str:
         value,
     )
     redacted = JWT_PATTERN.sub("[redacted-token]", redacted)
+    redacted = TELEGRAM_BOT_URL_PATTERN.sub(r"\1[redacted-token]", redacted)
+    redacted = SECRET_QUERY_PATTERN.sub(r"\1[redacted-secret]", redacted)
     return redacted
+
+
+def _sanitize_log_args(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, tuple):
+        return tuple(_sanitize_log_args(item) for item in value)
+    if isinstance(value, list):
+        return [_sanitize_log_args(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_log_args(item) for key, item in value.items()}
+    return value
 
 
 def sanitize_sentry_value(value: Any, *, key: str | None = None) -> Any:

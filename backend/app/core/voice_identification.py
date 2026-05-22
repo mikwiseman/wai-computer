@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_MATCH_THRESHOLD = 0.6
+VOICE_EMBEDDING_TIMEOUT_SECONDS = 15.0
 
 
 async def identify_speakers_for_recording(
@@ -41,6 +42,8 @@ async def identify_speakers_for_recording(
     staged_audio_path: Path | str,
     transcript_results: list["TranscriptResult"],
     threshold: float = DEFAULT_MATCH_THRESHOLD,
+    embedding_timeout_seconds: float = VOICE_EMBEDDING_TIMEOUT_SECONDS,
+    enabled: bool = True,
 ) -> dict[str, tuple[uuid.UUID, float] | None]:
     """Match each diarization cluster (``raw_label``) to a known Person.
 
@@ -51,6 +54,8 @@ async def identify_speakers_for_recording(
     raw_labels = {tr.speaker for tr in transcript_results if tr.speaker is not None}
     if not raw_labels:
         return {}
+    if not enabled:
+        return {raw_label: None for raw_label in sorted(raw_labels)}
 
     assignments: dict[str, tuple[uuid.UUID, float] | None] = {}
 
@@ -62,9 +67,19 @@ async def identify_speakers_for_recording(
 
         start_ms, end_ms = span
         try:
-            embedding = await asyncio.to_thread(
-                compute_voice_embedding, staged_audio_path, start_ms, end_ms
+            embedding = await asyncio.wait_for(
+                asyncio.to_thread(
+                    compute_voice_embedding, staged_audio_path, start_ms, end_ms
+                ),
+                timeout=embedding_timeout_seconds,
             )
+        except TimeoutError:
+            logger.warning(
+                "Voice embedding timed out for raw_label=%s; skipping cluster",
+                raw_label,
+            )
+            assignments[raw_label] = None
+            continue
         except Exception:
             logger.exception(
                 "Voice embedding failed for raw_label=%s; skipping cluster", raw_label

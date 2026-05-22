@@ -1,0 +1,60 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.recording_recovery import (
+    INTERRUPTED_PROCESSING_FAILURE_CODE,
+    mark_stale_processing_recordings,
+)
+from app.models.recording import Recording, RecordingStatus
+from app.models.user import User
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="recovery@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+    stale = Recording(
+        user_id=user.id,
+        title="stale",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=now - timedelta(minutes=20),
+    )
+    active = Recording(
+        user_id=user.id,
+        title="active",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=now - timedelta(minutes=2),
+    )
+    ready = Recording(
+        user_id=user.id,
+        title="ready",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        uploaded_at=now - timedelta(minutes=30),
+    )
+    db_session.add_all([stale, active, ready])
+    await db_session.commit()
+
+    count = await mark_stale_processing_recordings(
+        db_session,
+        stale_after=timedelta(minutes=15),
+        now=now,
+    )
+
+    assert count == 1
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    by_title = {row.title: row for row in rows}
+    assert by_title["stale"].status == RecordingStatus.FAILED.value
+    assert by_title["stale"].failure_code == INTERRUPTED_PROCESSING_FAILURE_CODE
+    assert by_title["active"].status == RecordingStatus.PROCESSING.value
+    assert by_title["ready"].status == RecordingStatus.READY.value
