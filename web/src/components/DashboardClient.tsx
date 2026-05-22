@@ -903,7 +903,7 @@ export function DashboardClient() {
                     type="text"
                     value={telegramLinkCode}
                     onChange={(event) => setTelegramLinkCode(event.target.value)}
-                    placeholder="ABCD-2345"
+                    placeholder="Введите код из бота"
                     autoComplete="one-time-code"
                     disabled={telegramLoading}
                   />

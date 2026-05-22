@@ -604,8 +604,10 @@ struct MacSettingsView: View {
                     Text(t("Code from Telegram", "Код из Telegram"))
                         .font(Typography.caption.weight(.semibold))
                     HStack {
-                        TextField("ABCD-2345", text: $telegramLinkCode)
+                        TextField("", text: $telegramLinkCode)
                             .textFieldStyle(.roundedBorder)
+                            .labelsHidden()
+                            .help(t("Paste the code from the bot.", "Вставь код из бота."))
                             .disabled(telegramLoading)
                             .accessibilityIdentifier("settings-telegram-code-field")
                         Button {
