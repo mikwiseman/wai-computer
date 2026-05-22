@@ -127,6 +127,7 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     stripe_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     # T-Bank sidecar — Recurrent flow uses CustomerKey + RebillId.
+    tinkoff_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
     tinkoff_customer_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     tinkoff_rebill_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True)
     tinkoff_next_charge_at: Mapped[datetime | None] = mapped_column(

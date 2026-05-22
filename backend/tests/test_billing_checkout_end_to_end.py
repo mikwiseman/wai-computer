@@ -254,9 +254,7 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
         "Success": True,
         "PaymentId": "payment-endpoint",
         "Amount": 799900,
-        "CustomerKey": user_id,
         "RebillId": "rebill-endpoint",
-        "DATA": {"user_id": user_id, "plan_code": "pro", "period": "year"},
     }
     token = generate_tinkoff_token(notification, BillingTestSettings.tinkoff_password)
     webhook = await client.post(
@@ -278,6 +276,14 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     assert payload["status"] == "active"
     assert payload["provider"] == "tinkoff"
     assert payload["billing_period"] == "year"
+
+    row = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tinkoff_order_id == init_payload["OrderId"])
+        )
+    ).scalar_one()
+    assert row.tinkoff_customer_key == user_id
+    assert row.tinkoff_rebill_id == "rebill-endpoint"
 
 
 @pytest.mark.asyncio

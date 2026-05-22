@@ -370,7 +370,7 @@ describe("app pages", () => {
   it("renders localized billing result pages", async () => {
     render(await BillingCancelPage());
     expect(screen.getByRole("heading", { level: 1, name: "Checkout canceled" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open billing" })).toHaveAttribute("href", "/billing");
+    expect(screen.queryByRole("link", { name: "Open billing" })).not.toBeInTheDocument();
 
     cleanup();
     render(await BillingSuccessPage());
@@ -385,10 +385,7 @@ describe("app pages", () => {
     render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));
     expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
     expect(screen.getByText(/4242 4242 4242 4242/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Вернуться к подписке" })).toHaveAttribute(
-      "href",
-      "/ru/billing",
-    );
+    expect(screen.queryByRole("link", { name: "Вернуться к подписке" })).not.toBeInTheDocument();
 
     cleanup();
     render(<RuBillingCancelPage />);

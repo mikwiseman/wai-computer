@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export type BillingResultKind = "success" | "cancel";
 export type BillingResultLocale = "en" | "ru";
 export type BillingResultSearchParams = Record<string, string | string[] | undefined>;
@@ -44,37 +42,32 @@ export function resolveBillingResultLocale(
 
 const copy: Record<
   BillingResultLocale,
-  Record<BillingResultKind, { title: string; body: string; action: string; eyebrow: string }>
+  Record<BillingResultKind, { title: string; body: string; eyebrow: string }>
 > = {
   en: {
     success: {
       eyebrow: "Billing",
       title: "Billing updated",
       body:
-        "Your payment was accepted. Return to WaiComputer and refresh Billing if Pro is not visible yet.",
-      action: "Open billing",
+        "Your payment was accepted. You can close this tab and return to WaiComputer.",
     },
     cancel: {
       eyebrow: "Billing",
       title: "Checkout canceled",
-      body: "No payment was made. You can restart checkout from Billing when you are ready.",
-      action: "Open billing",
+      body: "No payment was made. You can close this tab and return to WaiComputer.",
     },
   },
   ru: {
     success: {
       eyebrow: "Подписка",
       title: "Оплата обновлена",
-      body:
-        "Платёж принят. Вернись в WaiComputer и обнови раздел «Подписка», если статус Pro ещё не появился.",
-      action: "Вернуться к подписке",
+      body: "Платёж принят. Можно закрыть эту вкладку и вернуться в WaiComputer.",
     },
     cancel: {
       eyebrow: "Подписка",
       title: "Оплата не прошла",
       body:
-        "Платёж не был подтверждён: карта не подошла, банк отклонил операцию или форма оплаты была закрыта. Для оплаты через Т-Банк нужна карта, которую принимает Т-Банк; 4242 4242 4242 4242 — Stripe test card, а не тестовая карта Т-Банка.",
-      action: "Вернуться к подписке",
+        "Платёж не был подтверждён: карта не подошла, банк отклонил операцию или форма оплаты была закрыта. Для оплаты через Т-Банк нужна карта, которую принимает Т-Банк; 4242 4242 4242 4242 — Stripe test card, а не тестовая карта Т-Банка. Можно закрыть эту вкладку и вернуться в WaiComputer.",
     },
   },
 };
@@ -87,7 +80,6 @@ export function BillingResultCard({
   locale: BillingResultLocale;
 }) {
   const text = copy[locale][kind];
-  const billingHref = locale === "ru" ? "/ru/billing" : "/billing";
 
   return (
     <main className="billing-result-shell">
@@ -95,9 +87,6 @@ export function BillingResultCard({
         <p className="eyebrow">{text.eyebrow}</p>
         <h1>{text.title}</h1>
         <p>{text.body}</p>
-        <Link className="primary-button billing-result-button" href={billingHref}>
-          {text.action}
-        </Link>
       </section>
     </main>
   );

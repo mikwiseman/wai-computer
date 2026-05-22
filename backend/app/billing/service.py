@@ -308,6 +308,15 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                 select(Subscription).where(Subscription.tinkoff_rebill_id == rebill_id)
             )
         ).scalar_one_or_none()
+    if sub is None and order_id:
+        sub = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.tinkoff_order_id == order_id,
+                    Subscription.provider == "tinkoff",
+                )
+            )
+        ).scalar_one_or_none()
     if sub is None and customer_key:
         candidates = (
             await db.execute(
@@ -381,6 +390,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             status=event.status or SubscriptionStatus.INCOMPLETE.value,
             provider="tinkoff",
             billing_period=billing_period,
+            tinkoff_order_id=order_id,
             tinkoff_customer_key=customer_key,
             tinkoff_rebill_id=rebill_id,
         )
@@ -407,6 +417,8 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
     # Update sub state.
     if event.status:
         sub.status = event.status
+    if order_id and sub.tinkoff_order_id is None:
+        sub.tinkoff_order_id = order_id
     if rebill_id and sub.tinkoff_rebill_id != rebill_id:
         sub.tinkoff_rebill_id = rebill_id
 
