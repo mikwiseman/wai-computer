@@ -76,10 +76,13 @@ $promo$;
 
 def run_on_vps(sql: str, *, user: str, host: str, root: str, env_file: str) -> str:
     quoted_sql = shlex.quote(sql)
+    psql_command = shlex.quote(
+        'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "$1"'
+    )
     remote = (
         f"cd {shlex.quote(root)}/backend && "
         f"docker compose --env-file {shlex.quote(env_file)} exec -T db "
-        f"psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -v ON_ERROR_STOP=1 -c {quoted_sql}"
+        f"sh -c {psql_command} sh {quoted_sql}"
     )
     result = subprocess.run(
         ["ssh", f"{user}@{host}", remote],
