@@ -147,6 +147,8 @@ def redact_text(value: str) -> str:
 def _sanitize_log_args(value: Any) -> Any:
     if isinstance(value, str):
         return redact_text(value)
+    if value.__class__.__name__ == "URL" and value.__class__.__module__.startswith("httpx"):
+        return redact_text(str(value))
     if isinstance(value, tuple):
         return tuple(_sanitize_log_args(item) for item in value)
     if isinstance(value, list):

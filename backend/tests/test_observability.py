@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from httpx import AsyncClient
 
@@ -71,6 +72,27 @@ def test_redacting_log_filter_sanitizes_message_and_arguments():
 
     assert "ABC-SECRET" not in record.getMessage()
     assert "bot[redacted-token]" in record.getMessage()
+
+
+def test_redacting_log_filter_sanitizes_httpx_url_arguments():
+    record = logging.LogRecord(
+        "httpx",
+        logging.INFO,
+        __file__,
+        1,
+        'HTTP Request: %s %s "%s"',
+        (
+            "GET",
+            httpx.URL("https://api.telegram.org/file/bot123456:ABC-SECRET/voice/file.oga"),
+            "HTTP/1.1 200 OK",
+        ),
+        None,
+    )
+
+    assert observability.RedactingLogFilter().filter(record)
+
+    assert "ABC-SECRET" not in record.getMessage()
+    assert "https://api.telegram.org/file/bot[redacted-token]/voice/file.oga" in record.getMessage()
 
 
 def test_safe_metadata_helpers_do_not_expose_raw_values():
