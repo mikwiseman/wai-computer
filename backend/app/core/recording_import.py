@@ -18,7 +18,6 @@ from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.summarizer import (
     SummaryResult,
-    generate_title,
     resolve_highlight_timestamps,
     summarize_transcript,
 )
@@ -31,6 +30,16 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS = """\
+For Telegram voice/audio imports, make the summary field the complete
+Telegram-facing response, not a short abstract. Use the transcript's dominant
+language. Prefer a readable sectioned format with short headings and bullet
+points. Preserve concrete dates, week numbers, names, projects, and outcomes in
+the title and summary. For weekly reflections, group the response around what
+went well, what did not go well, and next steps when those themes are present.
+Keep the summary under 3500 characters.
+"""
 
 
 class RecordingImportError(Exception):
@@ -213,6 +222,15 @@ def _summary_language(user: User, recording: Recording) -> str:
     if default_language not in {"", "auto", "multi"}:
         return default_language
     return "auto"
+
+
+def _summary_instructions(user: User, *, source_label: str) -> str | None:
+    instructions = (user.summary_instructions or "").strip()
+    if source_label != "telegram":
+        return instructions or None
+    if instructions:
+        return f"{instructions}\n\n{TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS}"
+    return TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
 
 
 async def _transcribe(
@@ -401,6 +419,7 @@ async def import_media_as_recording(
     logger.info("external recording import started source=%s", source_label)
 
     ext = resolve_import_extension(filename, content_type)
+    explicit_title = bool((title or "").strip())
     normalized_content_type = (
         (content_type or "").split(";")[0].strip().lower()
         or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
@@ -464,23 +483,18 @@ async def import_media_as_recording(
             staged_path=staged_path,
             transcript_results=speech_results,
         )
-        if not recording.title and transcript.strip():
-            try:
-                recording.title = await generate_title(
-                    transcript,
-                    language=recording.language or "auto",
-                )
-            except Exception:
-                logger.exception("title generation failed for imported recording")
-
         summary_result = await summarize_transcript(
             "\n".join(
                 f"{tr.speaker or 'Speaker'}: {tr.text}" for tr in speech_results
             ),
             language=_summary_language(user, recording),
             style=user.summary_style,
-            instructions=user.summary_instructions,
+            instructions=_summary_instructions(user, source_label=source_label),
         )
+        if not explicit_title:
+            generated_title = summary_result.title.strip()
+            if generated_title:
+                recording.title = generated_title[:500]
         summary = await _persist_summary(
             db=db,
             recording=recording,

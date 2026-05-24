@@ -9,6 +9,7 @@ import string
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
@@ -177,12 +178,14 @@ async def _send_chunks(
     text: str,
     *,
     reply_to_message_id: int | None = None,
+    parse_mode: str | None = None,
 ) -> None:
     for idx, chunk in enumerate(telegram_chunks(text)):
         await client.send_message(
             chat_id,
             chunk,
             reply_to_message_id=reply_to_message_id if idx == 0 else None,
+            parse_mode=parse_mode,
         )
 
 
@@ -204,34 +207,32 @@ def _safe_transcript_filename(title: str | None, *, media_kind: str | None = Non
     return f"{slug}.txt"
 
 
-def _clean_summary_items(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    items: list[str] = []
-    for item in value:
-        text = str(item).strip()
-        if text:
-            items.append(text)
-    return items
-
-
 def _format_import_summary_message(result: Any) -> str:
     title = str(getattr(result.recording, "title", "") or "").strip()
     summary = getattr(result, "summary", None)
     summary_text = str(getattr(summary, "summary", "") or "").strip()
-    key_points = _clean_summary_items(getattr(summary, "key_points", None))
-    topics = _clean_summary_items(getattr(summary, "topics", None))
 
     sections: list[str] = []
     if title:
-        sections.append(title)
+        sections.append(f"<b>{escape(title)}</b>")
     if summary_text:
-        sections.append(summary_text)
-    if key_points:
-        sections.append("Ключевые пункты:\n" + "\n".join(f"- {item}" for item in key_points))
-    if topics:
-        sections.append("Темы:\n" + "\n".join(f"- {item}" for item in topics[:8]))
+        sections.append(_telegram_summary_html(summary_text))
     return "\n\n".join(sections).strip()
+
+
+def _telegram_summary_html(text: str) -> str:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            lines.append("")
+            continue
+        escaped = escape(line)
+        if not line.startswith(("-", "•")) and line.endswith(":"):
+            lines.append(f"<b>{escaped}</b>")
+        else:
+            lines.append(escaped)
+    return "\n".join(lines).strip()
 
 
 def _sent_message_id(response: Any) -> int | None:
@@ -785,6 +786,7 @@ async def _handle_media_message(
             chat_id,
             summary_message,
             reply_to_message_id=message.get("message_id"),
+            parse_mode="HTML",
         )
     else:
         await client.send_message(

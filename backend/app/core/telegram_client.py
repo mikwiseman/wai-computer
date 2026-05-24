@@ -84,19 +84,20 @@ class TelegramBotClient:
         text: str,
         *,
         reply_to_message_id: int | None = None,
+        parse_mode: str | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = reply_to_message_id
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         return await self._post(
             "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-                **(
-                    {"reply_to_message_id": reply_to_message_id}
-                    if reply_to_message_id is not None
-                    else {}
-                ),
-            },
+            payload,
         )
 
     async def send_document(

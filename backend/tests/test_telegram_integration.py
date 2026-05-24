@@ -190,10 +190,8 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
     async def fake_identify(**kwargs):
         raise RuntimeError("voice id offline")
 
-    async def fake_title(transcript: str, *, language: str):
-        return "Telegram запись"
-
     async def fake_summary(transcript: str, **kwargs):
+        assert "For Telegram voice/audio imports" in kwargs["instructions"]
         return SummaryResult(
             title="Telegram запись",
             summary="Короткое саммари.",
@@ -230,7 +228,6 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
     monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
     monkeypatch.setattr("app.core.recording_import.generate_embedding", fake_embedding)
     monkeypatch.setattr("app.core.recording_import.identify_speakers_for_recording", fake_identify)
-    monkeypatch.setattr("app.core.recording_import.generate_title", fake_title)
     monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
 
     result = await import_media_as_recording(
@@ -359,7 +356,7 @@ def test_telegram_import_response_helpers():
     result = SimpleNamespace(
         recording=SimpleNamespace(title="Рефлексия 21 неделя 17 23 мая"),
         summary=SimpleNamespace(
-            summary="Итог недели",
+            summary="Что понравилось:\n- Первый пункт\n\nЧто дальше:\n- Второй пункт",
             key_points=["Первый пункт", "", "Второй пункт"],
             topics=["Работа", "Режим"],
         ),
@@ -373,13 +370,22 @@ def test_telegram_import_response_helpers():
         telegram_routes._safe_transcript_filename("!!!", media_kind="voice")
         == "telegram-voice.txt"
     )
-    assert telegram_routes._clean_summary_items("not-list") == []
     assert telegram_routes._sent_message_id("not-dict") is None
 
     text = telegram_routes._format_import_summary_message(result)
-    assert text.startswith("Рефлексия 21 неделя 17 23 мая")
-    assert "Ключевые пункты:\n- Первый пункт\n- Второй пункт" in text
-    assert "Темы:\n- Работа\n- Режим" in text
+    assert text.startswith("<b>Рефлексия 21 неделя 17 23 мая</b>")
+    assert "<b>Что понравилось:</b>\n- Первый пункт" in text
+    assert "<b>Что дальше:</b>\n- Второй пункт" in text
+
+    html = telegram_routes._format_import_summary_message(
+        SimpleNamespace(
+            recording=SimpleNamespace(title="A <B> & C"),
+            summary=SimpleNamespace(summary="Risk <check>:\n- Keep A & B"),
+        )
+    )
+    assert html.startswith("<b>A &lt;B&gt; &amp; C</b>")
+    assert "<b>Risk &lt;check&gt;:</b>" in html
+    assert "- Keep A &amp; B" in html
 
 
 @pytest.mark.asyncio
@@ -412,6 +418,7 @@ class _TelegramCapture:
         text: str,
         *,
         reply_to_message_id: int | None = None,
+        parse_mode: str | None = None,
     ) -> None:
         message_id = len(self.messages) + 1
         self.messages.append(
@@ -420,6 +427,7 @@ class _TelegramCapture:
                 "chat_id": chat_id,
                 "text": text,
                 "reply_to_message_id": reply_to_message_id,
+                "parse_mode": parse_mode,
             }
         )
         return {"message_id": message_id}
@@ -698,7 +706,12 @@ async def test_handle_media_message_imports_and_replies(
         return SimpleNamespace(
             recording=SimpleNamespace(title="Рефлексия 21 неделя 17 23 мая"),
             summary=SimpleNamespace(
-                summary="Короткое саммари",
+                summary=(
+                    "Что понравилось / достижения:\n"
+                    "- Первый пункт\n\n"
+                    "Что не понравилось / проблемы недели:\n"
+                    "- Второй пункт"
+                ),
                 key_points=["Первый пункт", "Второй пункт"],
                 decisions=[],
                 topics=[],
@@ -728,8 +741,9 @@ async def test_handle_media_message_imports_and_replies(
             "reply_to_message_id": 12,
         }
     ]
-    assert capture.messages[-1]["text"].startswith("Рефлексия 21 неделя 17 23 мая")
-    assert "Короткое саммари" in capture.messages[-1]["text"]
+    assert capture.messages[-1]["text"].startswith("<b>Рефлексия 21 неделя 17 23 мая</b>")
+    assert capture.messages[-1]["parse_mode"] == "HTML"
+    assert "<b>Что понравилось / достижения:</b>" in capture.messages[-1]["text"]
     assert "Первый пункт" in capture.messages[-1]["text"]
     assert "Саммари" not in capture.messages[-1]["text"]
     assert "Расшифровка" not in capture.messages[-1]["text"]
@@ -1142,7 +1156,7 @@ async def test_import_media_marks_failed_on_domain_processing_error(
 
 
 @pytest.mark.asyncio
-async def test_import_media_continues_when_title_generation_fails(
+async def test_import_media_uses_summary_title_without_separate_title_generation(
     db_session: AsyncSession,
     monkeypatch,
     tmp_path,
@@ -1166,9 +1180,6 @@ async def test_import_media_continues_when_title_generation_fails(
             )
         ]
 
-    async def fake_title(*args, **kwargs):
-        raise RuntimeError("title down")
-
     async def fake_summary(*args, **kwargs):
         return SummaryResult(
             title="Fallback title",
@@ -1188,7 +1199,6 @@ async def test_import_media_continues_when_title_generation_fails(
         "app.core.recording_import.generate_embedding",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr("app.core.recording_import.generate_title", fake_title)
     monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
 
     result = await import_media_as_recording(
@@ -1203,7 +1213,7 @@ async def test_import_media_continues_when_title_generation_fails(
     )
 
     assert result.recording.status == RecordingStatus.READY.value
-    assert result.recording.title is None
+    assert result.recording.title == "Fallback title"
     assert result.recording.language == "auto"
 
 
@@ -1271,10 +1281,6 @@ async def test_telegram_ogg_audio_import_normalizes_before_transcription(
     monkeypatch.setattr(
         "app.core.recording_import.generate_embedding",
         AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "app.core.recording_import.generate_title",
-        AsyncMock(return_value="Голосовое"),
     )
     monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
 
@@ -1354,7 +1360,6 @@ async def test_video_import_normalizes_audio_before_transcription(
         "app.core.recording_import.generate_embedding",
         AsyncMock(return_value=None),
     )
-    monkeypatch.setattr("app.core.recording_import.generate_title", AsyncMock(return_value="Видео"))
     monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
 
     result = await import_media_as_recording(
@@ -1465,7 +1470,7 @@ async def test_telegram_client_send_get_and_download():
 
     with patcher:
         client = TelegramBotClient("token")
-        await client.send_message(123, "hello", reply_to_message_id=9)
+        await client.send_message(123, "hello", reply_to_message_id=9, parse_mode="HTML")
         tg_file = await client.get_file("file-id")
         data = await client.download_file(tg_file)
 
@@ -1473,6 +1478,7 @@ async def test_telegram_client_send_get_and_download():
     assert data == b"audio"
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
     assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
+    assert client_mock.post.await_args_list[0].kwargs["json"]["parse_mode"] == "HTML"
     assert client_mock.get.await_args.args[0].endswith("/voice/file.ogg")
 
 
