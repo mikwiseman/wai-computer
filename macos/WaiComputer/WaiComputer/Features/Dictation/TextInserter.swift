@@ -17,7 +17,7 @@ enum TextInsertionError: LocalizedError {
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
         case .eventPostingPermissionDenied:
-            return "WaiComputer needs permission to paste into other apps. The text is on your clipboard — turn on Automatic Paste in Settings, restart WaiComputer, and try again."
+            return "WaiComputer needs Accessibility permission to paste into other apps. The text is on your clipboard - enable WaiComputer in System Settings -> Privacy & Security -> Accessibility, restart WaiComputer, and try again."
         case .pasteSimulationFailed:
             return "Could not paste text. It's been copied to your clipboard — press ⌘V to paste manually."
         case .modifierStuck:
@@ -29,8 +29,8 @@ enum TextInsertionError: LocalizedError {
 /// Inserts text into the target application via clipboard + simulated Cmd+V.
 ///
 /// Uses `CGEvent.post` with `combinedSessionState` + `cgSessionEventTap`.
-/// macOS protects this separately from listen-only Input Monitoring, so missing
-/// event-posting permission is reported before we attempt the paste.
+/// macOS gates this through the app's Accessibility trust, so missing
+/// permission is reported before we attempt the paste.
 ///
 /// On any failure the text stays on the clipboard so the user can paste
 /// manually with ⌘V, and the error surfaces a message that says exactly that.
@@ -135,12 +135,12 @@ enum TextInserter {
             throw TextInsertionError.eventPostingPermissionDenied
         }
 
-        // Pre-check WITHOUT triggering a system prompt. After a Sparkle
-        // update macOS may invalidate the previous Accessibility grant
-        // (cdhash drift) and `requestEventPostingPermission()` would surface
-        // a confusing system dialog mid-dictation. Surface the in-app
-        // permission banner instead — the user grants once, restarts WaiComputer,
-        // and the next dictation completes cleanly.
+        // Pre-check WITHOUT triggering a system prompt. Normal Developer ID
+        // Sparkle updates preserve TCC through the stable designated
+        // requirement; this branch handles missing or stale Accessibility
+        // state from migration, development builds, or explicit resets.
+        // Surface the in-app permission banner instead of prompting
+        // mid-dictation.
         guard hasEventPostingPermission else {
             log.warning("Event posting permission missing — surfacing banner instead of system prompt")
             throw TextInsertionError.eventPostingPermissionDenied

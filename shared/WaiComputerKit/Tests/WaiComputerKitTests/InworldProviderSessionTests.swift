@@ -33,4 +33,23 @@ final class InworldProviderSessionTests: XCTestCase {
         let output = InworldProviderSession.cappedKeyTerms(["", "  ", "\n", "Real"])
         XCTAssertEqual(output, ["Real"])
     }
+
+    func testSafeReceivedTextFrameSummaryDoesNotExposeTranscriptText() {
+        let payload = """
+        {
+          "transcription": {
+            "transcript": "Private words from a dictated sentence",
+            "is_final": true
+          }
+        }
+        """
+
+        let summary = InworldProviderSession.safeReceivedTextFrameSummary(payload)
+
+        XCTAssertFalse(summary.contains("Private words"))
+        XCTAssertFalse(summary.contains("dictated sentence"))
+        XCTAssertTrue(summary.contains("transcription"))
+        XCTAssertTrue(summary.contains("chars=38"))
+        XCTAssertTrue(summary.contains("final=true"))
+    }
 }
