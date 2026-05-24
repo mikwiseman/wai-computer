@@ -160,6 +160,35 @@ def test_normalize_soniox_file_audio_leaves_non_browser_audio_unchanged():
     )
 
 
+def test_normalize_soniox_file_audio_converts_browser_audio(monkeypatch):
+    from app.core.transcription import _normalize_soniox_file_audio
+
+    class FakeSegment:
+        def set_frame_rate(self, value):
+            assert value == 16_000
+            return self
+
+        def set_channels(self, value):
+            assert value == 1
+            return self
+
+        def set_sample_width(self, value):
+            assert value == 2
+            return self
+
+        def export(self, output, format):
+            assert format == "wav"
+            output.write(b"wav")
+
+    monkeypatch.setattr("pydub.AudioSegment.from_file", lambda _data: FakeSegment())
+
+    assert _normalize_soniox_file_audio(b"webm", " audio/webm ;codecs=opus", None) == (
+        b"wav",
+        "audio/wav",
+        1,
+    )
+
+
 def test_normalize_soniox_file_audio_surfaces_decode_errors():
     from app.core.transcription import _normalize_soniox_file_audio
 

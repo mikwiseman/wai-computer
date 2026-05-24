@@ -256,6 +256,13 @@ def _stt_upload_filename(content_type: str) -> str:
     return f"recording.{extension}"
 
 
+def _stt_language_code(language: str | None) -> str | None:
+    normalized = (language or "").strip().lower()
+    if not normalized or normalized in {"auto", "multi", "und"}:
+        return None
+    return normalized
+
+
 async def transcribe_audio_file(
     audio_data: bytes,
     *,
@@ -279,8 +286,9 @@ async def transcribe_audio_file(
     }
     if settings.elevenlabs_no_verbatim:
         form_data["no_verbatim"] = "true"
-    if language and language != "multi":
-        form_data["language_code"] = language
+    language_code = _stt_language_code(language)
+    if language_code:
+        form_data["language_code"] = language_code
     if resolved_channels and resolved_channels > 1:
         form_data["use_multi_channel"] = "true"
     if content_type == "audio/raw" and (resolved_channels or 1) == 1:
