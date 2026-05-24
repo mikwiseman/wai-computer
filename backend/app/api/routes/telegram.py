@@ -48,6 +48,43 @@ BOT_LINK_CODE_TTL = timedelta(minutes=15)
 BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
+CYRILLIC_SLUG_MAP = str.maketrans(
+    {
+        "а": "a",
+        "б": "b",
+        "в": "v",
+        "г": "g",
+        "д": "d",
+        "е": "e",
+        "ё": "e",
+        "ж": "zh",
+        "з": "z",
+        "и": "i",
+        "й": "y",
+        "к": "k",
+        "л": "l",
+        "м": "m",
+        "н": "n",
+        "о": "o",
+        "п": "p",
+        "р": "r",
+        "с": "s",
+        "т": "t",
+        "у": "u",
+        "ф": "f",
+        "х": "h",
+        "ц": "ts",
+        "ч": "ch",
+        "ш": "sh",
+        "щ": "sch",
+        "ъ": "",
+        "ы": "y",
+        "ь": "",
+        "э": "e",
+        "ю": "yu",
+        "я": "ya",
+    }
+)
 
 
 class TelegramLinkStatus(BaseModel):
@@ -147,6 +184,75 @@ async def _send_chunks(
             chunk,
             reply_to_message_id=reply_to_message_id if idx == 0 else None,
         )
+
+
+def _safe_transcript_filename(title: str | None, *, media_kind: str | None = None) -> str:
+    source = (title or "").strip() or f"telegram-{media_kind or 'media'}"
+    transliterated = source.lower().translate(CYRILLIC_SLUG_MAP)
+    chars: list[str] = []
+    previous_dash = False
+    for char in transliterated:
+        if char in string.ascii_lowercase or char in string.digits:
+            chars.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            chars.append("-")
+            previous_dash = True
+    slug = "".join(chars).strip("-")[:60].strip("-")
+    if not slug:
+        slug = f"telegram-{media_kind or 'media'}"
+    return f"{slug}.txt"
+
+
+def _clean_summary_items(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _format_import_summary_message(result: Any) -> str:
+    title = str(getattr(result.recording, "title", "") or "").strip()
+    summary = getattr(result, "summary", None)
+    summary_text = str(getattr(summary, "summary", "") or "").strip()
+    key_points = _clean_summary_items(getattr(summary, "key_points", None))
+    topics = _clean_summary_items(getattr(summary, "topics", None))
+
+    sections: list[str] = []
+    if title:
+        sections.append(title)
+    if summary_text:
+        sections.append(summary_text)
+    if key_points:
+        sections.append("Ключевые пункты:\n" + "\n".join(f"- {item}" for item in key_points))
+    if topics:
+        sections.append("Темы:\n" + "\n".join(f"- {item}" for item in topics[:8]))
+    return "\n\n".join(sections).strip()
+
+
+def _sent_message_id(response: Any) -> int | None:
+    if not isinstance(response, dict):
+        return None
+    message_id = response.get("message_id")
+    return message_id if isinstance(message_id, int) else None
+
+
+async def _delete_status_message(
+    client: TelegramBotClient,
+    *,
+    chat_id: int,
+    message_id: int | None,
+) -> None:
+    if message_id is None:
+        return
+    try:
+        await client.delete_message(chat_id, message_id)
+    except TelegramClientError as exc:
+        logger.warning("telegram status delete failed error=%s", type(exc).__name__)
 
 
 async def _send_chat_action_until_cancelled(
@@ -614,11 +720,12 @@ async def _handle_media_message(
         )
         return
 
-    await client.send_message(
+    status_response = await client.send_message(
         chat_id,
         "Принял. Расшифровываю и сохраняю в библиотеку WaiComputer.",
         reply_to_message_id=message.get("message_id"),
     )
+    status_message_id = _sent_message_id(status_response)
 
     tg_file = await client.get_file(file_id)
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
@@ -637,7 +744,7 @@ async def _handle_media_message(
         )
         return
     caption = str(message.get("caption") or "").strip()
-    title = caption[:500] if caption else f"Telegram {media.get('kind', 'media')}"
+    title = caption[:500] if caption else None
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
         result = await import_media_as_recording(
@@ -661,16 +768,31 @@ async def _handle_media_message(
     finally:
         await _stop_chat_action_task(action_task)
 
-    summary_text = result.summary.summary if result.summary else None
-    parts = [f"Готово. Запись сохранена в библиотеку: {result.recording.title or 'Без названия'}"]
-    if summary_text:
-        parts.append(f"Саммари:\n{summary_text}")
     if result.transcript:
-        transcript = result.transcript
-        if len(transcript) > 1800:
-            transcript = f"{transcript[:1800].rstrip()}..."
-        parts.append(f"Расшифровка:\n{transcript}")
-    await _send_chunks(client, chat_id, "\n\n".join(parts))
+        await client.send_document(
+            chat_id,
+            filename=_safe_transcript_filename(
+                result.recording.title,
+                media_kind=str(media.get("kind") or "media"),
+            ),
+            data=result.transcript.encode("utf-8"),
+            reply_to_message_id=message.get("message_id"),
+        )
+    summary_message = _format_import_summary_message(result)
+    if summary_message:
+        await _send_chunks(
+            client,
+            chat_id,
+            summary_message,
+            reply_to_message_id=message.get("message_id"),
+        )
+    else:
+        await client.send_message(
+            chat_id,
+            f"Готово. Запись сохранена в библиотеку: {result.recording.title or 'Без названия'}",
+            reply_to_message_id=message.get("message_id"),
+        )
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
 
 
 async def _handle_update(update: dict[str, Any]) -> None:
