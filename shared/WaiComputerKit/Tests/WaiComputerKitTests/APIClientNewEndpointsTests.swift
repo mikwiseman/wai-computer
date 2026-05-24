@@ -36,6 +36,60 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    // MARK: - Companion
+
+    func testPatchCompanionChatSendsRenameBody() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/companion/chats/chat-1")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["title"] as? String, "Roadmap follow-ups")
+            XCTAssertNil(body["scope"] as? [String: Any])
+            XCTAssertNil(body["pinned"] as? Bool)
+            XCTAssertNil(body["archived"] as? Bool)
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"chat-1","title":"Roadmap follow-ups","scope":null,"pinned_at":null,
+             "last_message_at":null,"archived_at":null,
+             "created_at":"2026-05-18T09:00:00Z","updated_at":"2026-05-18T09:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let chat = try await client.patchCompanionChat(
+            chatId: "chat-1",
+            title: "Roadmap follow-ups"
+        )
+        XCTAssertEqual(chat.title, "Roadmap follow-ups")
+    }
+
+    func testDeleteCompanionChatUsesDeleteEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/companion/chats/chat-1")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 204,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        try await client.deleteCompanionChat(chatId: "chat-1")
+    }
+
     // MARK: - Billing
 
     func testCreateBillingCheckoutSendsExplicitTinkoffProvider() async throws {

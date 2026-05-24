@@ -5,6 +5,11 @@ struct MacSearchView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = MacSearchViewModel()
+    let onOpenRecording: (String) -> Void
+
+    init(onOpenRecording: @escaping (String) -> Void = { _ in }) {
+        self.onOpenRecording = onOpenRecording
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +35,7 @@ struct MacSearchView: View {
                     .onSubmit {
                         performSearch()
                     }
+                    .accessibilityIdentifier("search-field")
 
                 if !viewModel.query.isEmpty {
                     Button {
@@ -42,6 +48,19 @@ struct MacSearchView: View {
                     .buttonStyle(.plain)
                     .help(t("Clear search", "Очистить поиск"))
                 }
+
+                Button {
+                    performSearch()
+                } label: {
+                    Label(
+                        MacSearchPresentation.searchButtonTitle(language: languageManager.current),
+                        systemImage: "magnifyingglass"
+                    )
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
+                .accessibilityIdentifier("search-submit-button")
             }
             .padding(Spacing.md)
             .background(Palette.surfaceSubtle)
@@ -89,7 +108,9 @@ struct MacSearchView: View {
                         .padding(.horizontal, Spacing.lg)
 
                     ForEach(viewModel.results) { result in
-                        SearchResultRow(result: result)
+                        SearchResultRow(result: result) {
+                            onOpenRecording(result.recordingId)
+                        }
                     }
                 }
                 .padding(.vertical, Spacing.lg)
@@ -107,7 +128,13 @@ struct MacSearchView: View {
     }
 
     private func performSearch() {
-        guard !viewModel.query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        #if DEBUG
+        if let response = appState.uiTestSearchResponse(query: viewModel.query) {
+            viewModel.applySearchResponse(response)
+            return
+        }
+        #endif
         Task {
             await viewModel.search(apiClient: appState.getAPIClient())
         }
@@ -121,40 +148,55 @@ struct MacSearchView: View {
 struct SearchResultRow: View {
     @EnvironmentObject private var languageManager: LanguageManager
     let result: SearchResult
+    let onOpen: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            HStack {
-                Text(result.recordingTitle ?? t("Untitled", "Без названия"))
-                    .font(Typography.headingMedium)
-                    .lineLimit(1)
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack {
+                    Text(result.recordingTitle ?? t("Untitled", "Без названия"))
+                        .font(Typography.headingMedium)
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
+                }
 
-                Text(String(format: "%.0f%%", result.score * 100))
-                    .font(Typography.mono)
-                    .foregroundStyle(Palette.textTertiary)
+                if let speaker = result.speaker {
+                    Text(speaker)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.accent)
+                }
+
+                Text(result.content)
+                    .font(Typography.reading)
+                    .lineSpacing(6)
+                    .lineLimit(3)
+                    .foregroundStyle(Palette.textSecondary)
             }
-
-            if let speaker = result.speaker {
-                Text(speaker)
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.accent)
-            }
-
-            Text(result.content)
-                .font(Typography.reading)
-                .lineSpacing(6)
-                .lineLimit(3)
-                .foregroundStyle(Palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier(MacSearchPresentation.resultRowIdentifier(recordingId: result.recordingId))
     }
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
+}
+
+enum MacSearchPresentation {
+    static func searchButtonTitle(language selection: LanguageManager.SupportedLanguage) -> String {
+        OnboardingL10n.text("Search", "Поиск", language: selection)
+    }
+
+    static func resultRowIdentifier(recordingId: String) -> String {
+        "search-result-row-\(recordingId)"
+    }
+
 }
 
 // MARK: - ViewModel
@@ -168,8 +210,16 @@ class MacSearchViewModel: ObservableObject {
     @Published var error: String?
     @Published var hasSearched = false
 
+    func applySearchResponse(_ response: SearchResponse) {
+        error = nil
+        hasSearched = true
+        isLoading = false
+        results = response.results
+        totalResults = response.total
+    }
+
     func search(apiClient: APIClient) async {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         isLoading = true

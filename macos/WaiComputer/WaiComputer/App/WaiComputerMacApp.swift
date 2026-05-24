@@ -1238,7 +1238,8 @@ class MacAppState: ObservableObject {
 
     func startRecording(
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .dual
+        inputSource: MacRecordingInputSource = .dual,
+        folderId: String? = nil
     ) async {
         completedRecordingContext = nil
         if dictationManager.state != .idle {
@@ -1248,7 +1249,8 @@ class MacAppState: ObservableObject {
         await recordingViewModel.startRecording(
             apiClient: apiClient,
             type: type,
-            inputSource: inputSource
+            inputSource: inputSource,
+            folderId: folderId
         )
     }
 
@@ -1284,6 +1286,17 @@ class MacAppState: ObservableObject {
         }
         guard testingMode.isMainView else { return nil }
         return MacUITestFixtures.recordings
+        #else
+        return nil
+        #endif
+    }
+
+    func uiTestSearchResponse(query: String) -> SearchResponse? {
+        #if DEBUG
+        guard testingMode.isMainView,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return MacUITestFixtures.searchResponse
         #else
         return nil
         #endif

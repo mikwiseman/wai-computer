@@ -1,12 +1,30 @@
 import Foundation
 import WaiComputerKit
 
+enum LibraryBulkOperationKind: Equatable {
+    case moving
+    case movingToTrash
+    case restoring
+    case deletingPermanently
+}
+
+struct LibraryBulkOperation: Equatable {
+    let kind: LibraryBulkOperationKind
+    let totalCount: Int
+    var completedCount: Int
+
+    var isDeterminate: Bool {
+        completedCount > 0 && totalCount > 0
+    }
+}
+
 @MainActor
 class MacLibraryViewModel: ObservableObject {
     @Published var recordings: [Recording] = []
     @Published var trashedRecordings: [Recording] = []
     @Published var folders: [Folder] = []
     @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
+    @Published private(set) var bulkOperation: LibraryBulkOperation?
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var error: String?
@@ -138,16 +156,13 @@ class MacLibraryViewModel: ObservableObject {
 
     func moveRecordings(ids: [String], to folderId: String?, apiClient: APIClient) async {
         guard !ids.isEmpty else { return }
-        error = nil
-
-        do {
-            for id in ids {
-                _ = try await apiClient.moveRecording(id: id, folderId: folderId)
-            }
-            await loadLibrary(apiClient: apiClient)
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
+        await runBulkOperation(
+            ids: ids,
+            kind: .moving,
+            action: .move,
+            folderId: folderId,
+            apiClient: apiClient
+        )
     }
 
     @discardableResult
@@ -195,44 +210,95 @@ class MacLibraryViewModel: ObservableObject {
 
     func trashRecordings(ids: [String], apiClient: APIClient) async {
         guard !ids.isEmpty else { return }
-        error = nil
-
-        do {
-            for id in ids {
-                try await apiClient.deleteRecording(id: id)
-            }
-            await loadLibrary(apiClient: apiClient)
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
+        await runBulkOperation(
+            ids: ids,
+            kind: .movingToTrash,
+            action: .delete,
+            folderId: nil,
+            apiClient: apiClient
+        )
     }
 
     func restoreRecordings(ids: [String], apiClient: APIClient) async {
         guard !ids.isEmpty else { return }
-        error = nil
-
-        do {
-            for id in ids {
-                _ = try await apiClient.restoreRecording(id: id)
-            }
-            await loadLibrary(apiClient: apiClient)
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
+        await runBulkOperation(
+            ids: ids,
+            kind: .restoring,
+            action: .restore,
+            folderId: nil,
+            apiClient: apiClient
+        )
     }
 
     func permanentlyDeleteRecordings(ids: [String], apiClient: APIClient) async {
         guard !ids.isEmpty else { return }
         error = nil
+        bulkOperation = LibraryBulkOperation(
+            kind: .deletingPermanently,
+            totalCount: ids.count,
+            completedCount: 0
+        )
+        defer { bulkOperation = nil }
 
         do {
-            for id in ids {
-                try await apiClient.deleteRecording(id: id, permanent: true)
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for id in ids {
+                    group.addTask {
+                        try await apiClient.deleteRecording(id: id, permanent: true)
+                    }
+                }
+
+                var completedCount = 0
+                for try await _ in group {
+                    completedCount += 1
+                    updateBulkOperationCompletedCount(completedCount)
+                }
             }
             await loadLibrary(apiClient: apiClient)
         } catch {
+            let message = error.userFacingMessage(context: .library)
+            await loadLibrary(apiClient: apiClient)
+            self.error = message
+        }
+    }
+
+    private func runBulkOperation(
+        ids: [String],
+        kind: LibraryBulkOperationKind,
+        action: BulkRecordingAction,
+        folderId: String?,
+        apiClient: APIClient
+    ) async {
+        error = nil
+        bulkOperation = LibraryBulkOperation(kind: kind, totalCount: ids.count, completedCount: 0)
+        defer { bulkOperation = nil }
+
+        do {
+            let result = try await apiClient.bulkRecordingOperation(
+                recordingIds: ids,
+                action: action,
+                folderId: folderId
+            )
+            updateBulkOperationCompletedCount(result.processed)
+            let partialFailureMessage: String?
+            if result.failed > 0 {
+                partialFailureMessage = "Processed \(result.processed) of \(ids.count) recordings. Failed: \(result.failed)."
+            } else {
+                partialFailureMessage = nil
+            }
+            await loadLibrary(apiClient: apiClient)
+            if let partialFailureMessage {
+                error = partialFailureMessage
+            }
+        } catch {
             self.error = error.userFacingMessage(context: .library)
         }
+    }
+
+    private func updateBulkOperationCompletedCount(_ completedCount: Int) {
+        guard var operation = bulkOperation else { return }
+        operation.completedCount = completedCount
+        bulkOperation = operation
     }
 
     private func shouldBackgroundRefresh(for recording: Recording) -> Bool {

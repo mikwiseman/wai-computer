@@ -118,7 +118,12 @@ struct DictationHistoryView: View {
             } else if calendar.isDateInYesterday(date) {
                 label = t("Yesterday", "Вчера")
             } else {
-                label = date.formatted(date: .abbreviated, time: .omitted)
+                label = MacDateFormatting.string(
+                    from: date,
+                    dateStyle: .long,
+                    timeStyle: .none,
+                    language: languageManager.current
+                )
             }
             return DayGroup(date: date, label: label, entries: grouped[date]!.sorted { $0.timestamp > $1.timestamp })
         }
@@ -166,7 +171,12 @@ private struct HistoryEntryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
-            Text(entry.timestamp.formatted(date: .omitted, time: .shortened))
+            Text(MacDateFormatting.string(
+                from: entry.timestamp,
+                dateStyle: .none,
+                timeStyle: .short,
+                language: languageManager.current
+            ))
                 .font(Typography.mono)
                 .foregroundStyle(Palette.textTertiary)
                 .frame(width: 60, alignment: .leading)

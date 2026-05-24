@@ -2,7 +2,6 @@ import SwiftUI
 import WaiComputerKit
 
 private enum SpeakerAssignmentPopoverLayout {
-    static let width: CGFloat = 500
     static let listMaxHeight: CGFloat = 220
 }
 
@@ -40,7 +39,7 @@ struct SpeakerChipView: View {
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             popoverContent
                 .padding(Spacing.md)
-                .frame(width: SpeakerAssignmentPopoverLayout.width, alignment: .leading)
+                .frame(width: MacMainLayoutMetrics.speakerAssignmentPopoverWidth, alignment: .leading)
         }
         .task(id: isPopoverPresented) {
             if isPopoverPresented && people.isEmpty {
@@ -115,7 +114,7 @@ struct SpeakerChipView: View {
     }
 
     private var displayLabel: String {
-        segment.displayName ?? segment.rawLabel ?? segment.speaker ?? t("Speaker", "Говорящий")
+        segment.userFacingSpeakerLabel(languageCode: speakerLanguageCode) ?? t("Speaker", "Говорящий")
     }
 
     private var isAssigned: Bool {
@@ -135,6 +134,15 @@ struct SpeakerChipView: View {
             )
         }
         return t("Click to assign", "Нажми, чтобы назначить")
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
     }
 
     private var trimmedFilter: String {

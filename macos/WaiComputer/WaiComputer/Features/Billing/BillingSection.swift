@@ -318,11 +318,16 @@ struct BillingSection: View {
     @ViewBuilder
     private func proControls(subscription: BillingSubscription) -> some View {
         if subscription.cancelAtPeriodEnd, let end = subscription.currentPeriodEnd {
-            let formatted = end.formatted(date: .abbreviated, time: .omitted)
+            let formatted = formattedPeriodDate(end)
             Text(String(format: String(localized: "billing.subscription.proThrough", bundle: .main), formatted))
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
         } else {
+            if let end = subscription.currentPeriodEnd {
+                Text(String(format: String(localized: "billing.subscription.renewsOn", bundle: .main), formattedPeriodDate(end)))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button(role: .destructive) {
@@ -538,7 +543,7 @@ struct BillingSection: View {
             await loadAll()
         } catch {
             await MainActor.run {
-                actionError = error.localizedDescription
+                actionError = localizedBillingActionError(error)
             }
         }
         await MainActor.run {
@@ -592,5 +597,27 @@ struct BillingSection: View {
         await MainActor.run {
             cancelInFlight = false
         }
+    }
+
+    private func formattedPeriodDate(_ date: Date) -> String {
+        MacDateFormatting.string(
+            from: date,
+            dateStyle: .long,
+            timeStyle: .none,
+            language: languageManager.current
+        )
+    }
+
+    private func localizedBillingActionError(_ error: Error) -> String {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if message == "Promo code not found" {
+            return String(localized: "billing.promo.error.notFound", bundle: .main)
+        }
+        if message == "Active subscription already exists" {
+            return String(localized: "billing.promo.error.activeSubscription", bundle: .main)
+        }
+        return message.isEmpty
+            ? String(localized: "billing.error.loadFailed", bundle: .main)
+            : message
     }
 }

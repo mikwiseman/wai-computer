@@ -1003,6 +1003,51 @@ async def test_upload_no_speech_fallback_uses_user_default_for_multilingual_reco
 
 
 @pytest.mark.asyncio
+async def test_upload_typing_placeholder_uses_russian_no_speech_fallback(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None, language="ru")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(
+            return_value=[
+                TranscriptResult(
+                    text="[typing]",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1200,
+                    confidence=0.1,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+    title_mock = AsyncMock(return_value="Typing")
+    monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("typing.wav", b"typing", "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ready"
+    assert data["segments"] == []
+    assert data["title"] == "Без речи"
+    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
+    title_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_upload_no_speech_fallback_stays_english_for_english_recordings(
     client: AsyncClient,
     auth_headers: dict,

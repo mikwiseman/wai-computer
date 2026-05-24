@@ -450,3 +450,68 @@ class TestPostMessageSSE:
         assert "Found it." in body
         assert holder["fake"] is not None
         assert len(holder["fake"].calls) == 1
+
+    async def test_first_user_message_auto_titles_new_chat(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        stub_openai_for_route,
+    ):
+        install, _ = stub_openai_for_route
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        install()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "Summarize my pricing call and list the open follow-ups"
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        detail = await client.get(
+            f"/api/companion/chats/{chat['id']}", headers=auth_headers
+        )
+        assert detail.status_code == 200
+        assert (
+            detail.json()["title"]
+            == "Summarize my pricing call and list the open follow-ups"
+        )
+
+    async def test_auto_title_does_not_overwrite_manual_chat_title(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        stub_openai_for_route,
+    ):
+        install, _ = stub_openai_for_route
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        renamed = await client.patch(
+            f"/api/companion/chats/{chat['id']}",
+            json={"title": "Manual title"},
+            headers=auth_headers,
+        )
+        assert renamed.status_code == 200
+        install()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={"content": "This prompt must not replace the manual title"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        detail = await client.get(
+            f"/api/companion/chats/{chat['id']}", headers=auth_headers
+        )
+        assert detail.status_code == 200
+        assert detail.json()["title"] == "Manual title"

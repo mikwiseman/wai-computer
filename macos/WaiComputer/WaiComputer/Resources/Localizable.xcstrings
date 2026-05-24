@@ -223,6 +223,40 @@
         }
       }
     },
+    "billing.promo.error.activeSubscription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You already have an active subscription."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У тебя уже есть активная подписка."
+          }
+        }
+      }
+    },
+    "billing.promo.error.notFound" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promo code not found."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Промокод не найден."
+          }
+        }
+      }
+    },
     "billing.promo.placeholder" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -559,6 +593,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pro до %@"
+          }
+        }
+      }
+    },
+    "billing.subscription.renewsOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renews on %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Продление %@"
           }
         }
       }

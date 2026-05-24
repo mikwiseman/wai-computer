@@ -796,6 +796,7 @@ NO_SPEECH_PLACEHOLDERS = {
     "noise",
     "silence",
     "silent audio",
+    "typing",
 }
 
 

@@ -83,6 +83,43 @@ public struct Segment: Codable, Identifiable, Sendable {
         let remainingSeconds = seconds % 60
         return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
+
+    public func userFacingSpeakerLabel(languageCode: String?) -> String? {
+        let candidate = displayName ?? rawLabel ?? speaker
+        return SpeakerLabelCopy.userFacingLabel(candidate, languageCode: languageCode)
+    }
+}
+
+public enum SpeakerLabelCopy {
+    public static func userFacingLabel(_ rawLabel: String?, languageCode: String?) -> String? {
+        guard let rawLabel else { return nil }
+        let trimmed = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard prefersRussian(languageCode: languageCode) else { return trimmed }
+
+        let normalized = trimmed.lowercased()
+        if normalized == "you" {
+            return "Ты"
+        }
+        if normalized == "speaker" {
+            return "Говорящий"
+        }
+        if normalized.hasPrefix("speaker ") {
+            let suffix = String(trimmed.dropFirst("Speaker ".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return suffix.isEmpty ? "Говорящий" : "Говорящий \(suffix)"
+        }
+        return trimmed
+    }
+
+    private static func prefersRussian(languageCode: String?) -> Bool {
+        guard let languageCode, !languageCode.isEmpty else { return false }
+        if languageCode == "system" {
+            let preferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+            return preferred.hasPrefix("ru")
+        }
+        return languageCode.lowercased().hasPrefix("ru")
+    }
 }
 
 /// Summary of a recording

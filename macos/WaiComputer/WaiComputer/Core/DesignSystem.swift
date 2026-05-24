@@ -296,6 +296,10 @@ enum MacMainLayoutMetrics {
     static let toolbarIconFrame: CGFloat = 28
     static let folderNameSheetWidth: CGFloat = 720
     static let folderNameSheetActionWidth: CGFloat = 200
+    static let recordingTitleEditMinWidth: CGFloat = 440
+    static let speakerAssignmentPopoverWidth: CGFloat = 560
+    static let sidebarRowMinHeight: CGFloat = 30
+    static let sidebarRowHorizontalPadding: CGFloat = 8
     static let searchContentMaxWidth: CGFloat = 880
     static let minimumReadableDetailWidth: CGFloat = 360
     static let allColumnsReadableWidth: CGFloat = sidebarMinWidth + listMinWidth + minimumReadableDetailWidth

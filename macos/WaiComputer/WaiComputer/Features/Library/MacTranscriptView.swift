@@ -71,11 +71,21 @@ struct MacTranscriptView: View {
 
     private var transcriptText: String {
         segments.map { seg in
-            let speaker = seg.displayName ?? seg.rawLabel ?? seg.speaker ?? t("Speaker", "Говорящий")
+            let speaker = seg.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
+                ?? t("Speaker", "Говорящий")
             let timestamp = seg.formattedTimestamp
             return "[\(speaker), \(timestamp)] \(seg.content)"
         }
         .joined(separator: "\n")
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
     }
 
     private var copyTranscriptButton: some View {
@@ -103,6 +113,7 @@ struct SegmentRowView: View {
     let segment: Segment
     let recordingId: String?
     let onAssigned: ((RecordingDetail) -> Void)?
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -137,6 +148,15 @@ struct SegmentRowView: View {
     }
 
     private var effectiveDisplayLabel: String? {
-        segment.displayName ?? segment.rawLabel ?? segment.speaker
+        segment.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
     }
 }

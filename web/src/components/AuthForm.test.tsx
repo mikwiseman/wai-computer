@@ -158,6 +158,30 @@ describe("AuthForm", () => {
     expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
   });
 
+  it("uses browser Russian locale when no server locale is provided", async () => {
+    const user = userEvent.setup();
+    mockRequestMagicLink.mockResolvedValue({ message: "Ссылка отправлена" });
+    setNavigatorLanguages(["ru-RU", "en-US"]);
+
+    render(<AuthForm mode="login" onSuccess={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Войти");
+    });
+    expect(screen.getByTestId("magic-link-button")).toHaveTextContent("Отправить ссылку для входа");
+    expect(screen.queryByText(/Magic Link|Register|Login/i)).not.toBeInTheDocument();
+
+    await user.type(screen.getByTestId("auth-email"), "ru-login@example.com");
+    await user.click(screen.getByTestId("magic-link-button"));
+
+    await waitFor(() => {
+      expect(mockRequestMagicLink).toHaveBeenCalledWith("ru-login@example.com", {
+        locale: "ru",
+        region: "ru",
+      });
+    });
+  });
+
   it("passes legal acceptance when creating password accounts", async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();

@@ -75,4 +75,24 @@ final class MacThemePreferencesTests: XCTestCase {
         XCTAssertTrue(english.lowercased().contains("mar"), english)
         XCTAssertTrue(russian.lowercased().contains("мар"), russian)
     }
+
+    func testLongDateFormattingUsesRussianMonthNamesForHistoryHeadings() {
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        components.year = 2026
+        components.month = 5
+        components.day = 20
+        let date = try! XCTUnwrap(components.date)
+
+        let russian = MacDateFormatting.string(
+            from: date,
+            dateStyle: .long,
+            timeStyle: .none,
+            language: .russian
+        )
+
+        XCTAssertTrue(russian.lowercased().contains("мая"), russian)
+        XCTAssertFalse(russian.lowercased().contains("may"), russian)
+    }
 }

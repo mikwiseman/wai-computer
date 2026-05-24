@@ -17,6 +17,11 @@ router = APIRouter(prefix="/search", tags=["search"])
 HYBRID_SEMANTIC_THRESHOLD = 0.3
 
 
+def _escape_like_term(value: str) -> str:
+    """Escape user text used inside parameterized ILIKE patterns."""
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
 class SearchResultResponse(BaseModel):
     """Response for a search result."""
 
@@ -62,60 +67,108 @@ async def hybrid_search(
         message="Hybrid search",
         data={**safe_query_metadata(q), "limit": limit, "offset": offset},
     )
+    like_query = f"%{_escape_like_term(q)}%"
     # Generate embedding for semantic search
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
 
-    # Build hybrid search query using RRF
-    # This combines FTS ranking with vector similarity
+    # Prefer direct lexical matches. Semantic-only rows are useful for broad conceptual
+    # searches, but they should not dilute obvious exact-term searches.
     hybrid_query = text("""
-        WITH fts_results AS (
+        WITH search_scope AS (
             SELECT
                 s.id,
                 s.recording_id,
-                s.speaker,
+                COALESCE(p.display_name, s.raw_label, s.speaker) as speaker,
                 s.content,
                 s.start_ms,
                 s.end_ms,
-                ts_rank(to_tsvector('english', s.content),
-                    plainto_tsquery('english', :query)) as fts_rank,
-                ROW_NUMBER() OVER (ORDER BY ts_rank(
-                    to_tsvector('english', s.content),
-                    plainto_tsquery('english', :query)) DESC) as fts_rn
+                s.embedding,
+                r.title as recording_title,
+                r.type as recording_type,
+                COALESCE((
+                    SELECT string_agg(alias.value, ' ')
+                    FROM jsonb_array_elements_text(
+                        CASE
+                            WHEN jsonb_typeof(p.aliases) = 'array' THEN p.aliases
+                            ELSE '[]'::jsonb
+                        END
+                    ) AS alias(value)
+                ), '') as person_aliases,
+                concat_ws(
+                    ' ',
+                    s.content,
+                    r.title,
+                    s.speaker,
+                    s.raw_label,
+                    p.display_name,
+                    COALESCE((
+                        SELECT string_agg(alias.value, ' ')
+                        FROM jsonb_array_elements_text(
+                            CASE
+                                WHEN jsonb_typeof(p.aliases) = 'array' THEN p.aliases
+                                ELSE '[]'::jsonb
+                            END
+                        ) AS alias(value)
+                    ), '')
+                ) as search_document
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
+            LEFT JOIN people p ON s.person_id = p.id AND p.user_id = r.user_id
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
-              AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
         ),
-        semantic_results AS (
+        lexical_results AS (
             SELECT
-                s.id,
-                s.recording_id,
-                s.speaker,
-                s.content,
-                s.start_ms,
-                s.end_ms,
-                1 - (s.embedding <=> CAST(:embedding AS vector)) as semantic_score,
-                ROW_NUMBER() OVER (ORDER BY s.embedding <=> CAST(:embedding AS vector)) as sem_rn
-            FROM segments s
-            JOIN recordings r ON s.recording_id = r.id
-            WHERE r.user_id = :user_id
-              AND r.deleted_at IS NULL
-              AND s.embedding IS NOT NULL
-              AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
+                *,
+                (
+                    ts_rank(
+                        to_tsvector('simple', search_document),
+                        plainto_tsquery('simple', :query)
+                    )
+                    + CASE WHEN lower(speaker) = lower(:query) THEN 10 ELSE 0 END
+                    + CASE WHEN speaker ILIKE :like_query ESCAPE '!' THEN 5 ELSE 0 END
+                    + CASE WHEN person_aliases ILIKE :like_query ESCAPE '!' THEN 4 ELSE 0 END
+                    + CASE WHEN recording_title ILIKE :like_query ESCAPE '!' THEN 2 ELSE 0 END
+                    + CASE WHEN content ILIKE :like_query ESCAPE '!' THEN 1 ELSE 0 END
+                ) as lexical_score
+            FROM search_scope
+            WHERE to_tsvector('simple', search_document) @@ plainto_tsquery('simple', :query)
+               OR content ILIKE :like_query ESCAPE '!'
+               OR recording_title ILIKE :like_query ESCAPE '!'
+               OR speaker ILIKE :like_query ESCAPE '!'
+               OR person_aliases ILIKE :like_query ESCAPE '!'
+        ),
+        lexical_count AS (
+            SELECT COUNT(*) as total FROM lexical_results
         ),
         combined AS (
             SELECT
-                COALESCE(f.id, s.id) as id,
-                COALESCE(f.recording_id, s.recording_id) as recording_id,
-                COALESCE(f.speaker, s.speaker) as speaker,
-                COALESCE(f.content, s.content) as content,
-                COALESCE(f.start_ms, s.start_ms) as start_ms,
-                COALESCE(f.end_ms, s.end_ms) as end_ms,
-                COALESCE(1.0 / (60 + f.fts_rn), 0) + COALESCE(1.0 / (60 + s.sem_rn), 0) as rrf_score
-            FROM fts_results f
-            FULL OUTER JOIN semantic_results s ON f.id = s.id
+                id,
+                recording_id,
+                speaker,
+                content,
+                start_ms,
+                end_ms,
+                recording_title,
+                recording_type,
+                lexical_score as score
+            FROM lexical_results
+            UNION ALL
+            SELECT
+                id,
+                recording_id,
+                speaker,
+                content,
+                start_ms,
+                end_ms,
+                recording_title,
+                recording_type,
+                1 - (embedding <=> CAST(:embedding AS vector)) as score
+            FROM search_scope
+            WHERE (SELECT total FROM lexical_count) = 0
+              AND embedding IS NOT NULL
+              AND 1 - (embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         )
         SELECT
             c.id,
@@ -124,12 +177,11 @@ async def hybrid_search(
             c.content,
             c.start_ms,
             c.end_ms,
-            c.rrf_score,
-            r.title as recording_title,
-            r.type as recording_type
+            c.score,
+            c.recording_title,
+            c.recording_type
         FROM combined c
-        JOIN recordings r ON c.recording_id = r.id AND r.deleted_at IS NULL
-        ORDER BY c.rrf_score DESC
+        ORDER BY c.score DESC
         LIMIT :limit OFFSET :offset
     """)
 
@@ -137,6 +189,7 @@ async def hybrid_search(
         hybrid_query,
         {
             "query": q,
+            "like_query": like_query,
             "user_id": str(user.id),
             "embedding": query_embedding,
             "limit": limit,
@@ -148,32 +201,77 @@ async def hybrid_search(
 
     # Get total count using the same combined CTE logic
     count_query = text("""
-        WITH fts_results AS (
-            SELECT s.id
+        WITH search_scope AS (
+            SELECT
+                s.id,
+                s.embedding,
+                s.content,
+                r.title as recording_title,
+                COALESCE(p.display_name, s.raw_label, s.speaker) as speaker,
+                COALESCE((
+                    SELECT string_agg(alias.value, ' ')
+                    FROM jsonb_array_elements_text(
+                        CASE
+                            WHEN jsonb_typeof(p.aliases) = 'array' THEN p.aliases
+                            ELSE '[]'::jsonb
+                        END
+                    ) AS alias(value)
+                ), '') as person_aliases,
+                concat_ws(
+                    ' ',
+                    s.content,
+                    r.title,
+                    s.speaker,
+                    s.raw_label,
+                    p.display_name,
+                    COALESCE((
+                        SELECT string_agg(alias.value, ' ')
+                        FROM jsonb_array_elements_text(
+                            CASE
+                                WHEN jsonb_typeof(p.aliases) = 'array' THEN p.aliases
+                                ELSE '[]'::jsonb
+                            END
+                        ) AS alias(value)
+                    ), '')
+                ) as search_document
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
+            LEFT JOIN people p ON s.person_id = p.id AND p.user_id = r.user_id
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
-              AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
+        ),
+        lexical_results AS (
+            SELECT id
+            FROM search_scope
+            WHERE to_tsvector('simple', search_document) @@ plainto_tsquery('simple', :query)
+               OR content ILIKE :like_query ESCAPE '!'
+               OR recording_title ILIKE :like_query ESCAPE '!'
+               OR speaker ILIKE :like_query ESCAPE '!'
+               OR person_aliases ILIKE :like_query ESCAPE '!'
+        ),
+        lexical_count AS (
+            SELECT COUNT(*) as total FROM lexical_results
         ),
         semantic_results AS (
-            SELECT s.id
-            FROM segments s
-            JOIN recordings r ON s.recording_id = r.id
-            WHERE r.user_id = :user_id
-              AND r.deleted_at IS NULL
-              AND s.embedding IS NOT NULL
-              AND 1 - (s.embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
+            SELECT id
+            FROM search_scope
+            WHERE (SELECT total FROM lexical_count) = 0
+              AND embedding IS NOT NULL
+              AND 1 - (embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
         )
-        SELECT COUNT(DISTINCT COALESCE(f.id, s.id))
-        FROM fts_results f
-        FULL OUTER JOIN semantic_results s ON f.id = s.id
+        SELECT
+            CASE
+                WHEN (SELECT total FROM lexical_count) > 0
+                THEN (SELECT total FROM lexical_count)
+                ELSE (SELECT COUNT(*) FROM semantic_results)
+            END
     """)
 
     count_result = await db.execute(
         count_query,
         {
             "query": q,
+            "like_query": like_query,
             "user_id": str(user.id),
             "embedding": query_embedding,
             "semantic_threshold": HYBRID_SEMANTIC_THRESHOLD,
@@ -192,7 +290,7 @@ async def hybrid_search(
                 content=row.content,
                 start_ms=row.start_ms,
                 end_ms=row.end_ms,
-                score=float(row.rrf_score),
+                score=float(row.score),
             )
             for row in rows
         ],

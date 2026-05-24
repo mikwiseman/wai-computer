@@ -131,6 +131,28 @@ enum MacUITestFixtures {
 
     static let recordingFlowRecordings: [Recording] = [completedRecording] + recordings
 
+    static let searchResponse: SearchResponse = {
+        let data = """
+        {
+            "results": [
+                {
+                    "recording_id": "rec-1",
+                    "recording_title": "Weekly Team Standup",
+                    "recording_type": "meeting",
+                    "segment_id": "search-seg-1",
+                    "speaker": "David",
+                    "content": "The recording feature is working well. We need to finish the transcript view and search functionality.",
+                    "start_ms": 22800,
+                    "end_ms": 35600,
+                    "score": 1.0
+                }
+            ],
+            "total": 1
+        }
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(SearchResponse.self, from: data)
+    }()
+
     static let recordingDetail = RecordingDetail(
         id: readyRecording.id,
         title: readyRecording.title,

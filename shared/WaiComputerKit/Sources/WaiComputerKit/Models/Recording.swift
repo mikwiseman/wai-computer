@@ -333,6 +333,22 @@ public struct CreateRecordingRequest: Codable, Sendable {
     }
 }
 
+public enum BulkRecordingAction: String, Codable, Sendable {
+    case delete
+    case restore
+    case move
+}
+
+public struct BulkRecordingOperationResponse: Codable, Sendable {
+    public let processed: Int
+    public let failed: Int
+
+    public init(processed: Int, failed: Int) {
+        self.processed = processed
+        self.failed = failed
+    }
+}
+
 public extension Recording {
     var isFailedUpload: Bool {
         status == .failed

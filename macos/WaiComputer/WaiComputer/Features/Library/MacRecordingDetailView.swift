@@ -280,6 +280,11 @@ struct MacRecordingDetailView: View {
                     .font(Typography.displayMedium)
                     .lineLimit(2)
                     .focused($titleFieldFocused)
+                    .frame(
+                        minWidth: MacMainLayoutMetrics.recordingTitleEditMinWidth,
+                        maxWidth: .infinity,
+                        alignment: .leading
+                    )
                     .onSubmit { commitTitleEdit(originalTitle: detail.title) }
                     .onKeyPress(.escape) {
                         isEditingTitle = false

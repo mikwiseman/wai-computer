@@ -40,6 +40,8 @@ const COPY: Record<
     promoApply: string;
     promoApplying: string;
     promoApplied: string;
+    promoNotFound: string;
+    promoActiveSubscription: string;
   }
 > = {
   en: {
@@ -65,6 +67,8 @@ const COPY: Record<
     promoApply: "Apply",
     promoApplying: "Applying...",
     promoApplied: "Promo code applied.",
+    promoNotFound: "Promo code not found.",
+    promoActiveSubscription: "You already have an active subscription.",
   },
   ru: {
     heading: "Подписка",
@@ -89,8 +93,25 @@ const COPY: Record<
     promoApply: "Применить",
     promoApplying: "Применяем...",
     promoApplied: "Промокод применён.",
+    promoNotFound: "Промокод не найден.",
+    promoActiveSubscription: "У тебя уже есть активная подписка.",
   },
 };
+
+function localizeBillingError(error: unknown, locale: Locale): string {
+  const copy = COPY[locale];
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (message === "Promo code not found") {
+    return copy.promoNotFound;
+  }
+  if (message === "Active subscription already exists") {
+    return copy.promoActiveSubscription;
+  }
+  if (message.length > 0) {
+    return message;
+  }
+  return copy.loadError;
+}
 
 interface Props {
   locale: Locale;
@@ -179,7 +200,7 @@ export function BillingDashboard({ locale, currency }: Props) {
       setPromoCode("");
       setPromoMessage(copy.promoApplied);
     } catch (error: unknown) {
-      setPromoError(error instanceof Error ? error.message : copy.loadError);
+      setPromoError(localizeBillingError(error, locale));
     } finally {
       setPromoInFlight(false);
     }
