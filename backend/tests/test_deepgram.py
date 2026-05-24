@@ -100,6 +100,110 @@ async def test_transcribe_audio_file_returns_speaker_segments():
 
 
 @pytest.mark.asyncio
+async def test_transcribe_audio_file_prefers_utterance_segments():
+    body = {
+        "results": {
+            "utterances": [
+                {
+                    "transcript": "Hello from utterances.",
+                    "start": 0.0,
+                    "end": 1.1,
+                    "confidence": 0.97,
+                    "speaker": 0,
+                }
+            ],
+            "channels": [
+                {
+                    "alternatives": [
+                        {
+                            "transcript": "Hello from words",
+                            "confidence": 0.8,
+                            "words": [
+                                _word("Hello", 0.0, 0.4, 0.8, 1),
+                                _word("from", 0.4, 0.7, 0.8, 1),
+                                _word("words", 0.7, 1.0, 0.8, 1),
+                            ],
+                        }
+                    ]
+                }
+            ],
+        }
+    }
+    response = _mock_response(200, body)
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response) as client_patch,
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        results = await transcribe_audio_file(
+            b"audio",
+            model="nova-3",
+            language="en",
+            content_type="audio/wav",
+        )
+
+    client = client_patch.return_value.__aenter__.return_value
+    params = client.post.await_args.kwargs["params"]
+    assert params["utterances"] == "true"
+    assert results[0].speaker == "Speaker 0"
+    assert results[0].text == "Hello from utterances."
+    assert results[0].start_ms == 0
+    assert results[0].end_ms == 1100
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_smooths_short_speaker_islands():
+    body = {
+        "results": {
+            "channels": [
+                {
+                    "alternatives": [
+                        {
+                            "transcript": "Итак отчет по VyE School 2 продажи по VyE Tombinator",
+                            "confidence": 0.95,
+                            "words": [
+                                _word("Итак,", 0.0, 0.4, 0.95, 0),
+                                _word("отчет", 0.4, 0.8, 0.95, 0),
+                                _word("по", 0.8, 1.0, 0.65, 1),
+                                _word("VyE", 1.0, 1.3, 0.7, 0),
+                                _word("School", 1.3, 1.6, 0.72, 1),
+                                _word("2", 1.6, 1.8, 0.72, 1),
+                                _word("продажи,", 1.8, 2.1, 0.72, 1),
+                                _word("по", 2.1, 2.3, 0.72, 1),
+                                _word("VyE", 2.3, 2.6, 0.72, 1),
+                                _word("Tombinator.", 2.6, 3.1, 0.95, 0),
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    response = _mock_response(200, body)
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response),
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        results = await transcribe_audio_file(
+            b"audio",
+            model="nova-3",
+            language="ru",
+            content_type="audio/wav",
+        )
+
+    assert len(results) == 1
+    assert results[0].speaker == "Speaker 0"
+    assert results[0].text == (
+        "Итак, отчет по VyE School 2 продажи, по VyE Tombinator."
+    )
+    assert results[0].start_ms == 0
+    assert results[0].end_ms == 3100
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_file_uses_language_detection_for_auto():
     body = {
         "results": {
