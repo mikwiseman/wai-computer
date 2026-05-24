@@ -1,6 +1,63 @@
 import Foundation
 import SwiftUI
 
+private struct CompanionAccentColorKey: EnvironmentKey {
+    static let defaultValue: Color = .accentColor
+}
+
+extension EnvironmentValues {
+    var companionAccentColor: Color {
+        get { self[CompanionAccentColorKey.self] }
+        set { self[CompanionAccentColorKey.self] = newValue }
+    }
+}
+
+public extension View {
+    func companionAccentColor(_ color: Color) -> some View {
+        environment(\.companionAccentColor, color)
+    }
+}
+
+struct CompanionComposerInsets: Equatable {
+    let horizontal: CGFloat
+    let vertical: CGFloat
+
+    var edgeInsets: EdgeInsets {
+        EdgeInsets(
+            top: vertical,
+            leading: horizontal,
+            bottom: vertical,
+            trailing: horizontal
+        )
+    }
+}
+
+enum CompanionComposerMetrics {
+    static let textInsets = CompanionComposerInsets(horizontal: 12, vertical: 10)
+    static let placeholderInsets = textInsets
+    static let minHeight: CGFloat = 48
+    static let maxHeight: CGFloat = 112
+}
+
+enum CompanionChatPresentation {
+    static func chatLabel(
+        title: String?,
+        createdAt: Date,
+        lastMessageAt: Date?,
+        locale: Locale
+    ) -> String {
+        let trimmedTitle = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty { return trimmedTitle }
+
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        let fallbackPrefix = locale.identifier.lowercased().hasPrefix("ru") ? "Чат" : "Chat"
+        return "\(fallbackPrefix) · \(formatter.string(from: lastMessageAt ?? createdAt))"
+    }
+}
+
 /// Cross-platform Wai chat view used by both the macOS sidebar `.wai` section
 /// and the iOS `WaiHomeView`. Takes an `APIClient` (kept in environment by the
 /// host app's auth flow) and a list of recordings used to resolve citation
@@ -9,6 +66,7 @@ public struct CompanionView: View {
     public let apiClient: APIClient
     public let recordings: [Recording]
     @Environment(\.locale) private var locale
+    @Environment(\.companionAccentColor) private var companionAccentColor
 
     @State private var chats: [CompanionConversation] = []
     @State private var activeChatId: String?
@@ -21,6 +79,10 @@ public struct CompanionView: View {
     @State private var errorMessage: String?
     @State private var showChats: Bool = false
     @State private var turnTask: Task<Void, Never>?
+    @State private var renamingChat: CompanionConversation?
+    @State private var renameDraft: String = ""
+    @State private var isRenamingChat = false
+    @State private var deletingChat: CompanionConversation?
     private let contentMaxWidth: CGFloat = 880
 
     private enum TurnStage {
@@ -38,6 +100,60 @@ public struct CompanionView: View {
         VStack(spacing: 0) {
             header
             CompanionDivider()
+            content
+        }
+        .background(Color.primary.opacity(0.025))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task { await initialLoad() }
+        .onDisappear { turnTask?.cancel() }
+        .sheet(item: $renamingChat) { chat in
+            renameSheet(for: chat)
+        }
+        .confirmationDialog(
+            t("Delete chat?", "Удалить чат?"),
+            isPresented: Binding(
+                get: { deletingChat != nil },
+                set: { if !$0 { deletingChat = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let deletingChat {
+                Button(t("Delete", "Удалить"), role: .destructive) {
+                    Task { await deleteChat(deletingChat) }
+                }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            if let deletingChat {
+                Text(
+                    t(
+                        "This removes “\(chatLabel(deletingChat))” from Wai.",
+                        "Чат «\(chatLabel(deletingChat))» будет удален из Wai."
+                    )
+                )
+            }
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(macOS)
+        HStack(spacing: 0) {
+            if showChats {
+                chatList
+                    .frame(width: 280)
+                Color.primary.opacity(0.08)
+                    .frame(width: 1)
+            }
+            VStack(spacing: 0) {
+                messageList
+                composer
+            }
+        }
+        #else
+        VStack(spacing: 0) {
             if showChats {
                 chatList
                 CompanionDivider()
@@ -45,19 +161,22 @@ public struct CompanionView: View {
             messageList
             composer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .task { await initialLoad() }
-        .onDisappear { turnTask?.cancel() }
+        #endif
     }
-
-    // MARK: - Sections
 
     private var header: some View {
         HStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(companionAccentColor)
+                .frame(width: 28, height: 28)
+                .background(companionAccentColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+
             Text(t("Ask Wai", "Спроси Wai"))
                 .font(.system(size: 18, weight: .semibold))
                 .lineLimit(1)
-                .layoutPriority(1)
+            .layoutPriority(1)
 
             Spacer(minLength: 12)
 
@@ -90,47 +209,88 @@ public struct CompanionView: View {
     private var chatList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(chats) { chat in
-                    chatRow(chat)
+                if chats.isEmpty {
+                    Text(t("No chats yet", "Чатов пока нет"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                } else {
+                    ForEach(chats) { chat in
+                        chatRow(chat)
+                    }
                 }
             }
             .frame(maxWidth: contentMaxWidth, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 8)
+            .padding(.horizontal, showChats ? 12 : 24)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        #if os(macOS)
+        .background(Color.primary.opacity(0.018))
+        #else
         .frame(maxHeight: 220)
+        #endif
     }
 
     private func chatRow(_ chat: CompanionConversation) -> some View {
         let isActive = chat.id == activeChatId
-        return Button {
-            Task { await loadChat(chat.id) }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "bubble.left")
-                    .foregroundStyle(isActive ? Color.accentColor : .secondary)
-                    .frame(width: 18)
+        return HStack(spacing: 6) {
+            Button {
+                Task { await loadChat(chat.id) }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "bubble.left")
+                        .foregroundStyle(isActive ? companionAccentColor : .secondary)
+                        .frame(width: 18)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(chatLabel(chat))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(relativeDate(chat.lastMessageAt ?? chat.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(chatLabel(chat))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(relativeDate(chat.lastMessageAt ?? chat.createdAt))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
                 }
-
-                Spacer()
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(isActive ? Color.accentColor.opacity(0.14) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+
+            Menu {
+                Button(t("Rename…", "Переименовать…")) {
+                    beginRename(chat)
+                }
+                Button(t("Delete", "Удалить"), role: .destructive) {
+                    deletingChat = chat
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(isActive ? companionAccentColor.opacity(0.14) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            Button(t("Rename…", "Переименовать…")) {
+                beginRename(chat)
+            }
+            Button(t("Delete", "Удалить"), role: .destructive) {
+                deletingChat = chat
+            }
+        }
         .accessibilityIdentifier("wai-chat-row")
     }
 
@@ -195,10 +355,13 @@ public struct CompanionView: View {
     }
 
     private func bubble(for message: CompanionMessage) -> some View {
-        MessageRow(
-            role: message.role == .user ? t("You", "Ты") : "Wai",
+        let isUser = message.role == .user
+        return MessageRow(
+            role: isUser ? t("You", "Ты") : "Wai",
             text: message.plainText,
             dateText: relativeDate(message.createdAt),
+            isUser: isUser,
+            accentColor: companionAccentColor,
             citations: message.citations.map { cit in
                 CitationDisplay(
                     index: cit.citationIndex,
@@ -223,6 +386,8 @@ public struct CompanionView: View {
             text: text,
             dateText: t("Now", "Сейчас"),
             isMuted: streamingText.isEmpty,
+            isUser: false,
+            accentColor: companionAccentColor,
             citations: streamingCitations.map {
                 CitationDisplay(
                     index: $0.index,
@@ -240,46 +405,54 @@ public struct CompanionView: View {
         let text: String
         let dateText: String
         var isMuted = false
+        let isUser: Bool
+        let accentColor: Color
         let citations: [CitationDisplay]
         let formattedCitation: (CitationDisplay) -> String
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Text(role)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(dateText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary.opacity(0.8))
-                    Spacer()
-                }
+            HStack(alignment: .top, spacing: 0) {
+                if isUser { Spacer(minLength: 80) }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(role)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(dateText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary.opacity(0.8))
+                        Spacer()
+                    }
 
-                Text(text)
-                    .font(.system(size: 15))
-                    .lineSpacing(5)
-                    .foregroundStyle(isMuted ? .secondary : .primary)
-                    .italicIfNeeded(isMuted)
-                    .textSelection(.enabled)
+                    Text(text)
+                        .font(.system(size: 15))
+                        .lineSpacing(5)
+                        .foregroundStyle(isMuted ? .secondary : .primary)
+                        .italicIfNeeded(isMuted)
+                        .textSelection(.enabled)
 
-                if !citations.isEmpty {
-                    FlowLayoutCompat {
-                        ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
-                            Text(formattedCitation(citation))
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.accentColor.opacity(0.12))
-                                .clipShape(Capsule())
+                    if !citations.isEmpty {
+                        FlowLayoutCompat {
+                            ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
+                                Text(formattedCitation(citation))
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(accentColor.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(isUser ? accentColor.opacity(0.12) : Color.primary.opacity(0.045))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(maxWidth: 660, alignment: .leading)
+                if !isUser { Spacer(minLength: 80) }
             }
-            .padding(.vertical, 14)
-            .overlay(alignment: .bottom) {
-                Color.primary.opacity(0.08)
-                    .frame(height: 1)
-            }
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            .padding(.vertical, 6)
         }
     }
 
@@ -288,31 +461,28 @@ public struct CompanionView: View {
             CompanionDivider()
 
             HStack(alignment: .bottom, spacing: 10) {
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.05))
-
-                    if input.isEmpty {
-                        Text(t("Ask Wai about your recordings...", "Спроси Wai о своих записях..."))
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 11)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $input)
-                        .font(.system(size: 14))
-                        .scrollContentBackgroundCompatHidden()
-                        .padding(6)
-                        .frame(minHeight: 56, maxHeight: 96)
-                        .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
-                        .accessibilityIdentifier("wai-message-editor")
-                }
+                TextField(
+                    t("Ask Wai about your recordings...", "Спроси Wai о своих записях..."),
+                    text: $input,
+                    axis: .vertical
+                )
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .lineLimit(1...4)
+                .padding(CompanionComposerMetrics.textInsets.edgeInsets)
+                .frame(
+                    minHeight: CompanionComposerMetrics.minHeight,
+                    maxHeight: CompanionComposerMetrics.maxHeight,
+                    alignment: .topLeading
+                )
+                .background(Color.primary.opacity(0.05))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.primary.opacity(0.10), lineWidth: 1)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
+                .accessibilityIdentifier("wai-message-editor")
 
                 if isStreaming {
                     Button {
@@ -342,6 +512,37 @@ public struct CompanionView: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private func renameSheet(for chat: CompanionConversation) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(t("Rename chat", "Переименовать чат"))
+                .font(.headline)
+            TextField(t("Chat name", "Название чата"), text: $renameDraft)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("wai-rename-chat-field")
+
+            HStack {
+                Spacer()
+                Button(t("Cancel", "Отмена")) {
+                    renamingChat = nil
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button(t("Save", "Сохранить")) {
+                    Task { await renameChat(chat) }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    isRenamingChat
+                        || renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+                .accessibilityIdentifier("wai-rename-chat-save-button")
+            }
+        }
+        .padding(22)
+        .frame(minWidth: 460)
     }
 
     // MARK: - Loading + sending
@@ -382,6 +583,52 @@ public struct CompanionView: View {
             chats.insert(chat, at: 0)
             activeChatId = chat.id
             messages = []
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func beginRename(_ chat: CompanionConversation) {
+        renameDraft = chatLabel(chat)
+        renamingChat = chat
+    }
+
+    @MainActor
+    private func renameChat(_ chat: CompanionConversation) async {
+        let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isRenamingChat = true
+        defer { isRenamingChat = false }
+
+        do {
+            let updated = try await apiClient.patchCompanionChat(
+                chatId: chat.id,
+                title: trimmed
+            )
+            replaceChat(updated)
+            renamingChat = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func deleteChat(_ chat: CompanionConversation) async {
+        do {
+            if chat.id == activeChatId {
+                cancelTurn()
+            }
+            try await apiClient.deleteCompanionChat(chatId: chat.id)
+            deletingChat = nil
+            chats.removeAll { $0.id == chat.id }
+            if activeChatId == chat.id {
+                messages = []
+                activeChatId = nil
+                if let nextChat = chats.first {
+                    await loadChat(nextChat.id)
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -452,6 +699,7 @@ public struct CompanionView: View {
                 }
                 let detail = try await apiClient.getCompanionChat(chatId: chatId)
                 messages = detail.messages
+                await refreshChats(selecting: chatId)
             } catch is CancellationError {
                 return
             } catch let urlError as URLError where urlError.code == .cancelled {
@@ -466,6 +714,28 @@ public struct CompanionView: View {
                 streamingToolNotes = []
             }
             stage = .idle
+        }
+    }
+
+    @MainActor
+    private func refreshChats(selecting chatId: String? = nil) async {
+        do {
+            let list = try await apiClient.listCompanionChats()
+            chats = list.chats
+            if let chatId {
+                activeChatId = chatId
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func replaceChat(_ chat: CompanionConversation) {
+        if let index = chats.firstIndex(where: { $0.id == chat.id }) {
+            chats[index] = chat
+        } else {
+            chats.insert(chat, at: 0)
         }
     }
 
@@ -529,12 +799,12 @@ public struct CompanionView: View {
     }
 
     private func chatLabel(_ chat: CompanionConversation) -> String {
-        if let title = chat.title, !title.isEmpty { return title }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        let when = chat.lastMessageAt ?? chat.createdAt
-        return "\(t("Chat", "Чат")) · \(formatter.string(from: when))"
+        CompanionChatPresentation.chatLabel(
+            title: chat.title,
+            createdAt: chat.createdAt,
+            lastMessageAt: chat.lastMessageAt,
+            locale: locale
+        )
     }
 
     private func relativeDate(_ date: Date) -> String {

@@ -692,6 +692,19 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(id)/restore")
     }
 
+    public func bulkRecordingOperation(
+        recordingIds: [String],
+        action: BulkRecordingAction,
+        folderId: String? = nil
+    ) async throws -> BulkRecordingOperationResponse {
+        let body = BulkRecordingOperationRequest(
+            recordingIds: recordingIds,
+            action: action,
+            folderId: folderId
+        )
+        return try await request(.POST, path: "/api/recordings/bulk", body: body)
+    }
+
     public func createRecordingShareLink(id: String) async throws -> RecordingShareLink {
         return try await request(.POST, path: "/api/recordings/\(id)/share")
     }
@@ -1569,6 +1582,18 @@ private struct UpdateRecordingRequestBody: Encodable {
                 try container.encodeNil(forKey: .folderId)
             }
         }
+    }
+}
+
+private struct BulkRecordingOperationRequest: Encodable {
+    let recordingIds: [String]
+    let action: BulkRecordingAction
+    let folderId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingIds = "recording_ids"
+        case action
+        case folderId = "folder_id"
     }
 }
 

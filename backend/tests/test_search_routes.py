@@ -152,6 +152,115 @@ async def test_hybrid_search_excludes_low_similarity_results_from_rows_and_total
 
 
 @pytest.mark.asyncio
+async def test_hybrid_search_prefers_exact_text_matches_over_semantic_noise(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Exact obvious query terms should not show semantic-only unrelated rows."""
+    headers = await _register(client, "search.exact-query@example.com")
+    recording_id = await _create_recording(client, headers, "Exact Query Recording")
+
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording_id,
+                speaker="Speaker 1",
+                content="Budget forecast for launch",
+                start_ms=0,
+                end_ms=500,
+                embedding=_vector_list(0),
+            ),
+            Segment(
+                recording_id=recording_id,
+                speaker="Speaker 2",
+                content="Unrelated lunch notes",
+                start_ms=500,
+                end_ms=1000,
+                embedding=_vector_list(0),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
+
+    monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
+
+    response = await client.get(
+        "/api/search",
+        headers=headers,
+        params={"q": "budget", "limit": 20},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [result["content"] for result in payload["results"]] == [
+        "Budget forecast for launch"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_matches_assigned_person_display_name(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Search should match user-facing speaker/person names such as Оля."""
+    headers = await _register(client, "search.person-name@example.com")
+    recording_id = await _create_recording(client, headers, "Speaker Name Recording")
+    person_response = await client.post(
+        "/api/people",
+        headers=headers,
+        json={"display_name": "Оля"},
+    )
+    assert person_response.status_code == 201
+    person_id = UUID(person_response.json()["id"])
+
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording_id,
+                speaker="Speaker 1",
+                raw_label="Speaker 1",
+                person_id=person_id,
+                content="Обсуждали запуск и следующий созвон.",
+                start_ms=0,
+                end_ms=500,
+                embedding=_vector_list(1),
+            ),
+            Segment(
+                recording_id=recording_id,
+                speaker="Speaker 2",
+                raw_label="Speaker 2",
+                content="Другой участник говорил о бюджете.",
+                start_ms=500,
+                end_ms=1000,
+                embedding=_vector_list(0),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(0)
+
+    monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
+
+    response = await client.get(
+        "/api/search",
+        headers=headers,
+        params={"q": "Оля", "limit": 20},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["results"][0]["speaker"] == "Оля"
+    assert payload["results"][0]["content"] == "Обсуждали запуск и следующий созвон."
+
+
+@pytest.mark.asyncio
 async def test_semantic_search_honors_threshold(
     client: AsyncClient,
     db_session: AsyncSession,

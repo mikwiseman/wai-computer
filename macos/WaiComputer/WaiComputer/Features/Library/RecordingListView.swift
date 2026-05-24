@@ -6,6 +6,7 @@ struct RecordingListView: View {
     let folders: [Folder]
     let localRecoveryRecordingIDs: Set<String>
     let isTrash: Bool
+    let isOperationInProgress: Bool
     @Binding var selectedRecordingIds: Set<String>
     let onTrash: ([String]) -> Void
     let onRestore: ([String]) -> Void
@@ -30,15 +31,17 @@ struct RecordingListView: View {
                         Button(t("Restore", "Восстановить")) {
                             onRestore(contextSelection)
                         }
+                        .disabled(isOperationInProgress)
 
                         Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
                             onPermanentDelete(contextSelection)
                         }
+                        .disabled(isOperationInProgress)
                     } else {
                         Button(t("Rename…", "Переименовать…")) {
                             onRequestRename(recording.id)
                         }
-                        .disabled(contextSelection.count > 1)
+                        .disabled(contextSelection.count > 1 || isOperationInProgress)
 
                         if canRemoveFromFolder || !folders.isEmpty {
                             Menu(t("Move to Folder", "Переместить в папку")) {
@@ -46,26 +49,31 @@ struct RecordingListView: View {
                                     Button(t("Remove from Folder", "Убрать из папки")) {
                                         onMoveToFolder(contextSelection, nil)
                                     }
+                                    .disabled(isOperationInProgress)
                                 }
 
                                 ForEach(folders) { folder in
                                     Button(folder.name) {
                                         onMoveToFolder(contextSelection, folder.id)
                                     }
+                                    .disabled(isOperationInProgress)
                                 }
                             }
+                            .disabled(isOperationInProgress)
                         }
 
                         Button(t("Move to Trash", "Переместить в корзину"), role: .destructive) {
                             onTrash(contextSelection)
                         }
+                        .disabled(isOperationInProgress)
                     }
                 }
         }
         .listStyle(.inset)
+        .disabled(isOperationInProgress)
         .onDeleteCommand {
             let ids = Array(selectedRecordingIds)
-            guard !ids.isEmpty else { return }
+            guard !ids.isEmpty, !isOperationInProgress else { return }
             if isTrash {
                 onPermanentDelete(ids)
             } else {
@@ -97,18 +105,21 @@ struct RecordingRowView: View {
                 Text(recording.title ?? t("Untitled", "Без названия"))
                     .font(Typography.headingMedium)
                     .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: Spacing.sm)
 
                 if let statusText = recording.statusDisplayText(
                     hasLocalRecoveryBackup: hasLocalRecoveryBackup,
-                    languageCode: recording.language ?? fallbackStatusLanguageCode
+                    languageCode: fallbackStatusLanguageCode
                 ) {
                     Text(statusText)
                         .font(Typography.label)
                         .foregroundStyle(statusColor)
                         .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                        .minimumScaleFactor(0.85)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
                 }
             }
 

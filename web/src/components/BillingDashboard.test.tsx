@@ -124,4 +124,17 @@ describe("BillingDashboard", () => {
     await waitFor(() => expect(mockedPromo).toHaveBeenCalledWith("WAI-TEST-30"));
     expect(await screen.findByText(/Pro активен до/i)).toBeInTheDocument();
   });
+
+  it("localizes promo code errors in Russian billing", async () => {
+    mockedPromo.mockRejectedValue(new Error("Promo code not found"));
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "BAD-CODE");
+    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+    expect(await screen.findByText("Промокод не найден.")).toBeInTheDocument();
+    expect(screen.queryByText("Promo code not found")).not.toBeInTheDocument();
+  });
 });

@@ -108,6 +108,7 @@ struct MacMainView: View {
     @State private var libraryErrorAutoDismissTask: Task<Void, Never>?
     @State private var recoveryNotice: String?
     @State private var recoveryNoticeAutoDismissTask: Task<Void, Never>?
+    @State private var recordingStartFolderId: String?
     @State private var lastMeasuredLayoutWidth: CGFloat = 0
 
     enum SidebarSection: Hashable {
@@ -190,6 +191,10 @@ struct MacMainView: View {
         recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
     }
 
+    private var isLibraryOperationActive: Bool {
+        libraryViewModel.bulkOperation != nil
+    }
+
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
@@ -233,12 +238,12 @@ struct MacMainView: View {
     private var listHeaderActions: some View {
         HStack(spacing: Spacing.sm) {
             Button {
-                startRecording(type: .meeting, inputSource: .dual)
+                startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
             } label: {
                 MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "plus")
             }
             .buttonStyle(.plain)
-            .disabled(isRecordingHandoffActive || !appState.isAuthenticated)
+            .disabled(isRecordingHandoffActive || isLibraryOperationActive || !appState.isAuthenticated)
             .help(t("New Recording", "Новая запись"))
             .accessibilityIdentifier("new-recording-toolbar-button")
 
@@ -250,7 +255,7 @@ struct MacMainView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Move to Trash", "Переместить в корзину"))
-                .disabled(selectedRecordingIds.isEmpty)
+                .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
             }
 
             if isTrashSection {
@@ -261,7 +266,7 @@ struct MacMainView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Restore", "Восстановить"))
-                .disabled(selectedRecordingIds.isEmpty)
+                .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
 
                 Button {
                     permanentlyDeleteSelectedRecordings()
@@ -270,7 +275,7 @@ struct MacMainView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Delete Permanently", "Удалить навсегда"))
-                .disabled(selectedRecordingIds.isEmpty)
+                .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
             }
         }
     }
@@ -572,10 +577,11 @@ struct MacMainView: View {
                     shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
                     isShowingCreateFolderSheet = true
                 } label: {
-                    Label(t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
-                        .font(Typography.body)
+                    SidebarRowLabel(title: t("New Folder", "Новая папка"), icon: "folder.badge.plus")
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .disabled(isLibraryOperationActive)
                 .accessibilityIdentifier("sidebar-new-folder")
 
                 ForEach(libraryViewModel.folders) { folder in
@@ -611,10 +617,10 @@ struct MacMainView: View {
         Button {
             selectedSection = section
         } label: {
-            Label(title, systemImage: icon)
-                .font(Typography.body)
+            SidebarRowLabel(title: title, icon: icon)
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityIdentifier("sidebar-\(identifier)")
         .listRowBackground(
             selectedSection == section
@@ -665,6 +671,13 @@ struct MacMainView: View {
                 .padding(.vertical, Spacing.md)
 
                 WaiDivider()
+                    .padding(.horizontal, Spacing.lg)
+
+                if let bulkOperation = libraryViewModel.bulkOperation {
+                    LibraryBulkOperationBanner(operation: bulkOperation)
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.vertical, Spacing.sm)
+                }
 
                 if libraryViewModel.isLoading {
                     ProgressView()
@@ -682,6 +695,7 @@ struct MacMainView: View {
                         folders: libraryViewModel.folders,
                         localRecoveryRecordingIDs: libraryViewModel.localRecoveryRecordingIDs,
                         isTrash: isTrashSection,
+                        isOperationInProgress: isLibraryOperationActive,
                         selectedRecordingIds: $selectedRecordingIds,
                         onTrash: { ids in
                             trashRecordings(ids)
@@ -750,6 +764,7 @@ struct MacMainView: View {
                 BulkSelectionDetailView(
                     selectionCount: selectedRecordingIds.count,
                     isTrash: isTrashSection,
+                    isOperationInProgress: isLibraryOperationActive,
                     onTrash: moveSelectedRecordingsToTrash,
                     onRestore: restoreSelectedRecordings,
                     onPermanentDelete: permanentlyDeleteSelectedRecordings
@@ -801,13 +816,15 @@ struct MacMainView: View {
                 )
             } else {
                 NewRecordingView(
-                    onStartRecording: { startRecording(type: .meeting, inputSource: .dual) },
+                    onStartRecording: { startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId) },
                     onImportFile: { importAudioFile() },
                     isImporting: importViewModel.isImporting
                 )
             }
         case .search:
-            MacSearchView()
+            MacSearchView { recordingId in
+                openSearchResult(recordingId)
+            }
         case .history:
             DictationHistoryView()
         case .dictionary:
@@ -818,6 +835,7 @@ struct MacMainView: View {
                 recordings: libraryViewModel.recordings
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+            .companionAccentColor(Palette.accent)
         case .settings:
             MacSettingsView()
         }
@@ -833,8 +851,13 @@ struct MacMainView: View {
         completionTask?.cancel()
 
         guard let completedContext = appState.completedRecordingContext else { return }
+        let completedFolderId = recordingStartFolderId
 
-        selectedSection = .allRecordings
+        if let completedFolderId {
+            selectedSection = .folder(completedFolderId)
+        } else {
+            selectedSection = .allRecordings
+        }
         prefetchedRecordingDetail = nil
         // Immediate selection — the detail view shows a loading state until
         // resolveCompletedRecording returns. This avoids the "where did my
@@ -855,6 +878,7 @@ struct MacMainView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
                 }
+                recordingStartFolderId = nil
                 return
             }
 
@@ -868,6 +892,7 @@ struct MacMainView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     appState.finishCompletedRecordingTransition(recordingId: completedContext.recordingId)
                 }
+                recordingStartFolderId = nil
                 return
             }
 
@@ -882,6 +907,7 @@ struct MacMainView: View {
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
             await reloadLibrary()
+            recordingStartFolderId = nil
         }
     }
 
@@ -935,10 +961,12 @@ struct MacMainView: View {
 
     private func startRecording(
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .dual
+        inputSource: MacRecordingInputSource = .dual,
+        folderId: String? = nil
     ) {
+        recordingStartFolderId = folderId
         Task {
-            await appState.startRecording(type: type, inputSource: inputSource)
+            await appState.startRecording(type: type, inputSource: inputSource, folderId: folderId)
         }
     }
 
@@ -958,6 +986,12 @@ struct MacMainView: View {
         selectedRecordingIds = [id]
         prefetchedRecordingDetail = nil
         appState.selectedRecordingFromMenu = nil
+    }
+
+    private func openSearchResult(_ recordingId: String) {
+        selectedSection = .allRecordings
+        selectedRecordingIds = [recordingId]
+        prefetchedRecordingDetail = nil
     }
 
     private func handlePendingMainWindowAction(_ action: MacMainWindowAction?) {
@@ -1085,6 +1119,74 @@ struct MacMainView: View {
     }
 }
 
+private struct SidebarRowLabel: View {
+    let title: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Label(title, systemImage: icon)
+                .font(Typography.body)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, MacMainLayoutMetrics.sidebarRowHorizontalPadding)
+        .frame(maxWidth: .infinity, minHeight: MacMainLayoutMetrics.sidebarRowMinHeight, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct LibraryBulkOperationBanner: View {
+    let operation: LibraryBulkOperation
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            if operation.isDeterminate {
+                ProgressView(value: Double(operation.completedCount), total: Double(operation.totalCount))
+                    .frame(width: 96)
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Text(message)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("library-bulk-operation-banner")
+    }
+
+    private var message: String {
+        switch operation.kind {
+        case .moving:
+            return t("Moving \(operation.totalCount) recordings...", "Перемещаем записи: \(operation.totalCount)...")
+        case .movingToTrash:
+            return t("Moving \(operation.totalCount) recordings to Trash...", "Перемещаем записи в корзину: \(operation.totalCount)...")
+        case .restoring:
+            return t("Restoring \(operation.totalCount) recordings...", "Восстанавливаем записи: \(operation.totalCount)...")
+        case .deletingPermanently:
+            if operation.completedCount > 0 {
+                return t(
+                    "Deleting \(operation.completedCount) of \(operation.totalCount) recordings...",
+                    "Удаляем записи: \(operation.completedCount) из \(operation.totalCount)..."
+                )
+            }
+            return t("Deleting \(operation.totalCount) recordings...", "Удаляем записи: \(operation.totalCount)...")
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
 private struct InlineLibraryErrorBanner: View {
     let message: String
     let onDismiss: () -> Void
@@ -1190,6 +1292,7 @@ private struct MainToolbarIconLabel: View {
 private struct BulkSelectionDetailView: View {
     let selectionCount: Int
     let isTrash: Bool
+    let isOperationInProgress: Bool
     let onTrash: () -> Void
     let onRestore: () -> Void
     let onPermanentDelete: () -> Void
@@ -1214,12 +1317,15 @@ private struct BulkSelectionDetailView: View {
                 if isTrash {
                     Button(t("Restore", "Восстановить"), action: onRestore)
                         .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(isOperationInProgress)
 
                     Button(t("Delete Permanently", "Удалить навсегда"), action: onPermanentDelete)
                         .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(isOperationInProgress)
                 } else {
                     Button(t("Move to Trash", "Переместить в корзину"), action: onTrash)
                         .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(isOperationInProgress)
                 }
             }
         }

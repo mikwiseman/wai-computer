@@ -17,7 +17,14 @@ final class MacMainLayoutMetricsTests: XCTestCase {
         XCTAssertEqual(MacMainLayoutMetrics.toolbarIconFrame, 28)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetWidth, 600)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetActionWidth, 168)
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.recordingTitleEditMinWidth, 420)
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.speakerAssignmentPopoverWidth, 560)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.searchContentMaxWidth, 800)
+    }
+
+    func testSidebarRowsHaveStableFullWidthHitTargets() {
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.sidebarRowMinHeight, 28)
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.sidebarRowHorizontalPadding, 8)
     }
 
     func testListSectionsHideSidebarBeforeDetailBecomesUnreadable() {

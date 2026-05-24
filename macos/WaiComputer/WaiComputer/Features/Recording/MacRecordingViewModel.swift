@@ -201,7 +201,8 @@ class MacRecordingViewModel: ObservableObject {
     func startRecording(
         apiClient: APIClient,
         type: RecordingType,
-        inputSource: MacRecordingInputSource = .dual
+        inputSource: MacRecordingInputSource = .dual,
+        folderId: String? = nil
     ) async {
         // Wait for any in-progress cleanup to finish before starting a new recording
         if isCleaningUp {
@@ -300,7 +301,11 @@ class MacRecordingViewModel: ObservableObject {
 
             // Create recording on server
             let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
-            recording = try await apiClient.createRecording(type: recordingType, language: language)
+            recording = try await apiClient.createRecording(
+                type: recordingType,
+                language: language,
+                folderId: folderId
+            )
 
             guard let recordingId = recording?.id else {
                 error = t("Failed to create recording", "Не удалось создать запись")

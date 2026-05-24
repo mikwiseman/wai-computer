@@ -746,6 +746,65 @@ final class APIClientTests: XCTestCase {
         try await client.deleteRecording(id: "rec-del", permanent: true)
     }
 
+    func testBulkRecordingOperationUsesSingleBulkEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/bulk")
+
+            let body = self.bodyJSON(from: request)
+            XCTAssertEqual(body?["action"] as? String, "delete")
+            XCTAssertEqual(body?["recording_ids"] as? [String], ["rec-1", "rec-2", "rec-3"])
+            XCTAssertNil(body?["folder_id"] as? String)
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(#"{"processed":3,"failed":0}"#.utf8))
+        }
+
+        let result = try await client.bulkRecordingOperation(
+            recordingIds: ["rec-1", "rec-2", "rec-3"],
+            action: .delete
+        )
+        XCTAssertEqual(result.processed, 3)
+        XCTAssertEqual(result.failed, 0)
+    }
+
+    func testBulkRecordingMoveIncludesFolderId() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/bulk")
+
+            let body = self.bodyJSON(from: request)
+            XCTAssertEqual(body?["action"] as? String, "move")
+            XCTAssertEqual(body?["recording_ids"] as? [String], ["rec-1"])
+            XCTAssertEqual(body?["folder_id"] as? String, "folder-42")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(#"{"processed":1,"failed":0}"#.utf8))
+        }
+
+        let result = try await client.bulkRecordingOperation(
+            recordingIds: ["rec-1"],
+            action: .move,
+            folderId: "folder-42"
+        )
+        XCTAssertEqual(result.processed, 1)
+        XCTAssertEqual(result.failed, 0)
+    }
+
     func testCreateRecordingShareLinkUsesShareEndpoint() async throws {
         let client = makeClient()
 

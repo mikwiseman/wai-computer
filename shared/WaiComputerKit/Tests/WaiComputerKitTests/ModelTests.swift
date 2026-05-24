@@ -295,6 +295,25 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(minimal.formattedTimestamp, "--:--")
     }
 
+    func testSpeakerLabelsLocalizeGenericEnglishLabelsForRussianUI() {
+        XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("You", languageCode: "ru"),
+            "Ты"
+        )
+        XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("Speaker 1", languageCode: "ru"),
+            "Говорящий 1"
+        )
+        XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("Оля", languageCode: "ru"),
+            "Оля"
+        )
+        XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("You", languageCode: "en"),
+            "You"
+        )
+    }
+
     // MARK: - Summary Tests
 
     func testSummaryDecodeWithAllFields() throws {

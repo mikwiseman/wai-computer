@@ -27,6 +27,8 @@ from app.models.user_memory import UserMemoryBlock
 
 logger = logging.getLogger(__name__)
 
+COMPANION_AUTO_TITLE_MAX_CHARS = 72
+
 TOOL_CALL_CAP = 6
 HISTORY_WINDOW = 20
 SNIPPET_CHAR_CAP = 400
@@ -1345,6 +1347,11 @@ async def run_turn(
     memory_blocks = await user_memory_module.get_or_seed_blocks(db, user_id)
     instructions = system_prompt_for(user_row, memory_blocks=memory_blocks)
 
+    if not (conv.title or "").strip() and not await _conversation_has_messages(
+        db, conv.id
+    ):
+        conv.title = _auto_title_from_user_request(user_text)
+
     user_msg = ChatMessage(
         conversation_id=conv.id,
         role="user",
@@ -1468,6 +1475,22 @@ async def run_turn(
         model=settings.openai_llm_model,
         latency_ms=latency_ms,
     )
+
+
+async def _conversation_has_messages(db: AsyncSession, conversation_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        select(ChatMessage.id)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+def _auto_title_from_user_request(user_text: str) -> str:
+    title = " ".join(user_text.split())
+    if len(title) <= COMPANION_AUTO_TITLE_MAX_CHARS:
+        return title
+    return title[: COMPANION_AUTO_TITLE_MAX_CHARS - 3].rstrip() + "..."
 
 
 async def _load_conversation_locked(
