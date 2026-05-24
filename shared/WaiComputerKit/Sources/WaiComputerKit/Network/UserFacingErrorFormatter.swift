@@ -138,6 +138,9 @@ public enum UserFacingErrorFormatter {
         let technicalFragments = [
             "internal server error",
             "server error (500)",
+            "bad gateway",
+            "service unavailable",
+            "gateway timeout",
             "failed to reconnect after",
             "connection lost after retrying",
             "failed to get transcription token",

@@ -52,17 +52,20 @@ struct MacRecordingDetailView: View {
 
     var body: some View {
         Group {
-            if viewModel.isLoading {
+            if viewModel.isLoading && viewModel.recordingDetail == nil {
                 ProgressView(t("Loading...", "Загрузка..."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.error {
-                ContentUnavailableView(
-                    t("Error", "Ошибка"),
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
             } else if let detail = viewModel.recordingDetail {
                 VStack(spacing: 0) {
+                    if let error = viewModel.error {
+                        RecordingDetailInlineErrorBanner(
+                            message: error,
+                            onDismiss: { viewModel.error = nil }
+                        )
+                        .padding(.horizontal, Spacing.lg)
+                        .padding(.top, Spacing.md)
+                    }
+
                     detailHeader(detail)
 
                     WaiDivider()
@@ -96,6 +99,13 @@ struct MacRecordingDetailView: View {
                 .background(
                     SharePickerPresenter(payload: $pendingSharePayload)
                         .frame(width: 0, height: 0)
+                )
+            } else if let error = viewModel.error {
+                RecordingDetailLoadErrorView(
+                    title: t("Couldn’t Load Recording", "Не удалось загрузить запись"),
+                    message: error,
+                    retryTitle: t("Try Again", "Повторить"),
+                    onRetry: retryLoad
                 )
             } else {
                 ContentUnavailableView(
@@ -147,6 +157,13 @@ struct MacRecordingDetailView: View {
             guard let requested, requested == recordingId, mode == .active else { return }
             startTitleEdit(currentTitle: viewModel.recordingDetail?.title)
             pendingTitleEditId = nil
+        }
+    }
+
+    private func retryLoad() {
+        loadTask?.cancel()
+        loadTask = Task {
+            await loadRecordingDetail(recordingId: recordingId, showLoading: true)
         }
     }
 
@@ -639,6 +656,61 @@ struct MacRecordingDetailView: View {
 private struct SharePickerPayload: Identifiable, Equatable {
     let id = UUID()
     let url: URL
+}
+
+private struct RecordingDetailInlineErrorBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.recording)
+
+            Text(message)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: Spacing.md)
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss recording detail message")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("recording-detail-inline-error")
+    }
+}
+
+private struct RecordingDetailLoadErrorView: View {
+    let title: String
+    let message: String
+    let retryTitle: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: Spacing.lg) {
+            ContentUnavailableView(
+                title,
+                systemImage: "wifi.exclamationmark",
+                description: Text(message)
+            )
+
+            Button(retryTitle, action: onRetry)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: false))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("recording-detail-load-error")
+    }
 }
 
 private struct SharePickerPresenter: NSViewRepresentable {
