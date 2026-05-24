@@ -3,6 +3,7 @@ import WaiComputerKit
 
 private enum SpeakerAssignmentPopoverLayout {
     static let listMaxHeight: CGFloat = 220
+    static let errorIconWidth: CGFloat = 16
 }
 
 struct SpeakerChipView: View {
@@ -52,12 +53,25 @@ struct SpeakerChipView: View {
     private var popoverContent: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             TextField(t("Search or create…", "Найти или создать…"), text: $filter)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .waiTextField(isActive: true)
                 .frame(maxWidth: .infinity)
             if let loadError {
-                Text(loadError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                HStack(alignment: .top, spacing: Spacing.xs) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Palette.recording)
+                        .frame(width: SpeakerAssignmentPopoverLayout.errorIconWidth, alignment: .leading)
+                    Text(loadError)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.recording.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -173,7 +187,7 @@ struct SpeakerChipView: View {
             }
         } catch {
             await MainActor.run {
-                self.loadError = error.localizedDescription
+                self.loadError = error.userFacingMessage(context: .library)
             }
         }
     }
@@ -198,7 +212,7 @@ struct SpeakerChipView: View {
         } catch {
             await MainActor.run {
                 isWorking = false
-                loadError = error.localizedDescription
+                loadError = error.userFacingMessage(context: .library)
             }
         }
     }
@@ -224,7 +238,7 @@ struct SpeakerChipView: View {
         } catch {
             await MainActor.run {
                 isWorking = false
-                loadError = error.localizedDescription
+                loadError = error.userFacingMessage(context: .library)
             }
         }
     }

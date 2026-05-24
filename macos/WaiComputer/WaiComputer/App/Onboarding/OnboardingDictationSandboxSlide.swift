@@ -11,6 +11,8 @@ struct OnboardingDictationSandboxSlide: View {
     @State private var text: String = ""
     @State private var hasDictatedOnce: Bool = false
     @State private var textBeforeCurrentUtterance: String?
+    @State private var pendingFinalTranscript: PendingFinalTranscript?
+    @State private var pendingAppendTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -54,6 +56,10 @@ struct OnboardingDictationSandboxSlide: View {
                 }
             } else {
                 fieldFocused = false
+                pendingAppendTask?.cancel()
+                pendingAppendTask = nil
+                pendingFinalTranscript = nil
+                textBeforeCurrentUtterance = nil
             }
         }
         .onChange(of: text) { _, newValue in
@@ -67,21 +73,28 @@ struct OnboardingDictationSandboxSlide: View {
                 textBeforeCurrentUtterance = text
             }
             if oldValue != .idle, newValue == .idle {
+                schedulePendingFinalTranscriptAppend()
                 textBeforeCurrentUtterance = nil
             }
         }
-        // The dictation overlay panel can grab window focus while recording,
-        // so TextInserter (⌘V into the previously-focused field) may either
-        // miss this TextField or update it shortly after the final transcript
-        // publishes. Delay one run-loop slice, then append only if the sandbox
-        // field did not already get the same utterance from TextInserter.
+        // DictationManager publishes the final transcript before TextInserter
+        // finishes pasting into the target field. Keep it pending until the
+        // manager returns to idle, then append only if TextInserter did not
+        // already update this sandbox field.
         .onChange(of: dictationManager.lastFinalTranscript) { oldValue, newValue in
             guard isActive, let inserted = newValue, inserted != oldValue, !inserted.isEmpty else { return }
-            let textBeforeUtterance = textBeforeCurrentUtterance
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                guard isActive, dictationManager.lastFinalTranscript == inserted else { return }
-                appendDictatedText(inserted, textBeforeUtterance: textBeforeUtterance)
+            pendingFinalTranscript = PendingFinalTranscript(
+                text: inserted,
+                textBeforeUtterance: textBeforeCurrentUtterance
+            )
+            if dictationManager.state == .idle {
+                schedulePendingFinalTranscriptAppend()
             }
+        }
+        .onDisappear {
+            pendingAppendTask?.cancel()
+            pendingAppendTask = nil
+            pendingFinalTranscript = nil
         }
     }
 
@@ -209,6 +222,19 @@ struct OnboardingDictationSandboxSlide: View {
         textBeforeCurrentUtterance = nil
     }
 
+    private func schedulePendingFinalTranscriptAppend() {
+        pendingAppendTask?.cancel()
+        guard let pending = pendingFinalTranscript else { return }
+
+        pendingAppendTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, isActive, pendingFinalTranscript == pending else { return }
+            appendDictatedText(pending.text, textBeforeUtterance: pending.textBeforeUtterance)
+            pendingFinalTranscript = nil
+            pendingAppendTask = nil
+        }
+    }
+
     @ViewBuilder
     private func keyChip(_ label: String) -> some View {
         Text(label)
@@ -224,4 +250,9 @@ struct OnboardingDictationSandboxSlide: View {
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
+}
+
+private struct PendingFinalTranscript: Equatable {
+    let text: String
+    let textBeforeUtterance: String?
 }

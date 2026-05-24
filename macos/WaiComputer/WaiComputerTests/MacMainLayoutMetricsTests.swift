@@ -18,8 +18,15 @@ final class MacMainLayoutMetricsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetWidth, 600)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.folderNameSheetActionWidth, 168)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.recordingTitleEditMinWidth, 420)
-        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.speakerAssignmentPopoverWidth, 560)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.searchContentMaxWidth, 800)
+    }
+
+    func testSpeakerAssignmentPopoverStaysWithinReadableDetailColumn() {
+        XCTAssertLessThanOrEqual(
+            MacMainLayoutMetrics.speakerAssignmentPopoverWidth,
+            MacMainLayoutMetrics.minimumReadableDetailWidth
+        )
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.speakerAssignmentPopoverWidth, 320)
     }
 
     func testSidebarRowsHaveStableFullWidthHitTargets() {

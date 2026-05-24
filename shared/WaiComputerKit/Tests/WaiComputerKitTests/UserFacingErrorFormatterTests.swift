@@ -10,6 +10,14 @@ final class UserFacingErrorFormatterTests: XCTestCase {
         )
     }
 
+    func testLibraryHidesBadGateway() {
+        let error = APIError.httpError(statusCode: 502, message: "Bad Gateway")
+        XCTAssertEqual(
+            error.userFacingMessage(context: .library),
+            "We couldn't load your library right now. Please try again in a moment."
+        )
+    }
+
     func testRecordingUsesFriendlyReconnectMessage() {
         let error = WebSocketConnectionError.reconnectionExhausted(10)
         XCTAssertEqual(
