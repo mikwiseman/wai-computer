@@ -1,0 +1,120 @@
+- generic [ref=e1]:
+  - alert [ref=e20]
+  - main [ref=e21]:
+    - generic [ref=e22]:
+      - complementary "WaiComputer navigation" [ref=e23]:
+        - generic [ref=e26]:
+          - heading "WaiComputer" [level=1] [ref=e27]
+          - paragraph [ref=e28]: hi@mikwiseman.com
+        - navigation [ref=e29]:
+          - button "Wai Ask across notes" [ref=e30] [cursor=pointer]:
+            - generic [ref=e31]:
+              - strong [ref=e32]: Wai
+              - generic [ref=e33]: Ask across notes
+          - button "All Recordings Library 23" [ref=e34] [cursor=pointer]:
+            - generic [ref=e35]:
+              - strong [ref=e36]: All Recordings
+              - generic [ref=e37]: Library
+            - emphasis [ref=e38]: "23"
+          - button "Trash Recently removed 0" [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]:
+              - strong [ref=e41]: Trash
+              - generic [ref=e42]: Recently removed
+            - emphasis [ref=e43]: "0"
+          - button "Search Transcript lookup" [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]:
+              - strong [ref=e46]: Search
+              - generic [ref=e47]: Transcript lookup
+          - button "Action Items Follow-ups 17" [ref=e48] [cursor=pointer]:
+            - generic [ref=e49]:
+              - strong [ref=e50]: Action Items
+              - generic [ref=e51]: Follow-ups
+            - emphasis [ref=e52]: "17"
+          - button "Topics Entities 0" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]:
+              - strong [ref=e55]: Topics
+              - generic [ref=e56]: Entities
+            - emphasis [ref=e57]: "0"
+          - button "Settings Account" [active] [ref=e58] [cursor=pointer]:
+            - generic [ref=e59]:
+              - strong [ref=e60]: Settings
+              - generic [ref=e61]: Account
+        - generic [ref=e62]:
+          - button "Reload" [ref=e63] [cursor=pointer]
+          - button "Logout" [ref=e64] [cursor=pointer]
+      - main [ref=e65]:
+        - heading "Settings" [level=2] [ref=e86]
+        - generic [ref=e87]:
+          - generic [ref=e88]:
+            - heading "Transcription" [level=3] [ref=e89]
+            - generic [ref=e90]:
+              - generic [ref=e91]: Dictation live model
+              - combobox "Dictation live model Default for dictation. Best measured balance of fast startup, manual finalization, and Russian dictation accuracy." [ref=e92]:
+                - option "Soniox v4 Realtime" [selected]
+                - option "Deepgram Flux Multilingual"
+                - option "ElevenLabs Scribe v2 Realtime"
+                - option "Inworld STT-1"
+              - generic [ref=e93]: Default for dictation. Best measured balance of fast startup, manual finalization, and Russian dictation accuracy.
+            - generic [ref=e94]:
+              - generic [ref=e95]: Recording live model
+              - combobox "Recording live model Default. Best value long realtime option. 60+ languages, semantic endpointing, up to 5-hour streams." [ref=e96]:
+                - option "Soniox v4 Realtime" [selected]
+                - option "ElevenLabs Scribe v2 Realtime"
+                - option "Deepgram Flux Multilingual"
+                - option "Inworld STT-1"
+              - generic [ref=e97]: Default. Best value long realtime option. 60+ languages, semantic endpointing, up to 5-hour streams.
+            - generic [ref=e98]:
+              - generic [ref=e99]: Full session model
+              - combobox "Full session model Default. Best accuracy in our supported file providers, 90+ languages, diarization." [ref=e100]:
+                - option "ElevenLabs Scribe v2" [selected]
+                - option "Soniox v4 Async"
+                - option "Deepgram Nova-3"
+              - generic [ref=e101]: Default. Best accuracy in our supported file providers, 90+ languages, diarization.
+            - generic [ref=e102]:
+              - checkbox "Post-filter dictated text" [ref=e103]
+              - generic [ref=e104]: Post-filter dictated text
+          - generic [ref=e105]:
+            - heading "Account" [level=3] [ref=e106]
+            - generic [ref=e107]:
+              - generic [ref=e108]: Current password
+              - textbox "Current password" [ref=e109]
+            - generic [ref=e110]:
+              - generic [ref=e111]: New password
+              - textbox "New password" [ref=e112]
+            - button "Change password" [ref=e113] [cursor=pointer]
+          - generic [ref=e114]:
+            - heading "MCP" [level=3] [ref=e115]
+            - paragraph [ref=e116]: WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.
+            - generic [ref=e117]:
+              - code [ref=e118]: https://wai.computer/mcp
+              - button "Copy URL" [ref=e119] [cursor=pointer]
+            - tablist "MCP client" [ref=e120]:
+              - tab "Claude.ai" [selected] [ref=e121] [cursor=pointer]
+              - tab "Cursor" [ref=e122] [cursor=pointer]
+              - tab "ChatGPT" [ref=e123] [cursor=pointer]
+              - tab "Claude Code" [ref=e124] [cursor=pointer]
+              - tab "Codex CLI" [ref=e125] [cursor=pointer]
+              - tab "Custom / bot" [ref=e126] [cursor=pointer]
+            - generic [ref=e127]:
+              - paragraph [ref=e128]: Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.
+              - link "Open Connectors in Claude.ai" [ref=e129] [cursor=pointer]:
+                - /url: https://claude.ai/customize/connectors
+            - generic [ref=e130]:
+              - heading "Connected clients" [level=4] [ref=e131]
+              - paragraph [ref=e132]: Apps you’ve approved for read-only access to your library. Revoke any you no longer use — access is cut off on wai.computer immediately.
+              - list [ref=e133]:
+                - listitem [ref=e134]:
+                  - generic [ref=e135]:
+                    - generic [ref=e136]: Claude Code (waicomputer)
+                    - generic [ref=e137]: mcp:read · last active May 20, 2026
+                  - button "Revoke" [ref=e138] [cursor=pointer]
+          - generic [ref=e139]:
+            - heading "API tokens" [level=3] [ref=e140]
+            - paragraph [ref=e141]:
+              - text: Static
+              - code [ref=e142]: wc_live_
+              - text: Bearer tokens for headless/automation access (read-only). Use one for a server or cron job that pulls your recordings without a browser login — works on the REST API and the MCP endpoint.
+            - generic [ref=e143]:
+              - textbox "Token name (e.g. meeting-collector)" [ref=e144]
+              - button "Create token" [disabled] [ref=e145]
+            - paragraph [ref=e146]: No API tokens yet.

@@ -1,0 +1,63 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e20]
+  - main [ref=e21]:
+    - generic [ref=e22]:
+      - complementary "WaiComputer navigation" [ref=e23]:
+        - generic [ref=e26]:
+          - heading "WaiComputer" [level=1] [ref=e27]
+          - paragraph [ref=e28]: hi@mikwiseman.com
+        - navigation [ref=e29]:
+          - button "Wai Ask across notes" [ref=e30] [cursor=pointer]:
+            - generic [ref=e31]:
+              - strong [ref=e32]: Wai
+              - generic [ref=e33]: Ask across notes
+          - button "All Recordings Library 23" [ref=e34] [cursor=pointer]:
+            - generic [ref=e35]:
+              - strong [ref=e36]: All Recordings
+              - generic [ref=e37]: Library
+            - emphasis [ref=e38]: "23"
+          - button "Trash Recently removed 0" [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]:
+              - strong [ref=e41]: Trash
+              - generic [ref=e42]: Recently removed
+            - emphasis [ref=e43]: "0"
+          - button "Search Transcript lookup" [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]:
+              - strong [ref=e46]: Search
+              - generic [ref=e47]: Transcript lookup
+          - button "Action Items Follow-ups 17" [ref=e48] [cursor=pointer]:
+            - generic [ref=e49]:
+              - strong [ref=e50]: Action Items
+              - generic [ref=e51]: Follow-ups
+            - emphasis [ref=e52]: "17"
+          - button "Topics Entities 0" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]:
+              - strong [ref=e55]: Topics
+              - generic [ref=e56]: Entities
+            - emphasis [ref=e57]: "0"
+          - button "Settings Account" [ref=e58] [cursor=pointer]:
+            - generic [ref=e59]:
+              - strong [ref=e60]: Settings
+              - generic [ref=e61]: Account
+        - generic [ref=e62]:
+          - button "Reload" [ref=e63] [cursor=pointer]
+          - button "Logout" [ref=e64] [cursor=pointer]
+      - main [ref=e65]:
+        - heading "Wai" [level=2] [ref=e68]
+        - generic [ref=e70]:
+          - generic [ref=e71]:
+            - heading "Ask Wai" [level=2] [ref=e72]
+            - generic [ref=e73]:
+              - button "Chats (2)" [ref=e74] [cursor=pointer]
+              - button "+ New chat" [ref=e75] [cursor=pointer]
+          - generic [ref=e76]:
+            - article [ref=e77]:
+              - strong [ref=e78]: You
+              - generic [ref=e79]: О чем говорили вчера
+            - article [ref=e80]:
+              - strong [ref=e81]: Wai
+              - generic [ref=e82]: За вчера записей не найдено, поэтому я не могу сказать, о чём говорили.
+          - generic [ref=e83]:
+            - textbox "Ask Wai a question" [ref=e84]:
+              - /placeholder: Ask about your recordings…
+            - button "Ask" [disabled] [ref=e85]
