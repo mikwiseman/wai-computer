@@ -14,6 +14,24 @@ private let sysLog = Logger(subsystem: "is.waiwai.computer.kit", category: "syst
 /// Produces `AsyncStream<AVAudioPCMBuffer>` at 16kHz mono, matching
 /// the same interface pattern as `MicrophoneCapture`.
 @available(macOS 14.2, *)
+enum SystemAudioTapAggregateDescription {
+    static func make(aggregateUID: String, tapUID: String) -> [String: Any] {
+        [
+            kAudioAggregateDeviceNameKey: "WaiSystemAudioTap",
+            kAudioAggregateDeviceUIDKey: aggregateUID,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceTapListKey: [
+                [
+                    kAudioSubTapDriftCompensationKey: true,
+                    kAudioSubTapUIDKey: tapUID
+                ]
+            ]
+        ]
+    }
+}
+
+@available(macOS 14.2, *)
 public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let config: AudioCaptureConfig
 
@@ -106,8 +124,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
         sysLog.warning("[SysAudio] Default output device ID: \(defaultOutputID)")
 
-        // 2. Get the output device UID before creating the tap. The tap should
-        // explicitly target the device currently receiving browser/meeting audio.
+        // 2. Get the output device UID for diagnostics and final format fallback.
+        // The tap itself stays global instead of being pinned to this device.
         var uid: CFString?
         var uidAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceUID,
@@ -124,10 +142,15 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         sysLog.warning("[SysAudio] Output device UID: \(uid as String)")
 
         // Use a global tap here: the include-list initializer with an empty array captures nothing.
+        // Keep it independent from the physical output route. Bluetooth and
+        // headphone routes can create a valid AudioCapture permission entry
+        // while a device-pinned aggregate produces no system-audio buffers.
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         tapDescription.uuid = UUID()
         tapDescription.muteBehavior = .unmuted
-        tapDescription.deviceUID = uid as String
+        tapDescription.name = "WaiComputer System Audio Tap"
+        tapDescription.isPrivate = true
+        tapDescription.isExclusive = true
 
         var newTapID = AudioObjectID.max
         status = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
@@ -137,23 +160,13 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         tapID = newTapID
         sysLog.warning("[SysAudio] Created process tap ID: \(self.tapID)")
 
-        // 4. Create aggregate device containing the tap
-        let aggregateDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "WaiSystemAudioTap",
-            kAudioAggregateDeviceUIDKey: UUID().uuidString,
-            kAudioAggregateDeviceMainSubDeviceKey: uid as String,
-            kAudioAggregateDeviceIsPrivateKey: true,
-            kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [
-                [kAudioSubDeviceUIDKey: uid as String]
-            ],
-            kAudioAggregateDeviceTapListKey: [
-                [
-                    kAudioSubTapDriftCompensationKey: true,
-                    kAudioSubTapUIDKey: tapDescription.uuid.uuidString
-                ]
-            ]
-        ]
+        // 4. Create a private aggregate device containing only the tap. The
+        // tap is the input source; adding the user's output device here couples
+        // capture health to the current route instead of to AudioCapture.
+        let aggregateDesc = SystemAudioTapAggregateDescription.make(
+            aggregateUID: UUID().uuidString,
+            tapUID: tapDescription.uuid.uuidString
+        )
         var newAggregateID = AudioObjectID.max
         status = AudioHardwareCreateAggregateDevice(aggregateDesc as CFDictionary, &newAggregateID)
         guard status == noErr else {
@@ -163,18 +176,17 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         aggregateDeviceID = newAggregateID
         sysLog.warning("[SysAudio] Created aggregate device ID: \(self.aggregateDeviceID)")
 
-        // 5. Query the aggregate device's input stream format to get native sample rate
-        // The tap provides audio on the INPUT scope of the aggregate device.
-        // Try input scope first (correct for tapped audio), fall back to output if needed.
+        // 5. Query the tap's stream format to get native sample rate. The tap
+        // format is the source of truth for buffers delivered by the aggregate.
         var inputStreamFormat = AudioStreamBasicDescription()
         var formatAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioObjectPropertyScopeInput,
+            mSelector: kAudioTapPropertyFormat,
+            mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         status = AudioObjectGetPropertyData(
-            aggregateDeviceID,
+            tapID,
             &formatAddress,
             0, nil,
             &formatSize,
@@ -186,28 +198,29 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         if status == noErr && inputStreamFormat.mSampleRate > 0 {
             nativeSR = inputStreamFormat.mSampleRate
             nativeCh = inputStreamFormat.mChannelsPerFrame
-            sysLog.warning("[SysAudio] Native input format: \(nativeSR)Hz, \(nativeCh)ch")
+            sysLog.warning("[SysAudio] Tap format: \(nativeSR)Hz, \(nativeCh)ch")
         } else {
-            // Input scope query failed — try output scope (some aggregate devices expose format there)
-            sysLog.warning("[SysAudio] Input scope format query failed (status \(status)), trying output scope...")
-            var outputFormatAddress = AudioObjectPropertyAddress(
+            // Tap format query failed — try aggregate input scope before the
+            // final fallback to the output device's nominal sample rate.
+            sysLog.warning("[SysAudio] Tap format query failed (status \(status)), trying aggregate input scope...")
+            var aggregateFormatAddress = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyStreamFormat,
-                mScope: kAudioObjectPropertyScopeOutput,
+                mScope: kAudioObjectPropertyScopeInput,
                 mElement: kAudioObjectPropertyElementMain
             )
-            var outputStreamFormat = AudioStreamBasicDescription()
-            var outputFormatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-            let outputStatus = AudioObjectGetPropertyData(
+            var aggregateStreamFormat = AudioStreamBasicDescription()
+            var aggregateFormatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            let aggregateStatus = AudioObjectGetPropertyData(
                 aggregateDeviceID,
-                &outputFormatAddress,
+                &aggregateFormatAddress,
                 0, nil,
-                &outputFormatSize,
-                &outputStreamFormat
+                &aggregateFormatSize,
+                &aggregateStreamFormat
             )
-            if outputStatus == noErr && outputStreamFormat.mSampleRate > 0 {
-                nativeSR = outputStreamFormat.mSampleRate
-                nativeCh = outputStreamFormat.mChannelsPerFrame
-                sysLog.warning("[SysAudio] Output scope format: \(nativeSR)Hz, \(nativeCh)ch")
+            if aggregateStatus == noErr && aggregateStreamFormat.mSampleRate > 0 {
+                nativeSR = aggregateStreamFormat.mSampleRate
+                nativeCh = aggregateStreamFormat.mChannelsPerFrame
+                sysLog.warning("[SysAudio] Aggregate input format: \(nativeSR)Hz, \(nativeCh)ch")
             } else {
                 // Fall back to querying the original output device directly
                 var deviceFormatAddress = AudioObjectPropertyAddress(
@@ -227,7 +240,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 if deviceStatus == noErr && deviceSR > 0 {
                     nativeSR = deviceSR
                     nativeCh = 2 // stereo is safe default for output devices
-                    sysLog.warning("[SysAudio] Using output device sample rate: \(nativeSR)Hz, assuming \(nativeCh)ch")
+                    sysLog.warning("[SysAudio] Using default output device sample rate: \(nativeSR)Hz, assuming \(nativeCh)ch")
                 } else {
                     nativeSR = 48000
                     nativeCh = 2
