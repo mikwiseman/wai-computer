@@ -46,6 +46,30 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(mic.isRecording)
     }
 
+    func testSystemAudioAggregateDescriptionIsTapOnly() {
+        let description = SystemAudioTapAggregateDescription.make(
+            aggregateUID: "aggregate-test-uid",
+            tapUID: "tap-test-uid"
+        )
+
+        XCTAssertNil(
+            description[kAudioAggregateDeviceMainSubDeviceKey],
+            "Global system-audio taps should not be pinned to one physical output device."
+        )
+        XCTAssertNil(
+            description[kAudioAggregateDeviceSubDeviceListKey],
+            "A tap-only aggregate avoids Bluetooth/headphone output-device routing failures."
+        )
+        XCTAssertEqual(description[kAudioAggregateDeviceUIDKey] as? String, "aggregate-test-uid")
+        XCTAssertEqual(description[kAudioAggregateDeviceIsPrivateKey] as? Bool, true)
+        XCTAssertEqual(description[kAudioAggregateDeviceTapAutoStartKey] as? Bool, true)
+
+        let tapList = description[kAudioAggregateDeviceTapListKey] as? [[String: Any]]
+        XCTAssertEqual(tapList?.count, 1)
+        XCTAssertEqual(tapList?.first?[kAudioSubTapUIDKey] as? String, "tap-test-uid")
+        XCTAssertEqual(tapList?.first?[kAudioSubTapDriftCompensationKey] as? Bool, true)
+    }
+
     // MARK: - 2-Channel PCM Buffer Format (mirrors flushDualBuffers output)
 
     /// Verify that the 2-channel non-interleaved PCM format used by flushDualBuffers
