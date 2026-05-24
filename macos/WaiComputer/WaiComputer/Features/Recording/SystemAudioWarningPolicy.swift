@@ -186,6 +186,49 @@ enum SystemAudioReadinessPolicy {
         }
         return .setupNeeded
     }
+
+    static func permissionStatus(for readiness: Status) -> MacInputPermission.Status {
+        switch readiness {
+        case .ready:
+            return .granted
+        case .restartRequired:
+            return .staleNeedsRestart
+        case .setupNeeded, .unsupported:
+            return .denied
+        }
+    }
+
+    static func readiness(from permissionStatus: MacInputPermission.Status) -> Status {
+        switch permissionStatus {
+        case .granted:
+            return .ready
+        case .denied:
+            return .setupNeeded
+        case .staleNeedsRestart:
+            return .restartRequired
+        }
+    }
+}
+
+enum SystemAudioPermissionPreflight {
+    static let defaultTimeout: TimeInterval = 3.0
+
+    static func receivedBuffers(timeout: TimeInterval = defaultTimeout) async throws -> Bool {
+        guard #available(macOS 14.2, *) else {
+            return false
+        }
+
+        let capture = SystemAudioCapture()
+        do {
+            try await capture.startRecording()
+            let receivedBuffers = await capture.waitForAudioBuffers(timeout: timeout)
+            await capture.stopRecording()
+            return receivedBuffers
+        } catch {
+            await capture.stopRecording()
+            throw error
+        }
+    }
 }
 
 enum OnboardingDictationSandboxPolicy {

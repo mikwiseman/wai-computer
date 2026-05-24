@@ -230,11 +230,7 @@ public actor InworldProviderSession: ProviderSession {
         rxFrames &+= 1
         switch message {
         case .string(let text):
-            // Log every received text frame in full (truncated to keep logs
-            // readable). When dictation appears stuck this is the only way to
-            // see whether Inworld is actually sending us anything.
-            let snippet = text.count > 400 ? String(text.prefix(400)) + "…" : text
-            inworldLog.info("[Inworld] RX #\(self.rxFrames) text: \(snippet, privacy: .public)")
+            inworldLog.info("[Inworld] RX #\(self.rxFrames) \(Self.safeReceivedTextFrameSummary(text), privacy: .public)")
             handleText(text)
         case .data(let data):
             inworldLog.info("[Inworld] RX #\(self.rxFrames) binary: \(data.count) bytes")
@@ -364,12 +360,8 @@ public actor InworldProviderSession: ProviderSession {
         let message = (payload["message"] as? String) ?? (payload["error_message"] as? String)
         let providerError: ProviderError = Self.mapError(code: code, message: message)
         eventContinuation.yield(.providerWarning(providerError))
-        // Log the raw code AND message — when an unmapped code falls into the
-        // `transcriberInternal` default branch, the message is the only clue
-        // we have about what Inworld actually wanted to say. Public privacy
-        // because these are server-defined diagnostic strings, not user data.
         inworldLog.error(
-            "[Inworld] error frame code=\(code, privacy: .public) message=\(message ?? "<nil>", privacy: .public) mappedTo=\(String(describing: providerError), privacy: .public)"
+            "[Inworld] error frame code=\(code, privacy: .public) messageLen=\(message?.count ?? 0) mappedTo=\(String(describing: providerError), privacy: .public)"
         )
     }
 
@@ -405,6 +397,30 @@ public actor InworldProviderSession: ProviderSession {
         default:
             return .transcriberInternal(message: message ?? code)
         }
+    }
+
+    static func safeReceivedTextFrameSummary(_ text: String) -> String {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return "text frame bytes=\(text.utf8.count) parseable=false"
+        }
+
+        if let transcription = json["transcription"] as? [String: Any] {
+            let transcript = (transcription["transcript"] as? String)
+                ?? (transcription["text"] as? String)
+                ?? ""
+            let isFinal = (transcription["is_final"] as? Bool)
+                ?? (transcription["isFinal"] as? Bool)
+            return "transcription frame chars=\(transcript.count) final=\(isFinal.map(String.init) ?? "unknown")"
+        }
+
+        if json["error"] != nil {
+            return "error frame bytes=\(text.utf8.count)"
+        }
+
+        let keys = json.keys.sorted().joined(separator: ",")
+        return "text frame bytes=\(text.utf8.count) keys=\(keys)"
     }
 
     private static func encodeJSON(_ payload: [String: Any]) -> String {

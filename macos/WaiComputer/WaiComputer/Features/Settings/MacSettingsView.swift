@@ -94,6 +94,10 @@ struct MacSettingsView: View {
     @State private var deleteAccountError: String?
     @State private var hasMicrophonePermission = MacSettingsView.hasMicrophonePermission
     @State private var accessibilityStatus: MacInputPermission.Status = .denied
+    @State private var systemAudioReadiness = MacSettingsView.initialSystemAudioReadiness
+    @State private var systemAudioPreflightPassedInCurrentProcess = false
+    @State private var isRequestingSystemAudioPermission = false
+    @State private var triggeredOpenSystemAudioSettings = false
     @State private var permissionPollTimer: Timer?
     @AppStorage("transcriptionLanguage") private var transcriptionLanguage = "multi"
     @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
@@ -364,6 +368,18 @@ struct MacSettingsView: View {
                     identifierBase: "settings-permission-accessibility",
                     grantAction: openAccessibilitySettings,
                     settingsAction: { MacPrivacySettings.openAccessibility() },
+                    restartAction: MacPrivacySettings.restartForPermissionRefresh
+                )
+
+                permissionRow(
+                    title: t("System Audio", "Звук Mac"),
+                    status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
+                    identifierBase: "settings-permission-system-audio",
+                    grantLabel: isRequestingSystemAudioPermission
+                        ? t("Testing...", "Проверяем...")
+                        : t("Test System Audio", "Проверить звук Mac"),
+                    grantAction: requestSystemAudioPermission,
+                    settingsAction: { MacPrivacySettings.openSystemAudio() },
                     restartAction: MacPrivacySettings.restartForPermissionRefresh
                 )
 
@@ -1002,11 +1018,43 @@ struct MacSettingsView: View {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
+    private static var initialSystemAudioReadiness: SystemAudioReadinessPolicy.Status {
+        #if DEBUG
+        if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
+            return SystemAudioReadinessPolicy.readiness(from: snapshot.systemAudioStatus)
+        }
+        #endif
+
+        return currentSystemAudioReadiness(
+            preflightPassedInCurrentProcess: false,
+            openedSettingsDuringCurrentAttempt: false
+        )
+    }
+
+    private static var isSystemAudioCaptureSupported: Bool {
+        if #available(macOS 14.2, *) {
+            return true
+        }
+        return false
+    }
+
+    private static func currentSystemAudioReadiness(
+        preflightPassedInCurrentProcess: Bool,
+        openedSettingsDuringCurrentAttempt: Bool
+    ) -> SystemAudioReadinessPolicy.Status {
+        SystemAudioReadinessPolicy.status(
+            isSupported: isSystemAudioCaptureSupported,
+            preflightPassedInCurrentProcess: preflightPassedInCurrentProcess,
+            openedSettingsDuringCurrentAttempt: openedSettingsDuringCurrentAttempt
+        )
+    }
+
     @ViewBuilder
     private func permissionRow(
         title: String,
         status: MacInputPermission.Status,
         identifierBase: String,
+        grantLabel: String? = nil,
         grantAction: @escaping () -> Void,
         settingsAction: (() -> Void)?,
         restartAction: (() -> Void)?
@@ -1023,7 +1071,7 @@ struct MacSettingsView: View {
                         .font(Typography.bodySmall)
                         .foregroundStyle(.green)
                 case .denied:
-                    Button(t("Grant", "Разрешить")) {
+                    Button(grantLabel ?? t("Grant", "Разрешить")) {
                         grantAction()
                     }
                     .font(Typography.bodySmall)
@@ -1084,12 +1132,17 @@ struct MacSettingsView: View {
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             hasMicrophonePermission = snapshot.hasMicrophonePermission
             accessibilityStatus = snapshot.accessibilityStatus
+            systemAudioReadiness = SystemAudioReadinessPolicy.readiness(from: snapshot.systemAudioStatus)
             return
         }
         #endif
 
         hasMicrophonePermission = Self.hasMicrophonePermission
         accessibilityStatus = MacInputPermission.accessibilityStatus()
+        systemAudioReadiness = Self.currentSystemAudioReadiness(
+            preflightPassedInCurrentProcess: systemAudioPreflightPassedInCurrentProcess,
+            openedSettingsDuringCurrentAttempt: triggeredOpenSystemAudioSettings
+        )
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -1147,6 +1200,63 @@ struct MacSettingsView: View {
             MacPrivacySettings.openMicrophone()
             refreshPermissions()
         }
+    }
+
+    private func requestSystemAudioPermission() {
+        startPermissionPolling()
+        guard !isRequestingSystemAudioPermission else { return }
+
+        guard #available(macOS 14.2, *) else {
+            systemAudioPreflightPassedInCurrentProcess = false
+            systemAudioReadiness = .unsupported
+            refreshPermissions()
+            return
+        }
+
+        isRequestingSystemAudioPermission = true
+        Task {
+            do {
+                let receivedBuffers = try await SystemAudioPermissionPreflight.receivedBuffers()
+                await MainActor.run {
+                    if receivedBuffers {
+                        SentryHelper.addBreadcrumb(
+                            category: "permission",
+                            message: "system audio settings preflight received buffers",
+                            data: ["timeoutMs": Int(SystemAudioPermissionPreflight.defaultTimeout * 1000)]
+                        )
+                        systemAudioPreflightPassedInCurrentProcess = true
+                        triggeredOpenSystemAudioSettings = false
+                        isRequestingSystemAudioPermission = false
+                        refreshPermissions()
+                    } else {
+                        SentryHelper.addBreadcrumb(
+                            category: "permission",
+                            message: "system audio settings preflight produced no buffers",
+                            level: .warning,
+                            data: ["timeoutMs": Int(SystemAudioPermissionPreflight.defaultTimeout * 1000)]
+                        )
+                        markSystemAudioSetupFailed()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    SentryHelper.captureError(
+                        error,
+                        extras: ["action": "systemAudioSettingsPreflight"]
+                    )
+                    markSystemAudioSetupFailed()
+                }
+            }
+        }
+    }
+
+    private func markSystemAudioSetupFailed() {
+        systemAudioPreflightPassedInCurrentProcess = false
+        triggeredOpenSystemAudioSettings = true
+        isRequestingSystemAudioPermission = false
+        refreshPermissions()
+        MacInputPermission.revealAppInFinder()
+        MacPrivacySettings.openSystemAudio()
     }
 
     /// Unified Accessibility grant flow. Triggers the canonical

@@ -350,7 +350,7 @@ struct OnboardingView: View {
     private static var initialSystemAudioReadiness: SystemAudioReadinessPolicy.Status {
         #if DEBUG
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
-            return readiness(from: snapshot.systemAudioStatus)
+            return SystemAudioReadinessPolicy.readiness(from: snapshot.systemAudioStatus)
         }
         #endif
 
@@ -378,26 +378,8 @@ struct OnboardingView: View {
         )
     }
 
-    private static func readiness(from status: MacInputPermission.Status) -> SystemAudioReadinessPolicy.Status {
-        switch status {
-        case .granted:
-            return .ready
-        case .denied:
-            return .setupNeeded
-        case .staleNeedsRestart:
-            return .restartRequired
-        }
-    }
-
     private static func permissionStatus(for readiness: SystemAudioReadinessPolicy.Status) -> MacInputPermission.Status {
-        switch readiness {
-        case .ready:
-            return .granted
-        case .restartRequired:
-            return .staleNeedsRestart
-        case .setupNeeded, .unsupported:
-            return .denied
-        }
+        SystemAudioReadinessPolicy.permissionStatus(for: readiness)
     }
 
     private func refreshPermissions() {
@@ -405,7 +387,7 @@ struct OnboardingView: View {
         if let snapshot = MacPermissionTesting.dictationPermissionSnapshot {
             microphonePermissionStatus = snapshot.microphoneStatus
             accessibilityStatus = snapshot.accessibilityStatus
-            systemAudioReadiness = Self.readiness(from: snapshot.systemAudioStatus)
+            systemAudioReadiness = SystemAudioReadinessPolicy.readiness(from: snapshot.systemAudioStatus)
             return
         }
         #endif
@@ -495,18 +477,15 @@ struct OnboardingView: View {
         isRequestingSystemAudioPermission = true
 
         Task {
-            let capture = SystemAudioCapture()
             do {
-                try await capture.startRecording()
-                let receivedBuffers = await capture.waitForAudioBuffers(timeout: 3.0)
-                await capture.stopRecording()
+                let receivedBuffers = try await SystemAudioPermissionPreflight.receivedBuffers()
 
                 await MainActor.run {
                     if receivedBuffers {
                         SentryHelper.addBreadcrumb(
                             category: "permission",
                             message: "system audio preflight received buffers",
-                            data: ["timeoutMs": 3000]
+                            data: ["timeoutMs": Int(SystemAudioPermissionPreflight.defaultTimeout * 1000)]
                         )
                         systemAudioPreflightPassedInCurrentProcess = true
                         UserDefaults.standard.set(true, forKey: MacAppState.onboardingSystemAudioSetupKey)
@@ -518,13 +497,12 @@ struct OnboardingView: View {
                             category: "permission",
                             message: "system audio preflight produced no buffers",
                             level: .warning,
-                            data: ["timeoutMs": 3000]
+                            data: ["timeoutMs": Int(SystemAudioPermissionPreflight.defaultTimeout * 1000)]
                         )
                         markSystemAudioSetupFailed()
                     }
                 }
             } catch {
-                await capture.stopRecording()
                 await MainActor.run {
                     SentryHelper.captureError(
                         error,

@@ -92,9 +92,10 @@ enum MacInputPermission {
 
     /// Reveal the running app bundle in Finder so the user can drag it onto
     /// the "+" button in System Settings → Privacy & Security to create a
-    /// fresh TCC entry tied to the current cdhash. Works without any
-    /// entitlement and is the recommended recovery when `CGRequestListenEventAccess`
-    /// has gone silent because of a prior denied decision in `TCC.db`.
+    /// fresh TCC entry for the current signed bundle. Works without any
+    /// entitlement and is the recommended recovery when the Accessibility
+    /// prompt path has gone silent because of a prior denied or stale
+    /// decision in `TCC.db`.
     static func revealAppInFinder() {
         NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }

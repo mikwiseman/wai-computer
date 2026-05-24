@@ -179,6 +179,13 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
         )
     }
 
+    func testSystemAudioReadinessMapsToPermissionRowStatus() {
+        XCTAssertEqual(SystemAudioReadinessPolicy.permissionStatus(for: .ready), .granted)
+        XCTAssertEqual(SystemAudioReadinessPolicy.permissionStatus(for: .restartRequired), .staleNeedsRestart)
+        XCTAssertEqual(SystemAudioReadinessPolicy.permissionStatus(for: .setupNeeded), .denied)
+        XCTAssertEqual(SystemAudioReadinessPolicy.permissionStatus(for: .unsupported), .denied)
+    }
+
     func testSandboxFinalTranscriptAppendsWhenTextInserterDidNotChangeField() {
         XCTAssertEqual(
             OnboardingDictationSandboxPolicy.textAfterFinalTranscript(

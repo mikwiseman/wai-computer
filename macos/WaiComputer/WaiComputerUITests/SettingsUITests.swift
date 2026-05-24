@@ -154,4 +154,18 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(waitForElement(app.buttons.matching(identifier: "settings-permission-accessibility-restart").firstMatch, in: app, timeout: 3))
         XCTAssertFalse(app.buttons.matching(identifier: "settings-permission-accessibility-grant").firstMatch.exists)
     }
+
+    @MainActor
+    func testSettingsShowsSystemAudioPermissionForMeetingRecordings() throws {
+        let app = launchToSettings(permissionMock: "missing")
+
+        let systemAudioButton = app.buttons
+            .matching(identifier: "settings-permission-system-audio-grant")
+            .firstMatch
+        revealElementIfNeeded(systemAudioButton, in: app)
+
+        XCTAssertTrue(waitForElement(systemAudioButton, in: app, timeout: 5))
+        XCTAssertEqual(systemAudioButton.label, "Test System Audio")
+        XCTAssertTrue(app.staticTexts["System Audio"].exists)
+    }
 }
