@@ -4,16 +4,8 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
-const WINDOWS_EXE_URL = "/releases/windows/WaiComputer-Setup.exe";
-const LINUX_APPIMAGE_URL = "/releases/linux/is.waiwai.computer.AppImage";
-const ANDROID_APK_URL = "/releases/android/WaiComputer-latest.apk";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
-
-// Flip to `true` once the first signed Windows build lands at WINDOWS_EXE_URL.
-// Until then, render a disabled "Coming soon" placeholder so the homepage
-// shows the supported platforms even when the file isn't live yet.
-const WINDOWS_AVAILABLE = true as boolean;
 
 export default function Home() {
   return (
@@ -52,8 +44,8 @@ export default function Home() {
           An AI second brain for everything you say.
         </h1>
         <p className={styles.subhead}>
-          Record on Mac, Windows, Linux, iPhone, or Android. Transcribed in
-          real time. Search across everything. Ask Wai anything.
+          Record on Mac or iPhone. Transcribed in real time. Search across
+          everything. Ask Wai anything.
         </p>
 
         <div className={styles.downloads}>
@@ -66,52 +58,13 @@ export default function Home() {
             <span className={styles.downloadTitle}>Download for Mac</span>
             <span className={styles.downloadMeta}>macOS 14+ · DMG</span>
           </a>
-          {WINDOWS_AVAILABLE ? (
-            <a
-              className={styles.downloadPrimary}
-              href={WINDOWS_EXE_URL}
-              download
-              data-testid="download-windows"
-            >
-              <span className={styles.downloadTitle}>Download for Windows</span>
-              <span className={styles.downloadMeta}>Windows 10/11 · Setup.exe</span>
-            </a>
-          ) : (
-            <span
-              className={styles.downloadDisabled}
-              aria-disabled="true"
-              data-testid="download-windows"
-              data-status="coming-soon"
-            >
-              <span className={styles.downloadTitle}>Windows</span>
-              <span className={styles.downloadMeta}>Coming soon</span>
-            </span>
-          )}
-          <a
-            className={styles.downloadGhost}
-            href={LINUX_APPIMAGE_URL}
-            download
-            data-testid="download-linux"
-          >
-            <span className={styles.downloadTitle}>Linux</span>
-            <span className={styles.downloadMeta}>AppImage · x64</span>
-          </a>
           <a
             className={styles.downloadGhost}
             href={TESTFLIGHT_URL}
             data-testid="download-ios"
           >
-            <span className={styles.downloadTitle}>iPhone &amp; iPad</span>
+            <span className={styles.downloadTitle}>iPhone</span>
             <span className={styles.downloadMeta}>TestFlight</span>
-          </a>
-          <a
-            className={styles.downloadGhost}
-            href={ANDROID_APK_URL}
-            download
-            data-testid="download-android"
-          >
-            <span className={styles.downloadTitle}>Android</span>
-            <span className={styles.downloadMeta}>APK · sideload</span>
           </a>
         </div>
       </section>

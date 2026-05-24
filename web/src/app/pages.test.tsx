@@ -255,7 +255,7 @@ describe("app pages", () => {
     });
   });
 
-  it("renders landing with download links and sign-in", () => {
+  it("renders landing with only Mac and iPhone download links plus sign-in", () => {
     render(<Home />);
 
     expect(
@@ -270,40 +270,26 @@ describe("app pages", () => {
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("macOS 14+");
 
-    // Windows is live as of 0.1.0-beta (unsigned). Flip WINDOWS_AVAILABLE
-    // back to false in page.tsx if the file is ever taken down.
-    const winLink = screen.getByTestId("download-windows");
-    expect(winLink).toHaveAttribute("href", "/releases/windows/WaiComputer-Setup.exe");
-    expect(winLink).toHaveAttribute("download");
-    expect(winLink).toHaveTextContent("Windows 10/11");
-
-    const linuxLink = screen.getByTestId("download-linux");
-    expect(linuxLink).toHaveAttribute("href", "/releases/linux/is.waiwai.computer.AppImage");
-    expect(linuxLink).toHaveAttribute("download");
-    expect(linuxLink).toHaveTextContent("AppImage");
-
     const iosLink = screen.getByTestId("download-ios");
     expect(iosLink).toHaveAttribute(
       "href",
       "https://testflight.apple.com/join/rtnJQzwk",
     );
+    expect(iosLink).toHaveTextContent("iPhone");
     expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
-    const androidLink = screen.getByTestId("download-android");
-    expect(androidLink).toHaveAttribute(
-      "href",
-      "/releases/android/WaiComputer-latest.apk",
-    );
-    expect(androidLink).toHaveAttribute("download");
-    expect(androidLink).toHaveTextContent("APK");
+    expect(screen.queryByTestId("download-windows")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("download-linux")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("download-android")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Windows|Linux|Android|iPad/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
       "href",
       "/benchmarks/dictation",
     );
   });
 
-  it("renders Russian landing with download links including Android", () => {
+  it("renders Russian landing with only Mac and iPhone download links", () => {
     render(<RuHome />);
 
     expect(
@@ -318,25 +304,18 @@ describe("app pages", () => {
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("Скачать для Mac");
 
-    const linuxLink = screen.getByTestId("download-linux-ru");
-    expect(linuxLink).toHaveAttribute("href", "/releases/linux/is.waiwai.computer.AppImage");
-    expect(linuxLink).toHaveAttribute("download");
-    expect(linuxLink).toHaveTextContent("AppImage");
-
     const iosLink = screen.getByTestId("download-ios-ru");
     expect(iosLink).toHaveAttribute(
       "href",
       "https://testflight.apple.com/join/rtnJQzwk",
     );
+    expect(iosLink).toHaveTextContent("iPhone");
     expect(iosLink).toHaveTextContent("TestFlight");
 
-    const androidLink = screen.getByTestId("download-android-ru");
-    expect(androidLink).toHaveAttribute(
-      "href",
-      "/releases/android/WaiComputer-latest.apk",
-    );
-    expect(androidLink).toHaveAttribute("download");
-    expect(androidLink).toHaveTextContent("APK");
+    expect(screen.queryByTestId("download-windows-ru")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("download-linux-ru")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("download-android-ru")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Windows|Linux|Android|iPad/i)).not.toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: /войти/i })).toHaveAttribute(
       "href",
