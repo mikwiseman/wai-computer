@@ -47,6 +47,20 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
         )
     }
 
+    func testOnboardingPrimaryActionContinuesWhenDictationPermissionsAreReady() {
+        XCTAssertEqual(
+            OnboardingPermissionPrimaryActionPolicy.primaryButtonTitle(
+                microphoneStatus: .granted,
+                accessibilityStatus: .granted,
+                systemAudioReadiness: .setupNeeded,
+                restartRecommended: false,
+                language: .english
+            ),
+            "Continue",
+            "System audio setup is for meeting capture and must not block microphone dictation setup."
+        )
+    }
+
     func testRecordingImportCopyUsesSelectedLanguage() {
         XCTAssertEqual(
             RecordingCopy.importPanelTitle(language: .english),

@@ -285,7 +285,6 @@ struct OnboardingView: View {
     private var dictationPermissionsReady: Bool {
         hasMicrophonePermission
             && accessibilityStatus == .granted
-            && (systemAudioStatus == .granted || systemAudioReadiness == .unsupported)
     }
 
     private var hasMicrophonePermission: Bool {
@@ -572,8 +571,6 @@ struct OnboardingView: View {
             requestMicrophonePermission()
         } else if accessibilityStatus != .granted {
             openAccessibilitySettings()
-        } else if systemAudioStatus != .granted {
-            requestSystemAudioPermission()
         }
     }
 }
