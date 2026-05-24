@@ -107,7 +107,6 @@ enum OnboardingPermissionPrimaryActionPolicy {
     ) -> Bool {
         microphoneStatus == .granted
             && accessibilityStatus == .granted
-            && (systemAudioReadiness == .ready || systemAudioReadiness == .unsupported)
     }
 
     private static func text(
