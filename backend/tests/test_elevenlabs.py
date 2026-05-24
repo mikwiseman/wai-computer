@@ -10,6 +10,8 @@ from app.core.elevenlabs import (
     ElevenLabsSignedUrl,
     _confidence_from_words,
     _result_from_transcript,
+    _results_from_transcript,
+    _stt_upload_filename,
     get_signed_url,
     list_agents,
     transcribe_audio_file,
@@ -52,6 +54,27 @@ def test_result_from_transcript_builds_segment():
 
 def test_result_from_transcript_returns_none_for_empty_text():
     assert _result_from_transcript({"text": "   "}) is None
+
+
+def test_results_from_transcript_skips_empty_word_groups():
+    results = _results_from_transcript(
+        {
+            "text": "hello",
+            "words": [
+                {"text": "", "speaker_id": "Speaker 1", "start": 0.0, "end": 0.1},
+                {"text": "hello", "speaker_id": "Speaker 2", "start": 0.2, "end": 0.4},
+            ],
+        }
+    )
+
+    assert len(results) == 1
+    assert results[0].text == "hello"
+    assert results[0].speaker == "Speaker 2"
+
+
+def test_stt_upload_filename_rejects_unsupported_content_type():
+    with pytest.raises(ValueError, match="Unsupported ElevenLabs STT content type"):
+        _stt_upload_filename("application/octet-stream")
 
 
 @pytest.mark.asyncio
@@ -312,6 +335,33 @@ async def test_transcribe_audio_file_sends_filename_matching_content_type():
         b"wav-data",
         "audio/wav",
     )
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_omits_auto_language_code():
+    response = httpx.Response(
+        200,
+        json={"text": "hello auto"},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+    post = AsyncMock(return_value=response)
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=post),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = False
+        results = await transcribe_audio_file(
+            b"wav-data",
+            content_type="audio/wav",
+            language=" auto ",
+        )
+
+    assert results[0].text == "hello auto"
+    assert "language_code" not in post.await_args.kwargs["data"]
 
 
 @pytest.mark.asyncio
