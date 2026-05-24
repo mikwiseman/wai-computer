@@ -27,6 +27,9 @@ DEEPGRAM_NOVA_REALTIME_WS_BASE = "wss://api.deepgram.com/v1/listen"
 DEEPGRAM_FLUX_REALTIME_WS_BASE = "wss://api.deepgram.com/v2/listen"
 DEEPGRAM_REALTIME_TOKEN_TTL_SECONDS = 30
 DEEPGRAM_REALTIME_SAMPLE_RATE = 16_000
+SHORT_SPEAKER_ISLAND_MAX_WORDS = 5
+SHORT_SPEAKER_ISLAND_MAX_MS = 2_500
+SPEAKER_ISLAND_MAX_GAP_MS = 1_000
 
 
 def _require_api_key() -> str:
@@ -166,6 +169,121 @@ async def mint_realtime_session(
     )
 
 
+def _speaker_label(value: Any) -> str | None:
+    return f"Speaker {value}" if value is not None else None
+
+
+def _average_confidence(left: TranscriptResult, right: TranscriptResult) -> float:
+    confidences = [value for value in (left.confidence, right.confidence) if value > 0]
+    return sum(confidences) / len(confidences) if confidences else 0.0
+
+
+def _merge_segments(left: TranscriptResult, right: TranscriptResult) -> TranscriptResult:
+    return TranscriptResult(
+        text=f"{left.text.strip()} {right.text.strip()}".strip(),
+        speaker=left.speaker,
+        is_final=True,
+        start_ms=min(left.start_ms, right.start_ms),
+        end_ms=max(left.end_ms, right.end_ms),
+        confidence=_average_confidence(left, right),
+    )
+
+
+def _word_count(segment: TranscriptResult) -> int:
+    return len([part for part in segment.text.split() if part.strip()])
+
+
+def _is_short_speaker_island(segment: TranscriptResult) -> bool:
+    duration_ms = max(0, segment.end_ms - segment.start_ms)
+    return (
+        _word_count(segment) <= SHORT_SPEAKER_ISLAND_MAX_WORDS
+        and duration_ms <= SHORT_SPEAKER_ISLAND_MAX_MS
+    )
+
+
+def _gap_ms(left: TranscriptResult, right: TranscriptResult) -> int:
+    return max(0, right.start_ms - left.end_ms)
+
+
+def _merge_adjacent_same_speaker(segments: list[TranscriptResult]) -> list[TranscriptResult]:
+    merged: list[TranscriptResult] = []
+    for segment in segments:
+        if not segment.text.strip():
+            continue
+        previous = merged[-1] if merged else None
+        if previous is not None and previous.speaker == segment.speaker:
+            merged[-1] = _merge_segments(previous, segment)
+        else:
+            merged.append(segment)
+    return merged
+
+
+def _smooth_speaker_segments(segments: list[TranscriptResult]) -> list[TranscriptResult]:
+    """Merge tiny speaker flips that split one phrase into unreadable fragments."""
+    smoothed = _merge_adjacent_same_speaker(segments)
+    changed = True
+    while changed:
+        changed = False
+        next_pass: list[TranscriptResult] = []
+        index = 0
+        while index < len(smoothed):
+            previous = next_pass[-1] if next_pass else None
+            current = smoothed[index]
+            following = smoothed[index + 1] if index + 1 < len(smoothed) else None
+
+            if (
+                previous is not None
+                and following is not None
+                and previous.speaker == following.speaker
+                and current.speaker != previous.speaker
+                and _is_short_speaker_island(current)
+                and _gap_ms(previous, current) <= SPEAKER_ISLAND_MAX_GAP_MS
+                and _gap_ms(current, following) <= SPEAKER_ISLAND_MAX_GAP_MS
+            ):
+                next_pass[-1] = _merge_segments(_merge_segments(previous, current), following)
+                index += 2
+                changed = True
+                continue
+
+            next_pass.append(current)
+            index += 1
+        smoothed = _merge_adjacent_same_speaker(next_pass)
+    return smoothed
+
+
+def _build_segments_from_utterances(utterances: list[Any]) -> list[TranscriptResult]:
+    """Build segments from Deepgram utterances, which are already readability-oriented."""
+    segments: list[TranscriptResult] = []
+    for utterance in utterances:
+        if not isinstance(utterance, dict):
+            raise RuntimeError("Deepgram utterance entry is not an object")
+        text = str(utterance.get("transcript", "")).strip()
+        if not text:
+            words = utterance.get("words")
+            if isinstance(words, list):
+                text = " ".join(
+                    str(word.get("punctuated_word") or word.get("word") or "").strip()
+                    for word in words
+                    if isinstance(word, dict)
+                    and str(word.get("punctuated_word") or word.get("word") or "").strip()
+                )
+        if not text:
+            continue
+        start_seconds = float(utterance.get("start", 0.0) or 0.0)
+        end_seconds = float(utterance.get("end", start_seconds) or start_seconds)
+        segments.append(
+            TranscriptResult(
+                text=text,
+                speaker=_speaker_label(utterance.get("speaker")),
+                is_final=True,
+                start_ms=int(start_seconds * 1000),
+                end_ms=int(end_seconds * 1000),
+                confidence=float(utterance.get("confidence", 0.0) or 0.0),
+            )
+        )
+    return _merge_adjacent_same_speaker(segments)
+
+
 def _build_segments_from_words(words: list[dict[str, Any]]) -> list[TranscriptResult]:
     """Group consecutive words by speaker into speaker-labeled segments."""
     segments: list[TranscriptResult] = []
@@ -181,8 +299,7 @@ def _build_segments_from_words(words: list[dict[str, Any]]) -> list[TranscriptRe
         text = word.get("punctuated_word") or word.get("word")
         if not isinstance(text, str) or not text.strip():
             continue
-        speaker_value = word.get("speaker")
-        speaker = f"Speaker {speaker_value}" if speaker_value is not None else None
+        speaker = _speaker_label(word.get("speaker"))
         start_seconds = float(word.get("start", 0.0) or 0.0)
         end_seconds = float(word.get("end", start_seconds) or start_seconds)
         confidence = float(word.get("confidence", 0.0) or 0.0)
@@ -226,7 +343,7 @@ def _build_segments_from_words(words: list[dict[str, Any]]) -> list[TranscriptRe
             )
         )
 
-    return segments
+    return _smooth_speaker_segments(segments)
 
 
 async def transcribe_audio_file(
@@ -244,6 +361,7 @@ async def transcribe_audio_file(
         "smart_format": "true",
         "punctuate": "true",
         "diarize_model": "latest",
+        "utterances": "true",
     }
     if _should_detect_language(language):
         params["detect_language"] = "true"
@@ -279,6 +397,12 @@ async def transcribe_audio_file(
         raise RuntimeError("Deepgram response missing 'results.channels' array")
 
     transcripts: list[TranscriptResult] = []
+    utterances = results.get("utterances")
+    if isinstance(utterances, list) and utterances:
+        transcripts.extend(_build_segments_from_utterances(utterances))
+        if transcripts:
+            return transcripts
+
     for channel in channels_payload:
         if not isinstance(channel, dict):
             raise RuntimeError("Deepgram channel entry is not an object")

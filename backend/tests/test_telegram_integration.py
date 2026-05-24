@@ -192,6 +192,8 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
 
     async def fake_summary(transcript: str, **kwargs):
         assert "For Telegram voice/audio imports" in kwargs["instructions"]
+        assert "overrides the normal STYLE brevity" in kwargs["instructions"]
+        assert kwargs["style"] == "detailed"
         return SummaryResult(
             title="Telegram запись",
             summary="Короткое саммари.",

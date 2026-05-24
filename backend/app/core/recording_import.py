@@ -32,13 +32,30 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS = """\
-For Telegram voice/audio imports, make the summary field the complete
-Telegram-facing response, not a short abstract. Use the transcript's dominant
-language. Prefer a readable sectioned format with short headings and bullet
-points. Preserve concrete dates, week numbers, names, projects, and outcomes in
-the title and summary. For weekly reflections, group the response around what
-went well, what did not go well, and next steps when those themes are present.
-Keep the summary under 3500 characters.
+For Telegram voice/audio imports, the summary field is the complete
+Telegram-facing response. This instruction overrides the normal STYLE brevity
+rules for the summary field: do not write a 2-3 sentence abstract.
+
+Use the transcript's dominant language. Preserve concrete dates, week numbers,
+names, projects, outcomes, and commitments in the title and summary. Keep the
+summary between 1000 and 3500 characters when the transcript has enough detail.
+
+For weekly reflections, use this sectioned format when those themes are present:
+Что понравилось / достижения:
+- ...
+
+Что не понравилось / проблемы недели:
+- ...
+
+Что продолжать делать:
+- ...
+
+Что изменить / решения:
+- ...
+
+Do not use generic sections like "Ключевые пункты" or "Темы" for weekly
+reflections. For non-reflection audio, choose concrete section headings from
+the transcript instead of generic labels.
 """
 
 
@@ -231,6 +248,12 @@ def _summary_instructions(user: User, *, source_label: str) -> str | None:
     if instructions:
         return f"{instructions}\n\n{TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS}"
     return TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
+
+
+def _summary_style(user: User, *, source_label: str) -> str:
+    if source_label == "telegram":
+        return "detailed"
+    return user.summary_style
 
 
 async def _transcribe(
@@ -488,7 +511,7 @@ async def import_media_as_recording(
                 f"{tr.speaker or 'Speaker'}: {tr.text}" for tr in speech_results
             ),
             language=_summary_language(user, recording),
-            style=user.summary_style,
+            style=_summary_style(user, source_label=source_label),
             instructions=_summary_instructions(user, source_label=source_label),
         )
         if not explicit_title:
