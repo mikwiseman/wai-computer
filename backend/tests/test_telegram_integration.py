@@ -355,10 +355,54 @@ async def test_expired_pairing_and_command_helpers(db_session: AsyncSession):
     assert telegram_routes._telegram_chat_id({"chat": "bad"}) is None
 
 
+def test_telegram_import_response_helpers():
+    result = SimpleNamespace(
+        recording=SimpleNamespace(title="Рефлексия 21 неделя 17 23 мая"),
+        summary=SimpleNamespace(
+            summary="Итог недели",
+            key_points=["Первый пункт", "", "Второй пункт"],
+            topics=["Работа", "Режим"],
+        ),
+    )
+
+    assert (
+        telegram_routes._safe_transcript_filename(result.recording.title, media_kind="voice")
+        == "refleksiya-21-nedelya-17-23-maya.txt"
+    )
+    assert (
+        telegram_routes._safe_transcript_filename("!!!", media_kind="voice")
+        == "telegram-voice.txt"
+    )
+    assert telegram_routes._clean_summary_items("not-list") == []
+    assert telegram_routes._sent_message_id("not-dict") is None
+
+    text = telegram_routes._format_import_summary_message(result)
+    assert text.startswith("Рефлексия 21 неделя 17 23 мая")
+    assert "Ключевые пункты:\n- Первый пункт\n- Второй пункт" in text
+    assert "Темы:\n- Работа\n- Режим" in text
+
+
+@pytest.mark.asyncio
+async def test_delete_status_message_handles_missing_and_telegram_error(caplog):
+    client = MagicMock()
+    client.delete_message = AsyncMock(side_effect=TelegramClientError("blocked"))
+
+    await telegram_routes._delete_status_message(client, chat_id=1, message_id=None)
+    client.delete_message.assert_not_awaited()
+
+    with caplog.at_level("WARNING", logger="app.api.routes.telegram"):
+        await telegram_routes._delete_status_message(client, chat_id=1, message_id=2)
+
+    client.delete_message.assert_awaited_once_with(1, 2)
+    assert "telegram status delete failed" in caplog.text
+
+
 class _TelegramCapture:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
         self.actions: list[dict[str, Any]] = []
+        self.documents: list[dict[str, Any]] = []
+        self.deleted_messages: list[dict[str, Any]] = []
         self.file = TelegramFile("file-id", "voice/file.ogg", 12)
         self.data = b"telegram audio"
 
@@ -369,13 +413,38 @@ class _TelegramCapture:
         *,
         reply_to_message_id: int | None = None,
     ) -> None:
+        message_id = len(self.messages) + 1
         self.messages.append(
             {
+                "message_id": message_id,
                 "chat_id": chat_id,
                 "text": text,
                 "reply_to_message_id": reply_to_message_id,
             }
         )
+        return {"message_id": message_id}
+
+    async def send_document(
+        self,
+        chat_id: int,
+        *,
+        filename: str,
+        data: bytes,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> None:
+        self.documents.append(
+            {
+                "chat_id": chat_id,
+                "filename": filename,
+                "data": data,
+                "caption": caption,
+                "reply_to_message_id": reply_to_message_id,
+            }
+        )
+
+    async def delete_message(self, chat_id: int, message_id: int) -> None:
+        self.deleted_messages.append({"chat_id": chat_id, "message_id": message_id})
 
     async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
         self.actions.append({"chat_id": chat_id, "action": action})
@@ -619,6 +688,7 @@ async def test_handle_media_message_imports_and_replies(
 
     async def fake_import(**kwargs):
         assert kwargs["filename"] == "voice/file.ogg"
+        assert kwargs["title"] is None
         assert kwargs["source_label"] == "telegram"
         for _ in range(20):
             if capture.actions:
@@ -626,8 +696,15 @@ async def test_handle_media_message_imports_and_replies(
             await asyncio.sleep(0.01)
         assert capture.actions == [{"chat_id": 44, "action": "typing"}]
         return SimpleNamespace(
-            recording=SimpleNamespace(title="Telegram запись"),
-            summary=SimpleNamespace(summary="Короткое саммари"),
+            recording=SimpleNamespace(title="Рефлексия 21 неделя 17 23 мая"),
+            summary=SimpleNamespace(
+                summary="Короткое саммари",
+                key_points=["Первый пункт", "Второй пункт"],
+                decisions=[],
+                topics=[],
+                people_mentioned=[],
+                sentiment="neutral",
+            ),
             transcript="Полная расшифровка",
         )
 
@@ -641,8 +718,21 @@ async def test_handle_media_message_imports_and_replies(
     )
 
     assert "Расшифровываю" in capture.messages[0]["text"]
-    assert "Саммари" in capture.messages[-1]["text"]
-    assert "Расшифровка" in capture.messages[-1]["text"]
+    assert capture.deleted_messages == [{"chat_id": 44, "message_id": 1}]
+    assert capture.documents == [
+        {
+            "chat_id": 44,
+            "filename": "refleksiya-21-nedelya-17-23-maya.txt",
+            "data": "Полная расшифровка".encode("utf-8"),
+            "caption": None,
+            "reply_to_message_id": 12,
+        }
+    ]
+    assert capture.messages[-1]["text"].startswith("Рефлексия 21 неделя 17 23 мая")
+    assert "Короткое саммари" in capture.messages[-1]["text"]
+    assert "Первый пункт" in capture.messages[-1]["text"]
+    assert "Саммари" not in capture.messages[-1]["text"]
+    assert "Расшифровка" not in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1387,6 +1477,54 @@ async def test_telegram_client_send_get_and_download():
 
 
 @pytest.mark.asyncio
+async def test_telegram_client_can_send_document_bytes():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": {"message_id": 77}}),
+        ],
+    )
+
+    with patcher:
+        result = await TelegramBotClient("token").send_document(
+            123,
+            filename="reflection.txt",
+            data=b"transcript",
+            caption="Transcript",
+            reply_to_message_id=9,
+        )
+
+    assert result == {"message_id": 77}
+    assert client_mock.post.await_args.args[0].endswith("/sendDocument")
+    assert client_mock.post.await_args.kwargs["data"] == {
+        "chat_id": "123",
+        "caption": "Transcript",
+        "reply_to_message_id": "9",
+    }
+    assert client_mock.post.await_args.kwargs["files"] == {
+        "document": ("reflection.txt", b"transcript", "text/plain; charset=utf-8")
+    }
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_send_document_network_error_is_token_safe():
+    client_mock = MagicMock()
+    client_mock.post = AsyncMock(side_effect=httpx.ConnectError("network"))
+    async_ctx = MagicMock()
+    async_ctx.__aenter__ = AsyncMock(return_value=client_mock)
+    async_ctx.__aexit__ = AsyncMock(return_value=None)
+    with (
+        patch("app.core.telegram_client.httpx.AsyncClient", return_value=async_ctx),
+        pytest.raises(TelegramClientError) as exc,
+    ):
+        await TelegramBotClient("secret-token").send_document(
+            1,
+            filename="reflection.txt",
+            data=b"transcript",
+        )
+    assert "secret-token" not in str(exc.value)
+
+
+@pytest.mark.asyncio
 async def test_telegram_client_send_chat_action():
     patcher, client_mock = _patch_telegram_httpx(
         post_responses=[
@@ -1401,6 +1539,24 @@ async def test_telegram_client_send_chat_action():
     assert client_mock.post.await_args.kwargs["json"] == {
         "chat_id": 123,
         "action": "typing",
+    }
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_can_delete_message():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": True}),
+        ],
+    )
+
+    with patcher:
+        await TelegramBotClient("token").delete_message(123, 456)
+
+    assert client_mock.post.await_args.args[0].endswith("/deleteMessage")
+    assert client_mock.post.await_args.kwargs["json"] == {
+        "chat_id": 123,
+        "message_id": 456,
     }
 
 
