@@ -1,7 +1,11 @@
 """Provider-dispatched file transcription."""
 
+import logging
 from io import BytesIO
 
+import httpx
+
+from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
 from app.core.soniox import transcribe_audio_file as soniox_transcribe_audio_file
@@ -13,10 +17,21 @@ from app.core.transcription_options import (
 )
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 SONIOX_BROWSER_AUDIO_CONTENT_TYPES = {
     "audio/webm",
     "audio/ogg",
     "audio/opus",
+}
+
+ELEVENLABS_DEEPGRAM_FALLBACK_STATUS_CODES = {401, 402, 403, 429, 500, 502, 503, 504}
+ELEVENLABS_DEEPGRAM_FALLBACK_CODES = {
+    "payment_issue",
+    "payment_required",
+    "quota_exceeded",
+    "rate_limited",
+    "service_unavailable",
 }
 
 
@@ -41,6 +56,32 @@ def _normalize_soniox_file_audio(
     output = BytesIO()
     segment.export(output, format="wav")
     return output.getvalue(), "audio/wav", 1
+
+
+def _elevenlabs_error_code(error: httpx.HTTPStatusError) -> str | None:
+    try:
+        payload = error.response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        for key in ("code", "type", "status"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _should_fallback_to_deepgram(error: httpx.HTTPStatusError) -> bool:
+    status_code = error.response.status_code
+    if status_code == 400:
+        return False
+    error_code = _elevenlabs_error_code(error)
+    if error_code in ELEVENLABS_DEEPGRAM_FALLBACK_CODES:
+        return True
+    return status_code in ELEVENLABS_DEEPGRAM_FALLBACK_STATUS_CODES
 
 
 async def transcribe_audio_file(
@@ -81,10 +122,29 @@ async def transcribe_audio_file(
     if provider != "elevenlabs":
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")
 
-    return await elevenlabs_transcribe_audio_file(
-        audio_data,
-        language=language,
-        content_type=content_type,
-        channels=channels,
-        model=selected_model,
-    )
+    try:
+        return await elevenlabs_transcribe_audio_file(
+            audio_data,
+            language=language,
+            content_type=content_type,
+            channels=channels,
+            model=selected_model,
+        )
+    except httpx.HTTPStatusError as exc:
+        if not _should_fallback_to_deepgram(exc):
+            raise
+        fallback_model = get_settings().deepgram_file_stt_model
+        error_code = _elevenlabs_error_code(exc) or "unknown"
+        logger.warning(
+            "falling back to Deepgram file STT primary_provider=elevenlabs "
+            "fallback_provider=deepgram status_code=%s error_code=%s",
+            exc.response.status_code,
+            error_code,
+        )
+        return await deepgram_transcribe_audio_file(
+            audio_data,
+            model=fallback_model,
+            language=language,
+            content_type=content_type,
+            channels=channels,
+        )

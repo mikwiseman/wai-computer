@@ -100,6 +100,43 @@ async def test_transcribe_audio_file_returns_speaker_segments():
 
 
 @pytest.mark.asyncio
+async def test_transcribe_audio_file_uses_language_detection_for_auto():
+    body = {
+        "results": {
+            "channels": [
+                {
+                    "alternatives": [
+                        {
+                            "transcript": "Привет мир",
+                            "confidence": 0.96,
+                            "words": [],
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    response = _mock_response(200, body)
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response) as client_patch,
+    ):
+        mock_settings.return_value.deepgram_api_key = "test-key"
+        await transcribe_audio_file(
+            b"audio",
+            model="nova-3",
+            language="auto",
+            content_type="audio/wav",
+        )
+
+    client = client_patch.return_value.__aenter__.return_value
+    params = client.post.await_args.kwargs["params"]
+    assert params["detect_language"] == "true"
+    assert "language" not in params
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_file_raises_on_non_2xx():
     response = _mock_response(401, {"error": "unauthorized"})
     response.text = '{"error":"unauthorized"}'

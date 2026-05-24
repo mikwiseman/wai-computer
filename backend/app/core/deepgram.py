@@ -43,6 +43,11 @@ def _normalize_language(language: str) -> str:
     return cleaned
 
 
+def _should_detect_language(language: str) -> bool:
+    cleaned = (language or "").strip().lower()
+    return not cleaned or cleaned in {"auto", "multi", "und"}
+
+
 @dataclass(frozen=True)
 class DeepgramRealtimeSession:
     """Connection blob handed to the native client for Deepgram streaming."""
@@ -234,15 +239,16 @@ async def transcribe_audio_file(
 ) -> list[TranscriptResult]:
     """Transcribe an audio file with Deepgram's prerecorded ``/v1/listen`` API."""
     api_key = _require_api_key()
-    resolved_language = _normalize_language(language)
-
     params = {
         "model": model,
         "smart_format": "true",
         "punctuate": "true",
-        "diarize": "true",
-        "language": resolved_language,
+        "diarize_model": "latest",
     }
+    if _should_detect_language(language):
+        params["detect_language"] = "true"
+    else:
+        params["language"] = _normalize_language(language)
     if channels and channels > 1:
         params["multichannel"] = "true"
 
