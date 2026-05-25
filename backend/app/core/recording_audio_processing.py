@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import wave
 from pathlib import Path
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
+from app.core.observability import add_sentry_breadcrumb, capture_sentry_message
 from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
@@ -109,6 +111,91 @@ def _speech_results(results: list[TranscriptResult]) -> list[TranscriptResult]:
     ]
 
 
+def _wav_duration_seconds(path: Path) -> int | None:
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            frame_rate = wav_file.getframerate()
+            if frame_rate <= 0:
+                return None
+            return round(wav_file.getnframes() / frame_rate)
+    except (wave.Error, EOFError, OSError):
+        return None
+
+
+def _audio_duration_seconds(path: Path, content_type: str) -> int | None:
+    if content_type in {"audio/wav", "audio/x-wav"} or path.suffix.lower() == ".wav":
+        return _wav_duration_seconds(path)
+    return None
+
+
+def _duration_seconds_from_sources(
+    *,
+    audio_duration_seconds: int | None,
+    client_duration_seconds: int | None,
+    transcript_end_ms: int | None,
+) -> int | None:
+    if audio_duration_seconds is not None and audio_duration_seconds > 0:
+        return audio_duration_seconds
+    if client_duration_seconds is not None and client_duration_seconds > 0:
+        return client_duration_seconds
+    if transcript_end_ms is not None:
+        return transcript_end_ms // 1000
+    return None
+
+
+def _log_transcript_coverage(
+    *,
+    recording_id: UUID,
+    audio_duration_seconds: int | None,
+    client_duration_seconds: int | None,
+    transcript_end_ms: int | None,
+    segment_count: int,
+) -> None:
+    source_duration = audio_duration_seconds or client_duration_seconds
+    transcript_duration = transcript_end_ms // 1000 if transcript_end_ms is not None else None
+    coverage_ratio = (
+        round(transcript_duration / source_duration, 4)
+        if source_duration and transcript_duration is not None
+        else None
+    )
+    logger.info(
+        "audio processing coverage recording_id=%s audio_duration_seconds=%s "
+        "client_duration_seconds=%s transcript_duration_seconds=%s segment_count=%s "
+        "coverage_ratio=%s",
+        recording_id,
+        audio_duration_seconds,
+        client_duration_seconds,
+        transcript_duration,
+        segment_count,
+        coverage_ratio,
+    )
+    if coverage_ratio is not None and coverage_ratio < 0.8:
+        logger.warning(
+            "audio transcript coverage below threshold recording_id=%s coverage_ratio=%s",
+            recording_id,
+            coverage_ratio,
+        )
+        alert_data = {
+            "recording_id": str(recording_id),
+            "audio_duration_seconds": audio_duration_seconds,
+            "client_duration_seconds": client_duration_seconds,
+            "transcript_duration_seconds": transcript_duration,
+            "segment_count": segment_count,
+            "coverage_ratio": coverage_ratio,
+        }
+        add_sentry_breadcrumb(
+            category="recording",
+            message="Audio transcript coverage below threshold",
+            level="warning",
+            data=alert_data,
+        )
+        capture_sentry_message(
+            "Audio transcript coverage below threshold",
+            level="warning",
+            extras=alert_data,
+        )
+
+
 async def process_staged_recording_upload(
     db: AsyncSession,
     *,
@@ -117,6 +204,9 @@ async def process_staged_recording_upload(
     staged_path: Path,
     content_type: str,
     user_default_language: str | None,
+    client_duration_seconds: int | None = None,
+    client_file_size_bytes: int | None = None,
+    staged_size_bytes: int | None = None,
 ) -> None:
     """Transcribe a staged upload and promote it as the recording's canonical transcript."""
     result = await db.execute(
@@ -141,6 +231,29 @@ async def process_staged_recording_upload(
     recording.duration_seconds = None
     recording_language = recording.language or "en"
     should_generate_title = not recording.title
+    audio_duration_seconds = _audio_duration_seconds(staged_path, content_type)
+    logger.info(
+        "audio processing started recording_id=%s content_type=%s staged_size_bytes=%s "
+        "client_file_size_bytes=%s audio_duration_seconds=%s client_duration_seconds=%s",
+        recording_id,
+        content_type,
+        staged_size_bytes,
+        client_file_size_bytes,
+        audio_duration_seconds,
+        client_duration_seconds,
+    )
+    add_sentry_breadcrumb(
+        category="recording",
+        message="Audio processing started",
+        data={
+            "recording_id": str(recording_id),
+            "content_type": content_type,
+            "staged_size_bytes": staged_size_bytes,
+            "client_file_size_bytes": client_file_size_bytes,
+            "audio_duration_seconds": audio_duration_seconds,
+            "client_duration_seconds": client_duration_seconds,
+        },
+    )
     await db.commit()
 
     try:
@@ -155,10 +268,19 @@ async def process_staged_recording_upload(
 
         speech_transcript_results = _speech_results(transcript_results)
         if not speech_transcript_results:
-            if transcript_results:
-                recording.duration_seconds = max(
-                    result.end_ms for result in transcript_results
-                ) // 1000
+            max_end_ms = max((result.end_ms for result in transcript_results), default=None)
+            recording.duration_seconds = _duration_seconds_from_sources(
+                audio_duration_seconds=audio_duration_seconds,
+                client_duration_seconds=client_duration_seconds,
+                transcript_end_ms=max_end_ms,
+            )
+            _log_transcript_coverage(
+                recording_id=recording_id,
+                audio_duration_seconds=audio_duration_seconds,
+                client_duration_seconds=client_duration_seconds,
+                transcript_end_ms=max_end_ms,
+                segment_count=0,
+            )
             apply_no_speech_result(recording, user_default_language)
             recording.status = RecordingStatus.READY.value
             recording.failure_code = None
@@ -209,7 +331,18 @@ async def process_staged_recording_upload(
             )
 
         max_end_ms = max(transcript.end_ms for transcript in speech_transcript_results)
-        recording.duration_seconds = max_end_ms // 1000
+        recording.duration_seconds = _duration_seconds_from_sources(
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=max_end_ms,
+        )
+        _log_transcript_coverage(
+            recording_id=recording_id,
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=max_end_ms,
+            segment_count=len(speech_transcript_results),
+        )
         transcript_text = " ".join(
             transcript.text for transcript in speech_transcript_results if transcript.text.strip()
         )

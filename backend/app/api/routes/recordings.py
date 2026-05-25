@@ -11,7 +11,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import selectinload
@@ -23,6 +23,7 @@ from app.core.embeddings import generate_embedding
 from app.core.observability import (
     add_sentry_breadcrumb,
     bind_recording_context,
+    capture_sentry_message,
     safe_filename_metadata,
     safe_text_digest,
 )
@@ -828,10 +829,13 @@ async def _persist_client_segments(
         transcript_chunks.append(text)
         end_times.append(segment.end_ms)
 
-    if end_times:
-        recording.duration_seconds = max(end_times) // 1000
+    segment_duration_seconds = max(end_times) // 1000 if end_times else None
+    if duration_seconds is not None and segment_duration_seconds is not None:
+        recording.duration_seconds = max(duration_seconds, segment_duration_seconds)
     elif duration_seconds is not None:
         recording.duration_seconds = duration_seconds
+    elif segment_duration_seconds is not None:
+        recording.duration_seconds = segment_duration_seconds
 
     transcript_text = " ".join(transcript_chunks)
     if not recording.title and transcript_text:
@@ -907,6 +911,9 @@ async def enqueue_recording_audio_processing(
     staged_path: Path,
     content_type: str,
     user_default_language: str | None,
+    client_duration_seconds: int | None = None,
+    client_file_size_bytes: int | None = None,
+    staged_size_bytes: int | None = None,
 ) -> None:
     from app.tasks.celery_app import celery_app
 
@@ -918,6 +925,9 @@ async def enqueue_recording_audio_processing(
             "staged_path": str(staged_path),
             "content_type": content_type,
             "user_default_language": user_default_language,
+            "client_duration_seconds": client_duration_seconds,
+            "client_file_size_bytes": client_file_size_bytes,
+            "staged_size_bytes": staged_size_bytes,
         },
     )
 
@@ -2479,9 +2489,11 @@ MAX_UPLOAD_SIZE = app_settings.upload_max_bytes
 @router.post("/{recording_id}/upload", response_model=RecordingDetailResponse)
 async def upload_audio_file(
     recording_id: UUID,
-    file: UploadFile,
     user: CurrentUser,
     db: Database,
+    file: UploadFile = File(...),
+    client_duration_seconds: int | None = Form(default=None),
+    client_file_size_bytes: int | None = Form(default=None),
 ) -> RecordingDetailResponse:
     """Upload an imported audio file to an existing recording."""
     bind_recording_context(str(recording_id))
@@ -2491,8 +2503,10 @@ async def upload_audio_file(
         data={"recording_id": str(recording_id), **safe_filename_metadata(file.filename)},
     )
     logger.info(
-        "audio upload started filename=%s",
+        "audio upload started filename=%s client_duration_seconds=%s client_file_size_bytes=%s",
         safe_text_digest(file.filename or "", label="filename"),
+        client_duration_seconds,
+        client_file_size_bytes,
     )
     # Validate recording exists and belongs to user
     user_id = user.id
@@ -2582,15 +2596,43 @@ async def upload_audio_file(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     try:
-        staged_path, _ = await _stage_upload_to_disk(
+        staged_path, staged_size_bytes = await _stage_upload_to_disk(
             file=file,
             user_id=user_id,
             recording_id=recording_id,
             ext=ext,
         )
+        if (
+            client_file_size_bytes is not None
+            and client_file_size_bytes != staged_size_bytes
+        ):
+            delete_staged_file(staged_path)
+            detail = "Uploaded file size did not match the recorded file size."
+            await _mark_recording_failed(recording, db, "upload_size_mismatch", detail)
+            alert_data = {
+                "recording_id": str(recording_id),
+                "client_file_size_bytes": client_file_size_bytes,
+                "staged_size_bytes": staged_size_bytes,
+            }
+            add_sentry_breadcrumb(
+                category="recording",
+                message="Audio upload size mismatch",
+                level="warning",
+                data=alert_data,
+            )
+            capture_sentry_message(
+                "Audio upload size mismatch",
+                level="warning",
+                extras=alert_data,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=detail,
+            )
     except Exception as exc:
         if isinstance(exc, HTTPException):
-            await _mark_recording_failed(recording, db, "file_too_large", str(exc.detail))
+            if exc.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE:
+                await _mark_recording_failed(recording, db, "file_too_large", str(exc.detail))
             raise
         logger.exception("Failed to stage audio for recording %s", recording_id)
         detail = "Failed to save recording for upload"
@@ -2628,6 +2670,9 @@ async def upload_audio_file(
             staged_path=staged_path,
             content_type=content_type,
             user_default_language=user_default_language,
+            client_duration_seconds=client_duration_seconds,
+            client_file_size_bytes=client_file_size_bytes,
+            staged_size_bytes=staged_size_bytes,
         )
     except Exception as exc:
         logger.exception("Failed to enqueue recording processing for %s", recording_id)
@@ -2652,5 +2697,23 @@ async def upload_audio_file(
             detail="Recording disappeared after upload",
         )
 
-    logger.info("audio upload accepted for async processing status=%s", recording.status)
+    logger.info(
+        "audio upload accepted for async processing status=%s staged_size_bytes=%s "
+        "client_file_size_bytes=%s client_duration_seconds=%s",
+        recording.status,
+        staged_size_bytes,
+        client_file_size_bytes,
+        client_duration_seconds,
+    )
+    add_sentry_breadcrumb(
+        category="recording",
+        message="Audio upload accepted for async processing",
+        data={
+            "recording_id": str(recording_id),
+            "status": recording.status,
+            "staged_size_bytes": staged_size_bytes,
+            "client_file_size_bytes": client_file_size_bytes,
+            "client_duration_seconds": client_duration_seconds,
+        },
+    )
     return _serialize_recording_detail(recording)

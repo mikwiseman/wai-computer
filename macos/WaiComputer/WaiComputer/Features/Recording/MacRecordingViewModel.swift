@@ -115,6 +115,7 @@ class MacRecordingViewModel: ObservableObject {
     private var transcriptTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
     private var systemAudioMonitorTask: Task<Void, Never>?
+    private var recordingActivity: NSObjectProtocol?
 
     private enum RecordingPersistenceResult {
         case remoteSaved(notice: String?, breadcrumbMessage: String)
@@ -314,6 +315,7 @@ class MacRecordingViewModel: ObservableObject {
             }
 
             currentRecordingId = recordingId
+            beginRecordingActivity(recordingId: recordingId, inputSource: inputSource)
 
             // Initialize audio capture first to know channel count
             let capture = try makeAudioCapture(for: inputSource)
@@ -471,6 +473,7 @@ class MacRecordingViewModel: ObservableObject {
                     self?.audioEncoder = nil
                     try? self?.audioFileWriter?.finalize()
                     self?.audioFileWriter = nil
+                    self?.endRecordingActivity(reason: "debug-stop")
                     self?.setPhase(.idle)
                     self?.isCleaningUp = false
                     self?.cleanupTask = nil
@@ -489,7 +492,7 @@ class MacRecordingViewModel: ObservableObject {
         let tTask = transcriptTask
         let recordingId = currentRecordingId
         let client = self.apiClient
-        let recordingDuration = duration
+        let timerDuration = duration
         let capture = audioCapture
         let sendingTask = audioTask
         let fileWriter = audioFileWriter
@@ -509,9 +512,26 @@ class MacRecordingViewModel: ObservableObject {
 
             // Finalize the local WAV file so it has correct header sizes
             try? fileWriter?.finalize()
+            let finalizedAudioDuration = fileWriter?.durationSeconds
+            let finalizedAudioBytes = fileWriter?.totalBytesWritten ?? 0
+            let persistedDurationSeconds = self.persistedDurationSeconds(
+                audioDuration: finalizedAudioDuration,
+                timerDuration: timerDuration
+            )
             if let fw = fileWriter {
                 NSLog("[Recording] Local audio file finalized: %.1f seconds, %lld bytes", fw.durationSeconds, fw.totalBytesWritten)
             }
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "local audio finalized",
+                data: [
+                    "recordingId": recordingId ?? "unknown",
+                    "audioDurationSeconds": finalizedAudioDuration ?? 0,
+                    "timerDurationSeconds": timerDuration,
+                    "persistedDurationSeconds": persistedDurationSeconds,
+                    "audioBytes": finalizedAudioBytes,
+                ]
+            )
 
             let didFinalize = await self.finishStreaming(ws)
             let segments = await ws?.collectedSegments ?? []
@@ -528,7 +548,7 @@ class MacRecordingViewModel: ObservableObject {
                     recordingId: recordingId,
                     client: client,
                     segments: finalizedSegments,
-                    durationSeconds: Int(recordingDuration.rounded()),
+                    durationSeconds: persistedDurationSeconds,
                     audioFileURL: fileWriter?.fileURL,
                     directSaveNotice: nil,
                     recoveredTranscriptNotice: self.transcriptRecoveredMessage()
@@ -547,6 +567,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.recording = nil
                 self.currentRecordingId = nil
                 self.audioEncoder = nil
+                self.endRecordingActivity(reason: "stop")
                 self.setPhase(.idle)
                 self.isCleaningUp = false
                 self.cleanupTask = nil
@@ -631,6 +652,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.interimText = ""
                 self.interimSpeaker = nil
                 self.audioEncoder = nil
+                self.endRecordingActivity(reason: "discard")
                 self.setPhase(.idle)
                 self.isCleaningUp = false
                 self.cleanupTask = nil
@@ -659,11 +681,81 @@ class MacRecordingViewModel: ObservableObject {
         error = nil
     }
 
+    #if DEBUG
+    func testingBeginRecordingForRealtimeFailure(
+        recordingId: String,
+        duration: TimeInterval = 0
+    ) {
+        currentRecordingId = recordingId
+        self.duration = duration
+        liveTranscriptionOffline = false
+        connectionState = .connected
+        error = nil
+        setPhase(.recording)
+    }
+
+    func testingHandleWebSocketEvent(_ event: WebSocketEvent) async {
+        await handleWebSocketEvent(event)
+    }
+    #endif
+
     // MARK: - Private
+
+    private func beginRecordingActivity(recordingId: String, inputSource: MacRecordingInputSource) {
+        endRecordingActivity(reason: "replace")
+        let options: ProcessInfo.ActivityOptions = [
+            .userInitiated,
+            .idleSystemSleepDisabled,
+            .suddenTerminationDisabled,
+            .automaticTerminationDisabled,
+        ]
+        recordingActivity = ProcessInfo.processInfo.beginActivity(
+            options: options,
+            reason: "WaiComputer recording local audio"
+        )
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording activity started",
+            data: ["recordingId": recordingId, "inputSource": inputSource.rawValue]
+        )
+    }
+
+    private func endRecordingActivity(reason: String) {
+        guard let activity = recordingActivity else { return }
+        ProcessInfo.processInfo.endActivity(activity)
+        recordingActivity = nil
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording activity ended",
+            data: ["reason": reason]
+        )
+    }
+
+    private func persistedDurationSeconds(
+        audioDuration: Double?,
+        timerDuration: TimeInterval
+    ) -> Int {
+        guard let audioDuration, audioDuration > 0 else {
+            return max(Int(timerDuration.rounded()), 0)
+        }
+        if timerDuration - audioDuration > 5 {
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording duration mismatch",
+                level: .warning,
+                data: [
+                    "audioDurationSeconds": audioDuration,
+                    "timerDurationSeconds": timerDuration,
+                ]
+            )
+        }
+        return max(Int(audioDuration.rounded()), 0)
+    }
 
     private func saveTranscriptBackup(
         recordingId: String,
-        segments: [LiveTranscriptSegment]
+        segments: [LiveTranscriptSegment],
+        durationSeconds: TimeInterval? = nil
     ) throws -> RecordingBackup {
         let transcript = {
             let finalized = transcriptText(from: segments)
@@ -676,7 +768,7 @@ class MacRecordingViewModel: ObservableObject {
             recordingId: recordingId,
             title: recording?.title,
             recordingType: recordingType,
-            durationSeconds: duration,
+            durationSeconds: durationSeconds ?? duration,
             transcript: transcript.isEmpty ? nil : transcript,
             segments: segments
         )
@@ -697,6 +789,7 @@ class MacRecordingViewModel: ObservableObject {
                 recordingId: recordingId,
                 segments: segments,
                 client: nil,
+                durationSeconds: TimeInterval(durationSeconds),
                 technicalReason: technicalReason
             ) ? .localBackup : .failed(technicalReason)
         }
@@ -706,14 +799,26 @@ class MacRecordingViewModel: ObservableObject {
         let shouldUploadAudio = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
 
         if shouldUploadAudio, let audioFileURL {
+            let clientDurationSeconds = durationSeconds > 0 ? durationSeconds : nil
+            let clientFileSizeBytes = (try? audioFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+                .map(Int64.init)
             SentryHelper.addBreadcrumb(
                 category: "recording",
                 message: "uploading finalized audio for transcription",
-                data: ["recordingId": recordingId]
+                data: [
+                    "recordingId": recordingId,
+                    "durationSeconds": durationSeconds,
+                    "fileSizeBytes": clientFileSizeBytes ?? 0,
+                ]
             )
 
             do {
-                let detail = try await client.uploadAudio(recordingId: recordingId, fileURL: audioFileURL)
+                let detail = try await client.uploadAudio(
+                    recordingId: recordingId,
+                    fileURL: audioFileURL,
+                    clientDurationSeconds: clientDurationSeconds,
+                    clientFileSizeBytes: clientFileSizeBytes
+                )
                 guard detail.status != .failed else {
                     let technicalReason = UserFacingErrorFormatter.displayMessage(
                         detail.failureMessage,
@@ -724,8 +829,19 @@ class MacRecordingViewModel: ObservableObject {
                         recordingId: recordingId,
                         segments: segments,
                         client: client,
+                        durationSeconds: TimeInterval(durationSeconds),
                         technicalReason: technicalReason
                     ) ? .localBackup : .failed(technicalReason)
+                }
+
+                guard detail.status == .ready else {
+                    return await retainLocalBackupWhileServerProcessesAudio(
+                        recordingId: recordingId,
+                        segments: segments,
+                        client: client,
+                        durationSeconds: TimeInterval(durationSeconds),
+                        status: detail.status
+                    )
                 }
 
                 return .remoteSaved(
@@ -744,6 +860,7 @@ class MacRecordingViewModel: ObservableObject {
                     recordingId: recordingId,
                     segments: segments,
                     client: client,
+                    durationSeconds: TimeInterval(durationSeconds),
                     technicalReason: technicalReason
                 ) ? .localBackup : .failed(technicalReason)
             }
@@ -765,6 +882,7 @@ class MacRecordingViewModel: ObservableObject {
                     recordingId: recordingId,
                     segments: segments,
                     client: client,
+                    durationSeconds: TimeInterval(durationSeconds),
                     technicalReason: technicalReason
                 ) ? .localBackup : .failed(technicalReason)
             }
@@ -779,18 +897,54 @@ class MacRecordingViewModel: ObservableObject {
                 recordingId: recordingId,
                 segments: segments,
                 client: client,
+                durationSeconds: TimeInterval(durationSeconds),
                 technicalReason: technicalReason
             ) ? .localBackup : .failed(technicalReason)
         }
+    }
+
+    private func retainLocalBackupWhileServerProcessesAudio(
+        recordingId: String,
+        segments: [LiveTranscriptSegment],
+        client: APIClient,
+        durationSeconds: TimeInterval,
+        status: RecordingStatus
+    ) async -> RecordingPersistenceResult {
+        do {
+            _ = try saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments,
+                durationSeconds: durationSeconds
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "retainAudioBackupWhileProcessing", "recordingId": recordingId]
+            )
+            return .failed(error.userFacingMessage(context: .recording))
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "audio upload accepted; local backup retained",
+            data: ["recordingId": recordingId, "status": status.rawValue]
+        )
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        return .localBackup
     }
 
     private func saveLocalBackupForRetry(
         recordingId: String,
         segments: [LiveTranscriptSegment],
         client: APIClient?,
+        durationSeconds: TimeInterval? = nil,
         technicalReason: String
     ) async -> Bool {
-        guard (try? saveTranscriptBackup(recordingId: recordingId, segments: segments)) != nil else {
+        guard (try? saveTranscriptBackup(
+            recordingId: recordingId,
+            segments: segments,
+            durationSeconds: durationSeconds
+        )) != nil else {
             return false
         }
 
@@ -979,6 +1133,7 @@ class MacRecordingViewModel: ObservableObject {
         currentRecordingId = nil
         isServerComplete = false
         recordingInputSource = .dual
+        endRecordingActivity(reason: "start-failure")
         setPhase(.idle)
     }
 
@@ -1015,7 +1170,10 @@ class MacRecordingViewModel: ObservableObject {
             interimTranscript = buildInterimTranscriptText()
         case .disconnected(let err):
             if let err, phase == .recording {
-                await failActiveRecording(with: err.userFacingMessage(context: .recording))
+                await continueRecordingWithoutLiveTranscription(
+                    reason: "websocket_disconnected",
+                    error: err
+                )
             } else if let err, phase != .finalizing, phase != .idle {
                 error = err.userFacingMessage(context: .recording)
             }
@@ -1026,14 +1184,48 @@ class MacRecordingViewModel: ObservableObject {
             error = nil
         case .reconnectionFailed(let err):
             connectionState = .connected
-            await handleReconnectionFailed(
-                with: err?.userFacingMessage(context: .recording)
+            if phase == .recording {
+                await continueRecordingWithoutLiveTranscription(
+                    reason: "websocket_reconnection_failed",
+                    error: err
+                )
+            } else if phase != .finalizing, phase != .idle {
+                error = err?.userFacingMessage(context: .recording)
                     ?? UserFacingErrorFormatter.message(
                         for: WebSocketConnectionError.reconnectionExhausted(10),
                         context: .recording
                     )
-            )
+            }
         }
+    }
+
+    private func continueRecordingWithoutLiveTranscription(
+        reason: String,
+        error: Error?
+    ) async {
+        guard phase == .recording else {
+            if let error, phase != .finalizing, phase != .idle {
+                self.error = error.userFacingMessage(context: .recording)
+            }
+            return
+        }
+
+        connectionState = .connected
+        liveTranscriptionOffline = true
+        self.error = nil
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "live transcription disabled while local recording continues",
+            level: .warning,
+            data: [
+                "recordingId": currentRecordingId ?? "unknown",
+                "reason": reason,
+                "durationSeconds": duration,
+                "errorType": error.map { String(describing: type(of: $0)) } ?? "none",
+            ]
+        )
+        await webSocketManager?.stopRealtimeStreamingForLocalRecording(reason: reason)
     }
 
     /// Show speaker labels only when realtime metadata actually contains them.
@@ -1096,131 +1288,6 @@ class MacRecordingViewModel: ObservableObject {
             return interimText
         }
         return "\(speaker): \(interimText)"
-    }
-
-    /// Handle permanent reconnection failure — save what we have instead of discarding.
-    private func handleReconnectionFailed(with message: String) async {
-        guard phase == .recording else {
-            error = UserFacingErrorFormatter.message(
-                for: WebSocketConnectionError.reconnectionExhausted(10),
-                context: .recording
-            )
-            return
-        }
-
-        setPhase(.finalizing)
-        await prepareFailureRecoveryResources()
-
-        if let recordingId = currentRecordingId {
-            let segments = finalizedSegments(
-                from: await webSocketManager?.collectedSegments ?? [],
-                didFinalize: false
-            )
-            let persistenceResult = await persistRecordingCloudFirst(
-                recordingId: recordingId,
-                client: apiClient,
-                segments: segments,
-                durationSeconds: Int(duration.rounded()),
-                audioFileURL: try? RecordingBackupStore.audioFileURL(recordingId: recordingId),
-                directSaveNotice: transcriptRecoveredMessage(),
-                recoveredTranscriptNotice: transcriptRecoveredMessage()
-            )
-            isServerComplete = await applyRecordingPersistenceResult(
-                persistenceResult,
-                recordingId: recordingId,
-                segmentsCount: segments.count
-            )
-        } else {
-            error = UserFacingErrorFormatter.message(
-                for: WebSocketConnectionError.reconnectionExhausted(10),
-                context: .recording
-            )
-        }
-
-        await cleanupAfterFailure()
-    }
-
-    private func cleanupAfterFailure() async {
-        timerTask?.cancel()
-        timerTask = nil
-        systemAudioMonitorTask?.cancel()
-        systemAudioMonitorTask = nil
-        systemAudioWarning = nil
-        transcriptTask?.cancel()
-        transcriptTask = nil
-        cleanupTask?.cancel()
-        cleanupTask = nil
-
-        await prepareFailureRecoveryResources()
-        audioEncoder = nil
-
-        let ws = webSocketManager
-        webSocketManager = nil
-        await ws?.disconnect()
-
-        recording = nil
-        currentRecordingId = nil
-        apiClient = nil
-        connectionState = .connected
-        isCleaningUp = false
-        recordingInputSource = .dual
-        setPhase(.idle)
-    }
-
-    private func failActiveRecording(with message: String) async {
-        guard phase == .recording else {
-            error = UserFacingErrorFormatter.message(
-                for: WebSocketConnectionError.disconnected(nil),
-                context: .recording
-            )
-            return
-        }
-
-        setPhase(.finalizing)
-        await prepareFailureRecoveryResources()
-
-        if let recordingId = currentRecordingId {
-            let segments = finalizedSegments(
-                from: await webSocketManager?.collectedSegments ?? [],
-                didFinalize: false
-            )
-            let persistenceResult = await persistRecordingCloudFirst(
-                recordingId: recordingId,
-                client: apiClient,
-                segments: segments,
-                durationSeconds: Int(duration.rounded()),
-                audioFileURL: try? RecordingBackupStore.audioFileURL(recordingId: recordingId),
-                directSaveNotice: transcriptRecoveredMessage(),
-                recoveredTranscriptNotice: transcriptRecoveredMessage()
-            )
-            isServerComplete = await applyRecordingPersistenceResult(
-                persistenceResult,
-                recordingId: recordingId,
-                segmentsCount: segments.count
-            )
-        } else {
-            error = UserFacingErrorFormatter.message(
-                for: WebSocketConnectionError.disconnected(nil),
-                context: .recording
-            )
-        }
-
-        await cleanupAfterFailure()
-    }
-
-    private func prepareFailureRecoveryResources() async {
-        let pendingAudioTask = audioTask
-        audioTask = nil
-        let capture = audioCapture
-        audioCapture = nil
-
-        await capture?.stopRecording()
-        pendingAudioTask?.cancel()
-        _ = await pendingAudioTask?.result
-
-        let fileWriter = audioFileWriter
-        audioFileWriter = nil
-        try? fileWriter?.finalize()
     }
 
     private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {

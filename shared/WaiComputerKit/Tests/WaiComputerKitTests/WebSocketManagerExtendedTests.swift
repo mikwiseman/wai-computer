@@ -979,4 +979,23 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(bufferedCount, 2, "Stopping during reconnect must not discard buffered tail audio")
         XCTAssertTrue(endRequested)
     }
+
+    func testStopRealtimeStreamingForLocalRecordingDropsBufferedAudioAndMakesSendThrow() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        await manager.testingSetReconnectState(enabled: true, reconnecting: true)
+        await manager.testingBufferAudioChunk(Data("buffered-live-audio".utf8))
+
+        await manager.stopRealtimeStreamingForLocalRecording(reason: "reconnectionFailed")
+
+        let bufferedCount = await manager.testingBufferedAudioCount()
+        XCTAssertEqual(bufferedCount, 0)
+        do {
+            try await manager.sendAudio(data: Data("new-live-audio".utf8))
+            XCTFail("Realtime streaming must stay disabled so the caller can continue local-only")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+    }
 }

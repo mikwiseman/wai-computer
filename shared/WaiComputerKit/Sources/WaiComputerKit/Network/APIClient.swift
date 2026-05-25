@@ -1449,7 +1449,12 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(recordingId)/transcript", body: body)
     }
 
-    public func uploadAudio(recordingId: String, fileURL: URL) async throws -> RecordingDetail {
+    public func uploadAudio(
+        recordingId: String,
+        fileURL: URL,
+        clientDurationSeconds: Int? = nil,
+        clientFileSizeBytes: Int64? = nil
+    ) async throws -> RecordingDetail {
         let fileSize = try fileSize(at: fileURL)
         if fileSize > Int64(Self.maxRecordingUploadSizeBytes) {
             throw APIError.httpError(
@@ -1489,7 +1494,9 @@ public actor APIClient {
             sourceFileURL: fileURL,
             filename: filename,
             mimeType: mimeType,
-            boundary: boundary
+            boundary: boundary,
+            clientDurationSeconds: clientDurationSeconds,
+            clientFileSizeBytes: clientFileSizeBytes ?? fileSize
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
@@ -1518,7 +1525,9 @@ public actor APIClient {
         sourceFileURL: URL,
         filename: String,
         mimeType: String,
-        boundary: String
+        boundary: String,
+        clientDurationSeconds: Int?,
+        clientFileSizeBytes: Int64
     ) throws -> URL {
         let uploadURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wai-upload-\(UUID().uuidString).multipart")
@@ -1530,6 +1539,23 @@ public actor APIClient {
         func writeString(_ string: String) throws {
             try output.write(contentsOf: Data(string.utf8))
         }
+
+        func writeField(name: String, value: String) throws {
+            try writeString("--\(boundary)\r\n")
+            try writeString("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+            try writeString("\(value)\r\n")
+        }
+
+        if let clientDurationSeconds, clientDurationSeconds > 0 {
+            try writeField(
+                name: "client_duration_seconds",
+                value: String(clientDurationSeconds)
+            )
+        }
+        try writeField(
+            name: "client_file_size_bytes",
+            value: String(clientFileSizeBytes)
+        )
 
         try writeString("--\(boundary)\r\n")
         try writeString(

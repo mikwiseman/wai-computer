@@ -120,6 +120,11 @@ def test_sanitize_sentry_value_redacts_sensitive_payloads():
         "query": "Alice salary details",
         "filename": "alice-comp-plan.wav",
         "Authorization": "Bearer abc",
+        "reason": "Alice@example.com discussed the token",
+        "error": "Alice salary details failed",
+        "detail": "alice@example.com salary details",
+        "description": "Alice private transcript description",
+        "message": "Alice private message",
         "nested": {
             "token": "jwt-token",
             "text": "Alice@example.com said hello",
@@ -133,6 +138,11 @@ def test_sanitize_sentry_value_redacts_sensitive_payloads():
     assert sanitized["query"].startswith("[redacted-text:")
     assert sanitized["filename"].startswith("[redacted-filename:")
     assert sanitized["Authorization"] == "[redacted-secret]"
+    assert sanitized["reason"].startswith("[redacted-text:")
+    assert sanitized["error"].startswith("[redacted-text:")
+    assert sanitized["detail"].startswith("[redacted-text:")
+    assert sanitized["description"].startswith("[redacted-text:")
+    assert sanitized["message"].startswith("[redacted-text:")
     assert sanitized["nested"]["token"] == "[redacted-secret]"
     assert sanitized["nested"]["text"].startswith("[redacted-text:")
 
@@ -394,6 +404,49 @@ def test_capture_sentry_exception_without_extras(monkeypatch: pytest.MonkeyPatch
     observability.capture_sentry_exception(error)
 
     assert captured["error"] is error
+
+
+def test_capture_sentry_message_sanitizes_message_and_extras(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    class DummyScope:
+        def __init__(self) -> None:
+            self.extras: dict[str, object] = {}
+
+        def set_extra(self, key: str, value: object) -> None:
+            self.extras[key] = value
+
+    class DummyScopeManager:
+        def __enter__(self) -> DummyScope:
+            scope = DummyScope()
+            captured["scope"] = scope
+            return scope
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    def fake_capture_message(message: str, *, level: str) -> None:
+        captured["message"] = message
+        captured["level"] = level
+
+    monkeypatch.setattr(observability.sentry_sdk, "new_scope", lambda: DummyScopeManager())
+    monkeypatch.setattr(observability.sentry_sdk, "capture_message", fake_capture_message)
+
+    observability.capture_sentry_message(
+        "coverage failed for alice@example.com",
+        level="warning",
+        extras={
+            "error": "Alice salary details failed",
+            "filename": "alice-private.wav",
+        },
+    )
+
+    scope = captured["scope"]
+    assert isinstance(scope, DummyScope)
+    assert "[redacted-email:" in captured["message"]
+    assert captured["level"] == "warning"
+    assert scope.extras["error"].startswith("[redacted-text:")
+    assert scope.extras["filename"].startswith("[redacted-filename:")
 
 
 def test_get_release_version_handles_git_results(monkeypatch: pytest.MonkeyPatch):

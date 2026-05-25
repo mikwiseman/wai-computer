@@ -59,11 +59,14 @@ targets:
     sources:
       - path: WaiComputerTests
       - path: WaiComputer/Core/DesignSystem.swift
+      - path: WaiComputer/App/MacTestingSupport.swift
+      - path: WaiComputer/App/Onboarding/OnboardingL10n.swift
       - path: WaiComputer/Features/Dictation/DictationCopy.swift
       - path: WaiComputer/Features/Dictation/DictationOverlayPanel.swift
       - path: WaiComputer/Features/Dictation/GlobalHotkeyManager.swift
       - path: WaiComputer/Features/Settings/DictationSettingsCopy.swift
       - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
+      - path: WaiComputer/Features/Recording/MacRecordingViewModel.swift
       - path: WaiComputer/Features/Library/MacRecordingDetailViewModel.swift
       - path: WaiComputer/Features/Updates/BetaChannelStore.swift
     settings:

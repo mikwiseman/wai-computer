@@ -74,6 +74,12 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         bufferContinuation = continuation
     }
 
+    private func finishBufferStream() {
+        os_unfair_lock_lock(continuationLock)
+        bufferContinuation?.finish()
+        os_unfair_lock_unlock(continuationLock)
+    }
+
     /// Start recording from microphone
     public func startRecording() async throws {
         // Guard against double-start
@@ -105,6 +111,7 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         // passing a non-nil format different from native throws an NSException.
         // Install with nil (= native format) and convert manually.
         var tapCount = 0
+        inputNode.removeTap(onBus: 0)
         inputNode.installTap(
             onBus: 0,
             bufferSize: AVAudioFrameCount(config.bufferSize),
@@ -170,7 +177,14 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         }
 
         micLog.warning("[Mic] Starting engine...")
-        try engine.start()
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            inputNode.removeTap(onBus: 0)
+            engine.stop()
+            throw error
+        }
         _isRecording = true
         micLog.warning("[Mic] Engine started, recording = true")
     }
@@ -180,9 +194,7 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         _isRecording = false
-        os_unfair_lock_lock(continuationLock)
-        bufferContinuation?.finish()
-        os_unfair_lock_unlock(continuationLock)
+        finishBufferStream()
         setupBufferStream()
     }
 

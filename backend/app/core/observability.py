@@ -39,6 +39,11 @@ TEXT_KEY_FRAGMENTS = (
     "body",
     "html",
     "prompt",
+    "reason",
+    "error",
+    "detail",
+    "description",
+    "message",
 )
 FILENAME_KEY_FRAGMENTS = ("filename", "file_name")
 
@@ -399,3 +404,22 @@ def capture_sentry_exception(error: Exception, *, extras: dict[str, Any] | None 
         return
 
     sentry_sdk.capture_exception(error)
+
+
+def capture_sentry_message(
+    message: str,
+    *,
+    level: str = "info",
+    extras: dict[str, Any] | None = None,
+) -> None:
+    """Capture an alertable Sentry message with sanitized metadata."""
+    safe_message = redact_text(message)
+    if extras:
+        with sentry_sdk.new_scope() as scope:
+            sanitized = sanitize_sentry_value(extras, key="extras")
+            for key, value in sanitized.items():
+                scope.set_extra(key, value)
+            sentry_sdk.capture_message(safe_message, level=level)
+        return
+
+    sentry_sdk.capture_message(safe_message, level=level)
