@@ -109,3 +109,13 @@ def test_release_scripts_publish_channel_specific_release_slug():
     assert "release_slug=${RELEASE_SLUG}" in build_script
     assert 'RELEASE_SLUG=$(awk -F= \'$1 == "release_slug" {print $2}\'' in publish_script
     assert 'RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"' in publish_script
+
+
+def test_release_notes_find_previous_build_addition_not_current_removal():
+    root = Path(__file__).resolve().parents[2]
+    build_script = (root / "scripts" / "build-macos-dmg.sh").read_text(encoding="utf-8")
+
+    assert "find_previous_build_commit()" in build_script
+    assert 'prev_commit=$(find_previous_build_commit "$prev_build")' in build_script
+    assert 'CURRENT_PROJECT_VERSION: \\"${target_build}\\"' in build_script
+    assert 'git log -S "CURRENT_PROJECT_VERSION: \\"${prev_build}\\""' not in build_script

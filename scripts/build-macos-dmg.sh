@@ -520,6 +520,14 @@ CHECKSUM_PATH="$RELEASE_DIR/${DMG_BASENAME}.sha256"
 cp "$DMG_PATH" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg"
 cp "$CHECKSUM_PATH" "$RELEASE_ROOT/${APP_NAME}${VARIANT_SUFFIX}-latest.dmg.sha256"
 RELEASE_NOTES_PATH="$RELEASE_DIR/release-notes.md"
+find_previous_build_commit() {
+  local target_build="$1"
+  git log --format='commit %H' -p -- macos/WaiComputer/project.yml 2>/dev/null \
+    | awk -v target="CURRENT_PROJECT_VERSION: \"${target_build}\"" '
+        /^commit / { commit = $2 }
+        $0 ~ "^\\+[[:space:]]*" target "[[:space:]]*$" { print commit; exit }
+      '
+}
 generate_release_notes() {
   echo "# ${APP_NAME} ${VERSION} (${BUILD})"
   echo
@@ -527,7 +535,7 @@ generate_release_notes() {
   prev_build=$((BUILD - 1))
   prev_commit=""
   if [[ "$prev_build" -gt 0 ]]; then
-    prev_commit=$(git log -S "CURRENT_PROJECT_VERSION: \"${prev_build}\"" --pretty=format:"%H" -- macos/WaiComputer/project.yml 2>/dev/null | head -1 || true)
+    prev_commit=$(find_previous_build_commit "$prev_build")
   fi
   notes=""
   if [[ -n "$prev_commit" ]]; then
