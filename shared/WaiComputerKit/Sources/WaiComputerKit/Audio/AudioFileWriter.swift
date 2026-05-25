@@ -63,6 +63,7 @@ public final class AudioFileWriter: @unchecked Sendable {
         var dataSizeLE = dataSize.littleEndian
         handle.write(Data(bytes: &dataSizeLE, count: 4))
 
+        handle.synchronizeFile()
         handle.closeFile()
         fileHandle = nil
 

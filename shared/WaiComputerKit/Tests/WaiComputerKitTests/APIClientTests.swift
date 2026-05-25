@@ -627,9 +627,96 @@ final class APIClientTests: XCTestCase {
             }
         }
 
-        let detail = try await client.uploadAudio(recordingId: "rec-upload", fileURL: fileURL)
+        let detail = try await client.uploadAudio(
+            recordingId: "rec-upload",
+            fileURL: fileURL,
+            clientDurationSeconds: 1800,
+            clientFileSizeBytes: 8
+        )
         XCTAssertEqual(detail.id, "rec-upload")
         XCTAssertEqual(counter.value, 3)
+    }
+
+    func testUploadAudioIncludesClientDurationAndFileSizeMetadata() async throws {
+        let client = makeClient()
+        await client.setAccessToken("access-token")
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("metadata-upload-\(UUID().uuidString).wav")
+        try Data("wav-data".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-upload/upload")
+            let body = try XCTUnwrap(bodyData(from: request))
+            let bodyString = String(decoding: body, as: UTF8.self)
+            XCTAssertTrue(bodyString.contains("name=\"client_duration_seconds\""))
+            XCTAssertTrue(bodyString.contains("\r\n1800\r\n"))
+            XCTAssertTrue(bodyString.contains("name=\"client_file_size_bytes\""))
+            XCTAssertTrue(bodyString.contains("\r\n8\r\n"))
+            XCTAssertTrue(bodyString.contains("name=\"file\"; filename=\"\(fileURL.lastPathComponent)\""))
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"rec-upload","title":"Accepted","type":"note","status":"processing","segments":[],"action_items":[],"created_at":"2026-03-10T10:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let detail = try await client.uploadAudio(
+            recordingId: "rec-upload",
+            fileURL: fileURL,
+            clientDurationSeconds: 1800,
+            clientFileSizeBytes: 8
+        )
+
+        XCTAssertEqual(detail.status, RecordingStatus.processing)
+    }
+
+    func testUploadAudioIncludesMeasuredFileSizeWhenClientFileSizeIsOmitted() async throws {
+        let client = makeClient()
+        await client.setAccessToken("access-token")
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("measured-size-upload-\(UUID().uuidString).wav")
+        try Data("0123456789".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-upload/upload")
+            let body = try XCTUnwrap(bodyData(from: request))
+            let bodyString = String(decoding: body, as: UTF8.self)
+            XCTAssertTrue(bodyString.contains("name=\"client_duration_seconds\""))
+            XCTAssertTrue(bodyString.contains("\r\n9\r\n"))
+            XCTAssertTrue(bodyString.contains("name=\"client_file_size_bytes\""))
+            XCTAssertTrue(bodyString.contains("\r\n10\r\n"))
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"id":"rec-upload","title":"Accepted","type":"note","status":"processing","segments":[],"action_items":[],"created_at":"2026-03-10T10:00:00Z"}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let detail = try await client.uploadAudio(
+            recordingId: "rec-upload",
+            fileURL: fileURL,
+            clientDurationSeconds: 9
+        )
+
+        XCTAssertEqual(detail.status, RecordingStatus.processing)
     }
 
     func testRefreshServerFailureCapturesRefreshFingerprint() async {

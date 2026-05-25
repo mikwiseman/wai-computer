@@ -120,7 +120,12 @@ public actor PendingRecordingSyncCoordinator {
             let detail: RecordingDetail?
             if hasAudioFile {
                 log.info("Uploading audio for recording \(backup.recordingId)")
-                detail = try await apiClient.uploadAudio(recordingId: backup.recordingId, fileURL: backup.audioFileURL)
+                let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())
+                detail = try await apiClient.uploadAudio(
+                    recordingId: backup.recordingId,
+                    fileURL: backup.audioFileURL,
+                    clientDurationSeconds: durationSeconds > 0 ? durationSeconds : nil
+                )
             } else if manifest != nil {
                 log.info("Syncing transcript for recording \(backup.recordingId)")
                 let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())

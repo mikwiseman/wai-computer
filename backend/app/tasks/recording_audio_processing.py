@@ -20,6 +20,9 @@ async def _process_staged_recording_upload(
     staged_path: str,
     content_type: str,
     user_default_language: str | None,
+    client_duration_seconds: int | None = None,
+    client_file_size_bytes: int | None = None,
+    staged_size_bytes: int | None = None,
 ) -> None:
     async with get_db_context() as db:
         await process_staged_recording_upload_core(
@@ -29,6 +32,9 @@ async def _process_staged_recording_upload(
             staged_path=Path(staged_path),
             content_type=content_type,
             user_default_language=user_default_language,
+            client_duration_seconds=client_duration_seconds,
+            client_file_size_bytes=client_file_size_bytes,
+            staged_size_bytes=staged_size_bytes,
         )
 
 
@@ -40,6 +46,9 @@ def process_staged_recording_upload(
     staged_path: str,
     content_type: str,
     user_default_language: str | None,
+    client_duration_seconds: int | None = None,
+    client_file_size_bytes: int | None = None,
+    staged_size_bytes: int | None = None,
 ) -> None:
     asyncio.run(
         _process_staged_recording_upload(
@@ -48,5 +57,8 @@ def process_staged_recording_upload(
             staged_path=staged_path,
             content_type=content_type,
             user_default_language=user_default_language,
+            client_duration_seconds=client_duration_seconds,
+            client_file_size_bytes=client_file_size_bytes,
+            staged_size_bytes=staged_size_bytes,
         )
     )

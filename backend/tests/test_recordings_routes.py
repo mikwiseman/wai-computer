@@ -938,6 +938,7 @@ async def test_upload_success_with_mocked_services(
     response = await client.post(
         f"/api/recordings/{recording['id']}/upload",
         headers=auth_headers,
+        data={"client_duration_seconds": "1800", "client_file_size_bytes": "13"},
         files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
     assert response.status_code == 200
@@ -952,6 +953,52 @@ async def test_upload_success_with_mocked_services(
     _, enqueue_kwargs = enqueue_processing.await_args
     assert enqueue_kwargs["recording_id"] == UUID(recording["id"])
     assert enqueue_kwargs["content_type"] == "audio/mpeg"
+    assert enqueue_kwargs["client_duration_seconds"] == 1800
+    assert enqueue_kwargs["client_file_size_bytes"] == 13
+    assert enqueue_kwargs["staged_size_bytes"] == 13
+
+
+@pytest.mark.asyncio
+async def test_upload_size_mismatch_marks_failed_and_sends_sentry_message(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Upload rejects client/server size drift and emits one alertable Sentry event."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    sentry_messages: list[dict[str, object]] = []
+
+    def capture_message(message: str, **kwargs) -> None:
+        sentry_messages.append({"message": message, **kwargs})
+
+    monkeypatch.setattr("app.api.routes.recordings.capture_sentry_message", capture_message)
+
+    response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={"client_duration_seconds": "1800", "client_file_size_bytes": "999"},
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file size did not match the recorded file size."
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == UUID(recording["id"])))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.FAILED.value
+    assert refreshed.failure_code == "upload_size_mismatch"
+    assert sentry_messages == [
+        {
+            "message": "Audio upload size mismatch",
+            "level": "warning",
+            "extras": {
+                "recording_id": recording["id"],
+                "client_file_size_bytes": 999,
+                "staged_size_bytes": 13,
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -1153,7 +1200,7 @@ async def test_save_transcript_persists_segments_before_audio_upload(
     data = response.json()
     assert data["status"] == "ready"
     assert data["title"] == "Transcript First"
-    assert data["duration_seconds"] == 2
+    assert data["duration_seconds"] == 3
     assert [segment["content"] for segment in data["segments"]] == ["Transcript saved first"]
 
 

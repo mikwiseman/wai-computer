@@ -252,6 +252,7 @@ public actor WebSocketManager {
         } catch {
             if reconnectEnabled {
                 bufferAudioChunk(data)
+                startReconnection(afterError: error)
                 return
             }
             throw error
@@ -274,8 +275,7 @@ public actor WebSocketManager {
     @discardableResult
     public func finishStreaming(timeout: Duration = .seconds(5)) async throws -> Bool {
         try await sendEnd()
-        let minimumWaitUntil = reconnectClock.now + .milliseconds(150)
-        let quietWindow: Duration = .milliseconds(350)
+        let startedAt = reconnectClock.now
         let deadline = reconnectClock.now + timeout
 
         while reconnectClock.now < deadline {
@@ -295,14 +295,13 @@ public actor WebSocketManager {
             }
 
             let now = reconnectClock.now
-            let isSettled: Bool
-            if let lastTranscriptReceivedAt {
-                isSettled = now >= minimumWaitUntil && now - lastTranscriptReceivedAt >= quietWindow
-            } else {
-                isSettled = now >= minimumWaitUntil
-            }
-
-            if isSettled {
+            if !RealtimeCloseDrainPolicy.shouldKeepWaiting(
+                now: now,
+                deadline: deadline,
+                startedAt: startedAt,
+                lastTranscriptEventAt: lastTranscriptReceivedAt,
+                finalizationMarkerReceived: endOfStreamSent
+            ) {
                 break
             }
 
@@ -341,6 +340,27 @@ public actor WebSocketManager {
             finishEventStream: false
         )
         SentryHelper.addBreadcrumb(category: "websocket", message: "disconnected")
+    }
+
+    /// Permanently stop the realtime provider stream for a recording that is
+    /// still capturing local audio. This keeps the event stream open for the
+    /// caller's eventual `finishStreaming`/`disconnect` cleanup, but makes all
+    /// future `sendAudio` calls fail fast so the caller can continue local-only.
+    public func stopRealtimeStreamingForLocalRecording(reason: String) {
+        reconnectEnabled = false
+        cancelReconnection(clearBufferedAudio: true)
+        closeConnection(
+            forConnection: connectionId,
+            error: nil,
+            emitDisconnected: false,
+            finishEventStream: false
+        )
+        SentryHelper.addBreadcrumb(
+            category: "websocket",
+            message: "realtime streaming stopped while local recording continues",
+            level: .warning,
+            data: ["reason": reason]
+        )
     }
 
     // MARK: - URL builders
