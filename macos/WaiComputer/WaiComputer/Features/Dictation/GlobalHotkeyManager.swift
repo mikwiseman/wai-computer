@@ -376,17 +376,24 @@ final class GlobalHotkeyManager: ObservableObject {
     }
 
     /// Optional separate hotkey that toggles hands-free mode on a single tap.
-    /// When `nil`, hands-free still works via double-tap of `hotkey` (legacy).
+    /// When `nil`, hands-free starts via double-tap of `hotkey`; while active,
+    /// one press of `hotkey` stops it.
     var handsFreeHotkey: DictationHotkey? {
         didSet { log.info("Hands-free hotkey: \(self.handsFreeHotkey?.label ?? "double-tap of push-to-talk")") }
     }
 
+    /// Set by DictationManager while a hands-free session is live. In that mode
+    /// the primary dictation key becomes a stop key on press, regardless of how
+    /// long the user holds it.
+    var isHandsFreeModeActive = false
+
     private var handsFreeKeyHeld = false
+    private var handsFreeStopKeyHeld = false
 
     /// How long the key must be held before starting push-to-talk.
     ///
     /// Keep this below the threshold where the hotkey feels laggy, but above a
-    /// quick tap so double-tap hands-free remains reliable.
+    /// quick tap so double-tap hands-free start remains reliable.
     private let holdThreshold: TimeInterval = 0.08
 
     // State tracking
@@ -532,8 +539,43 @@ final class GlobalHotkeyManager: ObservableObject {
             }
         }
 
-        // 2. Push-to-talk hotkey
+        // 2. If hands-free is already live, the primary hotkey is a stop key.
+        //    Do this on press so a slightly long tap cannot become a busy
+        //    push-to-talk start and miss the stop.
         let isTargetKey = isHotkeyEvent(keyCode: keyCode, flags: flags)
+        let isTargetPhysicalKey = isHotkeyPhysicalEvent(keyCode: keyCode, hotkey: hotkey)
+        if handsFreeStopKeyHeld {
+            if isTargetPhysicalKey && !isTargetKey {
+                handsFreeStopKeyHeld = false
+                isHotkeyHeld = false
+                hotkeyDownTime = nil
+                otherKeyPressed = false
+            }
+            return
+        }
+
+        if isHandsFreeModeActive {
+            if isTargetKey && !isHotkeyHeld {
+                isHotkeyHeld = true
+                handsFreeStopKeyHeld = true
+                hotkeyDownTime = nil
+                otherKeyPressed = false
+                isInPushToTalk = false
+                lastTapTime = nil
+                holdTimer?.cancel()
+                holdTimer = nil
+                log.info("Primary hotkey pressed during hands-free — toggling stop")
+                onHandsFreeToggle?()
+                return
+            } else if !isTargetKey && isHotkeyHeld {
+                isHotkeyHeld = false
+                hotkeyDownTime = nil
+                otherKeyPressed = false
+                return
+            }
+        }
+
+        // 3. Push-to-talk hotkey
         if isTargetKey && !isHotkeyHeld {
             hotkeyDown()
         } else if !isTargetKey && isHotkeyHeld {
@@ -563,6 +605,15 @@ final class GlobalHotkeyManager: ObservableObject {
 
     private func isHotkeyEvent(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
         isHotkeyEvent(keyCode: keyCode, flags: flags, hotkey: hotkey)
+    }
+
+    private func isHotkeyPhysicalEvent(keyCode: UInt16, hotkey: DictationHotkey) -> Bool {
+        switch hotkey {
+        case .rightOption, .leftOption, .rightCommand, .fn:
+            return keyCode == hotkey.keyCode
+        case .controlOption:
+            return keyCode == hotkey.keyCode || keyCode == UInt16(kVK_Control)
+        }
     }
 
     private func hotkeyDown() {

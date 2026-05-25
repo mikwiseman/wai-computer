@@ -987,8 +987,8 @@ struct MacSettingsView: View {
         }
         let hotkey = dictationHotkeyShortLabel(dictationManager.selectedHotkey)
         return t(
-            "Hold \(hotkey) to dictate. Release to paste. Double-tap to start hands-free; double-tap again to stop.",
-            "Зажми \(hotkey), чтобы диктовать. Отпусти, чтобы вставить. Двойное нажатие включает режим без рук, ещё одно двойное нажатие останавливает."
+            "Hold \(hotkey) to dictate. Release to paste. Double-tap to start hands-free; press once to stop.",
+            "Зажми \(hotkey), чтобы диктовать. Отпусти, чтобы вставить. Двойное нажатие включает режим без рук; одно нажатие останавливает."
         )
     }
 
