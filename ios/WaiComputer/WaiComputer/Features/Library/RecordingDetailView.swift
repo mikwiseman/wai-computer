@@ -144,7 +144,7 @@ struct RecordingDetailView: View {
                     : "You can restore it later from Trash."
             )
         }
-        .task {
+        .task(id: recording.id) {
             if isScreenshotMode {
                 viewModel.loadScreenshotFixture(recordingId: recording.id)
             } else {
@@ -505,71 +505,6 @@ struct FlowLayout: Layout {
 
             size = CGSize(width: maxWidth, height: y + rowHeight)
         }
-    }
-}
-
-@MainActor
-class RecordingDetailViewModel: ObservableObject {
-    @Published var detail: RecordingDetail?
-    @Published var isLoading = false
-    @Published var error: String?
-
-    func loadDetail(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
-        if showLoading {
-            isLoading = true
-        }
-        error = nil
-
-        do {
-            detail = try await apiClient.getRecording(id: recordingId)
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
-
-        if showLoading {
-            isLoading = false
-        }
-    }
-
-    func generateSummary(recordingId: String, apiClient: APIClient) async {
-        isLoading = true
-
-        do {
-            _ = try await apiClient.generateSummary(recordingId: recordingId)
-            // Reload to get updated detail with summary
-            detail = try await apiClient.getRecording(id: recordingId)
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
-
-        isLoading = false
-    }
-
-    func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {
-        guard shouldAutoRefresh(for: detail?.status) else { return }
-
-        while !Task.isCancelled, shouldAutoRefresh(for: detail?.status) {
-            try? await Task.sleep(for: .seconds(detail?.status == .processing ? 4 : 2))
-            guard !Task.isCancelled else { return }
-            await loadDetail(recordingId: recordingId, apiClient: apiClient, showLoading: false)
-        }
-    }
-
-    private func shouldAutoRefresh(for status: RecordingStatus?) -> Bool {
-        switch status {
-        case .pendingUpload, .uploading, .processing:
-            return true
-        case .ready, .failed, .none:
-            return false
-        }
-    }
-
-    func loadScreenshotFixture(recordingId: String) {
-        #if DEBUG
-        detail = IOSScreenshotFixtures.detail
-        isLoading = false
-        error = nil
-        #endif
     }
 }
 
