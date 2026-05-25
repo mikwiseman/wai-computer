@@ -503,7 +503,7 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
     user_payload, _ = await _register(client, "stats-user@example.com")
     await _grant_admin(db_session, admin_payload["user_id"])
     user_id = user_payload["user_id"]
-    now = datetime.now(timezone.utc)
+    now = datetime(2026, 5, 25, 12, 0, tzinfo=timezone.utc)
 
     recording = Recording(
         user_id=user_id,
@@ -512,6 +512,7 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
         status="ready",
         duration_seconds=120,
         billed_word_count=7,
+        created_at=now,
     )
     db_session.add(recording)
     await db_session.flush()
@@ -541,6 +542,7 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
         status="active",
         provider="stripe",
         billing_period="month",
+        created_at=now,
     )
     db_session.add(sub)
     await db_session.flush()
@@ -556,6 +558,15 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
     )
     db_session.add_all(
         [
+            BillingPromoCode(
+                code_hash=hash_promo_code("WAI-REDEEMED-STATS"),
+                plan_id=plan.id,
+                billing_period="month",
+                duration_days=30,
+                max_redemptions=2,
+                redeemed_count=1,
+                created_at=now,
+            ),
             BillingPromoCode(
                 code_hash=hash_promo_code("WAI-ARCHIVED-STATS"),
                 plan_id=plan.id,
@@ -584,6 +595,22 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
         ]
     )
     await db_session.flush()
+    redeemed_promo = (
+        await db_session.execute(
+            select(BillingPromoCode).where(
+                BillingPromoCode.code_hash == hash_promo_code("WAI-REDEEMED-STATS")
+            )
+        )
+    ).scalar_one()
+    db_session.add(
+        BillingPromoRedemption(
+            promo_code_id=redeemed_promo.id,
+            user_id=user_id,
+            subscription_id=sub.id,
+            created_at=now,
+        )
+    )
+    await db_session.flush()
 
     response = await client.get("/api/admin/stats", headers=admin_headers)
 
@@ -598,6 +625,19 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
     assert payload["promo"]["expired"] >= 1
     assert payload["promo"]["exhausted"] >= 1
     assert payload["promo"]["paused"] >= 1
+    monthly_usage = {row["period"]: row for row in payload["usage"]["monthly"]}
+    yearly_usage = {row["period"]: row for row in payload["usage"]["yearly"]}
+    assert monthly_usage["2026-05"]["recording_words"] == 7
+    assert monthly_usage["2026-05"]["dictation_words"] == 3
+    assert monthly_usage["2026-05"]["total_words"] == 10
+    assert yearly_usage["2026"]["recording_duration_seconds"] == 120
+    monthly_revenue = payload["billing"]["monthly_revenue"]
+    assert monthly_revenue == [{"period": "2026-05", "currency": "USD", "amount": 12.0}]
+    monthly_redemptions = {
+        row["period"]: row["redemptions"]
+        for row in payload["promo"]["monthly_redemptions"]
+    }
+    assert monthly_redemptions["2026-05"] == 1
     assert "Private filename" not in str(payload)
     assert "secret raw dictation" not in str(payload)
 

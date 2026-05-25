@@ -20,7 +20,10 @@ import {
   type AdminAuditLog,
   type AdminBillingSubscription,
   type AdminPromoCode,
+  type AdminPromoRedemptionBucket,
+  type AdminRevenueBucket,
   type AdminStats,
+  type AdminUsageBucket,
   type AdminUserDetail,
   type AdminUserSummary,
 } from "@/lib/admin";
@@ -50,6 +53,18 @@ function fmtDate(value: string | null): string {
 
 function metricEntries(record: Record<string, number>): Array<[string, number]> {
   return Object.entries(record).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function promoMetricRows(stats: AdminStats["promo"]): Array<[string, number]> {
+  return [
+    ["total", stats.total],
+    ["active", stats.active],
+    ["paused", stats.paused],
+    ["archived", stats.archived],
+    ["expired", stats.expired],
+    ["exhausted", stats.exhausted],
+    ["redemptions", stats.redemptions],
+  ];
 }
 
 export function AdminConsoleClient() {
@@ -243,7 +258,7 @@ export function AdminConsoleClient() {
               <MetricTable title="Users by status" rows={metricEntries(stats.users.by_status)} />
               <MetricTable title="Subscriptions by provider" rows={metricEntries(stats.billing.subscriptions_by_provider)} />
               <MetricTable title="Subscriptions by status" rows={metricEntries(stats.billing.subscriptions_by_status)} />
-              <MetricTable title="Promo codes" rows={metricEntries(stats.promo)} />
+              <MetricTable title="Promo codes" rows={promoMetricRows(stats.promo)} />
               <MetricTable title="Revenue" rows={metricEntries(stats.billing.revenue_by_currency)} />
               <MetricTable
                 title="Usage"
@@ -253,6 +268,10 @@ export function AdminConsoleClient() {
                   ["failed_recordings", stats.usage.failed_recordings],
                 ]}
               />
+              <UsageBucketTable title="Monthly usage" rows={stats.usage.monthly.slice(-12)} />
+              <UsageBucketTable title="Yearly usage" rows={stats.usage.yearly} />
+              <RevenueBucketTable title="Monthly revenue" rows={stats.billing.monthly_revenue.slice(-12)} />
+              <PromoRedemptionBucketTable title="Promo redemptions" rows={stats.promo.monthly_redemptions.slice(-12)} />
             </div>
           </div>
         ) : null}
@@ -440,6 +459,88 @@ function MetricTable({ title, rows }: { title: string; rows: Array<[string, numb
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+function UsageBucketTable({ title, rows }: { title: string; rows: AdminUsageBucket[] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>{title}</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Words</th>
+            <th>Recordings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.period}>
+              <td>{row.period}</td>
+              <td>{fmtNumber(row.total_words)}</td>
+              <td>{fmtNumber(row.recording_count)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function RevenueBucketTable({ title, rows }: { title: string; rows: AdminRevenueBucket[] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>{title}</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Currency</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.period}-${row.currency}`}>
+              <td>{row.period}</td>
+              <td>{row.currency}</td>
+              <td>{fmtNumber(row.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function PromoRedemptionBucketTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: AdminPromoRedemptionBucket[];
+}) {
+  return (
+    <section className="admin-metric-table">
+      <h3>{title}</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Redemptions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.period}>
+              <td>{row.period}</td>
+              <td>{fmtNumber(row.redemptions)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

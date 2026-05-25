@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, desc, func, or_, select, update
+from sqlalchemy import String, case, desc, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, Database
@@ -285,6 +285,127 @@ class AdminBillingSubscriptionListItem(BaseModel):
 
 class AdminBillingListResponse(BaseModel):
     items: list[AdminBillingSubscriptionListItem]
+
+
+def _bucket_label(bucket: datetime, grain: Literal["month", "year"]) -> str:
+    if grain == "year":
+        return f"{bucket.year:04d}"
+    return f"{bucket.year:04d}-{bucket.month:02d}"
+
+
+def _usage_bucket(period: str) -> dict:
+    return {
+        "period": period,
+        "recording_words": 0,
+        "dictation_words": 0,
+        "total_words": 0,
+        "recording_duration_seconds": 0,
+        "dictation_duration_seconds": 0.0,
+        "recording_count": 0,
+        "failed_recordings": 0,
+    }
+
+
+def _utc_date_trunc(grain: Literal["month", "year"], value):
+    return func.date_trunc(grain, func.timezone("UTC", value))
+
+
+async def _usage_buckets(
+    db: Database,
+    *,
+    grain: Literal["month", "year"],
+    since: datetime | None,
+) -> list[dict]:
+    buckets: dict[str, dict] = {}
+
+    recording_bucket = _utc_date_trunc(grain, Recording.created_at)
+    recording_query = select(
+        recording_bucket.label("bucket"),
+        func.coalesce(func.sum(Recording.billed_word_count), 0),
+        func.coalesce(func.sum(Recording.duration_seconds), 0),
+        func.count(Recording.id),
+        func.coalesce(
+            func.sum(case((Recording.status == "failed", 1), else_=0)),
+            0,
+        ),
+    )
+    if since is not None:
+        recording_query = recording_query.where(Recording.created_at >= since)
+    recording_rows = (
+        await db.execute(recording_query.group_by(recording_bucket).order_by(recording_bucket))
+    ).all()
+    for bucket, words, duration, count, failed in recording_rows:
+        label = _bucket_label(bucket, grain)
+        item = buckets.setdefault(label, _usage_bucket(label))
+        item["recording_words"] = int(words or 0)
+        item["recording_duration_seconds"] = int(duration or 0)
+        item["recording_count"] = int(count or 0)
+        item["failed_recordings"] = int(failed or 0)
+
+    dictation_bucket = _utc_date_trunc(grain, DictationEntry.occurred_at)
+    dictation_query = select(
+        dictation_bucket.label("bucket"),
+        func.coalesce(func.sum(DictationEntry.word_count), 0),
+        func.coalesce(func.sum(DictationEntry.duration_seconds), 0),
+    )
+    if since is not None:
+        dictation_query = dictation_query.where(DictationEntry.occurred_at >= since)
+    dictation_rows = (
+        await db.execute(dictation_query.group_by(dictation_bucket).order_by(dictation_bucket))
+    ).all()
+    for bucket, words, duration in dictation_rows:
+        label = _bucket_label(bucket, grain)
+        item = buckets.setdefault(label, _usage_bucket(label))
+        item["dictation_words"] = int(words or 0)
+        item["dictation_duration_seconds"] = float(duration or 0)
+
+    for item in buckets.values():
+        item["total_words"] = item["recording_words"] + item["dictation_words"]
+    return [buckets[label] for label in sorted(buckets)]
+
+
+async def _monthly_revenue(db: Database, *, since: datetime) -> list[dict]:
+    bucket = _utc_date_trunc("month", Invoice.paid_at)
+    rows = (
+        await db.execute(
+            select(
+                bucket.label("bucket"),
+                Invoice.currency,
+                func.coalesce(func.sum(Invoice.amount), 0),
+            )
+            .where(
+                Invoice.status == "paid",
+                Invoice.paid_at.is_not(None),
+                Invoice.paid_at >= since,
+            )
+            .group_by(bucket, Invoice.currency)
+            .order_by(bucket, Invoice.currency)
+        )
+    ).all()
+    return [
+        {
+            "period": _bucket_label(month, "month"),
+            "currency": currency,
+            "amount": float(amount or 0),
+        }
+        for month, currency, amount in rows
+    ]
+
+
+async def _monthly_promo_redemptions(db: Database, *, since: datetime) -> list[dict]:
+    bucket = _utc_date_trunc("month", BillingPromoRedemption.created_at)
+    rows = (
+        await db.execute(
+            select(bucket.label("bucket"), func.count(BillingPromoRedemption.id))
+            .where(BillingPromoRedemption.created_at >= since)
+            .group_by(bucket)
+            .order_by(bucket)
+        )
+    ).all()
+    return [
+        {"period": _bucket_label(month, "month"), "redemptions": int(count)}
+        for month, count in rows
+    ]
 
 
 async def _promo_response(
@@ -917,6 +1038,7 @@ async def refund_admin_invoice(
 async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsResponse:
     del admin
     now = datetime.now(timezone.utc)
+    monthly_since = now - timedelta(days=366)
     user_counts = dict(
         (status_value, int(count))
         for status_value, count in (
@@ -1021,6 +1143,10 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
             )
         ).all()
     )
+    monthly_usage = await _usage_buckets(db, grain="month", since=monthly_since)
+    yearly_usage = await _usage_buckets(db, grain="year", since=None)
+    monthly_revenue = await _monthly_revenue(db, since=monthly_since)
+    monthly_redemptions = await _monthly_promo_redemptions(db, since=monthly_since)
     return AdminStatsResponse(
         users={
             "total": total_users,
@@ -1041,6 +1167,7 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
             "expired": expired,
             "exhausted": exhausted,
             "redemptions": redemptions,
+            "monthly_redemptions": monthly_redemptions,
         },
         usage={
             "recording_words": recording_words,
@@ -1050,11 +1177,14 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
             "dictation_duration_seconds": dictation_duration,
             "recording_count": recording_count,
             "failed_recordings": failed_recordings,
+            "monthly": monthly_usage,
+            "yearly": yearly_usage,
         },
         billing={
             "subscriptions_by_provider": subscription_by_provider,
             "subscriptions_by_status": subscription_by_status,
             "revenue_by_currency": revenue_by_currency,
+            "monthly_revenue": monthly_revenue,
         },
     )
 
