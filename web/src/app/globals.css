@@ -2216,6 +2216,30 @@ a.primary-button:hover {
   font-weight: 720;
 }
 
+.admin-mini-table {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-collapse: collapse;
+}
+
+.admin-mini-table th,
+.admin-mini-table td {
+  border-top: 1px solid var(--border);
+  padding: 0.45rem 0;
+  text-align: left;
+}
+
+.admin-mini-table th {
+  color: var(--ink-soft);
+  font-size: 0.74rem;
+  font-weight: 740;
+}
+
+.admin-mini-table td {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
 .admin-inline-form {
   display: grid;
   grid-template-columns: repeat(6, minmax(110px, 1fr));

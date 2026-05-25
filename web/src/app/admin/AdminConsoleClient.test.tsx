@@ -58,7 +58,16 @@ const mockedRefundInvoice = vi.mocked(refundAdminInvoice);
 function setupMocks() {
   mockedStats.mockResolvedValue({
     users: { total: 3, new_30d: 2, by_status: { active: 2, paused: 1 } },
-    promo: { total: 1, active: 1, paused: 0, archived: 0, expired: 0, exhausted: 0, redemptions: 0 },
+    promo: {
+      total: 1,
+      active: 1,
+      paused: 0,
+      archived: 0,
+      expired: 0,
+      exhausted: 0,
+      redemptions: 0,
+      monthly_redemptions: [{ period: "2026-05", redemptions: 2 }],
+    },
     usage: {
       recording_words: 120,
       dictation_words: 30,
@@ -67,11 +76,36 @@ function setupMocks() {
       dictation_duration_seconds: 12,
       recording_count: 4,
       failed_recordings: 1,
+      monthly: [
+        {
+          period: "2026-05",
+          recording_words: 120,
+          dictation_words: 30,
+          total_words: 150,
+          recording_duration_seconds: 600,
+          dictation_duration_seconds: 12,
+          recording_count: 4,
+          failed_recordings: 1,
+        },
+      ],
+      yearly: [
+        {
+          period: "2026",
+          recording_words: 120,
+          dictation_words: 30,
+          total_words: 150,
+          recording_duration_seconds: 600,
+          dictation_duration_seconds: 12,
+          recording_count: 4,
+          failed_recordings: 1,
+        },
+      ],
     },
     billing: {
       subscriptions_by_provider: { stripe: 1 },
       subscriptions_by_status: { active: 1 },
       revenue_by_currency: { USD: 12 },
+      monthly_revenue: [{ period: "2026-05", currency: "USD", amount: 12 }],
     },
   });
   mockedPromos.mockResolvedValue([
@@ -188,7 +222,9 @@ describe("AdminConsoleClient", () => {
     render(<AdminConsoleClient />);
 
     expect(await screen.findByText("Total users")).toBeInTheDocument();
-    expect(screen.getByText("150")).toBeInTheDocument();
+    expect(screen.getAllByText("150").length).toBeGreaterThan(0);
+    expect(screen.getByText("Monthly usage")).toBeInTheDocument();
+    expect(screen.getAllByText("2026-05").length).toBeGreaterThan(0);
 
     await userEvent.click(screen.getByRole("button", { name: "Promo codes" }));
 

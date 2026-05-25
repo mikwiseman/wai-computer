@@ -6,7 +6,7 @@ export interface AdminStats {
     new_30d: number;
     by_status: Record<string, number>;
   };
-  promo: Record<string, number>;
+  promo: AdminPromoStats;
   usage: {
     recording_words: number;
     dictation_words: number;
@@ -15,12 +15,48 @@ export interface AdminStats {
     dictation_duration_seconds: number;
     recording_count: number;
     failed_recordings: number;
+    monthly: AdminUsageBucket[];
+    yearly: AdminUsageBucket[];
   };
   billing: {
     subscriptions_by_provider: Record<string, number>;
     subscriptions_by_status: Record<string, number>;
     revenue_by_currency: Record<string, number>;
+    monthly_revenue: AdminRevenueBucket[];
   };
+}
+
+export interface AdminUsageBucket {
+  period: string;
+  recording_words: number;
+  dictation_words: number;
+  total_words: number;
+  recording_duration_seconds: number;
+  dictation_duration_seconds: number;
+  recording_count: number;
+  failed_recordings: number;
+}
+
+export interface AdminRevenueBucket {
+  period: string;
+  currency: string;
+  amount: number;
+}
+
+export interface AdminPromoRedemptionBucket {
+  period: string;
+  redemptions: number;
+}
+
+export interface AdminPromoStats {
+  total: number;
+  active: number;
+  paused: number;
+  archived: number;
+  expired: number;
+  exhausted: number;
+  redemptions: number;
+  monthly_redemptions: AdminPromoRedemptionBucket[];
 }
 
 export interface AdminPromoCodeCreateInput {
