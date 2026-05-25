@@ -7,9 +7,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def _load_script_module():
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "create-promo-code.py"
-    spec = importlib.util.spec_from_file_location("create_promo_code_script", script_path)
+def _load_script_module(filename: str = "create-promo-code.py"):
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / filename
+    module_name = filename.removesuffix(".py").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -46,3 +47,31 @@ def test_run_on_vps_reads_postgres_env_inside_db_container(monkeypatch):
     )
     assert 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' in remote_command
     assert "exec -T db psql -U" not in remote_command
+
+
+def test_grant_admin_role_script_targets_staff_members():
+    script = _load_script_module("grant-admin-role.py")
+
+    sql = script.build_sql(email="admin@example.com", role="owner")
+
+    assert "INSERT INTO staff_members (user_id, status)" in sql
+    assert "INSERT INTO admin_roles (staff_member_id, role)" in sql
+    assert "ON CONFLICT (staff_member_id, role)" in sql
+    assert "admin_roles (user_id, role)" not in sql
+
+
+def test_create_admin_user_script_requires_explicit_existing_password_reset():
+    script = _load_script_module("create-admin-user.py")
+
+    sql = script.build_sql(
+        email="admin@example.com",
+        password_hash="$2b$12$example",
+        role="owner",
+        reset_existing_password=False,
+    )
+
+    assert "INSERT INTO users" in sql
+    assert "INSERT INTO staff_members (user_id, status)" in sql
+    assert "INSERT INTO admin_roles (staff_member_id, role)" in sql
+    assert "User email % already exists" in sql
+    assert "ELSIF FALSE THEN" in sql

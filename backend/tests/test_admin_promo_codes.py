@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.promo_codes import hash_promo_code
-from app.models.admin import AdminRole
+from app.models.admin import AdminRole, StaffMember
 from app.models.billing import BillingPromoCode
 
 LEGAL_ACCEPTANCE = {
@@ -33,7 +33,10 @@ async def _admin_headers(client: AsyncClient, db_session: AsyncSession) -> dict[
     headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
     me = await client.get("/api/auth/me", headers=headers)
     assert me.status_code == 200
-    db_session.add(AdminRole(user_id=me.json()["id"], role="owner"))
+    staff_member = StaffMember(user_id=me.json()["id"], status="active")
+    db_session.add(staff_member)
+    await db_session.flush()
+    db_session.add(AdminRole(staff_member_id=staff_member.id, role="owner"))
     await db_session.flush()
     return headers
 

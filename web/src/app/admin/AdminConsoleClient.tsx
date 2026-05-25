@@ -6,6 +6,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminObservability,
   getAdminStats,
   getAdminUser,
   grantAdminSubscription,
@@ -19,6 +20,7 @@ import {
   updateAdminUserStatus,
   type AdminAuditLog,
   type AdminBillingSubscription,
+  type AdminObservability,
   type AdminPromoCode,
   type AdminPromoRedemptionBucket,
   type AdminRevenueBucket,
@@ -28,13 +30,14 @@ import {
   type AdminUserSummary,
 } from "@/lib/admin";
 
-type AdminTab = "overview" | "promos" | "users" | "billing" | "audit";
+type AdminTab = "overview" | "promos" | "users" | "billing" | "observability" | "audit";
 
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "promos", label: "Promo codes" },
   { id: "users", label: "Users" },
   { id: "billing", label: "Billing" },
+  { id: "observability", label: "Observability" },
   { id: "audit", label: "Audit" },
 ];
 
@@ -77,6 +80,7 @@ export function AdminConsoleClient() {
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
   const [billing, setBilling] = useState<AdminBillingSubscription[]>([]);
+  const [observability, setObservability] = useState<AdminObservability | null>(null);
   const [audit, setAudit] = useState<AdminAuditLog[]>([]);
   const [userQuery, setUserQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -101,13 +105,15 @@ export function AdminConsoleClient() {
 
   async function refreshAll() {
     setError(null);
-    const [freshStats, freshPromos, freshUsers, freshBilling, freshAudit] = await Promise.all([
-      getAdminStats(),
-      listAdminPromoCodes(),
-      listAdminUsers(userQuery),
-      listAdminBilling(),
-      listAdminAudit(),
-    ]);
+    const [freshStats, freshPromos, freshUsers, freshBilling, freshObservability, freshAudit] =
+      await Promise.all([
+        getAdminStats(),
+        listAdminPromoCodes(),
+        listAdminUsers(userQuery),
+        listAdminBilling(),
+        getAdminObservability(),
+        listAdminAudit(),
+      ]);
     setStats(freshStats);
     setPromos(freshPromos);
     setPromoDrafts(
@@ -124,6 +130,7 @@ export function AdminConsoleClient() {
     );
     setUsers(freshUsers);
     setBilling(freshBilling);
+    setObservability(freshObservability);
     setAudit(freshAudit);
   }
 
@@ -415,6 +422,75 @@ export function AdminConsoleClient() {
               <input value={billingReason} onChange={(event) => setBillingReason(event.target.value)} placeholder="billing reason" />
             </div>
             <BillingList subscriptions={billing} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} />
+          </div>
+        ) : null}
+
+        {tab === "observability" && observability ? (
+          <div className="admin-section">
+            <div className="admin-grid">
+              <MetricTable
+                title="Server"
+                rows={[
+                  ["database_connected", observability.server.database === "connected" ? 1 : 0],
+                  ["sentry_configured", observability.sentry.configured ? 1 : 0],
+                ]}
+              />
+              <MetricTable
+                title="Recording pipeline"
+                rows={[
+                  ["failed_rate_24h", Math.round(observability.recording_pipeline.failed_rate_24h * 100)],
+                  ["stuck_processing", observability.recording_pipeline.stuck_processing_count],
+                  [
+                    "low_coverage_24h",
+                    observability.recording_pipeline.low_transcript_coverage_count_24h,
+                  ],
+                ]}
+              />
+              <MetricTable
+                title="Status counts"
+                rows={metricEntries(observability.recording_pipeline.status_counts)}
+              />
+              <section className="admin-metric-table">
+                <h3>Sentry</h3>
+                <dl>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{observability.sentry.configured ? "configured" : "not configured"}</dd>
+                  </div>
+                  <div>
+                    <dt>Environment</dt>
+                    <dd>{observability.sentry.environment ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Release</dt>
+                    <dd>{observability.sentry.release ?? observability.server.release ?? "-"}</dd>
+                  </div>
+                </dl>
+              </section>
+              <section className="admin-metric-table">
+                <h3>Alerts</h3>
+                <table className="admin-mini-table">
+                  <thead>
+                    <tr>
+                      <th>Severity</th>
+                      <th>Title</th>
+                      <th>Code</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {observability.alerts.map((item) => (
+                      <tr key={item.code}>
+                        <td>{item.severity}</td>
+                        <td>{item.title}</td>
+                        <td>{item.code}</td>
+                        <td>{item.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </div>
           </div>
         ) : null}
 

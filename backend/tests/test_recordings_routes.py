@@ -991,11 +991,12 @@ async def test_upload_size_mismatch_marks_failed_and_sends_sentry_message(
     assert sentry_messages == [
         {
             "message": "Audio upload size mismatch",
-            "level": "warning",
-            "extras": {
-                "recording_id": recording["id"],
-                "client_file_size_bytes": 999,
-                "staged_size_bytes": 13,
+                "level": "warning",
+                "extras": {
+                    "alert_code": "recording.upload.size_mismatch",
+                    "recording_id": recording["id"],
+                    "client_file_size_bytes": 999,
+                    "staged_size_bytes": 13,
             },
         }
     ]

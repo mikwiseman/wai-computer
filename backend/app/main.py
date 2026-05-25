@@ -43,23 +43,18 @@ from app.core.recording_recovery import mark_stale_processing_recordings
 from app.db.session import async_session_maker
 from app.mcp_server import create_mcp_app
 
-logging.basicConfig(
-    level=logging.INFO,
-    format=(
-        "%(asctime)s [%(levelname)s] %(name)s "
-        "[request_id=%(request_id)s user_id=%(user_id)s recording_id=%(recording_id)s] "
-        "%(message)s"
-    ),
-)
-configure_logging()
+app_settings = get_settings()
+logging.basicConfig(level=logging.INFO)
+configure_logging(log_format=app_settings.log_format)
 logger = logging.getLogger(__name__)
 
-app_settings = get_settings()
 mcp_asgi_app = create_mcp_app(app_settings)
 initialize_sentry(
     dsn=app_settings.sentry_dsn,
     debug=app_settings.debug,
     include_fastapi=True,
+    traces_sample_rate=app_settings.sentry_traces_sample_rate,
+    profiles_sample_rate=app_settings.sentry_profiles_sample_rate,
 )
 
 
@@ -193,6 +188,18 @@ async def health():
     async with async_session_maker() as session:
         await session.execute(text("SELECT 1"))
     return {"status": "healthy", "database": "connected"}
+
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness check that only verifies the process can answer."""
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness check for load balancers and external uptime probes."""
+    return await health()
 
 
 for mcp_route in mcp_asgi_app.routes:

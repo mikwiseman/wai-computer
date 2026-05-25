@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.admin import AdminPromoCodeCreateRequest
 from app.billing.promo_codes import hash_promo_code
-from app.models.admin import AdminRole
+from app.models.admin import AdminRole, StaffMember
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -51,7 +51,14 @@ async def _register(client: AsyncClient, email: str) -> tuple[dict, dict]:
 
 
 async def _grant_admin(db: AsyncSession, user_id, role: str = "owner") -> None:
-    db.add(AdminRole(user_id=user_id, role=role))
+    staff_member = (
+        await db.execute(select(StaffMember).where(StaffMember.user_id == user_id))
+    ).scalar_one_or_none()
+    if staff_member is None:
+        staff_member = StaffMember(user_id=user_id, status="active")
+        db.add(staff_member)
+        await db.flush()
+    db.add(AdminRole(staff_member_id=staff_member.id, role=role))
     await db.flush()
 
 
@@ -69,6 +76,20 @@ async def test_admin_routes_require_admin_role(
     assert forbidden.status_code == 403
     assert forbidden.json()["detail"] == "Admin role required"
     assert anonymous.status_code in {401, 403}
+
+
+@pytest.mark.asyncio
+async def test_admin_principal_allows_multiple_staff_roles(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-multi-role@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"], role="support")
+    await _grant_admin(db_session, admin_payload["user_id"], role="owner")
+
+    response = await client.get("/api/admin/stats", headers=admin_headers)
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -443,6 +464,7 @@ async def test_admin_user_detail_billing_audit_and_deactivation_revocation(
     assert key.revoked_at is not None
     assert audit.status_code == 200
     assert audit.json()["items"][0]["action"] == "user_status_update"
+    assert audit.json()["items"][0]["actor_staff_member_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -616,7 +638,7 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["users"]["total"] >= 2
+    assert payload["users"]["total"] == 1
     assert payload["usage"]["recording_words"] == 7
     assert payload["usage"]["dictation_words"] == 3
     assert payload["usage"]["recording_duration_seconds"] == 120
@@ -640,6 +662,96 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
     assert monthly_redemptions["2026-05"] == 1
     assert "Private filename" not in str(payload)
     assert "secret raw dictation" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_observability_snapshot_flags_recording_pipeline_risks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-observability@example.com")
+    user_payload, _ = await _register(client, "observability-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    user_id = user_payload["user_id"]
+    now = datetime.now(timezone.utc)
+
+    healthy = Recording(
+        user_id=user_id,
+        title="Private healthy recording title",
+        type="meeting",
+        status="ready",
+        duration_seconds=120,
+        billed_word_count=20,
+        created_at=now - timedelta(minutes=10),
+        updated_at=now - timedelta(minutes=9),
+    )
+    low_coverage = Recording(
+        user_id=user_id,
+        title="Private low coverage title",
+        type="meeting",
+        status="ready",
+        duration_seconds=1800,
+        billed_word_count=25,
+        created_at=now - timedelta(minutes=20),
+        updated_at=now - timedelta(minutes=18),
+    )
+    stuck = Recording(
+        user_id=user_id,
+        title="Private stuck recording title",
+        type="meeting",
+        status="processing",
+        duration_seconds=900,
+        created_at=now - timedelta(minutes=45),
+        updated_at=now - timedelta(minutes=40),
+    )
+    failed = Recording(
+        user_id=user_id,
+        title="Private failed recording title",
+        type="meeting",
+        status="failed",
+        failure_code="stt_provider_error",
+        failure_message="Raw provider message must not leak",
+        created_at=now - timedelta(minutes=30),
+        updated_at=now - timedelta(minutes=29),
+    )
+    db_session.add_all([healthy, low_coverage, stuck, failed])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=healthy.id,
+                speaker="speaker_0",
+                content="private healthy transcript",
+                start_ms=0,
+                end_ms=120_000,
+            ),
+            Segment(
+                recording_id=low_coverage.id,
+                speaker="speaker_0",
+                content="private partial transcript",
+                start_ms=0,
+                end_ms=120_000,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await client.get("/api/admin/observability", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["recording_pipeline"]["status_counts"]["ready"] >= 2
+    assert payload["recording_pipeline"]["stuck_processing_count"] >= 1
+    assert payload["recording_pipeline"]["low_transcript_coverage_count_24h"] >= 1
+    assert payload["recording_pipeline"]["failed_rate_24h"] > 0
+    alert_codes = {item["code"] for item in payload["alerts"]}
+    assert "recording.processing.stuck" in alert_codes
+    assert "recording.transcript.low_coverage" in alert_codes
+    assert payload["sentry"]["configured"] in {True, False}
+    assert payload["server"]["database"] == "connected"
+    assert "Private" not in str(payload)
+    assert "Raw provider" not in str(payload)
+    assert "private partial transcript" not in str(payload)
 
 
 @pytest.mark.asyncio

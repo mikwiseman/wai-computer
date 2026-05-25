@@ -5,6 +5,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminObservability,
   getAdminUser,
   getAdminStats,
   grantAdminSubscription,
@@ -27,6 +28,7 @@ vi.mock("@/lib/admin", () => ({
   archiveAdminPromoCode: vi.fn(),
   cancelAdminSubscription: vi.fn(),
   createAdminPromoCode: vi.fn(),
+  getAdminObservability: vi.fn(),
   getAdminStats: vi.fn(),
   getAdminUser: vi.fn(),
   grantAdminSubscription: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("@/lib/admin", () => ({
 }));
 
 const mockedStats = vi.mocked(getAdminStats);
+const mockedObservability = vi.mocked(getAdminObservability);
 const mockedPromos = vi.mocked(listAdminPromoCodes);
 const mockedUsers = vi.mocked(listAdminUsers);
 const mockedBilling = vi.mocked(listAdminBilling);
@@ -107,6 +110,44 @@ function setupMocks() {
       revenue_by_currency: { USD: 12 },
       monthly_revenue: [{ period: "2026-05", currency: "USD", amount: 12 }],
     },
+  });
+  mockedObservability.mockResolvedValue({
+    generated_at: "2026-05-25T12:00:00Z",
+    server: {
+      database: "connected",
+      release: "waicomputer@test",
+      environment: "production",
+      log_format: "json",
+    },
+    sentry: {
+      configured: true,
+      release: "waicomputer@test",
+      environment: "production",
+      traces_sample_rate: 0.1,
+      profiles_sample_rate: 0.1,
+    },
+    recording_pipeline: {
+      status_counts: { ready: 2, failed: 1, processing: 1 },
+      last_24h: {
+        total: 4,
+        ready: 2,
+        failed: 1,
+        processing: 1,
+      },
+      failed_rate_24h: 0.25,
+      stuck_processing_count: 1,
+      low_transcript_coverage_count_24h: 1,
+      median_transcript_coverage_24h: 0.68,
+    },
+    alerts: [
+      {
+        severity: "critical",
+        code: "recording.processing.stuck",
+        title: "Stuck processing recordings",
+        value: 1,
+        threshold: 0,
+      },
+    ],
   });
   mockedPromos.mockResolvedValue([
     {
@@ -183,6 +224,7 @@ function setupMocks() {
   mockedAudit.mockResolvedValue([
     {
       id: "audit-1",
+      actor_staff_member_id: "staff-1",
       actor_user_id: "admin-1",
       action: "admin.user_status.updated",
       target_type: "user",
@@ -230,6 +272,18 @@ describe("AdminConsoleClient", () => {
 
     expect(await screen.findByDisplayValue("launch")).toBeInTheDocument();
     expect(screen.getByText("2 / 10")).toBeInTheDocument();
+  });
+
+  it("shows observability signals in the admin console", async () => {
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Observability" }));
+
+    expect(await screen.findByText("Sentry")).toBeInTheDocument();
+    expect(screen.getByText("configured")).toBeInTheDocument();
+    expect(screen.getByText("Stuck processing recordings")).toBeInTheDocument();
+    expect(screen.getByText("recording.processing.stuck")).toBeInTheDocument();
   });
 
   it("creates a promo code and shows plaintext once", async () => {

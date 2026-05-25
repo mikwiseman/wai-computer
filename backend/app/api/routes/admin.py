@@ -4,19 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from statistics import median
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import String, case, desc, func, or_, select, update
+from sqlalchemy import String, case, desc, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, Database
 from app.billing.promo_codes import generate_promo_code, hash_promo_code, normalize_promo_code
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
-from app.models.admin import AdminAuditLog, AdminRole
+from app.config import get_settings
+from app.core.observability import get_release_version, get_sentry_runtime
+from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -32,7 +35,7 @@ from app.models.billing import (
 )
 from app.models.dictation import DictationEntry
 from app.models.mcp_oauth import McpOAuthToken
-from app.models.recording import Recording
+from app.models.recording import Recording, Segment
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -44,29 +47,48 @@ ACCOUNT_STATUSES = {"active", "paused", "deactivated"}
 
 class AdminPrincipal(BaseModel):
     user: User
+    staff_member: StaffMember
     role: str
 
     model_config = {"arbitrary_types_allowed": True}
 
 
 async def require_admin(user: CurrentUser, db: Database) -> AdminPrincipal:
-    role = (
+    role_priority = case(
+        (AdminRole.role == "owner", 0),
+        (AdminRole.role == "admin", 1),
+        (AdminRole.role == "support", 2),
+        else_=99,
+    )
+    row = (
         await db.execute(
-            select(AdminRole)
+            select(AdminRole, StaffMember)
+            .join(StaffMember, StaffMember.id == AdminRole.staff_member_id)
             .where(
-                AdminRole.user_id == user.id,
+                StaffMember.user_id == user.id,
+                StaffMember.status == "active",
                 AdminRole.revoked_at.is_(None),
                 AdminRole.role.in_(ADMIN_ROLES),
             )
-            .order_by(AdminRole.created_at.asc())
+            .order_by(role_priority.asc(), AdminRole.created_at.asc())
+            .limit(1)
         )
-    ).scalar_one_or_none()
-    if role is None:
+    ).first()
+    if row is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
-    return AdminPrincipal(user=user, role=role.role)
+    role, staff_member = row
+    return AdminPrincipal(user=user, staff_member=staff_member, role=role.role)
 
 
 CurrentAdmin = Annotated[AdminPrincipal, Depends(require_admin)]
+
+
+def _staff_user_ids_query():
+    return select(StaffMember.user_id)
+
+
+def _customer_user_filter():
+    return User.id.not_in(_staff_user_ids_query())
 
 
 async def _audit(
@@ -81,6 +103,7 @@ async def _audit(
     subscription_id: UUID | None = None,
 ) -> None:
     payload = {
+        "actor_staff_member_id": str(admin.staff_member.id),
         "actor_user_id": str(admin.user.id),
         "actor_role": admin.role,
         "target_type": target_type,
@@ -89,6 +112,7 @@ async def _audit(
     }
     db.add(
         AdminAuditLog(
+            actor_staff_member_id=admin.staff_member.id,
             actor_user_id=admin.user.id,
             action=action,
             target_type=target_type,
@@ -260,6 +284,14 @@ class AdminStatsResponse(BaseModel):
     billing: dict
 
 
+class AdminObservabilityResponse(BaseModel):
+    generated_at: datetime
+    server: dict
+    sentry: dict
+    recording_pipeline: dict
+    alerts: list[dict]
+
+
 class AdminBillingInvoiceResponse(BaseModel):
     id: str
     amount: float
@@ -328,7 +360,7 @@ async def _usage_buckets(
             func.sum(case((Recording.status == "failed", 1), else_=0)),
             0,
         ),
-    )
+    ).where(Recording.user_id.not_in(_staff_user_ids_query()))
     if since is not None:
         recording_query = recording_query.where(Recording.created_at >= since)
     recording_rows = (
@@ -347,7 +379,7 @@ async def _usage_buckets(
         dictation_bucket.label("bucket"),
         func.coalesce(func.sum(DictationEntry.word_count), 0),
         func.coalesce(func.sum(DictationEntry.duration_seconds), 0),
-    )
+    ).where(DictationEntry.user_id.not_in(_staff_user_ids_query()))
     if since is not None:
         dictation_query = dictation_query.where(DictationEntry.occurred_at >= since)
     dictation_rows = (
@@ -373,7 +405,9 @@ async def _monthly_revenue(db: Database, *, since: datetime) -> list[dict]:
                 Invoice.currency,
                 func.coalesce(func.sum(Invoice.amount), 0),
             )
+            .join(Subscription, Subscription.id == Invoice.subscription_id)
             .where(
+                Subscription.user_id.not_in(_staff_user_ids_query()),
                 Invoice.status == "paid",
                 Invoice.paid_at.is_not(None),
                 Invoice.paid_at >= since,
@@ -397,7 +431,10 @@ async def _monthly_promo_redemptions(db: Database, *, since: datetime) -> list[d
     rows = (
         await db.execute(
             select(bucket.label("bucket"), func.count(BillingPromoRedemption.id))
-            .where(BillingPromoRedemption.created_at >= since)
+            .where(
+                BillingPromoRedemption.user_id.not_in(_staff_user_ids_query()),
+                BillingPromoRedemption.created_at >= since,
+            )
             .group_by(bucket)
             .order_by(bucket)
         )
@@ -406,6 +443,146 @@ async def _monthly_promo_redemptions(db: Database, *, since: datetime) -> list[d
         {"period": _bucket_label(month, "month"), "redemptions": int(count)}
         for month, count in rows
     ]
+
+
+async def _recording_pipeline_observability(db: Database, *, now: datetime) -> dict:
+    settings = get_settings()
+    since = now - timedelta(hours=24)
+    stale_before = now - timedelta(minutes=settings.recording_processing_stale_after_minutes)
+
+    status_counts = dict(
+        (status_value, int(count))
+        for status_value, count in (
+            await db.execute(
+                select(Recording.status, func.count(Recording.id))
+                .where(
+                    Recording.deleted_at.is_(None),
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                )
+                .group_by(Recording.status)
+            )
+        ).all()
+    )
+    last_24h_counts = dict(
+        (status_value, int(count))
+        for status_value, count in (
+            await db.execute(
+                select(Recording.status, func.count(Recording.id))
+                .where(
+                    Recording.deleted_at.is_(None),
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                    Recording.created_at >= since,
+                )
+                .group_by(Recording.status)
+            )
+        ).all()
+    )
+    last_24h_total = sum(last_24h_counts.values())
+    failed_rate = (
+        last_24h_counts.get("failed", 0) / last_24h_total if last_24h_total > 0 else 0.0
+    )
+    stuck_processing_count = int(
+        (
+            await db.execute(
+                select(func.count(Recording.id)).where(
+                    Recording.deleted_at.is_(None),
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                    Recording.status == "processing",
+                    Recording.updated_at <= stale_before,
+                )
+            )
+        ).scalar_one()
+    )
+    max_segment_end = (
+        select(Segment.recording_id, func.max(Segment.end_ms).label("max_end_ms"))
+        .group_by(Segment.recording_id)
+        .subquery()
+    )
+    coverage_rows = (
+        await db.execute(
+            select(
+                Recording.id,
+                Recording.duration_seconds,
+                max_segment_end.c.max_end_ms,
+            )
+            .outerjoin(max_segment_end, max_segment_end.c.recording_id == Recording.id)
+            .where(
+                Recording.deleted_at.is_(None),
+                Recording.user_id.not_in(_staff_user_ids_query()),
+                Recording.status == "ready",
+                Recording.created_at >= since,
+                Recording.duration_seconds.is_not(None),
+                Recording.duration_seconds > 0,
+            )
+        )
+    ).all()
+    coverage_ratios = [
+        min(1.0, (float(max_end_ms or 0) / 1000) / float(duration_seconds))
+        for _, duration_seconds, max_end_ms in coverage_rows
+    ]
+    low_coverage_count = len(
+        [
+            ratio
+            for ratio in coverage_ratios
+            if ratio < settings.recording_monitoring_min_coverage_ratio
+        ]
+    )
+    median_coverage = round(float(median(coverage_ratios)), 4) if coverage_ratios else None
+
+    return {
+        "status_counts": status_counts,
+        "last_24h": {
+            "total": last_24h_total,
+            "ready": last_24h_counts.get("ready", 0),
+            "failed": last_24h_counts.get("failed", 0),
+            "processing": last_24h_counts.get("processing", 0),
+        },
+        "failed_rate_24h": round(failed_rate, 4),
+        "stuck_processing_count": stuck_processing_count,
+        "low_transcript_coverage_count_24h": low_coverage_count,
+        "median_transcript_coverage_24h": median_coverage,
+    }
+
+
+def _observability_alerts(recording_pipeline: dict) -> list[dict]:
+    settings = get_settings()
+    alerts: list[dict] = []
+    if recording_pipeline["stuck_processing_count"] > 0:
+        alerts.append(
+            {
+                "severity": "critical",
+                "code": "recording.processing.stuck",
+                "title": "Stuck processing recordings",
+                "value": recording_pipeline["stuck_processing_count"],
+                "threshold": 0,
+            }
+        )
+    if recording_pipeline["low_transcript_coverage_count_24h"] > 0:
+        alerts.append(
+            {
+                "severity": "warning",
+                "code": "recording.transcript.low_coverage",
+                "title": "Low transcript coverage",
+                "value": recording_pipeline["low_transcript_coverage_count_24h"],
+                "threshold": settings.recording_monitoring_min_coverage_ratio,
+            }
+        )
+    if (
+        recording_pipeline["last_24h"]["total"]
+        >= settings.recording_monitoring_min_volume_24h
+        and recording_pipeline["failed_rate_24h"]
+        >= settings.recording_monitoring_failure_rate_critical
+    ):
+        alerts.append(
+            {
+                "severity": "critical",
+                "code": "recording.failed_rate.high",
+                "title": "High recording failure rate",
+                "value": recording_pipeline["failed_rate_24h"],
+                "threshold": settings.recording_monitoring_failure_rate_critical,
+            }
+        )
+    return alerts
 
 
 async def _promo_response(
@@ -650,10 +827,13 @@ async def list_admin_users(
     admin: CurrentAdmin,
     q: str | None = None,
     account_status: Literal["active", "paused", "deactivated"] | None = None,
+    include_staff: bool = False,
     limit: int = 100,
 ) -> AdminUserListResponse:
     del admin
     query = select(User).order_by(desc(User.created_at)).limit(min(max(limit, 1), 500))
+    if not include_staff:
+        query = query.where(_customer_user_filter())
     if account_status is not None:
         query = query.where(User.account_status == account_status)
     if q:
@@ -904,6 +1084,7 @@ async def list_admin_billing(
             select(Subscription, Plan, User)
             .join(Plan, Plan.id == Subscription.plan_id)
             .join(User, User.id == Subscription.user_id)
+            .where(Subscription.user_id.not_in(_staff_user_ids_query()))
             .order_by(desc(Subscription.created_at))
             .limit(min(max(limit, 1), 500))
         )
@@ -1043,17 +1224,24 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         (status_value, int(count))
         for status_value, count in (
             await db.execute(
-                select(User.account_status, func.count(User.id)).group_by(
-                    User.account_status
-                )
+                select(User.account_status, func.count(User.id))
+                .where(_customer_user_filter())
+                .group_by(User.account_status)
             )
         ).all()
     )
-    total_users = int((await db.execute(select(func.count(User.id)))).scalar_one())
+    total_users = int(
+        (
+            await db.execute(select(func.count(User.id)).where(_customer_user_filter()))
+        ).scalar_one()
+    )
     new_users_30d = int(
         (
             await db.execute(
-                select(func.count(User.id)).where(User.created_at >= now - timedelta(days=30))
+                select(func.count(User.id)).where(
+                    _customer_user_filter(),
+                    User.created_at >= now - timedelta(days=30),
+                )
             )
         ).scalar_one()
     )
@@ -1073,42 +1261,67 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         if promo.active and promo.archived_at is None:
             active += 1
     redemptions = int(
-        (await db.execute(select(func.count(BillingPromoRedemption.id)))).scalar_one()
+        (
+            await db.execute(
+                select(func.count(BillingPromoRedemption.id)).where(
+                    BillingPromoRedemption.user_id.not_in(_staff_user_ids_query())
+                )
+            )
+        ).scalar_one()
     )
 
     recording_words = int(
         (
             await db.execute(
-                select(func.coalesce(func.sum(Recording.billed_word_count), 0))
+                select(func.coalesce(func.sum(Recording.billed_word_count), 0)).where(
+                    Recording.user_id.not_in(_staff_user_ids_query())
+                )
             )
         ).scalar_one()
     )
     recording_duration = int(
         (
             await db.execute(
-                select(func.coalesce(func.sum(Recording.duration_seconds), 0))
+                select(func.coalesce(func.sum(Recording.duration_seconds), 0)).where(
+                    Recording.user_id.not_in(_staff_user_ids_query())
+                )
             )
         ).scalar_one()
     )
-    recording_count = int((await db.execute(select(func.count(Recording.id)))).scalar_one())
+    recording_count = int(
+        (
+            await db.execute(
+                select(func.count(Recording.id)).where(
+                    Recording.user_id.not_in(_staff_user_ids_query())
+                )
+            )
+        ).scalar_one()
+    )
     failed_recordings = int(
         (
             await db.execute(
-                select(func.count(Recording.id)).where(Recording.status == "failed")
+                select(func.count(Recording.id)).where(
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                    Recording.status == "failed",
+                )
             )
         ).scalar_one()
     )
     dictation_words = int(
         (
             await db.execute(
-                select(func.coalesce(func.sum(DictationEntry.word_count), 0))
+                select(func.coalesce(func.sum(DictationEntry.word_count), 0)).where(
+                    DictationEntry.user_id.not_in(_staff_user_ids_query())
+                )
             )
         ).scalar_one()
     )
     dictation_duration = float(
         (
             await db.execute(
-                select(func.coalesce(func.sum(DictationEntry.duration_seconds), 0))
+                select(func.coalesce(func.sum(DictationEntry.duration_seconds), 0)).where(
+                    DictationEntry.user_id.not_in(_staff_user_ids_query())
+                )
             )
         ).scalar_one()
     )
@@ -1117,9 +1330,9 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         (provider, int(count))
         for provider, count in (
             await db.execute(
-                select(Subscription.provider, func.count(Subscription.id)).group_by(
-                    Subscription.provider
-                )
+                select(Subscription.provider, func.count(Subscription.id))
+                .where(Subscription.user_id.not_in(_staff_user_ids_query()))
+                .group_by(Subscription.provider)
             )
         ).all()
     )
@@ -1127,9 +1340,9 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         (status_value, int(count))
         for status_value, count in (
             await db.execute(
-                select(Subscription.status, func.count(Subscription.id)).group_by(
-                    Subscription.status
-                )
+                select(Subscription.status, func.count(Subscription.id))
+                .where(Subscription.user_id.not_in(_staff_user_ids_query()))
+                .group_by(Subscription.status)
             )
         ).all()
     )
@@ -1138,7 +1351,11 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
         for currency, amount in (
             await db.execute(
                 select(Invoice.currency, func.coalesce(func.sum(Invoice.amount), 0))
-                .where(Invoice.status == "paid")
+                .join(Subscription, Subscription.id == Invoice.subscription_id)
+                .where(
+                    Subscription.user_id.not_in(_staff_user_ids_query()),
+                    Invoice.status == "paid",
+                )
                 .group_by(Invoice.currency)
             )
         ).all()
@@ -1189,6 +1406,38 @@ async def get_admin_stats(db: Database, admin: CurrentAdmin) -> AdminStatsRespon
     )
 
 
+@router.get("/observability", response_model=AdminObservabilityResponse)
+async def get_admin_observability(db: Database, admin: CurrentAdmin) -> AdminObservabilityResponse:
+    del admin
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    await db.execute(text("SELECT 1"))
+    recording_pipeline = await _recording_pipeline_observability(db, now=now)
+    sentry_runtime = get_sentry_runtime()
+    sentry_runtime.update(
+        {
+            "configured": bool(settings.sentry_dsn),
+            "release": sentry_runtime.get("release") or get_release_version(),
+            "environment": sentry_runtime.get("environment")
+            or ("production" if not settings.debug else "development"),
+            "traces_sample_rate": settings.sentry_traces_sample_rate,
+            "profiles_sample_rate": settings.sentry_profiles_sample_rate,
+        }
+    )
+    return AdminObservabilityResponse(
+        generated_at=now,
+        server={
+            "database": "connected",
+            "release": get_release_version(),
+            "environment": "production" if not settings.debug else "development",
+            "log_format": settings.log_format,
+        },
+        sentry=sentry_runtime,
+        recording_pipeline=recording_pipeline,
+        alerts=_observability_alerts(recording_pipeline),
+    )
+
+
 @router.get("/audit")
 async def list_admin_audit(db: Database, admin: CurrentAdmin, limit: int = 100) -> dict:
     del admin
@@ -1203,6 +1452,9 @@ async def list_admin_audit(db: Database, admin: CurrentAdmin, limit: int = 100) 
         "items": [
             {
                 "id": str(row.id),
+                "actor_staff_member_id": str(row.actor_staff_member_id)
+                if row.actor_staff_member_id
+                else None,
                 "actor_user_id": str(row.actor_user_id) if row.actor_user_id else None,
                 "action": row.action,
                 "target_type": row.target_type,

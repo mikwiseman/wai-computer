@@ -3,6 +3,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminObservability,
   getAdminStats,
   getAdminUser,
   grantAdminSubscription,
@@ -30,9 +31,12 @@ describe("admin api wrappers", () => {
   });
 
   it("calls stats and list endpoints", async () => {
-    mockedApiFetch.mockResolvedValueOnce({ users: {}, promo: {}, usage: {}, billing: {} } as never);
+    mockedApiFetch
+      .mockResolvedValueOnce({ users: {}, promo: {}, usage: {}, billing: {} } as never)
+      .mockResolvedValueOnce({ server: {}, sentry: {}, recording_pipeline: {}, alerts: [] } as never);
 
     await getAdminStats();
+    await getAdminObservability();
     await listAdminPromoCodes();
     await listAdminUsers();
     await listAdminUsers("  test+admin@example.com  ");
@@ -40,14 +44,15 @@ describe("admin api wrappers", () => {
     await listAdminAudit();
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/admin/stats");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/admin/promo-codes");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/admin/users");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/admin/observability");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/admin/promo-codes");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/admin/users");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      4,
+      5,
       "/api/admin/users?q=test%2Badmin%40example.com",
     );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/admin/billing");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(6, "/api/admin/audit");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(6, "/api/admin/billing");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(7, "/api/admin/audit");
   });
 
   it("calls promo mutation endpoints", async () => {

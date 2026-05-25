@@ -26,6 +26,47 @@ export interface AdminStats {
   };
 }
 
+export interface AdminObservabilityAlert {
+  severity: "critical" | "warning" | "info";
+  code: string;
+  title: string;
+  value: number;
+  threshold: number;
+}
+
+export interface AdminObservability {
+  generated_at: string;
+  server: {
+    database: string;
+    release: string | null;
+    environment: string;
+    log_format: string;
+  };
+  sentry: {
+    configured: boolean;
+    release: string | null;
+    environment: string | null;
+    traces_sample_rate: number | null;
+    profiles_sample_rate: number | null;
+  };
+  recording_pipeline: {
+    status_counts: Record<string, number>;
+    last_24h: {
+      total: number;
+      ready: number;
+      failed: number;
+      processing: number;
+      pending_upload?: number;
+      uploading?: number;
+    };
+    failed_rate_24h: number;
+    stuck_processing_count: number;
+    low_transcript_coverage_count_24h: number;
+    median_transcript_coverage_24h: number | null;
+  };
+  alerts: AdminObservabilityAlert[];
+}
+
 export interface AdminUsageBucket {
   period: string;
   recording_words: number;
@@ -140,6 +181,7 @@ export interface AdminBillingSubscription {
 
 export interface AdminAuditLog {
   id: string;
+  actor_staff_member_id: string | null;
   actor_user_id: string | null;
   action: string;
   target_type: string;
@@ -151,6 +193,10 @@ export interface AdminAuditLog {
 
 export function getAdminStats(): Promise<AdminStats> {
   return apiFetch<AdminStats>("/api/admin/stats");
+}
+
+export function getAdminObservability(): Promise<AdminObservability> {
+  return apiFetch<AdminObservability>("/api/admin/observability");
 }
 
 export async function createAdminPromoCode(

@@ -176,6 +176,7 @@ def _log_transcript_coverage(
             coverage_ratio,
         )
         alert_data = {
+            "alert_code": "recording.transcript.low_coverage",
             "recording_id": str(recording_id),
             "audio_duration_seconds": audio_duration_seconds,
             "client_duration_seconds": client_duration_seconds,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grant a WaiComputer admin role to an existing user email."""
+"""Grant a WaiComputer staff/admin role to an existing user email."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ def build_sql(*, email: str, role: str) -> str:
 DO $admin$
 DECLARE
     target_user_id uuid;
+    target_staff_member_id uuid;
 BEGIN
     SELECT id INTO target_user_id
     FROM users
@@ -27,12 +28,18 @@ BEGIN
         RAISE EXCEPTION 'User email % not found', {sql_string(email)};
     END IF;
 
-    INSERT INTO admin_roles (user_id, role)
-    VALUES (target_user_id, {sql_string(role)})
-    ON CONFLICT (user_id, role)
+    INSERT INTO staff_members (user_id, status)
+    VALUES (target_user_id, 'active')
+    ON CONFLICT (user_id)
+    DO UPDATE SET status = 'active', updated_at = now()
+    RETURNING id INTO target_staff_member_id;
+
+    INSERT INTO admin_roles (staff_member_id, role)
+    VALUES (target_staff_member_id, {sql_string(role)})
+    ON CONFLICT (staff_member_id, role)
     DO UPDATE SET revoked_at = NULL, updated_at = now();
 
-    RAISE NOTICE 'Granted % role to user %', {sql_string(role)}, target_user_id;
+    RAISE NOTICE 'Granted % role to staff member %', {sql_string(role)}, target_staff_member_id;
 END
 $admin$;
 """.strip()
@@ -61,7 +68,7 @@ def run_on_vps(sql: str, *, user: str, host: str, root: str, env_file: str) -> s
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Grant a WaiComputer admin role")
+    parser = argparse.ArgumentParser(description="Grant a WaiComputer staff/admin role")
     parser.add_argument("--email", required=True)
     parser.add_argument("--role", choices=["owner", "admin", "support"], default="owner")
     parser.add_argument("--vps-user", default="root")

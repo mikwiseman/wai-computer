@@ -1,6 +1,6 @@
 """SQLAlchemy models."""
 
-from app.models.admin import AdminAuditLog, AdminRole
+from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.benchmark import DictationBenchmarkVote
@@ -53,6 +53,7 @@ __all__ = [
     "ApiKey",
     "AdminAuditLog",
     "AdminRole",
+    "StaffMember",
     "DictationBenchmarkVote",
     "BillingEvent",
     "BillingPeriod",

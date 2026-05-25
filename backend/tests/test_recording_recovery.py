@@ -15,7 +15,13 @@ from app.models.user import User
 @pytest.mark.asyncio
 async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    alerts: list[dict] = []
+    monkeypatch.setattr(
+        "app.core.recording_recovery.capture_sentry_message",
+        lambda _message, *, level, extras: alerts.append({"level": level, "extras": extras}),
+    )
     user = User(email="recovery@example.com", password_hash="x")
     db_session.add(user)
     await db_session.flush()
@@ -67,3 +73,13 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
     assert by_title["stale-uploading"].failure_code == INTERRUPTED_PROCESSING_FAILURE_CODE
     assert by_title["active"].status == RecordingStatus.PROCESSING.value
     assert by_title["ready"].status == RecordingStatus.READY.value
+    assert alerts == [
+        {
+            "level": "warning",
+            "extras": {
+                "alert_code": "recording.processing.stuck",
+                "count": 2,
+                "stale_after_seconds": 900,
+            },
+        }
+    ]
