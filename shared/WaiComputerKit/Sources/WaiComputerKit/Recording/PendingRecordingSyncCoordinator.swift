@@ -91,6 +91,10 @@ public actor PendingRecordingSyncCoordinator {
 
         for backup in backups {
             let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId)
+            if manifest?.isReadyForSync == false {
+                log.info("Skipping in-progress recording backup \(backup.recordingId)")
+                continue
+            }
             if manifest?.isPermanentFailure == true {
                 continue
             }

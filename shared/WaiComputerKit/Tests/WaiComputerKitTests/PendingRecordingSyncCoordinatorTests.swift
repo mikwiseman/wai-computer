@@ -311,6 +311,36 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
+    func testPendingRecordingSyncSkipsInProgressAudioBackup() async throws {
+        let recordingId = "pending-sync-active-audio-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data("partial-wav".utf8).write(to: audioURL)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        MockURLProtocol.requestHandler = { request in
+            XCTFail("In-progress audio backup should not sync: \(request.url?.path ?? "<nil>")")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 500,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertFalse(manifest.isReadyForSync)
+    }
+
     func testScheduleSyncWakesBackoffImmediatelyAfterConnectivityReturns() async throws {
         let recordingId = "pending-sync-retry-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }

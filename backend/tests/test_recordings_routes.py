@@ -1349,6 +1349,60 @@ async def test_save_transcript_persists_segments_before_audio_upload(
 
 
 @pytest.mark.asyncio
+async def test_save_transcript_ignores_audio_backed_no_speech_recording(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A late live transcript must not overwrite canonical uploaded-audio processing."""
+    recording = await _create_recording(client, auth_headers, title=None, language="en")
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.transcribe_audio_file",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    title_mock = AsyncMock(return_value="Late Live Transcript")
+    monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
+
+    upload_response = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        files={"file": ("silence.wav", b"silence", "audio/wav")},
+    )
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()
+    assert uploaded["title"] == "No speech detected"
+    assert uploaded["segments"] == []
+
+    transcript_response = await client.post(
+        f"/api/recordings/{recording['id']}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 60,
+            "segments": [
+                {
+                    "text": "This late live transcript should be ignored.",
+                    "speaker": None,
+                    "start_ms": 0,
+                    "end_ms": 60000,
+                    "confidence": 0,
+                }
+            ],
+        },
+    )
+
+    assert transcript_response.status_code == 200
+    data = transcript_response.json()
+    assert data["title"] == "No speech detected"
+    assert data["segments"] == []
+    title_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_save_transcript_accepts_empty_payload_without_erasing_existing_segments(
     client: AsyncClient,
     auth_headers: dict,
