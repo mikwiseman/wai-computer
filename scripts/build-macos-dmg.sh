@@ -525,7 +525,8 @@ find_previous_build_commit() {
   git log --format='commit %H' -p -- macos/WaiComputer/project.yml 2>/dev/null \
     | awk -v target="CURRENT_PROJECT_VERSION: \"${target_build}\"" '
         /^commit / { commit = $2 }
-        $0 ~ "^\\+[[:space:]]*" target "[[:space:]]*$" { print commit; exit }
+        $0 ~ "^\\+[[:space:]]*" target "[[:space:]]*$" && found == "" { found = commit }
+        END { if (found != "") print found }
       '
 }
 generate_release_notes() {
@@ -543,7 +544,7 @@ generate_release_notes() {
       | grep -vE "^(chore|docs|test|refactor|wip)[\(:]" \
       | sed -E 's/^macOS [0-9]+\.[0-9]+\.[0-9]+,? build [0-9]+ (— )?//' \
       | sed -E 's/^/- /' \
-      | head -25 || true)
+      | sed -n '1,25p' || true)
   fi
   if [[ -z "${notes:-}" ]]; then
     notes=$(git log -1 --pretty=format:"%s" 2>/dev/null \
