@@ -43,6 +43,24 @@ def test_configure_logging_is_idempotent():
     assert len(redacting_filters) == 1
 
 
+def test_configure_logging_supports_json_formatter():
+    handler = logging.StreamHandler()
+    handler.filters = []
+    logger = logging.Logger("observability-json-test")
+    logger.handlers = [handler]
+
+    original_get_logger = logging.getLogger
+    logging.getLogger = lambda: logger  # type: ignore[assignment]
+    try:
+        observability.configure_logging(log_format="json")
+    finally:
+        logging.getLogger = original_get_logger  # type: ignore[assignment]
+
+    assert isinstance(handler.formatter, observability.JsonLogFormatter)
+    assert any(isinstance(item, observability.RequestContextFilter) for item in handler.filters)
+    assert any(isinstance(item, observability.RedactingLogFilter) for item in handler.filters)
+
+
 def test_redact_text_removes_telegram_bot_tokens_and_secret_queries():
     redacted = observability.redact_text(
         "POST https://api.telegram.org/bot123456:ABC-SECRET/sendMessage "
@@ -93,6 +111,78 @@ def test_redacting_log_filter_sanitizes_httpx_url_arguments():
 
     assert "ABC-SECRET" not in record.getMessage()
     assert "https://api.telegram.org/file/bot[redacted-token]/voice/file.oga" in record.getMessage()
+
+
+def test_json_log_formatter_outputs_safe_structured_payload():
+    record = logging.LogRecord(
+        "test",
+        logging.WARNING,
+        __file__,
+        1,
+        "failed request for %s",
+        ("alice@example.com",),
+        None,
+    )
+    record.request_id = "req-1"
+    record.request_method = "POST"
+    record.request_path = "/api/recordings"
+    record.user_id = "user-1"
+    record.recording_id = "rec-1"
+    record.session_id = "sess-1"
+    observability.RedactingLogFilter().filter(record)
+
+    formatted = observability.JsonLogFormatter().format(record)
+
+    assert '"level":"WARNING"' in formatted
+    assert '"request_id":"req-1"' in formatted
+    assert "alice@example.com" not in formatted
+    assert "[redacted-email:" in formatted
+
+
+def test_json_log_formatter_redacts_exception_text():
+    try:
+        raise RuntimeError("alice@example.com failed")
+    except RuntimeError:
+        exc_info = __import__("sys").exc_info()
+
+    record = logging.LogRecord(
+        "test",
+        logging.ERROR,
+        __file__,
+        1,
+        "upload failed",
+        (),
+        exc_info,
+    )
+    formatted = observability.JsonLogFormatter().format(record)
+
+    assert "alice@example.com" not in formatted
+    assert "[redacted-email:" in formatted
+
+
+def test_redacting_log_filter_sanitizes_nested_arguments():
+    record = logging.LogRecord(
+        "test",
+        logging.INFO,
+        __file__,
+        1,
+        "payload %s",
+        (
+            {
+                "email": "alice@example.com",
+                "items": ["https://wai.computer/auth/app?token=secret"],
+                "nested": ("eyJabc.def.ghi",),
+            },
+        ),
+        None,
+    )
+
+    assert observability.RedactingLogFilter().filter(record)
+
+    message = record.getMessage()
+    assert "alice@example.com" not in message
+    assert "token=secret" not in message
+    assert "eyJabc.def.ghi" not in message
 
 
 def test_safe_metadata_helpers_do_not_expose_raw_values():
@@ -234,6 +324,32 @@ def test_initialize_sentry_registers_sanitizers(monkeypatch: pytest.MonkeyPatch)
     assert captured["before_send"] is observability._before_send
     assert captured["before_breadcrumb"] is observability._before_breadcrumb
     assert captured["release"] == "waicomputer@test"
+    assert captured["enable_logs"] is True
+    assert captured["traces_sample_rate"] == 0.1
+    assert captured["profiles_sample_rate"] == 0.1
+
+
+def test_initialize_sentry_without_dsn_records_runtime(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(observability.sentry_sdk, "init", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(observability, "_sentry_initialized", False)
+    monkeypatch.setattr(observability, "get_release_version", lambda: "waicomputer@test")
+
+    observability.initialize_sentry(
+        dsn="",
+        debug=True,
+        traces_sample_rate=0.2,
+        profiles_sample_rate=0.3,
+    )
+
+    runtime = observability.get_sentry_runtime()
+    assert captured == {}
+    assert runtime["configured"] is False
+    assert runtime["release"] == "waicomputer@test"
+    assert runtime["environment"] == "development"
+    assert runtime["traces_sample_rate"] == 0.2
+    assert runtime["profiles_sample_rate"] == 0.3
 
 
 def test_initialize_sentry_includes_optional_integrations(monkeypatch: pytest.MonkeyPatch):
@@ -354,9 +470,13 @@ def test_capture_sentry_exception_sanitizes_extras(monkeypatch: pytest.MonkeyPat
     class DummyScope:
         def __init__(self) -> None:
             self.extras: dict[str, object] = {}
+            self.tags: dict[str, str] = {}
 
         def set_extra(self, key: str, value: object) -> None:
             self.extras[key] = value
+
+        def set_tag(self, key: str, value: str) -> None:
+            self.tags[key] = value
 
     class DummyScopeManager:
         def __enter__(self) -> DummyScope:
@@ -377,6 +497,7 @@ def test_capture_sentry_exception_sanitizes_extras(monkeypatch: pytest.MonkeyPat
     observability.capture_sentry_exception(
         error,
         extras={
+            "alert_code": "recording.processing.failed",
             "email": "alice@example.com",
             "query": "Alice salary details",
             "Authorization": "Bearer secret",
@@ -388,6 +509,7 @@ def test_capture_sentry_exception_sanitizes_extras(monkeypatch: pytest.MonkeyPat
     assert scope.extras["email"].startswith("[redacted-email:")
     assert scope.extras["query"].startswith("[redacted-text:")
     assert scope.extras["Authorization"] == "[redacted-secret]"
+    assert scope.tags["alert_code"] == "recording.processing.failed"
     assert captured["error"] is error
 
 
@@ -412,9 +534,13 @@ def test_capture_sentry_message_sanitizes_message_and_extras(monkeypatch: pytest
     class DummyScope:
         def __init__(self) -> None:
             self.extras: dict[str, object] = {}
+            self.tags: dict[str, str] = {}
 
         def set_extra(self, key: str, value: object) -> None:
             self.extras[key] = value
+
+        def set_tag(self, key: str, value: str) -> None:
+            self.tags[key] = value
 
     class DummyScopeManager:
         def __enter__(self) -> DummyScope:
@@ -436,6 +562,7 @@ def test_capture_sentry_message_sanitizes_message_and_extras(monkeypatch: pytest
         "coverage failed for alice@example.com",
         level="warning",
         extras={
+            "alert_code": "recording.transcript.low_coverage",
             "error": "Alice salary details failed",
             "filename": "alice-private.wav",
         },
@@ -445,8 +572,24 @@ def test_capture_sentry_message_sanitizes_message_and_extras(monkeypatch: pytest
     assert isinstance(scope, DummyScope)
     assert "[redacted-email:" in captured["message"]
     assert captured["level"] == "warning"
+    assert scope.tags["alert_code"] == "recording.transcript.low_coverage"
     assert scope.extras["error"].startswith("[redacted-text:")
     assert scope.extras["filename"].startswith("[redacted-filename:")
+
+
+def test_capture_sentry_message_without_extras(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        observability.sentry_sdk,
+        "capture_message",
+        lambda message, *, level: captured.update({"message": message, "level": level}),
+    )
+
+    observability.capture_sentry_message("alert for alice@example.com", level="error")
+
+    assert "[redacted-email:" in captured["message"]
+    assert captured["level"] == "error"
 
 
 def test_get_release_version_handles_git_results(monkeypatch: pytest.MonkeyPatch):

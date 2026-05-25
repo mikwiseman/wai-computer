@@ -92,6 +92,14 @@ class Settings(BaseSettings):
 
     # Sentry
     sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.1
+    sentry_profiles_sample_rate: float = 0.1
+
+    # Observability
+    log_format: str = "json"
+    recording_monitoring_min_coverage_ratio: float = 0.8
+    recording_monitoring_failure_rate_critical: float = 0.2
+    recording_monitoring_min_volume_24h: int = 3
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

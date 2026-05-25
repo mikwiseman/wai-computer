@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import capture_sentry_message
 from app.models.recording import Recording, RecordingStatus
 
 INTERRUPTED_PROCESSING_FAILURE_CODE = "processing_interrupted"
@@ -48,4 +49,15 @@ async def mark_stale_processing_recordings(
         )
     )
     await db.commit()
-    return int(result.rowcount or 0)
+    count = int(result.rowcount or 0)
+    if count:
+        capture_sentry_message(
+            "Stale recording processing rows marked failed",
+            level="warning",
+            extras={
+                "alert_code": "recording.processing.stuck",
+                "count": count,
+                "stale_after_seconds": int(stale_after.total_seconds()),
+            },
+        )
+    return count

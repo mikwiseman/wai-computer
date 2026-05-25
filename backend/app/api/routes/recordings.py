@@ -2610,6 +2610,7 @@ async def upload_audio_file(
             detail = "Uploaded file size did not match the recorded file size."
             await _mark_recording_failed(recording, db, "upload_size_mismatch", detail)
             alert_data = {
+                "alert_code": "recording.upload.size_mismatch",
                 "recording_id": str(recording_id),
                 "client_file_size_bytes": client_file_size_bytes,
                 "staged_size_bytes": staged_size_bytes,

@@ -1,10 +1,12 @@
 """Request-scoped logging and Sentry helpers."""
 
 import hashlib
+import json
 import logging
 import re
 import subprocess
 from contextvars import ContextVar, Token
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -19,6 +21,19 @@ _user_id: ContextVar[str] = ContextVar("user_id", default="-")
 _recording_id: ContextVar[str] = ContextVar("recording_id", default="-")
 _session_id: ContextVar[str] = ContextVar("session_id", default="-")
 _sentry_initialized = False
+_sentry_runtime: dict[str, Any] = {
+    "configured": False,
+    "release": None,
+    "environment": None,
+    "traces_sample_rate": None,
+    "profiles_sample_rate": None,
+}
+
+TEXT_LOG_FORMAT = (
+    "%(asctime)s [%(levelname)s] %(name)s "
+    "[request_id=%(request_id)s user_id=%(user_id)s recording_id=%(recording_id)s] "
+    "%(message)s"
+)
 
 EMAIL_PATTERN = re.compile(r"(?P<email>[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})", re.IGNORECASE)
 JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
@@ -72,10 +87,38 @@ class RedactingLogFilter(logging.Filter):
         return True
 
 
-def configure_logging() -> None:
+class JsonLogFormatter(logging.Formatter):
+    """Emit privacy-safe one-line JSON logs for server-side investigation."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": redact_text(record.getMessage()),
+            "request_id": getattr(record, "request_id", "-"),
+            "request_method": getattr(record, "request_method", "-"),
+            "request_path": getattr(record, "request_path", "-"),
+            "user_id": getattr(record, "user_id", "-"),
+            "recording_id": getattr(record, "recording_id", "-"),
+            "session_id": getattr(record, "session_id", "-"),
+        }
+        if record.exc_info:
+            payload["exception"] = redact_text(self.formatException(record.exc_info))
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+def configure_logging(*, log_format: str = "text") -> None:
     """Attach request-context and redaction filtering to the root logger once."""
     root_logger = logging.getLogger()
+    formatter: logging.Formatter
+    if log_format == "json":
+        formatter = JsonLogFormatter()
+    else:
+        formatter = logging.Formatter(TEXT_LOG_FORMAT)
+
     for handler in root_logger.handlers:
+        handler.setFormatter(formatter)
         if not any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
             handler.addFilter(RequestContextFilter())
         if not any(isinstance(existing, RedactingLogFilter) for existing in handler.filters):
@@ -149,17 +192,20 @@ def redact_text(value: str) -> str:
     return redacted
 
 
-def _sanitize_log_args(value: Any) -> Any:
+def _sanitize_log_args(value: Any, *, key: str | None = None) -> Any:
     if isinstance(value, str):
-        return redact_text(value)
+        return sanitize_sentry_value(value, key=key)
     if value.__class__.__name__ == "URL" and value.__class__.__module__.startswith("httpx"):
         return redact_text(str(value))
     if isinstance(value, tuple):
-        return tuple(_sanitize_log_args(item) for item in value)
+        return tuple(_sanitize_log_args(item, key=key) for item in value)
     if isinstance(value, list):
-        return [_sanitize_log_args(item) for item in value]
+        return [_sanitize_log_args(item, key=key) for item in value]
     if isinstance(value, dict):
-        return {key: _sanitize_log_args(item) for key, item in value.items()}
+        return {
+            item_key: _sanitize_log_args(item, key=str(item_key))
+            for item_key, item in value.items()
+        }
     return value
 
 
@@ -291,11 +337,23 @@ def initialize_sentry(
     debug: bool,
     include_fastapi: bool = False,
     include_celery: bool = False,
+    traces_sample_rate: float = 0.1,
+    profiles_sample_rate: float = 0.1,
 ) -> None:
     """Initialize Sentry once per process with log capture enabled."""
     global _sentry_initialized
 
     if not dsn or _sentry_initialized:
+        if not dsn:
+            _sentry_runtime.update(
+                {
+                    "configured": False,
+                    "release": get_release_version(),
+                    "environment": "production" if not debug else "development",
+                    "traces_sample_rate": traces_sample_rate,
+                    "profiles_sample_rate": profiles_sample_rate,
+                }
+            )
         return
 
     integrations = [
@@ -315,18 +373,35 @@ def initialize_sentry(
 
         integrations.append(CeleryIntegration(monitor_beat_tasks=True))
 
+    environment = "production" if not debug else "development"
+    release = get_release_version()
     sentry_sdk.init(
         dsn=dsn,
-        traces_sample_rate=0.1,
-        profiles_sample_rate=0.1,
-        environment="production" if not debug else "development",
-        release=get_release_version(),
+        traces_sample_rate=traces_sample_rate,
+        profiles_sample_rate=profiles_sample_rate,
+        environment=environment,
+        release=release,
+        enable_logs=True,
         send_default_pii=False,
         before_send=_before_send,
         before_breadcrumb=_before_breadcrumb,
         integrations=integrations,
     )
+    _sentry_runtime.update(
+        {
+            "configured": True,
+            "release": release,
+            "environment": environment,
+            "traces_sample_rate": traces_sample_rate,
+            "profiles_sample_rate": profiles_sample_rate,
+        }
+    )
     _sentry_initialized = True
+
+
+def get_sentry_runtime() -> dict[str, Any]:
+    """Return non-secret Sentry runtime settings for admin diagnostics."""
+    return dict(_sentry_runtime)
 
 
 def begin_request_context(
@@ -400,6 +475,9 @@ def capture_sentry_exception(error: Exception, *, extras: dict[str, Any] | None 
             sanitized = sanitize_sentry_value(extras, key="extras")
             for key, value in sanitized.items():
                 scope.set_extra(key, value)
+            alert_code = sanitized.get("alert_code")
+            if isinstance(alert_code, str) and alert_code:
+                scope.set_tag("alert_code", alert_code)
             sentry_sdk.capture_exception(error)
         return
 
@@ -419,6 +497,9 @@ def capture_sentry_message(
             sanitized = sanitize_sentry_value(extras, key="extras")
             for key, value in sanitized.items():
                 scope.set_extra(key, value)
+            alert_code = sanitized.get("alert_code")
+            if isinstance(alert_code, str) and alert_code:
+                scope.set_tag("alert_code", alert_code)
             sentry_sdk.capture_message(safe_message, level=level)
         return
 
