@@ -152,7 +152,7 @@ async def test_transcription_ignores_unsupported_user_choice():
 
 
 @pytest.mark.asyncio
-async def test_transcription_falls_back_to_deepgram_for_elevenlabs_payment_issue(caplog):
+async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_fallback():
     response = httpx.Response(
         401,
         json={
@@ -177,29 +177,18 @@ async def test_transcription_falls_back_to_deepgram_for_elevenlabs_payment_issue
             new=AsyncMock(side_effect=error),
         ),
         patch("app.core.transcription.deepgram_transcribe_audio_file", new=deepgram),
-        patch("app.core.transcription.get_settings") as mock_settings,
-        caplog.at_level("WARNING", logger="app.core.transcription"),
     ):
-        mock_settings.return_value.deepgram_file_stt_model = "nova-3"
         from app.core.transcription import transcribe_audio_file
 
-        result = await transcribe_audio_file(
-            b"wav",
-            language="auto",
-            content_type="audio/wav",
-            channels=1,
-        )
+        with pytest.raises(httpx.HTTPStatusError):
+            await transcribe_audio_file(
+                b"wav",
+                language="auto",
+                content_type="audio/wav",
+                channels=1,
+            )
 
-    assert result == ["deepgram-ok"]
-    deepgram.assert_awaited_once_with(
-        b"wav",
-        model="nova-3",
-        language="auto",
-        content_type="audio/wav",
-        channels=1,
-    )
-    assert "falling back to Deepgram file STT" in caplog.text
-    assert "Complete the latest invoice" not in caplog.text
+    deepgram.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -232,7 +221,7 @@ async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
 
 
 def test_elevenlabs_error_code_handles_unstructured_error_payloads():
-    from app.core.transcription import _elevenlabs_error_code, _should_fallback_to_deepgram
+    from app.core.transcription import _elevenlabs_error_code
 
     invalid_json_response = httpx.Response(
         503,
@@ -245,7 +234,6 @@ def test_elevenlabs_error_code_handles_unstructured_error_payloads():
         response=invalid_json_response,
     )
     assert _elevenlabs_error_code(invalid_json_error) is None
-    assert _should_fallback_to_deepgram(invalid_json_error)
 
     list_response = httpx.Response(
         401,

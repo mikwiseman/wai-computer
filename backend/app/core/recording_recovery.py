@@ -32,7 +32,12 @@ async def mark_stale_processing_recordings(
     result = await db.execute(
         update(Recording)
         .where(
-            Recording.status == RecordingStatus.PROCESSING.value,
+            Recording.status.in_(
+                [
+                    RecordingStatus.UPLOADING.value,
+                    RecordingStatus.PROCESSING.value,
+                ]
+            ),
             Recording.uploaded_at.is_not(None),
             Recording.uploaded_at < cutoff,
         )

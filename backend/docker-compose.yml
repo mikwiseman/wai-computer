@@ -180,7 +180,10 @@ services:
       - ${WAICOMPUTER_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
       REDIS_URL: redis://redis:6379/0
+    volumes:
+      - recording_uploads:/var/lib/waicomputer/uploads
     networks:
       - internal
     depends_on:

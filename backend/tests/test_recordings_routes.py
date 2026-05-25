@@ -11,8 +11,14 @@ from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
-from app.core.transcript_utils import TranscriptResult
-from app.models.recording import ActionItem, Recording, RecordingShare, Segment, Summary
+from app.models.recording import (
+    ActionItem,
+    Recording,
+    RecordingShare,
+    RecordingStatus,
+    Segment,
+    Summary,
+)
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
@@ -41,6 +47,37 @@ async def _register_headers(client: AsyncClient, email: str) -> dict:
     assert response.status_code == 200
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}
+
+
+async def _mark_audio_backed_ready(
+    db_session: AsyncSession,
+    recording_id: str,
+    *,
+    title: str | None,
+    duration_seconds: int | None,
+    segments: list[dict],
+) -> None:
+    result = await db_session.execute(select(Recording).where(Recording.id == UUID(recording_id)))
+    recording = result.scalar_one()
+    recording.status = RecordingStatus.READY.value
+    recording.uploaded_at = datetime.now(timezone.utc)
+    recording.title = title
+    recording.duration_seconds = duration_seconds
+    recording.failure_code = None
+    recording.failure_message = None
+    for segment in segments:
+        db_session.add(
+            Segment(
+                recording_id=recording.id,
+                speaker=segment.get("speaker"),
+                raw_label=segment.get("speaker"),
+                content=segment["content"],
+                start_ms=segment.get("start_ms"),
+                end_ms=segment.get("end_ms"),
+                confidence=segment.get("confidence"),
+            )
+        )
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
@@ -860,41 +897,12 @@ async def test_upload_accepts_audio_content_type_without_extension(
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Upload should accept a valid audio MIME type even when the filename has no extension."""
+    """Upload accepts a valid audio MIME type and queues canonical processing."""
     recording = await _create_recording(client, auth_headers, title=None)
-
-    fake_transcripts = [
-        TranscriptResult(
-            text="Recovered from MIME type",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=1000,
-            confidence=0.95,
-        )
-    ]
-
-    async def fake_transcribe_audio_file(
-        audio_data: bytes,
-        language: str,
-        content_type: str = "audio/mpeg",
-        **kwargs,
-    ) -> list[TranscriptResult]:
-        assert audio_data == b"fake-audio"
-        assert content_type == "audio/mpeg"
-        return fake_transcripts
-
-    async def fake_generate_title(text: str, **kwargs) -> str:
-        return "Recovered from MIME"
-
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        fake_transcribe_audio_file,
-    )
-    monkeypatch.setattr("app.api.routes.recordings.generate_title", fake_generate_title)
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=None),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     response = await client.post(
@@ -905,177 +913,12 @@ async def test_upload_accepts_audio_content_type_without_extension(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "ready"
-    assert payload["title"] == "Recovered from MIME"
-    assert payload["segments"][0]["content"] == "Recovered from MIME type"
-
-
-@pytest.mark.asyncio
-async def test_upload_no_speech_fallback_uses_russian_recording_language(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Noise/no-speech provider placeholders should not create English UI copy."""
-    recording = await _create_recording(client, auth_headers, title=None, language="ru")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(
-            return_value=[
-                TranscriptResult(
-                    text="[noise]",
-                    speaker=None,
-                    is_final=True,
-                    start_ms=0,
-                    end_ms=1200,
-                    confidence=0.1,
-                )
-            ]
-        ),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=None),
-    )
-    title_mock = AsyncMock(return_value="No Speech Detected")
-    monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
-
-    response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("noise.wav", b"noise", "audio/wav")},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ready"
-    assert data["segments"] == []
-    assert data["title"] == "Без речи"
-    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
-    title_mock.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_upload_no_speech_fallback_uses_user_default_for_multilingual_recording(
-    client: AsyncClient,
-    auth_headers: dict,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    user = (await db_session.execute(select(User))).scalar_one()
-    user.default_language = "ru"
-    await db_session.flush()
-    recording = await _create_recording(client, auth_headers, title=None, language="multi")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(
-            return_value=[
-                TranscriptResult(
-                    text="[noise]",
-                    speaker=None,
-                    is_final=True,
-                    start_ms=0,
-                    end_ms=1200,
-                    confidence=0.1,
-                )
-            ]
-        ),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=None),
-    )
-
-    response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("noise.wav", b"noise", "audio/wav")},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ready"
-    assert data["segments"] == []
-    assert data["title"] == "Без речи"
-    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
-
-
-@pytest.mark.asyncio
-async def test_upload_typing_placeholder_uses_russian_no_speech_fallback(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    recording = await _create_recording(client, auth_headers, title=None, language="ru")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(
-            return_value=[
-                TranscriptResult(
-                    text="[typing]",
-                    speaker=None,
-                    is_final=True,
-                    start_ms=0,
-                    end_ms=1200,
-                    confidence=0.1,
-                )
-            ]
-        ),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=None),
-    )
-    title_mock = AsyncMock(return_value="Typing")
-    monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
-
-    response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("typing.wav", b"typing", "audio/wav")},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ready"
-    assert data["segments"] == []
-    assert data["title"] == "Без речи"
-    assert data["failure_message"] == "Мы не обнаружили разборчивой речи в этой записи."
-    title_mock.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_upload_no_speech_fallback_stays_english_for_english_recordings(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    recording = await _create_recording(client, auth_headers, title=None, language="en")
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=[]),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=None),
-    )
-
-    response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("silence.wav", b"silence", "audio/wav")},
-    )
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ready"
-    assert data["segments"] == []
-    assert data["title"] == "No speech detected"
-    assert data["failure_message"] == "We could not detect clear speech in this recording."
+    assert payload["status"] == "processing"
+    assert payload["title"] is None
+    assert payload["segments"] == []
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["content_type"] == "audio/mpeg"
 
 
 @pytest.mark.asyncio
@@ -1084,32 +927,12 @@ async def test_upload_success_with_mocked_services(
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Successful upload should transcribe and return recording detail."""
+    """Successful upload should stage audio and enqueue canonical processing."""
     recording = await _create_recording(client, auth_headers, title=None)
-
-    fake_transcripts = [
-        TranscriptResult(
-            text="Hello world",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=1500,
-            confidence=0.98,
-        ),
-    ]
-
-    transcribe_audio = AsyncMock(return_value=fake_transcripts)
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        transcribe_audio,
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Hello World Meeting"),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     response = await client.post(
@@ -1119,71 +942,75 @@ async def test_upload_success_with_mocked_services(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["title"] == "Hello World Meeting"
+    assert data["title"] is None
     assert data["audio_url"] is None
     assert data["uploaded_at"] is not None
-    assert data["status"] == "ready"
-    assert data["duration_seconds"] == 1
-    assert len(data["segments"]) == 1
-    assert data["segments"][0]["content"] == "Hello world"
-    transcribe_audio.assert_awaited_once()
-    _, transcribe_kwargs = transcribe_audio.await_args
-    assert "provider" not in transcribe_kwargs
-    assert "model" not in transcribe_kwargs
-    assert "user" not in transcribe_kwargs
+    assert data["status"] == "processing"
+    assert data["duration_seconds"] is None
+    assert data["segments"] == []
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["recording_id"] == UUID(recording["id"])
+    assert enqueue_kwargs["content_type"] == "audio/mpeg"
+
+
+@pytest.mark.asyncio
+async def test_claim_audio_upload_rejects_ready_audio_backed_no_speech_recording(
+    db_session: AsyncSession,
+) -> None:
+    """A ready uploaded no-speech recording is still canonical, even with no segments."""
+    from app.api.routes.recordings import _claim_audio_upload
+
+    user = User(email="claim-nospeech@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="No speech detected",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    did_claim = await _claim_audio_upload(recording.id, user.id, db_session)
+
+    assert did_claim is False
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
 
 
 @pytest.mark.asyncio
 async def test_live_transcript_cannot_overwrite_uploaded_audio_transcript(
     client: AsyncClient,
     auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
 ):
     """Once uploaded audio is processed, realtime transcript saves are not canonical."""
     recording = await _create_recording(client, auth_headers, title=None)
-
-    audio_transcripts = [
-        TranscriptResult(
-            text="Audio transcript opening",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=1500,
-            confidence=0.98,
-        ),
-        TranscriptResult(
-            text="Audio transcript ending",
-            speaker="Speaker 1",
-            is_final=True,
-            start_ms=5000,
-            end_ms=9000,
-            confidence=0.97,
-        ),
-    ]
-
-    monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=audio_transcripts),
+    await _mark_audio_backed_ready(
+        db_session,
+        recording["id"],
+        title="Audio Canonical",
+        duration_seconds=9,
+        segments=[
+            {
+                "content": "Audio transcript opening",
+                "speaker": "Speaker 0",
+                "start_ms": 0,
+                "end_ms": 1500,
+                "confidence": 0.98,
+            },
+            {
+                "content": "Audio transcript ending",
+                "speaker": "Speaker 1",
+                "start_ms": 5000,
+                "end_ms": 9000,
+                "confidence": 0.97,
+            },
+        ],
     )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Audio Canonical"),
-    )
-
-    upload_response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("recording.wav", b"fake-wav-data", "audio/wav")},
-    )
-    assert upload_response.status_code == 200
-    assert [segment["content"] for segment in upload_response.json()["segments"]] == [
-        "Audio transcript opening",
-        "Audio transcript ending",
-    ]
 
     stale_live_response = await client.post(
         f"/api/recordings/{recording['id']}/transcript",
@@ -1216,49 +1043,31 @@ async def test_live_transcript_cannot_overwrite_uploaded_audio_transcript(
 async def test_duplicate_audio_upload_cannot_overwrite_ready_audio_transcript(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Background retries must not replace an already-ready audio transcript."""
     recording = await _create_recording(client, auth_headers, title=None)
-    first_transcripts = [
-        TranscriptResult(
-            text="Full canonical transcript",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=55 * 60 * 1000,
-            confidence=0.98,
-        )
-    ]
-    second_transcripts = [
-        TranscriptResult(
-            text="Short stale retry transcript",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=27 * 60 * 1000,
-            confidence=0.72,
-        )
-    ]
-    transcribe_mock = AsyncMock(side_effect=[first_transcripts, second_transcripts])
-
-    monkeypatch.setattr("app.api.routes.recordings.transcribe_audio_file", transcribe_mock)
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Full Canonical"),
+    await _mark_audio_backed_ready(
+        db_session,
+        recording["id"],
+        title="Full Canonical",
+        duration_seconds=55 * 60,
+        segments=[
+            {
+                "content": "Full canonical transcript",
+                "speaker": "Speaker 0",
+                "start_ms": 0,
+                "end_ms": 55 * 60 * 1000,
+                "confidence": 0.98,
+            }
+        ],
     )
-
-    first_upload = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("recording.wav", b"full-audio", "audio/wav")},
-    )
-    assert first_upload.status_code == 200
-    assert first_upload.json()["duration_seconds"] == 55 * 60
 
     duplicate_upload = await client.post(
         f"/api/recordings/{recording['id']}/upload",
@@ -1272,7 +1081,7 @@ async def test_duplicate_audio_upload_cannot_overwrite_ready_audio_transcript(
     assert [segment["content"] for segment in data["segments"]] == [
         "Full canonical transcript"
     ]
-    assert transcribe_mock.await_count == 1
+    enqueue_processing.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1352,31 +1161,25 @@ async def test_save_transcript_persists_segments_before_audio_upload(
 async def test_save_transcript_ignores_audio_backed_no_speech_recording(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """A late live transcript must not overwrite canonical uploaded-audio processing."""
     recording = await _create_recording(client, auth_headers, title=None, language="en")
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=[]),
-    )
-    monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
         AsyncMock(return_value=[0.1] * 1536),
     )
     title_mock = AsyncMock(return_value="Late Live Transcript")
     monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
-
-    upload_response = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        files={"file": ("silence.wav", b"silence", "audio/wav")},
+    await _mark_audio_backed_ready(
+        db_session,
+        recording["id"],
+        title="No speech detected",
+        duration_seconds=None,
+        segments=[],
     )
-    assert upload_response.status_code == 200
-    uploaded = upload_response.json()
-    assert uploaded["title"] == "No speech detected"
-    assert uploaded["segments"] == []
 
     transcript_response = await client.post(
         f"/api/recordings/{recording['id']}/transcript",
@@ -1478,7 +1281,7 @@ async def test_save_transcript_marks_recording_failed_when_server_processing_cra
     await db_session.commit()
 
     monkeypatch.setattr(
-        "app.api.routes.recordings._reset_recording_processing_state",
+        "app.api.routes.recordings.reset_recording_processing_state",
         AsyncMock(side_effect=RuntimeError("database exploded")),
     )
 
@@ -1512,16 +1315,17 @@ async def test_save_transcript_marks_recording_failed_when_server_processing_cra
 
 
 @pytest.mark.asyncio
-async def test_upload_processing_failure_returns_failed_recording_with_audio_preserved(
+async def test_upload_enqueue_failure_returns_503_and_marks_recording_failed(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Transient upload should still return the failed recording when processing fails."""
+    """If the queue cannot accept work, the upload fails explicitly."""
     recording = await _create_recording(client, auth_headers, title=None)
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(side_effect=RuntimeError("Deepgram unavailable")),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        AsyncMock(side_effect=RuntimeError("Redis unavailable")),
     )
 
     response = await client.post(
@@ -1529,24 +1333,28 @@ async def test_upload_processing_failure_returns_failed_recording_with_audio_pre
         headers=auth_headers,
         files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "failed"
-    assert data["failure_code"] == "processing_failed"
-    assert data["audio_url"] is None
-    assert data["segments"] == []
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Failed to start recording processing"
+    result = await db_session.execute(
+        select(Recording).where(Recording.id == UUID(recording["id"]))
+    )
+    failed_recording = result.scalar_one()
+    assert failed_recording.status == "failed"
+    assert failed_recording.failure_code == "processing_enqueue_failed"
+    assert failed_recording.failure_message == "Failed to start recording processing"
 
 
 @pytest.mark.asyncio
-async def test_upload_processing_failure_hides_sqlalchemy_internal_error(
+async def test_upload_enqueue_failure_hides_internal_error(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Async ORM infrastructure details should not be stored as user-facing failures."""
+    """Queue infrastructure details should not be stored as user-facing failures."""
     recording = await _create_recording(client, auth_headers, title=None)
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
         AsyncMock(side_effect=MissingGreenlet("greenlet_spawn has not been called")),
     )
 
@@ -1555,11 +1363,14 @@ async def test_upload_processing_failure_hides_sqlalchemy_internal_error(
         headers=auth_headers,
         files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "failed"
-    assert data["failure_code"] == "processing_failed"
-    assert data["failure_message"] == "Imported audio processing failed"
+    assert response.status_code == 503
+    result = await db_session.execute(
+        select(Recording).where(Recording.id == UUID(recording["id"]))
+    )
+    failed_recording = result.scalar_one()
+    assert failed_recording.status == "failed"
+    assert failed_recording.failure_code == "processing_enqueue_failed"
+    assert failed_recording.failure_message == "Failed to start recording processing"
 
 
 @pytest.mark.asyncio
@@ -1589,13 +1400,13 @@ async def test_upload_staging_failure_marks_recording_failed_and_keeps_record_vi
 
 
 @pytest.mark.asyncio
-async def test_upload_processing_failure_for_trashed_recording_does_not_leave_processing(
+async def test_upload_enqueue_failure_for_trashed_recording_does_not_leave_processing(
     client: AsyncClient,
     auth_headers: dict,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Concurrent soft-delete during upload failure should still finalize the recording state."""
+    """Concurrent soft-delete during enqueue failure should still finalize the recording state."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = UUID(recording["id"])
 
@@ -1604,10 +1415,10 @@ async def test_upload_processing_failure_for_trashed_recording_does_not_leave_pr
         trashed_recording = result.scalar_one()
         trashed_recording.deleted_at = datetime.now(timezone.utc)
         await db_session.commit()
-        raise RuntimeError("transcription worker crashed")
+        raise RuntimeError("queue unavailable")
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
         soft_delete_then_fail,
     )
 
@@ -1616,16 +1427,13 @@ async def test_upload_processing_failure_for_trashed_recording_does_not_leave_pr
         headers=auth_headers,
         files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["deleted_at"] is not None
-    assert data["status"] == "failed"
-    assert data["failure_code"] == "processing_failed"
+    assert response.status_code == 503
 
     result = await db_session.execute(select(Recording).where(Recording.id == recording_id))
     final_recording = result.scalar_one()
     assert final_recording.deleted_at is not None
     assert final_recording.status == "failed"
+    assert final_recording.failure_code == "processing_enqueue_failed"
 
 
 @pytest.mark.asyncio

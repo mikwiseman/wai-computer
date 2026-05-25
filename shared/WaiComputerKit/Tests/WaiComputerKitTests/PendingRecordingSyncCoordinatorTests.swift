@@ -311,6 +311,43 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
+    func testPendingRecordingSyncKeepsBackupWhenAudioUploadIsProcessing() async throws {
+        let recordingId = "pending-sync-audio-processing-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data("fake-wav".utf8).write(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Audio accepted",
+            recordingType: .note,
+            durationSeconds: 7,
+            transcript: nil,
+            segments: []
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId, status: "processing"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
     func testPendingRecordingSyncSkipsInProgressAudioBackup() async throws {
         let recordingId = "pending-sync-active-audio-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
