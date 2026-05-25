@@ -74,4 +74,59 @@ final class GlobalHotkeyManagerGestureTests: XCTestCase {
         XCTAssertEqual(starts, 0)
         XCTAssertEqual(toggles, 1)
     }
+
+    func testPrimaryHotkeyPressStopsActiveHandsFreeWithoutEnteringPushToTalk() async throws {
+        let manager = GlobalHotkeyManager()
+        manager.isHandsFreeModeActive = true
+        var starts = 0
+        var toggles = 0
+        manager.onPushToTalkStart = { starts += 1 }
+        manager.onHandsFreeToggle = { toggles += 1 }
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: [.command]
+        )
+
+        XCTAssertEqual(toggles, 1)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(starts, 0)
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: []
+        )
+        XCTAssertEqual(toggles, 1)
+    }
+
+    func testHandsFreeStopReleaseDoesNotSeedNextDoubleTapAfterCleanup() async throws {
+        let manager = GlobalHotkeyManager()
+        manager.isHandsFreeModeActive = true
+        var toggles = 0
+        manager.onHandsFreeToggle = { toggles += 1 }
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: [.command]
+        )
+        XCTAssertEqual(toggles, 1)
+
+        manager.isHandsFreeModeActive = false
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: []
+        )
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: [.command]
+        )
+        try await Task.sleep(for: .milliseconds(35))
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: []
+        )
+
+        XCTAssertEqual(toggles, 1)
+    }
 }

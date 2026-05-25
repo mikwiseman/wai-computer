@@ -280,6 +280,11 @@ final class DictationManager: ObservableObject {
         refreshPermissionState()
     }
 
+    private func setHandsFree(_ active: Bool) {
+        isHandsFree = active
+        hotkeyManager.isHandsFreeModeActive = active
+    }
+
     func refreshPermissionState() {
         hotkeyManager.refreshAfterPermissionChange()
         applyHotkeyAvailability()
@@ -322,7 +327,7 @@ final class DictationManager: ObservableObject {
                 )
                 return
             }
-            self.isHandsFree = false
+            self.setHandsFree(false)
             Task { await self.startDictation() }
         }
 
@@ -350,19 +355,15 @@ final class DictationManager: ObservableObject {
                 Task { await self.stopAndInsert() }
             } else if self.state == .idle, self.canBeginExternalDictation() {
                 // Start hands-free
-                self.isHandsFree = true
+                self.setHandsFree(true)
                 Task { await self.startDictation() }
             }
         }
 
         hotkeyManager.onSingleTap = {
-            // Wispr Flow pattern: hands-free is toggled exclusively via the
-            // double-tap gesture (start AND stop). Single-tap of the PTT key
-            // is intentionally NOT bound to any action — this is what makes
-            // their UX immune to the start/stop race we used to hit, where a
-            // stray flagsChanged event right after .listening would call
-            // stopAndInsert(). The hotkey manager still emits the callback
-            // for symmetry; we no-op here on purpose.
+            // Idle single taps are intentionally ignored. Active hands-free
+            // stop is handled on key press inside GlobalHotkeyManager so a
+            // slightly long tap cannot become push-to-talk.
         }
 
         hotkeyManager.onCancelled = { [weak self] in
@@ -1171,7 +1172,7 @@ final class DictationManager: ObservableObject {
 
         targetApp = nil
         setState(.idle)
-        isHandsFree = false
+        setHandsFree(false)
         hideOverlay()
 
         // Treat reaching idle without a prior failure() / cancel() as success.
