@@ -384,6 +384,41 @@ async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_tinkoff_cancel_payment_calls_cancel(monkeypatch):
+    provider = TinkoffProvider(terminal_key="terminal", password="pw")
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_call(method: str, payload: dict) -> dict:
+        calls.append((method, payload))
+        return {"Success": True, "Status": "REFUNDED"}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+
+    await provider.cancel_subscription("unused", at_period_end=False)
+    result = await provider.cancel_payment("payment-1", amount_kopecks=500)
+
+    assert result == {"Success": True, "Status": "REFUNDED"}
+    assert calls[0][0] == "Cancel"
+    payload = calls[0][1]
+    assert payload["PaymentId"] == "payment-1"
+    assert payload["Amount"] == 500
+    assert verify_tinkoff_token(payload, "pw") is True
+
+
+@pytest.mark.asyncio
+async def test_tinkoff_cancel_payment_rejects_failed_response(monkeypatch):
+    provider = TinkoffProvider(terminal_key="terminal", password="pw")
+
+    async def fake_call(method: str, payload: dict) -> dict:
+        return {"Success": False, "Message": "cannot cancel"}
+
+    monkeypatch.setattr(provider, "_call", fake_call)
+
+    with pytest.raises(RuntimeError, match="Tinkoff Cancel failed"):
+        await provider.cancel_payment("payment-1")
+
+
+@pytest.mark.asyncio
 async def test_apply_tinkoff_confirmed_creates_pro_year_subscription(
     db_session: AsyncSession,
 ):

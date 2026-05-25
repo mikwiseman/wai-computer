@@ -10,74 +10,66 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.promo_codes import hash_promo_code
+from app.models.admin import AdminRole
 from app.models.billing import BillingPromoCode
 
+LEGAL_ACCEPTANCE = {
+    "accepted_legal_terms": True,
+    "legal_terms_version": "2026-05-22",
+    "legal_privacy_version": "2026-05-22",
+}
 
-class _AdminSettings:
-    admin_password = "correct-admin-password"
 
-
-@pytest.mark.asyncio
-async def test_admin_promo_code_requires_configured_password(
-    client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from app.api.routes import admin as admin_routes
-
-    settings = type("Settings", (), {"admin_password": ""})()
-    monkeypatch.setattr(admin_routes, "get_settings", lambda: settings)
-
+async def _admin_headers(client: AsyncClient, db_session: AsyncSession) -> dict[str, str]:
     response = await client.post(
-        "/api/admin/promo-codes",
-        headers={"X-Wai-Admin-Password": "anything"},
+        "/api/auth/register",
         json={
-            "duration_days": 30,
-            "max_redemptions": 5,
+            "email": "promo-admin@example.com",
+            "password": "testpassword123",
+            **LEGAL_ACCEPTANCE,
         },
     )
-
-    assert response.status_code == 503
-    assert response.json()["detail"] == "Admin password is not configured"
+    assert response.status_code == 200
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    me = await client.get("/api/auth/me", headers=headers)
+    assert me.status_code == 200
+    db_session.add(AdminRole(user_id=me.json()["id"], role="owner"))
+    await db_session.flush()
+    return headers
 
 
 @pytest.mark.asyncio
-async def test_admin_promo_code_rejects_missing_or_wrong_password(
-    client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from app.api.routes import admin as admin_routes
+async def test_admin_promo_code_rejects_non_admin(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "not-admin@example.com",
+            "password": "testpassword123",
+            **LEGAL_ACCEPTANCE,
+        },
+    )
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
 
-    monkeypatch.setattr(admin_routes, "get_settings", lambda: _AdminSettings())
-
-    missing = await client.post(
+    forbidden = await client.post(
         "/api/admin/promo-codes",
+        headers=headers,
         json={"duration_days": 30, "max_redemptions": 5},
     )
-    wrong = await client.post(
-        "/api/admin/promo-codes",
-        headers={"X-Wai-Admin-Password": "wrong"},
-        json={"duration_days": 30, "max_redemptions": 5},
-    )
 
-    assert missing.status_code == 401
-    assert wrong.status_code == 401
-    assert missing.json()["detail"] == "Incorrect admin password"
-    assert wrong.json()["detail"] == "Incorrect admin password"
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"] == "Admin role required"
 
 
 @pytest.mark.asyncio
 async def test_admin_promo_code_creates_hash_only_code(
     client: AsyncClient,
     db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
 ):
-    from app.api.routes import admin as admin_routes
-
-    monkeypatch.setattr(admin_routes, "get_settings", lambda: _AdminSettings())
+    headers = await _admin_headers(client, db_session)
 
     response = await client.post(
         "/api/admin/promo-codes",
-        headers={"X-Wai-Admin-Password": "correct-admin-password"},
+        headers=headers,
         json={
             "code": "WAI-ADMIN-30",
             "plan": "pro",
@@ -115,31 +107,24 @@ async def test_admin_promo_code_creates_hash_only_code(
     assert promo.expires_at is not None
     assert promo.expires_at > datetime.now(timezone.utc)
 
+    listed = await client.get("/api/admin/promo-codes", headers=headers)
+    assert "code" not in listed.json()["items"][0]
+
 
 @pytest.mark.asyncio
 async def test_admin_promo_code_rejects_duplicate_code(
     client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
 ):
-    from app.api.routes import admin as admin_routes
-
-    monkeypatch.setattr(admin_routes, "get_settings", lambda: _AdminSettings())
-
+    headers = await _admin_headers(client, db_session)
     payload = {
         "code": "WAI-DUPLICATE",
         "duration_days": 30,
         "max_redemptions": 1,
     }
-    first = await client.post(
-        "/api/admin/promo-codes",
-        headers={"X-Wai-Admin-Password": "correct-admin-password"},
-        json=payload,
-    )
-    second = await client.post(
-        "/api/admin/promo-codes",
-        headers={"X-Wai-Admin-Password": "correct-admin-password"},
-        json=payload,
-    )
+
+    first = await client.post("/api/admin/promo-codes", headers=headers, json=payload)
+    second = await client.post("/api/admin/promo-codes", headers=headers, json=payload)
 
     assert first.status_code == 200
     assert second.status_code == 409

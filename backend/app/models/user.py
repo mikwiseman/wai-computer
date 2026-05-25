@@ -89,6 +89,16 @@ class User(Base, UUIDMixin, TimestampMixin):
     region: Mapped[str] = mapped_column(
         String(10), default="global", server_default="global", nullable=False
     )
+    account_status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default="active", nullable=False, index=True
+    )
+    account_status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    account_status_changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
     # Convenience pointer to the active subscription. NULL = free tier.
     current_subscription_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

@@ -96,12 +96,47 @@ class StripeProvider(PaymentProvider):
             provider_session_id=session.id,
         )
 
-    async def cancel_subscription(self, provider_subscription_id: str) -> None:
+    async def cancel_subscription(
+        self,
+        provider_subscription_id: str,
+        *,
+        at_period_end: bool = True,
+    ) -> None:
+        client = self._client_or_raise()
+        if at_period_end:
+            await client.v1.subscriptions.update_async(
+                provider_subscription_id,
+                params={"cancel_at_period_end": True},
+            )
+            return
+        await client.v1.subscriptions.cancel_async(provider_subscription_id)
+
+    async def resume_subscription(self, provider_subscription_id: str) -> None:
         client = self._client_or_raise()
         await client.v1.subscriptions.update_async(
             provider_subscription_id,
-            params={"cancel_at_period_end": True},
+            params={"cancel_at_period_end": False},
         )
+
+    async def refund_payment(
+        self,
+        payment_id: str,
+        *,
+        amount_minor: int | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        client = self._client_or_raise()
+        params: dict[str, Any] = {"payment_intent": payment_id}
+        if amount_minor is not None:
+            params["amount"] = amount_minor
+        if reason:
+            params["reason"] = reason
+        refund = await client.v1.refunds.create_async(params=params)
+        if hasattr(refund, "to_dict"):
+            return refund.to_dict()
+        if hasattr(refund, "to_dict_recursive"):
+            return refund.to_dict_recursive()
+        return dict(refund)
 
     async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]) -> ProviderEvent:
         if not self._webhook_secret:

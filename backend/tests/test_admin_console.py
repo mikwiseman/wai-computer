@@ -1,0 +1,824 @@
+"""Admin console API tests."""
+
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from uuid import uuid4
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.routes.admin import AdminPromoCodeCreateRequest
+from app.billing.promo_codes import hash_promo_code
+from app.models.admin import AdminRole
+from app.models.api_key import ApiKey
+from app.models.billing import (
+    BillingEvent,
+    BillingPromoCode,
+    BillingPromoRedemption,
+    Invoice,
+    Plan,
+    Subscription,
+    UsageWeek,
+)
+from app.models.dictation import DictationEntry
+from app.models.recording import Recording, Segment
+from app.models.refresh_token import RefreshToken
+from app.models.user import User
+
+LEGAL_ACCEPTANCE = {
+    "accepted_legal_terms": True,
+    "legal_terms_version": "2026-05-22",
+    "legal_privacy_version": "2026-05-22",
+}
+
+
+async def _register(client: AsyncClient, email: str) -> tuple[dict, dict]:
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "testpassword123", **LEGAL_ACCEPTANCE},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    me = await client.get("/api/auth/me", headers=headers)
+    assert me.status_code == 200
+    payload["user_id"] = me.json()["id"]
+    return payload, headers
+
+
+async def _grant_admin(db: AsyncSession, user_id, role: str = "owner") -> None:
+    db.add(AdminRole(user_id=user_id, role=role))
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_admin_routes_require_admin_role(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _, user_headers = await _register(client, "ordinary-admin-check@example.com")
+
+    forbidden = await client.get("/api/admin/stats", headers=user_headers)
+    client.cookies.clear()
+    anonymous = await client.get("/api/admin/stats")
+
+    assert forbidden.status_code == 403
+    assert forbidden.json()["detail"] == "Admin role required"
+    assert anonymous.status_code in {401, 403}
+
+
+@pytest.mark.asyncio
+async def test_admin_can_manage_promo_codes_and_see_redemption_stats(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-promos@example.com")
+    user_payload, _ = await _register(client, "promo-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    create = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={
+            "code": "WAI-ADMIN-CONSOLE",
+            "duration_days": 30,
+            "max_redemptions": 10,
+            "expires_days": 60,
+            "note": "console test",
+        },
+    )
+    assert create.status_code == 200
+    promo_id = create.json()["id"]
+    assert create.json()["code"] == "WAI-ADMIN-CONSOLE"
+
+    promo = (
+        await db_session.execute(
+            select(BillingPromoCode).where(
+                BillingPromoCode.code_hash == hash_promo_code("WAI-ADMIN-CONSOLE")
+            )
+        )
+    ).scalar_one()
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user_payload["user_id"],
+        plan_id=plan.id,
+        status="active",
+        provider="promo",
+        billing_period="month",
+        current_period_start=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(
+        BillingPromoRedemption(
+            promo_code_id=promo.id,
+            user_id=user_payload["user_id"],
+            subscription_id=sub.id,
+        )
+    )
+    promo.redeemed_count = 1
+    await db_session.flush()
+
+    listed = await client.get("/api/admin/promo-codes", headers=admin_headers)
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["id"] == promo_id
+    assert item["redemption_rate"] == 0.1
+    assert item["redemptions"][0]["user_email"] == "promo-user@example.com"
+    assert "code" not in item
+
+    patched = await client.patch(
+        f"/api/admin/promo-codes/{promo_id}",
+        headers=admin_headers,
+        json={"active": False, "note": "paused test", "max_redemptions": 25},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["active"] is False
+    assert patched.json()["note"] == "paused test"
+    assert patched.json()["max_redemptions"] == 25
+
+    archived = await client.delete(f"/api/admin/promo-codes/{promo_id}", headers=admin_headers)
+    archived_patch = await client.patch(
+        f"/api/admin/promo-codes/{promo_id}",
+        headers=admin_headers,
+        json={"active": True},
+    )
+    archived_delete = await client.delete(
+        f"/api/admin/promo-codes/{promo_id}", headers=admin_headers
+    )
+    assert archived.status_code == 204
+    assert archived_patch.status_code == 404
+    assert archived_delete.status_code == 404
+    await db_session.refresh(promo)
+    assert promo.archived_at is not None
+
+
+def test_admin_promo_code_create_request_normalizes_operator_input():
+    payload = AdminPromoCodeCreateRequest(
+        code="   ",
+        prefix=" support ",
+        duration_days=7,
+        max_redemptions=1,
+        note="  created by support  ",
+    )
+
+    assert payload.code is None
+    assert payload.prefix == "SUPPORT"
+    assert payload.note == "created by support"
+
+
+@pytest.mark.asyncio
+async def test_admin_promo_code_validation_and_error_paths(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-promo-errors@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    missing_plan = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={
+            "code": "WAI-MISSING-PLAN",
+            "plan": "missing",
+            "duration_days": 30,
+            "max_redemptions": 10,
+        },
+    )
+    invalid_prefix = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={"prefix": "***", "duration_days": 30, "max_redemptions": 10},
+    )
+    invalid_code = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={"code": "***", "duration_days": 30, "max_redemptions": 10},
+    )
+    auto_created = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={
+            "code": "",
+            "prefix": "SUPPORT",
+            "duration_days": 7,
+            "max_redemptions": 1,
+            "expires_days": None,
+            "note": "   ",
+        },
+    )
+    created = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={
+            "code": "WAI-DUPLICATE",
+            "duration_days": 30,
+            "max_redemptions": 5,
+            "note": "  duplicate test  ",
+        },
+    )
+    duplicate = await client.post(
+        "/api/admin/promo-codes",
+        headers=admin_headers,
+        json={"code": "WAI-DUPLICATE", "duration_days": 30, "max_redemptions": 5},
+    )
+    promo = (
+        await db_session.execute(
+            select(BillingPromoCode).where(
+                BillingPromoCode.code_hash == hash_promo_code("WAI-DUPLICATE")
+            )
+        )
+    ).scalar_one()
+    promo.redeemed_count = 2
+    await db_session.flush()
+    listed = await client.get(
+        "/api/admin/promo-codes?active=true&include_archived=true&limit=0",
+        headers=admin_headers,
+    )
+    existing_get = await client.get(
+        f"/api/admin/promo-codes/{created.json()['id']}", headers=admin_headers
+    )
+    missing_get = await client.get(f"/api/admin/promo-codes/{uuid4()}", headers=admin_headers)
+    too_low = await client.patch(
+        f"/api/admin/promo-codes/{created.json()['id']}",
+        headers=admin_headers,
+        json={"max_redemptions": 1},
+    )
+    archived = await client.delete(
+        f"/api/admin/promo-codes/{created.json()['id']}", headers=admin_headers
+    )
+    archived_patch = await client.patch(
+        f"/api/admin/promo-codes/{created.json()['id']}",
+        headers=admin_headers,
+        json={"active": True},
+    )
+    missing_archive = await client.delete(
+        f"/api/admin/promo-codes/{uuid4()}", headers=admin_headers
+    )
+
+    assert missing_plan.status_code == 400
+    assert invalid_prefix.status_code == 422
+    assert invalid_code.status_code == 422
+    assert auto_created.status_code == 200
+    assert auto_created.json()["code"].startswith("SUPPORT-")
+    assert auto_created.json()["note"] is None
+    assert auto_created.json()["expires_at"] is None
+    assert created.status_code == 200
+    assert created.json()["note"] == "duplicate test"
+    assert duplicate.status_code == 409
+    assert listed.status_code == 200
+    assert existing_get.status_code == 200
+    assert existing_get.json()["id"] == created.json()["id"]
+    assert missing_get.status_code == 404
+    assert too_low.status_code == 400
+    assert archived.status_code == 204
+    assert archived_patch.status_code == 404
+    assert missing_archive.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_can_pause_and_reactivate_user_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-users@example.com")
+    user_payload, user_headers = await _register(client, "pause-me@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    paused = await client.patch(
+        f"/api/admin/users/{user_payload['user_id']}/status",
+        headers=admin_headers,
+        json={"status": "paused", "reason": "support hold"},
+    )
+    assert paused.status_code == 200
+    assert paused.json()["account_status"] == "paused"
+
+    blocked = await client.get("/api/auth/me", headers=user_headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Account paused"
+
+    active = await client.patch(
+        f"/api/admin/users/{user_payload['user_id']}/status",
+        headers=admin_headers,
+        json={"status": "active", "reason": "resolved"},
+    )
+    assert active.status_code == 200
+
+    allowed = await client.get("/api/auth/me", headers=user_headers)
+    assert allowed.status_code == 200
+    assert allowed.json()["email"] == "pause-me@example.com"
+
+
+@pytest.mark.asyncio
+async def test_admin_user_detail_billing_audit_and_deactivation_revocation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-user-detail@example.com")
+    user_payload, user_headers = await _register(client, "detail-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    user_id = user_payload["user_id"]
+    now = datetime.now(timezone.utc)
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user_id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        current_period_end=now + timedelta(days=30),
+        cancel_at_period_end=False,
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user = await db_session.get(User, user_id)
+    assert user is not None
+    user.current_subscription_id = sub.id
+    promo = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-DETAIL"),
+        plan_id=plan.id,
+        billing_period="month",
+        duration_days=30,
+        max_redemptions=5,
+        note="detail promo",
+    )
+    db_session.add(promo)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            BillingPromoRedemption(
+                promo_code_id=promo.id,
+                user_id=user_id,
+                subscription_id=sub.id,
+            ),
+            UsageWeek(
+                user_id=user_id,
+                week_start_utc=date(2026, 5, 24),
+                words_used=123,
+            ),
+            Invoice(
+                subscription_id=sub.id,
+                amount=Decimal("12.00"),
+                currency="USD",
+                status="paid",
+                provider_payment_id="pi_detail",
+                paid_at=now,
+            ),
+            RefreshToken(
+                user_id=user_id,
+                token_hash="refresh-detail",
+                expires_at=now + timedelta(days=30),
+            ),
+            ApiKey(
+                user_id=user_id,
+                name="detail key",
+                token_hash="a" * 64,
+                prefix="wc_live",
+                last4="tail",
+                scopes=["read"],
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    users = await client.get(
+        "/api/admin/users?q=detail-user&account_status=active&limit=1",
+        headers=admin_headers,
+    )
+    detail = await client.get(f"/api/admin/users/{user_id}", headers=admin_headers)
+    missing_detail = await client.get(f"/api/admin/users/{uuid4()}", headers=admin_headers)
+    billing = await client.get("/api/admin/billing?limit=1", headers=admin_headers)
+    self_pause = await client.patch(
+        f"/api/admin/users/{admin_payload['user_id']}/status",
+        headers=admin_headers,
+        json={"status": "paused", "reason": "self hold"},
+    )
+    deactivated = await client.patch(
+        f"/api/admin/users/{user_id}/status",
+        headers=admin_headers,
+        json={"status": "deactivated", "reason": "abuse review"},
+    )
+    missing_status = await client.patch(
+        f"/api/admin/users/{uuid4()}/status",
+        headers=admin_headers,
+        json={"status": "paused", "reason": "missing"},
+    )
+    missing_grant = await client.post(
+        f"/api/admin/users/{uuid4()}/subscriptions/grant",
+        headers=admin_headers,
+        json={"duration_days": 1, "reason": "missing"},
+    )
+    blocked = await client.get("/api/auth/me", headers=user_headers)
+    audit = await client.get("/api/admin/audit?limit=1", headers=admin_headers)
+
+    assert users.status_code == 200
+    assert users.json()["items"][0]["email"] == "detail-user@example.com"
+    assert detail.status_code == 200
+    assert detail.json()["subscriptions"][0]["id"] == str(sub.id)
+    assert detail.json()["promo_redemptions"][0]["promo_note"] == "detail promo"
+    assert detail.json()["weekly_usage"][0]["words_used"] == 123
+    assert missing_detail.status_code == 404
+    assert billing.status_code == 200
+    assert billing.json()["items"][0]["invoices"][0]["provider_payment_id"] == "pi_detail"
+    assert self_pause.status_code == 400
+    assert deactivated.status_code == 200
+    assert missing_status.status_code == 404
+    assert missing_grant.status_code == 404
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Account deactivated"
+    token = (
+        await db_session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == "refresh-detail")
+        )
+    ).scalar_one()
+    key = (
+        await db_session.execute(select(ApiKey).where(ApiKey.token_hash == "a" * 64))
+    ).scalar_one()
+    assert token.expires_at <= datetime.now(timezone.utc)
+    assert key.revoked_at is not None
+    assert audit.status_code == 200
+    assert audit.json()["items"][0]["action"] == "user_status_update"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_grant_pro_entitlement_to_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-grants@example.com")
+    user_payload, user_headers = await _register(client, "grant-me@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    grant = await client.post(
+        f"/api/admin/users/{user_payload['user_id']}/subscriptions/grant",
+        headers=admin_headers,
+        json={"duration_days": 45, "reason": "manual customer support"},
+    )
+    assert grant.status_code == 200
+    assert grant.json()["provider"] == "admin"
+    assert grant.json()["status"] == "active"
+
+    subscription = await client.get("/api/billing/subscription", headers=user_headers)
+    assert subscription.status_code == 200
+    assert subscription.json()["plan"]["code"] == "pro"
+    assert subscription.json()["provider"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_admin_extends_existing_admin_entitlement(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-extend@example.com")
+    user_payload, _ = await _register(client, "extend-me@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    first = await client.post(
+        f"/api/admin/users/{user_payload['user_id']}/subscriptions/grant",
+        headers=admin_headers,
+        json={"duration_days": 10, "reason": "first"},
+    )
+    second = await client.post(
+        f"/api/admin/users/{user_payload['user_id']}/subscriptions/grant",
+        headers=admin_headers,
+        json={"duration_days": 10, "reason": "second"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_admin_stats_are_privacy_safe_and_aggregated(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-stats@example.com")
+    user_payload, _ = await _register(client, "stats-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    user_id = user_payload["user_id"]
+    now = datetime.now(timezone.utc)
+
+    recording = Recording(
+        user_id=user_id,
+        title="Private filename should not leak",
+        type="meeting",
+        status="ready",
+        duration_seconds=120,
+        billed_word_count=7,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording.id,
+                content="private transcript words",
+                start_ms=0,
+                end_ms=1000,
+            ),
+            DictationEntry(
+                user_id=user_id,
+                client_entry_id=uuid4(),
+                raw_text="secret raw dictation",
+                cleaned_text="secret cleaned dictation",
+                duration_seconds=5,
+                word_count=3,
+                occurred_at=now,
+            ),
+        ]
+    )
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user_id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(
+        Invoice(
+            subscription_id=sub.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            status="paid",
+            provider_payment_id="pi_stats",
+            paid_at=now,
+        )
+    )
+    db_session.add_all(
+        [
+            BillingPromoCode(
+                code_hash=hash_promo_code("WAI-ARCHIVED-STATS"),
+                plan_id=plan.id,
+                billing_period="month",
+                duration_days=30,
+                max_redemptions=1,
+                archived_at=now,
+            ),
+            BillingPromoCode(
+                code_hash=hash_promo_code("WAI-EXPIRED-STATS"),
+                plan_id=plan.id,
+                billing_period="month",
+                duration_days=30,
+                max_redemptions=1,
+                expires_at=now - timedelta(days=1),
+            ),
+            BillingPromoCode(
+                code_hash=hash_promo_code("WAI-EXHAUSTED-STATS"),
+                plan_id=plan.id,
+                billing_period="month",
+                duration_days=30,
+                max_redemptions=1,
+                redeemed_count=1,
+                active=False,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await client.get("/api/admin/stats", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["users"]["total"] >= 2
+    assert payload["usage"]["recording_words"] == 7
+    assert payload["usage"]["dictation_words"] == 3
+    assert payload["usage"]["recording_duration_seconds"] == 120
+    assert payload["billing"]["revenue_by_currency"]["USD"] == 12.0
+    assert payload["promo"]["archived"] >= 1
+    assert payload["promo"]["expired"] >= 1
+    assert payload["promo"]["exhausted"] >= 1
+    assert payload["promo"]["paused"] >= 1
+    assert "Private filename" not in str(payload)
+    assert "secret raw dictation" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_subscription_provider_actions_are_audited(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    admin_payload, admin_headers = await _register(client, "admin-provider@example.com")
+    user_payload, _ = await _register(client, "provider-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user_payload["user_id"],
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_admin_test",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    invoice = Invoice(
+        subscription_id=sub.id,
+        amount=Decimal("12.00"),
+        currency="USD",
+        status="paid",
+        provider_payment_id="pi_admin_refund",
+        paid_at=datetime.now(timezone.utc),
+    )
+    db_session.add(invoice)
+    tinkoff_sub = Subscription(
+        user_id=user_payload["user_id"],
+        plan_id=plan.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+    )
+    unsupported_sub = Subscription(
+        user_id=user_payload["user_id"],
+        plan_id=plan.id,
+        status="active",
+        provider="admin",
+        billing_period="month",
+    )
+    db_session.add_all([tinkoff_sub, unsupported_sub])
+    await db_session.flush()
+    stripe_missing_id_sub = Subscription(
+        user_id=user_payload["user_id"],
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+    )
+    db_session.add(stripe_missing_id_sub)
+    await db_session.flush()
+    tinkoff_invoice = Invoice(
+        subscription_id=tinkoff_sub.id,
+        amount=Decimal("12.00"),
+        currency="RUB",
+        status="paid",
+        provider_payment_id="tb_payment",
+        paid_at=datetime.now(timezone.utc),
+    )
+    unsupported_invoice = Invoice(
+        subscription_id=unsupported_sub.id,
+        amount=Decimal("12.00"),
+        currency="USD",
+        status="paid",
+        provider_payment_id="admin_payment",
+        paid_at=datetime.now(timezone.utc),
+    )
+    missing_provider_payment_invoice = Invoice(
+        subscription_id=tinkoff_sub.id,
+        amount=Decimal("12.00"),
+        currency="RUB",
+        status="paid",
+        paid_at=datetime.now(timezone.utc),
+    )
+    db_session.add_all([tinkoff_invoice, unsupported_invoice, missing_provider_payment_invoice])
+    await db_session.flush()
+
+    calls: list[tuple[str, str, object]] = []
+
+    async def fake_cancel(self, provider_subscription_id: str, *, at_period_end: bool = True):
+        calls.append(("cancel", provider_subscription_id, at_period_end))
+
+    async def fake_resume(self, provider_subscription_id: str):
+        calls.append(("resume", provider_subscription_id, None))
+
+    async def fake_refund(
+        self,
+        payment_id: str,
+        *,
+        amount_minor: int | None = None,
+        reason: str | None = None,
+    ):
+        calls.append(("refund", payment_id, amount_minor))
+        return {"id": "re_admin_test", "status": "succeeded"}
+
+    async def fake_tinkoff_cancel(self, payment_id: str, *, amount_kopecks: int | None = None):
+        calls.append(("tinkoff_refund", payment_id, amount_kopecks))
+        return {"Success": True, "Status": "PARTIAL_REFUNDED"}
+
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.StripeProvider.cancel_subscription",
+        fake_cancel,
+    )
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.StripeProvider.resume_subscription",
+        fake_resume,
+    )
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.StripeProvider.refund_payment",
+        fake_refund,
+    )
+    monkeypatch.setattr(
+        "app.billing.providers.tinkoff_provider.TinkoffProvider.cancel_payment",
+        fake_tinkoff_cancel,
+    )
+
+    cancel = await client.post(
+        f"/api/admin/subscriptions/{sub.id}/cancel",
+        headers=admin_headers,
+        json={"mode": "period_end", "reason": "admin test"},
+    )
+    resume = await client.post(
+        f"/api/admin/subscriptions/{sub.id}/resume",
+        headers=admin_headers,
+        json={"reason": "admin test resume"},
+    )
+    immediate_cancel = await client.post(
+        f"/api/admin/subscriptions/{sub.id}/cancel",
+        headers=admin_headers,
+        json={"mode": "immediate", "reason": "admin immediate"},
+    )
+    canceled_resume = await client.post(
+        f"/api/admin/subscriptions/{sub.id}/resume",
+        headers=admin_headers,
+        json={"reason": "reactivate canceled subscription"},
+    )
+    refund = await client.post(
+        f"/api/admin/invoices/{invoice.id}/refund",
+        headers=admin_headers,
+        json={"reason": "requested_by_customer"},
+    )
+    tinkoff_refund = await client.post(
+        f"/api/admin/invoices/{tinkoff_invoice.id}/refund",
+        headers=admin_headers,
+        json={"amount_minor": 500, "reason": "partial"},
+    )
+    unsupported_refund = await client.post(
+        f"/api/admin/invoices/{unsupported_invoice.id}/refund",
+        headers=admin_headers,
+        json={"reason": "unsupported"},
+    )
+    missing_cancel = await client.post(
+        f"/api/admin/subscriptions/{uuid4()}/cancel",
+        headers=admin_headers,
+        json={"mode": "period_end", "reason": "missing"},
+    )
+    stripe_missing_id_cancel = await client.post(
+        f"/api/admin/subscriptions/{stripe_missing_id_sub.id}/cancel",
+        headers=admin_headers,
+        json={"mode": "period_end", "reason": "missing stripe id"},
+    )
+    missing_resume = await client.post(
+        f"/api/admin/subscriptions/{uuid4()}/resume",
+        headers=admin_headers,
+        json={"reason": "missing"},
+    )
+    stripe_missing_id_resume = await client.post(
+        f"/api/admin/subscriptions/{stripe_missing_id_sub.id}/resume",
+        headers=admin_headers,
+        json={"reason": "missing stripe id"},
+    )
+    missing_invoice = await client.post(
+        f"/api/admin/invoices/{uuid4()}/refund",
+        headers=admin_headers,
+        json={"reason": "missing"},
+    )
+    missing_provider_payment = await client.post(
+        f"/api/admin/invoices/{missing_provider_payment_invoice.id}/refund",
+        headers=admin_headers,
+        json={"reason": "missing provider payment"},
+    )
+
+    assert cancel.status_code == 200
+    assert resume.status_code == 200
+    assert immediate_cancel.status_code == 200
+    assert canceled_resume.status_code == 200
+    assert refund.status_code == 200
+    assert tinkoff_refund.status_code == 200
+    assert unsupported_refund.status_code == 400
+    assert missing_cancel.status_code == 404
+    assert stripe_missing_id_cancel.status_code == 400
+    assert missing_resume.status_code == 404
+    assert stripe_missing_id_resume.status_code == 400
+    assert missing_invoice.status_code == 404
+    assert missing_provider_payment.status_code == 400
+    assert calls == [
+        ("cancel", "sub_admin_test", True),
+        ("resume", "sub_admin_test", None),
+        ("cancel", "sub_admin_test", False),
+        ("resume", "sub_admin_test", None),
+        ("refund", "pi_admin_refund", None),
+        ("tinkoff_refund", "tb_payment", 500),
+    ]
+    await db_session.refresh(invoice)
+    await db_session.refresh(tinkoff_invoice)
+    assert invoice.status == "refunded"
+    assert tinkoff_invoice.status == "partially_refunded"
+    events = (
+        await db_session.execute(
+            select(BillingEvent).where(BillingEvent.type.like("admin.%"))
+        )
+    ).scalars().all()
+    assert {event.type for event in events} >= {
+        "admin.subscription_cancel",
+        "admin.subscription_resume",
+        "admin.invoice_refund",
+    }

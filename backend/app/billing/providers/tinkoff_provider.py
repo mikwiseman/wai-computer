@@ -264,9 +264,35 @@ class TinkoffProvider(PaymentProvider):
             raise RuntimeError(f"Tinkoff Charge failed: {charge_response}")
         return charge_response
 
-    async def cancel_subscription(self, provider_subscription_id: str) -> None:
+    async def cancel_subscription(
+        self,
+        provider_subscription_id: str,
+        *,
+        at_period_end: bool = True,
+    ) -> None:
         """No-op for T-Bank: cancel happens by ceasing to schedule the next Charge."""
+        del provider_subscription_id, at_period_end
         return None
+
+    async def cancel_payment(
+        self,
+        payment_id: str,
+        *,
+        amount_kopecks: int | None = None,
+    ) -> dict[str, Any]:
+        """Cancel or refund a T-Bank payment via /v2/Cancel."""
+        terminal_key, password = self._require_creds()
+        base: dict[str, Any] = {
+            "TerminalKey": terminal_key,
+            "PaymentId": payment_id,
+        }
+        if amount_kopecks is not None:
+            base["Amount"] = amount_kopecks
+        token = generate_tinkoff_token(base, password)
+        response = await self._call("Cancel", {**base, "Token": token})
+        if not response.get("Success"):
+            raise RuntimeError(f"Tinkoff Cancel failed: {response}")
+        return response
 
     async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]) -> ProviderEvent:
         _, password = self._require_creds()
