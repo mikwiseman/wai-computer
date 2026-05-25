@@ -63,7 +63,8 @@ wai.computer {
         reverse_proxy api:8000
     }
 
-    handle /health {
+    @health path /health /health/*
+    handle @health {
         reverse_proxy api:8000
     }
 
