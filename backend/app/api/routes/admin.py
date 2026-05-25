@@ -18,6 +18,7 @@ from app.billing.promo_codes import generate_promo_code, hash_promo_code, normal
 from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.config import get_settings
+from app.core.embedding_backfill import backfill_missing_segment_embeddings
 from app.core.observability import get_release_version, get_sentry_runtime
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.api_key import ApiKey
@@ -292,6 +293,21 @@ class AdminObservabilityResponse(BaseModel):
     alerts: list[dict]
 
 
+class AdminEmbeddingBackfillRequest(BaseModel):
+    user_id: UUID | None = None
+    batch_size: int | None = Field(default=None, ge=1, le=2048)
+    limit: int | None = Field(default=None, ge=1, le=10_000)
+
+
+class AdminEmbeddingBackfillResponse(BaseModel):
+    scanned: int
+    filled: int
+    failed: int
+    remaining: int
+    batches: int
+    isolated_failures: int
+
+
 class AdminBillingInvoiceResponse(BaseModel):
     id: str
     amount: float
@@ -528,6 +544,38 @@ async def _recording_pipeline_observability(db: Database, *, now: datetime) -> d
         ]
     )
     median_coverage = round(float(median(coverage_ratios)), 4) if coverage_ratios else None
+    segments_missing_embedding_count = int(
+        (
+            await db.execute(
+                select(func.count(Segment.id))
+                .join(Recording, Recording.id == Segment.recording_id)
+                .where(
+                    Recording.deleted_at.is_(None),
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                    Segment.embedding.is_(None),
+                    Segment.content.is_not(None),
+                    func.length(func.trim(Segment.content)) > 0,
+                )
+            )
+        ).scalar_one()
+    )
+    recordings_with_degraded_embeddings_24h = int(
+        (
+            await db.execute(
+                select(func.count(func.distinct(Recording.id)))
+                .join(Segment, Segment.recording_id == Recording.id)
+                .where(
+                    Recording.deleted_at.is_(None),
+                    Recording.user_id.not_in(_staff_user_ids_query()),
+                    Recording.created_at >= since,
+                    Recording.status == "ready",
+                    Segment.embedding.is_(None),
+                    Segment.content.is_not(None),
+                    func.length(func.trim(Segment.content)) > 0,
+                )
+            )
+        ).scalar_one()
+    )
 
     return {
         "status_counts": status_counts,
@@ -541,6 +589,8 @@ async def _recording_pipeline_observability(db: Database, *, now: datetime) -> d
         "stuck_processing_count": stuck_processing_count,
         "low_transcript_coverage_count_24h": low_coverage_count,
         "median_transcript_coverage_24h": median_coverage,
+        "segments_missing_embedding_count": segments_missing_embedding_count,
+        "recordings_with_degraded_embeddings_24h": recordings_with_degraded_embeddings_24h,
     }
 
 
@@ -565,6 +615,19 @@ def _observability_alerts(recording_pipeline: dict) -> list[dict]:
                 "title": "Low transcript coverage",
                 "value": recording_pipeline["low_transcript_coverage_count_24h"],
                 "threshold": settings.recording_monitoring_min_coverage_ratio,
+            }
+        )
+    if (
+        recording_pipeline["recordings_with_degraded_embeddings_24h"]
+        >= settings.recording_monitoring_degraded_embedding_warning_threshold
+    ):
+        alerts.append(
+            {
+                "severity": "warning",
+                "code": "recording.embeddings.degraded",
+                "title": "Segments missing semantic embeddings",
+                "value": recording_pipeline["recordings_with_degraded_embeddings_24h"],
+                "threshold": settings.recording_monitoring_degraded_embedding_warning_threshold,
             }
         )
     if (
@@ -1436,6 +1499,32 @@ async def get_admin_observability(db: Database, admin: CurrentAdmin) -> AdminObs
         recording_pipeline=recording_pipeline,
         alerts=_observability_alerts(recording_pipeline),
     )
+
+
+@router.post("/embeddings/backfill", response_model=AdminEmbeddingBackfillResponse)
+async def run_admin_embedding_backfill(
+    request: AdminEmbeddingBackfillRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> AdminEmbeddingBackfillResponse:
+    settings = get_settings()
+    result = await backfill_missing_segment_embeddings(
+        db,
+        user_id=request.user_id,
+        batch_size=request.batch_size or settings.embedding_backfill_batch_size,
+        limit=request.limit or settings.embedding_backfill_max_segments_per_run,
+    )
+    payload = result.as_dict()
+    await _audit(
+        db,
+        admin,
+        action="embeddings.backfill",
+        target_type="embeddings",
+        target_id=str(request.user_id) if request.user_id else None,
+        details=payload,
+    )
+    await db.commit()
+    return AdminEmbeddingBackfillResponse(**payload)
 
 
 @router.get("/audit")

@@ -251,6 +251,67 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
+    func testServerProcessingAudioBackupPollsStatusInsteadOfReuploadingAudio() async throws {
+        let recordingId = "pending-sync-server-processing-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data("fake wav bytes".utf8).write(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Audio backup",
+            recordingType: .meeting,
+            durationSeconds: 42,
+            transcript: nil,
+            segments: []
+        )
+        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let firstPoll = expectation(description: "server processing backup polled status")
+        let synced = expectation(description: "server processing backup removed after ready")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let counter = RequestCounter()
+        MockURLProtocol.requestHandler = { request in
+            let count = counter.increment()
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)")
+            XCTAssertFalse(request.value(forHTTPHeaderField: "Content-Type")?.contains("multipart/form-data") ?? false)
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            if count == 1 {
+                firstPoll.fulfill()
+                return (response, self.responsePayload(recordingId: recordingId, status: "processing"))
+            }
+            return (response, self.responsePayload(recordingId: recordingId, status: "ready"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [firstPoll], timeout: 2)
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 2)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
     func testPendingRecordingSyncPrefersAudioUploadWhenBackupHasAudioFile() async throws {
         let recordingId = "pending-sync-audio-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }

@@ -34,6 +34,7 @@ enum SystemAudioTapAggregateDescription {
 @available(macOS 14.2, *)
 public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let config: AudioCaptureConfig
+    private var audioProcessor: CaptureAudioProcessor?
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
     /// Lock protecting `bufferContinuation` from concurrent access between the
@@ -100,9 +101,11 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     /// Start capturing system audio.
     public func startCapture() throws {
         if _isCapturing {
-            sysLog.warning("[SysAudio] startCapture called while already capturing -- stopping first")
+            sysLog.info("[SysAudio] startCapture called while already capturing -- stopping first")
             stopCapture()
         }
+        OSAtomicCompareAndSwap32(1, 0, _bufferReceivedFlag)
+        OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
 
         // 1. Get the default output device
         var defaultOutputID = AudioObjectID(kAudioObjectSystemObject)
@@ -122,7 +125,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         guard status == noErr else {
             throw SystemAudioCaptureError.failedToGetDefaultOutput(status)
         }
-        sysLog.warning("[SysAudio] Default output device ID: \(defaultOutputID)")
+        sysLog.info("[SysAudio] Default output device ID: \(defaultOutputID)")
 
         // 2. Get the output device UID for diagnostics and final format fallback.
         // The tap itself stays global instead of being pinned to this device.
@@ -139,7 +142,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         guard status == noErr, let uid else {
             throw SystemAudioCaptureError.failedToGetDeviceUID(status)
         }
-        sysLog.warning("[SysAudio] Output device UID: \(uid as String)")
+        sysLog.info("[SysAudio] Output device UID: \(uid as String)")
 
         // Use a global tap here: the include-list initializer with an empty array captures nothing.
         // Keep it independent from the physical output route. Bluetooth and
@@ -158,7 +161,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             throw SystemAudioCaptureError.failedToCreateTap(status)
         }
         tapID = newTapID
-        sysLog.warning("[SysAudio] Created process tap ID: \(self.tapID)")
+        sysLog.info("[SysAudio] Created process tap ID: \(self.tapID)")
 
         // 4. Create a private aggregate device containing only the tap. The
         // tap is the input source; adding the user's output device here couples
@@ -174,7 +177,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             throw SystemAudioCaptureError.failedToCreateAggregateDevice(status)
         }
         aggregateDeviceID = newAggregateID
-        sysLog.warning("[SysAudio] Created aggregate device ID: \(self.aggregateDeviceID)")
+        sysLog.info("[SysAudio] Created aggregate device ID: \(self.aggregateDeviceID)")
 
         // 5. Query the tap's stream format to get native sample rate. The tap
         // format is the source of truth for buffers delivered by the aggregate.
@@ -198,7 +201,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         if status == noErr && inputStreamFormat.mSampleRate > 0 {
             nativeSR = inputStreamFormat.mSampleRate
             nativeCh = inputStreamFormat.mChannelsPerFrame
-            sysLog.warning("[SysAudio] Tap format: \(nativeSR)Hz, \(nativeCh)ch")
+            sysLog.info("[SysAudio] Tap format: \(nativeSR)Hz, \(nativeCh)ch")
         } else {
             // Tap format query failed — try aggregate input scope before the
             // final fallback to the output device's nominal sample rate.
@@ -220,7 +223,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             if aggregateStatus == noErr && aggregateStreamFormat.mSampleRate > 0 {
                 nativeSR = aggregateStreamFormat.mSampleRate
                 nativeCh = aggregateStreamFormat.mChannelsPerFrame
-                sysLog.warning("[SysAudio] Aggregate input format: \(nativeSR)Hz, \(nativeCh)ch")
+                sysLog.info("[SysAudio] Aggregate input format: \(nativeSR)Hz, \(nativeCh)ch")
             } else {
                 // Fall back to querying the original output device directly
                 var deviceFormatAddress = AudioObjectPropertyAddress(
@@ -250,19 +253,18 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
 
         // 6. Set up IO proc to receive audio buffers
-        guard let targetFormat = config.format else {
+        guard let processor = CaptureAudioProcessor(config: config) else {
             destroyAggregateDevice()
             destroyTap()
             throw AudioCaptureError.invalidFormat
         }
-        let targetSR = config.sampleRate
-        var tapCount = 0
+        processor.reset()
+        audioProcessor = processor
 
         var procID: AudioDeviceIOProcID?
         status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, nil) {
             [weak self] _, inInputData, _, _, _ in
             guard let self = self else { return }
-            tapCount += 1
 
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
             guard !buffers.isEmpty else { return }
@@ -299,80 +301,48 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 return srcSamples[frame * sourceChannels + min(channel, sourceChannels - 1)]
             }
 
-            // Downsample from native rate to target rate (16kHz), mix to mono
-            let ratio = nativeSR / targetSR
-            let outFrames = Int(Double(srcFrames) / ratio)
-            if outFrames == 0 { return }
             OSAtomicCompareAndSwap32(0, 1, self._bufferReceivedFlag)
 
-            guard let outBuffer = AVAudioPCMBuffer(
-                pcmFormat: targetFormat,
-                frameCapacity: AVAudioFrameCount(outFrames)
-            ) else {
-                if tapCount <= 5 { sysLog.error("[SysAudio] Failed to create output buffer") }
+            guard let sourceFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: nativeSR,
+                channels: AVAudioChannelCount(sourceChannels),
+                interleaved: false
+            ) else { return }
+            guard let sourceBuffer = AVAudioPCMBuffer(
+                pcmFormat: sourceFormat,
+                frameCapacity: AVAudioFrameCount(srcFrames)
+            ) else { return }
+            sourceBuffer.frameLength = AVAudioFrameCount(srcFrames)
+            guard let sourceData = sourceBuffer.floatChannelData else { return }
+
+            for frame in 0..<srcFrames {
+                for channel in 0..<sourceChannels {
+                    sourceData[channel][frame] = sourceSample(frame: frame, channel: channel)
+                }
+            }
+
+            guard let outBuffer = self.audioProcessor?.process(sourceBuffer),
+                  let outData = outBuffer.floatChannelData else {
                 return
             }
-            outBuffer.frameLength = AVAudioFrameCount(outFrames)
-
-            guard let outData = outBuffer.floatChannelData else { return }
-            let dst = outData[0]
-
-            let channels = sourceChannels
-
-            if ratio <= 1.01 && channels == 1 {
-                // No resampling or mixing needed
-                for i in 0..<outFrames {
-                    dst[i] = sourceSample(frame: i, channel: 0)
-                }
-            } else {
-                // Downsample with averaging + mono mixdown
-                let intRatio = max(1, Int(ratio.rounded()))
-                for i in 0..<outFrames {
-                    let srcStart = Int(Double(i) * ratio)
-                    if srcStart >= srcFrames {
-                        dst[i] = 0
-                        continue
-                    }
-                    var sum: Float = 0
-                    let count = min(intRatio, srcFrames - srcStart)
-                    guard count > 0 else {
-                        dst[i] = 0
-                        continue
-                    }
-                    for j in 0..<count {
-                        // Average across channels for mono mixdown
-                        var sampleSum: Float = 0
-                        for ch in 0..<channels {
-                            sampleSum += sourceSample(frame: srcStart + j, channel: ch)
-                        }
-                        sum += sampleSum / Float(channels)
-                    }
-                    dst[i] = sum / Float(count)
-                }
-            }
-
-            if tapCount <= 5 || tapCount % 100 == 0 {
-                sysLog.warning("[SysAudio] Tap #\(tapCount): \(srcFrames)@\(nativeSR)Hz, buffers=\(buffers.count), channels=\(sourceChannels) -> \(outFrames)@\(targetSR)Hz")
-            }
+            let outFrames = Int(outBuffer.frameLength)
 
             // Mark audio as flowing once we see any non-zero sample (lock-free, real-time safe)
             if OSAtomicAdd32(0, self._audioReceivedFlag) == 0 {
                 var foundNonZero = false
                 for i in 0..<outFrames {
-                    if abs(dst[i]) > Self.audioPresenceThreshold {
+                    if abs(outData[0][i]) > Self.audioPresenceThreshold {
                         foundNonZero = true
                         break
                     }
                 }
                 if foundNonZero {
                     OSAtomicCompareAndSwap32(0, 1, self._audioReceivedFlag)
-                    sysLog.warning("[SysAudio] First non-zero audio received at tap #\(tapCount)")
                 }
             }
 
-            os_unfair_lock_lock(self.continuationLock)
             self.bufferContinuation?.yield(outBuffer)
-            os_unfair_lock_unlock(self.continuationLock)
         }
         guard status == noErr, let validProcID = procID else {
             destroyAggregateDevice()
@@ -391,7 +361,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         }
 
         _isCapturing = true
-        sysLog.warning("[SysAudio] System audio capture started")
+        sysLog.info("[SysAudio] System audio capture started")
 
         let transport = Self.transportName(for: defaultOutputID)
         SentryHelper.addBreadcrumb(
@@ -506,7 +476,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
     public func stopCapture() {
         guard _isCapturing else { return }
 
-        sysLog.warning("[SysAudio] Stopping system audio capture...")
+        sysLog.info("[SysAudio] Stopping system audio capture...")
 
         // Stop device
         if let procID = ioProcID {
@@ -518,6 +488,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         destroyTap()
 
         _isCapturing = false
+        logProcessingSummary(context: "stop")
         OSAtomicCompareAndSwap32(1, 0, _bufferReceivedFlag)
         OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
         os_unfair_lock_lock(continuationLock)
@@ -525,8 +496,22 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         bufferContinuation = nil
         os_unfair_lock_unlock(continuationLock)
         setupBufferStream()
+        audioProcessor = nil
 
-        sysLog.warning("[SysAudio] System audio capture stopped")
+        sysLog.info("[SysAudio] System audio capture stopped")
+    }
+
+    private func logProcessingSummary(context: String) {
+        guard let stats = audioProcessor?.snapshot else { return }
+        if stats.hasFailures {
+            sysLog.error(
+                "[SysAudio] Capture summary (\(context)): received=\(stats.buffersReceived), yielded=\(stats.buffersYielded), empty=\(stats.emptyBuffers), missingFloat=\(stats.missingFloatData), allocFailures=\(stats.allocationFailures), resamplerBuildFailures=\(stats.resamplerBuildFailures), conversionFailures=\(stats.conversionFailures), resamplerRebuilds=\(stats.resamplerRebuilds), passthroughCopies=\(stats.passthroughCopies)"
+            )
+        } else {
+            sysLog.info(
+                "[SysAudio] Capture summary (\(context)): received=\(stats.buffersReceived), yielded=\(stats.buffersYielded), resamplerRebuilds=\(stats.resamplerRebuilds), passthroughCopies=\(stats.passthroughCopies)"
+            )
+        }
     }
 
     // MARK: - Cleanup helpers

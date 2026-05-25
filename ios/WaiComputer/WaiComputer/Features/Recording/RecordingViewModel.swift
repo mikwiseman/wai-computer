@@ -1,8 +1,11 @@
 import Foundation
 import AVFoundation
 import Combine
+import os
 import Sentry
 import WaiComputerKit
+
+private let recordingLog = Logger(subsystem: "is.waiwai.computer.ios", category: "recording")
 
 enum RecordingPhase: Equatable {
     case idle
@@ -148,7 +151,7 @@ class RecordingViewModel: ObservableObject {
             do {
                 try await ws.connect()
             } catch {
-                NSLog("[Recording] Live transcription unavailable at recording start")
+                recordingLog.warning("Live transcription unavailable at recording start recordingId=\(recordingId, privacy: .public)")
                 SentryHelper.addBreadcrumb(
                     category: "recording",
                     message: "live transcription unavailable at recording start",
@@ -186,7 +189,7 @@ class RecordingViewModel: ObservableObject {
                             do {
                                 try await ws.sendAudio(data: data)
                             } catch {
-                                NSLog("[Recording] Realtime audio send failed; continuing with local backup only")
+                                recordingLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
                                 isLiveTranscriptionActive = false
                                 await MainActor.run { self.liveTranscriptionOffline = true }
@@ -296,6 +299,19 @@ class RecordingViewModel: ObservableObject {
                     } else {
                         error = failureMessage
                     }
+                } else if detail.status == .processing || detail.status == .uploading {
+                    _ = try? saveTranscriptBackup(recordingId: recordingId, segments: segments)
+                    do {
+                        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+                    } catch {
+                        SentryHelper.captureError(
+                            error,
+                            extras: ["action": "markServerProcessing", "recordingId": recordingId]
+                        )
+                        throw error
+                    }
+                    await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+                    error = nil
                 } else {
                     try? RecordingBackupStore.removeRecording(recordingId: recordingId)
                     error = nil
@@ -404,7 +420,7 @@ class RecordingViewModel: ObservableObject {
         do {
             return try await manager.finishStreaming(timeout: .seconds(5))
         } catch {
-            NSLog("[Recording] Failed to finalize realtime transcription stream")
+            recordingLog.warning("Failed to finalize realtime transcription stream")
             return false
         }
     }
@@ -508,7 +524,7 @@ class RecordingViewModel: ObservableObject {
                         return
                     }
                 } catch {
-                    NSLog("[Recording] Server save after reconnection failure also failed")
+                    recordingLog.warning("Server save after reconnection failure also failed recordingId=\(recordingId, privacy: .public)")
                 }
             }
 
@@ -605,7 +621,7 @@ class RecordingViewModel: ObservableObject {
                         return
                     }
                 } catch {
-                    NSLog("[Recording] Server save after streaming failure also failed")
+                    recordingLog.warning("Server save after streaming failure also failed recordingId=\(recordingId, privacy: .public)")
                 }
             }
 
@@ -676,7 +692,7 @@ class RecordingViewModel: ObservableObject {
                 return true
             }
         } catch {
-            NSLog("[Recording] Audio upload after streaming interruption failed")
+            recordingLog.warning("Audio upload after streaming interruption failed recordingId=\(recordingId, privacy: .public)")
         }
 
         return false

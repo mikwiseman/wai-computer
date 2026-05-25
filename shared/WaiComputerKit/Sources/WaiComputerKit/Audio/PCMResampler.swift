@@ -1,10 +1,10 @@
 import Foundation
 import AVFoundation
 
-/// Thin wrapper around `AVAudioConverter` for downsampling native mic audio
-/// to 16 kHz mono Float32 (Inworld + ElevenLabs both consume LINEAR16 / PCM16
-/// at 16 kHz; we keep the intermediate Float32 here and convert to Int16 in
-/// the encoder).
+/// Thin wrapper around `AVAudioConverter` for downsampling native capture audio
+/// to provider-configured Float32 PCM. Most providers consume 16 kHz mono, while
+/// OpenAI realtime dictation uses 24 kHz mono, so the target rate is always
+/// supplied by the caller instead of being hard-coded.
 ///
 /// **Why not arithmetic decimation?** The previous implementation averaged
 /// adjacent samples (44.1/48 kHz → 16 kHz). That is a low-pass-free averaging
@@ -18,11 +18,15 @@ public final class PCMResampler: @unchecked Sendable {
     private let target: AVAudioFormat
     public let sourceFormat: AVAudioFormat
 
-    public init?(source: AVAudioFormat, targetSampleRate: Double = 16_000) {
+    public init?(
+        source: AVAudioFormat,
+        targetSampleRate: Double = 16_000,
+        targetChannelCount: AVAudioChannelCount = 1
+    ) {
         guard let target = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: targetSampleRate,
-            channels: 1,
+            channels: targetChannelCount,
             interleaved: false
         ) else { return nil }
         guard let conv = AVAudioConverter(from: source, to: target) else { return nil }

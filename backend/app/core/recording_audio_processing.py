@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
-from app.core.observability import add_sentry_breadcrumb, capture_sentry_message
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    capture_sentry_message,
+    fingerprint_text,
+)
+from app.core.retry_policy import is_retryable_exception
 from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
@@ -101,6 +106,22 @@ async def reset_recording_processing_state(recording_id: UUID, db: AsyncSession)
     await db.execute(delete(Highlight).where(Highlight.recording_id == recording_id))
     await db.execute(delete(Summary).where(Summary.recording_id == recording_id))
     await db.execute(delete(Segment).where(Segment.recording_id == recording_id))
+
+
+async def mark_recording_processing_failed(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    failure_code: str,
+    failure_message: str,
+) -> None:
+    failed = await db.get(Recording, recording_id)
+    if failed is None:
+        return
+    failed.status = RecordingStatus.FAILED.value
+    failed.failure_code = failure_code
+    failed.failure_message = failure_message
+    await db.commit()
 
 
 def _speech_results(results: list[TranscriptResult]) -> list[TranscriptResult]:
@@ -257,6 +278,20 @@ async def process_staged_recording_upload(
     )
     await db.commit()
 
+    if not staged_path.exists():
+        logger.error(
+            "audio processing staged file missing recording_id=%s staged_size_bytes=%s",
+            recording_id,
+            staged_size_bytes,
+        )
+        await mark_recording_processing_failed(
+            db,
+            recording_id=recording_id,
+            failure_code="staged_file_missing",
+            failure_message="Uploaded audio file was missing before processing.",
+        )
+        return
+
     try:
         await reset_recording_processing_state(recording_id, db)
 
@@ -302,6 +337,7 @@ async def process_staged_recording_upload(
         except Exception:
             logger.exception("Voice identification failed; segments will keep person_id=NULL")
 
+        embedding_failure_count = 0
         for transcript in speech_transcript_results:
             text = transcript.text.strip()
             embedding = None
@@ -309,7 +345,12 @@ async def process_staged_recording_upload(
                 try:
                     embedding = await generate_embedding(text)
                 except Exception as exc:
-                    logger.warning("Failed to generate embedding: %s", exc)
+                    embedding_failure_count += 1
+                    logger.warning(
+                        "Failed to generate embedding error_type=%s error_fingerprint=%s",
+                        type(exc).__name__,
+                        fingerprint_text(str(exc)),
+                    )
 
             assignment = speaker_assignments.get(transcript.speaker) if transcript.speaker else None
             assigned_person_id, match_confidence = (
@@ -363,21 +404,53 @@ async def process_staged_recording_upload(
         recording.failure_message = None
         await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
+        if embedding_failure_count:
+            alert_data = {
+                "alert_code": "recording.embeddings.degraded",
+                "recording_id": str(recording_id),
+                "failed_segments": embedding_failure_count,
+                "segment_count": len(speech_transcript_results),
+            }
+            add_sentry_breadcrumb(
+                category="recording",
+                message="Recording completed with degraded semantic embeddings",
+                level="warning",
+                data=alert_data,
+            )
+            capture_sentry_message(
+                "Recording completed with degraded semantic embeddings",
+                level="warning",
+                extras=alert_data,
+            )
         delete_staged_file(staged_path)
         logger.info("audio processing completed")
     except Exception as exc:
-        logger.exception("Recording processing failed for %s", recording_id)
         await db.rollback()
-        failed = await db.get(Recording, recording_id)
-        if failed is not None:
-            failed.status = RecordingStatus.FAILED.value
-            failed.failure_code = "processing_failed"
-            failed.failure_message = _processing_failure_message(exc)
-            await db.commit()
+        if is_retryable_exception(exc):
+            logger.warning(
+                "Recording processing hit retryable error recording_id=%s error_type=%s "
+                "error_fingerprint=%s",
+                recording_id,
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
+            raise
+        logger.exception(
+            "Recording processing failed recording_id=%s error_type=%s error_fingerprint=%s",
+            recording_id,
+            type(exc).__name__,
+            fingerprint_text(str(exc)),
+        )
+        await mark_recording_processing_failed(
+            db,
+            recording_id=recording_id,
+            failure_code="processing_failed",
+            failure_message=_processing_failure_message(exc),
+        )
         delete_staged_file(staged_path)
         raise
 
 
 def _processing_failure_message(exc: Exception) -> str:
-    message = str(exc).strip()
-    return (message or "Imported audio processing failed")[:500]
+    del exc
+    return "Imported audio processing failed"

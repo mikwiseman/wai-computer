@@ -32,6 +32,7 @@ public enum SentryHelper {
     }
 
     public static func captureError(_ error: Error, extras: [String: Any]? = nil) {
+        guard SentrySDK.isEnabled else { return }
         SentrySDK.capture(error: error) { scope in
             if let extras {
                 for (key, value) in sanitizeDictionary(extras) {
@@ -161,6 +162,7 @@ public enum SentryHelper {
         level: SentryLevel = .info,
         data: [String: Any]? = nil
     ) {
+        guard SentrySDK.isEnabled else { return }
         let crumb = Breadcrumb(level: level, category: category)
         crumb.message = sanitizeString(message, key: "message")
         if let data {
@@ -170,12 +172,14 @@ public enum SentryHelper {
     }
 
     public static func setUser(id: String) {
+        guard SentrySDK.isEnabled else { return }
         let user = Sentry.User()
         user.userId = id
         SentrySDK.setUser(user)
     }
 
     public static func clearUser() {
+        guard SentrySDK.isEnabled else { return }
         SentrySDK.setUser(nil)
     }
 

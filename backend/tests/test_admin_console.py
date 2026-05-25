@@ -743,15 +743,62 @@ async def test_admin_observability_snapshot_flags_recording_pipeline_risks(
     assert payload["recording_pipeline"]["status_counts"]["ready"] >= 2
     assert payload["recording_pipeline"]["stuck_processing_count"] >= 1
     assert payload["recording_pipeline"]["low_transcript_coverage_count_24h"] >= 1
+    assert payload["recording_pipeline"]["segments_missing_embedding_count"] >= 1
+    assert payload["recording_pipeline"]["recordings_with_degraded_embeddings_24h"] >= 1
     assert payload["recording_pipeline"]["failed_rate_24h"] > 0
     alert_codes = {item["code"] for item in payload["alerts"]}
     assert "recording.processing.stuck" in alert_codes
     assert "recording.transcript.low_coverage" in alert_codes
+    assert "recording.embeddings.degraded" in alert_codes
     assert payload["sentry"]["configured"] in {True, False}
     assert payload["server"]["database"] == "connected"
     assert "Private" not in str(payload)
     assert "Raw provider" not in str(payload)
     assert "private partial transcript" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_can_trigger_embedding_backfill(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    admin_payload, admin_headers = await _register(
+        client,
+        "admin-embedding-backfill@example.com",
+    )
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    async def fake_backfill(db, *, user_id=None, batch_size=64, limit=512):
+        del db, user_id, batch_size, limit
+
+        class Result:
+            def as_dict(self) -> dict:
+                return {
+                    "scanned": 2,
+                    "filled": 2,
+                    "failed": 0,
+                    "remaining": 0,
+                    "batches": 1,
+                    "isolated_failures": 0,
+                }
+
+        return Result()
+
+    monkeypatch.setattr(
+        "app.api.routes.admin.backfill_missing_segment_embeddings",
+        fake_backfill,
+    )
+
+    response = await client.post(
+        "/api/admin/embeddings/backfill",
+        headers=admin_headers,
+        json={"limit": 10, "batch_size": 2},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["filled"] == 2
+    assert response.json()["remaining"] == 0
 
 
 @pytest.mark.asyncio

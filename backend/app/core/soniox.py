@@ -34,6 +34,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.core.observability import fingerprint_text, safe_text_digest
 from app.core.transcript_utils import TranscriptResult
 
 SONIOX_API_BASE = "https://api.soniox.com"
@@ -100,7 +101,7 @@ async def mint_realtime_session(
         if response.status_code >= 400:
             raise RuntimeError(
                 "Soniox temporary API key request failed "
-                f"status={response.status_code} body={response.text[:512]}"
+                f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
             )
         body = response.json()
 
@@ -197,7 +198,8 @@ async def _upload_file(
     )
     if response.status_code >= 400:
         raise RuntimeError(
-            f"Soniox /v1/files failed status={response.status_code} body={response.text[:512]}"
+            "Soniox /v1/files failed "
+            f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
         )
     body = response.json()
     file_id = body.get("id") if isinstance(body, dict) else None
@@ -227,7 +229,7 @@ async def _create_job(
     if response.status_code >= 400:
         raise RuntimeError(
             "Soniox /v1/transcriptions failed "
-            f"status={response.status_code} body={response.text[:512]}"
+            f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
         )
     body = response.json()
     job_id = body.get("id") if isinstance(body, dict) else None
@@ -244,7 +246,7 @@ async def _wait_for_completion(client: httpx.AsyncClient, job_id: str) -> None:
         if response.status_code >= 400:
             raise RuntimeError(
                 "Soniox transcription poll failed "
-                f"status={response.status_code} body={response.text[:512]}"
+                f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
             )
         body = response.json()
         if not isinstance(body, dict):
@@ -254,7 +256,10 @@ async def _wait_for_completion(client: httpx.AsyncClient, job_id: str) -> None:
             return
         if status == "error":
             error_message = body.get("error_message") or body.get("error") or "unknown"
-            raise RuntimeError(f"Soniox transcription job errored: {error_message}")
+            raise RuntimeError(
+                "Soniox transcription job errored "
+                f"provider_error={safe_text_digest(str(error_message), label='soniox_error')}"
+            )
         # Any other status ("queued", "processing", ...) — keep polling.
         if elapsed >= SONIOX_POLL_HARD_TIMEOUT_SECONDS:
             raise RuntimeError(
@@ -273,7 +278,7 @@ async def _fetch_transcript(
     if response.status_code >= 400:
         raise RuntimeError(
             "Soniox transcript fetch failed "
-            f"status={response.status_code} body={response.text[:512]}"
+            f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
         )
     body = response.json()
     if not isinstance(body, dict):
