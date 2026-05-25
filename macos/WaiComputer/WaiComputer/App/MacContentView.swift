@@ -808,6 +808,7 @@ struct MacMainView: View {
                         }
                     }
                 )
+                .id("\(detailMode)-\(recordingId)")
             } else if isTrashSection {
                 ContentUnavailableView(
                     t("Select a Recording", "Выбери запись"),
