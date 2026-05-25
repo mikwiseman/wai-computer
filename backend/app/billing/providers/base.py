@@ -57,7 +57,12 @@ class PaymentProvider(ABC):
         """Create a hosted checkout session and return its URL."""
 
     @abstractmethod
-    async def cancel_subscription(self, provider_subscription_id: str) -> None:
+    async def cancel_subscription(
+        self,
+        provider_subscription_id: str,
+        *,
+        at_period_end: bool = True,
+    ) -> None:
         """Mark the provider subscription as canceled at period end."""
 
     @abstractmethod

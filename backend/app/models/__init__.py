@@ -1,5 +1,6 @@
 """SQLAlchemy models."""
 
+from app.models.admin import AdminAuditLog, AdminRole
 from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.benchmark import DictationBenchmarkVote
@@ -29,7 +30,14 @@ from app.models.mcp_oauth import (
     McpOAuthToken,
 )
 from app.models.person import Person, Voiceprint
-from app.models.recording import ActionItem, Folder, Recording, RecordingShare, Segment, Summary
+from app.models.recording import (
+    ActionItem,
+    Folder,
+    Recording,
+    RecordingShare,
+    Segment,
+    Summary,
+)
 from app.models.refresh_token import RefreshToken
 from app.models.telegram import (
     TelegramAccount,
@@ -43,6 +51,8 @@ from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 __all__ = [
     "Base",
     "ApiKey",
+    "AdminAuditLog",
+    "AdminRole",
     "DictationBenchmarkVote",
     "BillingEvent",
     "BillingPeriod",

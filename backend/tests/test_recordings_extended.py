@@ -615,23 +615,23 @@ def test_serialize_summary_with_none_returns_none():
 
 
 # ---------------------------------------------------------------------------
-# _delete_staged_file edge cases
+# delete_staged_file edge cases
 # ---------------------------------------------------------------------------
 
 
 def test_delete_staged_file_with_none_is_noop():
-    """_delete_staged_file should not crash when given None."""
-    recordings._delete_staged_file(None)
+    """delete_staged_file should not crash when given None."""
+    recordings.delete_staged_file(None)
 
 
 def test_delete_staged_file_with_empty_string_is_noop():
-    """_delete_staged_file should not crash when given empty string."""
-    recordings._delete_staged_file("")
+    """delete_staged_file should not crash when given empty string."""
+    recordings.delete_staged_file("")
 
 
 def test_delete_staged_file_with_nonexistent_path_is_noop():
-    """_delete_staged_file should not crash for missing files (missing_ok=True)."""
-    recordings._delete_staged_file("/tmp/nonexistent-file-12345.mp3")
+    """delete_staged_file should not crash for missing files (missing_ok=True)."""
+    recordings.delete_staged_file("/tmp/nonexistent-file-12345.mp3")
 
 
 # ---------------------------------------------------------------------------

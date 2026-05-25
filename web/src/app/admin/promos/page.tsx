@@ -1,14 +1,5 @@
-import type { Metadata } from "next";
-import { AdminPromoCodesClient } from "./AdminPromoCodesClient";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Admin Promocodes — WaiComputer",
-  robots: {
-    index: false,
-    follow: false,
-  },
-};
-
-export default function AdminPromoCodesPage() {
-  return <AdminPromoCodesClient />;
+export default function AdminPromosPage() {
+  redirect("/admin?tab=promos");
 }

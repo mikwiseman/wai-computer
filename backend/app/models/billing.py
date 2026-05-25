@@ -36,6 +36,7 @@ class BillingProvider(str, enum.Enum):
     STRIPE = "stripe"
     TINKOFF = "tinkoff"
     PROMO = "promo"
+    ADMIN = "admin"
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -251,6 +252,7 @@ class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
         Boolean, nullable=False, default=True, server_default="true"
     )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     note: Mapped[str | None] = mapped_column(Text)
 
     plan: Mapped["Plan"] = relationship("Plan", back_populates="promo_codes")

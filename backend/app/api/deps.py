@@ -16,6 +16,7 @@ from app.models.user import User
 
 settings = get_settings()
 bearer_security = HTTPBearer(auto_error=False)
+ACTIVE_ACCOUNT_STATUS = "active"
 
 
 def _extract_access_token(
@@ -45,6 +46,17 @@ async def _user_for_api_key(db: AsyncSession, token: str) -> User | None:
     return result.scalar_one_or_none()
 
 
+def _require_active_account(user: User) -> None:
+    status_value = getattr(user, "account_status", ACTIVE_ACCOUNT_STATUS)
+    if status_value == ACTIVE_ACCOUNT_STATUS:
+        return
+    label = "deactivated" if status_value == "deactivated" else "paused"
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Account {label}",
+    )
+
+
 async def get_current_user(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_security)],
@@ -72,6 +84,7 @@ async def get_current_user(
                 detail="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        _require_active_account(user)
         if request.method not in SAFE_METHODS:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -100,6 +113,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    _require_active_account(user)
     bind_user_context(str(user.id))
     return user
 
@@ -120,6 +134,11 @@ async def get_optional_user(
 
     if is_api_key(token):
         user = await _user_for_api_key(db, token)
+        if (
+            user is not None
+            and getattr(user, "account_status", ACTIVE_ACCOUNT_STATUS) != ACTIVE_ACCOUNT_STATUS
+        ):
+            return None
         if user is not None:
             request.state.auth_via_api_key = True
             bind_user_context(str(user.id))
@@ -132,6 +151,11 @@ async def get_optional_user(
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
+    if (
+        user is not None
+        and getattr(user, "account_status", ACTIVE_ACCOUNT_STATUS) != ACTIVE_ACCOUNT_STATUS
+    ):
+        return None
     if user is not None:
         bind_user_context(str(user.id))
     return user

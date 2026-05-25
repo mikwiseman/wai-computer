@@ -1,7 +1,29 @@
-import { ApiError, getApiBaseUrl } from "./http";
+import { apiFetch } from "./http";
+
+export interface AdminStats {
+  users: {
+    total: number;
+    new_30d: number;
+    by_status: Record<string, number>;
+  };
+  promo: Record<string, number>;
+  usage: {
+    recording_words: number;
+    dictation_words: number;
+    total_words: number;
+    recording_duration_seconds: number;
+    dictation_duration_seconds: number;
+    recording_count: number;
+    failed_recordings: number;
+  };
+  billing: {
+    subscriptions_by_provider: Record<string, number>;
+    subscriptions_by_status: Record<string, number>;
+    revenue_by_currency: Record<string, number>;
+  };
+}
 
 export interface AdminPromoCodeCreateInput {
-  adminPassword: string;
   code: string | null;
   prefix: string;
   plan: string;
@@ -12,60 +34,183 @@ export interface AdminPromoCodeCreateInput {
   note: string | null;
 }
 
+export interface AdminPromoRedemption {
+  user_id: string;
+  user_email: string;
+  subscription_id: string;
+  redeemed_at: string;
+}
+
 export interface AdminPromoCode {
-  code: string;
-  normalized_code: string;
+  id: string;
+  code?: string;
+  normalized_code?: string;
   plan: string;
   billing_period: string;
   duration_days: number;
   max_redemptions: number;
   redeemed_count: number;
+  redemption_rate: number;
   active: boolean;
+  archived_at: string | null;
   expires_at: string | null;
   note: string | null;
+  created_at: string;
+  redemptions: AdminPromoRedemption[];
 }
 
-async function parsePayload(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text.trim()) return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  account_status: "active" | "paused" | "deactivated";
+  account_status_reason: string | null;
+  created_at: string;
+  current_plan: string;
+  current_subscription_status: string | null;
+  current_subscription_provider: string | null;
+  dictation_words: number;
+  recording_words: number;
+  recording_count: number;
 }
 
-function messageFromPayload(payload: unknown, fallback: string): string {
-  if (payload && typeof payload === "object") {
-    const detail = (payload as { detail?: unknown }).detail;
-    if (typeof detail === "string" && detail.length > 0) {
-      return detail;
-    }
-  }
-  return fallback;
+export interface AdminUserDetail extends AdminUserSummary {
+  subscriptions: Array<Record<string, unknown>>;
+  promo_redemptions: Array<Record<string, unknown>>;
+  weekly_usage: Array<Record<string, unknown>>;
+}
+
+export interface AdminBillingInvoice {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  provider_payment_id: string | null;
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface AdminBillingSubscription {
+  id: string;
+  user_id: string;
+  user_email: string;
+  plan: string;
+  status: string;
+  provider: string;
+  billing_period: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  invoices: AdminBillingInvoice[];
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  reason: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export function getAdminStats(): Promise<AdminStats> {
+  return apiFetch<AdminStats>("/api/admin/stats");
 }
 
 export async function createAdminPromoCode(
   input: AdminPromoCodeCreateInput,
 ): Promise<AdminPromoCode> {
-  const { adminPassword, ...payload } = input;
-  const response = await fetch(`${getApiBaseUrl()}/api/admin/promo-codes`, {
+  return apiFetch<AdminPromoCode>("/api/admin/promo-codes", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Wai-Admin-Password": adminPassword,
-    },
-    body: JSON.stringify(payload),
-    credentials: "include",
-    cache: "no-store",
+    body: JSON.stringify(input),
   });
-  const responsePayload = await parsePayload(response);
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      messageFromPayload(responsePayload, "Не удалось сгенерировать промокод."),
-      responsePayload,
-    );
-  }
-  return responsePayload as AdminPromoCode;
+}
+
+export async function listAdminPromoCodes(): Promise<AdminPromoCode[]> {
+  const payload = await apiFetch<{ items: AdminPromoCode[] }>("/api/admin/promo-codes");
+  return payload.items;
+}
+
+export function updateAdminPromoCode(
+  id: string,
+  input: Partial<Pick<AdminPromoCode, "active" | "note" | "duration_days" | "max_redemptions">>,
+): Promise<AdminPromoCode> {
+  return apiFetch<AdminPromoCode>(`/api/admin/promo-codes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function archiveAdminPromoCode(id: string): Promise<void> {
+  await apiFetch<void>(`/api/admin/promo-codes/${id}`, { method: "DELETE" });
+}
+
+export async function listAdminUsers(q = ""): Promise<AdminUserSummary[]> {
+  const suffix = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  const payload = await apiFetch<{ items: AdminUserSummary[] }>(`/api/admin/users${suffix}`);
+  return payload.items;
+}
+
+export function getAdminUser(id: string): Promise<AdminUserDetail> {
+  return apiFetch<AdminUserDetail>(`/api/admin/users/${id}`);
+}
+
+export function updateAdminUserStatus(
+  id: string,
+  input: { status: AdminUserSummary["account_status"]; reason: string | null },
+): Promise<AdminUserSummary> {
+  return apiFetch<AdminUserSummary>(`/api/admin/users/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function grantAdminSubscription(
+  id: string,
+  input: { duration_days: number; reason: string | null },
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/api/admin/users/${id}/subscriptions/grant`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listAdminBilling(): Promise<AdminBillingSubscription[]> {
+  const payload = await apiFetch<{ items: AdminBillingSubscription[] }>("/api/admin/billing");
+  return payload.items;
+}
+
+export function cancelAdminSubscription(
+  id: string,
+  input: { mode: "period_end" | "immediate"; reason: string | null },
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/api/admin/subscriptions/${id}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function resumeAdminSubscription(
+  id: string,
+  input: { reason: string | null },
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/api/admin/subscriptions/${id}/resume`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function refundAdminInvoice(
+  id: string,
+  input: { amount_minor: number | null; reason: string | null },
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(`/api/admin/invoices/${id}/refund`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listAdminAudit(): Promise<AdminAuditLog[]> {
+  const payload = await apiFetch<{ items: AdminAuditLog[] }>("/api/admin/audit");
+  return payload.items;
 }

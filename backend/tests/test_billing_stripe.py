@@ -201,6 +201,58 @@ async def test_create_checkout_without_trial_does_not_add_trial_params(monkeypat
     assert "trial_settings" not in captured["subscription_data"]
 
 
+@pytest.mark.asyncio
+async def test_stripe_admin_subscription_and_refund_operations(monkeypatch):
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    calls: list[tuple[str, str, dict | None]] = []
+
+    class FakeRefund:
+        def to_dict(self):
+            return {"id": "re_123", "status": "succeeded"}
+
+    class FakeSubscriptions:
+        async def update_async(self, subscription_id: str, *, params: dict):
+            calls.append(("update", subscription_id, params))
+
+        async def cancel_async(self, subscription_id: str):
+            calls.append(("cancel", subscription_id, None))
+
+    class FakeRefunds:
+        async def create_async(self, *, params: dict):
+            calls.append(("refund", params["payment_intent"], params))
+            return FakeRefund()
+
+    class FakeV1:
+        subscriptions = FakeSubscriptions()
+        refunds = FakeRefunds()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+
+    await p.cancel_subscription("sub_123")
+    await p.cancel_subscription("sub_123", at_period_end=False)
+    await p.resume_subscription("sub_123")
+    refund = await p.refund_payment("pi_123", amount_minor=500, reason="requested_by_customer")
+
+    assert calls == [
+        ("update", "sub_123", {"cancel_at_period_end": True}),
+        ("cancel", "sub_123", None),
+        ("update", "sub_123", {"cancel_at_period_end": False}),
+        (
+            "refund",
+            "pi_123",
+            {
+                "payment_intent": "pi_123",
+                "amount": 500,
+                "reason": "requested_by_customer",
+            },
+        ),
+    ]
+    assert refund == {"id": "re_123", "status": "succeeded"}
+
+
 # ----- service event handlers ---------------------------------------------
 
 

@@ -241,6 +241,10 @@ async function installAuthMocks(page: Page) {
 
 async function fillEmailAfterHydration(page: Page, email: string) {
   await page.getByTestId("auth-email").fill(email);
+  const legalConsent = page.getByTestId("legal-consent-checkbox");
+  if (await legalConsent.count()) {
+    await legalConsent.check();
+  }
   await expect(page.getByTestId("magic-link-button")).toBeEnabled();
 }
 
@@ -344,6 +348,9 @@ test.describe("Auth flow", () => {
       email: "brand-new@example.com",
       locale: "en",
       region: "global",
+      accepted_legal_terms: true,
+      legal_terms_version: "2026-05-22",
+      legal_privacy_version: "2026-05-22",
     });
     await expect(page).toHaveURL(/\/register/);
   });
