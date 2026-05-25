@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -256,6 +257,91 @@ async def test_process_staged_recording_upload_skips_ready_recording(
     assert recording.status == RecordingStatus.READY.value
     assert recording.title == "Already Ready"
     transcribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_missing_staged_file_failed(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="queued-missing-staged@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Missing staged file",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    transcribe = AsyncMock()
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=tmp_path / "missing.wav",
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "staged_file_missing"
+    assert recording.failure_message == "Uploaded audio file was missing before processing."
+    transcribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_keeps_retryable_failure_in_processing(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="queued-retryable@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Retryable staged file",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "retryable.wav"
+    staged_path.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(side_effect=httpx.TimeoutException("provider timed out")),
+    )
+
+    with pytest.raises(httpx.TimeoutException):
+        await process_staged_recording_upload(
+            db_session,
+            recording_id=recording.id,
+            user_id=user.id,
+            staged_path=staged_path,
+            content_type="audio/wav",
+            user_default_language="en",
+        )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.PROCESSING.value
+    assert recording.failure_code is None
+    assert staged_path.exists()
 
 
 @pytest.mark.asyncio

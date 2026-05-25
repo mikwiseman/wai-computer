@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     recording_monitoring_min_coverage_ratio: float = 0.8
     recording_monitoring_failure_rate_critical: float = 0.2
     recording_monitoring_min_volume_24h: int = 3
+    recording_monitoring_degraded_embedding_warning_threshold: int = 1
+    embedding_backfill_batch_size: int = 64
+    embedding_backfill_max_segments_per_run: int = 512
+    embedding_backfill_interval_minutes: int = 30
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

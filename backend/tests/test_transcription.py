@@ -192,6 +192,38 @@ async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_
 
 
 @pytest.mark.asyncio
+async def test_transcription_logs_provider_latency_without_audio_or_error_body(caplog):
+    from app.core.transcript_utils import TranscriptResult
+
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(
+            return_value=[
+                TranscriptResult(
+                    text="private transcript must not be logged",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1000,
+                    confidence=0.9,
+                )
+            ]
+        ),
+    ):
+        from app.core.transcription import transcribe_audio_file
+
+        caplog.set_level("INFO", logger="app.core.transcription")
+        await transcribe_audio_file(b"secret-audio-bytes", language="ru", content_type="audio/wav")
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "file STT completed" in messages
+    assert "provider=elevenlabs" in messages
+    assert "segment_count=1" in messages
+    assert "private transcript" not in messages
+    assert "secret-audio-bytes" not in messages
+
+
+@pytest.mark.asyncio
 async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
     response = httpx.Response(
         400,

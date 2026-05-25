@@ -57,6 +57,12 @@ public actor PendingRecordingSyncCoordinator {
             log.info("Sync pass attempt \(attempt), \(pendingCount) pending backups")
             let remainingCount = await syncAllBackups(using: apiClient)
             guard remainingCount > 0 else {
+                if retryImmediatelyAfterCurrentPass {
+                    retryImmediatelyAfterCurrentPass = false
+                    attempt = 0
+                    log.info("Retrying sync immediately after successful pass")
+                    continue
+                }
                 log.info("All backups synced successfully")
                 return
             }
@@ -91,14 +97,17 @@ public actor PendingRecordingSyncCoordinator {
 
         for backup in backups {
             let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId)
-            if manifest?.isReadyForSync == false {
+            if manifest?.syncState == .localRecording {
                 log.info("Skipping in-progress recording backup \(backup.recordingId)")
                 continue
             }
-            if manifest?.isPermanentFailure == true {
+            if manifest?.syncState == .permanentFailure {
                 continue
             }
-            if manifest?.requiresAuthentication == true {
+            if manifest?.syncState == .authenticationRequired {
+                continue
+            }
+            if manifest?.syncState == .remoteReady {
                 continue
             }
             let didSync = await sync(backup: backup, using: apiClient)
@@ -116,9 +125,13 @@ public actor PendingRecordingSyncCoordinator {
             let segments = try segmentsForSync(recordingId: backup.recordingId, manifest: manifest)
             let hasAudioFile = FileManager.default.fileExists(atPath: backup.audioFileURL.path)
                 && (manifest?.hasAudioFile ?? true)
+            try RecordingBackupStore.recordSyncAttempt(recordingId: backup.recordingId)
 
             let detail: RecordingDetail?
-            if hasAudioFile {
+            if manifest?.syncState == .serverProcessing {
+                log.info("Polling server processing status for recording \(backup.recordingId)")
+                detail = try await apiClient.getRecording(id: backup.recordingId)
+            } else if hasAudioFile {
                 log.info("Uploading audio for recording \(backup.recordingId)")
                 let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())
                 detail = try await apiClient.uploadAudio(
@@ -145,13 +158,14 @@ public actor PendingRecordingSyncCoordinator {
 
             if let detail, detail.status == .failed {
                 log.warning("Server returned failed status for recording \(backup.recordingId)")
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                try RecordingBackupStore.markRetryableFailure(
                     recordingId: backup.recordingId,
                     message: UserFacingErrorFormatter.displayMessage(
                         detail.failureMessage,
                         fallback: "We couldn't finish saving your recording right now. We'll keep trying in the background.",
                         context: .recording
-                    )
+                    ),
+                    failureCode: detail.failureCode
                 )
                 return false
             }
@@ -160,6 +174,9 @@ public actor PendingRecordingSyncCoordinator {
                 log.info(
                     "Server accepted recording \(backup.recordingId) with status \(detail.status.rawValue)"
                 )
+                if detail.status == .processing || detail.status == .uploading {
+                    try RecordingBackupStore.markServerProcessing(recordingId: backup.recordingId)
+                }
                 return false
             }
 

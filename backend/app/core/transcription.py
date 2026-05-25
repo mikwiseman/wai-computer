@@ -2,11 +2,13 @@
 
 import logging
 from io import BytesIO
+from time import perf_counter
 
 import httpx
 
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
+from app.core.observability import fingerprint_text
 from app.core.soniox import transcribe_audio_file as soniox_transcribe_audio_file
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription_options import (
@@ -76,44 +78,83 @@ async def transcribe_audio_file(
     provider = provider or DEFAULT_FILE_STT_PROVIDER
     selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
+    started_at = perf_counter()
+    audio_bytes = len(audio_data)
 
-    if provider == "deepgram":
-        return await deepgram_transcribe_audio_file(
-            audio_data,
-            model=selected_model,
-            language=language,
-            content_type=content_type,
-            channels=channels,
-        )
-    if provider == "soniox":
-        audio_data, content_type, channels = _normalize_soniox_file_audio(
-            audio_data,
+    try:
+        if provider == "deepgram":
+            results = await deepgram_transcribe_audio_file(
+                audio_data,
+                model=selected_model,
+                language=language,
+                content_type=content_type,
+                channels=channels,
+            )
+        elif provider == "soniox":
+            audio_data, content_type, channels = _normalize_soniox_file_audio(
+                audio_data,
+                content_type,
+                channels,
+            )
+            results = await soniox_transcribe_audio_file(
+                audio_data,
+                model=selected_model,
+                language=language,
+                content_type=content_type,
+                channels=channels,
+            )
+        elif provider == "elevenlabs":
+            results = await elevenlabs_transcribe_audio_file(
+                audio_data,
+                language=language,
+                content_type=content_type,
+                channels=channels,
+                model=selected_model,
+            )
+        else:
+            raise ValueError(f"Unsupported file_stt_provider: {provider}.")
+    except httpx.HTTPStatusError as exc:
+        error_code = _elevenlabs_error_code(exc) or "unknown"
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        logger.warning(
+            "file STT failed provider=%s model=%s latency_ms=%s status_code=%s "
+            "error_code=%s error_fingerprint=%s audio_bytes=%s content_type=%s channels=%s",
+            provider,
+            selected_model,
+            latency_ms,
+            exc.response.status_code,
+            error_code,
+            fingerprint_text(exc.response.text),
+            audio_bytes,
             content_type,
             channels,
         )
-        return await soniox_transcribe_audio_file(
-            audio_data,
-            model=selected_model,
-            language=language,
-            content_type=content_type,
-            channels=channels,
-        )
-    if provider != "elevenlabs":
-        raise ValueError(f"Unsupported file_stt_provider: {provider}.")
-
-    try:
-        return await elevenlabs_transcribe_audio_file(
-            audio_data,
-            language=language,
-            content_type=content_type,
-            channels=channels,
-            model=selected_model,
-        )
-    except httpx.HTTPStatusError as exc:
-        error_code = _elevenlabs_error_code(exc) or "unknown"
-        logger.warning(
-            "elevenlabs file STT failed status_code=%s error_code=%s",
-            exc.response.status_code,
-            error_code,
+        raise
+    except Exception as exc:
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        logger.exception(
+            "file STT failed provider=%s model=%s latency_ms=%s error_type=%s "
+            "audio_bytes=%s content_type=%s channels=%s",
+            provider,
+            selected_model,
+            latency_ms,
+            type(exc).__name__,
+            audio_bytes,
+            content_type,
+            channels,
         )
         raise
+
+    latency_ms = round((perf_counter() - started_at) * 1000)
+    logger.info(
+        "file STT completed provider=%s model=%s latency_ms=%s segment_count=%s "
+        "audio_bytes=%s content_type=%s channels=%s",
+        provider,
+        selected_model,
+        latency_ms,
+        len(results),
+        audio_bytes,
+        content_type,
+        channels,
+    )
+    return results

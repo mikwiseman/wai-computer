@@ -126,3 +126,27 @@ def test_celery_worker_init_resets_db_runtime(monkeypatch):
 
 def test_celery_app_has_no_stale_task_includes():
     assert celery_app_module.celery_app.conf.include in (None, ())
+
+
+def test_recording_audio_processing_task_has_reliability_options():
+    import app.tasks.recording_audio_processing  # noqa: F401
+
+    task = celery_app_module.celery_app.tasks[
+        "app.tasks.recording_audio_processing.process_staged_recording_upload"
+    ]
+
+    assert task.acks_late is True
+    assert task.reject_on_worker_lost is True
+    assert task.soft_time_limit == 3000
+    assert task.time_limit == 3300
+    assert task.max_retries == 3
+
+
+def test_embedding_backfill_task_is_registered_for_periodic_repair():
+    import app.tasks.embedding_backfill  # noqa: F401
+
+    assert (
+        "app.tasks.embedding_backfill.backfill_missing_segment_embeddings"
+        in celery_app_module.celery_app.tasks
+    )
+    assert "embedding-backfill-every-30-minutes" in celery_app_module.celery_app.conf.beat_schedule

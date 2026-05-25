@@ -138,6 +138,119 @@ final class PCMResamplerTests: XCTestCase {
         XCTAssertEqual(output.format.sampleRate, 16_000)
     }
 
+    func testConvertHonors24kTargetSampleRate() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let resampler = PCMResampler(source: source, targetSampleRate: 24_000)!
+
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.2)
+        let output = try XCTUnwrap(resampler.convert(input))
+
+        XCTAssertEqual(output.format.sampleRate, 24_000)
+        XCTAssertEqual(output.format.channelCount, 1)
+        XCTAssertGreaterThanOrEqual(Int(output.frameLength), 4_700)
+        XCTAssertLessThanOrEqual(Int(output.frameLength), 4_900)
+    }
+
+    func testConvertAppliesAntiAliasingForAboveNyquistTone() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let resampler = PCMResampler(source: source, targetSampleRate: 16_000)!
+
+        let input = makeSineBuffer(format: source, frequency: 12_000, durationSeconds: 0.4, amplitude: 0.9)
+        let output = try XCTUnwrap(resampler.convert(input))
+
+        XCTAssertLessThan(
+            try rms(output),
+            0.02,
+            "12kHz input must be filtered before 16kHz output instead of aliasing into the speech band"
+        )
+    }
+
+    // MARK: - CaptureAudioProcessor
+
+    func testCaptureAudioProcessorResamples48kStereoTo16kMono() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 2,
+            interleaved: false
+        )!
+        let processor = try XCTUnwrap(CaptureAudioProcessor(config: .default))
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.1)
+
+        let output = try XCTUnwrap(processor.process(input))
+
+        XCTAssertEqual(output.format.sampleRate, 16_000)
+        XCTAssertEqual(output.format.channelCount, 1)
+        XCTAssertGreaterThanOrEqual(Int(output.frameLength), 1_500)
+        XCTAssertLessThanOrEqual(Int(output.frameLength), 1_700)
+        XCTAssertEqual(processor.snapshot.buffersReceived, 1)
+        XCTAssertEqual(processor.snapshot.buffersYielded, 1)
+        XCTAssertEqual(processor.snapshot.resamplerRebuilds, 1)
+    }
+
+    func testCaptureAudioProcessorUsesConfigured24kTarget() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let config = AudioCaptureConfig(sampleRate: 24_000, channelCount: 1, bufferSize: 2_400)
+        let processor = try XCTUnwrap(CaptureAudioProcessor(config: config))
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.1)
+
+        let output = try XCTUnwrap(processor.process(input))
+
+        XCTAssertEqual(output.format.sampleRate, 24_000)
+        XCTAssertEqual(output.format.channelCount, 1)
+        XCTAssertGreaterThanOrEqual(Int(output.frameLength), 2_300)
+        XCTAssertLessThanOrEqual(Int(output.frameLength), 2_500)
+    }
+
+    func testCaptureAudioProcessorCopiesMatchingBuffersBeforeYielding() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let processor = try XCTUnwrap(CaptureAudioProcessor(config: .default))
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.1)
+
+        let output = try XCTUnwrap(processor.process(input))
+
+        XCTAssertFalse(output === input)
+        XCTAssertEqual(output.format.sampleRate, input.format.sampleRate)
+        XCTAssertEqual(output.frameLength, input.frameLength)
+        XCTAssertEqual(processor.snapshot.passthroughCopies, 1)
+    }
+
+    func testCaptureAudioProcessorCountsEmptyBuffers() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let processor = try XCTUnwrap(CaptureAudioProcessor(config: .default))
+        let input = AVAudioPCMBuffer(pcmFormat: source, frameCapacity: 128)!
+        input.frameLength = 0
+
+        XCTAssertNil(processor.process(input))
+        XCTAssertEqual(processor.snapshot.emptyBuffers, 1)
+        XCTAssertTrue(processor.snapshot.hasFailures)
+    }
+
     // MARK: - Helpers
 
     /// Make a Float32 sine-wave buffer at the given format.
@@ -169,5 +282,17 @@ final class PCMResamplerTests: XCTestCase {
         }
 
         return buffer
+    }
+
+    private func rms(_ buffer: AVAudioPCMBuffer) throws -> Double {
+        let data = try XCTUnwrap(buffer.floatChannelData)
+        let frames = Int(buffer.frameLength)
+        guard frames > 0 else { return 0 }
+        var sumSq: Double = 0
+        for i in 0..<frames {
+            let sample = Double(data[0][i])
+            sumSq += sample * sample
+        }
+        return sqrt(sumSq / Double(frames))
     }
 }

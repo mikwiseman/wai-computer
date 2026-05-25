@@ -161,13 +161,17 @@ async def test_transcribe_audio_file_raises_on_job_error():
         patcher,
     ):
         mock_settings.return_value.soniox_api_key = "test-key"
-        with pytest.raises(RuntimeError, match="audio decode failed"):
+        with pytest.raises(RuntimeError) as exc_info:
             await transcribe_audio_file(
                 b"audio",
                 model="stt-async-v4",
                 language="en",
                 content_type="audio/wav",
             )
+        message = str(exc_info.value)
+        assert "Soniox transcription job errored" in message
+        assert "soniox_error(len=19,sha=" in message
+        assert "audio decode failed" not in message
 
 
 @pytest.mark.asyncio

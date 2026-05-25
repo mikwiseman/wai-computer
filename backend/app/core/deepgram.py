@@ -20,6 +20,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.config import get_settings
+from app.core.observability import fingerprint_text
 from app.core.transcript_utils import TranscriptResult
 
 DEEPGRAM_API_BASE = "https://api.deepgram.com"
@@ -75,7 +76,7 @@ async def _create_realtime_access_token() -> tuple[str, int]:
         if response.status_code >= 400:
             raise RuntimeError(
                 "Deepgram /v1/auth/grant failed "
-                f"status={response.status_code} body={response.text[:512]}"
+                f"status={response.status_code} body_fingerprint={fingerprint_text(response.text)}"
             )
         body = response.json()
 

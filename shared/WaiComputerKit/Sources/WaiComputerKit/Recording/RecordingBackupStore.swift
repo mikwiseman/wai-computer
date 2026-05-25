@@ -10,6 +10,26 @@ public struct RecordingBackup: Sendable, Equatable {
     public let audioFileURL: URL
 }
 
+public enum RecordingBackupSyncState: String, Codable, Sendable, Equatable {
+    case localRecording
+    case localReady
+    case uploading
+    case serverProcessing
+    case remoteReady
+    case retryableFailure
+    case permanentFailure
+    case authenticationRequired
+
+    public var isReadyForSync: Bool {
+        switch self {
+        case .localRecording, .remoteReady, .permanentFailure, .authenticationRequired:
+            return false
+        case .localReady, .uploading, .serverProcessing, .retryableFailure:
+            return true
+        }
+    }
+}
+
 public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public let recordingId: String
     public let title: String?
@@ -21,14 +41,22 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public var lastErrorMessage: String?
     public var updatedAt: Date
     public var hasAudioFile: Bool
-    public var isPermanentFailure: Bool
-    public var requiresAuthentication: Bool
-    public var isReadyForSync: Bool
+    public var syncState: RecordingBackupSyncState
+    public var serverJobId: String?
+    public var lastSyncAttemptAt: Date?
+    public var syncAttemptCount: Int
+    public var lastFailureCode: String?
+
+    public var isPermanentFailure: Bool { syncState == .permanentFailure }
+    public var requiresAuthentication: Bool { syncState == .authenticationRequired }
+    public var isReadyForSync: Bool { syncState.isReadyForSync }
+    public var isServerProcessing: Bool { syncState == .serverProcessing }
 
     private enum CodingKeys: String, CodingKey {
         case recordingId, title, recordingType, createdAt, durationSeconds
         case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
-        case isPermanentFailure, requiresAuthentication, isReadyForSync
+        case syncState, serverJobId, lastSyncAttemptAt, syncAttemptCount, lastFailureCode
+        case isPermanentFailure, requiresAuthentication, isReadyForSync, isServerProcessing
     }
 
     public init(from decoder: Decoder) throws {
@@ -43,9 +71,49 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         hasAudioFile = try container.decodeIfPresent(Bool.self, forKey: .hasAudioFile) ?? false
-        isPermanentFailure = try container.decodeIfPresent(Bool.self, forKey: .isPermanentFailure) ?? false
-        requiresAuthentication = try container.decodeIfPresent(Bool.self, forKey: .requiresAuthentication) ?? false
-        isReadyForSync = try container.decodeIfPresent(Bool.self, forKey: .isReadyForSync) ?? true
+        serverJobId = try container.decodeIfPresent(String.self, forKey: .serverJobId)
+        lastSyncAttemptAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncAttemptAt)
+        syncAttemptCount = try container.decodeIfPresent(Int.self, forKey: .syncAttemptCount) ?? 0
+        lastFailureCode = try container.decodeIfPresent(String.self, forKey: .lastFailureCode)
+
+        if let storedState = try container.decodeIfPresent(RecordingBackupSyncState.self, forKey: .syncState) {
+            syncState = storedState
+        } else {
+            let isPermanentFailure = try container.decodeIfPresent(Bool.self, forKey: .isPermanentFailure) ?? false
+            let requiresAuthentication = try container.decodeIfPresent(Bool.self, forKey: .requiresAuthentication) ?? false
+            let isServerProcessing = try container.decodeIfPresent(Bool.self, forKey: .isServerProcessing) ?? false
+            let isReadyForSync = try container.decodeIfPresent(Bool.self, forKey: .isReadyForSync) ?? true
+            if isPermanentFailure {
+                syncState = .permanentFailure
+            } else if requiresAuthentication {
+                syncState = .authenticationRequired
+            } else if isServerProcessing {
+                syncState = .serverProcessing
+            } else if !isReadyForSync {
+                syncState = .localRecording
+            } else {
+                syncState = .localReady
+            }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(recordingId, forKey: .recordingId)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(recordingType, forKey: .recordingType)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+        try container.encode(segmentCount, forKey: .segmentCount)
+        try container.encodeIfPresent(transcript, forKey: .transcript)
+        try container.encodeIfPresent(lastErrorMessage, forKey: .lastErrorMessage)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(hasAudioFile, forKey: .hasAudioFile)
+        try container.encode(syncState, forKey: .syncState)
+        try container.encodeIfPresent(serverJobId, forKey: .serverJobId)
+        try container.encodeIfPresent(lastSyncAttemptAt, forKey: .lastSyncAttemptAt)
+        try container.encode(syncAttemptCount, forKey: .syncAttemptCount)
+        try container.encodeIfPresent(lastFailureCode, forKey: .lastFailureCode)
     }
 
     public init(
@@ -59,9 +127,15 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastErrorMessage: String?,
         updatedAt: Date,
         hasAudioFile: Bool = false,
+        syncState: RecordingBackupSyncState? = nil,
+        serverJobId: String? = nil,
+        lastSyncAttemptAt: Date? = nil,
+        syncAttemptCount: Int = 0,
+        lastFailureCode: String? = nil,
         isPermanentFailure: Bool = false,
         requiresAuthentication: Bool = false,
-        isReadyForSync: Bool = true
+        isReadyForSync: Bool = true,
+        isServerProcessing: Bool = false
     ) {
         self.recordingId = recordingId
         self.title = title
@@ -73,9 +147,23 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         self.lastErrorMessage = lastErrorMessage
         self.updatedAt = updatedAt
         self.hasAudioFile = hasAudioFile
-        self.isPermanentFailure = isPermanentFailure
-        self.requiresAuthentication = requiresAuthentication
-        self.isReadyForSync = isReadyForSync
+        if let syncState {
+            self.syncState = syncState
+        } else if isPermanentFailure {
+            self.syncState = .permanentFailure
+        } else if requiresAuthentication {
+            self.syncState = .authenticationRequired
+        } else if isServerProcessing {
+            self.syncState = .serverProcessing
+        } else if !isReadyForSync {
+            self.syncState = .localRecording
+        } else {
+            self.syncState = .localReady
+        }
+        self.serverJobId = serverJobId
+        self.lastSyncAttemptAt = lastSyncAttemptAt
+        self.syncAttemptCount = syncAttemptCount
+        self.lastFailureCode = lastFailureCode
     }
 }
 
@@ -121,9 +209,11 @@ public enum RecordingBackupStore {
             lastErrorMessage: nil,
             updatedAt: Date(),
             hasAudioFile: existingManifest?.hasAudioFile ?? false,
-            isPermanentFailure: existingManifest?.isPermanentFailure ?? false,
-            requiresAuthentication: existingManifest?.requiresAuthentication ?? false,
-            isReadyForSync: true
+            syncState: existingManifest?.syncState == .serverProcessing ? .serverProcessing : .localReady,
+            serverJobId: existingManifest?.serverJobId,
+            lastSyncAttemptAt: existingManifest?.lastSyncAttemptAt,
+            syncAttemptCount: existingManifest?.syncAttemptCount ?? 0,
+            lastFailureCode: existingManifest?.lastFailureCode
         )
         try writeManifest(manifest, to: backup.manifestURL)
 
@@ -164,6 +254,9 @@ public enum RecordingBackupStore {
             updatedAt: Date()
         )
         manifest.lastErrorMessage = message
+        if manifest.syncState != .serverProcessing {
+            manifest.syncState = .retryableFailure
+        }
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.warning("Recorded save failure for \(recordingId)")
@@ -183,8 +276,9 @@ public enum RecordingBackupStore {
             lastErrorMessage: nil,
             updatedAt: Date()
         )
-        manifest.isPermanentFailure = true
-        manifest.requiresAuthentication = false
+        manifest.syncState = .permanentFailure
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = "permanent_failure"
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.error("Marked permanent failure for \(recordingId)")
@@ -203,11 +297,45 @@ public enum RecordingBackupStore {
             lastErrorMessage: nil,
             updatedAt: Date()
         )
-        manifest.requiresAuthentication = true
-        manifest.isPermanentFailure = false
+        manifest.syncState = .authenticationRequired
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = "authentication_required"
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.error("Marked authentication required for \(recordingId)")
+    }
+
+    public static func markServerProcessing(recordingId: String, serverJobId: String? = nil) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        var manifest = try readManifest(from: backup.manifestURL) ?? RecordingBackupManifest(
+            recordingId: recordingId,
+            title: nil,
+            recordingType: RecordingType.note.rawValue,
+            createdAt: Date(),
+            durationSeconds: 0,
+            segmentCount: 0,
+            transcript: nil,
+            lastErrorMessage: nil,
+            updatedAt: Date()
+        )
+        manifest.syncState = .serverProcessing
+        manifest.serverJobId = serverJobId ?? manifest.serverJobId
+        manifest.lastFailureCode = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Marked server processing for \(recordingId)")
+    }
+
+    public static func clearServerProcessing(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        guard manifest.isServerProcessing else { return }
+
+        manifest.syncState = .localReady
+        manifest.serverJobId = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Cleared server processing for \(recordingId)")
     }
 
     public static func clearAuthenticationRequired(recordingId: String) throws {
@@ -215,7 +343,8 @@ public enum RecordingBackupStore {
         guard var manifest = try readManifest(from: backup.manifestURL) else { return }
         guard manifest.requiresAuthentication else { return }
 
-        manifest.requiresAuthentication = false
+        manifest.syncState = .localReady
+        manifest.lastFailureCode = nil
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.info("Cleared authentication required for \(recordingId)")
@@ -298,7 +427,32 @@ public enum RecordingBackupStore {
             updatedAt: Date()
         )
         manifest.hasAudioFile = true
-        manifest.isReadyForSync = false
+        manifest.syncState = .localRecording
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+    }
+
+    public static func recordSyncAttempt(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        manifest.lastSyncAttemptAt = Date()
+        manifest.syncAttemptCount += 1
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+    }
+
+    public static func markRetryableFailure(
+        recordingId: String,
+        message: String,
+        failureCode: String? = nil
+    ) throws {
+        guard let backup = try recordSaveFailure(recordingId: recordingId, message: message) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        manifest.syncState = .retryableFailure
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = failureCode
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
     }

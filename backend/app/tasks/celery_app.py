@@ -4,6 +4,8 @@ Uses Redis as broker and result backend. Celery Beat is embedded
 in the worker process (-B flag) for single-node deployment.
 """
 
+from datetime import timedelta
+
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_process_init
@@ -40,6 +42,7 @@ celery_app.conf.update(
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
     imports=[
         "app.tasks.consolidate_user_memory",
+        "app.tasks.embedding_backfill",
         "app.tasks.recording_audio_processing",
     ],
 )
@@ -51,6 +54,10 @@ celery_app.conf.beat_schedule = {
         # UTC covers most of Europe/Africa overnight.
         "task": "app.tasks.consolidate_user_memory.run",
         "schedule": crontab(hour=3, minute=0),
+    },
+    "embedding-backfill-every-30-minutes": {
+        "task": "app.tasks.embedding_backfill.backfill_missing_segment_embeddings",
+        "schedule": timedelta(minutes=settings.embedding_backfill_interval_minutes),
     },
 }
 

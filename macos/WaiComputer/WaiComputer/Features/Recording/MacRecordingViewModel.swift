@@ -207,22 +207,22 @@ class MacRecordingViewModel: ObservableObject {
     ) async {
         // Wait for any in-progress cleanup to finish before starting a new recording
         if isCleaningUp {
-            NSLog("[Recording] Waiting for previous cleanup to complete...")
+            audioLog.info("Waiting for previous recording cleanup to complete")
             await cleanupTask?.value
         }
 
         if phase == .preparing {
-            NSLog("[Recording] Ignoring start while a recording is still preparing")
+            audioLog.info("Ignoring recording start while preparation is in progress")
             return
         }
 
         if phase == .recording || phase == .finalizing {
-            NSLog("[Recording] Force-stopping previous recording before starting new one")
+            audioLog.info("Stopping previous recording before starting a new one")
             await stopRecording()
         }
 
         guard phase == .idle else {
-            NSLog("[Recording] Ignoring start while phase is %@", String(describing: phase))
+            audioLog.info("Ignoring recording start while phase=\(String(describing: self.phase), privacy: .public)")
             return
         }
 
@@ -323,18 +323,19 @@ class MacRecordingViewModel: ObservableObject {
 
             // Check if dual capture actually got system audio
             if #available(macOS 14.2, *), let dualCapture = capture as? DualAudioCapture {
-                NSLog("[Recording] Starting dual audio capture...")
+                audioLog.info("Starting dual audio capture")
                 try await capture.startRecording()
                 hasSystemAudio = dualCapture.hasSystemAudio
-                NSLog("[Recording] Dual capture started — system audio: %@", hasSystemAudio ? "YES" : "NO")
+                audioLog.info("Dual audio capture started systemAudio=\(self.hasSystemAudio, privacy: .public)")
             } else {
-                NSLog("[Recording] Starting audio capture...")
+                audioLog.info("Starting audio capture")
                 try await capture.startRecording()
             }
 
             // Now we know the real channel count — create WebSocket with correct params
             let channels = audioChannels
-            NSLog("[Recording] Audio channels: %d (%@)", channels, isDualMixedToMono ? "mono-mix with diarization" : channels > 1 ? "multichannel" : "mono")
+            let channelMode = isDualMixedToMono ? "mono-mix" : channels > 1 ? "multichannel" : "mono"
+            audioLog.info("Audio capture channels=\(channels, privacy: .public) mode=\(channelMode, privacy: .public)")
 
             let ws = WebSocketManager(apiClient: apiClient, language: language, channels: channels)
             self.webSocketManager = ws
@@ -355,7 +356,7 @@ class MacRecordingViewModel: ObservableObject {
             do {
                 try await ws.connect()
             } catch {
-                NSLog("[Recording] Live transcription unavailable at recording start")
+                audioLog.warning("Live transcription unavailable at recording start")
                 SentryHelper.addBreadcrumb(
                     category: "recording",
                     message: "live transcription unavailable at recording start",
@@ -378,31 +379,31 @@ class MacRecordingViewModel: ObservableObject {
             let fileWriter = try AudioFileWriter(fileURL: audioFileURL, sampleRate: 16000, channels: channels)
             self.audioFileWriter = fileWriter
             try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
-            NSLog("[Recording] Local audio file prepared")
+            audioLog.info("Local recording audio file prepared recordingId=\(recordingId, privacy: .public)")
 
             // Start the audio-sending loop
-            NSLog("[Recording] Starting audio task (detached)...")
+            audioLog.info("Starting recording audio task")
             var bufferCount = 0
             audioTask = Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
-                NSLog("[Recording] Audio task started, waiting for buffers...")
+                audioLog.info("Recording audio task started")
                 for await buffer in capture.audioBuffers {
                     bufferCount += 1
                     if bufferCount <= 5 || bufferCount % 50 == 0 {
-                        NSLog("[Recording] Buffer #%d: %d frames", bufferCount, buffer.frameLength)
+                        audioLog.debug("Recording buffer count=\(bufferCount, privacy: .public) frames=\(buffer.frameLength, privacy: .public)")
                     }
                     if let data = encoder.encode(buffer) {
                         if bufferCount <= 5 || bufferCount % 50 == 0 {
-                            NSLog("[Recording] Encoded %d bytes, sending...", data.count)
+                            audioLog.debug("Encoded recording audio bytes=\(data.count, privacy: .public)")
                         }
                         // Local-first: always write to disk before sending over network
                         fileWriter.writeEncodedPCM(data)
-                        
+
                         if isLiveTranscriptionActive {
                             do {
                                 try await ws.sendAudio(data: data)
                             } catch {
-                                NSLog("[Recording] Realtime audio send failed; continuing with local backup only")
+                                audioLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
                                 isLiveTranscriptionActive = false
                                 await MainActor.run { self.liveTranscriptionOffline = true }
@@ -410,7 +411,7 @@ class MacRecordingViewModel: ObservableObject {
                         }
                     }
                 }
-                NSLog("[Recording] Audio task loop ended (stream finished)")
+                audioLog.info("Recording audio task finished")
             }
 
             startTimer()
@@ -519,7 +520,7 @@ class MacRecordingViewModel: ObservableObject {
                 timerDuration: timerDuration
             )
             if let fw = fileWriter {
-                NSLog("[Recording] Local audio file finalized: %.1f seconds, %lld bytes", fw.durationSeconds, fw.totalBytesWritten)
+                audioLog.info("Local audio finalized durationSeconds=\(fw.durationSeconds, privacy: .public) bytes=\(fw.totalBytesWritten, privacy: .public)")
             }
             SentryHelper.addBreadcrumb(
                 category: "recording",
@@ -544,14 +545,12 @@ class MacRecordingViewModel: ObservableObject {
 
             let transcriptSaved: Bool
             if let recordingId {
-                let persistenceResult = await self.persistRecordingCloudFirst(
+                let persistenceResult = await self.persistRecordingForBackgroundSync(
                     recordingId: recordingId,
                     client: client,
                     segments: finalizedSegments,
                     durationSeconds: persistedDurationSeconds,
-                    audioFileURL: fileWriter?.fileURL,
-                    directSaveNotice: nil,
-                    recoveredTranscriptNotice: self.transcriptRecoveredMessage()
+                    audioFileURL: fileWriter?.fileURL
                 )
                 transcriptSaved = await self.applyRecordingPersistenceResult(
                     persistenceResult,
@@ -794,7 +793,7 @@ class MacRecordingViewModel: ObservableObject {
             ) ? .localBackup : .failed(technicalReason)
         }
 
-        NSLog("[Recording] Persisting %d transcript segments for recording %@", segments.count, recordingId)
+        audioLog.info("Persisting transcript segments count=\(segments.count, privacy: .public) recordingId=\(recordingId, privacy: .public)")
 
         let shouldUploadAudio = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
 
@@ -853,7 +852,7 @@ class MacRecordingViewModel: ObservableObject {
                     error,
                     extras: ["action": "uploadRecordedAudioFallback", "recordingId": recordingId]
                 )
-                NSLog("[Recording] Audio upload fallback failed")
+                audioLog.warning("Audio upload fallback failed recordingId=\(recordingId, privacy: .public)")
 
                 let technicalReason = error.userFacingMessage(context: .recording)
                 return await saveLocalBackupForRetry(
@@ -890,7 +889,7 @@ class MacRecordingViewModel: ObservableObject {
             return .remoteSaved(notice: directSaveNotice, breadcrumbMessage: "transcript saved")
         } catch {
             SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
-            NSLog("[Recording] Transcript save failed")
+            audioLog.warning("Transcript save failed recordingId=\(recordingId, privacy: .public)")
 
             let technicalReason = error.userFacingMessage(context: .recording)
             return await saveLocalBackupForRetry(
@@ -901,6 +900,55 @@ class MacRecordingViewModel: ObservableObject {
                 technicalReason: technicalReason
             ) ? .localBackup : .failed(technicalReason)
         }
+    }
+
+    private func persistRecordingForBackgroundSync(
+        recordingId: String,
+        client: APIClient?,
+        segments: [LiveTranscriptSegment],
+        durationSeconds: Int,
+        audioFileURL: URL?
+    ) async -> RecordingPersistenceResult {
+        let hasAudioFile = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        let audioBytes = audioFileURL.flatMap {
+            try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        } ?? 0
+
+        do {
+            _ = try saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments,
+                durationSeconds: TimeInterval(durationSeconds)
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "action": "saveRecordingForBackgroundSync",
+                    "recordingId": recordingId,
+                    "hasAudioFile": hasAudioFile,
+                ]
+            )
+            return .failed(error.userFacingMessage(context: .recording))
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording queued for background sync",
+            data: [
+                "recordingId": recordingId,
+                "segments": segments.count,
+                "durationSeconds": durationSeconds,
+                "hasAudioFile": hasAudioFile,
+                "audioBytes": audioBytes,
+            ]
+        )
+
+        if let client {
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        }
+
+        return .localBackup
     }
 
     private func retainLocalBackupWhileServerProcessesAudio(
@@ -916,6 +964,7 @@ class MacRecordingViewModel: ObservableObject {
                 segments: segments,
                 durationSeconds: durationSeconds
             )
+            try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
         } catch {
             SentryHelper.captureError(
                 error,
@@ -1355,13 +1404,6 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         return error.userFacingMessage(context: .recording)
-    }
-
-    private func transcriptRecoveredMessage() -> String {
-        t(
-            "Connection was interrupted, but your transcript was saved successfully.",
-            "Соединение прервалось, но расшифровка успешно сохранена."
-        )
     }
 
     private func localTranscriptRecoveryMessage(segmentsCount: Int) -> String {
