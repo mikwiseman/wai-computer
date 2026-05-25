@@ -23,11 +23,12 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public var hasAudioFile: Bool
     public var isPermanentFailure: Bool
     public var requiresAuthentication: Bool
+    public var isReadyForSync: Bool
 
     private enum CodingKeys: String, CodingKey {
         case recordingId, title, recordingType, createdAt, durationSeconds
         case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
-        case isPermanentFailure, requiresAuthentication
+        case isPermanentFailure, requiresAuthentication, isReadyForSync
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,6 +45,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         hasAudioFile = try container.decodeIfPresent(Bool.self, forKey: .hasAudioFile) ?? false
         isPermanentFailure = try container.decodeIfPresent(Bool.self, forKey: .isPermanentFailure) ?? false
         requiresAuthentication = try container.decodeIfPresent(Bool.self, forKey: .requiresAuthentication) ?? false
+        isReadyForSync = try container.decodeIfPresent(Bool.self, forKey: .isReadyForSync) ?? true
     }
 
     public init(
@@ -58,7 +60,8 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         updatedAt: Date,
         hasAudioFile: Bool = false,
         isPermanentFailure: Bool = false,
-        requiresAuthentication: Bool = false
+        requiresAuthentication: Bool = false,
+        isReadyForSync: Bool = true
     ) {
         self.recordingId = recordingId
         self.title = title
@@ -72,6 +75,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         self.hasAudioFile = hasAudioFile
         self.isPermanentFailure = isPermanentFailure
         self.requiresAuthentication = requiresAuthentication
+        self.isReadyForSync = isReadyForSync
     }
 }
 
@@ -118,7 +122,8 @@ public enum RecordingBackupStore {
             updatedAt: Date(),
             hasAudioFile: existingManifest?.hasAudioFile ?? false,
             isPermanentFailure: existingManifest?.isPermanentFailure ?? false,
-            requiresAuthentication: existingManifest?.requiresAuthentication ?? false
+            requiresAuthentication: existingManifest?.requiresAuthentication ?? false,
+            isReadyForSync: true
         )
         try writeManifest(manifest, to: backup.manifestURL)
 
@@ -293,6 +298,7 @@ public enum RecordingBackupStore {
             updatedAt: Date()
         )
         manifest.hasAudioFile = true
+        manifest.isReadyForSync = false
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
     }

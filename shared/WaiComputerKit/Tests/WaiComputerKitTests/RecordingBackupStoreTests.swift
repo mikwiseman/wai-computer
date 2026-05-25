@@ -385,6 +385,30 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertEqual(manifest.durationSeconds, 4)
     }
 
+    func testMarkHasAudioFileLeavesBackupUnreadyUntilFinalSave() throws {
+        let recordingId = "backup-audio-in-progress-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+
+        var manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.hasAudioFile)
+        XCTAssertFalse(manifest.isReadyForSync)
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Finalized backup",
+            recordingType: .meeting,
+            durationSeconds: 12,
+            transcript: nil,
+            segments: []
+        )
+
+        manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertTrue(manifest.hasAudioFile)
+        XCTAssertTrue(manifest.isReadyForSync)
+    }
+
     func testListBackupsReturnsAllSavedBackups() throws {
         let id1 = "backup-list-1-\(UUID().uuidString)"
         let id2 = "backup-list-2-\(UUID().uuidString)"
