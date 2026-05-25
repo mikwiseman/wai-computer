@@ -50,14 +50,17 @@ else
   printf 'admin/observability skipped: set WAICOMPUTER_ACCESS_TOKEN for authenticated snapshot\n'
 fi
 
-ssh "${VPS_USER}@${VPS_HOST}" \
-  "cd ${REMOTE_ROOT}/backend && docker compose --env-file ${REMOTE_ENV_FILE} ps --format json" \
-  | python3 - <<'PY'
+containers="$(
+  ssh "${VPS_USER}@${VPS_HOST}" \
+    "cd ${REMOTE_ROOT}/backend && docker compose --env-file ${REMOTE_ENV_FILE} ps --format json"
+)"
+CONTAINERS="$containers" python3 - <<'PY'
 import json
+import os
 import sys
 
 unhealthy = []
-for line in sys.stdin:
+for line in os.environ["CONTAINERS"].splitlines():
     if not line.strip():
         continue
     item = json.loads(line)
