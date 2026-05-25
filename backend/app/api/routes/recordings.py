@@ -1,6 +1,5 @@
 """Recording CRUD routes."""
 
-import asyncio
 import logging
 import re
 import secrets
@@ -15,7 +14,6 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, text, update
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -28,9 +26,13 @@ from app.core.observability import (
     safe_filename_metadata,
     safe_text_digest,
 )
+from app.core.recording_audio_processing import (
+    apply_no_speech_result,
+    delete_staged_file,
+    is_no_speech_placeholder,
+    reset_recording_processing_state,
+)
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
-from app.core.transcription import transcribe_audio_file
-from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import Person
 from app.models.recording import (
@@ -672,11 +674,6 @@ async def _claim_audio_upload(
     user_id: UUID,
     db: Database,
 ) -> bool:
-    canonical_segments_exist = (
-        select(Segment.id)
-        .where(Segment.recording_id == Recording.id)
-        .exists()
-    )
     result = await db.execute(
         update(Recording)
         .where(
@@ -692,7 +689,6 @@ async def _claim_audio_upload(
             ~(
                 (Recording.uploaded_at.is_not(None))
                 & (Recording.status == RecordingStatus.READY.value)
-                & canonical_segments_exist
             ),
         )
         .values(
@@ -739,19 +735,6 @@ def _transcript_failure_details(error: HTTPException) -> tuple[str, str]:
     return "transcript_validation_failed", normalized_detail
 
 
-async def _reset_recording_processing_state(recording_id: UUID, db: Database) -> None:
-    """Replace transcript-derived data before canonical transcript generation."""
-    await db.execute(
-        delete(ActionItem).where(
-            ActionItem.recording_id == recording_id,
-            ActionItem.source == "generated",
-        )
-    )
-    await db.execute(delete(Highlight).where(Highlight.recording_id == recording_id))
-    await db.execute(delete(Summary).where(Summary.recording_id == recording_id))
-    await db.execute(delete(Segment).where(Segment.recording_id == recording_id))
-
-
 def _measure_upload_size(file: UploadFile) -> int:
     file.file.seek(0, 2)
     size = file.file.tell()
@@ -768,61 +751,6 @@ def _normalize_failure_message(error: Exception | str, fallback: str) -> str:
     if not message:
         return fallback
     return message[:500]
-
-
-NO_SPEECH_COPY = {
-    "en": {
-        "title": "No speech detected",
-        "message": "We could not detect clear speech in this recording.",
-    },
-    "ru": {
-        "title": "Без речи",
-        "message": "Мы не обнаружили разборчивой речи в этой записи.",
-    },
-}
-
-NO_SPEECH_PLACEHOLDERS = {
-    "blank audio",
-    "background noise",
-    "inaudible",
-    "music",
-    "no audible speech",
-    "no speech",
-    "no speech detected",
-    "noise",
-    "silence",
-    "silent audio",
-    "typing",
-}
-
-
-def _copy_locale_from_recording_language(
-    language: str | None,
-    fallback_language: str | None = None,
-) -> str:
-    normalized = (language or "").strip().lower()
-    if normalized in {"", "auto", "multi"}:
-        normalized = (fallback_language or "").strip().lower()
-    return "ru" if normalized.startswith("ru") else "en"
-
-
-def _is_no_speech_placeholder(text: str) -> bool:
-    normalized = re.sub(r"[\[\]\(\)\{\}_\-.!?:;\"'`]+", " ", text.strip().lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized in NO_SPEECH_PLACEHOLDERS
-
-
-def _apply_no_speech_fallback(
-    recording: Recording,
-    fallback_language: str | None = None,
-) -> None:
-    if recording.title:
-        return
-    copy = NO_SPEECH_COPY[
-        _copy_locale_from_recording_language(recording.language, fallback_language)
-    ]
-    recording.title = copy["title"]
-    recording.failure_message = copy["message"]
 
 
 def _extension_from_upload(file_name: str, content_type: str) -> str:
@@ -854,7 +782,7 @@ async def _persist_client_segments(
     normalized_segments = [
         segment
         for segment in nonempty_segments
-        if not _is_no_speech_placeholder(segment.text)
+        if not is_no_speech_placeholder(segment.text)
     ]
     if not normalized_segments:
         if duration_seconds is not None:
@@ -868,11 +796,11 @@ async def _persist_client_segments(
         if recording.title:
             recording.failure_message = None
         else:
-            _apply_no_speech_fallback(recording, fallback_language)
+            apply_no_speech_result(recording, fallback_language)
         await db.commit()
         return ""
 
-    await _reset_recording_processing_state(recording.id, db)
+    await reset_recording_processing_state(recording.id, db)
 
     transcript_chunks: list[str] = []
     end_times: list[int] = []
@@ -931,16 +859,6 @@ def _staging_path(user_id: UUID, recording_id: UUID, ext: str) -> Path:
     return _staging_directory_for_user(user_id) / f"{recording_id}.{ext}"
 
 
-def _delete_staged_file(path: str | None) -> None:
-    if not path:
-        return
-
-    try:
-        Path(path).unlink(missing_ok=True)
-    except Exception as error:
-        logger.warning("Failed to delete staged audio %s: %s", path, error)
-
-
 async def _stage_upload_to_disk(
     *,
     file: UploadFile,
@@ -975,11 +893,33 @@ async def _stage_upload_to_disk(
         temp_path.replace(final_path)
         return final_path, total_size
     except Exception:
-        _delete_staged_file(str(temp_path))
-        _delete_staged_file(str(final_path))
+        delete_staged_file(temp_path)
+        delete_staged_file(final_path)
         raise
     finally:
         await file.close()
+
+
+async def enqueue_recording_audio_processing(
+    *,
+    recording_id: UUID,
+    user_id: UUID,
+    staged_path: Path,
+    content_type: str,
+    user_default_language: str | None,
+) -> None:
+    from app.tasks.celery_app import celery_app
+
+    celery_app.send_task(
+        "app.tasks.recording_audio_processing.process_staged_recording_upload",
+        kwargs={
+            "recording_id": str(recording_id),
+            "user_id": str(user_id),
+            "staged_path": str(staged_path),
+            "content_type": content_type,
+            "user_default_language": user_default_language,
+        },
+    )
 
 
 @router.get("", response_model=list[RecordingResponse])
@@ -2536,13 +2476,6 @@ EXTENSION_TO_CONTENT_TYPE = {
 MAX_UPLOAD_SIZE = app_settings.upload_max_bytes
 
 
-def _upload_processing_failure_message(exc: Exception) -> str:
-    """Keep infrastructure errors out of user-visible recording state."""
-    if isinstance(exc, SQLAlchemyError):
-        return "Imported audio processing failed"
-    return _normalize_failure_message(exc, "Imported audio processing failed")
-
-
 @router.post("/{recording_id}/upload", response_model=RecordingDetailResponse)
 async def upload_audio_file(
     recording_id: UUID,
@@ -2686,143 +2619,30 @@ async def upload_audio_file(
     recording.failure_message = None
     recording.audio_url = None
     recording.duration_seconds = None
-    recording_language = recording.language or "en"
-    should_generate_title = not recording.title
     await db.commit()
 
-    transcript_results = []
-    transcript_text = ""
-
     try:
-        await _reset_recording_processing_state(recording_id, db)
-
-        with staged_path.open("rb") as staged_file:
-            transcript_results = await transcribe_audio_file(
-                staged_file.read(),
-                language=recording_language,
-                content_type=content_type,
-            )
-
-        speech_transcript_results = [
-            result
-            for result in transcript_results
-            if result.text.strip() and not _is_no_speech_placeholder(result.text)
-        ]
-
-        if not speech_transcript_results:
-            if transcript_results:
-                recording.duration_seconds = max(
-                    result.end_ms for result in transcript_results
-                ) // 1000
-            if recording.title:
-                recording.failure_message = None
-            else:
-                _apply_no_speech_fallback(recording, user_default_language)
-            recording.status = RecordingStatus.READY.value
-            recording.failure_code = None
-            await db.commit()
-            _delete_staged_file(str(staged_path))
-            db.expire_all()
-            recording = await _load_recording_detail(
-                recording_id,
-                user_id,
-                db,
-                include_deleted=True,
-            )
-            if recording is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Recording disappeared after upload",
-                )
-            logger.info("audio upload completed status=%s", recording.status)
-            return _serialize_recording_detail(recording)
-
-        speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
-        try:
-            speaker_assignments = await identify_speakers_for_recording(
-                db=db,
-                user_id=user_id,
-                staged_audio_path=staged_path,
-                transcript_results=speech_transcript_results,
-                enabled=app_settings.voice_identification_enabled,
-            )
-        except Exception:
-            logger.exception(
-                "Voice identification failed; segments will keep person_id=NULL"
-            )
-
-        for tr in speech_transcript_results:
-            embedding = None
-            if tr.text.strip():
-                try:
-                    embedding = await generate_embedding(tr.text)
-                except Exception as exc:
-                    logger.warning("Failed to generate embedding: %s", exc)
-
-            assignment = speaker_assignments.get(tr.speaker) if tr.speaker else None
-            assigned_person_id, match_confidence = (
-                assignment if assignment is not None else (None, None)
-            )
-            db.add(
-                Segment(
-                    recording_id=recording_id,
-                    speaker=tr.speaker,
-                    raw_label=tr.speaker,
-                    person_id=assigned_person_id,
-                    auto_assigned=assigned_person_id is not None,
-                    match_confidence=match_confidence,
-                    content=tr.text,
-                    start_ms=tr.start_ms,
-                    end_ms=tr.end_ms,
-                    confidence=tr.confidence,
-                    embedding=embedding,
-                )
-            )
-
-        if speech_transcript_results:
-            max_end_ms = max(tr.end_ms for tr in speech_transcript_results)
-            recording.duration_seconds = max_end_ms // 1000
-            transcript_text = " ".join(
-                tr.text for tr in speech_transcript_results if tr.text.strip()
-            )
-
-        if should_generate_title and transcript_text.strip():
-            try:
-                recording.title = await generate_title(
-                    transcript_text,
-                    language=recording.language or "auto",
-                )
-            except Exception as exc:
-                logger.warning("Title generation failed: %s", exc)
-                recording.title = None
-
-        recording.status = RecordingStatus.READY.value
-        recording.failure_code = None
-        recording.failure_message = None
-        await record_recording_transcript_words(db, recording, transcript_text)
-        await db.commit()
-        _delete_staged_file(str(staged_path))
-    except asyncio.CancelledError:
-        logger.warning("Recording processing cancelled for %s", recording_id)
-        await db.rollback()
-        await _mark_recording_failed_by_id(
-            recording_id,
-            db,
-            "processing_cancelled",
-            "Обработка была прервана. Импортируй файл ещё раз.",
+        await enqueue_recording_audio_processing(
+            recording_id=recording_id,
+            user_id=user_id,
+            staged_path=staged_path,
+            content_type=content_type,
+            user_default_language=user_default_language,
         )
-        _delete_staged_file(str(staged_path))
-        raise
     except Exception as exc:
-        logger.exception("Recording processing failed for %s", recording_id)
+        logger.exception("Failed to enqueue recording processing for %s", recording_id)
         await db.rollback()
         await _mark_recording_failed_by_id(
             recording_id,
             db,
-            "processing_failed",
-            _upload_processing_failure_message(exc),
+            "processing_enqueue_failed",
+            "Failed to start recording processing",
         )
-        _delete_staged_file(str(staged_path))
+        delete_staged_file(staged_path)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to start recording processing",
+        ) from exc
 
     db.expire_all()
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=True)
@@ -2832,5 +2652,5 @@ async def upload_audio_file(
             detail="Recording disappeared after upload",
         )
 
-    logger.info("audio upload completed status=%s", recording.status)
+    logger.info("audio upload accepted for async processing status=%s", recording.status)
     return _serialize_recording_detail(recording)

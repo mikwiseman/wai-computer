@@ -365,7 +365,7 @@ async def test_transcribe_audio_file_omits_auto_language_code():
 
 
 @pytest.mark.asyncio
-async def test_transcribe_audio_file_ignores_invalid_transcript_entries():
+async def test_transcribe_audio_file_rejects_invalid_transcript_entries():
     response = httpx.Response(
         200,
         json={"transcripts": ["bad", {"text": ""}]},
@@ -379,9 +379,8 @@ async def test_transcribe_audio_file_ignores_invalid_transcript_entries():
     ):
         mock_settings.return_value.elevenlabs_api_key = "key"
         mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
-        results = await transcribe_audio_file(b"stereo-data", content_type="audio/wav")
-
-    assert results == []
+        with pytest.raises(RuntimeError, match="invalid transcript entry"):
+            await transcribe_audio_file(b"stereo-data", content_type="audio/wav")
 
 
 @pytest.mark.asyncio

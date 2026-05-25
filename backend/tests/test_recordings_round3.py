@@ -20,7 +20,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
-from app.core.transcript_utils import TranscriptResult
 from app.models.highlight import Highlight
 from app.models.recording import ActionItem, Recording, Segment, Summary
 from tests.conftest import LEGAL_ACCEPTANCE
@@ -264,31 +263,13 @@ async def test_upload_audio_with_m4a_extension(
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Upload with .m4a should succeed with mocked services."""
+    """Upload with .m4a should stage audio and enqueue processing."""
     rec = await _create_recording(client, auth_headers, title=None)
 
-    fake_transcripts = [
-        TranscriptResult(
-            text="Testing m4a upload",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=3000,
-            confidence=0.95,
-        ),
-    ]
-
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=fake_transcripts),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="M4A Test Recording"),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     response = await client.post(
@@ -298,11 +279,14 @@ async def test_upload_audio_with_m4a_extension(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
+    assert data["status"] == "processing"
     assert data["audio_url"] is None
-    assert data["title"] == "M4A Test Recording"
-    assert len(data["segments"]) == 1
-    assert data["duration_seconds"] == 3
+    assert data["title"] is None
+    assert data["segments"] == []
+    assert data["duration_seconds"] is None
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["content_type"] == "audio/mp4"
 
 
 # ---------------------------------------------------------------------------

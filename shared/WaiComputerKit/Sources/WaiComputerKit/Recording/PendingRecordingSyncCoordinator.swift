@@ -151,6 +151,13 @@ public actor PendingRecordingSyncCoordinator {
                 return false
             }
 
+            if let detail, detail.status != .ready {
+                log.info(
+                    "Server accepted recording \(backup.recordingId) with status \(detail.status.rawValue)"
+                )
+                return false
+            }
+
             try RecordingBackupStore.removeRecording(recordingId: backup.recordingId)
             log.info("Recording \(backup.recordingId) synced successfully")
             SentryHelper.addBreadcrumb(

@@ -58,3 +58,35 @@ async def test_elevenlabs_transcribe_raises_on_unexpected_payload_type():
                 language="en",
                 content_type="audio/raw",
             )
+
+
+@pytest.mark.asyncio
+async def test_elevenlabs_transcribe_raises_on_malformed_multichannel_entry():
+    """Malformed transcript entries must not collapse into a no-speech result."""
+    response = _mock_response(
+        200,
+        {
+            "transcripts": [
+                {
+                    "text": "valid",
+                    "words": [{"text": "valid", "start": 0.0, "end": 0.5}],
+                },
+                "bad-entry",
+            ]
+        },
+    )
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        _patch_client_post(response, "app.core.elevenlabs"),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "test-key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = True
+        with pytest.raises(RuntimeError, match="invalid transcript entry"):
+            await elevenlabs_transcribe_audio_file(
+                b"audio",
+                model="scribe_v2",
+                language="en",
+                content_type="audio/raw",
+            )

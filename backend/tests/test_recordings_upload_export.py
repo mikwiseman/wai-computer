@@ -8,7 +8,6 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.transcript_utils import TranscriptResult
 from app.models.billing import UsageWeek
 from app.models.recording import Recording
 from app.models.user import User
@@ -68,34 +67,16 @@ async def _save_transcript(
 async def test_upload_wav_file_with_correct_mime(
     client: AsyncClient,
     auth_headers: dict,
-    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Uploading a .wav file with audio/wav content type should succeed."""
+    """Uploading a .wav file with audio/wav content type should enqueue processing."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
-    fake_results = [
-        TranscriptResult(
-            text="Hello world",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=3000,
-            confidence=0.95,
-        ),
-    ]
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=fake_results),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Hello World Recording"),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     wav_content = b"RIFF" + b"\x00" * 40  # minimal bytes, will pass ext check
@@ -106,16 +87,11 @@ async def test_upload_wav_file_with_correct_mime(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
-    user = (await db_session.execute(select(User))).scalars().first()
-    assert user is not None
-    usage = (
-        await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
-    ).scalar_one()
-    assert usage.words_used == 2
-    stored = await db_session.get(Recording, recording_id)
-    assert stored is not None
-    assert stored.billed_word_count == 2
+    assert data["status"] == "processing"
+    assert data["segments"] == []
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["content_type"] == "audio/wav"
 
 
 # ---------------------------------------------------------------------------
@@ -332,49 +308,24 @@ async def test_export_other_users_recording_returns_404(
 
 
 # ---------------------------------------------------------------------------
-# 8. Transcription processing with mocked Deepgram (single channel)
+# 8. Upload queues single-channel processing
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_upload_transcribes_single_channel(
+async def test_upload_queues_single_channel_processing(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Upload should process single-channel transcription and store segments."""
+    """Upload should stage an MP3 and enqueue canonical processing."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = recording["id"]
 
-    fake_results = [
-        TranscriptResult(
-            text="Meeting started at nine.",
-            speaker="Speaker 0",
-            is_final=True,
-            start_ms=0,
-            end_ms=2000,
-            confidence=0.92,
-        ),
-        TranscriptResult(
-            text="Let's discuss the agenda.",
-            speaker="Speaker 1",
-            is_final=True,
-            start_ms=2100,
-            end_ms=5000,
-            confidence=0.88,
-        ),
-    ]
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=fake_results),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Morning Meeting"),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     response = await client.post(
@@ -384,67 +335,32 @@ async def test_upload_transcribes_single_channel(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
-    assert len(data["segments"]) == 2
-    assert data["segments"][0]["content"] == "Meeting started at nine."
-    assert data["segments"][1]["speaker"] == "Speaker 1"
-    assert data["duration_seconds"] == 5  # max end_ms 5000 // 1000
-    assert data["title"] == "Morning Meeting"
+    assert data["status"] == "processing"
+    assert data["segments"] == []
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["content_type"] == "audio/mpeg"
 
 
 # ---------------------------------------------------------------------------
-# 9. Transcription processing with mocked Deepgram (multichannel)
+# 9. Upload queues multichannel-capable files
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_upload_transcribes_multichannel(
+async def test_upload_queues_wav_processing(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Upload should process multichannel results and interleave them chronologically."""
+    """Upload should stage a WAV and enqueue canonical processing."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = recording["id"]
 
-    # Simulate multichannel results (ch0=You, ch1=Speaker 1) interleaved
-    fake_results = [
-        TranscriptResult(
-            text="I have a question.",
-            speaker="You",
-            is_final=True,
-            start_ms=0,
-            end_ms=2000,
-            confidence=0.91,
-        ),
-        TranscriptResult(
-            text="Sure, go ahead.",
-            speaker="Speaker 1",
-            is_final=True,
-            start_ms=2100,
-            end_ms=4000,
-            confidence=0.89,
-        ),
-        TranscriptResult(
-            text="What is the timeline?",
-            speaker="You",
-            is_final=True,
-            start_ms=4200,
-            end_ms=6000,
-            confidence=0.93,
-        ),
-    ]
+    enqueue_processing = AsyncMock()
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(return_value=fake_results),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
-    )
-    monkeypatch.setattr(
-        "app.api.routes.recordings.generate_title",
-        AsyncMock(return_value="Timeline Discussion"),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
     )
 
     wav_content = b"RIFF" + b"\x00" * 40
@@ -455,14 +371,11 @@ async def test_upload_transcribes_multichannel(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
-    assert len(data["segments"]) == 3
-    speakers = [s["speaker"] for s in data["segments"]]
-    assert "You" in speakers
-    assert "Speaker 1" in speakers
-    # Segments should be sorted by start_ms
-    start_times = [s["start_ms"] for s in data["segments"]]
-    assert start_times == sorted(start_times)
+    assert data["status"] == "processing"
+    assert data["segments"] == []
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["content_type"] == "audio/wav"
 
 
 # ---------------------------------------------------------------------------
@@ -710,15 +623,16 @@ async def test_save_transcript_sets_duration_from_end_times(
 async def test_upload_processing_failure_marks_recording_failed(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """If transcription fails during upload, recording should be marked as failed."""
+    """If queueing fails during upload, recording should be marked as failed."""
     recording = await _create_recording(client, auth_headers, title="Fail Test")
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.transcribe_audio_file",
-        AsyncMock(side_effect=RuntimeError("Deepgram connection timeout")),
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        AsyncMock(side_effect=RuntimeError("queue connection timeout")),
     )
 
     response = await client.post(
@@ -726,11 +640,12 @@ async def test_upload_processing_failure_marks_recording_failed(
         headers=auth_headers,
         files={"file": ("test.mp3", b"\x00" * 100, "audio/mpeg")},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "failed"
-    assert data["failure_code"] == "processing_failed"
-    assert "Deepgram connection timeout" in data["failure_message"]
+    assert response.status_code == 503
+    stored = await db_session.get(Recording, recording_id)
+    assert stored is not None
+    assert stored.status == "failed"
+    assert stored.failure_code == "processing_enqueue_failed"
+    assert stored.failure_message == "Failed to start recording processing"
 
 
 # ---------------------------------------------------------------------------

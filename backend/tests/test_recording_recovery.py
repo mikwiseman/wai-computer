@@ -35,6 +35,13 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=now - timedelta(minutes=2),
     )
+    stale_uploading = Recording(
+        user_id=user.id,
+        title="stale-uploading",
+        type="meeting",
+        status=RecordingStatus.UPLOADING.value,
+        uploaded_at=now - timedelta(minutes=25),
+    )
     ready = Recording(
         user_id=user.id,
         title="ready",
@@ -42,7 +49,7 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
         status=RecordingStatus.READY.value,
         uploaded_at=now - timedelta(minutes=30),
     )
-    db_session.add_all([stale, active, ready])
+    db_session.add_all([stale, active, stale_uploading, ready])
     await db_session.commit()
 
     count = await mark_stale_processing_recordings(
@@ -51,10 +58,12 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
         now=now,
     )
 
-    assert count == 1
+    assert count == 2
     rows = (await db_session.execute(select(Recording))).scalars().all()
     by_title = {row.title: row for row in rows}
     assert by_title["stale"].status == RecordingStatus.FAILED.value
     assert by_title["stale"].failure_code == INTERRUPTED_PROCESSING_FAILURE_CODE
+    assert by_title["stale-uploading"].status == RecordingStatus.FAILED.value
+    assert by_title["stale-uploading"].failure_code == INTERRUPTED_PROCESSING_FAILURE_CODE
     assert by_title["active"].status == RecordingStatus.PROCESSING.value
     assert by_title["ready"].status == RecordingStatus.READY.value

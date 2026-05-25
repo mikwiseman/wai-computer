@@ -38,7 +38,10 @@ celery_app.conf.update(
     worker_max_tasks_per_child=100,
     # Explicit imports: autodiscover_tasks only finds modules literally
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
-    imports=["app.tasks.consolidate_user_memory"],
+    imports=[
+        "app.tasks.consolidate_user_memory",
+        "app.tasks.recording_audio_processing",
+    ],
 )
 
 celery_app.conf.beat_schedule = {

@@ -198,17 +198,33 @@ def _result_from_transcript(
     )
 
 
+def _validated_words(transcript: dict[str, Any]) -> list[dict[str, Any]]:
+    if "words" not in transcript or transcript.get("words") is None:
+        return []
+    raw_words = transcript.get("words")
+    if not isinstance(raw_words, list):
+        raise RuntimeError("ElevenLabs STT returned invalid words payload")
+    words: list[dict[str, Any]] = []
+    for index, word in enumerate(raw_words):
+        if not isinstance(word, dict):
+            raise RuntimeError(f"ElevenLabs STT returned invalid word entry at index {index}")
+        words.append(word)
+    return words
+
+
 def _results_from_transcript(
     transcript: dict[str, Any],
     *,
     fallback_speaker: str | None = None,
 ) -> list[TranscriptResult]:
-    text = str(transcript.get("text", "")).strip()
+    text_value = transcript.get("text")
+    if not isinstance(text_value, str):
+        raise RuntimeError("ElevenLabs STT returned invalid transcript text")
+    text = text_value.strip()
     if not text:
         return []
 
-    raw_words = transcript.get("words") or []
-    words = [word for word in raw_words if isinstance(word, dict)]
+    words = _validated_words(transcript)
     if not words or not any(_word_text(word) for word in words):
         result = _result_from_transcript(transcript, fallback_speaker=fallback_speaker)
         return [result] if result is not None else []
@@ -317,7 +333,9 @@ async def transcribe_audio_file(
         results = []
         for index, transcript in enumerate(transcripts, start=1):
             if not isinstance(transcript, dict):
-                continue
+                raise RuntimeError(
+                    f"ElevenLabs STT returned invalid transcript entry at index {index}"
+                )
             results.extend(
                 _results_from_transcript(transcript, fallback_speaker=f"Channel {index}")
             )
