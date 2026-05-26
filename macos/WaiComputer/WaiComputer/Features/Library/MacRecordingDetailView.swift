@@ -85,6 +85,7 @@ struct MacRecordingDetailView: View {
                         MacTranscriptView(
                             segments: detail.segments,
                             status: detail.status,
+                            localRecoveryManifest: viewModel.localRecoveryManifest,
                             recordingId: detail.id,
                             onAssigned: { updated in
                                 viewModel.recordingDetail = updated
@@ -115,6 +116,7 @@ struct MacRecordingDetailView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             loadTask?.cancel()
             loadTask = Task {

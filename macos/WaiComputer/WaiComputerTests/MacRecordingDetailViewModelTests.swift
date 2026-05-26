@@ -32,6 +32,45 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isLoading)
     }
 
+    func testLoadUsesLocalRecoveryTranscriptWhenServerDetailHasNoSegments() async throws {
+        let recordingId = "local-recovery-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            recordingType: .meeting,
+            durationSeconds: 4,
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Recovered local transcript.",
+                    speaker: "speaker_1",
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 4_000,
+                    confidence: 0.93
+                )
+            ]
+        )
+        _ = try RecordingBackupStore.recordSaveFailure(
+            recordingId: recordingId,
+            message: "Saved locally and waiting to sync."
+        )
+
+        let viewModel = MacRecordingDetailViewModel()
+        let apiClient = makeAPIClient(
+            statusCode: 200,
+            body: makeRecordingDetailJSON(id: recordingId, status: "processing", segments: [])
+        )
+
+        await viewModel.load(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertEqual(viewModel.localRecoveryManifest?.recordingId, recordingId)
+        XCTAssertEqual(viewModel.recordingDetail?.status, .processing)
+        XCTAssertEqual(viewModel.recordingDetail?.segments.map(\.content), ["Recovered local transcript."])
+        XCTAssertEqual(viewModel.recordingDetail?.segments.first?.rawLabel, "speaker_1")
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
     private func makeDetail(id: String, title: String) -> RecordingDetail {
         RecordingDetail(
             id: id,
@@ -60,6 +99,23 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         configuration.protocolClasses = [MacRecordingDetailMockURLProtocol.self]
         let session = URLSession(configuration: configuration)
         return APIClient(baseURL: URL(string: "https://example.test")!, session: session)
+    }
+
+    private func makeRecordingDetailJSON(
+        id: String,
+        status: String,
+        segments: [[String: Any]]
+    ) -> String {
+        let payload: [String: Any] = [
+            "id": id,
+            "title": "Server Detail",
+            "type": "meeting",
+            "status": status,
+            "created_at": "2026-05-26T12:00:00Z",
+            "segments": segments,
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return String(data: data, encoding: .utf8)!
     }
 }
 

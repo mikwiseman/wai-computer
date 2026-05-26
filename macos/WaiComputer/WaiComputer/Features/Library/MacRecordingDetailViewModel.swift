@@ -11,6 +11,7 @@ class MacRecordingDetailViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var selectedTab: Tab = .transcript
+    @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
 
     private var loadGeneration = 0
@@ -34,6 +35,7 @@ class MacRecordingDetailViewModel: ObservableObject {
         let isSwitchingRecording = recordingDetail?.id != nil && recordingDetail?.id != recordingId
         if isSwitchingRecording {
             recordingDetail = nil
+            localRecoveryManifest = nil
             selectedTab = .transcript
         }
         if showLoading {
@@ -55,7 +57,7 @@ class MacRecordingDetailViewModel: ObservableObject {
                 detail = try await apiClient.getRecording(id: recordingId)
             }
             guard generation == loadGeneration else { return }
-            recordingDetail = detail
+            applyFetchedDetail(detail)
         } catch {
             guard generation == loadGeneration else { return }
             self.error = error.userFacingMessage(context: .library)
@@ -96,7 +98,7 @@ class MacRecordingDetailViewModel: ObservableObject {
             _ = try await apiClient.generateSummary(recordingId: id)
             let detail = try await apiClient.getRecording(id: id)
             if recordingDetail?.id == id {
-                recordingDetail = detail
+                applyFetchedDetail(detail)
                 selectedTab = .summary
             }
         } catch {
@@ -130,7 +132,7 @@ class MacRecordingDetailViewModel: ObservableObject {
         guard let id = recordingDetail?.id else { return false }
         do {
             _ = try await apiClient.moveRecording(id: id, folderId: folderId)
-            recordingDetail = try await apiClient.getRecording(id: id)
+            applyFetchedDetail(try await apiClient.getRecording(id: id))
             return true
         } catch {
             self.error = error.userFacingMessage(context: .library)
@@ -144,7 +146,7 @@ class MacRecordingDetailViewModel: ObservableObject {
         guard !trimmed.isEmpty else { return false }
         do {
             _ = try await apiClient.updateRecording(id: id, title: trimmed)
-            recordingDetail = try await apiClient.getRecording(id: id)
+            applyFetchedDetail(try await apiClient.getRecording(id: id))
             return true
         } catch {
             self.error = error.userFacingMessage(context: .library)
@@ -159,5 +161,109 @@ class MacRecordingDetailViewModel: ObservableObject {
         case .ready, .failed, .none:
             return false
         }
+    }
+
+    private func applyFetchedDetail(_ detail: RecordingDetail) {
+        let localRecovery = localRecoveryDetail(for: detail)
+        recordingDetail = localRecovery.detail
+        localRecoveryManifest = localRecovery.manifest
+        if let recoveryError = localRecovery.error {
+            self.error = recoveryError.userFacingMessage(context: .library)
+        }
+    }
+
+    private func localRecoveryDetail(for detail: RecordingDetail) -> (
+        detail: RecordingDetail,
+        manifest: RecordingBackupManifest?,
+        error: Error?
+    ) {
+        do {
+            guard let manifest = try RecordingBackupStore.manifest(recordingId: detail.id) else {
+                return (detail, nil, nil)
+            }
+
+            guard detail.segments.isEmpty else {
+                return (detail, manifest, nil)
+            }
+
+            let segments: [Segment]
+            do {
+                segments = try localSegments(recordingId: detail.id, manifest: manifest)
+            } catch {
+                return (detail, manifest, error)
+            }
+            guard !segments.isEmpty else {
+                return (detail, manifest, nil)
+            }
+
+            return (
+                RecordingDetail(
+                    id: detail.id,
+                    title: detail.title,
+                    type: detail.type,
+                    audioUrl: detail.audioUrl,
+                    status: detail.status,
+                    failureCode: detail.failureCode,
+                    failureMessage: detail.failureMessage,
+                    uploadedAt: detail.uploadedAt,
+                    durationSeconds: detail.durationSeconds,
+                    language: detail.language,
+                    folderId: detail.folderId,
+                    deletedAt: detail.deletedAt,
+                    starredAt: detail.starredAt,
+                    createdAt: detail.createdAt,
+                    segments: segments,
+                    summary: detail.summary,
+                    actionItems: detail.actionItems,
+                    highlights: detail.highlights
+                ),
+                manifest,
+                nil
+            )
+        } catch {
+            return (detail, nil, error)
+        }
+    }
+
+    private func localSegments(
+        recordingId: String,
+        manifest: RecordingBackupManifest
+    ) throws -> [Segment] {
+        let storedSegments = try RecordingBackupStore.segments(recordingId: recordingId)
+            .enumerated()
+            .compactMap { index, segment -> Segment? in
+                let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+
+                return Segment(
+                    id: "\(recordingId)-local-\(index)",
+                    speaker: segment.speaker,
+                    rawLabel: segment.speaker,
+                    content: text,
+                    startMs: segment.startMs,
+                    endMs: segment.endMs,
+                    confidence: segment.confidence
+                )
+            }
+
+        if !storedSegments.isEmpty {
+            return storedSegments
+        }
+
+        guard let transcript = manifest.transcript?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !transcript.isEmpty else {
+            return []
+        }
+
+        let durationMs = max(Int(manifest.durationSeconds.rounded()), 1) * 1000
+        return [
+            Segment(
+                id: "\(recordingId)-local-transcript",
+                content: transcript,
+                startMs: 0,
+                endMs: durationMs,
+                confidence: 1
+            )
+        ]
     }
 }

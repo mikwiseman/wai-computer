@@ -756,6 +756,7 @@ struct MacMainView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: detailPhaseKey)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
