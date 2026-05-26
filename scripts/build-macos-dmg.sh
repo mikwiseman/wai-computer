@@ -412,6 +412,11 @@ fi
 RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"
 mkdir -p "$RELEASE_DIR"
 
+if [[ "$MACOS_VARIANT" == "global" ]]; then
+  echo "Uploading macOS dSYMs to Sentry..."
+  "$ROOT_DIR/scripts/sentry-upload-debug-files.sh" waicomputer-macos "$ARCHIVE_PATH/dSYMs"
+fi
+
 APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
 UNIVERSAL_INFO=$(file "$APP_BINARY")
 echo "$UNIVERSAL_INFO"

@@ -236,7 +236,7 @@ class AppState: ObservableObject {
 
     init() {
         #if !DEBUG
-        SentryHelper.start(dsn: "https://0ce75b3bd10ed900ea5e9eb3f043d447@o4508963132145664.ingest.us.sentry.io/4511194363592704")
+        SentryHelper.start(dsn: "https://b677540a781e0058c8568b614d517530@o4508963132145664.ingest.us.sentry.io/4511116052070400")
         #endif
 
         // Configure API client

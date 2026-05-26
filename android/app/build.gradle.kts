@@ -5,6 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // 6.8.1 fails on this repo's Gradle 8.7 with Exec.setIgnoreExitValue NoSuchMethodError.
+    id("io.sentry.android.gradle") version "5.12.2"
 }
 
 val keystoreProperties = Properties().apply {
@@ -13,6 +15,11 @@ val keystoreProperties = Properties().apply {
 }
 val releaseArtifactRequested = gradle.startParameter.taskNames.any { taskName ->
     taskName.contains("Release", ignoreCase = true)
+}
+val sentryAuthToken = System.getenv("SENTRY_AUTH_TOKEN")
+
+if (releaseArtifactRequested && sentryAuthToken.isNullOrBlank()) {
+    throw GradleException("Release builds require SENTRY_AUTH_TOKEN so Sentry ProGuard/R8 mappings are uploaded.")
 }
 
 android {
@@ -96,6 +103,18 @@ android {
     }
 }
 
+sentry {
+    org.set("waiwai-diy")
+    projectName.set("waicomputer-android")
+    if (!sentryAuthToken.isNullOrBlank()) {
+        authToken.set(sentryAuthToken)
+    }
+    includeProguardMapping.set(true)
+    autoUploadProguardMapping.set(true)
+    includeSourceContext.set(true)
+    telemetry.set(false)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.03.00")
 
@@ -130,7 +149,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("io.sentry:sentry-android:7.16.0")
+    implementation("io.sentry:sentry-android:8.42.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.13")

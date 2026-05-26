@@ -25,6 +25,9 @@ xcodebuild archive \
     -authenticationKeyID "$KEY_ID" \
     -authenticationKeyIssuerID "$ISSUER_ID"
 
+echo "Uploading iOS dSYMs to Sentry..."
+"$ROOT_DIR/scripts/sentry-upload-debug-files.sh" waicomputer-ios /tmp/WaiComputeriOS.xcarchive/dSYMs
+
 echo "Preparing Export Options..."
 sed 's/<string>export<\/string>/<string>upload<\/string>/g' scripts/export-options/ios-app-store-connect.plist > /tmp/ios-upload.plist
 

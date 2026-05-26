@@ -224,6 +224,88 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
 
 
 @pytest.mark.asyncio
+async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core.transcript_utils import TranscriptResult
+    from app.core import transcription
+
+    sentry_messages: list[dict[str, object]] = []
+    sentry_breadcrumbs: list[dict[str, object]] = []
+    tick = iter([0.0, 121.0])
+    monkeypatch.setattr(transcription, "perf_counter", lambda: next(tick))
+    monkeypatch.setattr(
+        transcription,
+        "capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_messages.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        transcription,
+        "add_sentry_breadcrumb",
+        lambda **kwargs: sentry_breadcrumbs.append(kwargs),
+    )
+    monkeypatch.setattr(
+        transcription,
+        "elevenlabs_transcribe_audio_file",
+        AsyncMock(
+            return_value=[
+                TranscriptResult(
+                    text="private transcript must stay out of Sentry",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1000,
+                    confidence=0.9,
+                )
+            ]
+        ),
+    )
+
+    result = await transcription.transcribe_audio_file(
+        b"secret-audio-bytes",
+        language="ru",
+        content_type="audio/wav",
+        audio_duration_seconds=30,
+    )
+
+    assert len(result) == 1
+    assert sentry_messages == [
+        {
+            "alert_code": "recording.file_stt.slow",
+            "message": "File transcription latency exceeded threshold",
+            "category": "recording",
+            "extras": {
+                "provider": "elevenlabs",
+                "model": "scribe_v2",
+                "latency_ms": 121_000,
+                "slow_threshold_ms": 120_000,
+                "audio_duration_seconds": 30,
+                "latency_per_audio_second": round(121 / 30, 4),
+                "audio_bytes": len(b"secret-audio-bytes"),
+                "content_type": "audio/wav",
+                "channels": None,
+                "segment_count": 1,
+            },
+            "level": "warning",
+        }
+    ]
+    assert any(
+        item.get("message") == "File transcription completed"
+        for item in sentry_breadcrumbs
+    )
+    assert "private transcript" not in repr(sentry_messages)
+    assert "secret-audio-bytes" not in repr(sentry_messages)
+
+
+@pytest.mark.asyncio
 async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
     response = httpx.Response(
         400,

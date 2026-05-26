@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:22-alpine AS deps
 WORKDIR /app
 RUN corepack enable
@@ -9,12 +10,22 @@ WORKDIR /app
 RUN corepack enable
 ARG API_BASE_URL
 ARG NEXT_PUBLIC_API_BASE_URL
+ARG SENTRY_RELEASE
+ARG SENTRY_UPLOAD_REQUIRED=0
 ENV API_BASE_URL=${API_BASE_URL}
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
 COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY --from=deps /app/node_modules ./node_modules
 COPY web/ ./
-RUN pnpm build
+RUN --mount=type=secret,id=sentry_auth_token \
+    if [ -s /run/secrets/sentry_auth_token ]; then \
+      export SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token)"; \
+    elif [ "$SENTRY_UPLOAD_REQUIRED" = "1" ]; then \
+      echo "ERROR: SENTRY_AUTH_TOKEN build secret is required for production source map upload." >&2; \
+      exit 1; \
+    fi; \
+    pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app

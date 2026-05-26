@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
 export default withSentryConfig(nextConfig, {
   org: "waiwai-diy",
   project: "waicomputer-web",
+  widenClientFileUpload: true,
   // Source maps (readable stack traces) upload only when SENTRY_AUTH_TOKEN is
   // present at build time; without it the SDK still reports errors.
   authToken: process.env.SENTRY_AUTH_TOKEN,
