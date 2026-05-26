@@ -110,7 +110,7 @@ describe("VerifyMagicLinkClient", () => {
     render(<VerifyMagicLinkClient token="pending-token" />);
 
     expect(screen.getByTestId("verify-message")).toHaveTextContent("Verifying token...");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Magic Link Verification");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Verifying sign-in link");
   });
 
   it("passes Russian locale and renders Russian chrome", async () => {

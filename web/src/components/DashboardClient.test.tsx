@@ -737,7 +737,48 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("current-password")).toBeInTheDocument();
   });
 
-  it("claims Telegram bot link code from settings", async () => {
+  it("claims Telegram bot link code from settings (RU locale)", async () => {
+    arrangeHappyPathMocks();
+    const originalLanguage = navigator.language;
+    const originalLanguages = navigator.languages;
+    Object.defineProperty(navigator, "language", {
+      value: "ru-RU",
+      configurable: true,
+    });
+    Object.defineProperty(navigator, "languages", {
+      value: ["ru-RU"],
+      configurable: true,
+    });
+    const user = userEvent.setup();
+
+    try {
+      render(<DashboardClient />);
+      await waitForDashboardReady();
+      await openSettingsView(user);
+
+      await waitFor(() => {
+        expect(screen.getByText("Код из Telegram")).toBeInTheDocument();
+      });
+      await user.type(screen.getByPlaceholderText("Введите код из бота"), "ABCD-2345");
+      await user.click(screen.getByRole("button", { name: "Привязать по коду" }));
+
+      await waitFor(() => {
+        expect(mockClaimTelegramLinkCode).toHaveBeenCalledWith("ABCD-2345");
+        expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Telegram привязан.");
+      });
+    } finally {
+      Object.defineProperty(navigator, "language", {
+        value: originalLanguage,
+        configurable: true,
+      });
+      Object.defineProperty(navigator, "languages", {
+        value: originalLanguages,
+        configurable: true,
+      });
+    }
+  });
+
+  it("renders Telegram settings in English by default", async () => {
     arrangeHappyPathMocks();
     const user = userEvent.setup();
 
@@ -746,15 +787,11 @@ describe("DashboardClient", () => {
     await openSettingsView(user);
 
     await waitFor(() => {
-      expect(screen.getByText("Код из Telegram")).toBeInTheDocument();
+      expect(screen.getByText("Code from Telegram")).toBeInTheDocument();
     });
-    await user.type(screen.getByPlaceholderText("Введите код из бота"), "ABCD-2345");
-    await user.click(screen.getByRole("button", { name: "Привязать по коду" }));
-
-    await waitFor(() => {
-      expect(mockClaimTelegramLinkCode).toHaveBeenCalledWith("ABCD-2345");
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Telegram привязан.");
-    });
+    expect(
+      screen.getByRole("button", { name: "Link Telegram" }),
+    ).toBeInTheDocument();
   });
 
   // --- Password change does NOT clear fields on failure ---

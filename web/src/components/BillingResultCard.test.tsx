@@ -1,11 +1,43 @@
+import type React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import {
-  BillingResultCard,
-  resolveBillingResultLocale,
-} from "./BillingResultCard";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockReplace = vi.fn();
+
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    className,
+    "data-testid": testId,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    className?: string;
+    "data-testid"?: string;
+  }) => (
+    <a href={href} className={className} data-testid={testId}>
+      {children}
+    </a>
+  ),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace }),
+}));
+
+const { BillingResultCard, resolveBillingResultLocale } = await import("./BillingResultCard");
 
 describe("BillingResultCard", () => {
+  beforeEach(() => {
+    mockReplace.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("keeps bare result pages English without Russian or T-Bank context", () => {
     expect(resolveBillingResultLocale()).toBe("en");
   });
@@ -36,5 +68,36 @@ describe("BillingResultCard", () => {
 
     expect(screen.queryByRole("link", { name: /подписк/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /billing/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a primary CTA back to the dashboard in English", () => {
+    render(<BillingResultCard kind="success" locale="en" />);
+
+    const cta = screen.getByTestId("billing-result-cta");
+    expect(cta).toHaveAttribute("href", "/dashboard");
+    expect(cta).toHaveTextContent(/Open WaiComputer/i);
+  });
+
+  it("offers a primary CTA back to the dashboard in Russian", () => {
+    render(<BillingResultCard kind="cancel" locale="ru" />);
+
+    const cta = screen.getByTestId("billing-result-cta");
+    expect(cta).toHaveAttribute("href", "/dashboard");
+    expect(cta).toHaveTextContent(/Открыть WaiComputer/i);
+  });
+
+  it("auto-redirects to the dashboard 5 seconds after a successful checkout", () => {
+    render(<BillingResultCard kind="success" locale="en" />);
+
+    expect(mockReplace).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(5000);
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("does not auto-redirect on the cancel page", () => {
+    render(<BillingResultCard kind="cancel" locale="en" />);
+
+    vi.advanceTimersByTime(10000);
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });

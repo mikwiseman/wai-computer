@@ -50,6 +50,353 @@ import type {
 type SearchMode = "hybrid" | "semantic" | "fts";
 type DashboardView = "wai" | "library" | "trash" | "search" | "actions" | "topics" | "settings";
 type DetailMode = "active" | "trash";
+type Locale = "en" | "ru";
+
+const LIST_LIMIT = 100;
+
+interface DashboardCopy {
+  loadingDashboard: string;
+  refreshing: string;
+  reload: string;
+  reloading: string;
+  logout: string;
+  noUser: string;
+  fallbackTitle: string;
+  retryLoadSettings: string;
+  // Sidebar nav (label + one-line value prop subtitle)
+  nav: {
+    wai: { label: string; detail: string };
+    library: { label: string; detail: string };
+    trash: { label: string; detail: string };
+    search: { label: string; detail: string };
+    actions: { label: string; detail: string };
+    topics: { label: string; detail: string };
+    settings: { label: string; detail: string };
+  };
+  // Library
+  library: {
+    title: string;
+    trashTitle: string;
+    recordingsCount: (n: number) => string;
+    newButton: string;
+    emptyTitle: string;
+    emptyBody: string;
+    trashEmptyTitle: string;
+    trashEmptyBody: string;
+    selectTitle: string;
+    selectTrashBody: string;
+    untitled: string;
+    summarize: string;
+    trashAction: string;
+    couldNotProcess: string;
+    newRecordingHeading: string;
+    titlePlaceholder: string;
+    create: string;
+    typeNote: string;
+    typeMeeting: string;
+    typeReflection: string;
+  };
+  // Search
+  search: {
+    placeholder: string;
+    submit: string;
+    hybrid: string;
+    semantic: string;
+    fts: string;
+    total: (n: number) => string;
+    enterQuery: string;
+    noResultsTitle: string;
+    noResultsBody: string;
+    score: string;
+    open: string;
+  };
+  // Action items
+  actions: {
+    emptyTitle: string;
+    emptyBody: string;
+    complete: string;
+    pending: string;
+    updated: string;
+  };
+  // Topics
+  topics: {
+    placeholder: string;
+    create: string;
+    delete: string;
+    created: string;
+    deleted: string;
+  };
+  // Settings
+  settings: {
+    dictationHeading: string;
+    loadingSettings: string;
+    cleanupCheckbox: string;
+    settingsUpdated: string;
+    accountHeading: string;
+    magicLinkNote: string;
+    currentPassword: string;
+    newPassword: string;
+    changePassword: string;
+    setPassword: string;
+  };
+  // Telegram (RU + EN parity required by audit)
+  telegram: {
+    heading: string;
+    intro: string;
+    linkedAs: string;
+    disconnect: string;
+    instructions: string;
+    linkButton: string;
+    linkOpening: string;
+    awaitingStart: string;
+    codeLabel: string;
+    codeHelp: string;
+    codePlaceholder: string;
+    linkByCodeButton: string;
+    opened: string;
+    enterCode: string;
+    linked: string;
+  };
+  // Misc dashboard messages
+  msg: {
+    recordingCreated: string;
+    summaryGenerated: string;
+    recordingTrashed: string;
+    recordingDeletedPermanently: string;
+    recordingRestored: string;
+  };
+}
+
+const COPY: Record<Locale, DashboardCopy> = {
+  en: {
+    loadingDashboard: "Loading dashboard...",
+    refreshing: "Refreshing dashboard...",
+    reload: "Reload",
+    reloading: "Reloading...",
+    logout: "Logout",
+    noUser: "No user",
+    fallbackTitle: "WaiComputer",
+    retryLoadSettings: "Retry loading account settings",
+    nav: {
+      wai: { label: "Wai", detail: "Ask anything about what you said" },
+      library: { label: "All Recordings", detail: "Every note, meeting, and reflection" },
+      trash: { label: "Trash", detail: "Restore or delete forever" },
+      search: { label: "Search", detail: "Find a moment across transcripts" },
+      actions: { label: "Action Items", detail: "Follow-ups pulled from your notes" },
+      topics: { label: "Topics", detail: "People, projects, and ideas you mention" },
+      settings: { label: "Settings", detail: "Account, dictation, and integrations" },
+    },
+    library: {
+      title: "All Recordings",
+      trashTitle: "Trash",
+      recordingsCount: (n) => `${n} ${n === 1 ? "recording" : "recordings"}`,
+      newButton: "New",
+      emptyTitle: "No Recordings",
+      emptyBody: "Record in the browser or import an audio file.",
+      trashEmptyTitle: "Trash is Empty",
+      trashEmptyBody: "Deleted recordings will appear here.",
+      selectTitle: "Select a Recording",
+      selectTrashBody: "Choose a trashed recording to restore or delete it permanently.",
+      untitled: "(untitled)",
+      summarize: "Summarize",
+      trashAction: "Trash",
+      couldNotProcess: "Could not process this recording. Please try again or contact support.",
+      newRecordingHeading: "New Recording",
+      titlePlaceholder: "Create an empty note...",
+      create: "Create",
+      typeNote: "Note",
+      typeMeeting: "Meeting",
+      typeReflection: "Reflection",
+    },
+    search: {
+      placeholder: "Search recordings...",
+      submit: "Search",
+      hybrid: "Hybrid",
+      semantic: "Semantic",
+      fts: "Full text",
+      total: (n) => `Total: ${n}`,
+      enterQuery: "Enter a search query.",
+      noResultsTitle: "No Results",
+      noResultsBody: "No matching transcript segments found.",
+      score: "Score",
+      open: "Open",
+    },
+    actions: {
+      emptyTitle: "No Action Items",
+      emptyBody: "Generated follow-ups will appear here after summaries are created.",
+      complete: "Complete",
+      pending: "Pending",
+      updated: "Action item updated.",
+    },
+    topics: {
+      placeholder: "Topic name",
+      create: "Create topic",
+      delete: "Delete",
+      created: "Entity created.",
+      deleted: "Entity deleted.",
+    },
+    settings: {
+      dictationHeading: "Dictation",
+      loadingSettings: "Loading account settings...",
+      cleanupCheckbox: "Clean up dictated text before insertion",
+      settingsUpdated: "Settings updated.",
+      accountHeading: "Account",
+      magicLinkNote:
+        "You signed in with a magic link. Set a password to use email and password login.",
+      currentPassword: "Current password",
+      newPassword: "New password",
+      changePassword: "Change password",
+      setPassword: "Set password",
+    },
+    telegram: {
+      heading: "Telegram",
+      intro:
+        "Link @waicomputer_bot to send voice, video, and text questions. Media is transcribed, summarized, and saved to your Library.",
+      linkedAs: "Linked as",
+      disconnect: "Disconnect",
+      instructions:
+        "Tap “Link Telegram” — the bot will open. After you press Start linking finishes automatically.",
+      linkButton: "Link Telegram",
+      linkOpening: "Opening...",
+      awaitingStart:
+        "Waiting for Start in Telegram. You don't need to come back and copy a code.",
+      codeLabel: "Code from Telegram",
+      codeHelp: "Only if you started linking from Telegram.",
+      codePlaceholder: "Enter the code from the bot",
+      linkByCodeButton: "Link by code",
+      opened:
+        "Telegram opened. Tap Start in the bot — WaiComputer will finish linking automatically.",
+      enterCode: "Enter the Telegram code.",
+      linked: "Telegram linked.",
+    },
+    msg: {
+      recordingCreated: "Recording created.",
+      summaryGenerated: "Summary generated.",
+      recordingTrashed: "Recording moved to trash.",
+      recordingDeletedPermanently: "Recording permanently deleted.",
+      recordingRestored: "Recording restored.",
+    },
+  },
+  ru: {
+    loadingDashboard: "Загружаем дашборд...",
+    refreshing: "Обновляем дашборд...",
+    reload: "Обновить",
+    reloading: "Обновляем...",
+    logout: "Выйти",
+    noUser: "Нет пользователя",
+    fallbackTitle: "WaiComputer",
+    retryLoadSettings: "Повторить загрузку настроек",
+    nav: {
+      wai: { label: "Wai", detail: "Спросите о чём угодно из ваших записей" },
+      library: { label: "Все записи", detail: "Все заметки, встречи и размышления" },
+      trash: { label: "Корзина", detail: "Восстановить или удалить навсегда" },
+      search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
+      actions: { label: "Задачи", detail: "Действия, извлечённые из ваших записей" },
+      topics: { label: "Темы", detail: "Люди, проекты и идеи, о которых вы говорите" },
+      settings: { label: "Настройки", detail: "Аккаунт, диктовка и интеграции" },
+    },
+    library: {
+      title: "Все записи",
+      trashTitle: "Корзина",
+      recordingsCount: (n) =>
+        `${n} ${n === 1 ? "запись" : n >= 2 && n <= 4 ? "записи" : "записей"}`,
+      newButton: "Новая",
+      emptyTitle: "Записей пока нет",
+      emptyBody: "Запишите в браузере или загрузите аудиофайл.",
+      trashEmptyTitle: "Корзина пуста",
+      trashEmptyBody: "Удалённые записи появятся здесь.",
+      selectTitle: "Выберите запись",
+      selectTrashBody: "Выберите запись в корзине, чтобы восстановить или удалить навсегда.",
+      untitled: "(без названия)",
+      summarize: "Суммировать",
+      trashAction: "В корзину",
+      couldNotProcess:
+        "Не удалось обработать эту запись. Попробуйте ещё раз или обратитесь в поддержку.",
+      newRecordingHeading: "Новая запись",
+      titlePlaceholder: "Создать пустую заметку...",
+      create: "Создать",
+      typeNote: "Заметка",
+      typeMeeting: "Встреча",
+      typeReflection: "Размышление",
+    },
+    search: {
+      placeholder: "Искать в записях...",
+      submit: "Найти",
+      hybrid: "Гибридный",
+      semantic: "Семантический",
+      fts: "По тексту",
+      total: (n) => `Всего: ${n}`,
+      enterQuery: "Введите поисковый запрос.",
+      noResultsTitle: "Ничего не найдено",
+      noResultsBody: "Не нашли подходящих фрагментов транскрипта.",
+      score: "Релевантность",
+      open: "Открыть",
+    },
+    actions: {
+      emptyTitle: "Задач пока нет",
+      emptyBody: "Действия будут появляться здесь после создания саммари.",
+      complete: "Готово",
+      pending: "В работе",
+      updated: "Задача обновлена.",
+    },
+    topics: {
+      placeholder: "Название темы",
+      create: "Создать тему",
+      delete: "Удалить",
+      created: "Тема создана.",
+      deleted: "Тема удалена.",
+    },
+    settings: {
+      dictationHeading: "Диктовка",
+      loadingSettings: "Загружаем настройки аккаунта...",
+      cleanupCheckbox: "Чистить диктованный текст перед вставкой",
+      settingsUpdated: "Настройки сохранены.",
+      accountHeading: "Аккаунт",
+      magicLinkNote:
+        "Вы вошли по magic-ссылке. Задайте пароль, чтобы входить по email и паролю.",
+      currentPassword: "Текущий пароль",
+      newPassword: "Новый пароль",
+      changePassword: "Сменить пароль",
+      setPassword: "Задать пароль",
+    },
+    telegram: {
+      heading: "Telegram",
+      intro:
+        "Привяжите @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы текстом. Медиа расшифровываются, суммаризируются и сохраняются в Библиотеку.",
+      linkedAs: "Привязан как",
+      disconnect: "Отключить",
+      instructions:
+        "Нажмите «Привязать Telegram» — откроется бот. После Start привязка завершится автоматически.",
+      linkButton: "Привязать Telegram",
+      linkOpening: "Открываем...",
+      awaitingStart: "Ждем Start в Telegram. Возвращаться и копировать код не нужно.",
+      codeLabel: "Код из Telegram",
+      codeHelp: "Только если вы начали привязку из Telegram.",
+      codePlaceholder: "Введите код из бота",
+      linkByCodeButton: "Привязать по коду",
+      opened:
+        "Telegram открыт. Нажмите Start в боте — WaiComputer завершит привязку автоматически.",
+      enterCode: "Введите код из Telegram.",
+      linked: "Telegram привязан.",
+    },
+    msg: {
+      recordingCreated: "Запись создана.",
+      summaryGenerated: "Саммари сгенерировано.",
+      recordingTrashed: "Запись перемещена в корзину.",
+      recordingDeletedPermanently: "Запись удалена навсегда.",
+      recordingRestored: "Запись восстановлена.",
+    },
+  },
+};
+
+function detectLocale(): Locale {
+  if (typeof navigator === "undefined") return "en";
+  const candidates = [
+    ...Array.from(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean);
+  return candidates[0]?.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
 
 function formatError(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -64,22 +411,64 @@ function formatDuration(seconds: number | null): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
+function formatDate(value: string, locale: Locale): string {
+  const bcp = locale === "ru" ? "ru-RU" : undefined;
+  return new Date(value).toLocaleDateString(bcp, { dateStyle: "medium" });
 }
 
-function typeLabel(type: RecordingType): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
+function typeLabel(type: RecordingType, copy: DashboardCopy): string {
+  switch (type) {
+    case "note":
+      return copy.library.typeNote;
+    case "meeting":
+      return copy.library.typeMeeting;
+    case "reflection":
+      return copy.library.typeReflection;
+  }
 }
 
-function statusText(recording: Recording): string | null {
-  if (recording.failure_message) return recording.failure_message;
+// Hide OS paths, errno markers, and traceback fragments from end users.
+function isLikelyInternalError(message: string): boolean {
+  if (!message) return false;
+  return (
+    /\[Errno\b/.test(message)
+    || /\/var\//.test(message)
+    || /\/Users\//.test(message)
+    || /\/tmp\//.test(message)
+    || /\bTraceback\b/.test(message)
+    || /\bFile\s+"[^"]+",\s+line\s+\d+/.test(message)
+  );
+}
+
+function displayFailureMessage(failureMessage: string, copy: DashboardCopy): string {
+  if (isLikelyInternalError(failureMessage)) {
+    return copy.library.couldNotProcess;
+  }
+  return failureMessage;
+}
+
+function statusText(recording: Recording, copy: DashboardCopy): string | null {
+  if (recording.failure_message) {
+    return displayFailureMessage(recording.failure_message, copy);
+  }
   if (!recording.status || recording.status === "ready") return null;
   return recording.status.replace("_", " ");
 }
 
+// API caps list endpoints at `LIST_LIMIT`. When a list arrives full, the true
+// total is unknown — render "100+" so we never report an inflated, capped
+// number as the source of truth.
+function displayCount(rawArrayLength: number, displayedCount?: number): string {
+  const total = displayedCount ?? rawArrayLength;
+  if (rawArrayLength >= LIST_LIMIT) return `${total}+`;
+  return String(total);
+}
+
 export function DashboardClient() {
   const router = useRouter();
+
+  const [locale, setLocale] = useState<Locale>("en");
+  const copy = COPY[locale];
 
   const [initializing, setInitializing] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -113,25 +502,31 @@ export function DashboardClient() {
   const [telegramLinkCode, setTelegramLinkCode] = useState("");
   const [telegramLoading, setTelegramLoading] = useState(false);
 
-  const activeRecordingCount = recordings.length;
+  useEffect(() => {
+    setLocale(detectLocale());
+  }, []);
+
   const pendingActionCount = useMemo(
-    () => actionItems.filter((item) => item.status !== "completed" && item.status !== "cancelled").length,
+    () =>
+      actionItems.filter(
+        (item) => item.status !== "completed" && item.status !== "cancelled",
+      ).length,
     [actionItems],
   );
   const accountHasPassword = user?.has_password !== false;
 
   async function loadRecordingsState() {
-    const active = await listRecordings({ limit: 100 });
+    const active = await listRecordings({ limit: LIST_LIMIT });
     setRecordings(active);
   }
 
   async function loadTrashRecordingsState() {
-    const trashed = await listRecordings({ limit: 100, trashed: true });
+    const trashed = await listRecordings({ limit: LIST_LIMIT, trashed: true });
     setTrashRecordings(trashed);
   }
 
   async function loadActionItemsState() {
-    const response = await listActionItems({ limit: 100 });
+    const response = await listActionItems({ limit: LIST_LIMIT });
     setActionItems(response);
   }
 
@@ -219,7 +614,7 @@ export function DashboardClient() {
       setRecordingTitle("");
       await loadRecordingsState();
       setView("library");
-      setMessage("Recording created.");
+      setMessage(copy.msg.recordingCreated);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -253,7 +648,11 @@ export function DashboardClient() {
         options?.permanent ? loadTrashRecordingsState() : Promise.resolve(),
         loadActionItemsState(),
       ]);
-      setMessage(options?.permanent ? "Recording permanently deleted." : "Recording moved to trash.");
+      setMessage(
+        options?.permanent
+          ? copy.msg.recordingDeletedPermanently
+          : copy.msg.recordingTrashed,
+      );
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -267,7 +666,7 @@ export function DashboardClient() {
         setSelectedRecording(null);
       }
       await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
-      setMessage("Recording restored.");
+      setMessage(copy.msg.recordingRestored);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -281,7 +680,7 @@ export function DashboardClient() {
       setSelectedRecording(detail);
       setSelectedMode("active");
       await loadActionItemsState();
-      setMessage("Summary generated.");
+      setMessage(copy.msg.summaryGenerated);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -293,7 +692,7 @@ export function DashboardClient() {
     setMessage(null);
     if (query.length === 0) {
       setSearchResponse(null);
-      setMessage("Enter a search query.");
+      setMessage(copy.search.enterQuery);
       return;
     }
     try {
@@ -316,7 +715,7 @@ export function DashboardClient() {
     try {
       await updateActionItem(itemId, { status });
       await loadActionItemsState();
-      setMessage("Action item updated.");
+      setMessage(copy.actions.updated);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -329,7 +728,7 @@ export function DashboardClient() {
       await createEntity({ type: "topic", name: entityName, metadata: { source: "web" } });
       setEntityName("");
       await loadEntitiesState();
-      setMessage("Entity created.");
+      setMessage(copy.topics.created);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -340,7 +739,7 @@ export function DashboardClient() {
     try {
       await deleteEntity(entityId);
       await loadEntitiesState();
-      setMessage("Entity deleted.");
+      setMessage(copy.topics.deleted);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -366,7 +765,7 @@ export function DashboardClient() {
     try {
       const updated = await updateSettings(patch);
       setAccountSettings(updated);
-      setMessage("Settings updated.");
+      setMessage(copy.settings.settingsUpdated);
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -381,7 +780,7 @@ export function DashboardClient() {
       const response = await startTelegramLink();
       setTelegramPairing(response);
       window.location.href = response.deep_link;
-      setMessage("Telegram открыт. Нажмите Start в боте — WaiComputer завершит привязку автоматически.");
+      setMessage(copy.telegram.opened);
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -399,7 +798,7 @@ export function DashboardClient() {
         setTelegramPairing(null);
         if (status.linked) {
           setTelegramLinkCode("");
-          setMessage("Telegram привязан.");
+          setMessage(copy.telegram.linked);
         }
       }
     } catch (error: unknown) {
@@ -413,7 +812,7 @@ export function DashboardClient() {
     event.preventDefault();
     const code = telegramLinkCode.trim();
     if (!code) {
-      setMessage("Введите код из Telegram.");
+      setMessage(copy.telegram.enterCode);
       return;
     }
     setTelegramLoading(true);
@@ -422,7 +821,7 @@ export function DashboardClient() {
       setTelegramStatus(await claimTelegramLinkCode(code));
       setTelegramPairing(null);
       setTelegramLinkCode("");
-      setMessage("Telegram привязан.");
+      setMessage(copy.telegram.linked);
     } catch (error: unknown) {
       setMessage(formatError(error));
     } finally {
@@ -458,19 +857,44 @@ export function DashboardClient() {
   if (initializing) {
     return (
       <div className="loading-screen">
-        <p data-testid="dashboard-loading">Loading dashboard...</p>
+        <p data-testid="dashboard-loading">{copy.loadingDashboard}</p>
       </div>
     );
   }
 
   const navigation = [
-    { key: "wai", label: "Wai", detail: "Ask across notes", count: null },
-    { key: "library", label: "All Recordings", detail: "Library", count: activeRecordingCount },
-    { key: "trash", label: "Trash", detail: "Recently removed", count: trashRecordings.length },
-    { key: "search", label: "Search", detail: "Transcript lookup", count: null },
-    { key: "actions", label: "Action Items", detail: "Follow-ups", count: pendingActionCount },
-    { key: "topics", label: "Topics", detail: "Entities", count: entities.length },
-    { key: "settings", label: "Settings", detail: "Account", count: null },
+    { key: "wai", label: copy.nav.wai.label, detail: copy.nav.wai.detail, count: null },
+    {
+      key: "library",
+      label: copy.nav.library.label,
+      detail: copy.nav.library.detail,
+      count: displayCount(recordings.length),
+    },
+    {
+      key: "trash",
+      label: copy.nav.trash.label,
+      detail: copy.nav.trash.detail,
+      count: displayCount(trashRecordings.length),
+    },
+    { key: "search", label: copy.nav.search.label, detail: copy.nav.search.detail, count: null },
+    {
+      key: "actions",
+      label: copy.nav.actions.label,
+      detail: copy.nav.actions.detail,
+      count: displayCount(actionItems.length, pendingActionCount),
+    },
+    {
+      key: "topics",
+      label: copy.nav.topics.label,
+      detail: copy.nav.topics.detail,
+      count: displayCount(entities.length),
+    },
+    {
+      key: "settings",
+      label: copy.nav.settings.label,
+      detail: copy.nav.settings.detail,
+      count: null,
+    },
   ] as const;
 
   return (
@@ -480,7 +904,7 @@ export function DashboardClient() {
           <div className="brand-mark" aria-hidden="true" />
           <div>
             <h1>WaiComputer</h1>
-            <p data-testid="user-email">{user?.email ?? "No user"}</p>
+            <p data-testid="user-email">{user?.email ?? copy.noUser}</p>
           </div>
         </div>
 
@@ -516,10 +940,15 @@ export function DashboardClient() {
             onClick={() => void initialize({ preserveView: true })}
             disabled={refreshing}
           >
-            {refreshing ? "Reloading..." : "Reload"}
+            {refreshing ? copy.reloading : copy.reload}
           </button>
-          <button data-testid="logout-button" type="button" className="ghost-button" onClick={handleLogout}>
-            Logout
+          <button
+            data-testid="logout-button"
+            type="button"
+            className="ghost-button danger-button"
+            onClick={handleLogout}
+          >
+            {copy.logout}
           </button>
         </div>
       </aside>
@@ -527,9 +956,9 @@ export function DashboardClient() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <h2>{navigation.find((item) => item.key === view)?.label ?? "WaiComputer"}</h2>
+            <h2>{navigation.find((item) => item.key === view)?.label ?? copy.fallbackTitle}</h2>
           </div>
-          {refreshing ? <p data-testid="dashboard-refreshing">Refreshing dashboard...</p> : null}
+          {refreshing ? <p data-testid="dashboard-refreshing">{copy.refreshing}</p> : null}
         </header>
 
         {message ? (
@@ -538,7 +967,7 @@ export function DashboardClient() {
           </p>
         ) : null}
 
-        {view === "wai" ? <WaiView recordings={recordings} /> : null}
+        {view === "wai" ? <WaiView recordings={recordings} locale={locale} /> : null}
         {view === "library" ? renderLibrary("active", recordings) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
@@ -551,7 +980,7 @@ export function DashboardClient() {
 
   function renderLibrary(mode: DetailMode, items: Recording[]) {
     const isTrash = mode === "trash";
-    const title = isTrash ? "Trash" : "All Recordings";
+    const title = isTrash ? copy.library.trashTitle : copy.library.title;
 
     return (
       <div className="library-grid">
@@ -559,7 +988,7 @@ export function DashboardClient() {
           <header className="panel-header">
             <div>
               <h3>{title}</h3>
-              <p>{items.length} {items.length === 1 ? "recording" : "recordings"}</p>
+              <p>{copy.library.recordingsCount(items.length)}</p>
             </div>
             {!isTrash ? (
               <button
@@ -570,59 +999,68 @@ export function DashboardClient() {
                   setSelectedMode("active");
                 }}
               >
-                New
+                {copy.library.newButton}
               </button>
             ) : null}
           </header>
 
           {items.length === 0 ? (
             <div className="empty-state">
-              <h3>{isTrash ? "Trash is Empty" : "No Recordings"}</h3>
-              <p>{isTrash ? "Deleted recordings will appear here." : "Record in the browser or import an audio file."}</p>
+              <h3>{isTrash ? copy.library.trashEmptyTitle : copy.library.emptyTitle}</h3>
+              <p>{isTrash ? copy.library.trashEmptyBody : copy.library.emptyBody}</p>
             </div>
           ) : (
             <ul className="recording-list" data-testid="recording-list">
-              {items.map((recording) => (
-                <li key={recording.id}>
-                  <button
-                    type="button"
-                    className="recording-row"
-                    aria-current={selectedRecording?.id === recording.id && selectedMode === mode ? "true" : undefined}
-                    onClick={() => void handleSelectRecording(recording.id, mode)}
-                    data-testid={`select-recording-${recording.id}`}
-                  >
-                    <span className="recording-row__main">
-                      <strong>{recording.title ?? "(untitled)"}</strong>
-                      <small>
-                        {typeLabel(recording.type)} / {formatDate(recording.created_at)}
-                        {recording.duration_seconds ? ` / ${formatDuration(recording.duration_seconds)}` : ""}
-                      </small>
-                    </span>
-                    {statusText(recording) ? <span className="status-pill">{statusText(recording)}</span> : null}
-                  </button>
+              {items.map((recording) => {
+                const status = statusText(recording, copy);
+                return (
+                  <li key={recording.id}>
+                    <button
+                      type="button"
+                      className="recording-row"
+                      aria-current={
+                        selectedRecording?.id === recording.id && selectedMode === mode
+                          ? "true"
+                          : undefined
+                      }
+                      onClick={() => void handleSelectRecording(recording.id, mode)}
+                      data-testid={`select-recording-${recording.id}`}
+                    >
+                      <span className="recording-row__main">
+                        <strong>{recording.title ?? copy.library.untitled}</strong>
+                        <small>
+                          {typeLabel(recording.type, copy)} / {formatDate(recording.created_at, locale)}
+                          {recording.duration_seconds
+                            ? ` / ${formatDuration(recording.duration_seconds)}`
+                            : ""}
+                        </small>
+                      </span>
+                      {status ? <span className="status-pill">{status}</span> : null}
+                    </button>
 
-                  {!isTrash ? (
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        className="ghost-button compact-button"
-                        onClick={() => void handleGenerateSummary(recording.id)}
-                        data-testid={`generate-summary-${recording.id}`}
-                      >
-                        Summarize
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost-button compact-button danger-button"
-                        onClick={() => void handleDeleteRecording(recording.id)}
-                        data-testid={`delete-recording-${recording.id}`}
-                      >
-                        Trash
-                      </button>
-                    </div>
-                  ) : null}
-                </li>
-              ))}
+                    {!isTrash ? (
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="ghost-button compact-button"
+                          onClick={() => void handleGenerateSummary(recording.id)}
+                          data-testid={`generate-summary-${recording.id}`}
+                        >
+                          {copy.library.summarize}
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button compact-button danger-button"
+                          onClick={() => void handleDeleteRecording(recording.id)}
+                          data-testid={`delete-recording-${recording.id}`}
+                        >
+                          {copy.library.trashAction}
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -634,17 +1072,20 @@ export function DashboardClient() {
               mode={mode}
               onRecordingUpdate={setSelectedRecording}
               onRestore={(recordingId) => void handleRestoreRecording(recordingId)}
-              onDelete={(recordingId) => void handleDeleteRecording(recordingId, { permanent: isTrash })}
+              onDelete={(recordingId) =>
+                void handleDeleteRecording(recordingId, { permanent: isTrash })
+              }
             />
           ) : isTrash ? (
             <div className="empty-state empty-state--center">
-              <h3>Select a Recording</h3>
-              <p>Choose a trashed recording to restore or delete it permanently.</p>
+              <h3>{copy.library.selectTitle}</h3>
+              <p>{copy.library.selectTrashBody}</p>
             </div>
           ) : (
             <NewRecordingPane
               title={recordingTitle}
               type={recordingType}
+              copy={copy}
               onTitleChange={setRecordingTitle}
               onTypeChange={setRecordingType}
               onSubmit={handleCreateRecording}
@@ -667,7 +1108,7 @@ export function DashboardClient() {
         <form className="search-form" onSubmit={handleSearch}>
           <input
             data-testid="search-query"
-            placeholder="Search recordings..."
+            placeholder={copy.search.placeholder}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
           />
@@ -679,32 +1120,35 @@ export function DashboardClient() {
               setSearchResponse(null);
             }}
           >
-            <option value="hybrid">Hybrid</option>
-            <option value="semantic">Semantic</option>
-            <option value="fts">Full text</option>
+            <option value="hybrid">{copy.search.hybrid}</option>
+            <option value="semantic">{copy.search.semantic}</option>
+            <option value="fts">{copy.search.fts}</option>
           </select>
           <button data-testid="search-submit" type="submit">
-            Search
+            {copy.search.submit}
           </button>
         </form>
 
-        <p data-testid="search-total" className="muted-text">Total: {searchResponse?.total ?? 0}</p>
+        <p data-testid="search-total" className="muted-text">
+          {copy.search.total(searchResponse?.total ?? 0)}
+        </p>
         {searchResponse?.results && searchResponse.results.length > 0 ? (
           <ul className="search-results" data-testid="search-results">
             {searchResponse.results.map((result) => (
               <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
-                <strong>{result.recording_title ?? "(untitled)"}</strong>
+                <strong>{result.recording_title ?? copy.library.untitled}</strong>
                 <p>{result.content}</p>
                 <div className="search-result-footer">
                   <small>
-                    {result.speaker ? `${result.speaker} / ` : ""}Score {result.score.toFixed(2)}
+                    {result.speaker ? `${result.speaker} / ` : ""}
+                    {copy.search.score} {result.score.toFixed(2)}
                   </small>
                   <button
                     type="button"
                     className="ghost-button compact-button"
                     onClick={() => void handleSelectRecording(result.recording_id)}
                   >
-                    Open
+                    {copy.search.open}
                   </button>
                 </div>
               </li>
@@ -712,8 +1156,8 @@ export function DashboardClient() {
           </ul>
         ) : searchResponse && searchResponse.total === 0 ? (
           <div className="empty-state" data-testid="search-no-results">
-            <h3>No Results</h3>
-            <p>No matching transcript segments found.</p>
+            <h3>{copy.search.noResultsTitle}</h3>
+            <p>{copy.search.noResultsBody}</p>
           </div>
         ) : null}
       </section>
@@ -725,8 +1169,8 @@ export function DashboardClient() {
       <section className="tool-panel">
         {actionItems.length === 0 ? (
           <div className="empty-state">
-            <h3>No Action Items</h3>
-            <p>Generated follow-ups will appear here after summaries are created.</p>
+            <h3>{copy.actions.emptyTitle}</h3>
+            <p>{copy.actions.emptyBody}</p>
           </div>
         ) : (
           <ul className="action-list" data-testid="action-item-list">
@@ -747,7 +1191,7 @@ export function DashboardClient() {
                     className="ghost-button compact-button"
                     onClick={() => void handleUpdateAction(item.id, "completed")}
                   >
-                    Complete
+                    {copy.actions.complete}
                   </button>
                   <button
                     type="button"
@@ -755,7 +1199,7 @@ export function DashboardClient() {
                     className="ghost-button compact-button"
                     onClick={() => void handleUpdateAction(item.id, "pending")}
                   >
-                    Pending
+                    {copy.actions.pending}
                   </button>
                 </div>
               </li>
@@ -772,13 +1216,13 @@ export function DashboardClient() {
         <form className="search-form" onSubmit={handleCreateEntity}>
           <input
             data-testid="entity-name"
-            placeholder="Topic name"
+            placeholder={copy.topics.placeholder}
             value={entityName}
             onChange={(event) => setEntityName(event.target.value)}
             required
           />
           <button data-testid="create-entity" type="submit">
-            Create topic
+            {copy.topics.create}
           </button>
         </form>
         <ul className="topic-list" data-testid="entity-list">
@@ -791,7 +1235,7 @@ export function DashboardClient() {
                 onClick={() => void handleDeleteEntity(entity.id)}
                 data-testid={`delete-entity-${entity.id}`}
               >
-                Delete
+                {copy.topics.delete}
               </button>
             </li>
           ))}
@@ -804,8 +1248,10 @@ export function DashboardClient() {
     return (
       <section className="tool-panel settings-panel">
         <div className="settings-form">
-          <h3>Dictation</h3>
-          {settingsLoading ? <p className="settings-note">Loading account settings...</p> : null}
+          <h3>{copy.settings.dictationHeading}</h3>
+          {settingsLoading ? (
+            <p className="settings-note">{copy.settings.loadingSettings}</p>
+          ) : null}
           {accountSettings ? (
             <label className="settings-checkbox-field">
               <input
@@ -818,24 +1264,28 @@ export function DashboardClient() {
                   })
                 }
               />
-              <span>Clean up dictated text before insertion</span>
+              <span>{copy.settings.cleanupCheckbox}</span>
             </label>
           ) : settingsLoadedOnce && !settingsLoading ? (
-            <button type="button" className="ghost-button compact-button" onClick={() => void loadAccountSettings()}>
-              Retry loading account settings
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => void loadAccountSettings()}
+            >
+              {copy.retryLoadSettings}
             </button>
           ) : null}
         </div>
 
         <form className="settings-form" onSubmit={handleChangePassword}>
-          <h3>Account</h3>
+          <h3>{copy.settings.accountHeading}</h3>
           {!accountHasPassword ? (
             <p className="settings-note" data-testid="set-password-note">
-              You signed in with a magic link. Set a password to use email and password login.
+              {copy.settings.magicLinkNote}
             </p>
           ) : (
             <label>
-              <span>Current password</span>
+              <span>{copy.settings.currentPassword}</span>
               <input
                 data-testid="current-password"
                 type="password"
@@ -846,7 +1296,7 @@ export function DashboardClient() {
             </label>
           )}
           <label>
-            <span>New password</span>
+            <span>{copy.settings.newPassword}</span>
             <input
               data-testid="new-password"
               type="password"
@@ -856,24 +1306,23 @@ export function DashboardClient() {
             />
           </label>
           <button data-testid="change-password" type="submit">
-            {accountHasPassword ? "Change password" : "Set password"}
+            {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
           </button>
         </form>
 
         <div className="settings-form">
-          <h3>Telegram</h3>
-          <p className="settings-note">
-            Привяжите @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы текстом. Медиа
-            расшифровываются, суммаризируются и сохраняются в Библиотеку.
-          </p>
+          <h3>{copy.telegram.heading}</h3>
+          <p className="settings-note">{copy.telegram.intro}</p>
           {telegramStatus?.linked ? (
             <div className="telegram-link-card">
               <p>
-                Привязан как{" "}
+                {copy.telegram.linkedAs}{" "}
                 <strong>
                   {telegramStatus.username
                     ? `@${telegramStatus.username}`
-                    : [telegramStatus.first_name, telegramStatus.last_name].filter(Boolean).join(" ") || "Telegram"}
+                    : [telegramStatus.first_name, telegramStatus.last_name]
+                        .filter(Boolean)
+                        .join(" ") || "Telegram"}
                 </strong>
               </p>
               <button
@@ -882,40 +1331,42 @@ export function DashboardClient() {
                 disabled={telegramLoading}
                 onClick={() => void handleUnlinkTelegram()}
               >
-                Отключить
+                {copy.telegram.disconnect}
               </button>
             </div>
           ) : (
             <div className="telegram-link-card">
-              <p className="settings-note">
-                Нажмите «Привязать Telegram» — откроется бот. После Start привязка завершится автоматически.
-              </p>
+              <p className="settings-note">{copy.telegram.instructions}</p>
               <button
                 type="button"
                 className="ghost-button compact-button"
                 disabled={telegramLoading}
                 onClick={() => void handleStartTelegramLink()}
               >
-                {telegramLoading ? "Открываем..." : "Привязать Telegram"}
+                {telegramLoading ? copy.telegram.linkOpening : copy.telegram.linkButton}
               </button>
               {telegramPairing ? (
-                <p className="settings-note">Ждем Start в Telegram. Возвращаться и копировать код не нужно.</p>
+                <p className="settings-note">{copy.telegram.awaitingStart}</p>
               ) : null}
               <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
                 <label>
-                  <span>Код из Telegram</span>
-                  <small>Только если вы начали привязку из Telegram.</small>
+                  <span>{copy.telegram.codeLabel}</span>
+                  <small>{copy.telegram.codeHelp}</small>
                   <input
                     type="text"
                     value={telegramLinkCode}
                     onChange={(event) => setTelegramLinkCode(event.target.value)}
-                    placeholder="Введите код из бота"
+                    placeholder={copy.telegram.codePlaceholder}
                     autoComplete="one-time-code"
                     disabled={telegramLoading}
                   />
                 </label>
-                <button type="submit" className="ghost-button compact-button" disabled={telegramLoading}>
-                  Привязать по коду
+                <button
+                  type="submit"
+                  className="ghost-button compact-button"
+                  disabled={telegramLoading}
+                >
+                  {copy.telegram.linkByCodeButton}
                 </button>
               </form>
             </div>
@@ -929,10 +1380,10 @@ export function DashboardClient() {
   }
 }
 
-function WaiView({ recordings }: { recordings: Recording[] }) {
+function WaiView({ recordings, locale }: { recordings: Recording[]; locale: Locale }) {
   return (
     <div className="wai-panel">
-      <CompanionPanel recordings={recordings} />
+      <CompanionPanel recordings={recordings} locale={locale} />
     </div>
   );
 }
@@ -940,6 +1391,7 @@ function WaiView({ recordings }: { recordings: Recording[] }) {
 function NewRecordingPane({
   title,
   type,
+  copy,
   onTitleChange,
   onTypeChange,
   onSubmit,
@@ -948,6 +1400,7 @@ function NewRecordingPane({
 }: {
   title: string;
   type: RecordingType;
+  copy: DashboardCopy;
   onTitleChange: (value: string) => void;
   onTypeChange: (value: RecordingType) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -958,7 +1411,7 @@ function NewRecordingPane({
     <section className="new-recording-panel">
       <div className="new-recording-panel__intro">
         <div className="app-glyph" aria-hidden="true" />
-        <h3>New Recording</h3>
+        <h3>{copy.library.newRecordingHeading}</h3>
       </div>
 
       <div className="recording-options">
@@ -969,7 +1422,7 @@ function NewRecordingPane({
       <form className="manual-note-form" onSubmit={onSubmit}>
         <input
           data-testid="recording-title"
-          placeholder="Create an empty note..."
+          placeholder={copy.library.titlePlaceholder}
           value={title}
           onChange={(event) => onTitleChange(event.target.value)}
         />
@@ -978,12 +1431,12 @@ function NewRecordingPane({
           value={type}
           onChange={(event) => onTypeChange(event.target.value as RecordingType)}
         >
-          <option value="note">Note</option>
-          <option value="meeting">Meeting</option>
-          <option value="reflection">Reflection</option>
+          <option value="note">{copy.library.typeNote}</option>
+          <option value="meeting">{copy.library.typeMeeting}</option>
+          <option value="reflection">{copy.library.typeReflection}</option>
         </select>
         <button data-testid="create-recording" type="submit">
-          Create
+          {copy.library.create}
         </button>
       </form>
     </section>

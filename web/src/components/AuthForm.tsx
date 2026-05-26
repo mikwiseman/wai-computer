@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { login, register, requestMagicLink, requestPasswordReset } from "@/lib/api";
 import type { AuthLocale } from "@/lib/auth-locale";
@@ -58,7 +58,7 @@ const COPY: Record<
     unexpectedError: "Unexpected error",
     invalidCredentials: "Invalid email or password",
     registerError: "Unable to create account. Try signing in or request a magic link.",
-    legalConsent: "I agree to the Terms of Service and Privacy Policy.",
+    legalConsent: "I agree to the {terms} and {privacy}.",
     terms: "Terms of Service",
     privacy: "Privacy Policy",
     switchLink: {
@@ -89,7 +89,7 @@ const COPY: Record<
     unexpectedError: "Неожиданная ошибка",
     invalidCredentials: "Неверный email или пароль",
     registerError: "Не удалось создать аккаунт. Попробуйте войти или запросить ссылку на email.",
-    legalConsent: "Я принимаю Условия сервиса и Политику конфиденциальности.",
+    legalConsent: "Я принимаю {terms} и {privacy}.",
     terms: "Условия сервиса",
     privacy: "Политика конфиденциальности",
     switchLink: {
@@ -116,6 +116,33 @@ function detectLocale(): Locale {
 
 function authRegion(locale: Locale): "global" | "ru" {
   return locale === "ru" ? "ru" : "global";
+}
+
+function renderLegalConsent(
+  template: string,
+  termsNode: ReactNode,
+  privacyNode: ReactNode,
+): ReactNode[] {
+  const tokenPattern = /\{(terms|privacy)\}/g;
+  const segments: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = tokenPattern.exec(template)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push(template.slice(lastIndex, match.index));
+    }
+    segments.push(
+      <span key={`token-${key++}`}>
+        {match[1] === "terms" ? termsNode : privacyNode}
+      </span>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < template.length) {
+    segments.push(template.slice(lastIndex));
+  }
+  return segments;
 }
 
 function describeError(error: unknown, locale: Locale): string {
@@ -239,35 +266,38 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
           />
         </label>
 
-        {mode === "login" ? (
-          <button
-            className="primary-button"
-            data-testid="magic-link-button"
-            type="submit"
-            disabled={loading || email.trim().length === 0}
-          >
-            {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
-          </button>
+        {mode === "register" ? (
+          <label className="auth-legal-consent">
+            <input
+              data-testid="legal-consent-checkbox"
+              type="checkbox"
+              checked={acceptedLegalTerms}
+              onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
+              disabled={loading}
+            />
+            <span>
+              {renderLegalConsent(
+                copy.legalConsent,
+                <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>,
+                <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>,
+              )}
+            </span>
+          </label>
         ) : null}
-      </form>
 
-      {mode === "register" ? (
-        <label className="auth-legal-consent">
-          <input
-            data-testid="legal-consent-checkbox"
-            type="checkbox"
-            checked={acceptedLegalTerms}
-            onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
-            disabled={loading}
-          />
-          <span>
-            {copy.legalConsent}{" "}
-            <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>
-            {" · "}
-            <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>
-          </span>
-        </label>
-      ) : null}
+        <button
+          className="primary-button"
+          data-testid="magic-link-button"
+          type="submit"
+          disabled={
+            loading
+            || email.trim().length === 0
+            || (mode === "register" && !acceptedLegalTerms)
+          }
+        >
+          {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
+        </button>
+      </form>
 
       {passwordMode ? (
         <form onSubmit={onPasswordSubmit} className="auth-form">
@@ -316,19 +346,6 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
           {copy.passwordMode}
         </button>
       )}
-
-      {mode === "register" ? (
-        <form onSubmit={onSendMagicLink} className="auth-form">
-          <button
-            className="primary-button"
-            data-testid="magic-link-button"
-            type="submit"
-            disabled={loading || email.trim().length === 0 || !acceptedLegalTerms}
-          >
-            {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
-          </button>
-        </form>
-      ) : null}
 
       {forgotPasswordMode && mode === "login" ? (
         <form

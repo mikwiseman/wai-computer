@@ -15,20 +15,20 @@ interface AppOpenClientProps {
 
 const COPY = {
   en: {
-    title: "Open WaiComputer App",
+    title: "Open in WaiComputer",
     opening: "Opening WaiComputer. Keep this page open if macOS asks you to confirm.",
     invalid: "This app sign-in link is not valid.",
     missing: "Missing token.",
-    openApp: "Open WaiComputer App",
+    openApp: "Open in WaiComputer",
     browser: "Use browser instead",
     back: "Back to login",
   },
   ru: {
-    title: "Открыть приложение WaiComputer",
-    opening: "Открываем WaiComputer. Оставь страницу открытой, если macOS попросит подтверждение.",
+    title: "Открыть в WaiComputer",
+    opening: "Открываем WaiComputer. Оставьте страницу открытой, если macOS попросит подтверждение.",
     invalid: "Эта ссылка для входа в приложение недействительна.",
     missing: "В ссылке нет токена.",
-    openApp: "Открыть WaiComputer",
+    openApp: "Открыть в WaiComputer",
     browser: "Войти в браузере",
     back: "Назад ко входу",
   },

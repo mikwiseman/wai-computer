@@ -43,7 +43,7 @@ describe("ResetPasswordClient", () => {
       });
     });
     expect(screen.getByTestId("reset-password-message")).toHaveTextContent(
-      "Пароль успешно сброшен",
+      "Пароль обновлён. Войдите ниже.",
     );
   });
 

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
+from app.core.error_sanitizer import sanitize_failure_message
 from app.core.recording_audio_processing import apply_no_speech_failure
 from app.core.summarizer import (
     SummaryResult,
@@ -421,7 +422,7 @@ async def _mark_failed(
         return None
     recording.status = RecordingStatus.FAILED.value
     recording.failure_code = code
-    recording.failure_message = message
+    recording.failure_message = sanitize_failure_message(message)
     await db.commit()
     return recording
 

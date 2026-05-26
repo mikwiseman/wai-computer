@@ -190,8 +190,8 @@ describe("app pages", () => {
     expect(dashboardClientMock).toHaveBeenCalled();
   });
 
-  it("renders onboarding wrapper", () => {
-    render(<OnboardingPage />);
+  it("renders onboarding wrapper", async () => {
+    render(await OnboardingPage());
     expect(screen.getByTestId("onboarding-client-mock")).toBeInTheDocument();
     expect(onboardingClientMock).toHaveBeenCalled();
   });
@@ -222,7 +222,7 @@ describe("app pages", () => {
         searchParams: Promise.resolve({ token: "abc-token", client: "macos", locale: "ru" }),
       }),
     );
-    expect(screen.getByRole("heading", { name: "Открыть приложение WaiComputer" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Открыть в WaiComputer" })).toBeInTheDocument();
     expect(screen.getByTestId("browser-sign-in-link")).toHaveAttribute(
       "href",
       "/auth/verify?token=abc-token&locale=ru",
@@ -238,7 +238,7 @@ describe("app pages", () => {
 
     render(await AppMagicLinkPage({ searchParams: Promise.resolve({ token: "abc-token", client: "macos" }) }));
 
-    expect(screen.getByRole("heading", { name: "Открыть приложение WaiComputer" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Открыть в WaiComputer" })).toBeInTheDocument();
     expect(screen.getByTestId("browser-sign-in-link")).toHaveAttribute(
       "href",
       "/auth/verify?token=abc-token&locale=ru",
@@ -295,7 +295,7 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /AI second brain для всего/i,
+        name: /AI-память для всего, что вы говорите/i,
       }),
     ).toBeInTheDocument();
 
@@ -365,12 +365,12 @@ describe("app pages", () => {
 
     cleanup();
     render(await BillingSuccessPage());
-    expect(screen.getByRole("heading", { level: 1, name: "Billing updated" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "You're all set" })).toBeInTheDocument();
 
     cleanup();
     requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9,en;q=0.7";
     render(await BillingSuccessPage());
-    expect(screen.getByRole("heading", { level: 1, name: "Оплата обновлена" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Готово" })).toBeInTheDocument();
 
     cleanup();
     render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));
@@ -384,7 +384,7 @@ describe("app pages", () => {
 
     cleanup();
     render(<RuBillingSuccessPage />);
-    expect(screen.getByRole("heading", { level: 1, name: "Оплата обновлена" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Готово" })).toBeInTheDocument();
   });
 
   it("renders first-party privacy and terms pages", () => {
@@ -405,7 +405,7 @@ describe("app pages", () => {
 });
 
 describe("layout", () => {
-  it("exports metadata and renders html/body structure", () => {
+  it("exports metadata and renders html/body structure", async () => {
     expect(metadata.title).toBe("WaiComputer — AI second brain for voice");
     expect(metadata.description).toBe(
       "Record, transcribe, search, and ask anything across everything you've ever said.",
@@ -415,12 +415,19 @@ describe("layout", () => {
       { media: "(prefers-color-scheme: dark)", color: "#101214" },
     ]);
 
-    const element = RootLayout({ children: <div data-testid="layout-child">Child</div> });
+    requestHeaderMock.acceptLanguage = null;
+    const element = await RootLayout({ children: <div data-testid="layout-child">Child</div> });
     expect(element.type).toBe("html");
     expect((element.props as { lang: string }).lang).toBe("en");
 
     const body = (element.props as { children: React.ReactElement }).children;
     expect(body.type).toBe("body");
     expect((body.props as { className: string }).className).toContain("font-space-grotesk");
+  });
+
+  it("renders <html lang='ru'> when accept-language prefers Russian", async () => {
+    requestHeaderMock.acceptLanguage = "ru-RU,ru;q=0.9,en-US;q=0.8";
+    const element = await RootLayout({ children: <div /> });
+    expect((element.props as { lang: string }).lang).toBe("ru");
   });
 });

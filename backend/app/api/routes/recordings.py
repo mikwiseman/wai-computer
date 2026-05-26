@@ -20,6 +20,7 @@ from app.api.deps import CurrentUser, Database
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
+from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
     add_sentry_breadcrumb,
     bind_recording_context,
@@ -33,6 +34,7 @@ from app.core.recording_audio_processing import (
     is_no_speech_placeholder,
     reset_recording_processing_state,
 )
+from app.core.speaker_labels import fallback_speaker_display_name
 from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
 from app.models.highlight import Highlight
 from app.models.person import Person
@@ -502,6 +504,8 @@ def _serialize_recording(recording: Recording) -> RecordingResponse:
 
 def _serialize_segment(segment: Segment) -> SegmentResponse:
     display_name = segment.person.display_name if segment.person is not None else None
+    if not display_name:
+        display_name = fallback_speaker_display_name(segment.speaker)
     return SegmentResponse(
         id=str(segment.id),
         speaker=segment.speaker,
@@ -720,7 +724,7 @@ async def _mark_recording_failed(
 ) -> None:
     recording.status = RecordingStatus.FAILED.value
     recording.failure_code = failure_code
-    recording.failure_message = failure_message
+    recording.failure_message = sanitize_failure_message(failure_message)
     await db.commit()
 
 

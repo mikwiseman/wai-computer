@@ -141,6 +141,7 @@ test.describe("web-facing theme and responsive pass", () => {
   });
 
   test("billing result page does not send external checkout returns back to billing", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/billing/cancel?provider=tinkoff&lang=ru");
 
     await expect(page.getByRole("link", { name: "Вернуться к подписке" })).toHaveCount(0);

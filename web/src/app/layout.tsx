@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Space_Grotesk } from "next/font/google";
+import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -20,13 +22,17 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const requestHeaders = await headers();
+  const lang = resolveAuthLocaleFromAcceptLanguage(
+    requestHeaders.get("accept-language"),
+  );
   return (
-    <html lang="en">
+    <html lang={lang}>
       <body className={spaceGrotesk.variable}>{children}</body>
     </html>
   );

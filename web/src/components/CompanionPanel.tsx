@@ -18,8 +18,124 @@ import type {
   Recording,
 } from "@/lib/types";
 
+type Locale = "en" | "ru";
+
+interface CompanionCopy {
+  heading: string;
+  chatsButton: (n: number) => string;
+  hideChats: string;
+  newChat: string;
+  noChatsYet: string;
+  emptyHeading: string;
+  emptyBody: string;
+  starterPrompts: [string, string, string, string];
+  searchingRecordings: string;
+  composerPlaceholder: string;
+  composerAriaLabel: string;
+  stop: string;
+  ask: string;
+  rename: string;
+  delete: string;
+  renameTitle: string;
+  renameLabel: string;
+  renameSave: string;
+  renameCancel: string;
+  deleteTitle: string;
+  deleteBody: string;
+  deleteConfirm: string;
+  deleteCancel: string;
+  user: string;
+  assistant: string;
+  somethingWentWrong: string;
+  chatLabelPrefix: string;
+  recordingFallback: string;
+}
+
+const COPY: Record<Locale, CompanionCopy> = {
+  en: {
+    heading: "Ask Wai",
+    chatsButton: (n) => `Chats (${n})`,
+    hideChats: "Hide chats",
+    newChat: "+ New chat",
+    noChatsYet: "No chats yet.",
+    emptyHeading: "What do you want to know?",
+    emptyBody: "Wai answers from your recordings.",
+    starterPrompts: [
+      "What did I commit to this week?",
+      "Summarize my last meeting.",
+      "What patterns show up in my reflections?",
+      "When did I first mention pricing?",
+    ],
+    searchingRecordings: "Searching recordings…",
+    composerPlaceholder: "Ask about your recordings…",
+    composerAriaLabel: "Ask Wai a question",
+    stop: "Stop",
+    ask: "Ask",
+    rename: "Rename",
+    delete: "Delete",
+    renameTitle: "Rename chat",
+    renameLabel: "Chat name",
+    renameSave: "Save",
+    renameCancel: "Cancel",
+    deleteTitle: "Delete this chat?",
+    deleteBody: "This will permanently remove the chat and all of its messages.",
+    deleteConfirm: "Delete",
+    deleteCancel: "Cancel",
+    user: "You",
+    assistant: "Wai",
+    somethingWentWrong: "Something went wrong",
+    chatLabelPrefix: "Chat",
+    recordingFallback: "Recording",
+  },
+  ru: {
+    heading: "Спросить Wai",
+    chatsButton: (n) => `Чаты (${n})`,
+    hideChats: "Скрыть чаты",
+    newChat: "+ Новый чат",
+    noChatsYet: "Чатов пока нет.",
+    emptyHeading: "Что хотите узнать?",
+    emptyBody: "Wai отвечает по вашим записям.",
+    starterPrompts: [
+      "О чём я договорился на этой неделе?",
+      "Суммируй мою последнюю встречу.",
+      "Какие закономерности видны в моих размышлениях?",
+      "Когда я впервые упомянул цены?",
+    ],
+    searchingRecordings: "Ищем по записям…",
+    composerPlaceholder: "Спросите о ваших записях…",
+    composerAriaLabel: "Задать вопрос Wai",
+    stop: "Стоп",
+    ask: "Спросить",
+    rename: "Переименовать",
+    delete: "Удалить",
+    renameTitle: "Переименовать чат",
+    renameLabel: "Название чата",
+    renameSave: "Сохранить",
+    renameCancel: "Отмена",
+    deleteTitle: "Удалить чат?",
+    deleteBody: "Чат и все его сообщения будут удалены навсегда.",
+    deleteConfirm: "Удалить",
+    deleteCancel: "Отмена",
+    user: "Вы",
+    assistant: "Wai",
+    somethingWentWrong: "Что-то пошло не так",
+    chatLabelPrefix: "Чат",
+    recordingFallback: "Запись",
+  },
+};
+
+function detectLocale(): Locale {
+  if (typeof navigator === "undefined") return "en";
+  const candidates = [
+    ...Array.from(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean);
+  return candidates[0]?.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
 interface CompanionPanelProps {
   recordings: Recording[];
+  locale?: Locale;
 }
 
 interface StreamingCitation {
@@ -36,17 +152,10 @@ interface StreamingAssistant {
   toolCalls: { call_id: string; tool: string; summary: string | null }[];
 }
 
-const STARTER_PROMPTS = [
-  "What did I commit to this week?",
-  "Summarize my last meeting.",
-  "What patterns show up in my reflections?",
-  "When did I first mention pricing?",
-];
-
-function formatError(error: unknown): string {
+function formatError(error: unknown, copy: CompanionCopy): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Something went wrong";
+  return copy.somethingWentWrong;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -58,11 +167,12 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function chatLabel(chat: CompanionConversation): string {
+function chatLabel(chat: CompanionConversation, copy: CompanionCopy, locale: Locale): string {
   if (chat.title && chat.title.trim()) return chat.title;
   const t = chat.last_message_at ?? chat.created_at;
   const d = new Date(t);
-  return `Chat · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  const bcp = locale === "ru" ? "ru-RU" : undefined;
+  return `${copy.chatLabelPrefix} · ${d.toLocaleDateString(bcp)} ${d.toLocaleTimeString(bcp, { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function plainText(content: unknown): string {
@@ -80,7 +190,10 @@ function plainText(content: unknown): string {
   return "";
 }
 
-export function CompanionPanel({ recordings }: CompanionPanelProps) {
+export function CompanionPanel({ recordings, locale: localeProp }: CompanionPanelProps) {
+  const [locale, setLocale] = useState<Locale>(localeProp ?? "en");
+  const copy = COPY[locale];
+
   const [chats, setChats] = useState<CompanionConversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
@@ -91,9 +204,19 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [renameTarget, setRenameTarget] = useState<{ chatId: string; value: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
+
+  useEffect(() => {
+    if (localeProp) {
+      setLocale(localeProp);
+      return;
+    }
+    setLocale(detectLocale());
+  }, [localeProp]);
 
   useEffect(() => {
     if (initialized.current) return;
@@ -106,7 +229,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
           setActiveChatId(data.chats[0].id);
         }
       } catch (e) {
-        setError(formatError(e));
+        setError(formatError(e, COPY[detectLocale()]));
       }
     })();
   }, []);
@@ -122,10 +245,10 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         setMessages(detail.messages);
         setStreamingAssistant(null);
       } catch (e) {
-        setError(formatError(e));
+        setError(formatError(e, copy));
       }
     })();
-  }, [activeChatId]);
+  }, [activeChatId, copy]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -137,9 +260,9 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
 
   const recordingTitlesById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of recordings) m.set(r.id, r.title ?? "Untitled");
+    for (const r of recordings) m.set(r.id, r.title ?? copy.recordingFallback);
     return m;
-  }, [recordings]);
+  }, [recordings, copy.recordingFallback]);
 
   async function handleNewChat() {
     setError(null);
@@ -148,12 +271,18 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(chat.id);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy));
     }
   }
 
-  async function handleDeleteChat(chatId: string) {
-    if (!window.confirm("Delete this chat permanently?")) return;
+  function requestDeleteChat(chatId: string) {
+    setDeleteTarget(chatId);
+  }
+
+  async function confirmDeleteChat() {
+    const chatId = deleteTarget;
+    if (!chatId) return;
+    setDeleteTarget(null);
     setError(null);
     try {
       await deleteChat(chatId);
@@ -162,18 +291,26 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         setActiveChatId(null);
       }
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy));
     }
   }
 
-  async function handleRenameChat(chatId: string) {
-    const next = window.prompt("Rename chat");
+  function requestRenameChat(chatId: string, currentTitle: string) {
+    setRenameTarget({ chatId, value: currentTitle });
+  }
+
+  async function submitRenameChat(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renameTarget) return;
+    const next = renameTarget.value.trim();
+    const chatId = renameTarget.chatId;
+    setRenameTarget(null);
     if (!next) return;
     try {
       const updated = await patchChat(chatId, { title: next });
       setChats((prev) => prev.map((c) => (c.id === chatId ? updated : c)));
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy));
     }
   }
 
@@ -199,7 +336,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         setMessages([]);
         chatId = chat.id;
       } catch (e) {
-        setError(formatError(e));
+        setError(formatError(e, copy));
         setLoading(false);
         setStage("idle");
         return;
@@ -246,7 +383,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
         const refreshed = await getChat(chatId);
         setMessages(refreshed.messages);
       } catch (refetchErr) {
-        if (!receivedError) setError(formatError(refetchErr));
+        if (!receivedError) setError(formatError(refetchErr, copy));
       }
       setStreamingAssistant(null);
       if (!receivedError) {
@@ -262,7 +399,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
       if (controller.signal.aborted || isAbortError(e)) {
         return;
       }
-      setError(formatError(e));
+      setError(formatError(e, copy));
       setStreamingAssistant(null);
       try {
         const refreshed = await getChat(chatId);
@@ -349,7 +486,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
   return (
     <section className="qa-panel">
       <header className="qa-panel__header">
-        <h2>Ask Wai</h2>
+        <h2>{copy.heading}</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
@@ -358,7 +495,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
             aria-pressed={!sidebarCollapsed}
             data-testid="companion-toggle-history"
           >
-            {sidebarCollapsed ? `Chats (${chats.length})` : "Hide chats"}
+            {sidebarCollapsed ? copy.chatsButton(chats.length) : copy.hideChats}
           </button>
           <button
             type="button"
@@ -366,7 +503,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
             onClick={handleNewChat}
             data-testid="companion-new-chat"
           >
-            + New chat
+            {copy.newChat}
           </button>
         </div>
       </header>
@@ -378,7 +515,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
           data-testid="companion-chat-list"
         >
           {chats.length === 0 ? (
-            <span>No chats yet.</span>
+            <span>{copy.noChatsYet}</span>
           ) : (
             chats.map((c) => (
               <span key={c.id} className="scope-chip" style={{ gap: 6 }}>
@@ -394,23 +531,23 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
                     fontWeight: c.id === activeChatId ? 600 : 400,
                   }}
                 >
-                  {chatLabel(c)}
+                  {chatLabel(c, copy, locale)}
                 </button>
                 <button
                   type="button"
                   className="ghost-button compact-button"
-                  onClick={() => handleRenameChat(c.id)}
-                  aria-label="Rename chat"
+                  onClick={() => requestRenameChat(c.id, c.title ?? "")}
+                  aria-label={copy.rename}
                 >
-                  Rename
+                  {copy.rename}
                 </button>
                 <button
                   type="button"
-                  className="ghost-button compact-button"
-                  onClick={() => handleDeleteChat(c.id)}
-                  aria-label="Delete chat"
+                  className="ghost-button compact-button danger-button"
+                  onClick={() => requestDeleteChat(c.id)}
+                  aria-label={copy.delete}
                 >
-                  Delete
+                  {copy.delete}
                 </button>
               </span>
             ))
@@ -421,10 +558,10 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
       <div className="qa-output" data-testid="companion-thread">
         {hasNoChats ? (
           <div className="empty-state empty-state--center">
-            <h3>What do you want to know?</h3>
-            <p>Wai answers from your recordings.</p>
+            <h3>{copy.emptyHeading}</h3>
+            <p>{copy.emptyBody}</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-              {STARTER_PROMPTS.map((p) => (
+              {copy.starterPrompts.map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -440,8 +577,8 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
 
         {isEmptyActive ? (
           <div className="empty-state empty-state--center">
-            <h3>What do you want to know?</h3>
-            <p>Wai answers from your recordings.</p>
+            <h3>{copy.emptyHeading}</h3>
+            <p>{copy.emptyBody}</p>
           </div>
         ) : null}
 
@@ -454,7 +591,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
             style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
           >
             <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
-              {m.role === "user" ? "You" : "Wai"}
+              {m.role === "user" ? copy.user : copy.assistant}
             </strong>
             <div>{plainText(m.content)}</div>
             {m.citations.length > 0 ? (
@@ -467,6 +604,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
                   end_ms: null,
                 }))}
                 recordingTitles={recordingTitlesById}
+                fallbackTitle={copy.recordingFallback}
               />
             ) : null}
           </article>
@@ -478,10 +616,10 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
             data-testid="companion-streaming"
             style={{ whiteSpace: "pre-wrap" }}
           >
-            <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>Wai</strong>
+            <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>{copy.assistant}</strong>
             {stage === "searching" && streamingAssistant.text.length === 0 ? (
               <div style={{ fontStyle: "italic", opacity: 0.7 }}>
-                Searching recordings…
+                {copy.searchingRecordings}
               </div>
             ) : null}
             {streamingAssistant.toolCalls.length > 0 && streamingAssistant.text.length === 0 ? (
@@ -501,6 +639,7 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
               <CitationStrip
                 citations={streamingAssistant.citations}
                 recordingTitles={recordingTitlesById}
+                fallbackTitle={copy.recordingFallback}
               />
             ) : null}
           </article>
@@ -520,22 +659,48 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about your recordings…"
+          placeholder={copy.composerPlaceholder}
           rows={3}
           disabled={loading}
           data-testid="companion-composer"
-          aria-label="Ask Wai a question"
+          aria-label={copy.composerAriaLabel}
         />
         {loading ? (
           <button type="button" onClick={handleStop} data-testid="companion-stop">
-            Stop
+            {copy.stop}
           </button>
         ) : (
           <button type="submit" disabled={input.trim().length === 0}>
-            Ask
+            {copy.ask}
           </button>
         )}
       </form>
+
+      {deleteTarget ? (
+        <ConfirmModal
+          title={copy.deleteTitle}
+          body={copy.deleteBody}
+          confirmLabel={copy.deleteConfirm}
+          cancelLabel={copy.deleteCancel}
+          onConfirm={() => void confirmDeleteChat()}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      ) : null}
+
+      {renameTarget ? (
+        <RenameModal
+          title={copy.renameTitle}
+          label={copy.renameLabel}
+          saveLabel={copy.renameSave}
+          cancelLabel={copy.renameCancel}
+          value={renameTarget.value}
+          onChange={(value) =>
+            setRenameTarget((prev) => (prev ? { ...prev, value } : prev))
+          }
+          onSubmit={submitRenameChat}
+          onCancel={() => setRenameTarget(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -543,9 +708,11 @@ export function CompanionPanel({ recordings }: CompanionPanelProps) {
 function CitationStrip({
   citations,
   recordingTitles,
+  fallbackTitle,
 }: {
   citations: StreamingCitation[];
   recordingTitles: Map<string, string>;
+  fallbackTitle: string;
 }) {
   const sorted = [...citations].sort((a, b) => a.index - b.index);
   return (
@@ -555,7 +722,7 @@ function CitationStrip({
       data-testid="companion-citations"
     >
       {sorted.map((c) => {
-        const title = recordingTitles.get(c.recording_id) ?? "Recording";
+        const title = recordingTitles.get(c.recording_id) ?? fallbackTitle;
         return (
           <span key={`${c.segment_id}-${c.index}`} className="scope-chip">
             [{c.index}] {title}
@@ -572,4 +739,170 @@ function formatMs(ms: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+const MODAL_BACKDROP_STYLE: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0, 0, 0, 0.45)",
+  display: "grid",
+  placeItems: "center",
+  padding: 16,
+  zIndex: 50,
+};
+
+const MODAL_CARD_STYLE: React.CSSProperties = {
+  background: "var(--panel)",
+  color: "var(--ink)",
+  border: "1px solid var(--border, rgba(0,0,0,0.1))",
+  borderRadius: 12,
+  padding: 20,
+  width: "100%",
+  maxWidth: 380,
+  boxShadow: "0 18px 42px rgba(0,0,0,0.18)",
+  display: "grid",
+  gap: 12,
+};
+
+const MODAL_ACTIONS_STYLE: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  justifyContent: "flex-end",
+  marginTop: 4,
+};
+
+function ConfirmModal({
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  function handleKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") onCancel();
+  }
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="companion-confirm-title"
+      style={MODAL_BACKDROP_STYLE}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      onKeyDown={handleKey}
+      data-testid="companion-confirm-modal"
+    >
+      <div style={MODAL_CARD_STYLE}>
+        <h3 id="companion-confirm-title" style={{ margin: 0, fontSize: "1.1rem" }}>
+          {title}
+        </h3>
+        <p style={{ margin: 0, color: "var(--ink-soft)" }}>{body}</p>
+        <div style={MODAL_ACTIONS_STYLE}>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onCancel}
+            data-testid="companion-confirm-cancel"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button danger-button"
+            onClick={onConfirm}
+            data-testid="companion-confirm-accept"
+            autoFocus
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RenameModal({
+  title,
+  label,
+  saveLabel,
+  cancelLabel,
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  title: string;
+  label: string;
+  saveLabel: string;
+  cancelLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+}) {
+  function handleKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") onCancel();
+  }
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="companion-rename-title"
+      style={MODAL_BACKDROP_STYLE}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+      onKeyDown={handleKey}
+      data-testid="companion-rename-modal"
+    >
+      <form style={MODAL_CARD_STYLE} onSubmit={onSubmit}>
+        <h3 id="companion-rename-title" style={{ margin: 0, fontSize: "1.1rem" }}>
+          {title}
+        </h3>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{label}</span>
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            autoFocus
+            data-testid="companion-rename-input"
+            style={{
+              padding: "0.5rem 0.65rem",
+              border: "1px solid var(--border, rgba(0,0,0,0.15))",
+              borderRadius: 8,
+              background: "var(--panel-subtle)",
+              color: "inherit",
+            }}
+          />
+        </label>
+        <div style={MODAL_ACTIONS_STYLE}>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onCancel}
+            data-testid="companion-rename-cancel"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="submit"
+            className="ghost-button compact-button"
+            data-testid="companion-rename-save"
+          >
+            {saveLabel}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }

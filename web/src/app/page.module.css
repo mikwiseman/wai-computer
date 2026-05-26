@@ -84,6 +84,12 @@
   box-shadow: 0 18px 42px rgba(24, 26, 31, 0.12);
 }
 
+@media (prefers-color-scheme: dark) {
+  .icon {
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  }
+}
+
 .headline {
   font-size: clamp(2.1rem, 6vw, 3.6rem);
   line-height: 1.04;
