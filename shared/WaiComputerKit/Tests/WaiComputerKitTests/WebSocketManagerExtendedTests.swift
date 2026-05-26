@@ -155,7 +155,12 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
     func testInworldTranscribeConfigUsesCurrentCamelCaseWireShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient, language: "multi", channels: 1)
+        let manager = WebSocketManager(
+            apiClient: apiClient,
+            language: "multi",
+            channels: 1,
+            keyTerms: ["WaiComputer", "waicomputer", "Anthropic"]
+        )
         let config = RealtimeTranscriptionSessionConfig(
             provider: "inworld",
             token: "jwt-token",
@@ -180,6 +185,8 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(transcribeConfig["sampleRateHertz"] as? Int, 16_000)
         XCTAssertEqual(transcribeConfig["numberOfChannels"] as? Int, 1)
         XCTAssertEqual(transcribeConfig["language"] as? String, "")
+        XCTAssertEqual(transcribeConfig["prompts"] as? [String], ["WaiComputer", "Anthropic"])
+        XCTAssertNil(transcribeConfig["context"])
         XCTAssertNil(payload["transcribe_config"])
     }
 
@@ -272,6 +279,31 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         } catch {
             XCTAssertTrue(String(describing: error).contains("Inworld realtime session is missing server-minted websocket URL"))
         }
+    }
+
+    func testProviderBackedInworldTranscribeConfigUsesPromptsField() async throws {
+        let session = ProviderBackedRealtimeSession(
+            config: RealtimeTranscriptionSessionConfig(
+                provider: "inworld",
+                token: "jwt-token",
+                expiresInSeconds: 900,
+                sampleRate: 16_000,
+                audioFormat: "linear16_16000",
+                language: "ru-RU",
+                channels: 1,
+                model: "inworld/inworld-stt-1",
+                websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+                authScheme: "bearer"
+            ),
+            keyTerms: ["Mikhail", "mikhail", "WaiComputer"]
+        )
+
+        let payload = await session.testingInworldTranscribeConfigPayload()
+        let transcribeConfig = try XCTUnwrap(payload["transcribeConfig"] as? [String: Any])
+
+        XCTAssertEqual(transcribeConfig["language"] as? String, "ru")
+        XCTAssertEqual(transcribeConfig["prompts"] as? [String], ["Mikhail", "WaiComputer"])
+        XCTAssertNil(transcribeConfig["context"])
     }
 
     func testProviderBackedElevenLabsUsesQueryTokenWithoutAuthorizationHeader() async throws {
