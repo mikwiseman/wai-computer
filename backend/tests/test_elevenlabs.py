@@ -307,6 +307,7 @@ async def test_transcribe_audio_file_handles_single_payload_and_raw_audio():
     assert len(results) == 1
     assert results[0].text == "hello raw"
     assert post.await_args.kwargs["data"]["no_verbatim"] == "true"
+    assert post.await_args.kwargs["data"]["file_format"] == "pcm_s16le_16"
     assert post.await_args.kwargs["files"]["file"][0] == "recording.raw"
 
 
@@ -362,6 +363,33 @@ async def test_transcribe_audio_file_omits_auto_language_code():
 
     assert results[0].text == "hello auto"
     assert "language_code" not in post.await_args.kwargs["data"]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_normalizes_region_language_code():
+    response = httpx.Response(
+        200,
+        json={"text": "hello region"},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+    post = AsyncMock(return_value=response)
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=post),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = False
+        results = await transcribe_audio_file(
+            b"wav-data",
+            content_type="audio/wav",
+            language="ru-RU",
+        )
+
+    assert results[0].text == "hello region"
+    assert post.await_args.kwargs["data"]["language_code"] == "ru"
 
 
 @pytest.mark.asyncio

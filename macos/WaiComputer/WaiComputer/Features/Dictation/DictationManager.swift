@@ -514,7 +514,7 @@ final class DictationManager: ObservableObject {
             session.event(.providerOpened)
 
             let audioCounter = audioSendCounter
-            providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture, session] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
                 for await buffer in capture.audioBuffers {
@@ -524,6 +524,12 @@ final class DictationManager: ObservableObject {
                         try await provider.send(pcm16: data)
                         liveSent += 1
                         audioCounter.record(bytes: data.count)
+                        if liveSent == 1 {
+                            session.event(.audioFirstChunkSent, data: [
+                                "provider": sessionConfig.provider,
+                                "bytes": data.count,
+                            ])
+                        }
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, data.count, sessionConfig.provider)
                         }
@@ -537,7 +543,6 @@ final class DictationManager: ObservableObject {
 
             startTimer()
             setState(.listening)
-            session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
             if consumeDeferredStopAction() == .finishAfterReady {
@@ -926,7 +931,7 @@ final class DictationManager: ObservableObject {
             try await provider.open()
 
             let audioCounter = audioSendCounter
-            openAIAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture] in
+            openAIAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture, session] in
                 guard let provider, let capture else { return }
                 var liveSent = 0
                 for await buffer in capture.audioBuffers {
@@ -936,6 +941,12 @@ final class DictationManager: ObservableObject {
                         try await provider.send(pcm16: data)
                         liveSent += 1
                         audioCounter.record(bytes: data.count)
+                        if liveSent == 1 {
+                            session.event(.audioFirstChunkSent, data: [
+                                "provider": "openai",
+                                "bytes": data.count,
+                            ])
+                        }
                     } catch {
                         NSLog("[Dictation/OpenAI] send #%d failed: %@", liveSent, String(describing: error))
                         return
@@ -945,7 +956,6 @@ final class DictationManager: ObservableObject {
 
             startTimer()
             setState(.listening)
-            session.event(.audioFirstChunkSent)
 
             if consumeDeferredStopAction() == .finishAfterReady {
                 await stopAndInsert()
@@ -1011,7 +1021,7 @@ final class DictationManager: ObservableObject {
 
             NSLog("[Dictation/EL] audio task starting (MicrophoneCapture)")
             let audioCounter = audioSendCounter
-            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture] in
+            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture, session] in
                 guard let ws, let capture else {
                     NSLog("[Dictation/EL] audio task exit — ws or capture nil")
                     return
@@ -1030,6 +1040,12 @@ final class DictationManager: ObservableObject {
                         try await ws.sendAudio(data: data)
                         liveSent += 1
                         audioCounter.record(bytes: data.count)
+                        if liveSent == 1 {
+                            session.event(.audioFirstChunkSent, data: [
+                                "provider": "elevenlabs",
+                                "bytes": data.count,
+                            ])
+                        }
                         if liveSent <= 3 || liveSent % 20 == 0 {
                             NSLog("[Dictation/EL] sent #%d %d bytes", liveSent, data.count)
                         }
@@ -1043,7 +1059,6 @@ final class DictationManager: ObservableObject {
 
             startTimer()
             setState(.listening)
-            session.event(.audioFirstChunkSent)
 
             // Hotkey released during connect — apply now.
             if consumeDeferredStopAction() == .finishAfterReady {

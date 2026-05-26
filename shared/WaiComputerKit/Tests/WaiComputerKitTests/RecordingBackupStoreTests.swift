@@ -409,6 +409,22 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertTrue(manifest.isReadyForSync)
     }
 
+    func testDiscardAudioFileClearsAudioFlagAndDeletesFile() throws {
+        let recordingId = "backup-discard-audio-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data([0, 1, 2, 3]).write(to: audioURL)
+
+        try RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertFalse(manifest.hasAudioFile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertTrue(manifest.isReadyForSync)
+    }
+
     func testMarkServerProcessingSurvivesManifestResave() throws {
         let recordingId = "backup-server-processing-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }

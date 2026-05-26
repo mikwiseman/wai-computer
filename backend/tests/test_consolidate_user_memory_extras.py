@@ -32,7 +32,8 @@ def test_consolidator_schema_shape() -> None:
     updates = inner["properties"]["updates"]
     assert updates["type"] == "array"
     item = updates["items"]
-    assert set(item["required"]) == {"block", "operation", "content"}
+    assert set(item["required"]) == {"block", "operation", "content", "target_line"}
+    assert item["properties"]["target_line"]["type"] == ["string", "null"]
     assert set(item["properties"]["block"]["enum"]) == {"human", "topics", "preferences"}
     assert set(item["properties"]["operation"]["enum"]) == {"append", "replace_line", "rewrite"}
 
