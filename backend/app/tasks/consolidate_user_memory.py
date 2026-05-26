@@ -104,6 +104,7 @@ async def _gather_user_material(
         .join(Conversation, Conversation.id == ChatMessage.conversation_id)
         .where(
             Conversation.user_id == user_id,
+            Conversation.deleted_at.is_(None),
             ChatMessage.created_at >= since,
         )
         .order_by(ChatMessage.created_at.asc())

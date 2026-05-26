@@ -76,7 +76,7 @@ try {
             "--azureTrustedSigningCertificateProfile", $tsProfile
         )
     } else {
-        Write-Host "⚠ Azure Trusted Signing env vars not set — building UNSIGNED" -ForegroundColor Yellow
+        throw "Azure Trusted Signing env vars are required for Windows releases."
     }
 
     & vpk @packArgs

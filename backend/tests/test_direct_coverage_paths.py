@@ -875,7 +875,13 @@ async def test_main_root_health_and_lifespan_paths(monkeypatch: pytest.MonkeyPat
     session = DummySession()
     monkeypatch.setattr("app.db.session.async_session_maker", DummySessionFactory(session))
     health = await main.health()
-    assert health == {"status": "healthy", "database": "connected"}
+    assert health == {
+        "status": "healthy",
+        "database": "connected",
+        "schema_revision": None,
+        "git_sha": None,
+        "git_dirty": False,
+    }
     assert session.called
 
     async with main.lifespan(main.app):

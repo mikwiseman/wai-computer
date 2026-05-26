@@ -222,6 +222,8 @@
     <string name="settings_save_access_token">Save access token</string>
     <string name="recording_in_progress_notification">Recording in progress — tap to return to WaiComputer</string>
     <string name="recording_notification_channel">Recording</string>
+    <string name="pending_sync_notification">Syncing saved recordings</string>
+    <string name="pending_sync_notification_channel">Recording sync</string>
     <string name="detail_transcript">Transcript</string>
     <string name="detail_summary">Summary</string>
     <string name="detail_action_items">Action items</string>

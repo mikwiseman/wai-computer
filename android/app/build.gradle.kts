@@ -11,6 +11,9 @@ val keystoreProperties = Properties().apply {
     val file = rootProject.file("keystore.properties")
     if (file.exists()) load(file.inputStream())
 }
+val releaseArtifactRequested = gradle.startParameter.taskNames.any { taskName ->
+    taskName.contains("Release", ignoreCase = true)
+}
 
 android {
     namespace = "is.waiwai.computer"
@@ -55,6 +58,8 @@ android {
             isShrinkResources = true
             if (signingConfigs.names.contains("release")) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (releaseArtifactRequested) {
+                throw GradleException("Release builds require android/keystore.properties.")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

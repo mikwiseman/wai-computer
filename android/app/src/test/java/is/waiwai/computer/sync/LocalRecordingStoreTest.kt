@@ -41,4 +41,40 @@ class LocalRecordingStoreTest {
         store.remove("rec-1")
         assertNull(store.manifest("rec-1"))
     }
+
+    @Test
+    fun `server id is persisted before retryable upload work`() = runTest {
+        val tempRoot = createTempDirectory("waicomputer-local-store").toFile()
+        val context = mockk<Context>()
+        every { context.filesDir } returns tempRoot
+
+        val store = LocalRecordingStore(context)
+        store.save(LocalRecordingManifest(recordingId = "rec-2", title = "Retry me"))
+
+        val updated = store.recordServerRecordingId("rec-2", "server-2")
+
+        assertEquals("server-2", updated?.serverRecordingId)
+        assertEquals("server-2", store.manifest("rec-2")?.serverRecordingId)
+        assertEquals("server-2", store.listPending().single().serverRecordingId)
+    }
+
+    @Test
+    fun `repeated sync failures move recording out of pending queue`() = runTest {
+        val tempRoot = createTempDirectory("waicomputer-local-store").toFile()
+        val context = mockk<Context>()
+        every { context.filesDir } returns tempRoot
+
+        val store = LocalRecordingStore(context)
+        store.save(LocalRecordingManifest(recordingId = "rec-3", title = "Poison item"))
+
+        repeat(5) {
+            store.recordSyncFailure("rec-3", "upload failed")
+        }
+
+        val manifest = store.manifest("rec-3")
+        assertEquals(5, manifest?.syncFailureCount)
+        assertEquals("upload failed", manifest?.failureMessage)
+        assertTrue(manifest?.syncDeadLetteredAtEpochMillis != null)
+        assertTrue(store.listPending().isEmpty())
+    }
 }

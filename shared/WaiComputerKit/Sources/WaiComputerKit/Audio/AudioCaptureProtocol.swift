@@ -72,12 +72,20 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
     private func setupBufferStream() {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         audioBuffers = stream
+        os_unfair_lock_lock(continuationLock)
         bufferContinuation = continuation
+        os_unfair_lock_unlock(continuationLock)
     }
 
     private func finishBufferStream() {
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
+        os_unfair_lock_unlock(continuationLock)
+    }
+
+    private func setAudioProcessor(_ processor: CaptureAudioProcessor?) {
+        os_unfair_lock_lock(continuationLock)
+        audioProcessor = processor
         os_unfair_lock_unlock(continuationLock)
     }
 
@@ -105,7 +113,7 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
             throw AudioCaptureError.invalidFormat
         }
         processor.reset()
-        audioProcessor = processor
+        setAudioProcessor(processor)
         let targetSR = config.sampleRate
         let targetCh = config.channelCount
         micLog.info("[Mic] Target format: \(targetSR)Hz, \(targetCh)ch")
@@ -120,8 +128,12 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
             format: nil
         ) { [weak self] buffer, _ in
             guard let self = self else { return }
-            guard let outBuffer = self.audioProcessor?.process(buffer) else { return }
-            self.bufferContinuation?.yield(outBuffer)
+            os_unfair_lock_lock(self.continuationLock)
+            let processor = self.audioProcessor
+            let continuation = self.bufferContinuation
+            os_unfair_lock_unlock(self.continuationLock)
+            guard let outBuffer = processor?.process(buffer) else { return }
+            continuation?.yield(outBuffer)
         }
 
         micLog.info("[Mic] Starting engine...")
@@ -144,8 +156,8 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         _isRecording = false
         logProcessingSummary(context: "stop")
         finishBufferStream()
+        setAudioProcessor(nil)
         setupBufferStream()
-        audioProcessor = nil
     }
 
     private func logProcessingSummary(context: String) {

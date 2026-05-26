@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
+from app.core.recording_audio_processing import apply_no_speech_failure
 from app.core.summarizer import (
     SummaryResult,
     resolve_highlight_timestamps,
@@ -492,9 +493,7 @@ async def import_media_as_recording(
             if tr.text.strip() and not _is_no_speech_placeholder(tr.text)
         ]
         if not speech_results:
-            recording.status = RecordingStatus.READY.value
-            recording.failure_code = None
-            recording.failure_message = None
+            apply_no_speech_failure(recording, user.default_language)
             await db.commit()
             await _delete_staged_file(staged_path)
             return ImportedRecordingResult(recording=recording, transcript="", summary=None)

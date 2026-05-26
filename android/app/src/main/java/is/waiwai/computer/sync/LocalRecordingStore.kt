@@ -34,6 +34,37 @@ class LocalRecordingStore(
         save(manifest.copy(failureMessage = message, updatedAtEpochMillis = System.currentTimeMillis()))
     }
 
+    suspend fun recordServerRecordingId(
+        recordingId: String,
+        serverRecordingId: String,
+    ): LocalRecordingManifest? {
+        val manifest = manifest(recordingId) ?: return null
+        val updated = manifest.copy(
+            serverRecordingId = serverRecordingId,
+            failureMessage = null,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+        save(updated)
+        return updated
+    }
+
+    suspend fun recordSyncFailure(recordingId: String, message: String): LocalRecordingManifest? {
+        val manifest = manifest(recordingId) ?: return null
+        val nextAttemptCount = manifest.syncFailureCount + 1
+        val updated = manifest.copy(
+            syncFailureCount = nextAttemptCount,
+            failureMessage = message,
+            syncDeadLetteredAtEpochMillis = if (nextAttemptCount >= MAX_SYNC_FAILURES) {
+                System.currentTimeMillis()
+            } else {
+                null
+            },
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+        save(updated)
+        return updated
+    }
+
     suspend fun remove(recordingId: String) {
         withRecordingLock(recordingId) {
             recordingDir(recordingId).deleteRecursively()
@@ -50,6 +81,7 @@ class LocalRecordingStore(
                     json.decodeFromString<LocalRecordingManifest>(File(dir, "manifest.json").readText())
                 }.getOrNull()
             }
+            .filter { it.syncDeadLetteredAtEpochMillis == null }
             .sortedByDescending { it.updatedAtEpochMillis }
     }
 
@@ -109,4 +141,8 @@ data class LocalRecordingManifest(
     val failureMessage: String? = null,
     val localOnly: Boolean = false,
     val requiresAuthentication: Boolean = false,
+    val syncFailureCount: Int = 0,
+    val syncDeadLetteredAtEpochMillis: Long? = null,
 )
+
+private const val MAX_SYNC_FAILURES = 5

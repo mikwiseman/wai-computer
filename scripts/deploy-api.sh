@@ -14,6 +14,11 @@ VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
 REMOTE_ROOT="${REMOTE_ROOT:-/opt/waicomputer}"
 REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-/etc/waicomputer/backend.env}"
+GIT_SHA="${GIT_SHA:-$(git rev-parse HEAD)}"
+GIT_DIRTY="${GIT_DIRTY:-false}"
+if [[ -n "$(git status --porcelain)" ]]; then
+  GIT_DIRTY=true
+fi
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
@@ -80,6 +85,6 @@ ssh \
   -o BatchMode=yes \
   -o StrictHostKeyChecking=accept-new \
   "${VPS_USER}@${VPS_HOST}" \
-  "PROD_ROOT='${REMOTE_ROOT}' PROD_ENV_FILE='${REMOTE_ENV_FILE}' bash '${REMOTE_ROOT}/scripts/server-build.sh'"
+  "PROD_ROOT='${REMOTE_ROOT}' PROD_ENV_FILE='${REMOTE_ENV_FILE}' GIT_SHA='${GIT_SHA}' GIT_DIRTY='${GIT_DIRTY}' bash '${REMOTE_ROOT}/scripts/server-build.sh'"
 
 echo "Deployment completed."

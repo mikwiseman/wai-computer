@@ -1,13 +1,20 @@
 package `is`.waiwai.computer.sync
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import `is`.waiwai.computer.R
 import `is`.waiwai.computer.auth.AuthStore
 import `is`.waiwai.computer.data.RecordingDetail
 import `is`.waiwai.computer.data.WaiApi
@@ -22,27 +29,40 @@ class PendingSyncWorker(
     private val authStore: AuthStore,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        setForeground(createForegroundInfo())
         val pending = localRecordingStore.listPending()
+        var shouldRetry = false
         pending.forEach { manifest ->
             if (manifest.requiresAuthentication && authStore.currentAccessToken().isNullOrBlank()) {
-                return@withContext Result.success()
+                return@forEach
             }
             runCatching {
                 syncOne(manifest)
-            }.onFailure {
-                return@withContext Result.retry()
+            }.onFailure { error ->
+                val updated = localRecordingStore.recordSyncFailure(
+                    manifest.recordingId,
+                    error.message ?: "Pending recording sync failed.",
+                )
+                if (updated?.syncDeadLetteredAtEpochMillis == null) {
+                    shouldRetry = true
+                }
             }
         }
-        Result.success()
+        if (shouldRetry) Result.retry() else Result.success()
     }
 
     private suspend fun syncOne(manifest: LocalRecordingManifest): RecordingDetail {
-        val recordingId = manifest.serverRecordingId
-            ?: waiApi.createRecording(
+        val recordingId = if (manifest.serverRecordingId.isNullOrBlank()) {
+            val createdId = waiApi.createRecording(
                 title = manifest.title,
                 type = manifest.recordingType,
                 language = "multi",
             ).id
+            localRecordingStore.recordServerRecordingId(manifest.recordingId, createdId)
+            createdId
+        } else {
+            manifest.serverRecordingId
+        }
         val audio = localRecordingStore.audioFile(manifest.recordingId)
         val detail = if (audio.exists()) {
             waiApi.uploadAudio(recordingId, audio)
@@ -62,8 +82,41 @@ class PendingSyncWorker(
         return detail
     }
 
+    private fun createForegroundInfo(): ForegroundInfo {
+        ensureChannel()
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle(applicationContext.getString(R.string.app_name))
+            .setContentText(applicationContext.getString(R.string.pending_sync_notification))
+            .setOngoing(true)
+            .build()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                applicationContext.getString(R.string.pending_sync_notification_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
+    }
+
     companion object {
         const val UNIQUE_NAME = "pendingRecordingSync"
+        private const val CHANNEL_ID = "pending-recording-sync"
+        private const val NOTIFICATION_ID = 2002
     }
 }
 

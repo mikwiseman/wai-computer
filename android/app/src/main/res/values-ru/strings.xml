@@ -219,6 +219,8 @@
     <string name="settings_save_access_token">Сохранить access token</string>
     <string name="recording_in_progress_notification">Идёт запись — нажми, чтобы вернуться в WaiComputer</string>
     <string name="recording_notification_channel">Запись</string>
+    <string name="pending_sync_notification">Синхронизируем сохранённые записи</string>
+    <string name="pending_sync_notification_channel">Синхронизация записей</string>
     <string name="detail_transcript">Транскрипт</string>
     <string name="detail_summary">Саммари</string>
     <string name="detail_action_items">Action items</string>

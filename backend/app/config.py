@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # App
     app_name: str = "WaiComputer"
     debug: bool = False
+    git_sha: str | None = None
+    git_dirty: bool = False
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer"

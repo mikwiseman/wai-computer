@@ -259,7 +259,9 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             throw AudioCaptureError.invalidFormat
         }
         processor.reset()
+        os_unfair_lock_lock(continuationLock)
         audioProcessor = processor
+        os_unfair_lock_unlock(continuationLock)
 
         var procID: AudioDeviceIOProcID?
         status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, nil) {
@@ -322,7 +324,12 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 }
             }
 
-            guard let outBuffer = self.audioProcessor?.process(sourceBuffer),
+            os_unfair_lock_lock(self.continuationLock)
+            let processor = self.audioProcessor
+            let continuation = self.bufferContinuation
+            os_unfair_lock_unlock(self.continuationLock)
+
+            guard let outBuffer = processor?.process(sourceBuffer),
                   let outData = outBuffer.floatChannelData else {
                 return
             }
@@ -342,7 +349,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
                 }
             }
 
-            self.bufferContinuation?.yield(outBuffer)
+            continuation?.yield(outBuffer)
         }
         guard status == noErr, let validProcID = procID else {
             destroyAggregateDevice()
@@ -494,9 +501,9 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         os_unfair_lock_lock(continuationLock)
         bufferContinuation?.finish()
         bufferContinuation = nil
+        audioProcessor = nil
         os_unfair_lock_unlock(continuationLock)
         setupBufferStream()
-        audioProcessor = nil
 
         sysLog.info("[SysAudio] System audio capture stopped")
     }
