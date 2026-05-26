@@ -5,42 +5,53 @@ import WaiComputerKit
 struct MacTranscriptView: View {
     let segments: [Segment]
     var status: RecordingStatus = .ready
+    var localRecoveryManifest: RecordingBackupManifest?
     var recordingId: String?
     var onAssigned: ((RecordingDetail) -> Void)?
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var copied = false
 
     var body: some View {
-        if segments.isEmpty {
-            emptyState
-        } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                    HStack {
-                        Text(t("Transcript", "Расшифровка"))
-                            .waiSectionHeader()
-                        Spacer()
-                        copyTranscriptButton
-                    }
+        Group {
+            if segments.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                        HStack {
+                            Text(t("Transcript", "Расшифровка"))
+                                .waiSectionHeader()
+                            Spacer()
+                            copyTranscriptButton
+                        }
 
-                    ForEach(segments) { segment in
-                        SegmentRowView(
-                            segment: segment,
-                            recordingId: recordingId,
-                            onAssigned: onAssigned
-                        )
+                        ForEach(segments) { segment in
+                            SegmentRowView(
+                                segment: segment,
+                                recordingId: recordingId,
+                                onAssigned: onAssigned
+                            )
+                        }
                     }
+                    .padding(.horizontal, Spacing.xxl)
+                    .padding(.vertical, Spacing.xl)
                 }
-                .padding(.horizontal, Spacing.xxl)
-                .padding(.vertical, Spacing.xl)
+                .accessibilityIdentifier("transcript-content")
             }
-            .accessibilityIdentifier("transcript-content")
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var emptyState: some View {
-        if isProcessing {
+        if isSavedLocally {
+            ContentUnavailableView(
+                t("Saved locally", "Сохранено локально"),
+                systemImage: "externaldrive",
+                description: Text(savedLocallyDescription)
+            )
+            .accessibilityIdentifier("transcript-local-recovery-state")
+        } else if isProcessing {
             ContentUnavailableView(
                 t("Transcript is processing", "Расшифровка готовится"),
                 systemImage: "hourglass",
@@ -58,6 +69,36 @@ struct MacTranscriptView: View {
             )
             .accessibilityIdentifier("transcript-empty-state")
         }
+    }
+
+    private var isSavedLocally: Bool {
+        guard let localRecoveryManifest, status != .failed else { return false }
+        switch localRecoveryManifest.syncState {
+        case .serverProcessing, .remoteReady:
+            return false
+        case .localRecording, .localReady, .uploading, .retryableFailure,
+             .permanentFailure, .authenticationRequired:
+            return true
+        }
+    }
+
+    private var savedLocallyDescription: String {
+        if localRecoveryManifest?.requiresAuthentication == true {
+            return t(
+                "Sign in again to sync this recording.",
+                "Войди снова, чтобы синхронизировать эту запись."
+            )
+        }
+        if localRecoveryManifest?.isPermanentFailure == true {
+            return t(
+                "This recording needs attention before it can sync.",
+                "Эта запись требует внимания перед синхронизацией."
+            )
+        }
+        return t(
+            "This recording is stored on this Mac. WaiComputer will sync it automatically when the connection is available.",
+            "Эта запись сохранена на этом Mac. WaiComputer синхронизирует ее автоматически, когда соединение будет доступно."
+        )
     }
 
     private var isProcessing: Bool {
