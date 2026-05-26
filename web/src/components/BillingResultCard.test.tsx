@@ -26,7 +26,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
 }));
 
-const { BillingResultCard, resolveBillingResultLocale } = await import("./BillingResultCard");
+const { BillingResultCard } = await import("./BillingResultCard");
+const { resolveBillingResultLocale } = await import("../lib/billing-result-locale");
 
 describe("BillingResultCard", () => {
   beforeEach(() => {
