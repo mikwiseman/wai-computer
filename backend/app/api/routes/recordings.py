@@ -530,6 +530,16 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
     )
 
 
+def _recording_detail_load_options():
+    """Eager-load every relationship used by detail serialization."""
+    return (
+        selectinload(Recording.segments).selectinload(Segment.person),
+        selectinload(Recording.summary),
+        selectinload(Recording.action_items),
+        selectinload(Recording.highlights),
+    )
+
+
 def _share_token_hash(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
 
@@ -587,7 +597,9 @@ async def _load_active_share(token: str, db: Database) -> RecordingShare:
             RecordingShare.revoked_at.is_(None),
         )
         .options(
-            selectinload(RecordingShare.recording).selectinload(Recording.segments),
+            selectinload(RecordingShare.recording)
+            .selectinload(Recording.segments)
+            .selectinload(Segment.person),
             selectinload(RecordingShare.recording).selectinload(Recording.summary),
             selectinload(RecordingShare.recording).selectinload(Recording.action_items),
             selectinload(RecordingShare.recording).selectinload(Recording.highlights),
@@ -628,12 +640,7 @@ async def _load_recording_detail(
     query = (
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user_id)
-        .options(
-            selectinload(Recording.segments),
-            selectinload(Recording.summary),
-            selectinload(Recording.action_items),
-            selectinload(Recording.highlights),
-        )
+        .options(*_recording_detail_load_options())
         .execution_options(populate_existing=True)
     )
     if not include_deleted:
@@ -1314,19 +1321,7 @@ async def get_recording(
     db: Database,
 ) -> RecordingDetailResponse:
     """Get a recording with all details."""
-    result = await db.execute(
-        select(Recording)
-        .where(Recording.id == recording_id, Recording.user_id == user.id)
-        .options(
-            selectinload(Recording.segments),
-            selectinload(Recording.summary),
-            selectinload(Recording.action_items),
-            selectinload(Recording.highlights),
-        )
-        .execution_options(populate_existing=True)
-    )
-    recording = result.scalar_one_or_none()
-
+    recording = await _load_recording_detail(recording_id, user.id, db)
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
