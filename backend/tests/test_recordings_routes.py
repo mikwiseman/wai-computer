@@ -11,6 +11,7 @@ from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
+from app.models.person import Person
 from app.models.recording import (
     ActionItem,
     Recording,
@@ -209,12 +210,17 @@ async def test_public_share_link_opens_recording_without_auth(
     result = await db_session.execute(select(Recording).where(Recording.id == recording_id))
     stored_recording = result.scalar_one()
     stored_recording.duration_seconds = 125
+    user = (await db_session.execute(select(User))).scalar_one()
+    person = Person(user_id=user.id, display_name="Mik")
+    db_session.add(person)
+    await db_session.flush()
 
     db_session.add_all(
         [
             Segment(
                 recording_id=recording_id,
                 speaker="Mik",
+                person_id=person.id,
                 content="Ship the public share page.",
                 start_ms=0,
                 end_ms=5000,
@@ -256,8 +262,44 @@ async def test_public_share_link_opens_recording_without_auth(
     assert payload["duration_seconds"] == 125
     assert payload["summary"]["summary"] == "Public sharing was discussed."
     assert payload["segments"][0]["content"] == "Ship the public share page."
+    assert payload["segments"][0]["display_name"] == "Mik"
     assert payload["action_items"][0]["task"] == "Add a share button"
     assert "audio_url" not in payload
+
+
+@pytest.mark.asyncio
+async def test_get_recording_detail_includes_assigned_segment_person(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Detail responses should eager-load assigned people for transcript segments."""
+    recording = await _create_recording(client, auth_headers, title="Speaker Detail")
+    recording_id = UUID(recording["id"])
+    user = (await db_session.execute(select(User))).scalar_one()
+    person = Person(user_id=user.id, display_name="Pavel")
+    db_session.add(person)
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            raw_label="Speaker 1",
+            person_id=person.id,
+            content="Assigned speaker segment.",
+            start_ms=0,
+            end_ms=3000,
+            confidence=0.95,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
+
+    assert response.status_code == 200
+    segment = response.json()["segments"][0]
+    assert segment["person_id"] == str(person.id)
+    assert segment["display_name"] == "Pavel"
 
 
 @pytest.mark.asyncio
