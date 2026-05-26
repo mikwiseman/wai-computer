@@ -510,7 +510,7 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
 
 
 @pytest.mark.asyncio
-async def test_handle_update_routes_help_meetings_actions_and_natural_search(
+async def test_handle_update_routes_help_meetings_and_natural_search(
     db_session: AsyncSession,
     monkeypatch,
 ):
@@ -534,9 +534,7 @@ async def test_handle_update_routes_help_meetings_actions_and_natural_search(
     db_session.add_all([meeting, note, deleted_meeting, other_meeting])
     await db_session.flush()
     db_session.add(Segment(recording_id=meeting.id, content="Дорожная карта и запуск", start_ms=0))
-    db_session.add(ActionItem(recording_id=meeting.id, task="Подготовить релиз", status="pending"))
-    db_session.add(ActionItem(recording_id=meeting.id, task="Старая задача", status="completed"))
-    for update_id in (201, 202, 203, 204, 205):
+    for update_id in (201, 202, 203, 204):
         db_session.add(
             TelegramUpdate(
                 update_id=update_id,
@@ -570,18 +568,62 @@ async def test_handle_update_routes_help_meetings_actions_and_natural_search(
     await send_text(201, "/help")
     await send_text(202, "/meetings")
     await send_text(203, "покажи последние встречи")
-    await send_text(204, "что я обещал")
-    await send_text(205, "найди запуск")
+    await send_text(204, "найди запуск")
 
     assert "/meetings" in capture.messages[0]["text"]
+    assert "/actions" not in capture.messages[0]["text"]
     assert "Roadmap Sync" in capture.messages[1]["text"]
     assert "Private note" not in capture.messages[1]["text"]
     assert "Deleted meeting" not in capture.messages[1]["text"]
     assert "Roadmap Sync" in capture.messages[2]["text"]
-    assert "Подготовить релиз" in capture.messages[3]["text"]
-    assert "Старая задача" not in capture.messages[3]["text"]
-    assert "запуск" in capture.messages[4]["text"]
-    assert (await db_session.get(TelegramUpdate, 205)).status == "completed"
+    assert "запуск" in capture.messages[3]["text"]
+    assert (await db_session.get(TelegramUpdate, 204)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_obligation_question_to_companion(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-obligation-question@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=62, telegram_chat_id=62)
+    db_session.add(account)
+    db_session.add(
+        TelegramUpdate(
+            update_id=207,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    async def fake_run_turn(*args, **kwargs):
+        assert args[3] == "что я обещал"
+        yield telegram_routes.TokenEvent(text="Ответ Wai")
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 207,
+            "message": {
+                "message_id": 207,
+                "from": {"id": 62, "username": "mik"},
+                "chat": {"id": 62, "type": "private"},
+                "text": "что я обещал",
+            },
+        }
+    )
+
+    assert capture.messages[-1]["text"] == "Ответ Wai"
+    assert (await db_session.get(TelegramUpdate, 207)).status == "completed"
 
 
 @pytest.mark.asyncio

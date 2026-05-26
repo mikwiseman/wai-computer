@@ -23,7 +23,6 @@ from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
 from app.core.mcp_tools import (
-    list_action_items_for_mcp,
     list_recordings_for_mcp,
     search_recordings_for_mcp,
 )
@@ -59,7 +58,6 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
     {"command": "link", "description": "Получить новый код привязки"},
     {"command": "meetings", "description": "Последние встречи"},
-    {"command": "actions", "description": "Открытые действия из встреч"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "settings", "description": "Статус привязки и настройки"},
 ]
@@ -175,12 +173,11 @@ def _telegram_help_text(*, linked: bool) -> str:
         f"{status_line}\n\n"
         "Что можно делать:\n"
         "/meetings — последние встречи\n"
-        "/actions — открытые действия и обещания\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/link — получить новый код привязки\n"
         "/settings — где управлять привязкой\n\n"
-        "Можно без команд: «покажи последние встречи», «что я обещал», "
-        "«найди дорожная карта». Голосовые, аудио и видео я сохраняю в библиотеку."
+        "Можно без команд: «покажи последние встречи», «найди дорожная карта». "
+        "Голосовые, аудио и видео я сохраняю в библиотеку."
     )
 
 
@@ -235,20 +232,6 @@ def _text_intent(text: str) -> tuple[str, str] | None:
 
     if lower in {"help", "помощь", "команды", "что ты умеешь"}:
         return "help", ""
-
-    action_markers = (
-        "что я обещал",
-        "что должен",
-        "мои обещания",
-        "мои обязательства",
-        "action items",
-        "commitments",
-        "my tasks",
-        "todo",
-        "to-do",
-    )
-    if any(marker in lower for marker in action_markers):
-        return "actions", ""
 
     search_prefixes = ("найди", "поищи", "найти", "поиск", "search", "find")
     search_questions = (
@@ -817,24 +800,6 @@ def _format_recording_list(results: list[dict[str, Any]], *, empty_text: str) ->
     return "\n\n".join(lines)
 
 
-def _format_action_items(results: list[dict[str, Any]]) -> str:
-    if not results:
-        return "Открытых действий из встреч нет."
-    lines = ["Открытые действия:"]
-    for index, item in enumerate(results, start=1):
-        task = str(item.get("task") or "").strip()
-        owner = str(item.get("owner") or "").strip()
-        due_date = str(item.get("due_date") or "").strip()
-        recording_title = str(item.get("recording_title") or "Без названия")
-        suffix_parts = [recording_title]
-        if owner:
-            suffix_parts.append(owner)
-        if due_date:
-            suffix_parts.append(f"до {due_date}")
-        lines.append(f"{index}. {task}\n{' · '.join(suffix_parts)}")
-    return "\n\n".join(lines)
-
-
 def _format_search_results(results: list[dict[str, Any]], *, query: str) -> str:
     if not results:
         return f"Ничего не нашел по запросу: {query}"
@@ -892,32 +857,6 @@ async def _handle_meetings_command(
                 "Встреч пока нет. Запиши встречу в приложении WaiComputer, и она появится здесь."
             ),
         ),
-        reply_to_message_id=message.get("message_id"),
-    )
-
-
-async def _handle_actions_command(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-) -> None:
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-    if await _ensure_active_user(db, client, message=message, account=account) is None:
-        return
-    result = await list_action_items_for_mcp(
-        db,
-        account.user_id,
-        status="pending",
-        limit=10,
-    )
-    await _send_chunks(
-        client,
-        chat_id,
-        _format_action_items(result["results"]),
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -986,9 +925,6 @@ async def _handle_account_command(
         return True
     if intent == "meetings":
         await _handle_meetings_command(db, client, message=message, account=account)
-        return True
-    if intent == "actions":
-        await _handle_actions_command(db, client, message=message, account=account)
         return True
     if intent == "search":
         await _handle_search_command(db, client, message=message, account=account, query=arg)
