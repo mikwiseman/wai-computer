@@ -117,7 +117,12 @@ async def test_realtime_transcription_session_captures_sentry_on_unexpected_erro
         "Live transcription is temporarily unavailable. Please try again in a moment."
     )
     assert isinstance(captured["error"], RuntimeError)
-    assert captured["extras"] == {"language": "multi", "channels": 2, "purpose": "recording"}
+    assert captured["extras"] is not None
+    assert captured["extras"]["alert_code"] == "realtime.session_mint.failed"
+    assert captured["extras"]["language"] == "multi"
+    assert captured["extras"]["channels"] == 2
+    assert captured["extras"]["purpose"] == "recording"
+    assert isinstance(captured["extras"]["latency_ms"], int)
 
 
 @pytest.mark.asyncio

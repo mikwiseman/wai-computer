@@ -7,6 +7,7 @@ import math
 import re
 import wave
 from pathlib import Path
+from time import perf_counter
 from uuid import UUID
 
 import httpx
@@ -18,6 +19,7 @@ from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.observability import (
     add_sentry_breadcrumb,
+    capture_sentry_anomaly,
     capture_sentry_message,
     fingerprint_text,
 )
@@ -58,6 +60,8 @@ NO_SPEECH_PLACEHOLDERS = {
 }
 EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
 MIN_FILE_STT_AUDIO_SECONDS = 0.1
+PROCESSING_SLOW_MIN_THRESHOLD_MS = 300_000
+PROCESSING_AUDIO_DURATION_MULTIPLIER = 4.0
 
 
 def copy_locale_from_recording_language(
@@ -175,6 +179,81 @@ def _audio_is_too_short_for_file_stt(audio_duration_seconds: float | None) -> bo
     )
 
 
+def recording_processing_slow_threshold_ms(duration_seconds: int | float | None) -> int:
+    """Return the alert threshold for end-to-end recording processing latency."""
+    if duration_seconds is None or duration_seconds <= 0:
+        return PROCESSING_SLOW_MIN_THRESHOLD_MS
+    duration_based_threshold = math.ceil(
+        duration_seconds * PROCESSING_AUDIO_DURATION_MULTIPLIER * 1000
+    )
+    return max(PROCESSING_SLOW_MIN_THRESHOLD_MS, duration_based_threshold)
+
+
+def _effective_duration_seconds(
+    *,
+    audio_duration_seconds: float | None,
+    client_duration_seconds: int | None,
+    transcript_end_ms: int | None = None,
+) -> int | float | None:
+    if audio_duration_seconds is not None and audio_duration_seconds > 0:
+        return audio_duration_seconds
+    if client_duration_seconds is not None and client_duration_seconds > 0:
+        return client_duration_seconds
+    if transcript_end_ms is not None and transcript_end_ms > 0:
+        return transcript_end_ms / 1000
+    return None
+
+
+def _recording_lifecycle_breadcrumb(
+    message: str,
+    *,
+    recording_id: UUID,
+    data: dict[str, object] | None = None,
+    level: str = "info",
+) -> None:
+    add_sentry_breadcrumb(
+        category="recording",
+        message=message,
+        level=level,
+        data={"recording_id": str(recording_id), **(data or {})},
+    )
+
+
+def _capture_processing_slow_if_needed(
+    *,
+    recording_id: UUID,
+    latency_ms: int,
+    audio_duration_seconds: float | None,
+    client_duration_seconds: int | None,
+    staged_size_bytes: int | None,
+    segment_count: int,
+    transcript_end_ms: int | None = None,
+) -> None:
+    effective_duration = _effective_duration_seconds(
+        audio_duration_seconds=audio_duration_seconds,
+        client_duration_seconds=client_duration_seconds,
+        transcript_end_ms=transcript_end_ms,
+    )
+    threshold_ms = recording_processing_slow_threshold_ms(effective_duration)
+    if latency_ms < threshold_ms:
+        return
+    capture_sentry_anomaly(
+        "recording.processing.slow",
+        "Recording processing latency exceeded threshold",
+        category="recording",
+        extras={
+            "recording_id": str(recording_id),
+            "latency_ms": latency_ms,
+            "slow_threshold_ms": threshold_ms,
+            "audio_duration_seconds": audio_duration_seconds,
+            "client_duration_seconds": client_duration_seconds,
+            "effective_duration_seconds": effective_duration,
+            "staged_size_bytes": staged_size_bytes,
+            "segment_count": segment_count,
+        },
+    )
+
+
 def _provider_reported_audio_too_short(exc: Exception) -> bool:
     if not isinstance(exc, httpx.HTTPStatusError):
         return False
@@ -280,6 +359,7 @@ async def process_staged_recording_upload(
     staged_size_bytes: int | None = None,
 ) -> None:
     """Transcribe a staged upload and promote it as the recording's canonical transcript."""
+    processing_started_at = perf_counter()
     result = await db.execute(
         select(Recording).where(
             Recording.id == recording_id,
@@ -293,6 +373,11 @@ async def process_staged_recording_upload(
         return
     if recording.status != RecordingStatus.PROCESSING.value:
         logger.info("skipping audio processing for recording in status=%s", recording.status)
+        _recording_lifecycle_breadcrumb(
+            "Recording processing skipped",
+            recording_id=recording_id,
+            data={"status": recording.status},
+        )
         return
 
     recording.status = RecordingStatus.PROCESSING.value
@@ -329,12 +414,20 @@ async def process_staged_recording_upload(
             audio_duration_seconds,
             staged_size_bytes,
         )
+        _recording_lifecycle_breadcrumb(
+            "Recording processing rejected too-short audio",
+            recording_id=recording_id,
+            level="warning",
+            data={
+                "audio_duration_seconds": audio_duration_seconds,
+                "staged_size_bytes": staged_size_bytes,
+            },
+        )
         return
-    add_sentry_breadcrumb(
-        category="recording",
-        message="Audio processing started",
+    _recording_lifecycle_breadcrumb(
+        "Recording processing started",
+        recording_id=recording_id,
         data={
-            "recording_id": str(recording_id),
             "content_type": content_type,
             "staged_size_bytes": staged_size_bytes,
             "client_file_size_bytes": client_file_size_bytes,
@@ -356,17 +449,53 @@ async def process_staged_recording_upload(
             failure_code="staged_file_missing",
             failure_message="Uploaded audio file was missing before processing.",
         )
+        capture_sentry_anomaly(
+            "recording.staged_file.missing",
+            "Recording staged audio file was missing before processing",
+            category="recording",
+            extras={
+                "recording_id": str(recording_id),
+                "staged_size_bytes": staged_size_bytes,
+                "content_type": content_type,
+            },
+            level="error",
+        )
         return
 
     try:
         await reset_recording_processing_state(recording_id, db)
 
         with staged_path.open("rb") as staged_file:
+            _recording_lifecycle_breadcrumb(
+                "Recording file transcription started",
+                recording_id=recording_id,
+                data={
+                    "content_type": content_type,
+                    "audio_duration_seconds": audio_duration_seconds,
+                    "client_duration_seconds": client_duration_seconds,
+                    "staged_size_bytes": staged_size_bytes,
+                },
+            )
             transcript_results = await transcribe_audio_file(
                 staged_file.read(),
                 language=recording_language,
                 content_type=content_type,
+                audio_duration_seconds=(
+                    audio_duration_seconds
+                    if audio_duration_seconds is not None
+                    else client_duration_seconds
+                ),
             )
+        _recording_lifecycle_breadcrumb(
+            "Recording file transcription completed",
+            recording_id=recording_id,
+            data={
+                "segment_count": len(transcript_results),
+                "content_type": content_type,
+                "audio_duration_seconds": audio_duration_seconds,
+                "client_duration_seconds": client_duration_seconds,
+            },
+        )
 
         speech_transcript_results = _speech_results(transcript_results)
         if not speech_transcript_results:
@@ -387,6 +516,24 @@ async def process_staged_recording_upload(
             await db.commit()
             delete_staged_file(staged_path)
             logger.warning("audio processing failed with empty transcript")
+            effective_duration = _effective_duration_seconds(
+                audio_duration_seconds=audio_duration_seconds,
+                client_duration_seconds=client_duration_seconds,
+                transcript_end_ms=max_end_ms,
+            )
+            if effective_duration is not None and effective_duration >= 10:
+                capture_sentry_anomaly(
+                    "recording.transcript.empty",
+                    "Recording processing produced an empty transcript",
+                    category="recording",
+                    extras={
+                        "recording_id": str(recording_id),
+                        "audio_duration_seconds": audio_duration_seconds,
+                        "client_duration_seconds": client_duration_seconds,
+                        "effective_duration_seconds": effective_duration,
+                        "segment_count": len(transcript_results),
+                    },
+                )
             return
 
         speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
@@ -398,8 +545,27 @@ async def process_staged_recording_upload(
                 transcript_results=speech_transcript_results,
                 enabled=settings.voice_identification_enabled,
             )
-        except Exception:
+            _recording_lifecycle_breadcrumb(
+                "Recording voice identification completed",
+                recording_id=recording_id,
+                data={
+                    "speaker_count": len(speaker_assignments),
+                    "enabled": settings.voice_identification_enabled,
+                },
+            )
+        except Exception as exc:
             logger.exception("Voice identification failed; segments will keep person_id=NULL")
+            capture_sentry_anomaly(
+                "recording.voice_identification.degraded",
+                "Recording completed with degraded voice identification",
+                category="recording",
+                extras={
+                    "recording_id": str(recording_id),
+                    "error_type": type(exc).__name__,
+                    "error_fingerprint": fingerprint_text(str(exc)),
+                    "segment_count": len(speech_transcript_results),
+                },
+            )
 
         embedding_failure_count = 0
         for transcript in speech_transcript_results:
@@ -461,6 +627,16 @@ async def process_staged_recording_upload(
                 )
             except Exception as exc:
                 logger.warning("Title generation failed: %s", exc)
+                capture_sentry_anomaly(
+                    "recording.title_generation.degraded",
+                    "Recording completed with degraded title generation",
+                    category="recording",
+                    extras={
+                        "recording_id": str(recording_id),
+                        "error_type": type(exc).__name__,
+                        "error_fingerprint": fingerprint_text(str(exc)),
+                    },
+                )
                 recording.title = None
 
         recording.status = RecordingStatus.READY.value
@@ -486,8 +662,30 @@ async def process_staged_recording_upload(
                 level="warning",
                 extras=alert_data,
             )
+        processing_latency_ms = round((perf_counter() - processing_started_at) * 1000)
+        _recording_lifecycle_breadcrumb(
+            "Recording processing completed",
+            recording_id=recording_id,
+            data={
+                "latency_ms": processing_latency_ms,
+                "audio_duration_seconds": audio_duration_seconds,
+                "client_duration_seconds": client_duration_seconds,
+                "duration_seconds": recording.duration_seconds,
+                "segment_count": len(speech_transcript_results),
+                "embedding_failure_count": embedding_failure_count,
+            },
+        )
+        _capture_processing_slow_if_needed(
+            recording_id=recording_id,
+            latency_ms=processing_latency_ms,
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            staged_size_bytes=staged_size_bytes,
+            segment_count=len(speech_transcript_results),
+            transcript_end_ms=max_end_ms,
+        )
         delete_staged_file(staged_path)
-        logger.info("audio processing completed")
+        logger.info("audio processing completed latency_ms=%s", processing_latency_ms)
     except Exception as exc:
         await db.rollback()
         if _provider_reported_audio_too_short(exc):
@@ -508,6 +706,15 @@ async def process_staged_recording_upload(
                 audio_duration_seconds,
                 staged_size_bytes,
             )
+            _recording_lifecycle_breadcrumb(
+                "Recording processing mapped provider audio-too-short to no speech",
+                recording_id=recording_id,
+                level="warning",
+                data={
+                    "audio_duration_seconds": audio_duration_seconds,
+                    "staged_size_bytes": staged_size_bytes,
+                },
+            )
             return
         if is_retryable_exception(exc):
             logger.warning(
@@ -523,6 +730,19 @@ async def process_staged_recording_upload(
             recording_id,
             type(exc).__name__,
             fingerprint_text(str(exc)),
+        )
+        capture_sentry_anomaly(
+            "recording.processing.failed",
+            "Recording processing failed",
+            category="recording",
+            extras={
+                "recording_id": str(recording_id),
+                "error_type": type(exc).__name__,
+                "error_fingerprint": fingerprint_text(str(exc)),
+                "content_type": content_type,
+                "staged_size_bytes": staged_size_bytes,
+            },
+            level="error",
         )
         await mark_recording_processing_failed(
             db,

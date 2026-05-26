@@ -64,6 +64,42 @@ final class DictationInstrumentationTests: XCTestCase {
         XCTAssertEqual(DictationInstrumentation.Event.tokenPrefetchHit.rawValue, "token.prefetch.hit")
     }
 
+    func testSlowLatencyThresholdsAreAlertableContracts() {
+        XCTAssertEqual(DictationInstrumentation.firstTokenSlowThresholdMs, 3_000)
+        XCTAssertEqual(DictationInstrumentation.totalLatencySlowThresholdMs, 8_000)
+        XCTAssertFalse(DictationInstrumentation.isFirstTokenSlow(2_999))
+        XCTAssertTrue(DictationInstrumentation.isFirstTokenSlow(3_000))
+        XCTAssertFalse(DictationInstrumentation.isTotalLatencySlow(7_999))
+        XCTAssertTrue(DictationInstrumentation.isTotalLatencySlow(8_000))
+    }
+
+    func testSlowLatencyAlertPayloadsContainNoTextAudioOrTokenData() {
+        let firstToken = DictationInstrumentation.firstTokenSlowAlertData(
+            sessionId: "session-1",
+            latencyMs: 3_500
+        )
+        XCTAssertEqual(firstToken["alert_code"] as? String, "dictation.first_token.slow")
+        XCTAssertEqual(firstToken["sessionId"] as? String, "session-1")
+        XCTAssertEqual(firstToken["latencyMs"] as? Int, 3_500)
+        XCTAssertEqual(firstToken["slowThresholdMs"] as? Int, 3_000)
+
+        let total = DictationInstrumentation.totalLatencySlowAlertData(
+            sessionId: "session-2",
+            latencyMs: 8_500,
+            firstTokenLatencyMs: 3_100
+        )
+        XCTAssertEqual(total["alert_code"] as? String, "dictation.total_latency.slow")
+        XCTAssertEqual(total["sessionId"] as? String, "session-2")
+        XCTAssertEqual(total["latencyMs"] as? Int, 8_500)
+        XCTAssertEqual(total["firstTokenLatencyMs"] as? Int, 3_100)
+
+        let rendered = "\(firstToken) \(total)"
+        XCTAssertFalse(rendered.contains("transcript"))
+        XCTAssertFalse(rendered.contains("audioData"))
+        XCTAssertFalse(rendered.contains("Bearer "))
+        XCTAssertFalse(rendered.contains("api_key"))
+    }
+
     // MARK: - Session counter behaviour
 
     func testStartSessionIncrementsCounter() {

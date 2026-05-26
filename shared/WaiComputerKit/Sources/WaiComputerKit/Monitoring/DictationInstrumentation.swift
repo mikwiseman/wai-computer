@@ -38,6 +38,8 @@ public final class DictationInstrumentation: @unchecked Sendable {
     private let lock = NSLock()
     private var counters = Counters()
     private static let latencyRingSize = 50
+    public static let firstTokenSlowThresholdMs = 3_000
+    public static let totalLatencySlowThresholdMs = 8_000
 
     private init() {}
 
@@ -80,6 +82,43 @@ public final class DictationInstrumentation: @unchecked Sendable {
         if buffer.count > Self.latencyRingSize {
             buffer.removeFirst(buffer.count - Self.latencyRingSize)
         }
+    }
+
+    public static func isFirstTokenSlow(_ latencyMs: Int) -> Bool {
+        latencyMs >= firstTokenSlowThresholdMs
+    }
+
+    public static func isTotalLatencySlow(_ latencyMs: Int) -> Bool {
+        latencyMs >= totalLatencySlowThresholdMs
+    }
+
+    public static func firstTokenSlowAlertData(
+        sessionId: String,
+        latencyMs: Int
+    ) -> [String: Any] {
+        [
+            "alert_code": "dictation.first_token.slow",
+            "sessionId": sessionId,
+            "latencyMs": latencyMs,
+            "slowThresholdMs": firstTokenSlowThresholdMs
+        ]
+    }
+
+    public static func totalLatencySlowAlertData(
+        sessionId: String,
+        latencyMs: Int,
+        firstTokenLatencyMs: Int?
+    ) -> [String: Any] {
+        var data: [String: Any] = [
+            "alert_code": "dictation.total_latency.slow",
+            "sessionId": sessionId,
+            "latencyMs": latencyMs,
+            "slowThresholdMs": totalLatencySlowThresholdMs
+        ]
+        if let firstTokenLatencyMs {
+            data["firstTokenLatencyMs"] = firstTokenLatencyMs
+        }
+        return data
     }
 
     public func consecutiveFailureCount() -> Int {
@@ -126,9 +165,24 @@ public extension DictationInstrumentation {
             )
 
             if event == .firstTokenReceived {
+                var shouldCaptureSlowFirstToken = false
                 lock.lock()
-                if firstTokenLatencyMs == nil { firstTokenLatencyMs = elapsedMs }
+                if firstTokenLatencyMs == nil {
+                    firstTokenLatencyMs = elapsedMs
+                    shouldCaptureSlowFirstToken = DictationInstrumentation.isFirstTokenSlow(elapsedMs)
+                }
                 lock.unlock()
+                if shouldCaptureSlowFirstToken {
+                    SentryHelper.captureMessageOnce(
+                        "Dictation first-token latency exceeded threshold",
+                        fingerprint: "dictation.first_token.slow",
+                        level: .warning,
+                        extras: DictationInstrumentation.firstTokenSlowAlertData(
+                            sessionId: id.uuidString,
+                            latencyMs: elapsedMs
+                        )
+                    )
+                }
             }
 
             var crumbData: [String: Any] = data
@@ -195,6 +249,31 @@ public extension DictationInstrumentation {
                     message: "consecutive_failures",
                     level: .warning,
                     data: ["count": DictationInstrumentation.shared.consecutiveFailureCount()]
+                )
+                SentryHelper.captureMessageOnce(
+                    "Dictation consecutive failures exceeded threshold",
+                    fingerprint: "dictation.session.failed_cluster",
+                    level: .warning,
+                    extras: [
+                        "alert_code": "dictation.session.failed_cluster",
+                        "sessionId": id.uuidString,
+                        "count": DictationInstrumentation.shared.consecutiveFailureCount()
+                    ]
+                )
+            }
+
+            if outcome == .succeeded,
+               let totalMs,
+               DictationInstrumentation.isTotalLatencySlow(totalMs) {
+                SentryHelper.captureMessageOnce(
+                    "Dictation total latency exceeded threshold",
+                    fingerprint: "dictation.total_latency.slow",
+                    level: .warning,
+                    extras: DictationInstrumentation.totalLatencySlowAlertData(
+                        sessionId: id.uuidString,
+                        latencyMs: totalMs,
+                        firstTokenLatencyMs: firstToken
+                    )
                 )
             }
         }

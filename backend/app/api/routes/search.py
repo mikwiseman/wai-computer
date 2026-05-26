@@ -1,6 +1,7 @@
 """Search routes for hybrid (FTS + semantic) search."""
 
 import logging
+from time import perf_counter
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -8,13 +9,19 @@ from sqlalchemy import text
 
 from app.api.deps import CurrentUser, Database
 from app.core.embeddings import format_embedding, generate_embedding
-from app.core.observability import add_sentry_breadcrumb, safe_query_metadata, safe_text_digest
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    capture_sentry_anomaly,
+    safe_query_metadata,
+    safe_text_digest,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 HYBRID_SEMANTIC_THRESHOLD = 0.3
+SEARCH_SLOW_THRESHOLD_MS = 5_000
 
 
 def _escape_like_term(value: str) -> str:
@@ -56,6 +63,7 @@ async def hybrid_search(
 
     Uses RRF (Reciprocal Rank Fusion) to combine results from both methods.
     """
+    started_at = perf_counter()
     logger.info(
         "hybrid_search query=%s limit=%s offset=%s",
         safe_text_digest(q, label="query"),
@@ -294,6 +302,27 @@ async def hybrid_search(
         },
     )
     total = count_result.scalar() or 0
+    latency_ms = round((perf_counter() - started_at) * 1000)
+    completion_data = {
+        **safe_query_metadata(q),
+        "limit": limit,
+        "offset": offset,
+        "latency_ms": latency_ms,
+        "result_count": len(rows),
+        "total": total,
+    }
+    add_sentry_breadcrumb(
+        category="search",
+        message="Hybrid search completed",
+        data=completion_data,
+    )
+    if latency_ms >= SEARCH_SLOW_THRESHOLD_MS:
+        capture_sentry_anomaly(
+            "search.query.slow",
+            "Search query latency exceeded threshold",
+            category="search",
+            extras={**completion_data, "slow_threshold_ms": SEARCH_SLOW_THRESHOLD_MS},
+        )
 
     return SearchResponse(
         results=[

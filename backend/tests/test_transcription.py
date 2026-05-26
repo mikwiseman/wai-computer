@@ -227,8 +227,8 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
 async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from app.core.transcript_utils import TranscriptResult
     from app.core import transcription
+    from app.core.transcript_utils import TranscriptResult
 
     sentry_messages: list[dict[str, object]] = []
     sentry_breadcrumbs: list[dict[str, object]] = []

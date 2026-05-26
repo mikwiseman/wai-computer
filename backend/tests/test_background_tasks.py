@@ -87,6 +87,60 @@ def test_recording_processing_task_marks_timeout_before_reraising(
     )
 
 
+def test_recording_processing_task_alerts_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recording_task_module,
+        "_process_staged_recording_upload",
+        AsyncMock(side_effect=SoftTimeLimitExceeded()),
+    )
+    monkeypatch.setattr(
+        recording_task_module,
+        "_mark_processing_timeout",
+        AsyncMock(),
+    )
+    sentry_anomalies: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        recording_task_module,
+        "capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        recording_task_module.process_staged_recording_upload.run(
+            recording_id="00000000-0000-0000-0000-000000000005",
+            user_id="00000000-0000-0000-0000-000000000006",
+            staged_path="/tmp/alice-private.wav",
+            content_type="audio/wav",
+            user_default_language="en",
+        )
+
+    assert sentry_anomalies == [
+        {
+            "alert_code": "recording.processing.timeout",
+            "message": "Recording processing task timed out",
+            "category": "recording",
+            "extras": {
+                "recording_id": "00000000-0000-0000-0000-000000000005",
+                "task_id": None,
+                "retries": 0,
+                "content_type": "audio/wav",
+            },
+            "level": "error",
+        }
+    ]
+    assert "alice-private.wav" not in repr(sentry_anomalies)
+
+
 def test_recording_processing_task_marks_failed_after_retry_exhaustion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -123,6 +177,69 @@ def test_recording_processing_task_marks_failed_after_retry_exhaustion(
         recording_id="00000000-0000-0000-0000-000000000007"
     )
     assert deleted_paths == [Path("/tmp/recording.wav")]
+
+
+def test_recording_processing_task_alerts_on_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recording_task_module,
+        "_process_staged_recording_upload",
+        AsyncMock(side_effect=httpx.TimeoutException("provider timeout")),
+    )
+    monkeypatch.setattr(
+        recording_task_module,
+        "_mark_processing_failed_after_retries",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(recording_task_module, "delete_staged_file", lambda _path: None)
+    sentry_anomalies: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        recording_task_module,
+        "capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    task = recording_task_module.process_staged_recording_upload
+    previous_retries = task.request.retries
+    task.request.retries = task.max_retries
+    try:
+        with pytest.raises(httpx.TimeoutException):
+            task.run(
+                recording_id="00000000-0000-0000-0000-000000000007",
+                user_id="00000000-0000-0000-0000-000000000008",
+                staged_path="/tmp/private-meeting.wav",
+                content_type="audio/wav",
+                user_default_language="en",
+            )
+    finally:
+        task.request.retries = previous_retries
+
+    assert sentry_anomalies == [
+        {
+            "alert_code": "recording.processing.retry_exhausted",
+            "message": "Recording processing retries exhausted",
+            "category": "recording",
+            "extras": {
+                "recording_id": "00000000-0000-0000-0000-000000000007",
+                "task_id": None,
+                "retries": 3,
+                "error_type": "TimeoutException",
+                "error_fingerprint": recording_task_module.fingerprint_text("provider timeout"),
+                "content_type": "audio/wav",
+            },
+            "level": "error",
+        }
+    ]
+    assert "private-meeting.wav" not in repr(sentry_anomalies)
 
 
 @pytest.mark.asyncio

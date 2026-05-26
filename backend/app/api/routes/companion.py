@@ -6,6 +6,7 @@ import logging
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -15,6 +16,11 @@ from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
 from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
+from app.core.observability import (
+    add_sentry_breadcrumb,
+    capture_sentry_anomaly,
+    safe_query_metadata,
+)
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.recording import Folder, Recording
 
@@ -30,6 +36,7 @@ MESSAGES_MAX_LIMIT = 500
 # Heartbeat must be shorter than the shortest reverse-proxy idle timeout in
 # front of this service (Caddy default is 30s).
 SSE_HEARTBEAT_SECONDS = 15.0
+COMPANION_TURN_SLOW_THRESHOLD_MS = 30_000
 
 
 class ConversationScope(BaseModel):
@@ -417,6 +424,17 @@ async def post_message(
 ) -> StreamingResponse:
     # Load + ownership check up front so 404 / 401 are not buried inside SSE.
     await _load_user_chat(db, user.id, chat_id)
+    message_meta = safe_query_metadata(request.content)
+    add_sentry_breadcrumb(
+        category="companion",
+        message="Companion turn requested",
+        data={
+            "chat_id": str(chat_id),
+            **message_meta,
+            "has_viewing_recording": request.viewing_recording_id is not None,
+            "has_viewing_folder": request.viewing_folder_id is not None,
+        },
+    )
 
     viewing_recording_title, viewing_folder_name = await _resolve_viewing_titles(
         db,
@@ -435,6 +453,9 @@ async def post_message(
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         async def producer() -> None:
+            started_at = perf_counter()
+            event_count = 0
+            failed = False
             try:
                 async for evt in run_turn(
                     db,
@@ -443,15 +464,45 @@ async def post_message(
                     request.content,
                     turn_context=turn_context,
                 ):
+                    event_count += 1
                     await queue.put(_sse_format(evt))
             except CompanionError as exc:
+                failed = True
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                capture_sentry_anomaly(
+                    "companion.turn.failed",
+                    "Companion turn failed",
+                    category="companion",
+                    extras={
+                        "chat_id": str(chat_id),
+                        **message_meta,
+                        "latency_ms": latency_ms,
+                        "event_count": event_count,
+                        "error_code": exc.code,
+                    },
+                )
                 logger.warning(
                     "companion turn error code=%s chat_id=%s", exc.code, chat_id
                 )
                 await queue.put(
                     _sse_format(ErrorEvent(code=exc.code, message=exc.message))
                 )
-            except Exception:
+            except Exception as exc:
+                failed = True
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                capture_sentry_anomaly(
+                    "companion.turn.failed",
+                    "Companion turn failed unexpectedly",
+                    category="companion",
+                    extras={
+                        "chat_id": str(chat_id),
+                        **message_meta,
+                        "latency_ms": latency_ms,
+                        "event_count": event_count,
+                        "error_type": type(exc).__name__,
+                    },
+                    level="error",
+                )
                 logger.exception(
                     "companion turn unhandled error chat_id=%s", chat_id
                 )
@@ -461,6 +512,31 @@ async def post_message(
                     )
                 )
             finally:
+                latency_ms = round((perf_counter() - started_at) * 1000)
+                add_sentry_breadcrumb(
+                    category="companion",
+                    message="Companion turn completed",
+                    data={
+                        "chat_id": str(chat_id),
+                        **message_meta,
+                        "latency_ms": latency_ms,
+                        "event_count": event_count,
+                        "failed": failed,
+                    },
+                )
+                if not failed and latency_ms >= COMPANION_TURN_SLOW_THRESHOLD_MS:
+                    capture_sentry_anomaly(
+                        "companion.turn.slow",
+                        "Companion turn latency exceeded threshold",
+                        category="companion",
+                        extras={
+                            "chat_id": str(chat_id),
+                            **message_meta,
+                            "latency_ms": latency_ms,
+                            "slow_threshold_ms": COMPANION_TURN_SLOW_THRESHOLD_MS,
+                            "event_count": event_count,
+                        },
+                    )
                 await queue.put(None)
 
         producer_task = asyncio.create_task(producer())

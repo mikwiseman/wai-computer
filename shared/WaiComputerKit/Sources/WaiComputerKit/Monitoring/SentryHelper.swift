@@ -34,9 +34,41 @@ public enum SentryHelper {
     public static func captureError(_ error: Error, extras: [String: Any]? = nil) {
         guard SentrySDK.isEnabled else { return }
         SentrySDK.capture(error: error) { scope in
-            if let extras {
-                for (key, value) in sanitizeDictionary(extras) {
-                    scope.setExtra(value: value, key: key)
+            applyLevelTagsAndExtras(scope, extras: extras)
+        }
+    }
+
+    public static func captureMessage(
+        _ message: String,
+        level: SentryLevel = .warning,
+        extras: [String: Any]? = nil
+    ) {
+        guard SentrySDK.isEnabled else { return }
+        SentrySDK.capture(message: sanitizeString(message, key: "message")) { scope in
+            scope.setLevel(level)
+            applyLevelTagsAndExtras(scope, extras: extras)
+        }
+    }
+
+    public static func captureMessageOnce(
+        _ message: String,
+        fingerprint: String,
+        level: SentryLevel = .warning,
+        extras: [String: Any]? = nil
+    ) {
+        guard shouldCaptureFingerprint(fingerprint) else { return }
+        captureMessage(message, level: level, extras: extras)
+    }
+
+    private static func applyLevelTagsAndExtras(_ scope: Scope, extras: [String: Any]?) {
+        if let extras {
+            let sanitized = sanitizeDictionary(extras)
+            for (key, value) in sanitized {
+                scope.setExtra(value: value, key: key)
+            }
+            for key in ["alert_code", "provider", "model", "platform", "purpose", "failure_code", "statusCode"] {
+                if let value = sanitized[key] {
+                    scope.setTag(value: "\(value)", key: key)
                 }
             }
         }
