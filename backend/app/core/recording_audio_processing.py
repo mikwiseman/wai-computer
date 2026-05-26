@@ -554,7 +554,12 @@ async def process_staged_recording_upload(
                 },
             )
         except Exception as exc:
-            logger.exception("Voice identification failed; segments will keep person_id=NULL")
+            logger.warning(
+                "Voice identification failed; segments will keep person_id=NULL "
+                "error_type=%s error_fingerprint=%s",
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
             capture_sentry_anomaly(
                 "recording.voice_identification.degraded",
                 "Recording completed with degraded voice identification",

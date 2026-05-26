@@ -525,7 +525,7 @@ def capture_sentry_anomaly(
     level: str = "warning",
 ) -> None:
     """Capture an alertable anomaly and leave a breadcrumb in the current trace."""
-    payload = {"alert_code": alert_code, **(extras or {})}
+    payload = {**(extras or {}), "alert_code": alert_code}
     add_sentry_breadcrumb(
         category=category,
         message=message,
