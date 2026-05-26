@@ -22,6 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
+from app.core.mcp_tools import (
+    list_action_items_for_mcp,
+    list_recordings_for_mcp,
+    search_recordings_for_mcp,
+)
 from app.core.recording_import import RecordingImportError, import_media_as_recording
 from app.core.telegram_client import (
     TelegramBotClient,
@@ -49,6 +54,15 @@ BOT_LINK_CODE_TTL = timedelta(minutes=15)
 BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
+TELEGRAM_BOT_COMMANDS = [
+    {"command": "start", "description": "Привязать Telegram и показать статус"},
+    {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
+    {"command": "link", "description": "Получить новый код привязки"},
+    {"command": "meetings", "description": "Последние встречи"},
+    {"command": "actions", "description": "Открытые действия из встреч"},
+    {"command": "search", "description": "Поиск по записям и расшифровкам"},
+    {"command": "settings", "description": "Статус привязки и настройки"},
+]
 CYRILLIC_SLUG_MAP = str.maketrans(
     {
         "а": "a",
@@ -144,6 +158,131 @@ def _message_command(message: dict[str, Any]) -> tuple[str, str] | None:
     return command, rest.strip()
 
 
+def _is_private_chat(message: dict[str, Any]) -> bool:
+    chat = message.get("chat")
+    if not isinstance(chat, dict):
+        return False
+    chat_type = chat.get("type")
+    return chat_type is None or chat_type == "private"
+
+
+def _telegram_help_text(*, linked: bool) -> str:
+    if linked:
+        status_line = "Telegram привязан к WaiComputer."
+    else:
+        status_line = "Сначала привяжи Telegram к WaiComputer."
+    return (
+        f"{status_line}\n\n"
+        "Что можно делать:\n"
+        "/meetings — последние встречи\n"
+        "/actions — открытые действия и обещания\n"
+        "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
+        "/link — получить новый код привязки\n"
+        "/settings — где управлять привязкой\n\n"
+        "Можно без команд: «покажи последние встречи», «что я обещал», "
+        "«найди дорожная карта». Голосовые, аудио и видео я сохраняю в библиотеку."
+    )
+
+
+def _format_duration(seconds: int | None) -> str:
+    if seconds is None:
+        return "длительность неизвестна"
+    if seconds < 60:
+        return f"{seconds} сек"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}:{secs:02d}"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
+def _format_created_at(value: str | None) -> str:
+    if not value:
+        return "дата неизвестна"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def _extract_search_query(text: str) -> str:
+    stripped = text.strip()
+    lower = stripped.lower()
+    prefixes = (
+        "/search",
+        "/find",
+        "найди",
+        "поищи",
+        "найти",
+        "поиск",
+        "search",
+        "find",
+    )
+    for prefix in prefixes:
+        if lower == prefix:
+            return ""
+        if lower.startswith(prefix + " "):
+            return stripped[len(prefix) :].strip()
+    return stripped
+
+
+def _text_intent(text: str) -> tuple[str, str] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    lower = stripped.lower()
+
+    if lower in {"help", "помощь", "команды", "что ты умеешь"}:
+        return "help", ""
+
+    action_markers = (
+        "что я обещал",
+        "что должен",
+        "мои обещания",
+        "мои обязательства",
+        "action items",
+        "commitments",
+        "my tasks",
+        "todo",
+        "to-do",
+    )
+    if any(marker in lower for marker in action_markers):
+        return "actions", ""
+
+    search_prefixes = ("найди", "поищи", "найти", "поиск", "search", "find")
+    search_questions = (
+        "что обсуждали",
+        "о чем говорили",
+        "где обсуждали",
+        "когда обсуждали",
+        "what did we discuss",
+        "what did i discuss",
+        "where did we discuss",
+    )
+    if lower.startswith(search_prefixes) or any(marker in lower for marker in search_questions):
+        return "search", _extract_search_query(stripped)
+
+    meeting_markers = ("встреч", "meeting", "meetings")
+    list_markers = (
+        "покажи",
+        "показать",
+        "список",
+        "последн",
+        "мои",
+        "list",
+        "show",
+        "recent",
+        "latest",
+    )
+    if any(marker in lower for marker in meeting_markers) and (
+        any(marker in lower for marker in list_markers) or lower in {"встречи", "meetings"}
+    ):
+        return "meetings", ""
+
+    return None
+
+
 def _normalize_bot_link_code(code: str) -> str:
     return "".join(ch for ch in code.upper() if ch in string.ascii_uppercase + string.digits)
 
@@ -187,6 +326,24 @@ async def _send_chunks(
             reply_to_message_id=reply_to_message_id if idx == 0 else None,
             parse_mode=parse_mode,
         )
+
+
+async def _send_private_chat_required(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    await client.send_message(
+        chat_id,
+        (
+            "Открой личный чат с ботом WaiComputer. "
+            "Встречи, расшифровки и задачи не показываю в группах."
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
 
 
 def _safe_transcript_filename(title: str | None, *, media_kind: str | None = None) -> str:
@@ -287,9 +444,7 @@ async def _stop_chat_action_task(task: asyncio.Task[None] | None) -> None:
 
 @router.get("/link", response_model=TelegramLinkStatus)
 async def get_link_status(user: CurrentUser, db: Database) -> TelegramLinkStatus:
-    result = await db.execute(
-        select(TelegramAccount).where(TelegramAccount.user_id == user.id)
-    )
+    result = await db.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     account = result.scalar_one_or_none()
     return _status_from_account(account)
 
@@ -318,9 +473,7 @@ async def start_link(user: CurrentUser, db: Database) -> TelegramPairingResponse
 
 @router.delete("/link", status_code=status.HTTP_204_NO_CONTENT)
 async def unlink(user: CurrentUser, db: Database) -> Response:
-    result = await db.execute(
-        select(TelegramAccount).where(TelegramAccount.user_id == user.id)
-    )
+    result = await db.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     account = result.scalar_one_or_none()
     if account is not None:
         await db.delete(account)
@@ -340,9 +493,7 @@ async def _apply_telegram_link(
 ) -> TelegramAccount:
     now = datetime.now(timezone.utc)
     existing_result = await db.execute(
-        select(TelegramAccount).where(
-            TelegramAccount.telegram_user_id == telegram_user_id
-        )
+        select(TelegramAccount).where(TelegramAccount.telegram_user_id == telegram_user_id)
     )
     existing_by_telegram = existing_result.scalar_one_or_none()
     if existing_by_telegram is not None and existing_by_telegram.user_id != user_id:
@@ -606,19 +757,246 @@ async def _handle_start_command(
             first_name=from_user.get("first_name"),
             last_name=from_user.get("last_name"),
         )
+        if text.startswith("Готово"):
+            text = f"{text}\n\n{_telegram_help_text(linked=True)}"
     elif await _load_account(db, telegram_user_id):
-        text = "WaiComputer уже привязан. Пришли голосовое, видео или вопрос текстом."
+        text = _telegram_help_text(linked=True)
     else:
         await _send_bot_link_code(
             db,
             client,
             message=message,
-            intro=(
-                "Чтобы привязать Telegram к WaiComputer, введи этот код в настройках."
-            ),
+            intro=_telegram_help_text(linked=False),
         )
         return
     await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
+
+
+async def _ensure_active_user(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> User | None:
+    user = await db.get(User, account.user_id)
+    chat_id = _telegram_chat_id(message)
+    if user is None:
+        if chat_id is not None:
+            await client.send_message(
+                chat_id,
+                "Аккаунт WaiComputer не найден. Привяжи Telegram заново.",
+                reply_to_message_id=message.get("message_id"),
+            )
+        return None
+    if getattr(user, "account_status", "active") != "active":
+        if chat_id is not None:
+            await client.send_message(
+                chat_id,
+                (
+                    "Аккаунт WaiComputer сейчас не активен. "
+                    "Открой приложение и проверь статус аккаунта."
+                ),
+                reply_to_message_id=message.get("message_id"),
+            )
+        return None
+    return user
+
+
+def _format_recording_list(results: list[dict[str, Any]], *, empty_text: str) -> str:
+    if not results:
+        return empty_text
+    lines = ["Последние встречи:"]
+    for index, item in enumerate(results, start=1):
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        title = str(item.get("title") or "Без названия")
+        created = _format_created_at(metadata.get("created_at"))
+        duration = _format_duration(metadata.get("duration_seconds"))
+        url = str(item.get("url") or "")
+        lines.append(f"{index}. {title}\n{created} · {duration}\n{url}".strip())
+    return "\n\n".join(lines)
+
+
+def _format_action_items(results: list[dict[str, Any]]) -> str:
+    if not results:
+        return "Открытых действий из встреч нет."
+    lines = ["Открытые действия:"]
+    for index, item in enumerate(results, start=1):
+        task = str(item.get("task") or "").strip()
+        owner = str(item.get("owner") or "").strip()
+        due_date = str(item.get("due_date") or "").strip()
+        recording_title = str(item.get("recording_title") or "Без названия")
+        suffix_parts = [recording_title]
+        if owner:
+            suffix_parts.append(owner)
+        if due_date:
+            suffix_parts.append(f"до {due_date}")
+        lines.append(f"{index}. {task}\n{' · '.join(suffix_parts)}")
+    return "\n\n".join(lines)
+
+
+def _format_search_results(results: list[dict[str, Any]], *, query: str) -> str:
+    if not results:
+        return f"Ничего не нашел по запросу: {query}"
+    lines = [f"Нашел по запросу: {query}"]
+    for index, item in enumerate(results, start=1):
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        title = str(item.get("title") or "Без названия")
+        text = str(item.get("text") or "").strip()
+        created = _format_created_at(metadata.get("created_at"))
+        url = str(item.get("url") or "")
+        lines.append(f"{index}. {title}\n{created}\n{text}\n{url}".strip())
+    return "\n\n".join(lines)
+
+
+async def _handle_help_command(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    linked: bool,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    await client.send_message(
+        chat_id,
+        _telegram_help_text(linked=linked),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_meetings_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await list_recordings_for_mcp(
+        db,
+        account.user_id,
+        recording_type="meeting",
+        limit=10,
+    )
+    await _send_chunks(
+        client,
+        chat_id,
+        _format_recording_list(
+            result["results"],
+            empty_text=(
+                "Встреч пока нет. Запиши встречу в приложении WaiComputer, и она появится здесь."
+            ),
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_actions_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await list_action_items_for_mcp(
+        db,
+        account.user_id,
+        status="pending",
+        limit=10,
+    )
+    await _send_chunks(
+        client,
+        chat_id,
+        _format_action_items(result["results"]),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_search_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    query: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    clean_query = query.strip()
+    if not clean_query:
+        await client.send_message(
+            chat_id,
+            "Напиши запрос после /search. Например: /search дорожная карта",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    result = await search_recordings_for_mcp(db, account.user_id, clean_query, limit=5)
+    await _send_chunks(
+        client,
+        chat_id,
+        _format_search_results(result["results"], query=clean_query),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_settings_command(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    linked: bool,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    status_text = "привязан" if linked else "не привязан"
+    await client.send_message(
+        chat_id,
+        (
+            f"Telegram сейчас {status_text}. Управление привязкой: "
+            "открой Settings в приложении WaiComputer или веб-дашборде и найди блок Telegram."
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_account_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    intent: str,
+    arg: str = "",
+) -> bool:
+    if intent == "help":
+        await _handle_help_command(client, message=message, linked=True)
+        return True
+    if intent == "meetings":
+        await _handle_meetings_command(db, client, message=message, account=account)
+        return True
+    if intent == "actions":
+        await _handle_actions_command(db, client, message=message, account=account)
+        return True
+    if intent == "search":
+        await _handle_search_command(db, client, message=message, account=account, query=arg)
+        return True
+    if intent == "settings":
+        await _handle_settings_command(client, message=message, linked=True)
+        return True
+    return False
 
 
 async def _ensure_telegram_conversation(
@@ -819,6 +1197,11 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 await _mark_update(db, update_id, "completed")
                 return
 
+            if not _is_private_chat(message):
+                await _send_private_chat_required(client, message=message)
+                await _mark_update(db, update_id, "completed")
+                return
+
             command = _message_command(message)
             if command and command[0] in {"/start", "/link"}:
                 await _handle_start_command(
@@ -831,6 +1214,19 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 return
 
             account = await _load_account(db, telegram_user_id)
+            if command and command[0] == "/help":
+                if account is None:
+                    await _send_bot_link_code(
+                        db,
+                        client,
+                        message=message,
+                        intro=_telegram_help_text(linked=False),
+                    )
+                else:
+                    await _handle_help_command(client, message=message, linked=True)
+                await _mark_update(db, update_id, "completed")
+                return
+
             if account is None:
                 await _send_bot_link_code(
                     db,
@@ -857,14 +1253,24 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     media=media,
                 )
             elif command:
-                await client.send_message(
-                    chat_id,
-                    (
-                        "Команды в боте не нужны. Просто пришли голосовое, "
-                        "видео или текстовый вопрос."
-                    ),
-                    reply_to_message_id=message.get("message_id"),
+                intent = command[0].removeprefix("/")
+                arg = command[1]
+                if intent == "find":
+                    intent = "search"
+                handled = await _handle_account_command(
+                    db,
+                    client,
+                    message=message,
+                    account=account,
+                    intent=intent,
+                    arg=arg,
                 )
+                if not handled:
+                    await client.send_message(
+                        chat_id,
+                        _telegram_help_text(linked=True),
+                        reply_to_message_id=message.get("message_id"),
+                    )
             else:
                 text = _message_text(message)
                 if not text:
@@ -874,13 +1280,25 @@ async def _handle_update(update: dict[str, Any]) -> None:
                         reply_to_message_id=message.get("message_id"),
                     )
                 else:
-                    await _handle_text_message(
-                        db,
-                        client,
-                        message=message,
-                        account=account,
-                        text=text,
-                    )
+                    text_intent = _text_intent(text)
+                    if text_intent is not None:
+                        intent, arg = text_intent
+                        await _handle_account_command(
+                            db,
+                            client,
+                            message=message,
+                            account=account,
+                            intent=intent,
+                            arg=arg,
+                        )
+                    else:
+                        await _handle_text_message(
+                            db,
+                            client,
+                            message=message,
+                            account=account,
+                            text=text,
+                        )
             await _mark_update(db, update_id, "completed")
         except (TelegramClientError, RecordingImportError) as exc:
             logger.warning(

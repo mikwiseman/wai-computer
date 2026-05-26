@@ -135,8 +135,7 @@ def test_format_transcript_sorts_and_handles_missing_speaker() -> None:
 def test_format_action_items_includes_owner_and_due_date() -> None:
     rid = uuid4()
     items = [
-        ActionItem(recording_id=rid, task="task A", owner="Alice",
-                   due_date=date(2026, 5, 25)),
+        ActionItem(recording_id=rid, task="task A", owner="Alice", due_date=date(2026, 5, 25)),
         ActionItem(recording_id=rid, task="task B"),  # no owner, no due
         ActionItem(recording_id=rid, task="task C", owner="Charlie"),
     ]
@@ -223,8 +222,10 @@ async def test_search_matches_segment_content(db_session: AsyncSession) -> None:
     user = await _create_user(db_session, "search-seg@example.com")
     rec = await _create_recording(db_session, user.id, title="Untitled")
     seg = Segment(
-        recording_id=rec.id, speaker="Alice",
-        content="We discussed the WIDGET roadmap thoroughly", start_ms=0,
+        recording_id=rec.id,
+        speaker="Alice",
+        content="We discussed the WIDGET roadmap thoroughly",
+        start_ms=0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -241,8 +242,10 @@ async def test_search_uses_default_title_when_missing(db_session: AsyncSession) 
     user = await _create_user(db_session, "search-untitled@example.com")
     rec = await _create_recording(db_session, user.id, title=None)
     seg = Segment(
-        recording_id=rec.id, speaker="Bob",
-        content="hello world UNIQUEMARK matches", start_ms=0,
+        recording_id=rec.id,
+        speaker="Bob",
+        content="hello world UNIQUEMARK matches",
+        start_ms=0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -305,15 +308,9 @@ async def test_search_with_multiple_folder_ids(db_session: AsyncSession) -> None
     folder_a = await _create_folder(db_session, user.id, "Folder A")
     folder_b = await _create_folder(db_session, user.id, "Folder B")
     folder_c = await _create_folder(db_session, user.id, "Folder C")
-    rec_a = await _create_recording(
-        db_session, user.id, title="MULTI alpha", folder_id=folder_a.id
-    )
-    rec_b = await _create_recording(
-        db_session, user.id, title="MULTI beta", folder_id=folder_b.id
-    )
-    rec_c = await _create_recording(
-        db_session, user.id, title="MULTI gamma", folder_id=folder_c.id
-    )
+    rec_a = await _create_recording(db_session, user.id, title="MULTI alpha", folder_id=folder_a.id)
+    rec_b = await _create_recording(db_session, user.id, title="MULTI beta", folder_id=folder_b.id)
+    rec_c = await _create_recording(db_session, user.id, title="MULTI gamma", folder_id=folder_c.id)
     await db_session.commit()
 
     out = await search_recordings_for_mcp(
@@ -341,9 +338,7 @@ async def test_search_with_empty_folder_ids_list_returns_empty(
     )
     await db_session.commit()
 
-    out = await search_recordings_for_mcp(
-        db_session, user.id, "EMPTYLIST", limit=10, folder_ids=[]
-    )
+    out = await search_recordings_for_mcp(db_session, user.id, "EMPTYLIST", limit=10, folder_ids=[])
     assert out["results"] == []
 
 
@@ -356,9 +351,7 @@ async def test_search_folder_ids_rejects_other_users_folders(
     user_a = await _create_user(db_session, "search-folder-xa@example.com")
     user_b = await _create_user(db_session, "search-folder-xb@example.com")
     folder_b = await _create_folder(db_session, user_b.id, "B's Folder")
-    await _create_recording(
-        db_session, user_b.id, title="CROSSUSER target", folder_id=folder_b.id
-    )
+    await _create_recording(db_session, user_b.id, title="CROSSUSER target", folder_id=folder_b.id)
     await db_session.commit()
 
     out = await search_recordings_for_mcp(
@@ -401,24 +394,40 @@ async def test_fetch_respects_user_isolation(db_session: AsyncSession) -> None:
 async def test_fetch_returns_text_sections(db_session: AsyncSession) -> None:
     user = await _create_user(db_session, "fetch-full@example.com")
     rec = await _create_recording(db_session, user.id, title="Full Recording")
-    db_session.add(Summary(
-        recording_id=rec.id,
-        summary="Top-line summary",
-        key_points=["point one", "point two"],
-        topics=["roadmap"],
-        people_mentioned=["alice"],
-        sentiment="positive",
-    ))
-    db_session.add(Segment(
-        recording_id=rec.id, speaker="Alice", content="opener", start_ms=0,
-    ))
-    db_session.add(Segment(
-        recording_id=rec.id, speaker="Bob", content="response", start_ms=1000,
-    ))
-    db_session.add(ActionItem(
-        recording_id=rec.id, task="Ship docs",
-        owner="Alice", due_date=date(2026, 6, 1),
-    ))
+    db_session.add(
+        Summary(
+            recording_id=rec.id,
+            summary="Top-line summary",
+            key_points=["point one", "point two"],
+            topics=["roadmap"],
+            people_mentioned=["alice"],
+            sentiment="positive",
+        )
+    )
+    db_session.add(
+        Segment(
+            recording_id=rec.id,
+            speaker="Alice",
+            content="opener",
+            start_ms=0,
+        )
+    )
+    db_session.add(
+        Segment(
+            recording_id=rec.id,
+            speaker="Bob",
+            content="response",
+            start_ms=1000,
+        )
+    )
+    db_session.add(
+        ActionItem(
+            recording_id=rec.id,
+            task="Ship docs",
+            owner="Alice",
+            due_date=date(2026, 6, 1),
+        )
+    )
     await db_session.commit()
 
     out = await fetch_recording_for_mcp(db_session, user.id, rec.id)
@@ -542,6 +551,27 @@ async def test_list_recordings_filters_by_folder_ids(
 
 
 @pytest.mark.asyncio
+async def test_list_recordings_filters_by_recording_type(
+    db_session: AsyncSession,
+) -> None:
+    user = await _create_user(db_session, "list-rec-type@example.com")
+    meeting = await _create_recording(db_session, user.id, title="planning")
+    meeting.type = "meeting"
+    note = await _create_recording(db_session, user.id, title="note")
+    note.type = "note"
+    await db_session.commit()
+
+    out = await list_recordings_for_mcp(
+        db_session,
+        user.id,
+        recording_type="meeting",
+        limit=10,
+    )
+
+    assert [r["title"] for r in out["results"]] == ["planning"]
+
+
+@pytest.mark.asyncio
 async def test_list_recordings_skips_deleted(db_session: AsyncSession) -> None:
     user = await _create_user(db_session, "list-rec-deleted@example.com")
     rec = await _create_recording(db_session, user.id, title="alive")
@@ -594,15 +624,11 @@ async def test_list_recordings_paginates_with_cursor(
     assert [r["title"] for r in page1["results"]] == ["rec-4", "rec-3"]
     assert page1["next_cursor"] is not None
 
-    page2 = await list_recordings_for_mcp(
-        db_session, user.id, limit=2, cursor=page1["next_cursor"]
-    )
+    page2 = await list_recordings_for_mcp(db_session, user.id, limit=2, cursor=page1["next_cursor"])
     assert [r["title"] for r in page2["results"]] == ["rec-2", "rec-1"]
     assert page2["next_cursor"] is not None
 
-    page3 = await list_recordings_for_mcp(
-        db_session, user.id, limit=2, cursor=page2["next_cursor"]
-    )
+    page3 = await list_recordings_for_mcp(db_session, user.id, limit=2, cursor=page2["next_cursor"])
     assert [r["title"] for r in page3["results"]] == ["rec-0"]
     assert page3["next_cursor"] is None
 
@@ -635,12 +661,8 @@ async def test_list_action_items_returns_open_by_default(
     """Default status filter is None — return all statuses unchanged."""
     user = await _create_user(db_session, "ai-default@example.com")
     rec = await _create_recording(db_session, user.id, title="R")
-    db_session.add(
-        ActionItem(recording_id=rec.id, task="open task", status="pending")
-    )
-    db_session.add(
-        ActionItem(recording_id=rec.id, task="done task", status="completed")
-    )
+    db_session.add(ActionItem(recording_id=rec.id, task="open task", status="pending"))
+    db_session.add(ActionItem(recording_id=rec.id, task="done task", status="completed"))
     await db_session.commit()
 
     out = await list_action_items_for_mcp(db_session, user.id, limit=20)
@@ -656,9 +678,7 @@ async def test_list_action_items_filters_by_status(db_session: AsyncSession) -> 
     db_session.add(ActionItem(recording_id=rec.id, task="done", status="completed"))
     await db_session.commit()
 
-    out = await list_action_items_for_mcp(
-        db_session, user.id, status="pending", limit=20
-    )
+    out = await list_action_items_for_mcp(db_session, user.id, status="pending", limit=20)
     tasks = {r["task"] for r in out["results"]}
     assert tasks == {"todo"}
 
@@ -742,9 +762,7 @@ async def _create_recording(
     return rec
 
 
-async def _create_folder(
-    db_session: AsyncSession, user_id: UUID, name: str
-) -> Folder:
+async def _create_folder(db_session: AsyncSession, user_id: UUID, name: str) -> Folder:
     folder = Folder(user_id=user_id, name=name)
     db_session.add(folder)
     await db_session.flush()
