@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "./page.module.css";
@@ -31,14 +30,20 @@ export default function Home() {
 
       <section className={styles.hero}>
         <div className={styles.iconHalo}>
-          <Image
-            className={styles.icon}
-            src="/app-icon.png"
-            alt=""
-            width={160}
-            height={160}
-            priority
-          />
+          <picture>
+            <source
+              srcSet="/app-icon-dark.png"
+              media="(prefers-color-scheme: dark)"
+            />
+            <img
+              className={styles.icon}
+              src="/app-icon.png"
+              width={160}
+              height={160}
+              alt=""
+              fetchPriority="high"
+            />
+          </picture>
         </div>
         <h1 className={styles.headline}>
           An AI second brain for everything you say.

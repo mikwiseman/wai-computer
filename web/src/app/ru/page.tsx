@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
@@ -9,9 +8,9 @@ const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/ru/privacy";
 
 export const metadata: Metadata = {
-  title: "WaiComputer — AI second brain для голоса",
+  title: "WaiComputer — AI-память для голоса",
   description:
-    "Записывай, расшифровывай и спрашивай у Wai что угодно про всё, что ты когда-либо сказал.",
+    "Записывайте, расшифровывайте, ищите, спрашивайте Wai обо всём, что вы когда-либо говорили.",
   alternates: {
     canonical: "https://wai.computer/ru",
     languages: {
@@ -45,21 +44,27 @@ export default function RuHome() {
 
       <section className={styles.hero}>
         <div className={styles.iconHalo}>
-          <Image
-            className={styles.icon}
-            src="/app-icon.png"
-            alt=""
-            width={160}
-            height={160}
-            priority
-          />
+          <picture>
+            <source
+              srcSet="/app-icon-dark.png"
+              media="(prefers-color-scheme: dark)"
+            />
+            <img
+              className={styles.icon}
+              src="/app-icon.png"
+              width={160}
+              height={160}
+              alt=""
+              fetchPriority="high"
+            />
+          </picture>
         </div>
         <h1 className={styles.headline}>
-          AI second brain для всего, что ты говоришь.
+          AI-память для всего, что вы говорите.
         </h1>
         <p className={styles.subhead}>
-          Запись на Mac или iPhone. Транскрипция в реальном времени. Поиск по
-          всему. Спроси Wai что угодно.
+          Запись на Mac или iPhone. Расшифровка в реальном времени. Поиск по
+          всему, что вы говорили. Спросите Wai о чём угодно.
         </p>
 
         <div className={styles.downloads}>
@@ -70,7 +75,7 @@ export default function RuHome() {
             data-testid="download-mac-ru"
           >
             <span className={styles.downloadTitle}>Скачать для Mac</span>
-            <span className={styles.downloadMeta}>macOS 14+ · DMG · RU</span>
+            <span className={styles.downloadMeta}>macOS 14+ · DMG</span>
           </a>
           <a
             className={styles.downloadGhost}
@@ -78,7 +83,7 @@ export default function RuHome() {
             data-testid="download-ios-ru"
           >
             <span className={styles.downloadTitle}>iPhone</span>
-            <span className={styles.downloadMeta}>TestFlight</span>
+            <span className={styles.downloadMeta}>TestFlight · бета</span>
           </a>
         </div>
       </section>

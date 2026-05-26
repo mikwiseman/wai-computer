@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   cancelBillingSubscription,
@@ -30,6 +31,10 @@ const COPY: Record<
     cancel: string;
     cancelling: string;
     cancelledNotice: (date: string) => string;
+    confirmHeading: string;
+    confirmBody: string;
+    confirmYes: string;
+    confirmNo: string;
     loadError: string;
     loading: string;
     payWith: string;
@@ -45,6 +50,10 @@ const COPY: Record<
     promoExpired: string;
     promoExhausted: string;
     promoAlreadyRedeemed: string;
+    invoicesHeading: string;
+    invoicesEmpty: string;
+    backToDashboard: string;
+    statuses: Record<string, string>;
   }
 > = {
   en: {
@@ -60,6 +69,11 @@ const COPY: Record<
     cancel: "Cancel subscription",
     cancelling: "Cancelling…",
     cancelledNotice: (d) => `Pro is active through ${d}.`,
+    confirmHeading: "Cancel your Pro subscription?",
+    confirmBody:
+      "You'll keep Pro features until the end of the current billing period. You can resubscribe at any time.",
+    confirmYes: "Yes, cancel",
+    confirmNo: "Keep Pro",
     loadError: "Couldn't load billing info.",
     loading: "Loading…",
     payWith: "Pay with",
@@ -75,6 +89,17 @@ const COPY: Record<
     promoExpired: "Promo code expired.",
     promoExhausted: "Promo code has already been fully used.",
     promoAlreadyRedeemed: "You already redeemed this promo code.",
+    invoicesHeading: "Invoices",
+    invoicesEmpty: "We'll show invoices here as soon as Stripe is wired.",
+    backToDashboard: "← Back to dashboard",
+    statuses: {
+      active: "Active",
+      trialing: "Trialing",
+      canceled: "Canceled",
+      past_due: "Past due",
+      incomplete: "Incomplete",
+      unpaid: "Unpaid",
+    },
   },
   ru: {
     heading: "Подписка",
@@ -89,6 +114,11 @@ const COPY: Record<
     cancel: "Отменить подписку",
     cancelling: "Отменяем…",
     cancelledNotice: (d) => `Pro активен до ${d}.`,
+    confirmHeading: "Отменить подписку Pro?",
+    confirmBody:
+      "Возможности Pro останутся до конца оплаченного периода. Вы сможете снова оформить подписку в любое время.",
+    confirmYes: "Да, отменить",
+    confirmNo: "Оставить Pro",
     loadError: "Не удалось загрузить данные подписки.",
     loading: "Загрузка…",
     payWith: "Оплата через",
@@ -104,6 +134,17 @@ const COPY: Record<
     promoExpired: "Срок действия промокода истёк.",
     promoExhausted: "Промокод уже исчерпан.",
     promoAlreadyRedeemed: "Ты уже использовал этот промокод.",
+    invoicesHeading: "Счета",
+    invoicesEmpty: "Здесь появятся счета, как только мы подключим выгрузку из Stripe.",
+    backToDashboard: "← Назад в кабинет",
+    statuses: {
+      active: "Активна",
+      trialing: "Пробная",
+      canceled: "Отменена",
+      past_due: "Просрочена",
+      incomplete: "Не завершена",
+      unpaid: "Не оплачена",
+    },
   },
 };
 
@@ -131,6 +172,13 @@ function localizeBillingError(error: unknown, locale: Locale): string {
   return copy.loadError;
 }
 
+function localizeStatus(
+  status: string,
+  copy: (typeof COPY)[Locale],
+): string {
+  return copy.statuses[status] ?? status;
+}
+
 interface Props {
   locale: Locale;
   currency: "usd" | "rub";
@@ -146,6 +194,7 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [promoInFlight, setPromoInFlight] = useState(false);
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   // RU UI users choose T-Bank or Stripe; other locales lock to Stripe.
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
@@ -192,6 +241,7 @@ export function BillingDashboard({ locale, currency }: Props) {
 
   async function handleCancel() {
     setInFlight(true);
+    setConfirmingCancel(false);
     try {
       await cancelBillingSubscription();
       const fresh = await getBillingSubscription();
@@ -235,7 +285,7 @@ export function BillingDashboard({ locale, currency }: Props) {
         </div>
         <div>
           <dt>{copy.statusLabel}</dt>
-          <dd>{sub.status}</dd>
+          <dd>{localizeStatus(sub.status, copy)}</dd>
         </div>
         {periodEnd ? (
           <div>
@@ -264,13 +314,53 @@ export function BillingDashboard({ locale, currency }: Props) {
       {sub.cancel_at_period_end && periodEnd ? (
         <p className="billing-notice">{copy.cancelledNotice(periodEnd)}</p>
       ) : isPro ? (
-        <button
-          className="billing-cancel"
-          onClick={handleCancel}
-          disabled={inFlight}
-        >
-          {inFlight ? copy.cancelling : copy.cancel}
-        </button>
+        confirmingCancel ? (
+          <div
+            role="alertdialog"
+            aria-labelledby="billing-cancel-heading"
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "8px",
+              padding: "1rem 1.1rem",
+              background: "var(--panel-subtle)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.6rem",
+            }}
+          >
+            <h3 id="billing-cancel-heading" style={{ margin: 0, fontSize: "1.05rem" }}>
+              {copy.confirmHeading}
+            </h3>
+            <p style={{ margin: 0, color: "var(--ink-soft)" }}>{copy.confirmBody}</p>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="billing-cancel"
+                onClick={handleCancel}
+                disabled={inFlight}
+              >
+                {inFlight ? copy.cancelling : copy.confirmYes}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setConfirmingCancel(false)}
+                disabled={inFlight}
+              >
+                {copy.confirmNo}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="billing-cancel"
+            onClick={() => setConfirmingCancel(true)}
+            disabled={inFlight}
+          >
+            {copy.cancel}
+          </button>
+        )
       ) : (
         <>
           {locale === "ru" && currency === "rub" ? (
@@ -332,6 +422,26 @@ export function BillingDashboard({ locale, currency }: Props) {
           </form>
         </>
       )}
+
+      <section
+        aria-labelledby="billing-invoices-heading"
+        style={{
+          marginTop: "1.4rem",
+          paddingTop: "1.4rem",
+          borderTop: "1px solid var(--border)",
+        }}
+      >
+        <h2 id="billing-invoices-heading" style={{ margin: 0, fontSize: "1rem" }}>
+          {copy.invoicesHeading}
+        </h2>
+        <p className="billing-caption" style={{ marginTop: "0.4rem" }}>
+          {copy.invoicesEmpty}
+        </p>
+      </section>
+
+      <p style={{ marginTop: "1.4rem" }}>
+        <Link href="/dashboard">{copy.backToDashboard}</Link>
+      </p>
     </section>
   );
 }

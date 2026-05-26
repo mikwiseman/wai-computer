@@ -7,6 +7,7 @@ import {
   generateSummary,
   getRecording,
 } from "@/lib/api";
+import { formatSpeakerLabel } from "@/lib/format";
 import type { RecordingDetail, Segment, Summary } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 
@@ -302,7 +303,7 @@ function TranscriptTab({
 
   const fullText = segments
     .map((s) => {
-      const speaker = s.display_name ?? s.raw_label ?? s.speaker ?? "Speaker";
+      const speaker = formatSpeakerLabel(s.speaker, s.raw_label, s.display_name);
       const ts = formatTimestamp(s.start_ms);
       return `[${speaker}, ${ts}] ${s.content}`;
     })
@@ -314,21 +315,38 @@ function TranscriptTab({
         <h3>Transcript</h3>
         <CopyButton text={fullText} label="Copy Transcript" />
       </div>
-      {segments.map((segment) => (
-        <article key={segment.id} className="transcript-row">
-          <div className="metadata-row">
-            {segment.raw_label || segment.speaker ? (
-              <SpeakerChip
-                segment={segment}
-                recordingId={recordingId}
-                onUpdated={(detail) => onRecordingUpdate?.(detail)}
-              />
-            ) : null}
-            <span className="mono">{formatTimestamp(segment.start_ms)}</span>
-          </div>
-          <p>{segment.content}</p>
-        </article>
-      ))}
+      {segments.map((segment) => {
+        // When the diariser exposes raw machine labels like "speaker_0" /
+        // "Speaker 0" but no person has been assigned yet, render a friendly
+        // "Speaker 1" label via display_name. raw_label is preserved so the
+        // backend assign-speaker call still receives the original token.
+        const displaySegment =
+          !segment.display_name && !segment.person_id
+            ? {
+                ...segment,
+                display_name: formatSpeakerLabel(
+                  segment.speaker,
+                  segment.raw_label,
+                  null,
+                ),
+              }
+            : segment;
+        return (
+          <article key={segment.id} className="transcript-row">
+            <div className="metadata-row">
+              {segment.raw_label || segment.speaker ? (
+                <SpeakerChip
+                  segment={displaySegment}
+                  recordingId={recordingId}
+                  onUpdated={(detail) => onRecordingUpdate?.(detail)}
+                />
+              ) : null}
+              <span className="mono">{formatTimestamp(segment.start_ms)}</span>
+            </div>
+            <p>{segment.content}</p>
+          </article>
+        );
+      })}
     </div>
   );
 }

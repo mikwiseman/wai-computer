@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +12,26 @@ const mockExportSharedRecording = vi.fn();
 vi.mock("@/lib/api", () => ({
   getSharedRecording: (...args: unknown[]) => mockGetSharedRecording(...args),
   exportSharedRecording: (...args: unknown[]) => mockExportSharedRecording(...args),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    className,
+    "aria-label": ariaLabel,
+    "data-testid": testId,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    className?: string;
+    "aria-label"?: string;
+    "data-testid"?: string;
+  }) => (
+    <a href={href} className={className} aria-label={ariaLabel} data-testid={testId}>
+      {children}
+    </a>
+  ),
 }));
 
 const sharedRecording: SharedRecording = {

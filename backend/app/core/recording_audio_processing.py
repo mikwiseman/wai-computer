@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
+from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -91,7 +92,7 @@ def apply_no_speech_result(
         copy_locale_from_recording_language(recording.language, fallback_language)
     ]
     recording.title = copy["title"]
-    recording.failure_message = copy["message"]
+    recording.failure_message = sanitize_failure_message(copy["message"])
 
 
 def apply_no_speech_failure(
@@ -105,7 +106,7 @@ def apply_no_speech_failure(
         recording.title = copy["title"]
     recording.status = RecordingStatus.FAILED.value
     recording.failure_code = EMPTY_TRANSCRIPT_FAILURE_CODE
-    recording.failure_message = copy["message"]
+    recording.failure_message = sanitize_failure_message(copy["message"])
 
 
 def delete_staged_file(path: Path | str | None) -> None:
@@ -142,7 +143,7 @@ async def mark_recording_processing_failed(
         return
     failed.status = RecordingStatus.FAILED.value
     failed.failure_code = failure_code
-    failed.failure_message = failure_message
+    failed.failure_message = sanitize_failure_message(failure_message)
     await db.commit()
 
 

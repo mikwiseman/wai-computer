@@ -5,6 +5,10 @@ import { LoginClient, resolveLoginRedirect } from "./LoginClient";
 
 export { resolveLoginRedirect };
 
+export const metadata = {
+  referrer: "no-referrer",
+} as const;
+
 export default async function LoginPage() {
   const requestHeaders = await headers();
   const initialLocale = resolveAuthLocaleFromAcceptLanguage(

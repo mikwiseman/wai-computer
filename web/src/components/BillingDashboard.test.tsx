@@ -1,3 +1,4 @@
+import type React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +17,22 @@ vi.mock("@/lib/billing", () => ({
   createBillingCheckout: vi.fn(),
   getBillingSubscription: vi.fn(),
   getBillingUsage: vi.fn(),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    className,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    className?: string;
+  }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
 }));
 
 const mockedSubscription = vi.mocked(getBillingSubscription);
@@ -97,7 +114,7 @@ describe("BillingDashboard", () => {
     expect(screen.queryByText(/World|Russia/i)).not.toBeInTheDocument();
   });
 
-  it("cancels active pro subscriptions", async () => {
+  it("cancels active pro subscriptions after an inline confirmation", async () => {
     mockedSubscription.mockResolvedValueOnce(proSub).mockResolvedValueOnce({
       ...proSub,
       cancel_at_period_end: true,
@@ -107,6 +124,13 @@ describe("BillingDashboard", () => {
 
     await screen.findByRole("button", { name: "Cancel subscription" });
     await userEvent.click(screen.getByRole("button", { name: "Cancel subscription" }));
+
+    expect(mockedCancel).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Cancel your Pro subscription?" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Yes, cancel" }));
 
     await waitFor(() => expect(mockedCancel).toHaveBeenCalled());
     expect(await screen.findByText(/Pro is active through/i)).toBeInTheDocument();

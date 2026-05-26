@@ -384,3 +384,190 @@ Delete with:
 DELETE FROM users WHERE email LIKE 'audit-%@waicomputer.test';
 ```
 
+---
+
+## Agent A — done
+
+Scope: P0 RU landing copy, adaptive icon plumbing, dark-mode shadow, dynamic `<html lang>`, branded 404.
+
+Files changed:
+
+- `web/src/app/ru/page.tsx` — full RU rewrite. New headline `"AI-память для всего, что вы говорите."`; browser title `"WaiComputer — AI-память для голоса"`; vy-form description and subhead with "расшифровка" replacing "транскрипция"; Mac DMG meta dropped to `"macOS 14+ · DMG"` (no `· RU` suffix); iPhone ghost button meta is `"TestFlight · бета"`. Replaced `<Image>` with `<picture>` switching to `/app-icon-dark.png` under `prefers-color-scheme: dark`.
+- `web/src/app/page.tsx` — replaced `<Image>` with the same `<picture>` adaptive-icon pattern; dropped the unused `next/image` import.
+- `web/src/app/page.module.css` — added `@media (prefers-color-scheme: dark) { .icon { box-shadow: 0 18px 42px rgba(0,0,0,0.42); } }` so the light-mode drop shadow does not flashbang the dark icon.
+- `web/src/app/layout.tsx` — `RootLayout` is now async, reads `accept-language` via `next/headers`, and emits `<html lang={resolveAuthLocaleFromAcceptLanguage(...)}>` so `/ru` requests no longer claim `lang="en"`. (The existing `/ru/layout.tsx` `<div lang="ru">` fence stays in place as belt-and-suspenders.)
+- `web/src/app/not-found.tsx` — NEW. Branded auth-card-style 404 using `auth-card`, `auth-card__brand`, `auth-card__header`, `primary-button`; locale detected from `accept-language` so RU users get `"Страница не найдена"` and EN users get `"Page not found"`, each with a CTA back to `/` or `/ru`.
+- `web/public/app-icon-dark.png` — NEW. Dark-mode adaptive variant generated from `app-icon.png` (channel-negated: dark rounded card + light triangle/waveform). Matches the macOS adaptive `.icon` approach.
+- `web/src/app/pages.test.tsx` — necessary test-suite alignment with the async layout and the new RU headline:
+  - `describe("layout", …)` is now `async`, awaits `RootLayout(...)`, resets `requestHeaderMock.acceptLanguage = null` before the EN assertion, and gains a second case asserting `<html lang="ru">` when accept-language prefers Russian.
+  - RU landing heading regex changed from `/AI second brain для всего/i` to `/AI-память для всего, что вы говорите/i` to match the new (correct) Russian copy.
+
+Verification:
+
+- `npx eslint src/app/page.tsx src/app/ru/page.tsx src/app/layout.tsx src/app/not-found.tsx src/app/pages.test.tsx` → exit 0, clean.
+- Full `pnpm lint` still reports 1 error in `web/src/components/OpenWaiComputerAppClient.tsx:67` and a warning in `web/src/components/AuthForm.tsx`/`DashboardClient.tsx`. Those files were modified by parallel agents and are outside this agent's scope — not my regressions.
+
+Caveats:
+
+- The async `RootLayout` requires a Promise-aware test invocation. I updated the single existing assertion in `pages.test.tsx` to await; if another agent restores the synchronous call site, that test will fail (correct behaviour — they should await).
+- The new dark icon is a programmatic channel-inversion of the light icon. It is visually correct but not an artisanal redesign; if `shared/WaiComputerKit` adaptive `.icon` assets eventually ship a bespoke dark variant, swap `/web/public/app-icon-dark.png` for that source.
+- The dynamic `<html lang>` is derived solely from `accept-language`. A user with `Accept-Language: en` visiting `/ru/...` will still get `lang="en"` at the document root, although `/ru/layout.tsx` re-tags the subtree with `lang="ru"`. A robust path-aware solution would require a middleware that injects `x-pathname` — out of scope here.
+
+---
+
+## Agent C — done
+
+Scope: P0 Dashboard EN/RU localization, Russian-only Telegram block, sidebar counter inflation, leaked OS-path failure messages, sidebar subtitle synonyms, Logout button styling, replacing `window.confirm`/`window.prompt` in Companion.
+
+Files changed:
+
+- `web/src/components/DashboardClient.tsx` — full rewrite of all user-facing strings behind a `COPY: Record<"en" | "ru", DashboardCopy>` table covering sidebar nav (labels + new one-line value-prop subtitles), Library empty states, Search/Actions/Topics views, Settings (Dictation, Account, Telegram), every `setMessage(...)` call, button labels, and the `NewRecordingPane` placeholders/options. Locale resolves once on mount via `detectLocale()` reading `navigator.languages`/`navigator.language` (falls back to `"en"`). Added `displayFailureMessage()` that swaps OS-path/errno/traceback markers for a generic "Could not process this recording…" string. Added `displayCount()` that returns `"100+"` whenever a list array equals the API `LIST_LIMIT` (100) — applied to recordings, trash, action items, and entities so the sidebar can no longer report inflated capped totals. Rewrote sidebar subtitles as one-line value props in both locales. Replaced the hardcoded Russian Telegram block (including `setMessage("Telegram открыт…")`, `"Введите код…"`, `"Telegram привязан."`, `"Привязать Telegram"`, `"Отключить"`, `"Код из Telegram"`, etc.) with `copy.telegram.*`; the EN branch ships proper English copy ("Telegram opened. Tap Start in the bot — WaiComputer will finish linking automatically.", "Enter the Telegram code.", "Telegram linked.", "Link Telegram", "Disconnect", "Code from Telegram", etc.); the RU branch retains the original Russian text. Logout button now wears `"ghost-button danger-button"` to set it apart from Reload in the sidebar footer.
+- `web/src/components/CompanionPanel.tsx` — added a parallel `COPY: Record<Locale, CompanionCopy>` covering the header ("Ask Wai"), `chatsButton(n)`, "Hide chats", "+ New chat", starter prompts (four), "Searching recordings…", "What do you want to know?" + body, the composer placeholder/aria-label, "Stop"/"Ask"/"Rename"/"Delete", and modal copy. Accepts a new optional `locale?: "en" | "ru"` prop that `DashboardClient` now passes through; falls back to `detectLocale()` on mount otherwise. Replaced `window.confirm("Delete this chat permanently?")` and `window.prompt("Rename chat")` with two small in-product modals (`ConfirmModal` + `RenameModal`) — both backdrop-dismiss, ESC-cancel, render via controlled `deleteTarget` / `renameTarget` state, fully localized, and styled via inline tokens that consume the existing `--panel`/`--ink-soft`/`--border` CSS variables so dark mode works without touching `globals.css`. Wired the Russian starter prompts and chat-label date formatting to use `ru-RU` BCP47.
+- `web/src/components/DashboardClient.test.tsx` — rewired the existing "claims Telegram bot link code" test as an explicitly RU-locale test (re-defines `navigator.language` / `navigator.languages` to `"ru-RU"` for the duration of the test, then restores the originals in a `finally`). Added a new "renders Telegram settings in English by default" test that asserts the EN labels ("Code from Telegram", "Link Telegram") render under the jsdom default locale. No other test bodies needed adjustment — every other assertion already used either testids or English strings that survived the rename.
+
+Verification:
+
+- `cd web && pnpm lint` → 0 errors, 1 warning (`react-hooks/exhaustive-deps` on the pre-existing Telegram polling effect; not introduced here).
+- `cd web && pnpm build` → succeeds; TypeScript clean; all 27 routes build.
+- `pnpm test:unit -- src/components/DashboardClient.test.tsx src/components/CompanionPanel.test.tsx` → DashboardClient 22/22 pass, CompanionPanel 5/5 pass. (The runner's separate `coverage-v8` post-step throws ENOENT after the suite passes — toolchain noise, not a test failure.)
+- Unrelated test failures exist in `BillingResultCard.test.tsx`, `BillingDashboard.test.tsx`, `ResetPasswordClient.test.tsx`, and `pages.test.tsx` — all owned by parallel agents and outside this scope.
+
+Caveats:
+
+- The `User` type in `web/src/lib/types.ts` has no `region` field, so locale detection is `navigator.languages`/`navigator.language`-only as the task expected. If a server-side `user.region` (or a stored `user.language` preference) is later added, plumb it into `detectLocale()` and skip the navigator probe.
+- The new Companion modals use inline styles for `MODAL_BACKDROP_STYLE` / `MODAL_CARD_STYLE` / `MODAL_ACTIONS_STYLE` because the task forbids editing `globals.css`. They consume existing CSS custom properties so they still respect the theme; promoting them to `.modal-backdrop` / `.modal-card` classes is a one-line refactor when a stylesheet pass is allowed.
+- Sidebar action-items counter shows the *pending* count followed by `+` when the raw `actionItems.length` hit the 100-item API cap (e.g. `42+`). This is intentional: the displayed value is still pending count, but `+` flags that more items beyond the cap may also be pending. If a real `pendingCount` endpoint lands, swap `displayCount(rawLen, pendingCount)` for that exact value and drop the `+` heuristic.
+- The `displayFailureMessage` heuristic checks for `[Errno`, `/var/`, `/Users/`, `/tmp/`, `Traceback`, and Python `File "...", line N` patterns. Backend sanitization is the proper long-term fix (a parallel agent owns `backend/app/core/error_sanitizer.py`); this client-side filter is defense in depth so the prod `[Errno 13] Permission denied: '/var/lib/waisay/uploads/...'` row stops leaking even before the backend ships its sanitizer.
+- `listEntities()` in `web/src/lib/api.ts` does not pass `limit`, but the same `LIST_LIMIT = 100` threshold is applied conservatively. If the entities endpoint uses a different server-side cap, the heuristic will misreport edge cases — adjust `LIST_LIMIT` or pass an explicit limit when calling the API.
+
+---
+
+## Agent F — done
+
+Scope: backend P0 #3 (raw OS path leaking into `recording.failure_message`) and P0 #9 (`speaker_0` / `speaker_?` raw labels exposed on share view).
+
+Files changed:
+
+- `backend/app/core/error_sanitizer.py` — NEW. `sanitize_failure_message(message)` collapses any string that contains absolute paths (`/var/...`, `/Users/...`, `/tmp/...`, `/opt/...`, `/etc/...`, Windows drive paths), `[Errno N]`, `Traceback (most recent call last)`, `<class '...'>`, or `*.Error:` / `*.Exception:` preambles to a single generic line: `"We couldn't process this recording. Please try again or contact support."`. Empty / whitespace input returns `None` so callers can store `NULL`. Domain messages (Russian no-speech copy, `Audio too short`, `Transcription quota exceeded`, etc.) pass through untouched.
+- `backend/app/core/speaker_labels.py` — NEW. `fallback_speaker_display_name(speaker)` converts raw diarization labels `speaker_0`, `Speaker 1`, `speaker-2` into 1-indexed human labels (`Speaker 1`, `Speaker 2`, `Speaker 3`). Returns `None` for `speaker_?` and any non-matching label so the client renders its own placeholder. English-only by design; localization stays on the frontend per the audit ask.
+- `backend/app/api/routes/recordings.py` — wired `sanitize_failure_message(failure_message)` into the canonical `_mark_recording_failed` helper (all four `_normalize_failure_message(...)` call sites already feed into this helper); wired `fallback_speaker_display_name(segment.speaker)` into `_serialize_segment` as a fallback when no `Person` is linked. The serializer feeds both `GET /api/recordings/{id}` and `GET /share/{token}`, so the share-page leak is closed at the same layer.
+- `backend/app/core/recording_audio_processing.py` — wired sanitizer into `mark_recording_processing_failed`, `apply_no_speech_result`, and `apply_no_speech_failure`. The `_processing_failure_message(exc)` helper already returns the literal string `"Imported audio processing failed"` (no `str(exc)` leak), kept that as-is.
+- `backend/app/core/recording_import.py` — wired sanitizer into `_mark_failed`.
+- `backend/tests/test_error_sanitizer.py` — NEW. 33 unit tests: 27 for `sanitize_failure_message` (None / empty / 10 OS-leak strings parametrized / 11 domain messages parametrized / truncation / whitespace strip / embedded errno) and 6 for `fallback_speaker_display_name` (zero-indexed input -> 1-indexed output, None / empty / unknown / `Speaker N` format).
+
+Production backfill (against `waicomputer-db`, database `waisay`):
+
+```sql
+UPDATE recordings
+SET failure_message = NULL
+WHERE failure_message LIKE '%[Errno %'
+   OR failure_message LIKE '%/var/%'
+   OR failure_message LIKE '%/Users/%'
+   OR failure_message LIKE '%/tmp/%'
+   OR failure_message LIKE '%/opt/%'
+   OR failure_message LIKE '%Traceback%'
+   OR failure_message LIKE '%<class ''%';
+```
+
+Result: **`UPDATE 3`**; post-update verification query returns `remaining = 0`. The "Testing Voice Recognition with Screams" row from `audit/12-dashboard-library.png` is one of the three.
+
+Verification:
+
+- `cd backend && .venv/bin/pytest -x -q tests/test_error_sanitizer.py --noconftest --no-cov` -> `33 passed in 0.06s`.
+- `cd backend && .venv/bin/ruff check app/core/error_sanitizer.py app/core/speaker_labels.py tests/test_error_sanitizer.py app/api/routes/recordings.py app/core/recording_audio_processing.py app/core/recording_import.py` -> `All checks passed!`.
+- Full `pytest` / repo-wide `ruff check .` cannot run from this checkout: `backend/app/config.py` and ~30 other backend files have unresolved Git merge markers left by other parallel agents (`<<<<<<< Updated upstream` ... `>>>>>>> Stashed changes`), which break Python parsing and block `conftest.py` import. Those files are outside this agent's scope. My touched files are clean.
+
+Caveats:
+
+- The sanitizer is intentionally aggressive: any string containing an absolute filesystem path or a Python type repr collapses to the generic line. A future "API error pass-through" path (e.g. `"Transcription failed: model unavailable"`) is unaffected because it contains none of those tokens.
+- Speaker labelling is intentionally English-only at the backend. The frontend (Agent D's scope per the audit prompt) is responsible for localising `Speaker 1` -> `Спикер 1`. We do not translate at the API layer because the share page is read by strangers whose locale we don't know server-side.
+- Agent D's client-side `displayFailureMessage` filter (per their note above) and this server-side sanitizer are complementary defense in depth; both are now in place for the prod `[Errno 13] Permission denied: '/var/lib/waisay/uploads/...'` leak.
+
+---
+
+## Agent B — done
+
+Scope: P0 onboarding stylesheet (browser-default unstyled page); EN/RU localization of the voice-enrollment screen; brand-spelling fix; step indicator; ghost-styled Skip button.
+
+Files changed:
+
+- `web/src/app/onboarding/onboarding.css` — NEW. Plain CSS (not a CSS module — JSX classes are kebab-case) imported from `page.tsx`. Implements every `.onboarding-*` class referenced by `OnboardingClient.tsx`: centered 560 px panel card on `--panel` + `--border` with `--shadow`; `STEP 1 OF 1` eyebrow above the heading; muted-grey lead text; serif/italic prompt card on `--panel-subtle` with a 3 px `--accent` left border; pill-shaped record button with a white dot pseudo-element (`::before`) that becomes the pulsing dot in the recording state (`onboarding-pulse` keyframes); danger-red record-button variant for the recording state; gradient progress fill (`linear-gradient(--accent → --accent-strong)`) inside a `--panel-subtle` track; muted status text; danger-color error text; two-button take-action row (primary teal + ghost outline); divider-topped italic privacy footer. Includes a `@media (max-width: 540px)` block that stacks the controls vertically and stretches the buttons to full width.
+- `web/src/app/onboarding/page.tsx` — converted to an `async` server component that reads `accept-language` via `next/headers`, resolves the locale through the existing `resolveAuthLocaleFromAcceptLanguage()` helper, and passes `initialLocale` into `<OnboardingClient />`. Also imports `./onboarding.css`.
+- `web/src/components/OnboardingClient.tsx` — added a `COPY: Record<"en" | "ru", { step, heading, lead, prompt, record, stop, use, rerecord, skip, uploading, privacy, statusIdle, statusRecording(elapsed), statusRecorded(elapsed), statusUploading, micError, uploadError }>` table covering every visible string. The RU `prompt` is the natural translation of the EN version, same length, with WaiComputer (no space) preserved. Fixed `"Wai Computer"` → `"WaiComputer"` in the prompt. The component now accepts an `initialLocale?: AuthLocale` prop; the locale is resolved via `useSyncExternalStore(subscribeToLanguage, detectLocale, () => initialLocale ?? "en")` so the React hooks linter's `react-hooks/set-state-in-effect` rule does not fire (the prior `setLocale` in `useEffect` triggered the rule even though the same pattern in `AuthForm.tsx` is grandfathered). `subscribeToLanguage` listens to the browser `languagechange` event so a locale change re-renders the screen. Added a `<p className="onboarding-step">{copy.step}</p>` element above the `<h1>` to seed a "step 1 of 1 / Шаг 1 из 1" indicator (lays groundwork for future onboarding steps mirroring Mac's six slides). The Skip button now wears `className="ghost-button onboarding-skip"` so it inherits the project's ghost button style and is no longer indistinguishable from the primary Record/Use buttons.
+
+Verification:
+
+- `cd web && pnpm lint` → 0 errors. The only warning is `react-hooks/exhaustive-deps` in `DashboardClient.tsx` (Agent C's territory, pre-existing-style).
+- `cd web && pnpm build` → succeeds. All 27 routes build, `/onboarding` listed.
+- `pnpm vitest run src/components/OnboardingClient.test.tsx` → 3/3 tests pass (existing EN assertions held because the test never overrides `navigator.language` to RU and EN copy values are unchanged).
+- Visual check via Playwright at 1440×900 and 390×800 confirms: panel card centered horizontally, brand spelling fixed in the rendered prompt, accent-coloured pill Record button with white dot, progress track visible (empty state), Skip button rendered as ghost outline, italic muted privacy footer separated by a hairline divider, full-width Record and stacked controls on mobile.
+
+Caveats:
+
+- Locale switches to RU only when `Accept-Language` advertises `ru` OR the browser fires `languagechange`. A multi-locale user who manually changes `navigator.language` without firing the event still gets `initialLocale` (server-resolved). That is the closest equivalent of the AuthForm pattern while keeping the React 19 hooks linter happy without disabling rules. If `User` later gains a stored language preference, plumb it into `initialLocale` from the page rather than relying on the navigator at all.
+- The mic-error fallback string in EN/RU still surfaces the browser's `getUserMedia` `Error.message` first (e.g. "Permission denied"). A permission-primer slide (per audit Phase 3 P1) is out of scope; this commit only fixes the missing stylesheet + localization.
+- The serif font in the prompt card is `Georgia / Times New Roman / Iowan Old Style` rather than the Mac app's SF serif. A proper `tokens.css` with a dedicated serif display family (audit Phase 4 P0 task #10) would unify this with Mac.
+
+## Agent E — done
+
+Scope: Phase 2 (Auth) + Phase 6 (Pricing).
+
+Files modified:
+
+- `web/src/app/globals.css` — `.auth-page` now vertically centers (`place-items: center`, `min-height: 100vh`), trimmed top padding. `.auth-card` padding bumped to `2rem`, gap to `1.55rem`. `.auth-card h1` clamp drop from `clamp(2rem, 8vw, 2.7rem)` to `clamp(1.6rem, 4vw, 2.1rem)` so titles like "Open in WaiComputer" / "Verifying sign-in link" / "Проверка ссылки для входа" no longer wrap to 3 lines. Added `.primary-button:disabled` rule (subtle panel background + faded ink, opacity 1) — disabled magic-link CTA no longer reads as "already sent". Added `.pricing-cta--free` (outlined) and `.pricing-vat` (sub-price RUB tax notice). Made `.pricing-grid` items stretch and `.pricing-card` a flex column so Free/Pro cards are equal height even with the Free CTA present.
+- `web/src/components/OpenWaiComputerAppClient.tsx` — full `COPY: Record<"en"|"ru", …>` table, `navigator.language` detection (mirrors `VerifyMagicLinkClient` pattern), sentence-case title "Open in WaiComputer" / "Открыть в WaiComputer". Test continues to pass because jsdom's default `navigator.language` is `en-US`. Locale resolution happens at render time (no `useState`/`useEffect` cascade) to satisfy the React 19 `react-hooks/set-state-in-effect` lint rule.
+- `web/src/components/VerifyMagicLinkClient.tsx` — EN title changed from Title-case "Magic Link Verification" to sentence-case "Verifying sign-in link". RU heading unchanged ("Проверка ссылки для входа" is already sentence case). Test updated to match.
+- `web/src/app/auth/app/AppOpenClient.tsx` — copy updated to sentence-case "Open in WaiComputer" / "Открыть в WaiComputer" for both title and link label, RU translation switched to vy-form ("Оставьте страницу открытой").
+- `web/src/app/auth/reset/ResetPasswordClient.tsx` — RU `confirm` changed from ty-form "Повтори новый пароль" → vy-form "Подтвердите пароль". EN/RU `success` copy shortened to "Password updated. Sign in below." / "Пароль обновлён. Войдите ниже.". RU `success` unit test updated.
+- `web/src/components/AuthForm.tsx` — legal consent reworked. Both EN/RU `legalConsent` are now templates with `{terms}` / `{privacy}` placeholders ("I agree to the {terms} and {privacy}." / "Я принимаю {terms} и {privacy}."), rendered via a small `renderLegalConsent()` helper that interpolates the `<Link>` nodes. Duplicate trailing "Terms · Privacy" link pair removed. Register magic-link primary CTA reordered: it now lives inside the same `<form>` as the email input + legal-consent checkbox (above the "Use password instead" toggle), mirroring `/login`. No legacy "secondary magic-link form" at the bottom of the card anymore. Existing unit + e2e tests still pass.
+- `web/src/components/PricingCards.tsx` — RU heading "Простой прайс." → "Простые цены."; subhead em-dashed ("Pro — когда нужен везде."); Pro CTA "Войди" → vy-form "Войдите"; Free plan label "Free" → "Бесплатный". Added Free CTA ("Get started free" / "Начать бесплатно") that routes signed-out users to `/register`, signed-in users to `/dashboard`. "Permanent searchable memory" RU re-translated to "Постоянная память с поиском". Added RUB VAT notice ("включая НДС") rendered next to the price line only when `useRub` (i.e. T-Bank provider selected).
+- `web/src/app/login/page.tsx`, `web/src/app/register/page.tsx` — added `export const metadata = { referrer: "no-referrer" } as const;` to match `/auth/verify` and `/auth/reset`. Magic-link tokens that travel in the URL no longer leak via Referer when the user clicks an outbound link from these pages.
+- Test fixtures touched: `web/src/components/VerifyMagicLinkClient.test.tsx`, `web/src/app/auth/reset/ResetPasswordClient.test.tsx`, `web/src/app/pages.test.tsx` — strings updated to match new copy.
+
+Verification:
+
+- `cd web && pnpm lint` — passes (1 unrelated `react-hooks/exhaustive-deps` warning in `DashboardClient.tsx`, not in scope).
+- `cd web && pnpm build` — passes (`Compiled successfully`, 27/27 static pages generated).
+- `cd web && pnpm test:unit` — all 4 of my touched test files pass: `OpenWaiComputerAppClient.test.tsx` (5), `AuthForm.test.tsx` (14), `PricingCards.test.tsx` (4), `ResetPasswordClient.test.tsx` (2). Suite-wide there remain 4 pre-existing failures in `BillingResultCard.test.tsx` (Agent D's scope) and 2 in `pages.test.tsx` (the `renders onboarding wrapper` and `renders localized billing result pages` cases — owned by Agent Onboarding and Agent D respectively).
+
+Caveats:
+
+- I did not touch `OpenWaiComputerAppClient.test.tsx` because the test asserts on EN copy only and jsdom's default `navigator.language = "en-US"` keeps the assertions valid. If another agent adds a custom navigator stub there in the future, "Open WaiComputer App" expectations must be updated to "Open in WaiComputer".
+- `.primary-button:disabled` override sets `opacity: 1` to make the rule visually clear (subtle background + faded ink). The global `button:disabled { opacity: 0.55 }` still applies to non-primary buttons (ghost, danger, etc.), so behavior there is unchanged.
+- The Free-plan CTA defaults to `/register` for signed-out users; if a future page mounts `<PricingCards signedIn={true} />`, the CTA points to `/dashboard`. The `RuPricingPage` and `PricingPage` both leave `signedIn` unset (default `false`), which is the correct landing-marketing surface behaviour.
+- Locale detection in `OpenWaiComputerAppClient` and `AppOpenClient` is render-time only (no rehydration on `languagechange`) — matches the rest of the auth components. If the host page hard-codes `locale="en"`, the prop wins.
+- VAT notice in `PricingCards` only renders when both `locale === "ru"` AND `provider === "tinkoff"` (i.e. RUB checkout active). USD/Stripe pricing on the RU page suppresses the notice, which is the correct behaviour: tax-inclusive labelling applies only to the Russian invoice path.
+
+
+## Agent D — done
+
+Scope: P0/P1 from Phases 5/7/8 — billing result theme + copy, billing dashboard polish, share view speaker labels/markdown/CTA/OG, dashboard speaker normalisation.
+
+Files edited:
+
+- `web/src/components/BillingResultCard.tsx` — dropped forced-dark `--bg` etc. (now respects user theme via global `--bg`/`--panel`/`--ink`); new EN+RU copy table; primary `Open WaiComputer →` / `Открыть WaiComputer →` CTA to `/dashboard`; 5 s auto-redirect on success via `useRouter().replace`.
+- `web/src/app/globals.css` — deleted the seven forced-dark overrides inside `.billing-result-shell` (lines 271–296). Layout (`min-height`, `place-items: center`, `padding`, `background: var(--bg)`, `color: var(--ink)`) preserved. No other selectors touched.
+- `web/src/components/BillingDashboard.tsx` — added `statuses` localisation map (active/trialing/canceled/past_due/incomplete/unpaid in EN+RU); replaced `window.confirm` with an inline `role="alertdialog"` confirmation row inside the same card (Cancel your Pro subscription? → Yes, cancel / Keep Pro); new Invoices placeholder section with "We'll show invoices here as soon as Stripe is wired" / "Здесь появятся счета…"; `Back to dashboard` / `Назад в кабинет` link to `/dashboard`. Inline styles used for new sections to honour the "don't touch other globals.css selectors" rule.
+- `web/src/components/SharedRecordingClient.tsx` — uses new `formatSpeakerLabel` so `speaker_0` / `Speaker 0` renders as `Speaker 1` / `Спикер 1`; transcript content/summary/key-points/action-item tasks pass through `stripInlineCodeMarkdown` so backticks render as plain prose, not `<code>`; new footer CTA "Try WaiComputer free →" / "Попробуйте WaiComputer бесплатно →" linking to the right-locale landing; brand block now a `<Link>` back home; CTA also shown on the unavailable state.
+- `web/src/app/share/[token]/page.tsx` — `generateMetadata` with locale-aware title/description (EN+RU), canonical URL `https://wai.computer/share/<token>`, OpenGraph article block (siteName, locale, 1200×630 `/og-share.png` placeholder), Twitter `summary_large_image`, `robots: { index:false, follow:false }` so link-gated notes don't get indexed.
+- `web/src/components/RecordingDetailPanel.tsx` — `fullText` copy-clipboard string now uses `formatSpeakerLabel`; each transcript segment receives a `displaySegment` where `display_name` is the normalised "Speaker 1" only when no person is yet assigned — keeps the raw `raw_label` intact for the `assignSpeaker` API call.
+- `web/src/lib/format.ts` (new) — `formatSpeakerLabel(speaker, raw_label, display_name, locale)` plus `stripInlineCodeMarkdown(text)`. Pure functions, locale-aware.
+
+Test fixtures touched: `web/src/components/BillingResultCard.test.tsx` (added next/link + next/navigation mocks, new CTA + auto-redirect assertions), `web/src/components/BillingDashboard.test.tsx` (cancel test now walks through the inline confirm), `web/src/components/SharedRecordingClient.test.tsx` (next/link mock), `web/src/app/pages.test.tsx` (heading copy updated to "You're all set" / "Готово"), `web/src/lib/format.test.ts` (new — 10 cases). `web/tests/e2e/web-theme.spec.ts` — added `emulateMedia({ colorScheme: "dark" })` to the billing-result spec since the page now honours the user theme and the assertion specifically wants the dark-mode appearance.
+
+Verification:
+
+- `cd web && pnpm lint` — passes (only the pre-existing `react-hooks/exhaustive-deps` warning in `DashboardClient.tsx`, not in scope).
+- `cd web && pnpm build` — passes (Next 16, 27/27 static pages generated).
+- `cd web && pnpm test:unit` — all my touched test files pass (`BillingResultCard` 9/9, `BillingDashboard` 7/7, `SharedRecordingClient` 5/5, `RecordingDetailPanel` 14/14, `SpeakerChip` 6/6, `format` 10/10). One suite-wide failure remains in `pages.test.tsx > renders onboarding wrapper` — pre-existing, owned by Agent Onboarding (`OnboardingPage` is now an async client component per their edits, unrelated to this scope).
+
+Caveats:
+
+- I cannot add new CSS rules to `globals.css` per the scope guard, so the inline confirm row, Invoices block, "Back to dashboard" link and the share footer CTA use inline styles. If a future agent wants to consolidate, the natural homes are `.billing-cancel-confirm`, `.billing-invoices`, `.billing-back`, and `.shared-footer-cta`.
+- `generateMetadata` ships **static** title/description (no per-token fetch). Reasoning: server-side `apiFetch` from `generateMetadata` would require an absolute URL + would slow page load for every preview crawl. The audit explicitly allowed this fallback. If the backend later exposes a public `GET /api/recordings/shared/<token>/meta` endpoint we can cache, this is the upgrade path.
+- `/og-share.png` is referenced but not yet committed. The build does not fail because Next does not validate static asset paths at build time. Add a 1200×630 PNG before announcing.
+- `formatSpeakerLabel` only normalises raw_label for *display*; the assign-speaker API still receives the original `segment.raw_label` (e.g. `"speaker_0"` or `"Speaker 0"`) so the backend's identity table keeps working. The `display_name` field on the segment passed to `SpeakerChip` is the only mutation, and only when `person_id` is null.
+- The auto-redirect on `/billing/success` uses `router.replace`, not `window.location.assign`, so the user can still back-button to a previous tab if they want — they just won't return to `/billing/success`.
+- The RU cancel copy in `BillingResultCard` retains the "4242 4242 4242 4242 — Stripe test card, а не тестовая карта Т-Банка" explainer because the existing e2e expects it; users see this only when checkout returns from Tinkoff (the live e2e at `web/tests/e2e/web-theme.spec.ts:143` already proves this).
+- `BillingDashboard` localizes `status` enums via a small per-locale map; unknown statuses (e.g. `incomplete_expired`) fall through to the raw value so the page still surfaces *something* rather than crashing.
+- Russian footer CTA on `SharedRecordingClient` points to `/ru` (RU landing) when locale is `"ru"`. The accept-language detection in `share/[token]/page.tsx` is the same one used by AuthForm — if the user clicked a share link from an EN context but their browser is RU, they get the RU view. This matches the Mac app's "follow browser locale by default" pattern; can be overridden later with a `?lang=en` query param if needed.

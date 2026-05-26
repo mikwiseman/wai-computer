@@ -29,7 +29,7 @@ const COPY: Record<
     missingToken: "Missing token.",
     genericFailure: "Verification failed.",
     verified: "Magic link verified. Redirecting...",
-    title: "Magic Link Verification",
+    title: "Verifying sign-in link",
     backToLogin: "Back to login",
   },
   ru: {

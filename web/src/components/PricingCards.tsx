@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { createBillingCheckout } from "@/lib/billing";
 
 type Locale = "en" | "ru";
@@ -21,6 +22,7 @@ const COPY: Record<
       name: string;
       price: string;
       features: string[];
+      cta: string;
     };
     pro: {
       name: string;
@@ -29,6 +31,7 @@ const COPY: Record<
       features: string[];
       cta: string;
       ctaInFlight: string;
+      vatNotice?: string;
     };
     signInPrompt: string;
     payWith: string;
@@ -51,6 +54,7 @@ const COPY: Record<
         "AI summaries on every recording",
         "Live dictation + meeting capture",
       ],
+      cta: "Get started free",
     },
     pro: {
       name: "Pro",
@@ -72,13 +76,13 @@ const COPY: Record<
     providerStripe: "USD via Stripe",
   },
   ru: {
-    heading: "Простой прайс.",
-    sub: "Бесплатно для повседневных голосовых заметок. Pro когда нужен везде.",
+    heading: "Простые цены.",
+    sub: "Бесплатно для повседневных голосовых заметок. Pro — когда нужен везде.",
     monthly: "Помесячно",
     yearly: "Годовая",
     save: "−20%",
     free: {
-      name: "Free",
+      name: "Бесплатный",
       price: "0 ₽",
       features: [
         "3 000 транскрибированных слов в неделю",
@@ -86,6 +90,7 @@ const COPY: Record<
         "AI-сводка к каждой записи",
         "Живая диктовка и запись встреч",
       ],
+      cta: "Начать бесплатно",
     },
     pro: {
       name: "Pro",
@@ -93,15 +98,16 @@ const COPY: Record<
       yearly: (a) => `${a} / год`,
       features: [
         "Без недельного лимита на слова",
-        "Память с поиском навсегда",
+        "Постоянная память с поиском",
         "Агенты + доступ к MCP",
         "Расширенный поиск по всему",
         "Приоритетная поддержка",
       ],
       cta: "Оформить Pro",
       ctaInFlight: "Открываем оплату…",
+      vatNotice: "включая НДС",
     },
-    signInPrompt: "Войди, чтобы оформить Pro",
+    signInPrompt: "Войдите, чтобы оформить Pro",
     payWith: "Оплата через",
     providerTinkoff: "RUB через Т-Банк",
     providerStripe: "USD через Stripe",
@@ -199,6 +205,9 @@ export function PricingCards({
               <li key={f}>{f}</li>
             ))}
           </ul>
+          <Link className="pricing-cta pricing-cta--free" href={signedIn ? "/dashboard" : "/register"}>
+            {copy.free.cta}
+          </Link>
         </article>
 
         <article className="pricing-card pricing-card--pro">
@@ -208,6 +217,9 @@ export function PricingCards({
               ? copy.pro.yearly(proYearly)
               : copy.pro.monthly(proMonthly)}
           </p>
+          {useRub && copy.pro.vatNotice ? (
+            <p className="pricing-vat">{copy.pro.vatNotice}</p>
+          ) : null}
           <ul>
             {copy.pro.features.map((f) => (
               <li key={f}>{f}</li>

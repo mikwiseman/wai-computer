@@ -142,8 +142,9 @@ h4 {
 
 .auth-page {
   display: grid;
-  place-items: start center;
-  padding: clamp(2rem, 9vh, 6rem) 1rem 2rem;
+  place-items: center;
+  min-height: 100vh;
+  padding: clamp(1.5rem, 4vh, 3rem) 1rem;
 }
 
 .card {
@@ -170,12 +171,12 @@ h4 {
 .auth-card {
   display: grid;
   width: min(100%, 430px);
-  gap: 1.3rem;
+  gap: 1.55rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  padding: 1.25rem;
+  padding: 2rem;
 }
 
 .auth-card--compact {
@@ -202,8 +203,8 @@ h4 {
 }
 
 .auth-card h1 {
-  font-size: clamp(2rem, 8vw, 2.7rem);
-  line-height: 0.98;
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  line-height: 1.1;
 }
 
 .auth-form {
@@ -268,13 +269,6 @@ h4 {
 }
 
 .billing-result-shell {
-  --bg: #101214;
-  --panel: #171a1d;
-  --ink: #f3f5f2;
-  --ink-soft: #c2cac7;
-  --accent-strong: #96e4d8;
-  --border: #30383b;
-  --shadow: 0 20px 56px rgba(0, 0, 0, 0.34);
   min-height: 100vh;
   display: grid;
   place-items: center;
@@ -337,6 +331,19 @@ a.primary-button {
 .primary-button:hover,
 a.primary-button:hover {
   background: var(--accent-strong);
+}
+
+.primary-button:disabled,
+a.primary-button[aria-disabled="true"] {
+  background: var(--panel-subtle);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.primary-button:disabled:hover,
+a.primary-button[aria-disabled="true"]:hover {
+  background: var(--panel-subtle);
 }
 
 .ghost-button,
@@ -1635,6 +1642,7 @@ a.primary-button:hover {
   gap: 1.5rem;
   max-width: 720px;
   margin: 0 auto;
+  align-items: stretch;
 }
 
 .pricing-card {
@@ -1642,6 +1650,12 @@ a.primary-button:hover {
   border-radius: 8px;
   padding: 2rem;
   background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.pricing-card ul {
+  flex: 1;
 }
 
 .pricing-card--pro {
@@ -1694,6 +1708,24 @@ a.primary-button:hover {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  text-align: center;
+}
+
+.pricing-cta--free {
+  background: transparent;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.pricing-cta--free:hover {
+  background: var(--panel-subtle);
+  border-color: var(--border-strong);
+}
+
+.pricing-vat {
+  margin: -0.85rem 0 1.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
 }
 
 .pricing-provider,
