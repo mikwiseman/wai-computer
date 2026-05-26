@@ -68,10 +68,17 @@ rsync \
   --exclude 'android/.gradle/' \
   --exclude 'android/build/' \
   --exclude 'android/app/build/' \
+  --exclude 'artifacts/' \
+  --exclude 'desktop/**/bin/' \
+  --exclude 'desktop/**/obj/' \
+  --exclude 'linux/**/bin/' \
+  --exclude 'linux/**/obj/' \
   --exclude 'macos/WaiComputer/build/' \
   --exclude 'shared/WaiComputerKit/.build/' \
   --exclude 'scripts/nightly/.venv/' \
   --exclude 'scripts/nightly/.artifacts/' \
+  --exclude 'windows/**/bin/' \
+  --exclude 'windows/**/obj/' \
   --exclude 'backups/' \
   --exclude 'releases/' \
   -e "ssh -i ${SSH_KEY_PATH} -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
