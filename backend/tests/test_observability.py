@@ -592,13 +592,73 @@ def test_capture_sentry_message_without_extras(monkeypatch: pytest.MonkeyPatch):
     assert captured["level"] == "error"
 
 
+def test_capture_sentry_anomaly_sets_alert_code_tag_and_breadcrumb(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {"breadcrumbs": []}
+
+    class DummyScope:
+        def __init__(self) -> None:
+            self.extras: dict[str, object] = {}
+            self.tags: dict[str, str] = {}
+
+        def set_extra(self, key: str, value: object) -> None:
+            self.extras[key] = value
+
+        def set_tag(self, key: str, value: str) -> None:
+            self.tags[key] = value
+
+    class DummyScopeManager:
+        def __enter__(self) -> DummyScope:
+            scope = DummyScope()
+            captured["scope"] = scope
+            return scope
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    monkeypatch.setattr(observability.sentry_sdk, "new_scope", lambda: DummyScopeManager())
+    monkeypatch.setattr(
+        observability.sentry_sdk,
+        "capture_message",
+        lambda message, *, level: captured.update({"message": message, "level": level}),
+    )
+    monkeypatch.setattr(
+        observability.sentry_sdk,
+        "add_breadcrumb",
+        lambda **kwargs: captured["breadcrumbs"].append(kwargs),
+    )
+
+    observability.capture_sentry_anomaly(
+        "recording.file_stt.slow",
+        "File transcription is slow for alice@example.com",
+        category="recording",
+        extras={
+            "query": "private search terms",
+            "filename": "secret-meeting.wav",
+            "latency_ms": 120_500,
+        },
+    )
+
+    scope = captured["scope"]
+    assert isinstance(scope, DummyScope)
+    assert captured["message"].startswith("File transcription is slow for [redacted-email:")
+    assert captured["level"] == "warning"
+    assert scope.tags["alert_code"] == "recording.file_stt.slow"
+    assert scope.extras["alert_code"] == "recording.file_stt.slow"
+    assert scope.extras["query"].startswith("[redacted-text:")
+    assert scope.extras["filename"].startswith("[redacted-filename:")
+    assert captured["breadcrumbs"][-1]["category"] == "recording"
+    assert captured["breadcrumbs"][-1]["data"]["alert_code"] == "recording.file_stt.slow"
+
+
 def test_get_release_version_handles_git_results(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         observability.subprocess,
         "run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="abc123\n"),
     )
-    assert observability.get_release_version() == "waicomputer@abc123"
+    assert observability.get_release_version() == "waicomputer-backend@abc123"
 
     monkeypatch.setattr(
         observability.subprocess,

@@ -30,6 +30,11 @@ if [[ ! -f "$SSH_KEY_PATH" ]]; then
   exit 1
 fi
 
+if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+  echo "ERROR: SENTRY_AUTH_TOKEN is required to create Sentry release and deploy markers." >&2
+  exit 1
+fi
+
 echo "Syncing source to ${VPS_USER}@${VPS_HOST}:${REMOTE_ROOT} ..."
 
 ssh \
@@ -93,5 +98,8 @@ ssh \
   -o StrictHostKeyChecking=accept-new \
   "${VPS_USER}@${VPS_HOST}" \
   "PROD_ROOT='${REMOTE_ROOT}' PROD_ENV_FILE='${REMOTE_ENV_FILE}' GIT_SHA='${GIT_SHA}' GIT_DIRTY='${GIT_DIRTY}' bash '${REMOTE_ROOT}/scripts/server-build.sh'"
+
+SENTRY_ORG=${SENTRY_ORG:-waiwai-diy} scripts/sentry-release.sh "waicomputer-backend" "waicomputer-backend@${GIT_SHA}" production
+SENTRY_ORG=${SENTRY_ORG:-waiwai-diy} scripts/sentry-release.sh "waicomputer-web" "waicomputer-web@${GIT_SHA}" production
 
 echo "Deployment completed."

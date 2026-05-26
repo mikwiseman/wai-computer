@@ -325,7 +325,7 @@ def get_release_version() -> str | None:
             timeout=5,
         )
         if result.returncode == 0:
-            return f"waicomputer@{result.stdout.strip()}"
+            return f"waicomputer-backend@{result.stdout.strip()}"
     except Exception:
         pass
     return None

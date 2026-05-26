@@ -48,6 +48,12 @@ require_env_key() {
   fi
 }
 
+read_env_key() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { value = substr($0, length(key) + 2) } END { print value }' "$PROD_ENV_FILE" \
+    | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
 docker_compose() {
   docker compose --env-file "$PROD_ENV_FILE" "$@"
 }
@@ -88,9 +94,14 @@ require_env_key FRONTEND_URL
 require_env_key CORS_ORIGINS
 require_env_key ELEVENLABS_API_KEY
 require_env_key AUTH_COOKIE_DOMAIN
+require_env_key SENTRY_DSN
+require_env_key SENTRY_AUTH_TOKEN
 
 cd "$PROD_ROOT/backend"
 export WAICOMPUTER_ENV_FILE="$PROD_ENV_FILE"
+export SENTRY_AUTH_TOKEN
+SENTRY_AUTH_TOKEN=$(read_env_key SENTRY_AUTH_TOKEN)
+export SENTRY_UPLOAD_REQUIRED=1
 
 docker_compose config >/dev/null
 docker_compose build api web celery-worker

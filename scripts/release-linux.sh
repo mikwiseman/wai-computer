@@ -75,6 +75,8 @@ dotnet publish linux/WaiComputer.Linux/WaiComputer.Linux.csproj \
   --no-restore \
   -o "$PUBLISH_DIR"
 
+"$REPO_ROOT/scripts/sentry-upload-debug-files.sh" waicomputer-linux "$PUBLISH_DIR"
+
 vpk pack \
   --packId is.waiwai.computer \
   --packTitle WaiComputer \

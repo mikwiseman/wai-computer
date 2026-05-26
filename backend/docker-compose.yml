@@ -104,6 +104,10 @@ services:
         # Next.js rewrites are resolved during build, so the upstream must be present here too.
         API_BASE_URL: http://api:8000
         NEXT_PUBLIC_API_BASE_URL: ""
+        SENTRY_RELEASE: waicomputer-web@${GIT_SHA:-local}
+        SENTRY_UPLOAD_REQUIRED: ${SENTRY_UPLOAD_REQUIRED:-0}
+      secrets:
+        - sentry_auth_token
     container_name: waicomputer-web
     environment:
       # Next rewrites should proxy straight to the backend service inside Docker.
@@ -232,3 +236,7 @@ networks:
     driver: bridge
   web:
     driver: bridge
+
+secrets:
+  sentry_auth_token:
+    environment: SENTRY_AUTH_TOKEN

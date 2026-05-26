@@ -38,6 +38,32 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $csproj = Join-Path $root "WaiComputer/WaiComputer.csproj"
 
+function Require-SentryAuth {
+    if (-not $env:SENTRY_AUTH_TOKEN) {
+        throw "SENTRY_AUTH_TOKEN is required to upload Windows debug files to Sentry."
+    }
+}
+
+function Invoke-SentryCli {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$Arguments
+    )
+
+    if (Get-Command sentry-cli -ErrorAction SilentlyContinue) {
+        & sentry-cli @Arguments
+        return
+    }
+
+    if (Get-Command npx -ErrorAction SilentlyContinue) {
+        $version = if ($env:SENTRY_CLI_NPM_VERSION) { $env:SENTRY_CLI_NPM_VERSION } else { "3.4.3" }
+        & npx -y "@sentry/cli@$version" @Arguments
+        return
+    }
+
+    throw "sentry-cli or npx is required to upload Windows debug files to Sentry."
+}
+
 if (-not $Version) {
     $xml = [xml](Get-Content $csproj)
     $Version = $xml.Project.PropertyGroup.Version
@@ -55,6 +81,17 @@ try {
         --self-contained=false `
         -p:WindowsAppSDKSelfContained=true `
         -o publish/win-x64
+
+    Require-SentryAuth
+    $sentryOrg = if ($env:SENTRY_ORG) { $env:SENTRY_ORG } else { "waiwai-diy" }
+    Invoke-SentryCli @(
+        "debug-files",
+        "upload",
+        "--org", $sentryOrg,
+        "--project", "waicomputer-windows",
+        "--wait",
+        "publish/win-x64"
+    )
 
     $packArgs = @(
         "pack",

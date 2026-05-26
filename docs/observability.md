@@ -31,6 +31,22 @@ The admin observability snapshot is aggregate-only. It includes:
 
 Alertable business anomalies must set `alert_code` in Sentry extras. The helper copies it to a Sentry tag.
 
+## Sentry Projects
+
+All WaiComputer surfaces must point at WaiComputer Sentry projects in the `waiwai-diy` organization, not the older `waisay-*` projects.
+
+| Surface | Sentry project | Project ID |
+| --- | --- | --- |
+| Backend API and worker | `waicomputer-backend` | `<sentry-project-id>` |
+| Web | `waicomputer-web` | `<sentry-project-id>` |
+| iOS | `waicomputer-ios` | `<sentry-project-id>` |
+| macOS | `waicomputer-macos` | `<sentry-project-id>` |
+| Android | `waicomputer-android` | `<sentry-project-id>` |
+| Windows | `waicomputer-windows` | `<sentry-project-id>` |
+| Linux | `waicomputer-linux` | `<sentry-project-id>` |
+
+Production backend env must contain `SENTRY_DSN=<backend DSN ending in /<sentry-project-id>>`. Production builds also require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are uploaded during release.
+
 Current alert codes:
 
 - `recording.processing.stuck`

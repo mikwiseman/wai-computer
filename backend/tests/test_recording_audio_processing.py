@@ -220,6 +220,122 @@ async def test_process_staged_recording_upload_preserves_client_duration(
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_alerts_when_processing_is_slow(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-processing-slow@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "slow-processing.wav"
+    staged_path.write_bytes(b"audio")
+    staged_size = staged_path.stat().st_size
+    transcript_results = [
+        TranscriptResult(
+            text="Slow processing completed.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=60_000,
+            confidence=0.94,
+        )
+    ]
+    tick = iter([0.0, 301.0])
+    sentry_anomalies: list[dict[str, object]] = []
+    sentry_breadcrumbs: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.perf_counter",
+        lambda: next(tick),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Slow Processing"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.add_sentry_breadcrumb",
+        lambda **kwargs: sentry_breadcrumbs.append(kwargs),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+        client_duration_seconds=60,
+        staged_size_bytes=staged_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert sentry_anomalies == [
+        {
+            "alert_code": "recording.processing.slow",
+            "message": "Recording processing latency exceeded threshold",
+            "category": "recording",
+            "extras": {
+                "recording_id": str(recording.id),
+                "latency_ms": 301_000,
+                "slow_threshold_ms": 300_000,
+                "audio_duration_seconds": None,
+                "client_duration_seconds": 60,
+                "effective_duration_seconds": 60,
+                "staged_size_bytes": staged_size,
+                "segment_count": 1,
+            },
+            "level": "warning",
+        }
+    ]
+    assert any(
+        item.get("message") == "Recording processing completed"
+        for item in sentry_breadcrumbs
+    )
+    assert "Slow processing completed" not in repr(sentry_anomalies)
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_skips_ready_recording(
     db_session: AsyncSession,
     tmp_path,
