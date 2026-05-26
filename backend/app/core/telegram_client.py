@@ -40,9 +40,7 @@ class TelegramBotClient:
     @staticmethod
     def _parse_response(method: str, response: httpx.Response) -> dict[str, Any]:
         if response.status_code >= 400:
-            raise TelegramClientError(
-                f"Telegram {method} returned HTTP {response.status_code}"
-            )
+            raise TelegramClientError(f"Telegram {method} returned HTTP {response.status_code}")
         data = response.json()
         if not data.get("ok"):
             description = str(data.get("description") or "request failed")
@@ -140,6 +138,17 @@ class TelegramBotClient:
 
     async def delete_my_commands(self) -> None:
         await self._post("deleteMyCommands", {})
+
+    async def set_my_commands(
+        self,
+        commands: list[dict[str, str]],
+        *,
+        language_code: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"commands": commands}
+        if language_code is not None:
+            payload["language_code"] = language_code
+        await self._post("setMyCommands", payload)
 
     async def download_file(self, file: TelegramFile) -> bytes:
         try:

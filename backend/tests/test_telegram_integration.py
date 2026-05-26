@@ -97,9 +97,7 @@ async def test_consume_pairing_links_telegram_account(db_session: AsyncSession):
 
     assert "Готово" in message
     account = (
-        await db_session.execute(
-            select(TelegramAccount).where(TelegramAccount.user_id == user.id)
-        )
+        await db_session.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     ).scalar_one()
     assert account.telegram_user_id == 12345
     assert account.username == "mik"
@@ -151,9 +149,7 @@ def test_extract_media_accepts_voice_video_and_audio_documents():
         == "document"
     )
     assert (
-        telegram_routes._extract_media(
-            {"document": {"file_id": "doc-id", "file_name": "x.pdf"}}
-        )
+        telegram_routes._extract_media({"document": {"file_id": "doc-id", "file_name": "x.pdf"}})
         is None
     )
 
@@ -251,17 +247,27 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
         await db_session.execute(select(Recording).where(Recording.id == result.recording.id))
     ).scalar_one()
     segments = (
-        await db_session.execute(select(Segment).where(Segment.recording_id == recording.id))
-    ).scalars().all()
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
     summary = (
         await db_session.execute(select(Summary).where(Summary.recording_id == recording.id))
     ).scalar_one()
     action_items = (
-        await db_session.execute(select(ActionItem).where(ActionItem.recording_id == recording.id))
-    ).scalars().all()
+        (
+            await db_session.execute(
+                select(ActionItem).where(ActionItem.recording_id == recording.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     highlights = (
-        await db_session.execute(select(Highlight).where(Highlight.recording_id == recording.id))
-    ).scalars().all()
+        (await db_session.execute(select(Highlight).where(Highlight.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
     assert len(segments) == 1
     assert segments[0].content == "Привет из Telegram"
     assert summary.summary == "Короткое саммари."
@@ -369,8 +375,7 @@ def test_telegram_import_response_helpers():
         == "refleksiya-21-nedelya-17-23-maya.txt"
     )
     assert (
-        telegram_routes._safe_transcript_filename("!!!", media_kind="voice")
-        == "telegram-voice.txt"
+        telegram_routes._safe_transcript_filename("!!!", media_kind="voice") == "telegram-voice.txt"
     )
     assert telegram_routes._sent_message_id("not-dict") is None
 
@@ -494,13 +499,129 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
         arg="",
     )
 
-    assert "уже привязан" in capture.messages[0]["text"]
+    assert "Telegram привязан" in capture.messages[0]["text"]
+    assert "/meetings" in capture.messages[0]["text"]
     assert "код" in capture.messages[1]["text"]
     assert (
         await db_session.execute(
             select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 999)
         )
     ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_handle_update_routes_help_meetings_actions_and_natural_search(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-commands@example.com")
+    other = await _user(db_session, "telegram-commands-other@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=60, telegram_chat_id=60)
+    db_session.add(account)
+    meeting = Recording(
+        user_id=user.id,
+        title="Roadmap Sync",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        duration_seconds=184,
+        language="ru",
+    )
+    meeting.created_at = datetime(2026, 5, 24, 10, 0, tzinfo=timezone.utc)
+    note = Recording(user_id=user.id, title="Private note", type="note", language="ru")
+    deleted_meeting = Recording(user_id=user.id, title="Deleted meeting", type="meeting")
+    deleted_meeting.deleted_at = datetime(2026, 5, 25, tzinfo=timezone.utc)
+    other_meeting = Recording(user_id=other.id, title="Other meeting", type="meeting")
+    db_session.add_all([meeting, note, deleted_meeting, other_meeting])
+    await db_session.flush()
+    db_session.add(Segment(recording_id=meeting.id, content="Дорожная карта и запуск", start_ms=0))
+    db_session.add(ActionItem(recording_id=meeting.id, task="Подготовить релиз", status="pending"))
+    db_session.add(ActionItem(recording_id=meeting.id, task="Старая задача", status="completed"))
+    for update_id in (201, 202, 203, 204, 205):
+        db_session.add(
+            TelegramUpdate(
+                update_id=update_id,
+                status="accepted",
+                received_at=datetime.now(timezone.utc),
+            )
+        )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    async def send_text(update_id: int, text: str) -> None:
+        await telegram_routes._handle_update(
+            {
+                "update_id": update_id,
+                "message": {
+                    "message_id": update_id,
+                    "from": {"id": 60, "username": "mik"},
+                    "chat": {"id": 60, "type": "private"},
+                    "text": text,
+                },
+            }
+        )
+
+    await send_text(201, "/help")
+    await send_text(202, "/meetings")
+    await send_text(203, "покажи последние встречи")
+    await send_text(204, "что я обещал")
+    await send_text(205, "найди запуск")
+
+    assert "/meetings" in capture.messages[0]["text"]
+    assert "Roadmap Sync" in capture.messages[1]["text"]
+    assert "Private note" not in capture.messages[1]["text"]
+    assert "Deleted meeting" not in capture.messages[1]["text"]
+    assert "Roadmap Sync" in capture.messages[2]["text"]
+    assert "Подготовить релиз" in capture.messages[3]["text"]
+    assert "Старая задача" not in capture.messages[3]["text"]
+    assert "запуск" in capture.messages[4]["text"]
+    assert (await db_session.get(TelegramUpdate, 205)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_handle_update_rejects_private_data_in_group_chat(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-group@example.com")
+    db_session.add(TelegramAccount(user_id=user.id, telegram_user_id=61, telegram_chat_id=61))
+    db_session.add(
+        TelegramUpdate(
+            update_id=206,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 206,
+            "message": {
+                "message_id": 206,
+                "from": {"id": 61, "username": "mik"},
+                "chat": {"id": -10061, "type": "group"},
+                "text": "покажи встречи",
+            },
+        }
+    )
+
+    assert "личный чат" in capture.messages[-1]["text"]
+    assert (await db_session.get(TelegramUpdate, 206)).status == "completed"
 
 
 @pytest.mark.asyncio
@@ -617,9 +738,7 @@ async def test_handle_text_message_reuses_wai_conversation(
 
     assert capture.messages[-1]["text"] == "Ответ Wai"
     conversation = (
-        await db_session.execute(
-            select(Conversation).where(Conversation.user_id == user.id)
-        )
+        await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
     assert conversation.title == "Telegram"
     assert account.companion_conversation_id == conversation.id
@@ -990,7 +1109,7 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     assert (await db_session.get(TelegramUpdate, 102)).status == "completed"
     assert (await db_session.get(TelegramUpdate, 103)).status == "completed"
     assert "Сначала привяжи" in capture.messages[0]["text"]
-    assert "Команды в боте не нужны" in capture.messages[1]["text"]
+    assert "/meetings" in capture.messages[1]["text"]
     failed = await db_session.get(TelegramUpdate, 106)
     assert failed.status == "failed"
     assert failed.error_code == "TelegramClientError"
@@ -1582,6 +1701,28 @@ async def test_telegram_client_can_clear_bot_commands():
 
     assert client_mock.post.await_args.args[0].endswith("/deleteMyCommands")
     assert client_mock.post.await_args.kwargs["json"] == {}
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_can_set_bot_commands():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": True}),
+        ],
+    )
+
+    commands = [
+        {"command": "start", "description": "Start"},
+        {"command": "help", "description": "Help"},
+    ]
+    with patcher:
+        await TelegramBotClient("token").set_my_commands(commands, language_code="en")
+
+    assert client_mock.post.await_args.args[0].endswith("/setMyCommands")
+    assert client_mock.post.await_args.kwargs["json"] == {
+        "commands": commands,
+        "language_code": "en",
+    }
 
 
 @pytest.mark.asyncio

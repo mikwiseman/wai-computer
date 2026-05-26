@@ -54,9 +54,7 @@ def _coerce_folder_ids(folder_ids: list[str] | None) -> list[UUID] | None:
     return [_as_uuid(value) for value in folder_ids]
 
 
-async def _user_folder_ids(
-    db: AsyncSession, user_uuid: UUID, requested: list[UUID]
-) -> list[UUID]:
+async def _user_folder_ids(db: AsyncSession, user_uuid: UUID, requested: list[UUID]) -> list[UUID]:
     """Return the subset of `requested` folder IDs that the user actually owns.
 
     Pruning unowned IDs here means cross-user data leaks turn into empty
@@ -187,9 +185,7 @@ async def search_recordings_for_mcp(
     }
 
 
-async def list_folders_for_mcp(
-    db: AsyncSession, user_id: str | UUID
-) -> dict:
+async def list_folders_for_mcp(db: AsyncSession, user_id: str | UUID) -> dict:
     """Return the user's folders with non-deleted recording counts.
 
     Used by agents to discover what folders exist before calling
@@ -227,6 +223,7 @@ async def list_recordings_for_mcp(
     user_id: str | UUID,
     *,
     folder_ids: list[str] | None = None,
+    recording_type: str | None = None,
     limit: int = 20,
     cursor: str | None = None,
 ) -> dict:
@@ -234,7 +231,8 @@ async def list_recordings_for_mcp(
 
     `folder_ids=None` returns every recording (filed and unfiled). A non-empty
     list narrows the result to those folders. An empty list is treated as
-    "no folders" and returns an empty page."""
+    "no folders" and returns an empty page. `recording_type` narrows the page
+    to one domain type such as "meeting"."""
     settings = get_settings()
     _validate_limit(limit, settings.mcp_max_search_results)
 
@@ -258,6 +256,8 @@ async def list_recordings_for_mcp(
     )
     if owned is not None:
         stmt = stmt.where(Recording.folder_id.in_(owned))
+    if recording_type is not None:
+        stmt = stmt.where(Recording.type == recording_type)
     if cursor is not None:
         cursor_created_at, cursor_id = _decode_cursor(cursor)
         stmt = stmt.where(
@@ -274,9 +274,7 @@ async def list_recordings_for_mcp(
     recordings = list(result.scalars().unique().all())
     has_more = len(recordings) > limit
     page = recordings[:limit]
-    next_cursor = (
-        _encode_cursor(page[-1].created_at, page[-1].id) if has_more and page else None
-    )
+    next_cursor = _encode_cursor(page[-1].created_at, page[-1].id) if has_more and page else None
 
     return {
         "results": [
