@@ -311,10 +311,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             "numberOfChannels": config.channels,
             "inactivityTimeoutSeconds": 60,
         ]
-        let terms = InworldProviderSession.cappedKeyTerms(keyTerms)
-        if !terms.isEmpty {
-            transcribeConfig["context"] = ["terms": terms]
-        }
+        InworldProviderSession.applyPromptHints(from: keyTerms, to: &transcribeConfig)
         return ["transcribeConfig": transcribeConfig]
     }
 
@@ -729,6 +726,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     func testingHasFinalizationMarker() -> Bool {
         finalizationMarkerReceived
+    }
+
+    func testingInworldTranscribeConfigPayload() -> [String: Any] {
+        inworldTranscribeConfigPayload()
     }
 
     func testingRequest() throws -> URLRequest {

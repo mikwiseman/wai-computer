@@ -568,10 +568,7 @@ public actor WebSocketManager {
             "numberOfChannels": sessionConfig.channels,
             "inactivityTimeoutSeconds": 60,
         ]
-        let cappedTerms = InworldProviderSession.cappedKeyTerms(keyTerms)
-        if !cappedTerms.isEmpty {
-            transcribeConfig["context"] = ["terms": cappedTerms]
-        }
+        InworldProviderSession.applyPromptHints(from: keyTerms, to: &transcribeConfig)
 
         let payload: [String: Any] = [
             "transcribeConfig": transcribeConfig

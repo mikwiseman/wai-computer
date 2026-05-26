@@ -34,6 +34,18 @@ final class InworldProviderSessionTests: XCTestCase {
         XCTAssertEqual(output, ["Real"])
     }
 
+    func testApplyPromptHintsUsesInworldPromptsField() {
+        var transcribeConfig: [String: Any] = ["modelId": "inworld/inworld-stt-1"]
+
+        InworldProviderSession.applyPromptHints(
+            from: ["  WaiComputer  ", "waicomputer", "Anthropic"],
+            to: &transcribeConfig
+        )
+
+        XCTAssertEqual(transcribeConfig["prompts"] as? [String], ["WaiComputer", "Anthropic"])
+        XCTAssertNil(transcribeConfig["context"])
+    }
+
     func testSafeReceivedTextFrameSummaryDoesNotExposeTranscriptText() {
         let payload = """
         {

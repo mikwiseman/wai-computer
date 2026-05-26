@@ -93,6 +93,15 @@ public actor InworldProviderSession: ProviderSession {
         return result
     }
 
+    static func applyPromptHints(from keyTerms: [String], to transcribeConfig: inout [String: Any]) {
+        let prompts = cappedKeyTerms(keyTerms)
+        guard !prompts.isEmpty else { return }
+
+        // Inworld STT reads contextual hints from top-level `prompts`.
+        // Soniox keeps using its provider-specific `context.terms` field.
+        transcribeConfig["prompts"] = prompts
+    }
+
     // MARK: - ProviderSession
 
     public func send(pcm16: Data) async throws {
@@ -199,10 +208,7 @@ public actor InworldProviderSession: ProviderSession {
             "numberOfChannels": channels,
             "inactivityTimeoutSeconds": 60,
         ]
-        let cappedTerms = Self.cappedKeyTerms(keyTerms)
-        if !cappedTerms.isEmpty {
-            transcribeConfig["context"] = ["terms": cappedTerms]
-        }
+        Self.applyPromptHints(from: keyTerms, to: &transcribeConfig)
         let configPayload: [String: Any] = [
             "transcribeConfig": transcribeConfig
         ]
