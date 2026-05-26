@@ -371,14 +371,14 @@ struct BillingSection: View {
     }
 
     private func displayWordsCap(usage: BillingUsage) -> Int? {
+        if subscription?.isPro == true {
+            return nil
+        }
         if let cap = usage.wordsCap {
             return cap
         }
         if let cap = subscription?.plan.wordCapPerWeek {
             return cap
-        }
-        if subscription?.isPro == true {
-            return currentProPlan()?.wordCapPerWeek
         }
         return plans.first(where: { $0.code == "free" })?.wordCapPerWeek
     }
@@ -615,6 +615,15 @@ struct BillingSection: View {
         }
         if message == "Active subscription already exists" {
             return String(localized: "billing.promo.error.activeSubscription", bundle: .main)
+        }
+        if message == "Promo code expired" {
+            return String(localized: "billing.promo.error.expired", bundle: .main)
+        }
+        if message == "Promo code exhausted" {
+            return String(localized: "billing.promo.error.exhausted", bundle: .main)
+        }
+        if message == "Promo code already redeemed" {
+            return String(localized: "billing.promo.error.alreadyRedeemed", bundle: .main)
         }
         return message.isEmpty
             ? String(localized: "billing.error.loadFailed", bundle: .main)

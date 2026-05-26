@@ -161,7 +161,7 @@ struct SearchResultRow: View {
                     Spacer()
                 }
 
-                if let speaker = result.speaker {
+                if let speaker = displaySpeaker {
                     Text(speaker)
                         .font(Typography.label)
                         .foregroundStyle(Palette.accent)
@@ -180,7 +180,21 @@ struct SearchResultRow: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityIdentifier(MacSearchPresentation.resultRowIdentifier(recordingId: result.recordingId))
+    }
+
+    private var displaySpeaker: String? {
+        SpeakerLabelCopy.userFacingLabel(result.speaker, languageCode: speakerLanguageCode)
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

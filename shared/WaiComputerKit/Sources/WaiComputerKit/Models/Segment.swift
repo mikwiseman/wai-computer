@@ -95,21 +95,30 @@ public enum SpeakerLabelCopy {
         guard let rawLabel else { return nil }
         let trimmed = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        guard prefersRussian(languageCode: languageCode) else { return trimmed }
-
+        let russian = prefersRussian(languageCode: languageCode)
         let normalized = trimmed.lowercased()
         if normalized == "you" {
-            return "Ты"
+            return russian ? "Ты" : "You"
         }
         if normalized == "speaker" {
-            return "Говорящий"
+            return russian ? "Говорящий" : "Speaker"
         }
-        if normalized.hasPrefix("speaker ") {
-            let suffix = String(trimmed.dropFirst("Speaker ".count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return suffix.isEmpty ? "Говорящий" : "Говорящий \(suffix)"
+        if let suffix = genericSpeakerSuffix(from: trimmed) {
+            return russian ? "Говорящий \(suffix)" : "Speaker \(suffix)"
         }
         return trimmed
+    }
+
+    private static func genericSpeakerSuffix(from rawLabel: String) -> String? {
+        let trimmed = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercase = trimmed.lowercased()
+        for prefix in ["speaker ", "speaker_", "speaker-"] {
+            guard lowercase.hasPrefix(prefix) else { continue }
+            let suffix = String(trimmed.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return suffix.isEmpty ? nil : suffix
+        }
+        return nil
     }
 
     private static func prefersRussian(languageCode: String?) -> Bool {

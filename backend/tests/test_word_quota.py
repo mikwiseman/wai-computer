@@ -78,7 +78,7 @@ async def _seed_pro_plan(db_session) -> Plan:
         code="pro",
         name="Pro",
         description="test seed",
-        word_cap_per_week=50000,
+        word_cap_per_week=None,
         memory_retention_days=None,
         features={"agents": True, "mcp": True, "advanced_search": True},
     )
@@ -167,7 +167,7 @@ async def test_free_user_blocked_when_estimate_would_exceed(db_session):
 
 
 @pytest.mark.asyncio
-async def test_pro_user_uses_higher_weekly_cap(db_session):
+async def test_pro_user_has_no_weekly_word_cap(db_session):
     await _seed_free_plan(db_session)
     pro = await _seed_pro_plan(db_session)
     user = await _make_user(db_session, "pro@example.test")
@@ -187,18 +187,18 @@ async def test_pro_user_uses_higher_weekly_cap(db_session):
     user.current_subscription_id = sub.id
     await db_session.flush()
 
-    result = await WordQuota.check(db_session, user, estimated_words=49_000)
+    result = await WordQuota.check(db_session, user, estimated_words=490_000)
     assert result.allowed is True
-    assert result.words_cap == 50_000
+    assert result.words_cap is None
 
-    rec = await WordQuota.record(db_session, user, words=49_000)
+    rec = await WordQuota.record(db_session, user, words=490_000)
     assert rec.allowed is True
-    assert rec.words_cap == 50_000
-    assert rec.words_used == 49_000
+    assert rec.words_cap is None
+    assert rec.words_used == 490_000
 
-    check = await WordQuota.check(db_session, user, estimated_words=1_001)
-    assert check.allowed is False
-    assert check.words_cap == 50_000
+    check = await WordQuota.check(db_session, user, estimated_words=1_000_000)
+    assert check.allowed is True
+    assert check.words_cap is None
 
 
 @pytest.mark.asyncio

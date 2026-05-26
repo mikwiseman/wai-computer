@@ -49,8 +49,10 @@ BEGIN
     END IF;
 
     INSERT INTO billing_promo_codes (
+        code,
         code_hash,
         plan_id,
+        promotion_type,
         billing_period,
         duration_days,
         max_redemptions,
@@ -58,8 +60,10 @@ BEGIN
         note
     )
     VALUES (
+        {sql_string(code)},
         {sql_string(hash_promo_code(code))},
         target_plan_id,
+        'access',
         {sql_string(args.period)},
         {args.duration_days},
         {args.max_redemptions},

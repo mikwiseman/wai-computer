@@ -10,13 +10,15 @@ struct MacContentView: View {
 
     var body: some View {
         Group {
-            if appState.isCheckingAuth {
+            if !appState.hasCompletedPreAuthOnboarding {
+                OnboardingView(phase: .preAuth)
+            } else if appState.isCheckingAuth {
                 ProgressView(t("Loading...", "Загрузка..."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !appState.isAuthenticated {
                 MacAuthView()
-            } else if !appState.hasCompletedOnboarding {
-                OnboardingView()
+            } else if !appState.hasCompletedPostAuthOnboarding {
+                OnboardingView(phase: .postAuth)
             } else {
                 MacMainView()
                     .overlay(alignment: .bottom) {
@@ -1345,24 +1347,15 @@ private struct CompletedRecordingTransitionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: Spacing.md) {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 12, height: 12)
-
-                Text(t("Saving transcript...", "Сохраняем расшифровку..."))
-                    .font(Typography.displaySmall)
-                    .foregroundStyle(Palette.textSecondary)
-
-                Spacer()
-
-                Text(formatDuration(transition.duration))
-                    .font(Typography.monoLarge)
-                    .foregroundStyle(Palette.textSecondary)
-
-                Text(recordingTypeLabel(transition.recordingType))
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.typeColor(transition.recordingType))
+            ViewThatFits(in: .horizontal) {
+                transitionHeaderRow
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    transitionTitle
+                    HStack(spacing: Spacing.md) {
+                        durationText
+                        recordingTypeText
+                    }
+                }
             }
             .padding(Spacing.lg)
 
@@ -1397,6 +1390,42 @@ private struct CompletedRecordingTransitionView: View {
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private var transitionHeaderRow: some View {
+        HStack(spacing: Spacing.md) {
+            transitionTitle
+            Spacer()
+            durationText
+            recordingTypeText
+        }
+    }
+
+    private var transitionTitle: some View {
+        HStack(spacing: Spacing.md) {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 12, height: 12)
+
+            Text(t("Saving transcript...", "Сохраняем расшифровку..."))
+                .font(Typography.displaySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
+        }
+    }
+
+    private var durationText: some View {
+        Text(formatDuration(transition.duration))
+            .font(Typography.monoLarge)
+            .foregroundStyle(Palette.textSecondary)
+            .lineLimit(1)
+    }
+
+    private var recordingTypeText: some View {
+        Text(recordingTypeLabel(transition.recordingType))
+            .font(Typography.label)
+            .foregroundStyle(Palette.typeColor(transition.recordingType))
+            .lineLimit(1)
     }
 
     private func recordingTypeLabel(_ type: RecordingType) -> String {
@@ -1641,7 +1670,7 @@ struct MacAuthView: View {
     }
 
     private var authLocale: String {
-        languageManager.current == .russian ? "ru" : "en"
+        languageManager.preferredLocale.language.languageCode?.identifier == "ru" ? "ru" : "en"
     }
 
     private func submit() {

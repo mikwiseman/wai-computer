@@ -32,8 +32,8 @@ def upgrade() -> None:
         sa.text(
             """
             UPDATE billing_plans
-            SET description = '50,000 transcribed words per week, permanent memory, agents, MCP, advanced search.',
-                word_cap_per_week = 50000
+            SET description = 'Unlimited transcription, permanent memory, agents, MCP, advanced search.',
+                word_cap_per_week = NULL
             WHERE code = 'pro'
             """
         )
@@ -64,8 +64,8 @@ def downgrade() -> None:
         sa.text(
             """
             UPDATE billing_plans
-            SET description = 'Unlimited transcription, permanent memory, agents, MCP, advanced search.',
-                word_cap_per_week = NULL
+            SET description = '50,000 transcribed words per week, permanent memory, agents, MCP, advanced search.',
+                word_cap_per_week = 50000
             WHERE code = 'pro'
             """
         )

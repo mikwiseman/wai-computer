@@ -31,3 +31,26 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         }
     }
 }
+
+enum OnboardingPhase {
+    case preAuth
+    case postAuth
+
+    var pages: [OnboardingPage] {
+        switch self {
+        case .preAuth:
+            return [.welcome, .valueProps, .permission, .languages, .hotkey]
+        case .postAuth:
+            return [.sandbox, .voiceSetup]
+        }
+    }
+
+    var currentPageKey: String {
+        switch self {
+        case .preAuth:
+            return MacAppState.preAuthOnboardingCurrentPageKey
+        case .postAuth:
+            return MacAppState.postAuthOnboardingCurrentPageKey
+        }
+    }
+}

@@ -109,14 +109,16 @@ final class UserEntityDictationModelsTests: XCTestCase {
     }
 
     func testMagicLinkRequest() throws {
-        let req = MagicLinkRequest(email: "a@b.com", client: "macos")
+        let req = MagicLinkRequest(email: "a@b.com", client: "macos", locale: "ru")
         let data = try encoder.encode(req)
         let decoded = try decoder.decode(MagicLinkRequest.self, from: data)
         XCTAssertEqual(decoded.email, "a@b.com")
         XCTAssertEqual(decoded.client, "macos")
+        XCTAssertEqual(decoded.locale, "ru")
 
         let noClient = MagicLinkRequest(email: "a@b.com")
         XCTAssertNil(noClient.client)
+        XCTAssertNil(noClient.locale)
     }
 
     func testVerifyMagicLinkRequest() throws {

@@ -104,10 +104,12 @@ export interface AdminPromoCodeCreateInput {
   code: string | null;
   prefix: string;
   plan: string;
+  promotion_type: "access" | "discount";
   billing_period: "month" | "year";
-  duration_days: number;
+  duration_days: number | null;
+  discount_percent: number | null;
   max_redemptions: number;
-  expires_days: number | null;
+  expires_at: string | null;
   note: string | null;
 }
 
@@ -123,8 +125,10 @@ export interface AdminPromoCode {
   code?: string;
   normalized_code?: string;
   plan: string;
+  promotion_type: "access" | "discount";
   billing_period: string;
-  duration_days: number;
+  duration_days: number | null;
+  discount_percent: number | null;
   max_redemptions: number;
   redeemed_count: number;
   redemption_rate: number;
@@ -215,7 +219,12 @@ export async function listAdminPromoCodes(): Promise<AdminPromoCode[]> {
 
 export function updateAdminPromoCode(
   id: string,
-  input: Partial<Pick<AdminPromoCode, "active" | "note" | "duration_days" | "max_redemptions">>,
+  input: Partial<
+    Pick<
+      AdminPromoCode,
+      "active" | "note" | "duration_days" | "discount_percent" | "max_redemptions"
+    >
+  >,
 ): Promise<AdminPromoCode> {
   return apiFetch<AdminPromoCode>(`/api/admin/promo-codes/${id}`, {
     method: "PATCH",

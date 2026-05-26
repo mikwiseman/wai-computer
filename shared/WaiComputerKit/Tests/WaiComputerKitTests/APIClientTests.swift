@@ -393,6 +393,40 @@ final class APIClientTests: XCTestCase {
         )
     }
 
+    func testRequestMagicLinkSendsClientRegionAndLocaleHint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/auth/magic-link")
+
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["email"] as? String, "user@example.com")
+            XCTAssertEqual(body?["client"] as? String, "macos")
+            XCTAssertEqual(body?["region"] as? String, "ru")
+            XCTAssertEqual(body?["locale"] as? String, "ru")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {"message":"Мы отправили ссылку для входа на твою почту."}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let result = try await client.requestMagicLink(
+            email: "user@example.com",
+            client: "macos",
+            region: "ru",
+            locale: "ru"
+        )
+        XCTAssertEqual(result.message, "Мы отправили ссылку для входа на твою почту.")
+    }
+
     // MARK: - Recording Endpoint Tests
 
     func testListRecordingsUsesGetMethod() async throws {

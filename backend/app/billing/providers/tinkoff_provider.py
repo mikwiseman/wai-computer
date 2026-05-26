@@ -110,6 +110,13 @@ def build_receipt(*, description: str, amount_kopecks: int, customer_email: str)
     }
 
 
+def _checkout_description(*, plan_code: str, period: str, discount_code: str | None) -> str:
+    description = f"WaiComputer {plan_code.upper()} {period}"
+    if discount_code:
+        description = f"{description} promo {discount_code}"
+    return description[:64]
+
+
 class TinkoffProvider(PaymentProvider):
     """T-Bank эквайринг with Recurrent subscription support."""
 
@@ -159,22 +166,34 @@ class TinkoffProvider(PaymentProvider):
         success_url: str,
         cancel_url: str,
         trial_days: int | None = None,
+        discount_percent: int | None = None,
+        discount_code: str | None = None,
+        promo_code_id: str | None = None,
     ) -> CheckoutResult:
         terminal_key, password = self._require_creds()
         amount_kopecks = await self._resolve_amount_kopecks(plan_code=plan_code, period=period)
+        if discount_percent is not None:
+            amount_kopecks = amount_kopecks * (100 - discount_percent) // 100
 
         # OrderId: deterministic per (user, plan, period) start. Use a UUID so
         # we don't collide across retries; we store it on the BillingEvent.
         from uuid import uuid4
 
         order_id = uuid4().hex
+        data = {"user_id": user_id, "plan_code": plan_code, "period": period}
+        if promo_code_id:
+            data["promo_code_id"] = promo_code_id
 
         base = {
             "TerminalKey": terminal_key,
             "Amount": amount_kopecks,
             "OrderId": order_id,
             "PayType": "O",
-            "Description": f"{plan_code.upper()} {period}"[:64],
+            "Description": _checkout_description(
+                plan_code=plan_code,
+                period=period,
+                discount_code=discount_code,
+            ),
             "CustomerKey": user_id,
             "Recurrent": "Y",
             "OperationInitiatorType": "1",
@@ -182,14 +201,14 @@ class TinkoffProvider(PaymentProvider):
             "SuccessURL": success_url,
             "FailURL": cancel_url,
             "NotificationURL": _notification_url(),
-            "DATA": {"user_id": user_id, "plan_code": plan_code, "period": period},
+            "DATA": data,
         }
         token = generate_tinkoff_token(base, password)
         payload = {
             **base,
             "Token": token,
             "Receipt": build_receipt(
-                description=f"{plan_code.upper()} {period}",
+                description=base["Description"],
                 amount_kopecks=amount_kopecks,
                 customer_email=user_email,
             ),
@@ -315,6 +334,7 @@ class TinkoffProvider(PaymentProvider):
 
         plan_code = data.get("plan_code")
         period = data.get("period")
+        promo_code_id = data.get("promo_code_id")
         return ProviderEvent(
             type=f"tinkoff.{status.lower() or 'unknown'}",
             subscription_id_provider=order_id,  # we key by OrderId on our side
@@ -328,6 +348,7 @@ class TinkoffProvider(PaymentProvider):
                 "amount": payload.get("Amount"),
                 "plan_code": str(plan_code).strip().lower() if plan_code else None,
                 "period": str(period).strip().lower() if period else None,
+                "promo_code_id": str(promo_code_id).strip() if promo_code_id else None,
                 "payload": payload,
             },
         )

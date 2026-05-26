@@ -240,6 +240,57 @@
         }
       }
     },
+    "billing.promo.error.alreadyRedeemed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You already redeemed this promo code."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ты уже использовал этот промокод."
+          }
+        }
+      }
+    },
+    "billing.promo.error.exhausted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promo code has already been fully used."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Промокод уже исчерпан."
+          }
+        }
+      }
+    },
+    "billing.promo.error.expired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promo code expired."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Срок действия промокода истёк."
+          }
+        }
+      }
+    },
     "billing.promo.error.notFound" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -382,7 +433,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No weekly cap reported"
+            "value" : "No weekly word cap"
           }
         },
         "ru" : {

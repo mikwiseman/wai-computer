@@ -42,6 +42,9 @@ const COPY: Record<
     promoApplied: string;
     promoNotFound: string;
     promoActiveSubscription: string;
+    promoExpired: string;
+    promoExhausted: string;
+    promoAlreadyRedeemed: string;
   }
 > = {
   en: {
@@ -51,7 +54,7 @@ const COPY: Record<
     renewsLabel: "Renews",
     endsLabel: "Ends",
     wordsLabel: "Words this week",
-    unlimited: "No weekly cap reported",
+    unlimited: "No weekly word cap",
     resets: "Resets Sunday at 00:00 UTC",
     upgrade: "Upgrade to Pro",
     cancel: "Cancel subscription",
@@ -69,6 +72,9 @@ const COPY: Record<
     promoApplied: "Promo code applied.",
     promoNotFound: "Promo code not found.",
     promoActiveSubscription: "You already have an active subscription.",
+    promoExpired: "Promo code expired.",
+    promoExhausted: "Promo code has already been fully used.",
+    promoAlreadyRedeemed: "You already redeemed this promo code.",
   },
   ru: {
     heading: "Подписка",
@@ -77,7 +83,7 @@ const COPY: Record<
     renewsLabel: "Продление",
     endsLabel: "Заканчивается",
     wordsLabel: "Слов на этой неделе",
-    unlimited: "Недельный лимит не получен",
+    unlimited: "Без недельного лимита",
     resets: "Сбрасывается в воскресенье в 00:00 UTC",
     upgrade: "Оформить Pro",
     cancel: "Отменить подписку",
@@ -95,6 +101,9 @@ const COPY: Record<
     promoApplied: "Промокод применён.",
     promoNotFound: "Промокод не найден.",
     promoActiveSubscription: "У тебя уже есть активная подписка.",
+    promoExpired: "Срок действия промокода истёк.",
+    promoExhausted: "Промокод уже исчерпан.",
+    promoAlreadyRedeemed: "Ты уже использовал этот промокод.",
   },
 };
 
@@ -106,6 +115,15 @@ function localizeBillingError(error: unknown, locale: Locale): string {
   }
   if (message === "Active subscription already exists") {
     return copy.promoActiveSubscription;
+  }
+  if (message === "Promo code expired") {
+    return copy.promoExpired;
+  }
+  if (message === "Promo code exhausted") {
+    return copy.promoExhausted;
+  }
+  if (message === "Promo code already redeemed") {
+    return copy.promoAlreadyRedeemed;
   }
   if (message.length > 0) {
     return message;
@@ -146,7 +164,7 @@ export function BillingDashboard({ locale, currency }: Props) {
   if (!sub || !usage) return <p>{copy.loading}</p>;
 
   const isPro = sub.plan.code === "pro" && sub.status !== "canceled";
-  const displayCap = usage.words_cap ?? sub.plan.word_cap_per_week;
+  const displayCap = isPro ? null : usage.words_cap ?? sub.plan.word_cap_per_week;
   const fraction = displayCap
     ? Math.min(1, usage.words_used / displayCap)
     : 0;

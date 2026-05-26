@@ -41,6 +41,7 @@ celery_app.conf.update(
     # Explicit imports: autodiscover_tasks only finds modules literally
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
     imports=[
+        "app.tasks.billing_renewals",
         "app.tasks.consolidate_user_memory",
         "app.tasks.embedding_backfill",
         "app.tasks.recording_audio_processing",
@@ -58,6 +59,10 @@ celery_app.conf.beat_schedule = {
     "embedding-backfill-every-30-minutes": {
         "task": "app.tasks.embedding_backfill.backfill_missing_segment_embeddings",
         "schedule": timedelta(minutes=settings.embedding_backfill_interval_minutes),
+    },
+    "billing-renewals-every-15-minutes": {
+        "task": "app.tasks.billing_renewals.charge_due_tinkoff_renewals",
+        "schedule": timedelta(minutes=15),
     },
 }
 

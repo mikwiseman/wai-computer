@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
@@ -18,8 +20,16 @@ from app.billing.providers.tinkoff_provider import (
 from app.billing.router import _checkout_result_urls
 from app.billing.service import apply_tinkoff_event
 from app.billing.webhooks import _tinkoff_ack_response
-from app.models.billing import Invoice, Plan, Subscription
+from app.models.billing import (
+    BillingPromoCode,
+    BillingPromoRedemption,
+    Invoice,
+    Plan,
+    Subscription,
+)
 from app.models.user import User
+from app.tasks import billing_renewals as billing_renewals_module
+from app.tasks.billing_renewals import charge_due_tinkoff_renewals, charge_due_tinkoff_renewals_task
 
 
 def test_token_is_deterministic_and_sorted():
@@ -245,7 +255,12 @@ async def test_parse_webhook_extracts_checkout_data_period():
         "PaymentId": "p1",
         "CustomerKey": "user-uuid",
         "RebillId": "rb-1",
-        "DATA": {"user_id": "user-uuid", "plan_code": "pro", "period": "year"},
+        "DATA": {
+            "user_id": "user-uuid",
+            "plan_code": "pro",
+            "period": "year",
+            "promo_code_id": "promo-uuid",
+        },
     }
     token = generate_tinkoff_token(payload, "pw")
     body = json.dumps({**payload, "Token": token}).encode()
@@ -254,6 +269,7 @@ async def test_parse_webhook_extracts_checkout_data_period():
 
     assert event.raw["plan_code"] == "pro"
     assert event.raw["period"] == "year"
+    assert event.raw["promo_code_id"] == "promo-uuid"
 
 
 @pytest.mark.asyncio
@@ -340,11 +356,48 @@ async def test_create_checkout_marks_parent_recurrent_payment(monkeypatch):
     assert payload["Recurrent"] == "Y"
     assert payload["OperationInitiatorType"] == "1"
     assert payload["CustomerKey"] == "user-uuid"
+    assert payload["Description"] == "WaiComputer PRO month"
+    assert payload["Receipt"]["Items"][0]["Name"] == "WaiComputer PRO month"
     assert payload["DATA"] == {
         "user_id": "user-uuid",
         "plan_code": "pro",
         "period": "month",
     }
+    assert verify_tinkoff_token(payload, "pw") is True
+
+
+@pytest.mark.asyncio
+async def test_create_checkout_applies_percent_discount_metadata(monkeypatch):
+    provider = TinkoffProvider(terminal_key="terminal", password="pw")
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_amount(*, plan_code: str, period: str) -> int:
+        return 100000
+
+    async def fake_call(method: str, payload: dict) -> dict:
+        calls.append((method, payload))
+        return {"Success": True, "PaymentURL": "https://pay.tbank.test/new/abc", "PaymentId": "p1"}
+
+    monkeypatch.setattr(provider, "_resolve_amount_kopecks", fake_amount)
+    monkeypatch.setattr(provider, "_call", fake_call)
+
+    await provider.create_checkout(
+        plan_code="pro",
+        period="year",
+        user_email="payer@example.test",
+        user_id="user-uuid",
+        success_url="https://wai.computer/billing/success",
+        cancel_url="https://wai.computer/billing/cancel",
+        discount_percent=25,
+        discount_code="WAI-OFF-25",
+        promo_code_id="promo-uuid",
+    )
+
+    payload = calls[0][1]
+    assert payload["Amount"] == 75000
+    assert payload["Description"] == "WaiComputer PRO year promo WAI-OFF-25"
+    assert payload["Receipt"]["Items"][0]["Amount"] == 75000
+    assert payload["DATA"]["promo_code_id"] == "promo-uuid"
     assert verify_tinkoff_token(payload, "pw") is True
 
 
@@ -381,6 +434,201 @@ async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
     charge_payload = calls[1][1]
     assert charge_payload["RebillId"] == "rebill-1"
     assert verify_tinkoff_token(charge_payload, "pw") is True
+
+
+@pytest.mark.asyncio
+async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
+    user = User(email="tinkoff.renewal@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    pro.tinkoff_amount_rub_monthly = Decimal("999.00")
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_rebill_id="rebill-renewal",
+        tinkoff_next_charge_at=datetime.now(timezone.utc),
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.commit()
+
+    class FakeProvider:
+        calls: list[dict] = []
+
+        async def charge_rebill(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "Success": True,
+                "Status": "CONFIRMED",
+                "OrderId": "renewal-order-1",
+                "PaymentId": "renewal-payment-1",
+                "Amount": 99900,
+            }
+
+    fake = FakeProvider()
+    result = await charge_due_tinkoff_renewals(
+        provider_factory=lambda: fake,
+        db_session=db_session,
+    )
+
+    assert result == {"charged": 1, "skipped": 0, "failed": 0}
+    assert fake.calls[0]["rebill_id"] == "rebill-renewal"
+    assert fake.calls[0]["description"] == "WaiComputer PRO month"
+
+    refreshed = (
+        await db_session.execute(select(Subscription).where(Subscription.id == sub.id))
+    ).scalar_one()
+    assert refreshed.current_period_end is not None
+    assert refreshed.tinkoff_next_charge_at is not None
+    invoices = (
+        await db_session.execute(select(Invoice).where(Invoice.subscription_id == sub.id))
+    ).scalars().all()
+    assert [invoice.provider_payment_id for invoice in invoices] == ["renewal-payment-1"]
+
+
+@pytest.mark.asyncio
+async def test_due_tinkoff_renewal_task_skips_subscription_without_amount(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = User(email="tinkoff.renewal-skip@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    pro.tinkoff_amount_rub_monthly = None
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_rebill_id="rebill-skip",
+        tinkoff_next_charge_at=datetime.now(timezone.utc),
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    class SessionContext:
+        async def __aenter__(self):
+            return db_session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeProvider:
+        calls: list[dict] = []
+
+        async def charge_rebill(self, **kwargs):
+            self.calls.append(kwargs)
+            raise AssertionError("subscription without amount must not be charged")
+
+    fake = FakeProvider()
+    monkeypatch.setattr(billing_renewals_module, "get_db_context", lambda: SessionContext())
+
+    result = await charge_due_tinkoff_renewals(provider_factory=lambda: fake)
+
+    assert result == {"charged": 0, "skipped": 1, "failed": 0}
+    assert fake.calls == []
+
+
+@pytest.mark.asyncio
+async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_fails(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.renewal-fail@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    pro.tinkoff_amount_rub_monthly = Decimal("999.00")
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_rebill_id="rebill-fail",
+        tinkoff_next_charge_at=datetime.now(timezone.utc),
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    class FailingProvider:
+        async def charge_rebill(self, **kwargs):
+            raise RuntimeError("bank unavailable")
+
+    result = await charge_due_tinkoff_renewals(
+        provider_factory=FailingProvider,
+        db_session=db_session,
+    )
+
+    assert result == {"charged": 0, "skipped": 0, "failed": 1}
+    refreshed = (
+        await db_session.execute(select(Subscription).where(Subscription.id == sub.id))
+    ).scalar_one()
+    assert refreshed.status == "past_due"
+    assert refreshed.tinkoff_next_charge_at is None
+
+
+@pytest.mark.asyncio
+async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_lacks_status(
+    db_session: AsyncSession,
+):
+    user = User(email="tinkoff.renewal-no-status@example.test")
+    db_session.add(user)
+    await db_session.flush()
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    pro.tinkoff_amount_rub_monthly = Decimal("999.00")
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="tinkoff",
+        billing_period="month",
+        tinkoff_rebill_id="rebill-no-status",
+        tinkoff_next_charge_at=datetime.now(timezone.utc),
+    )
+    db_session.add(sub)
+    await db_session.commit()
+
+    class NoStatusProvider:
+        async def charge_rebill(self, **kwargs):
+            return {"Success": True, "PaymentId": "payment-no-status"}
+
+    result = await charge_due_tinkoff_renewals(
+        provider_factory=NoStatusProvider,
+        db_session=db_session,
+    )
+
+    assert result == {"charged": 0, "skipped": 0, "failed": 1}
+    refreshed = (
+        await db_session.execute(select(Subscription).where(Subscription.id == sub.id))
+    ).scalar_one()
+    assert refreshed.status == "past_due"
+    assert refreshed.tinkoff_next_charge_at is None
+
+
+def test_due_tinkoff_renewal_celery_task_runs_async_core(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, int] = {}
+
+    async def fake_charge_due_tinkoff_renewals(*, limit: int) -> dict[str, int]:
+        captured["limit"] = limit
+        return {"charged": 2, "skipped": 1, "failed": 0}
+
+    monkeypatch.setattr(
+        billing_renewals_module,
+        "charge_due_tinkoff_renewals",
+        fake_charge_due_tinkoff_renewals,
+    )
+
+    result = charge_due_tinkoff_renewals_task.run(limit=7)
+
+    assert captured == {"limit": 7}
+    assert result == {"charged": 2, "skipped": 1, "failed": 0}
 
 
 @pytest.mark.asyncio
@@ -425,6 +673,19 @@ async def test_apply_tinkoff_confirmed_creates_pro_year_subscription(
     user = User(email="tinkoff.year@example.com")
     db_session.add(user)
     await db_session.flush()
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    promo = BillingPromoCode(
+        code="WAI-TINKOFF-25",
+        code_hash="tinkoff-discount-hash",
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="year",
+        duration_days=None,
+        discount_percent=25,
+        max_redemptions=10,
+    )
+    db_session.add(promo)
+    await db_session.flush()
 
     event = ProviderEvent(
         type="tinkoff.confirmed",
@@ -439,6 +700,7 @@ async def test_apply_tinkoff_confirmed_creates_pro_year_subscription(
             "amount": 799900,
             "plan_code": "pro",
             "period": "year",
+            "promo_code_id": str(promo.id),
             "payload": {"Status": "CONFIRMED"},
         },
     )
@@ -462,10 +724,18 @@ async def test_apply_tinkoff_confirmed_creates_pro_year_subscription(
     assert sub.provider == "tinkoff"
     assert sub.status == "active"
     assert sub.billing_period == "year"
+    assert sub.promo_code_id == promo.id
     assert sub.current_period_end is not None
     assert sub.tinkoff_next_charge_at is not None
     assert invoice.amount == 7999
     assert invoice.currency == "RUB"
+    redemption = (
+        await db_session.execute(
+            select(BillingPromoRedemption).where(BillingPromoRedemption.subscription_id == sub.id)
+        )
+    ).scalar_one()
+    assert redemption.promo_code_id == promo.id
+    assert promo.redeemed_count == 1
 
 
 @pytest.mark.asyncio

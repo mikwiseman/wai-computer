@@ -40,7 +40,7 @@ function browserLocale(): Locale {
     ...Array.from(navigator.languages ?? []),
     navigator.language,
   ].filter(Boolean);
-  return candidates.some((language) => language.toLowerCase().startsWith("ru")) ? "ru" : "en";
+  return candidates[0]?.toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
 function normalizeLocale(locale: string | null | undefined): Locale {

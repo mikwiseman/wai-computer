@@ -71,10 +71,16 @@ class StripeProvider(PaymentProvider):
         success_url: str,
         cancel_url: str,
         trial_days: int | None = None,
+        discount_percent: int | None = None,
+        discount_code: str | None = None,
+        promo_code_id: str | None = None,
     ) -> CheckoutResult:
         client = self._client_or_raise()
         settings = get_settings()
         price_id = await self._resolve_price_id(plan_code=plan_code, period=period)
+        metadata = {"user_id": user_id, "plan_code": plan_code, "period": period}
+        if promo_code_id:
+            metadata["promo_code_id"] = promo_code_id
         params: dict[str, Any] = {
             "mode": "subscription",
             "line_items": [{"price": price_id, "quantity": 1}],
@@ -82,11 +88,18 @@ class StripeProvider(PaymentProvider):
             "cancel_url": cancel_url,
             "customer_email": user_email,
             "client_reference_id": user_id,
-            "metadata": {"user_id": user_id, "plan_code": plan_code, "period": period},
-            "subscription_data": {
-                "metadata": {"user_id": user_id, "plan_code": plan_code, "period": period},
-            },
+            "metadata": metadata,
+            "subscription_data": {"metadata": metadata},
         }
+        if discount_percent is not None:
+            coupon = await client.v1.coupons.create_async(
+                params={
+                    "percent_off": discount_percent,
+                    "duration": "once",
+                    "name": discount_code or f"{discount_percent}% off",
+                }
+            )
+            params["discounts"] = [{"coupon": coupon.id}]
         if settings.stripe_automatic_tax:
             params["automatic_tax"] = {"enabled": True}
         session = await client.v1.checkout.sessions.create_async(params=params)
