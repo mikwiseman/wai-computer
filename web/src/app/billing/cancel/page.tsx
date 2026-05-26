@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { BillingResultCard } from "@/components/BillingResultCard";
 import {
-  BillingResultCard,
   type BillingResultSearchParams,
   resolveBillingResultLocale,
-} from "@/components/BillingResultCard";
+} from "@/lib/billing-result-locale";
 
 export const metadata: Metadata = {
   title: "Payment status — WaiComputer",
