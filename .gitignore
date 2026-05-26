@@ -101,6 +101,7 @@ web/.next/
 web/coverage/
 web/test-results/
 web/playwright-report/
+.playwright-mcp/
 **/fastlane/report.xml
 fastlane/mac_screenshots_en-US/
 
