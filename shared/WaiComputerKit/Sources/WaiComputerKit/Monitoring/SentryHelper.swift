@@ -56,6 +56,7 @@ public enum SentryHelper {
         level: SentryLevel = .warning,
         extras: [String: Any]? = nil
     ) {
+        guard SentrySDK.isEnabled else { return }
         guard shouldCaptureFingerprint(fingerprint) else { return }
         captureMessage(message, level: level, extras: extras)
     }
