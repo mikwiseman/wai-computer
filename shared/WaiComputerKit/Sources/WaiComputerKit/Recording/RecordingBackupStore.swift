@@ -434,6 +434,24 @@ public enum RecordingBackupStore {
         try writeManifest(manifest, to: backup.manifestURL)
     }
 
+    /// Removes the local audio payload from a backup and prevents future sync
+    /// passes from uploading a stale or too-short file.
+    public static func discardAudioFile(recordingId: String) throws {
+        let backup = try makeBackup(recordingId: recordingId)
+        try? FileManager.default.removeItem(at: backup.audioFileURL)
+
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        manifest.hasAudioFile = false
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = nil
+        if manifest.syncState == .localRecording || manifest.syncState == .serverProcessing {
+            manifest.syncState = .localReady
+        }
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Discarded local audio file for \(recordingId)")
+    }
+
     public static func recordSyncAttempt(recordingId: String) throws {
         guard let backup = try existingBackup(recordingId: recordingId) else { return }
         guard var manifest = try readManifest(from: backup.manifestURL) else { return }

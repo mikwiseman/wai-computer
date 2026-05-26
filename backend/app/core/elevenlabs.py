@@ -273,10 +273,10 @@ def _stt_upload_filename(content_type: str) -> str:
 
 
 def _stt_language_code(language: str | None) -> str | None:
-    normalized = (language or "").strip().lower()
+    normalized = (language or "").strip().lower().replace("_", "-")
     if not normalized or normalized in {"auto", "multi", "und"}:
         return None
-    return normalized
+    return normalized.split("-", 1)[0]
 
 
 async def transcribe_audio_file(

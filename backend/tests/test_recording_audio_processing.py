@@ -1,6 +1,7 @@
 """Tests for queued canonical recording audio processing."""
 
 import logging
+import wave
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
@@ -302,6 +303,186 @@ async def test_process_staged_recording_upload_marks_missing_staged_file_failed(
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_rejects_too_short_wav_before_provider(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-too-short@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "too-short.wav"
+    _write_wav(staged_path, frame_count=800)
+    transcribe = AsyncMock()
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "transcript_empty"
+    assert recording.title == "No speech detected"
+    assert recording.failure_message == "We could not detect clear speech in this recording."
+    assert not staged_path.exists()
+    transcribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_allows_provider_minimum_wav(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-provider-minimum@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "minimum-provider-duration.wav"
+    _write_wav(staged_path, frame_count=1600)
+    transcribe = AsyncMock(return_value=[
+        TranscriptResult(
+            text="Minimum audio accepted.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=100,
+            confidence=0.9,
+        )
+    ])
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Minimum Recording"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.title == "Minimum Recording"
+    assert recording.duration_seconds == 1
+    assert not staged_path.exists()
+    transcribe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_maps_provider_audio_too_short_to_no_speech(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-provider-too-short@example.com",
+        password_hash="x",
+        default_language="ru",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "provider-too-short.webm"
+    staged_path.write_bytes(b"short-webm")
+    error = httpx.HTTPStatusError(
+        "Client error '400 Bad Request'",
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        response=httpx.Response(
+            400,
+            json={"detail": {"status": "audio_too_short"}},
+            request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(side_effect=error),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/webm",
+        user_default_language="ru",
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "transcript_empty"
+    assert recording.title == "Без речи"
+    assert recording.failure_message == "Мы не обнаружили разборчивой речи в этой записи."
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_keeps_retryable_failure_in_processing(
     db_session: AsyncSession,
     tmp_path,
@@ -449,3 +630,11 @@ async def test_process_staged_recording_upload_fails_empty_transcript_without_ti
     assert segments == []
     assert not staged_path.exists()
     title_mock.assert_not_awaited()
+
+
+def _write_wav(path, *, frame_count: int, sample_rate: int = 16_000) -> None:
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\0\0" * frame_count)

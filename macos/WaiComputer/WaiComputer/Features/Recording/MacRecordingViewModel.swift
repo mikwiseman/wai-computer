@@ -533,6 +533,12 @@ class MacRecordingViewModel: ObservableObject {
                     "audioBytes": finalizedAudioBytes,
                 ]
             )
+            let uploadableAudioFileURL = self.uploadableFinalizedAudioFileURL(
+                recordingId: recordingId,
+                fileWriter: fileWriter,
+                audioDuration: finalizedAudioDuration,
+                pcmBytesWritten: finalizedAudioBytes
+            )
 
             let didFinalize = await self.finishStreaming(ws)
             let segments = await ws?.collectedSegments ?? []
@@ -550,7 +556,7 @@ class MacRecordingViewModel: ObservableObject {
                     client: client,
                     segments: finalizedSegments,
                     durationSeconds: persistedDurationSeconds,
-                    audioFileURL: fileWriter?.fileURL
+                    audioFileURL: uploadableAudioFileURL
                 )
                 transcriptSaved = await self.applyRecordingPersistenceResult(
                     persistenceResult,
@@ -749,6 +755,40 @@ class MacRecordingViewModel: ObservableObject {
             )
         }
         return max(Int(audioDuration.rounded()), 0)
+    }
+
+    private func uploadableFinalizedAudioFileURL(
+        recordingId: String?,
+        fileWriter: AudioFileWriter?,
+        audioDuration: Double?,
+        pcmBytesWritten: Int64
+    ) -> URL? {
+        guard let fileWriter else { return nil }
+        if RecordingAudioUploadPolicy.canUploadFinalizedAudio(
+            durationSeconds: audioDuration,
+            pcmBytesWritten: pcmBytesWritten
+        ) {
+            return fileWriter.fileURL
+        }
+
+        if let recordingId {
+            try? RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+        }
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "local audio below upload minimum",
+            level: .warning,
+            data: [
+                "recordingId": recordingId ?? "unknown",
+                "audioDurationSeconds": audioDuration ?? 0,
+                "audioBytes": pcmBytesWritten,
+                "minimumDurationSeconds": RecordingAudioUploadPolicy.minimumDurationSeconds,
+            ]
+        )
+        audioLog.warning(
+            "Skipping finalized audio upload durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
+        )
+        return nil
     }
 
     private func saveTranscriptBackup(

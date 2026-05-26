@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import wave
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +57,7 @@ NO_SPEECH_PLACEHOLDERS = {
     "typing",
 }
 EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
+MIN_FILE_STT_AUDIO_SECONDS = 0.1
 
 
 def copy_locale_from_recording_language(
@@ -147,31 +150,62 @@ def _speech_results(results: list[TranscriptResult]) -> list[TranscriptResult]:
     ]
 
 
-def _wav_duration_seconds(path: Path) -> int | None:
+def _wav_duration_seconds(path: Path) -> float | None:
     try:
         with wave.open(str(path), "rb") as wav_file:
             frame_rate = wav_file.getframerate()
             if frame_rate <= 0:
                 return None
-            return round(wav_file.getnframes() / frame_rate)
+            return wav_file.getnframes() / frame_rate
     except (wave.Error, EOFError, OSError):
         return None
 
 
-def _audio_duration_seconds(path: Path, content_type: str) -> int | None:
-    if content_type in {"audio/wav", "audio/x-wav"} or path.suffix.lower() == ".wav":
+def _audio_duration_seconds(path: Path, content_type: str) -> float | None:
+    normalized_content_type = content_type.split(";", 1)[0].strip().lower()
+    if normalized_content_type in {"audio/wav", "audio/x-wav"} or path.suffix.lower() == ".wav":
         return _wav_duration_seconds(path)
     return None
 
 
+def _audio_is_too_short_for_file_stt(audio_duration_seconds: float | None) -> bool:
+    return (
+        audio_duration_seconds is not None
+        and audio_duration_seconds < MIN_FILE_STT_AUDIO_SECONDS
+    )
+
+
+def _provider_reported_audio_too_short(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    if exc.response.status_code != 400:
+        return False
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    detail = payload.get("detail")
+    if not isinstance(detail, dict):
+        return False
+    return any(
+        detail.get(key) == "audio_too_short"
+        for key in ("code", "type", "status")
+    )
+
+
 def _duration_seconds_from_sources(
     *,
-    audio_duration_seconds: int | None,
+    audio_duration_seconds: float | None,
     client_duration_seconds: int | None,
     transcript_end_ms: int | None,
 ) -> int | None:
-    if audio_duration_seconds is not None and audio_duration_seconds > 0:
-        return audio_duration_seconds
+    if (
+        audio_duration_seconds is not None
+        and audio_duration_seconds >= MIN_FILE_STT_AUDIO_SECONDS
+    ):
+        return max(math.ceil(audio_duration_seconds), 1)
     if client_duration_seconds is not None and client_duration_seconds > 0:
         return client_duration_seconds
     if transcript_end_ms is not None:
@@ -182,7 +216,7 @@ def _duration_seconds_from_sources(
 def _log_transcript_coverage(
     *,
     recording_id: UUID,
-    audio_duration_seconds: int | None,
+    audio_duration_seconds: float | None,
     client_duration_seconds: int | None,
     transcript_end_ms: int | None,
     segment_count: int,
@@ -279,6 +313,23 @@ async def process_staged_recording_upload(
         audio_duration_seconds,
         client_duration_seconds,
     )
+    if _audio_is_too_short_for_file_stt(audio_duration_seconds):
+        recording.duration_seconds = _duration_seconds_from_sources(
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=None,
+        )
+        apply_no_speech_failure(recording, user_default_language)
+        await db.commit()
+        delete_staged_file(staged_path)
+        logger.warning(
+            "audio processing rejected too-short audio before provider call "
+            "recording_id=%s audio_duration_seconds=%s staged_size_bytes=%s",
+            recording_id,
+            audio_duration_seconds,
+            staged_size_bytes,
+        )
+        return
     add_sentry_breadcrumb(
         category="recording",
         message="Audio processing started",
@@ -439,6 +490,25 @@ async def process_staged_recording_upload(
         logger.info("audio processing completed")
     except Exception as exc:
         await db.rollback()
+        if _provider_reported_audio_too_short(exc):
+            failed = await db.get(Recording, recording_id)
+            if failed is not None:
+                failed.duration_seconds = _duration_seconds_from_sources(
+                    audio_duration_seconds=audio_duration_seconds,
+                    client_duration_seconds=client_duration_seconds,
+                    transcript_end_ms=None,
+                )
+                apply_no_speech_failure(failed, user_default_language)
+                await db.commit()
+            delete_staged_file(staged_path)
+            logger.warning(
+                "audio processing marked too-short provider rejection as no speech "
+                "recording_id=%s audio_duration_seconds=%s staged_size_bytes=%s",
+                recording_id,
+                audio_duration_seconds,
+                staged_size_bytes,
+            )
+            return
         if is_retryable_exception(exc):
             logger.warning(
                 "Recording processing hit retryable error recording_id=%s error_type=%s "

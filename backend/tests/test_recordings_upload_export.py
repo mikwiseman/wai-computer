@@ -511,7 +511,7 @@ async def test_save_transcript_whitespace_only_segments_return_ready_recording(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Whitespace-only segments should be treated as an empty but successful transcript."""
+    """Whitespace-only segments should surface the no-speech state."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
@@ -526,7 +526,8 @@ async def test_save_transcript_whitespace_only_segments_return_ready_recording(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
+    assert data["status"] == "failed"
+    assert data["failure_code"] == "transcript_empty"
     assert data["segments"] == []
 
 

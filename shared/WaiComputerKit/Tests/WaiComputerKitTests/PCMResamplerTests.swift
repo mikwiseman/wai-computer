@@ -78,6 +78,29 @@ final class PCMResamplerTests: XCTestCase {
         XCTAssertLessThanOrEqual(outFrames, 16_100)
     }
 
+    func testConvertProcessesContinuousCaptureBuffers() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let resampler = PCMResampler(source: source, targetSampleRate: 16_000)!
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.16)
+
+        var frameCounts: [Int] = []
+        for _ in 0..<8 {
+            let output = try XCTUnwrap(resampler.convert(input))
+            frameCounts.append(Int(output.frameLength))
+        }
+
+        XCTAssertEqual(frameCounts.count, 8)
+        for frameCount in frameCounts {
+            XCTAssertGreaterThanOrEqual(frameCount, 2_500)
+            XCTAssertLessThanOrEqual(frameCount, 2_700)
+        }
+    }
+
     func testConvertDownsamples44_1kTo16k() throws {
         let source = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -196,6 +219,33 @@ final class PCMResamplerTests: XCTestCase {
         XCTAssertEqual(processor.snapshot.buffersReceived, 1)
         XCTAssertEqual(processor.snapshot.buffersYielded, 1)
         XCTAssertEqual(processor.snapshot.resamplerRebuilds, 1)
+    }
+
+    func testCaptureAudioProcessorResamplesContinuousBuffers() throws {
+        let source = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 2,
+            interleaved: false
+        )!
+        let processor = try XCTUnwrap(CaptureAudioProcessor(config: .default))
+        let input = makeSineBuffer(format: source, frequency: 440, durationSeconds: 0.16)
+
+        var outputs: [AVAudioPCMBuffer] = []
+        for _ in 0..<8 {
+            outputs.append(try XCTUnwrap(processor.process(input)))
+        }
+
+        XCTAssertEqual(processor.snapshot.buffersReceived, 8)
+        XCTAssertEqual(processor.snapshot.buffersYielded, 8)
+        XCTAssertEqual(processor.snapshot.conversionFailures, 0)
+        XCTAssertEqual(processor.snapshot.resamplerRebuilds, 1)
+        for output in outputs {
+            XCTAssertEqual(output.format.sampleRate, 16_000)
+            XCTAssertEqual(output.format.channelCount, 1)
+            XCTAssertGreaterThanOrEqual(Int(output.frameLength), 2_500)
+            XCTAssertLessThanOrEqual(Int(output.frameLength), 2_700)
+        }
     }
 
     func testCaptureAudioProcessorUsesConfigured24kTarget() throws {

@@ -14,7 +14,6 @@ import AVFoundation
 /// applies proper anti-aliasing (mastering-quality FIR by default) so the
 /// resampled signal is a faithful representation of the band-limited input.
 public final class PCMResampler: @unchecked Sendable {
-    private let converter: AVAudioConverter
     private let target: AVAudioFormat
     public let sourceFormat: AVAudioFormat
 
@@ -29,10 +28,7 @@ public final class PCMResampler: @unchecked Sendable {
             channels: targetChannelCount,
             interleaved: false
         ) else { return nil }
-        guard let conv = AVAudioConverter(from: source, to: target) else { return nil }
-        // Mastering quality FIR — small CPU cost, big quality win on Russian.
-        conv.sampleRateConverterQuality = AVAudioQuality.max.rawValue
-        self.converter = conv
+        guard AVAudioConverter(from: source, to: target) != nil else { return nil }
         self.target = target
         self.sourceFormat = source
     }
@@ -48,6 +44,11 @@ public final class PCMResampler: @unchecked Sendable {
         guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: estOut) else {
             return nil
         }
+        guard let converter = AVAudioConverter(from: sourceFormat, to: target) else {
+            return nil
+        }
+        // Mastering quality FIR — small CPU cost, big quality win on Russian.
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 
         var error: NSError?
         var supplied = false
