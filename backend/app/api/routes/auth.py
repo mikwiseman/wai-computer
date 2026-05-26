@@ -53,6 +53,7 @@ AUTH_MESSAGES = {
         "forgot_password_sent": (
             "If this email is registered, we sent a password reset link."
         ),
+        "password_reset_delivery_failed": "Could not send email. Try again later.",
         "invalid_password_reset": "Invalid password reset link",
         "password_reset_expired": "Password reset link expired",
         "password_reset_success": "Password reset successfully",
@@ -70,6 +71,7 @@ AUTH_MESSAGES = {
         "forgot_password_sent": (
             "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."
         ),
+        "password_reset_delivery_failed": "Не удалось отправить письмо. Попробуйте позже.",
         "invalid_password_reset": "Недействительная ссылка для сброса пароля",
         "password_reset_expired": "Срок действия ссылки для сброса пароля истек",
         "password_reset_success": "Пароль успешно сброшен",
@@ -567,6 +569,10 @@ async def forgot_password(request: ForgotPasswordRequest, db: Database) -> Messa
                 "password_reset email delivery failed email=%s",
                 safe_text_digest(request.email, label="email"),
             )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=AUTH_MESSAGES[locale]["password_reset_delivery_failed"],
+            ) from None
         logger.info(
             "password_reset requested email=%s",
             safe_text_digest(request.email, label="email"),

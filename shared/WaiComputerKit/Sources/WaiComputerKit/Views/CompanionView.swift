@@ -542,7 +542,7 @@ public struct CompanionView: View {
             }
         }
         .padding(22)
-        .frame(minWidth: 460)
+        .frame(minWidth: 620)
     }
 
     // MARK: - Loading + sending

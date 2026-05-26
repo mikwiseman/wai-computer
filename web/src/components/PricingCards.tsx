@@ -57,7 +57,7 @@ const COPY: Record<
       monthly: (a) => `${a} / month`,
       yearly: (a) => `${a} / year`,
       features: [
-        "50,000 transcribed words per week",
+        "No weekly word cap",
         "Permanent searchable memory",
         "Agents + MCP access",
         "Advanced search across everything",
@@ -92,7 +92,7 @@ const COPY: Record<
       monthly: (a) => `${a} / мес`,
       yearly: (a) => `${a} / год`,
       features: [
-        "50 000 транскрибированных слов в неделю",
+        "Без недельного лимита на слова",
         "Память с поиском навсегда",
         "Агенты + доступ к MCP",
         "Расширенный поиск по всему",

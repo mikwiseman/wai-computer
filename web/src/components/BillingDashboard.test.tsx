@@ -137,4 +137,30 @@ describe("BillingDashboard", () => {
     expect(await screen.findByText("Промокод не найден.")).toBeInTheDocument();
     expect(screen.queryByText("Promo code not found")).not.toBeInTheDocument();
   });
+
+  it("localizes exhausted promo code errors in Russian billing", async () => {
+    mockedPromo.mockRejectedValue(new Error("Promo code exhausted"));
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "USED-CODE");
+    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+    expect(await screen.findByText("Промокод уже исчерпан.")).toBeInTheDocument();
+    expect(screen.queryByText("Promo code exhausted")).not.toBeInTheDocument();
+  });
+
+  it("shows Pro usage as unlimited even if a stale plan payload still includes the old cap", async () => {
+    mockedSubscription.mockResolvedValue({
+      ...proSub,
+      plan: { ...proSub.plan, word_cap_per_week: 50000 },
+    });
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(await screen.findByText("Без недельного лимита")).toBeInTheDocument();
+    expect(screen.queryByText(/50[\s,]000/)).not.toBeInTheDocument();
+  });
 });

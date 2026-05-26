@@ -2290,6 +2290,12 @@ a.primary-button:hover {
   background: var(--panel);
 }
 
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+}
+
 .admin-table th,
 .admin-table td {
   border-bottom: 1px solid var(--border);
@@ -2307,6 +2313,12 @@ a.primary-button:hover {
 
 .admin-table td {
   font-size: 0.86rem;
+}
+
+.admin-code-cell {
+  min-width: 135px;
+  font-weight: 720;
+  overflow-wrap: anywhere;
 }
 
 .admin-table tbody tr {

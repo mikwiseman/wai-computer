@@ -24,7 +24,8 @@ describe("PricingCards", () => {
 
     expect(screen.getByRole("heading", { name: "Simple pricing." })).toBeInTheDocument();
     expect(screen.getByText("3,000 transcribed words per week")).toBeInTheDocument();
-    expect(screen.getByText("50,000 transcribed words per week")).toBeInTheDocument();
+    expect(screen.getByText("No weekly word cap")).toBeInTheDocument();
+    expect(screen.queryByText("50,000 transcribed words per week")).not.toBeInTheDocument();
     expect(screen.queryByText(/trial/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(screen.queryByText(/World|Russia/i)).not.toBeInTheDocument();

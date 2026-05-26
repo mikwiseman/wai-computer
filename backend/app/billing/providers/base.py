@@ -53,6 +53,9 @@ class PaymentProvider(ABC):
         success_url: str,
         cancel_url: str,
         trial_days: int | None = None,
+        discount_percent: int | None = None,
+        discount_code: str | None = None,
+        promo_code_id: str | None = None,
     ) -> CheckoutResult:
         """Create a hosted checkout session and return its URL."""
 

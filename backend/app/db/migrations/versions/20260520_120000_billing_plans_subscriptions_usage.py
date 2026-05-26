@@ -267,9 +267,9 @@ def upgrade() -> None:
         (
             'pro',
             'Pro',
-            '50,000 transcribed words per week, permanent memory, agents, MCP, advanced search.',
+            'Unlimited transcription, permanent memory, agents, MCP, advanced search.',
             12, 96, 999, 7999,
-            50000, NULL,
+            NULL, NULL,
             '{"agents": true, "mcp": true, "advanced_search": true}'::jsonb
         );
         """

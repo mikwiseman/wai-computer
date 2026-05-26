@@ -152,9 +152,13 @@ function setupMocks() {
   mockedPromos.mockResolvedValue([
     {
       id: "promo-1",
+      code: "WAI-LAUNCH-30",
+      normalized_code: "WAILAUNCH30",
       plan: "pro",
+      promotion_type: "access",
       billing_period: "month",
       duration_days: 30,
+      discount_percent: null,
       max_redemptions: 10,
       redeemed_count: 2,
       redemption_rate: 0.2,
@@ -271,6 +275,7 @@ describe("AdminConsoleClient", () => {
     await userEvent.click(screen.getByRole("button", { name: "Promo codes" }));
 
     expect(await screen.findByDisplayValue("launch")).toBeInTheDocument();
+    expect(screen.getByText("WAI-LAUNCH-30")).toBeInTheDocument();
     expect(screen.getByText("2 / 10")).toBeInTheDocument();
   });
 
@@ -292,8 +297,10 @@ describe("AdminConsoleClient", () => {
       code: "WAI-NEW-30",
       normalized_code: "WAINEW30",
       plan: "pro",
+      promotion_type: "access",
       billing_period: "month",
       duration_days: 30,
+      discount_percent: null,
       max_redemptions: 1,
       redeemed_count: 0,
       redemption_rate: 0,
@@ -317,22 +324,77 @@ describe("AdminConsoleClient", () => {
         code: null,
         prefix: "WAI",
         plan: "pro",
+        promotion_type: "access",
         billing_period: "month",
         duration_days: 30,
+        discount_percent: null,
         max_redemptions: 5,
-        expires_days: 30,
+        expires_at: expect.any(String),
         note: null,
       }),
     );
     expect(await screen.findByText("WAI-NEW-30")).toBeInTheDocument();
   });
 
+  it("creates a percent discount promo code with an expiry date", async () => {
+    mockedCreatePromo.mockResolvedValue({
+      id: "promo-discount",
+      code: "WAI-OFF-25",
+      normalized_code: "WAIOFF25",
+      plan: "pro",
+      promotion_type: "discount",
+      billing_period: "year",
+      duration_days: null,
+      discount_percent: 25,
+      max_redemptions: 3,
+      redeemed_count: 0,
+      redemption_rate: 0,
+      active: true,
+      archived_at: null,
+      expires_at: "2026-06-25T23:59:59Z",
+      note: null,
+      created_at: "2026-05-25T00:00:00Z",
+      redemptions: [],
+    });
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Promo codes" }));
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "discount");
+    await userEvent.selectOptions(screen.getByLabelText("Checkout period"), "year");
+    await userEvent.clear(screen.getByLabelText("Discount %"));
+    await userEvent.type(screen.getByLabelText("Discount %"), "25");
+    await userEvent.clear(screen.getByLabelText("Redemptions"));
+    await userEvent.type(screen.getByLabelText("Redemptions"), "3");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(mockedCreatePromo).toHaveBeenCalledWith({
+        code: null,
+        prefix: "WAI",
+        plan: "pro",
+        promotion_type: "discount",
+        billing_period: "year",
+        duration_days: null,
+        discount_percent: 25,
+        max_redemptions: 3,
+        expires_at: expect.any(String),
+        note: null,
+      }),
+    );
+    expect(await screen.findByText("WAI-OFF-25")).toBeInTheDocument();
+  });
+
   it("updates promo metadata from the table row", async () => {
     mockedUpdatePromo.mockResolvedValue({
       id: "promo-1",
+      code: "WAI-LAUNCH-30",
+      normalized_code: "WAILAUNCH30",
       plan: "pro",
+      promotion_type: "access",
       billing_period: "month",
       duration_days: 45,
+      discount_percent: null,
       max_redemptions: 10,
       redeemed_count: 2,
       redemption_rate: 0.2,

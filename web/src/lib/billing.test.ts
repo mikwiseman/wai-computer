@@ -32,13 +32,23 @@ describe("billing api wrappers", () => {
   });
 
   it("calls checkout and cancel endpoints", async () => {
-    await createBillingCheckout({ plan: "pro", period: "month", provider: "stripe" });
+    await createBillingCheckout({
+      plan: "pro",
+      period: "month",
+      provider: "stripe",
+      promo_code: "WAI-OFF-20",
+    });
     await claimBillingPromoCode("WAI-TEST-30");
     await cancelBillingSubscription();
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/billing/checkout", {
       method: "POST",
-      body: JSON.stringify({ plan: "pro", period: "month", provider: "stripe" }),
+      body: JSON.stringify({
+        plan: "pro",
+        period: "month",
+        provider: "stripe",
+        promo_code: "WAI-OFF-20",
+      }),
     });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/billing/promo/claim", {
       method: "POST",

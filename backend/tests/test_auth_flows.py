@@ -405,11 +405,11 @@ async def test_forgot_password_sends_reset_link_without_creating_unknown_user(
 
 
 @pytest.mark.asyncio
-async def test_forgot_password_email_failure_keeps_non_enumerating_response(
+async def test_forgot_password_email_failure_surfaces_delivery_error_for_existing_user(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Email delivery errors must not reveal whether a reset email exists."""
+    """Existing-account reset must not claim success when delivery failed."""
 
     async def fake_send_password_reset_email(*args, **kwargs) -> None:
         raise RuntimeError("email provider unavailable")
@@ -422,7 +422,7 @@ async def test_forgot_password_email_failure_keeps_non_enumerating_response(
 
     await client.post(
         "/api/auth/register",
-        json={"email": "reset.fail.com", "password": "password123", **LEGAL_ACCEPTANCE},
+        json={"email": "reset.fail@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
     )
 
     existing_response = await client.post(
@@ -434,9 +434,12 @@ async def test_forgot_password_email_failure_keeps_non_enumerating_response(
         json={"email": "reset.fail.missing@example.com", "locale": "ru"},
     )
 
-    assert existing_response.status_code == 200
+    assert existing_response.status_code == 502
+    assert existing_response.json()["detail"] == "Не удалось отправить письмо. Попробуйте позже."
     assert missing_response.status_code == 200
-    assert existing_response.json() == missing_response.json()
+    assert missing_response.json()["message"] == (
+        "Если этот email зарегистрирован, мы отправили ссылку для сброса пароля."
+    )
 
 
 @pytest.mark.asyncio
@@ -486,6 +489,81 @@ async def test_reset_password_errors_are_localized(client: AsyncClient):
     )
     assert invalid_response.status_code == 401
     assert invalid_response.json()["detail"] == "Недействительная ссылка для сброса пароля"
+
+
+@pytest.mark.asyncio
+async def test_reset_password_rejects_blank_token(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "   ", "password": "password1234"},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reset_password_unknown_reset_token_returns_invalid(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "reset_missing", "password": "password1234"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid password reset link"
+
+
+@pytest.mark.asyncio
+async def test_reset_password_expired_token_is_cleared(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user = User(
+        email="reset.expired@example.com",
+        magic_link_token="reset_expired",
+        magic_link_expires=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "reset_expired", "password": "password1234", "locale": "ru"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Срок действия ссылки для сброса пароля истек"
+    await db_session.refresh(user)
+    assert user.magic_link_token is None
+    assert user.magic_link_expires is None
+
+
+@pytest.mark.asyncio
+async def test_verify_magic_link_rejects_password_reset_token(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/verify-magic",
+        json={"token": "reset_abc", "locale": "ru"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Недействительная ссылка для входа"
+
+
+@pytest.mark.asyncio
+async def test_register_requires_current_legal_versions(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": "legal.version@example.com",
+            "password": "password123",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2020-01-01",
+            "legal_privacy_version": "2020-01-01",
+            "locale": "ru",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Нужно принять актуальные юридические документы"
 
 
 @pytest.mark.asyncio

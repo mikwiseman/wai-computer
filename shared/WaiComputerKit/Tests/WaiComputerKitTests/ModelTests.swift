@@ -305,6 +305,14 @@ final class ModelTests: XCTestCase {
             "Говорящий 1"
         )
         XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("speaker_0", languageCode: "ru"),
+            "Говорящий 0"
+        )
+        XCTAssertEqual(
+            SpeakerLabelCopy.userFacingLabel("speaker_0", languageCode: "en"),
+            "Speaker 0"
+        )
+        XCTAssertEqual(
             SpeakerLabelCopy.userFacingLabel("Оля", languageCode: "ru"),
             "Оля"
         )

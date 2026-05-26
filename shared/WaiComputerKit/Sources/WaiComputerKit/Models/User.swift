@@ -97,10 +97,12 @@ public enum LegalDocumentVersions {
 public struct LoginRequest: Codable, Sendable {
     public let email: String
     public let password: String
+    public let locale: String?
 
-    public init(email: String, password: String) {
+    public init(email: String, password: String, locale: String? = nil) {
         self.email = email
         self.password = password
+        self.locale = locale
     }
 }
 
@@ -108,6 +110,7 @@ public struct RegisterRequest: Codable, Sendable {
     public let email: String
     public let password: String
     public let region: String?
+    public let locale: String?
     public let acceptedLegalTerms: Bool
     public let legalTermsVersion: String
     public let legalPrivacyVersion: String
@@ -116,6 +119,7 @@ public struct RegisterRequest: Codable, Sendable {
         email: String,
         password: String,
         region: String? = nil,
+        locale: String? = nil,
         acceptedLegalTerms: Bool,
         legalTermsVersion: String = LegalDocumentVersions.terms,
         legalPrivacyVersion: String = LegalDocumentVersions.privacy
@@ -123,6 +127,7 @@ public struct RegisterRequest: Codable, Sendable {
         self.email = email
         self.password = password
         self.region = region
+        self.locale = locale
         self.acceptedLegalTerms = acceptedLegalTerms
         self.legalTermsVersion = legalTermsVersion
         self.legalPrivacyVersion = legalPrivacyVersion
@@ -132,6 +137,7 @@ public struct RegisterRequest: Codable, Sendable {
         case email
         case password
         case region
+        case locale
         case acceptedLegalTerms = "accepted_legal_terms"
         case legalTermsVersion = "legal_terms_version"
         case legalPrivacyVersion = "legal_privacy_version"
@@ -142,6 +148,7 @@ public struct MagicLinkRequest: Codable, Sendable {
     public let email: String
     public let client: String?
     public let region: String?
+    public let locale: String?
     public let acceptedLegalTerms: Bool?
     public let legalTermsVersion: String?
     public let legalPrivacyVersion: String?
@@ -150,6 +157,7 @@ public struct MagicLinkRequest: Codable, Sendable {
         email: String,
         client: String? = nil,
         region: String? = nil,
+        locale: String? = nil,
         acceptedLegalTerms: Bool? = nil,
         legalTermsVersion: String? = nil,
         legalPrivacyVersion: String? = nil
@@ -157,6 +165,7 @@ public struct MagicLinkRequest: Codable, Sendable {
         self.email = email
         self.client = client
         self.region = region
+        self.locale = locale
         self.acceptedLegalTerms = acceptedLegalTerms
         self.legalTermsVersion = legalTermsVersion
         self.legalPrivacyVersion = legalPrivacyVersion
@@ -166,6 +175,7 @@ public struct MagicLinkRequest: Codable, Sendable {
         case email
         case client
         case region
+        case locale
         case acceptedLegalTerms = "accepted_legal_terms"
         case legalTermsVersion = "legal_terms_version"
         case legalPrivacyVersion = "legal_privacy_version"

@@ -151,7 +151,7 @@ async def test_admin_can_manage_promo_codes_and_see_redemption_stats(
     assert item["id"] == promo_id
     assert item["redemption_rate"] == 0.1
     assert item["redemptions"][0]["user_email"] == "promo-user@example.com"
-    assert "code" not in item
+    assert item["code"] == "WAI-ADMIN-CONSOLE"
 
     patched = await client.patch(
         f"/api/admin/promo-codes/{promo_id}",

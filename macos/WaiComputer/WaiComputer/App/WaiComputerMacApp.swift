@@ -29,7 +29,7 @@ struct WaiComputerMacApp: App {
 
     init() {
         #if !DEBUG
-        SentryHelper.start(dsn: "https://05638b94653e5d1bca3552d885d5dc4f@o4508963132145664.ingest.us.sentry.io/4511194363658240")
+        SentryHelper.start(dsn: "https://7d4dee467b0776baf21d5833aa953caa@o4508963132145664.ingest.us.sentry.io/4511116051939328")
         #endif
 
         #if DEBUG
@@ -568,6 +568,8 @@ class MacAppState: ObservableObject {
     @Published var completedRecordingContext: CompletedRecordingContext?
     @Published var selectedRecordingFromMenu: String?
     @Published var pendingMainWindowAction: MacMainWindowAction?
+    @Published var hasCompletedPreAuthOnboarding: Bool = false
+    @Published var hasCompletedPostAuthOnboarding: Bool = false
     @Published var hasCompletedOnboarding: Bool = false
     @Published var missingPermissions: Set<MissingPermission> = []
     @Published private var activeSummaryGenerationRecordingIds: Set<String> = []
@@ -605,6 +607,10 @@ class MacAppState: ObservableObject {
 
     static let onboardingCompletedKey = "nativeOnboardingV4Completed"
     static let onboardingCurrentPageKey = "nativeOnboardingV4CurrentPage"
+    static let preAuthOnboardingCompletedKey = "nativeOnboardingV5PreAuthCompleted"
+    static let preAuthOnboardingCurrentPageKey = "nativeOnboardingV5PreAuthCurrentPage"
+    static let postAuthOnboardingCurrentPageKey = "nativeOnboardingV5PostAuthCurrentPage"
+    private static let postAuthOnboardingCompletedKeyPrefix = "nativeOnboardingV5PostAuthCompleted."
     static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed", "nativeOnboardingV3Completed"]
     static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
     static let onboardingSystemAudioSetupKey = "onboardingSystemAudioSetupCompleted"
@@ -639,40 +645,58 @@ class MacAppState: ObservableObject {
         }
         apiClient = APIClient(baseURL: baseURL)
 
-        // Resolve onboarding flag honoring env-var overrides used by tests/dev.
-        // The V4 key intentionally invalidates older completion flags because
-        // permission onboarding now preflights System Audio before recording.
+        // Resolve onboarding flags honoring env-var overrides used by tests/dev.
+        // V5 splits local first-run setup before auth from API-backed voice
+        // setup after auth.
         let env = ProcessInfo.processInfo.environment
         if env["WAI_FORCE_ONBOARDING"] == "1" {
-            UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
+            UserDefaults.standard.set(false, forKey: MacAppState.preAuthOnboardingCompletedKey)
             if !Self.hasExplicitOnboardingCurrentPageArgument {
-                UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+                UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCurrentPageKey)
+                UserDefaults.standard.removeObject(forKey: MacAppState.postAuthOnboardingCurrentPageKey)
             }
-            hasCompletedOnboarding = false
+            hasCompletedPreAuthOnboarding = false
+            hasCompletedPostAuthOnboarding = false
         } else if env["WAI_SKIP_ONBOARDING"] == "1" {
-            UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
-            hasCompletedOnboarding = true
+            UserDefaults.standard.set(true, forKey: MacAppState.preAuthOnboardingCompletedKey)
+            hasCompletedPreAuthOnboarding = true
+            hasCompletedPostAuthOnboarding = true
         } else {
-            hasCompletedOnboarding = UserDefaults.standard.bool(forKey: MacAppState.onboardingCompletedKey)
+            hasCompletedPreAuthOnboarding = Self.preAuthOnboardingCompleted()
+            hasCompletedPostAuthOnboarding = false
         }
+        refreshCombinedOnboardingState()
 
         #if DEBUG
         if testingMode.isRecordingFlow || testingMode.isMainView {
             currentUser = MacUITestFixtures.user
             isAuthenticated = true
             isCheckingAuth = false
+            hasCompletedPreAuthOnboarding = true
+            hasCompletedPostAuthOnboarding = true
             hasCompletedOnboarding = true
             return
         }
         if testingMode.isAuthFlow {
             isCheckingAuth = false
-            hasCompletedOnboarding = true
+            if env["WAI_FORCE_ONBOARDING"] == "1" {
+                hasCompletedPreAuthOnboarding = false
+                hasCompletedPostAuthOnboarding = false
+                refreshCombinedOnboardingState()
+            } else {
+                hasCompletedPreAuthOnboarding = true
+                hasCompletedPostAuthOnboarding = true
+                hasCompletedOnboarding = true
+            }
             return
         }
         if testingMode.isOnboardingFlow {
             currentUser = MacUITestFixtures.user
             isAuthenticated = true
             isCheckingAuth = false
+            hasCompletedPreAuthOnboarding = false
+            hasCompletedPostAuthOnboarding = false
+            refreshCombinedOnboardingState()
             dictationManager.configure(
                 apiClient: apiClient,
                 canStart: { [weak recordingViewModel] in
@@ -720,25 +744,81 @@ class MacAppState: ObservableObject {
             }
         }
 
-        // Auth/session restoration must happen before onboarding. The final
-        // onboarding sandbox performs real dictation, so showing it before the
-        // API client configures DictationManager creates a dead hotkey.
-        beginStoredSessionRestoreIfNeeded()
+        if hasCompletedPreAuthOnboarding {
+            beginStoredSessionRestoreIfNeeded()
+        } else {
+            isCheckingAuth = false
+        }
     }
 
     private static var hasExplicitOnboardingCurrentPageArgument: Bool {
         ProcessInfo.processInfo.arguments.contains("-\(onboardingCurrentPageKey)")
+            || ProcessInfo.processInfo.arguments.contains("-\(preAuthOnboardingCurrentPageKey)")
+            || ProcessInfo.processInfo.arguments.contains("-\(postAuthOnboardingCurrentPageKey)")
     }
 
-    /// Mark the current welcome and permission tour as seen.
+    private static func preAuthOnboardingCompleted() -> Bool {
+        UserDefaults.standard.bool(forKey: preAuthOnboardingCompletedKey)
+            || UserDefaults.standard.bool(forKey: onboardingCompletedKey)
+    }
+
+    private static func postAuthOnboardingCompletedKey(userId: String) -> String {
+        "\(postAuthOnboardingCompletedKeyPrefix)\(userId)"
+    }
+
+    private func refreshCombinedOnboardingState() {
+        hasCompletedOnboarding = hasCompletedPreAuthOnboarding && hasCompletedPostAuthOnboarding
+    }
+
+    /// Backward-compatible completion hook for older call sites.
     func completeOnboarding() {
-        UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        if isAuthenticated {
+            completePostAuthOnboarding()
+        } else {
+            completePreAuthOnboarding()
+        }
+    }
+
+    func completePreAuthOnboarding() {
+        UserDefaults.standard.set(true, forKey: MacAppState.preAuthOnboardingCompletedKey)
+        UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCurrentPageKey)
         UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
         MacAppState.legacyOnboardingCompletedKeys.forEach {
             UserDefaults.standard.removeObject(forKey: $0)
         }
-        hasCompletedOnboarding = true
+        hasCompletedPreAuthOnboarding = true
+        refreshCombinedOnboardingState()
         beginStoredSessionRestoreIfNeeded()
+    }
+
+    func completePostAuthOnboarding() {
+        if let userId = currentUser?.id {
+            UserDefaults.standard.set(
+                true,
+                forKey: MacAppState.postAuthOnboardingCompletedKey(userId: userId)
+            )
+        }
+        UserDefaults.standard.removeObject(forKey: MacAppState.postAuthOnboardingCurrentPageKey)
+        UserDefaults.standard.set(true, forKey: MacAppState.onboardingCompletedKey)
+        hasCompletedPostAuthOnboarding = true
+        refreshCombinedOnboardingState()
+    }
+
+    func resetOnboardingForSetupRerun() {
+        UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
+        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+        UserDefaults.standard.set(false, forKey: MacAppState.preAuthOnboardingCompletedKey)
+        UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCurrentPageKey)
+        UserDefaults.standard.removeObject(forKey: MacAppState.postAuthOnboardingCurrentPageKey)
+        if let userId = currentUser?.id {
+            UserDefaults.standard.removeObject(
+                forKey: MacAppState.postAuthOnboardingCompletedKey(userId: userId)
+            )
+        }
+        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingSystemAudioSetupKey)
+        hasCompletedPreAuthOnboarding = false
+        hasCompletedPostAuthOnboarding = false
+        refreshCombinedOnboardingState()
     }
 
     private func beginStoredSessionRestoreIfNeeded() {
@@ -797,7 +877,7 @@ class MacAppState: ObservableObject {
         error = nil
 
         do {
-            let response = try await apiClient.login(email: email, password: password)
+            let response = try await apiClient.login(email: email, password: password, locale: authLocale)
             await apiClient.setAccessToken(response.accessToken)
             if let rt = response.refreshToken {
                 await apiClient.setRefreshToken(rt)
@@ -822,6 +902,7 @@ class MacAppState: ObservableObject {
                 email: email,
                 password: password,
                 region: installedBillingRegion()?.rawValue,
+                locale: authLocale,
                 acceptedLegalTerms: acceptedLegalTerms
             )
             await apiClient.setAccessToken(response.accessToken)
@@ -847,7 +928,8 @@ class MacAppState: ObservableObject {
             _ = try await apiClient.requestMagicLink(
                 email: email,
                 client: "macos",
-                region: installedBillingRegion()?.rawValue
+                region: installedBillingRegion()?.rawValue,
+                locale: authLocale
             )
             magicLinkSent = true
         } catch let apiError as APIError {
@@ -857,6 +939,10 @@ class MacAppState: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    private var authLocale: String {
+        LanguageManager.shared.preferredLocale.language.languageCode?.identifier == "ru" ? "ru" : "en"
     }
 
     func requestPasswordReset(email: String, locale: String?) async {
@@ -895,12 +981,6 @@ class MacAppState: ObservableObject {
             persistSession(accessToken: response.accessToken, refreshToken: response.refreshToken)
             magicLinkSent = false
             await loadCurrentUser()
-            if isAuthenticated && !hasCompletedOnboarding {
-                UserDefaults.standard.set(
-                    OnboardingPage.permission.rawValue,
-                    forKey: MacAppState.onboardingCurrentPageKey
-                )
-            }
         } catch let apiError as APIError {
             handleAPIError(apiError)
         } catch {
@@ -989,11 +1069,16 @@ class MacAppState: ObservableObject {
         if removeUserData {
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCompletedKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCompletedKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCurrentPageKey)
+            UserDefaults.standard.removeObject(forKey: MacAppState.postAuthOnboardingCurrentPageKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingMicAcknowledgedKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingSystemAudioSetupKey)
             MacAppState.legacyOnboardingCompletedKeys.forEach {
                 UserDefaults.standard.removeObject(forKey: $0)
             }
+            hasCompletedPreAuthOnboarding = false
+            hasCompletedPostAuthOnboarding = false
             hasCompletedOnboarding = false
         }
         error = cleanupFailure
@@ -1020,6 +1105,8 @@ class MacAppState: ObservableObject {
         dictationManager.disable()
         currentUser = nil
         isAuthenticated = false
+        hasCompletedPostAuthOnboarding = false
+        refreshCombinedOnboardingState()
     }
 
     func loadCurrentUser() async {
@@ -1027,6 +1114,23 @@ class MacAppState: ObservableObject {
             let user = try await apiClient.getCurrentUser()
             currentUser = user
             isAuthenticated = true
+            if UserDefaults.standard.bool(forKey: MacAppState.onboardingCompletedKey) {
+                UserDefaults.standard.set(
+                    true,
+                    forKey: MacAppState.preAuthOnboardingCompletedKey
+                )
+                UserDefaults.standard.set(
+                    true,
+                    forKey: MacAppState.postAuthOnboardingCompletedKey(userId: user.id)
+                )
+            }
+            hasCompletedPreAuthOnboarding = Self.preAuthOnboardingCompleted()
+            hasCompletedPostAuthOnboarding =
+                ProcessInfo.processInfo.environment["WAI_SKIP_ONBOARDING"] == "1"
+                || UserDefaults.standard.bool(
+                    forKey: MacAppState.postAuthOnboardingCompletedKey(userId: user.id)
+                )
+            refreshCombinedOnboardingState()
             SentryHelper.setUser(id: user.id)
             await syncDownloadRegionToServerIfNeeded()
             await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
@@ -1049,6 +1153,8 @@ class MacAppState: ObservableObject {
         } catch {
             isAuthenticated = false
             currentUser = nil
+            hasCompletedPostAuthOnboarding = false
+            refreshCombinedOnboardingState()
             SentryHelper.clearUser()
             dictationManager.disable()
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -10,7 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.providers.base import ProviderEvent
-from app.models.billing import BillingEvent, BillingPeriod, Plan, Subscription, SubscriptionStatus
+from app.models.billing import (
+    BillingEvent,
+    BillingPeriod,
+    BillingPromoCode,
+    BillingPromoRedemption,
+    Plan,
+    Subscription,
+    SubscriptionStatus,
+)
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -21,6 +30,49 @@ async def _free_plan(db: AsyncSession) -> Plan:
     if plan is None:
         raise RuntimeError("Free plan missing — seed migration not applied?")
     return plan
+
+
+def _uuid_or_none(value: object) -> uuid.UUID | None:
+    if value is None:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
+async def _record_promo_redemption(
+    db: AsyncSession,
+    *,
+    promo_code_id: uuid.UUID | None,
+    user_id: uuid.UUID,
+    subscription_id: uuid.UUID,
+) -> None:
+    if promo_code_id is None:
+        return
+    promo = await db.get(BillingPromoCode, promo_code_id, with_for_update=True)
+    if promo is None:
+        logger.warning("checkout completed with unknown promo_code_id=%s", promo_code_id)
+        return
+    existing = (
+        await db.execute(
+            select(BillingPromoRedemption).where(
+                BillingPromoRedemption.promo_code_id == promo_code_id,
+                BillingPromoRedemption.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    db.add(
+        BillingPromoRedemption(
+            promo_code_id=promo_code_id,
+            user_id=user_id,
+            subscription_id=subscription_id,
+        )
+    )
+    if promo.redeemed_count < promo.max_redemptions:
+        promo.redeemed_count += 1
 
 
 def _ts(value: int | None) -> datetime | None:
@@ -125,6 +177,7 @@ async def _handle_checkout_completed(db: AsyncSession, obj: dict) -> None:
     metadata = obj.get("metadata") or {}
     plan_code = metadata.get("plan_code") or "pro"
     period = metadata.get("period") or "month"
+    promo_code_id = _uuid_or_none(metadata.get("promo_code_id"))
 
     if not user_id or not provider_subscription_id:
         logger.warning(
@@ -161,13 +214,22 @@ async def _handle_checkout_completed(db: AsyncSession, obj: dict) -> None:
             status=SubscriptionStatus.ACTIVE.value,
             provider="stripe",
             billing_period=period,
+            promo_code_id=promo_code_id,
             stripe_subscription_id=provider_subscription_id,
             stripe_customer_id=customer_id,
         )
         db.add(sub)
         await db.flush()
+    if promo_code_id is not None and sub.promo_code_id is None:
+        sub.promo_code_id = promo_code_id
 
     user.current_subscription_id = sub.id
+    await _record_promo_redemption(
+        db,
+        promo_code_id=sub.promo_code_id,
+        user_id=user.id,
+        subscription_id=sub.id,
+    )
     await db.flush()
 
 
@@ -280,6 +342,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
     customer_key = event.customer_id_provider
     amount = raw.get("amount")
     raw_payload = raw.get("payload", {})
+    promo_code_id = _uuid_or_none(raw.get("promo_code_id"))
 
     # Persist audit row regardless of dispatch outcome.
     billing_event = BillingEvent(
@@ -390,6 +453,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
             status=event.status or SubscriptionStatus.INCOMPLETE.value,
             provider="tinkoff",
             billing_period=billing_period,
+            promo_code_id=promo_code_id,
             tinkoff_order_id=order_id,
             tinkoff_customer_key=customer_key,
             tinkoff_rebill_id=rebill_id,
@@ -411,6 +475,8 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                 user = await db.get(User, sub.user_id)
             if user is not None and user.current_subscription_id != sub.id:
                 user.current_subscription_id = sub.id
+        if promo_code_id is not None and sub.promo_code_id is None:
+            sub.promo_code_id = promo_code_id
 
     billing_event.subscription_id = sub.id
 
@@ -423,6 +489,12 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
         sub.tinkoff_rebill_id = rebill_id
 
     if event.status == "active":
+        await _record_promo_redemption(
+            db,
+            promo_code_id=sub.promo_code_id,
+            user_id=sub.user_id,
+            subscription_id=sub.id,
+        )
         payment_id = raw.get("payment_id")
         existing_invoice = None
         if payment_id:

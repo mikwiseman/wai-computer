@@ -26,11 +26,15 @@ struct OnboardingView: View {
     @State private var triggeredOpenAccessibilitySettings = false
     @State private var triggeredOpenSystemAudioSettings = false
 
-    private let pages = OnboardingPage.allCases
+    private let phase: OnboardingPhase
+    private let pages: [OnboardingPage]
     @EnvironmentObject var languageStore: DictationLanguageStore
 
-    init() {
-        _currentPage = State(initialValue: Self.initialCurrentPage())
+    init(phase: OnboardingPhase = .preAuth) {
+        self.phase = phase
+        let pages = phase.pages
+        self.pages = pages
+        _currentPage = State(initialValue: Self.initialCurrentPage(for: phase, pages: pages))
     }
 
     private var isLastPage: Bool { currentPage == pages.count - 1 }
@@ -51,7 +55,7 @@ struct OnboardingView: View {
         .frame(minWidth: 800, minHeight: 640)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .onAppear {
-            currentPage = Self.clampedPageIndex(currentPage)
+            currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
             persistCurrentPage()
             refreshPermissions()
             startPermissionPollingIfNeeded()
@@ -249,7 +253,12 @@ struct OnboardingView: View {
 
     private func completeOnboarding() {
         UserDefaults.standard.set(hasMicrophonePermission, forKey: MacAppState.onboardingMicAcknowledgedKey)
-        appState.completeOnboarding()
+        switch phase {
+        case .preAuth:
+            appState.completePreAuthOnboarding()
+        case .postAuth:
+            appState.completePostAuthOnboarding()
+        }
     }
 
     private func advanceToNextPage() {
@@ -270,16 +279,33 @@ struct OnboardingView: View {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 
-    private static func initialCurrentPage() -> Int {
-        clampedPageIndex(UserDefaults.standard.integer(forKey: MacAppState.onboardingCurrentPageKey))
+    private static func initialCurrentPage(for phase: OnboardingPhase, pages: [OnboardingPage]) -> Int {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: phase.currentPageKey) == nil,
+           case .preAuth = phase,
+           defaults.object(forKey: MacAppState.onboardingCurrentPageKey) != nil {
+            let legacyPage = defaults.integer(forKey: MacAppState.onboardingCurrentPageKey)
+            guard legacyPage < pages.count else { return 0 }
+            return clampedPageIndex(
+                legacyPage,
+                pageCount: pages.count
+            )
+        }
+        return clampedPageIndex(
+            defaults.integer(forKey: phase.currentPageKey),
+            pageCount: pages.count
+        )
     }
 
-    private static func clampedPageIndex(_ value: Int) -> Int {
-        min(max(value, 0), OnboardingPage.allCases.count - 1)
+    private static func clampedPageIndex(_ value: Int, pageCount: Int? = nil) -> Int {
+        min(max(value, 0), max((pageCount ?? OnboardingPage.allCases.count) - 1, 0))
     }
 
     private func persistCurrentPage() {
-        UserDefaults.standard.set(Self.clampedPageIndex(currentPage), forKey: MacAppState.onboardingCurrentPageKey)
+        UserDefaults.standard.set(
+            Self.clampedPageIndex(currentPage, pageCount: pages.count),
+            forKey: phase.currentPageKey
+        )
     }
 
     private var dictationPermissionsReady: Bool {

@@ -155,7 +155,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "usd_amount_yearly": 96,
                 "rub_amount_monthly": 999,
                 "rub_amount_yearly": 7999,
-                "word_cap_per_week": 50000,
+                "word_cap_per_week": null,
                 "memory_retention_days": null,
                 "features": {
                   "billing": true

@@ -52,6 +52,7 @@ export async function createBillingCheckout(input: {
   plan: string;
   period: "month" | "year";
   provider?: "stripe" | "tinkoff";
+  promo_code?: string;
 }): Promise<BillingCheckoutResponse> {
   return apiFetch<BillingCheckoutResponse>("/api/billing/checkout", {
     method: "POST",

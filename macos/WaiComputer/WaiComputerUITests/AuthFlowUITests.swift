@@ -50,7 +50,7 @@ final class AuthFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testUnauthenticatedLaunchShowsAuthBeforeOnboarding() throws {
+    func testUnauthenticatedLaunchShowsPreAuthOnboardingBeforeAuth() throws {
         let app = XCUIApplication()
         app.configureWaiComputerUITestLaunch(
             scenario: "auth_flow",
@@ -59,7 +59,8 @@ final class AuthFlowUITests: XCTestCase {
         app.launch()
         app.activate()
 
-        XCTAssertTrue(app.textFields["Email"].waitForExistence(timeout: 8), "Unauthenticated users must sign in before the dictation onboarding tour")
+        XCTAssertTrue(app.staticTexts["Welcome to WaiComputer"].waitForExistence(timeout: 8), "Unauthenticated first launch should start with local onboarding")
+        XCTAssertFalse(app.textFields["Email"].exists, "Auth should appear after pre-auth onboarding")
         XCTAssertFalse(app.staticTexts["Try dictation now"].exists, "The dictation sandbox requires an authenticated, configured DictationManager")
     }
 }

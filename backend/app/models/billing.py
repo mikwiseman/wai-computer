@@ -57,6 +57,13 @@ class BillingPeriod(str, enum.Enum):
     YEAR = "year"
 
 
+class PromoPromotionType(str, enum.Enum):
+    """Admin-created promo-code modes."""
+
+    ACCESS = "access"
+    DISCOUNT = "discount"
+
+
 class Plan(Base, UUIDMixin, TimestampMixin):
     """Billing plan with feature flags and per-rail price references."""
 
@@ -107,6 +114,9 @@ class Subscription(Base, UUIDMixin, TimestampMixin):
     )
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("billing_plans.id", ondelete="RESTRICT"), nullable=False
+    )
+    promo_code_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("billing_promo_codes.id", ondelete="SET NULL"), index=True
     )
 
     status: Mapped[str] = mapped_column(
@@ -219,7 +229,33 @@ class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "billing_promo_codes"
     __table_args__ = (
-        CheckConstraint("duration_days > 0", name="ck_billing_promo_codes_duration_positive"),
+        CheckConstraint(
+            "duration_days IS NULL OR duration_days > 0",
+            name="ck_billing_promo_codes_duration_positive",
+        ),
+        CheckConstraint(
+            "promotion_type IN ('access', 'discount')",
+            name="ck_billing_promo_codes_promotion_type",
+        ),
+        CheckConstraint(
+            "promotion_type != 'access' OR duration_days IS NOT NULL",
+            name="ck_billing_promo_codes_access_duration_required",
+        ),
+        CheckConstraint(
+            "promotion_type != 'access' OR discount_percent IS NULL",
+            name="ck_billing_promo_codes_access_discount_forbidden",
+        ),
+        CheckConstraint(
+            (
+                "promotion_type != 'discount' OR "
+                "(discount_percent IS NOT NULL AND discount_percent BETWEEN 1 AND 99)"
+            ),
+            name="ck_billing_promo_codes_discount_percent",
+        ),
+        CheckConstraint(
+            "promotion_type != 'discount' OR duration_days IS NULL",
+            name="ck_billing_promo_codes_discount_duration_forbidden",
+        ),
         CheckConstraint(
             "max_redemptions > 0",
             name="ck_billing_promo_codes_max_redemptions_positive",
@@ -234,14 +270,22 @@ class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
         ),
     )
 
+    code: Mapped[str | None] = mapped_column(String(128))
     code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("billing_plans.id", ondelete="RESTRICT"), nullable=False
     )
+    promotion_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=PromoPromotionType.ACCESS.value,
+        server_default=PromoPromotionType.ACCESS.value,
+    )
     billing_period: Mapped[str] = mapped_column(
         String(10), nullable=False, default=BillingPeriod.MONTH.value, server_default="month"
     )
-    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_days: Mapped[int | None] = mapped_column(Integer)
+    discount_percent: Mapped[int | None] = mapped_column(Integer)
     max_redemptions: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )

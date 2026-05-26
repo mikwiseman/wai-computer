@@ -60,10 +60,12 @@ describe("admin api wrappers", () => {
       code: null,
       prefix: "WAI",
       plan: "pro",
+      promotion_type: "access",
       billing_period: "month",
       duration_days: 30,
+      discount_percent: null,
       max_redemptions: 10,
-      expires_days: null,
+      expires_at: null,
       note: "launch",
     });
     await updateAdminPromoCode("promo-1", {
@@ -80,10 +82,12 @@ describe("admin api wrappers", () => {
         code: null,
         prefix: "WAI",
         plan: "pro",
+        promotion_type: "access",
         billing_period: "month",
         duration_days: 30,
+        discount_percent: null,
         max_redemptions: 10,
-        expires_days: null,
+        expires_at: null,
         note: "launch",
       }),
     });

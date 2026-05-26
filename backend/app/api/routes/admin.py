@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import String, case, desc, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 
@@ -136,10 +136,13 @@ class AdminPromoCodeCreateRequest(BaseModel):
     code: str | None = Field(default=None, max_length=128)
     prefix: str = Field(default="WAI", min_length=1, max_length=16)
     plan: str = Field(default="pro", min_length=1, max_length=20)
+    promotion_type: Literal["access", "discount"] = "access"
     billing_period: BillingPeriod = BillingPeriod.MONTH
-    duration_days: int = Field(ge=1, le=3650)
+    duration_days: int | None = Field(default=None, ge=1, le=3650)
+    discount_percent: int | None = Field(default=None, ge=1, le=99)
     max_redemptions: int = Field(ge=1, le=100_000)
-    expires_days: int | None = Field(default=30, ge=1, le=3650)
+    expires_days: int | None = Field(default=None, ge=1, le=3650)
+    expires_at: datetime | None = None
     note: str | None = Field(default=None, max_length=500)
 
     @field_validator("code", "note", mode="before")
@@ -171,11 +174,28 @@ class AdminPromoCodeCreateRequest(BaseModel):
     def _strip_note(cls, value: str | None) -> str | None:
         return value.strip() if value is not None else None
 
+    @model_validator(mode="after")
+    def _validate_shape(self) -> "AdminPromoCodeCreateRequest":
+        if self.promotion_type == "access":
+            if self.duration_days is None:
+                raise ValueError("duration_days is required for access promo codes")
+            if self.discount_percent is not None:
+                raise ValueError("discount_percent is only valid for discount promo codes")
+        if self.promotion_type == "discount":
+            if self.discount_percent is None:
+                raise ValueError("discount_percent is required for discount promo codes")
+            if self.duration_days is not None:
+                raise ValueError("duration_days is only valid for access promo codes")
+        if self.expires_days is not None and self.expires_at is not None:
+            raise ValueError("expires_at and expires_days cannot both be set")
+        return self
+
 
 class AdminPromoCodePatchRequest(BaseModel):
     active: bool | None = None
     expires_at: datetime | None = None
     duration_days: int | None = Field(default=None, ge=1, le=3650)
+    discount_percent: int | None = Field(default=None, ge=1, le=99)
     max_redemptions: int | None = Field(default=None, ge=1, le=100_000)
     note: str | None = Field(default=None, max_length=500)
 
@@ -197,8 +217,10 @@ class AdminPromoCodeResponse(BaseModel):
     code: str | None = None
     normalized_code: str | None = None
     plan: str
+    promotion_type: str
     billing_period: str
-    duration_days: int
+    duration_days: int | None
+    discount_percent: int | None
     max_redemptions: int
     redeemed_count: int
     redemption_rate: float
@@ -678,11 +700,13 @@ async def _promo_response(
 
     return AdminPromoCodeResponse(
         id=str(promo.id),
-        code=code,
-        normalized_code=normalize_promo_code(code) if code else None,
+        code=code or promo.code,
+        normalized_code=normalize_promo_code(code or promo.code) if code or promo.code else None,
         plan=plan.code if plan is not None else "unknown",
+        promotion_type=promo.promotion_type,
         billing_period=promo.billing_period,
         duration_days=promo.duration_days,
+        discount_percent=promo.discount_percent,
         max_redemptions=promo.max_redemptions,
         redeemed_count=promo.redeemed_count,
         redemption_rate=promo.redeemed_count / promo.max_redemptions,
@@ -715,15 +739,20 @@ async def create_admin_promo_code(
     if existing is not None:
         raise HTTPException(status_code=409, detail="Promo code already exists")
 
-    expires_at = None
-    if payload.expires_days is not None:
+    expires_at = payload.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at is None and payload.expires_days is not None:
         expires_at = datetime.now(timezone.utc) + timedelta(days=payload.expires_days)
 
     promo = BillingPromoCode(
+        code=code,
         code_hash=code_hash,
         plan_id=plan.id,
+        promotion_type=payload.promotion_type,
         billing_period=payload.billing_period.value,
         duration_days=payload.duration_days,
+        discount_percent=payload.discount_percent,
         max_redemptions=payload.max_redemptions,
         expires_at=expires_at,
         note=payload.note,
@@ -740,7 +769,11 @@ async def create_admin_promo_code(
         action="promo_create",
         target_type="promo_code",
         target_id=str(promo.id),
-        details={"plan": plan.code, "max_redemptions": promo.max_redemptions},
+        details={
+            "plan": plan.code,
+            "promotion_type": promo.promotion_type,
+            "max_redemptions": promo.max_redemptions,
+        },
     )
     return await _promo_response(promo, db, code=code, include_redemptions=False)
 
@@ -807,6 +840,16 @@ async def patch_admin_promo_code(
         raise HTTPException(
             status_code=400,
             detail="max_redemptions cannot be lower than redeemed_count",
+        )
+    if promo.promotion_type == "access" and "discount_percent" in updates:
+        raise HTTPException(
+            status_code=400,
+            detail="discount_percent is only valid for discount promo codes",
+        )
+    if promo.promotion_type == "discount" and "duration_days" in updates:
+        raise HTTPException(
+            status_code=400,
+            detail="duration_days is only valid for access promo codes",
         )
     for field_name, value in updates.items():
         setattr(promo, field_name, value)

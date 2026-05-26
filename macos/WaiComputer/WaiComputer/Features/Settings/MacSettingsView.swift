@@ -399,10 +399,7 @@ struct MacSettingsView: View {
                 // Recovery actions for permission state drift after updates
                 HStack(spacing: Spacing.sm) {
                     Button {
-                        UserDefaults.standard.set(false, forKey: MacAppState.onboardingCompletedKey)
-                        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
-                        UserDefaults.standard.removeObject(forKey: MacAppState.onboardingSystemAudioSetupKey)
-                        appState.hasCompletedOnboarding = false
+                        appState.resetOnboardingForSetupRerun()
                     } label: {
                         Text("settings.dictation.rerunSetup", bundle: .main)
                     }

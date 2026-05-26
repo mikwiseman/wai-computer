@@ -530,19 +530,21 @@ public actor APIClient {
         email: String,
         password: String,
         region: String? = nil,
+        locale: String? = nil,
         acceptedLegalTerms: Bool
     ) async throws -> AuthResponse {
         let request = RegisterRequest(
             email: email,
             password: password,
             region: region,
+            locale: locale,
             acceptedLegalTerms: acceptedLegalTerms
         )
         return try await self.request(.POST, path: "/api/auth/register", body: request)
     }
 
-    public func login(email: String, password: String) async throws -> AuthResponse {
-        let request = LoginRequest(email: email, password: password)
+    public func login(email: String, password: String, locale: String? = nil) async throws -> AuthResponse {
+        let request = LoginRequest(email: email, password: password, locale: locale)
         return try await self.request(.POST, path: "/api/auth/login", body: request)
     }
 
@@ -550,6 +552,7 @@ public actor APIClient {
         email: String,
         client: String? = nil,
         region: String? = nil,
+        locale: String? = nil,
         acceptedLegalTerms: Bool? = nil,
         legalTermsVersion: String? = nil,
         legalPrivacyVersion: String? = nil
@@ -558,6 +561,7 @@ public actor APIClient {
             email: email,
             client: client,
             region: region,
+            locale: locale,
             acceptedLegalTerms: acceptedLegalTerms,
             legalTermsVersion: legalTermsVersion,
             legalPrivacyVersion: legalPrivacyVersion

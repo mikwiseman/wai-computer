@@ -26,7 +26,7 @@ final class RealAppSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    func testInstalledReleaseShowsAuthBeforePersistedOnboardingTryPageWithoutSession() throws {
+    func testInstalledReleaseShowsPreAuthOnboardingBeforePersistedTryPageWithoutSession() throws {
         let app = try installedReleaseApp()
         app.terminate()
         app.launchEnvironment["WAI_DISABLE_STORED_SESSION_RESTORE"] = "1"
@@ -39,8 +39,8 @@ final class RealAppSmokeUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(
-            app.textFields["Email"].waitForExistence(timeout: 8),
-            "Installed release must require auth before showing the dictation sandbox."
+            app.staticTexts["Welcome to WaiComputer"].waitForExistence(timeout: 8),
+            "Installed release should show pre-auth onboarding before auth."
         )
         XCTAssertFalse(
             app.staticTexts["Try dictation now"].exists,

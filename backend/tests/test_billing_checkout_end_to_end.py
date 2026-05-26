@@ -241,6 +241,8 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
         "https://wai.computer/billing/cancel?provider=tinkoff&lang=ru"
     )
     assert init_payload["NotificationURL"] == "https://wai.computer/api/webhooks/tinkoff"
+    assert init_payload["Description"] == "WaiComputer PRO year"
+    assert init_payload["Receipt"]["Items"][0]["Name"] == "WaiComputer PRO year"
     assert init_payload["DATA"] == {
         "user_id": user_id,
         "plan_code": "pro",

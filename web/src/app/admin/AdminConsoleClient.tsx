@@ -31,6 +31,12 @@ import {
 } from "@/lib/admin";
 
 type AdminTab = "overview" | "promos" | "users" | "billing" | "observability" | "audit";
+type PromoDraft = {
+  note: string;
+  duration_days: number | null;
+  discount_percent: number | null;
+  max_redemptions: number;
+};
 
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -52,6 +58,17 @@ function fmtDate(value: string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function defaultPromoExpiryDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  return date.toISOString().slice(0, 10);
+}
+
+function promoExpiryIso(dateValue: string): string | null {
+  if (!dateValue) return null;
+  return `${dateValue}T23:59:59.000Z`;
 }
 
 function metricEntries(record: Record<string, number>): Array<[string, number]> {
@@ -76,7 +93,7 @@ export function AdminConsoleClient() {
   const [tab, setTab] = useState<AdminTab>(TABS.some((item) => item.id === initialTab) ? initialTab : "overview");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [promos, setPromos] = useState<AdminPromoCode[]>([]);
-  const [promoDrafts, setPromoDrafts] = useState<Record<string, { note: string; duration_days: number; max_redemptions: number }>>({});
+  const [promoDrafts, setPromoDrafts] = useState<Record<string, PromoDraft>>({});
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
   const [billing, setBilling] = useState<AdminBillingSubscription[]>([]);
@@ -89,9 +106,11 @@ export function AdminConsoleClient() {
   const [newPromo, setNewPromo] = useState({
     code: "",
     prefix: "WAI",
+    promotionType: "access" as "access" | "discount",
     durationDays: 30,
+    discountPercent: 20,
     maxRedemptions: 1,
-    expiresDays: 30,
+    expiresOn: defaultPromoExpiryDate(),
     period: "month" as "month" | "year",
     note: "",
   });
@@ -123,6 +142,7 @@ export function AdminConsoleClient() {
           {
             note: promo.note ?? "",
             duration_days: promo.duration_days,
+            discount_percent: promo.discount_percent,
             max_redemptions: promo.max_redemptions,
           },
         ]),
@@ -169,10 +189,12 @@ export function AdminConsoleClient() {
         code: newPromo.code.trim() || null,
         prefix: newPromo.prefix.trim() || "WAI",
         plan: "pro",
+        promotion_type: newPromo.promotionType,
         billing_period: newPromo.period,
-        duration_days: newPromo.durationDays,
+        duration_days: newPromo.promotionType === "access" ? newPromo.durationDays : null,
+        discount_percent: newPromo.promotionType === "discount" ? newPromo.discountPercent : null,
         max_redemptions: newPromo.maxRedemptions,
-        expires_days: newPromo.expiresDays,
+        expires_at: promoExpiryIso(newPromo.expiresOn),
         note: newPromo.note.trim() || null,
       });
       setLatestPlaintextCode(created.code ?? null);
@@ -291,27 +313,36 @@ export function AdminConsoleClient() {
                 <input value={newPromo.code} onChange={(event) => setNewPromo((current) => ({ ...current, code: event.target.value }))} placeholder="auto" />
               </label>
               <label>
-                <span>Prefix</span>
-                <input value={newPromo.prefix} onChange={(event) => setNewPromo((current) => ({ ...current, prefix: event.target.value }))} />
+                <span>Auto prefix</span>
+                <input value={newPromo.prefix} disabled={newPromo.code.trim().length > 0} onChange={(event) => setNewPromo((current) => ({ ...current, prefix: event.target.value }))} />
               </label>
               <label>
-                <span>Period</span>
-                <select value={newPromo.period} onChange={(event) => setNewPromo((current) => ({ ...current, period: event.target.value as "month" | "year" }))}>
-                  <option value="month">month</option>
-                  <option value="year">year</option>
+                <span>Type</span>
+                <select value={newPromo.promotionType} onChange={(event) => setNewPromo((current) => ({ ...current, promotionType: event.target.value as "access" | "discount" }))}>
+                  <option value="access">Pro access</option>
+                  <option value="discount">Price discount</option>
                 </select>
               </label>
+              {newPromo.promotionType === "discount" ? (
+                <label>
+                  <span>Checkout period</span>
+                  <select value={newPromo.period} onChange={(event) => setNewPromo((current) => ({ ...current, period: event.target.value as "month" | "year" }))}>
+                    <option value="month">month</option>
+                    <option value="year">year</option>
+                  </select>
+                </label>
+              ) : null}
               <label>
-                <span>Pro days</span>
-                <input type="number" min={1} value={newPromo.durationDays} onChange={(event) => setNewPromo((current) => ({ ...current, durationDays: Number(event.target.value) }))} />
+                <span>{newPromo.promotionType === "access" ? "Pro days" : "Discount %"}</span>
+                <input type="number" min={1} max={newPromo.promotionType === "discount" ? 99 : undefined} value={newPromo.promotionType === "access" ? newPromo.durationDays : newPromo.discountPercent} onChange={(event) => setNewPromo((current) => current.promotionType === "access" ? { ...current, durationDays: Number(event.target.value) } : { ...current, discountPercent: Number(event.target.value) })} />
               </label>
               <label>
                 <span>Redemptions</span>
                 <input type="number" min={1} value={newPromo.maxRedemptions} onChange={(event) => setNewPromo((current) => ({ ...current, maxRedemptions: Number(event.target.value) }))} />
               </label>
               <label>
-                <span>Expires days</span>
-                <input type="number" min={1} value={newPromo.expiresDays} onChange={(event) => setNewPromo((current) => ({ ...current, expiresDays: Number(event.target.value) }))} />
+                <span>Expires on</span>
+                <input type="date" value={newPromo.expiresOn} onChange={(event) => setNewPromo((current) => ({ ...current, expiresOn: event.target.value }))} />
               </label>
               <label className="admin-form-wide">
                 <span>Note</span>
@@ -333,9 +364,13 @@ export function AdminConsoleClient() {
               onSave={(promoId) =>
                 runAction(async () => {
                   const draft = promoDrafts[promoId];
+                  const promo = promos.find((item) => item.id === promoId);
+                  if (!promo) return;
                   await updateAdminPromoCode(promoId, {
                     note: draft.note,
-                    duration_days: draft.duration_days,
+                    ...(promo.promotion_type === "access"
+                      ? { duration_days: draft.duration_days }
+                      : { discount_percent: draft.discount_percent }),
                     max_redemptions: draft.max_redemptions,
                   });
                 }, "Promo code updated.")
@@ -631,59 +666,75 @@ function PromoTable({
   onArchive,
 }: {
   promos: AdminPromoCode[];
-  drafts: Record<string, { note: string; duration_days: number; max_redemptions: number }>;
-  setDrafts: Dispatch<
-    SetStateAction<
-      Record<string, { note: string; duration_days: number; max_redemptions: number }>
-    >
-  >;
+  drafts: Record<string, PromoDraft>;
+  setDrafts: Dispatch<SetStateAction<Record<string, PromoDraft>>>;
   busy: boolean;
   onSave: (promoId: string) => Promise<void>;
   onToggle: (promo: AdminPromoCode) => Promise<void>;
   onArchive: (promo: AdminPromoCode) => Promise<void>;
 }) {
   return (
-    <table className="admin-table">
-      <thead>
-        <tr>
-          <th>Created</th>
-          <th>Status</th>
-          <th>Plan</th>
-          <th>Use</th>
-          <th>Days</th>
-          <th>Max</th>
-          <th>Note</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {promos.map((promo) => {
-          const draft = drafts[promo.id] ?? { note: "", duration_days: promo.duration_days, max_redemptions: promo.max_redemptions };
-          return (
-            <tr key={promo.id}>
-              <td>{fmtDate(promo.created_at)}</td>
-              <td>{promo.active ? "active" : "paused"}</td>
-              <td>{promo.plan}</td>
-              <td>{promo.redeemed_count} / {promo.max_redemptions}</td>
-              <td>
-                <input type="number" min={1} value={draft.duration_days} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, duration_days: Number(event.target.value) } }))} />
-              </td>
-              <td>
-                <input type="number" min={promo.redeemed_count || 1} value={draft.max_redemptions} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, max_redemptions: Number(event.target.value) } }))} />
-              </td>
-              <td>
-                <input value={draft.note} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, note: event.target.value } }))} />
-              </td>
-              <td className="admin-row-actions">
-                <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onSave(promo.id)}>Save</button>
-                <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onToggle(promo)}>{promo.active ? "Pause" : "Resume"}</button>
-                <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => void onArchive(promo)}>Archive</button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="admin-table-wrap">
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Code</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Plan</th>
+            <th>Use</th>
+            <th>Benefit</th>
+            <th>Period</th>
+            <th>Expires</th>
+            <th>Max</th>
+            <th>Note</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {promos.map((promo) => {
+            const draft = drafts[promo.id] ?? {
+              note: "",
+              duration_days: promo.duration_days,
+              discount_percent: promo.discount_percent,
+              max_redemptions: promo.max_redemptions,
+            };
+            const code = promo.code ?? promo.normalized_code ?? "-";
+            return (
+              <tr key={promo.id}>
+                <td>{fmtDate(promo.created_at)}</td>
+                <td className="admin-code-cell">{code}</td>
+                <td>{promo.promotion_type === "discount" ? "discount" : "access"}</td>
+                <td>{promo.active ? "active" : "paused"}</td>
+                <td>{promo.plan}</td>
+                <td>{promo.redeemed_count} / {promo.max_redemptions}</td>
+                <td>
+                  {promo.promotion_type === "access" ? (
+                    <input type="number" min={1} value={draft.duration_days ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, duration_days: Number(event.target.value) } }))} />
+                  ) : (
+                    <input type="number" min={1} max={99} value={draft.discount_percent ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, discount_percent: Number(event.target.value) } }))} />
+                  )}
+                </td>
+                <td>{promo.promotion_type === "discount" ? promo.billing_period : "-"}</td>
+                <td>{fmtDate(promo.expires_at)}</td>
+                <td>
+                  <input type="number" min={promo.redeemed_count || 1} value={draft.max_redemptions} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, max_redemptions: Number(event.target.value) } }))} />
+                </td>
+                <td>
+                  <input value={draft.note} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, note: event.target.value } }))} />
+                </td>
+                <td className="admin-row-actions">
+                  <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onSave(promo.id)}>Save</button>
+                  <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onToggle(promo)}>{promo.active ? "Pause" : "Resume"}</button>
+                  <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => void onArchive(promo)}>Archive</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

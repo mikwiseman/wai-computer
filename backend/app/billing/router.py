@@ -88,6 +88,7 @@ class CheckoutRequest(BaseModel):
     plan: str  # plan code, e.g. "pro"
     period: str  # "month" | "year"
     provider: str | None = None  # optional override: "stripe" | "tinkoff"
+    promo_code: str | None = None
 
 
 class PromoClaimRequest(BaseModel):
@@ -191,6 +192,57 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
+def _promo_expired(promo: BillingPromoCode, now: datetime) -> bool:
+    expires_at = promo.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at is not None and expires_at <= now
+
+
+async def _checkout_discount_promo(
+    *,
+    db: Database,
+    user: CurrentUser,
+    promo_code: str | None,
+    period: str,
+) -> BillingPromoCode | None:
+    if promo_code is None or not promo_code.strip():
+        return None
+    normalized = normalize_promo_code(promo_code)
+    if not normalized:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+    promo = (
+        await db.execute(
+            select(BillingPromoCode)
+            .where(BillingPromoCode.code_hash == hash_promo_code(normalized))
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if promo is None or not promo.active:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+    if promo.promotion_type != "discount":
+        raise HTTPException(status_code=400, detail="Promo code grants Pro access")
+    if _promo_expired(promo, datetime.now(timezone.utc)):
+        raise HTTPException(status_code=400, detail="Promo code expired")
+    if promo.redeemed_count >= promo.max_redemptions:
+        raise HTTPException(status_code=409, detail="Promo code exhausted")
+    if promo.billing_period != period:
+        raise HTTPException(status_code=400, detail="Promo code does not apply to selected period")
+    existing_redemption = (
+        await db.execute(
+            select(BillingPromoRedemption).where(
+                BillingPromoRedemption.promo_code_id == promo.id,
+                BillingPromoRedemption.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_redemption is not None:
+        raise HTTPException(status_code=409, detail="Promo code already redeemed")
+    if promo.discount_percent is None:
+        raise HTTPException(status_code=500, detail="Promo code discount missing")
+    return promo
+
+
 def _plan_payload(plan: Plan) -> PlanResponse:
     return PlanResponse(
         code=plan.code,
@@ -242,6 +294,12 @@ async def create_checkout(
     settings = get_settings()
     provider_code = _pick_provider(user.region, payload.provider)
     success_url, cancel_url = _checkout_result_urls(settings.frontend_url, provider_code)
+    promo = await _checkout_discount_promo(
+        db=db,
+        user=user,
+        promo_code=payload.promo_code,
+        period=payload.period,
+    )
 
     if provider_code == BillingProvider.STRIPE.value:
         provider = StripeProvider()
@@ -254,6 +312,9 @@ async def create_checkout(
                 success_url=success_url,
                 cancel_url=cancel_url,
                 trial_days=None,
+                discount_percent=promo.discount_percent if promo is not None else None,
+                discount_code=promo.code if promo is not None else None,
+                promo_code_id=str(promo.id) if promo is not None else None,
             )
         except ProviderUnavailableError as exc:
             raise HTTPException(
@@ -273,6 +334,9 @@ async def create_checkout(
                 success_url=success_url,
                 cancel_url=cancel_url,
                 trial_days=None,  # T-Bank Init has no native trial; first charge is real.
+                discount_percent=promo.discount_percent if promo is not None else None,
+                discount_code=promo.code if promo is not None else None,
+                promo_code_id=str(promo.id) if promo is not None else None,
             )
         except ProviderUnavailableError as exc:
             raise HTTPException(
@@ -296,6 +360,7 @@ async def create_checkout(
                 status=SubscriptionStatus.INCOMPLETE.value,
                 provider=BillingProvider.TINKOFF.value,
                 billing_period=payload.period,
+                promo_code_id=promo.id if promo is not None else None,
                 tinkoff_order_id=result.provider_order_id,
                 tinkoff_customer_key=str(user.id),
             )
@@ -326,12 +391,11 @@ async def claim_promo_code(
     ).scalar_one_or_none()
     if promo is None or not promo.active:
         raise HTTPException(status_code=404, detail="Promo code not found")
+    if promo.promotion_type != "access":
+        raise HTTPException(status_code=400, detail="Promo code applies to checkout")
 
     now = datetime.now(timezone.utc)
-    expires_at = promo.expires_at
-    if expires_at is not None and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at is not None and expires_at <= now:
+    if _promo_expired(promo, now):
         raise HTTPException(status_code=400, detail="Promo code expired")
     if promo.redeemed_count >= promo.max_redemptions:
         raise HTTPException(status_code=409, detail="Promo code exhausted")
@@ -350,6 +414,8 @@ async def claim_promo_code(
     plan = (await db.execute(select(Plan).where(Plan.id == promo.plan_id))).scalar_one_or_none()
     if plan is None:
         raise HTTPException(status_code=500, detail="Promo code plan missing")
+    if promo.duration_days is None:
+        raise HTTPException(status_code=500, detail="Promo code duration missing")
 
     if user.current_subscription_id is not None:
         current_sub = (

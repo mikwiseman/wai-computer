@@ -43,7 +43,7 @@ async def test_billing_plans_amounts_are_numbers_not_strings(
     pro = next(p for p in plans if p["code"] == "pro")
     assert pro["usd_amount_monthly"] == 12.0
     assert pro["rub_amount_monthly"] == 999.0
-    assert pro["word_cap_per_week"] == 50_000
+    assert pro["word_cap_per_week"] is None
 
     free = next(p for p in plans if p["code"] == "free")
     assert free["word_cap_per_week"] == 3_000
@@ -235,6 +235,206 @@ async def test_checkout_defaults_ru_region_to_tinkoff_provider(
 
 
 @pytest.mark.asyncio
+async def test_checkout_applies_percent_discount_promo_code(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, _ = await _register_for_billing(
+        client, db_session, "checkout.discount@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    promo = BillingPromoCode(
+        code="WAI-OFF-20",
+        code_hash=hash_promo_code("WAI-OFF-20"),
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="month",
+        duration_days=None,
+        discount_percent=20,
+        max_redemptions=10,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+    )
+    db_session.add(promo)
+    await db_session.flush()
+    captured: dict[str, object] = {}
+
+    class FakeStripeProvider:
+        async def create_checkout(self, **kwargs):
+            captured.update(kwargs)
+            return CheckoutResult(
+                provider="stripe",
+                checkout_url="https://checkout.stripe.test/session",
+                provider_session_id="cs_1",
+            )
+
+    monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/checkout",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "plan": "pro",
+            "period": "month",
+            "provider": "stripe",
+            "promo_code": " wai-off-20 ",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["discount_percent"] == 20
+    assert captured["discount_code"] == "WAI-OFF-20"
+    assert captured["promo_code_id"] == str(promo.id)
+
+
+@pytest.mark.asyncio
+async def test_checkout_rejects_discount_promo_for_wrong_period(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, _ = await _register_for_billing(
+        client, db_session, "checkout.discount.period@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    db_session.add(
+        BillingPromoCode(
+            code="WAI-YEAR-20",
+            code_hash=hash_promo_code("WAI-YEAR-20"),
+            plan_id=pro.id,
+            promotion_type="discount",
+            billing_period="year",
+            duration_days=None,
+            discount_percent=20,
+            max_redemptions=10,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+        )
+    )
+    await db_session.flush()
+
+    class FakeStripeProvider:
+        async def create_checkout(self, **kwargs):
+            raise AssertionError("checkout provider must not be called")
+
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/checkout",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "plan": "pro",
+            "period": "month",
+            "provider": "stripe",
+            "promo_code": "WAI-YEAR-20",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Promo code does not apply to selected period"
+
+
+@pytest.mark.asyncio
+async def test_checkout_rejects_invalid_discount_promo_states(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "checkout.discount.invalid@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    expired = BillingPromoCode(
+        code="WAI-OLD-20",
+        code_hash=hash_promo_code("WAI-OLD-20"),
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="month",
+        duration_days=None,
+        discount_percent=20,
+        max_redemptions=10,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    exhausted = BillingPromoCode(
+        code="WAI-USED-UP",
+        code_hash=hash_promo_code("WAI-USED-UP"),
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="month",
+        duration_days=None,
+        discount_percent=20,
+        max_redemptions=1,
+        redeemed_count=1,
+    )
+    access = BillingPromoCode(
+        code="WAI-FREE-DAYS",
+        code_hash=hash_promo_code("WAI-FREE-DAYS"),
+        plan_id=pro.id,
+        promotion_type="access",
+        billing_period="month",
+        duration_days=14,
+        discount_percent=None,
+        max_redemptions=10,
+    )
+    redeemed = BillingPromoCode(
+        code="WAI-ALREADY-20",
+        code_hash=hash_promo_code("WAI-ALREADY-20"),
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="month",
+        duration_days=None,
+        discount_percent=20,
+        max_redemptions=10,
+    )
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+    )
+    db_session.add_all([expired, exhausted, access, redeemed, sub])
+    await db_session.flush()
+    db_session.add(
+        BillingPromoRedemption(
+            promo_code_id=redeemed.id,
+            user_id=user.id,
+            subscription_id=sub.id,
+        )
+    )
+    await db_session.flush()
+
+    class FakeStripeProvider:
+        async def create_checkout(self, **kwargs):
+            raise AssertionError("checkout provider must not be called")
+
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    async def checkout(code: str):
+        return await client.post(
+            "/api/billing/checkout",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"plan": "pro", "period": "month", "provider": "stripe", "promo_code": code},
+        )
+
+    not_found = await checkout("WAI-MISSING")
+    access_response = await checkout("WAI-FREE-DAYS")
+    expired_response = await checkout("WAI-OLD-20")
+    exhausted_response = await checkout("WAI-USED-UP")
+    redeemed_response = await checkout("WAI-ALREADY-20")
+
+    assert not_found.status_code == 404
+    assert access_response.status_code == 400
+    assert access_response.json()["detail"] == "Promo code grants Pro access"
+    assert expired_response.status_code == 400
+    assert expired_response.json()["detail"] == "Promo code expired"
+    assert exhausted_response.status_code == 409
+    assert exhausted_response.json()["detail"] == "Promo code exhausted"
+    assert redeemed_response.status_code == 409
+    assert redeemed_response.json()["detail"] == "Promo code already redeemed"
+
+
+@pytest.mark.asyncio
 async def test_checkout_surfaces_provider_unavailable_errors(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -412,6 +612,65 @@ async def test_claim_promo_code_rejects_invalid_expired_and_exhausted_codes(
     assert expired_response.json()["detail"] == "Promo code expired"
     assert exhausted_response.status_code == 409
     assert exhausted_response.json()["detail"] == "Promo code exhausted"
+
+
+@pytest.mark.asyncio
+async def test_claim_promo_code_rejects_discount_and_corrupt_access_codes(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(client, db_session, "promo.shape@example.com")
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    discount = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-DISCOUNT"),
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="month",
+        duration_days=None,
+        discount_percent=20,
+        max_redemptions=10,
+    )
+    redeemed = BillingPromoCode(
+        code_hash=hash_promo_code("WAI-REDEEMED"),
+        plan_id=pro.id,
+        promotion_type="access",
+        billing_period="month",
+        duration_days=30,
+        max_redemptions=10,
+    )
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="expired",
+        provider="promo",
+        billing_period="month",
+    )
+    db_session.add_all([discount, redeemed, sub])
+    await db_session.flush()
+    db_session.add(
+        BillingPromoRedemption(
+            promo_code_id=redeemed.id,
+            user_id=user.id,
+            subscription_id=sub.id,
+        )
+    )
+    await db_session.flush()
+
+    discount_response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "WAI-DISCOUNT"},
+    )
+    redeemed_response = await client.post(
+        "/api/billing/promo/claim",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"code": "WAI-REDEEMED"},
+    )
+
+    assert discount_response.status_code == 400
+    assert discount_response.json()["detail"] == "Promo code applies to checkout"
+    assert redeemed_response.status_code == 409
+    assert redeemed_response.json()["detail"] == "Promo code already redeemed"
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,8 @@ from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.service import apply_stripe_event
 from app.models.billing import (
     BillingEvent,
+    BillingPromoCode,
+    BillingPromoRedemption,
     Invoice,
     Plan,
     Subscription,
@@ -36,7 +38,7 @@ async def _seed_plans(db_session) -> tuple[Plan, Plan]:
             name="Pro",
             stripe_price_id_monthly="price_test_pro_month",
             stripe_price_id_yearly="price_test_pro_year",
-            word_cap_per_week=50000,
+            word_cap_per_week=None,
         )
         db_session.add(pro)
     await db_session.flush()
@@ -202,6 +204,72 @@ async def test_create_checkout_without_trial_does_not_add_trial_params(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_create_checkout_attaches_percent_discount_coupon(monkeypatch):
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    captured_session: dict = {}
+    captured_coupon: dict = {}
+
+    class FakeCoupon:
+        id = "coupon_25"
+
+    class FakeCoupons:
+        async def create_async(self, *, params):
+            captured_coupon.update(params)
+            return FakeCoupon()
+
+    class FakeSession:
+        id = "cs_discount"
+        url = "https://checkout.stripe.test/discount"
+
+    class FakeSessions:
+        async def create_async(self, *, params):
+            captured_session.update(params)
+            return FakeSession()
+
+    class FakeCheckout:
+        sessions = FakeSessions()
+
+    class FakeV1:
+        coupons = FakeCoupons()
+        checkout = FakeCheckout()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    async def fake_resolve_price_id(*, plan_code: str, period: str) -> str:
+        return "price_test_pro_year"
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+    monkeypatch.setattr(p, "_resolve_price_id", fake_resolve_price_id)
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.get_settings",
+        lambda: type("S", (), {"stripe_automatic_tax": False})(),
+    )
+
+    result = await p.create_checkout(
+        plan_code="pro",
+        period="year",
+        user_email="billing@example.test",
+        user_id="user-1",
+        success_url="https://wai.computer/billing/success",
+        cancel_url="https://wai.computer/billing/cancel",
+        discount_percent=25,
+        discount_code="WAI-OFF-25",
+        promo_code_id="promo-uuid",
+    )
+
+    assert result.checkout_url == "https://checkout.stripe.test/discount"
+    assert captured_coupon == {
+        "percent_off": 25,
+        "duration": "once",
+        "name": "WAI-OFF-25",
+    }
+    assert captured_session["discounts"] == [{"coupon": "coupon_25"}]
+    assert captured_session["metadata"]["promo_code_id"] == "promo-uuid"
+    assert captured_session["subscription_data"]["metadata"]["promo_code_id"] == "promo-uuid"
+
+
+@pytest.mark.asyncio
 async def test_stripe_admin_subscription_and_refund_operations(monkeypatch):
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     calls: list[tuple[str, str, dict | None]] = []
@@ -301,6 +369,109 @@ async def test_checkout_completed_creates_subscription(db_session):
         )
     ).scalar_one_or_none()
     assert audit is not None
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_records_discount_promo_redemption(db_session):
+    _, pro = await _seed_plans(db_session)
+    user = User(email="checkout.promo@example.test")
+    promo = BillingPromoCode(
+        code="WAI-OFF-25",
+        code_hash="discount-hash",
+        plan_id=pro.id,
+        promotion_type="discount",
+        billing_period="year",
+        duration_days=None,
+        discount_percent=25,
+        max_redemptions=10,
+    )
+    db_session.add_all([user, promo])
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider="sub_promo",
+        customer_id_provider="cus_promo",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": str(user.id),
+                    "subscription": "sub_promo",
+                    "customer": "cus_promo",
+                    "metadata": {
+                        "plan_code": "pro",
+                        "period": "year",
+                        "promo_code_id": str(promo.id),
+                    },
+                }
+            },
+        },
+    )
+    await apply_stripe_event(db_session, event)
+
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.stripe_subscription_id == "sub_promo")
+        )
+    ).scalar_one()
+    assert sub.promo_code_id == promo.id
+    redemption = (
+        await db_session.execute(
+            select(BillingPromoRedemption).where(BillingPromoRedemption.subscription_id == sub.id)
+        )
+    ).scalar_one()
+    assert redemption.promo_code_id == promo.id
+    assert promo.redeemed_count == 1
+
+    await apply_stripe_event(db_session, event)
+    redemptions = (
+        await db_session.execute(
+            select(BillingPromoRedemption).where(BillingPromoRedemption.promo_code_id == promo.id)
+        )
+    ).scalars().all()
+    assert len(redemptions) == 1
+    assert promo.redeemed_count == 1
+
+
+@pytest.mark.asyncio
+async def test_checkout_completed_ignores_invalid_promo_metadata(db_session):
+    _, pro = await _seed_plans(db_session)
+    user = User(email="checkout.bad-promo@example.test")
+    db_session.add(user)
+    await db_session.flush()
+
+    event = ProviderEvent(
+        type="checkout.session.completed",
+        subscription_id_provider="sub_bad_promo",
+        customer_id_provider="cus_bad_promo",
+        status=None,
+        raw={
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": str(user.id),
+                    "subscription": "sub_bad_promo",
+                    "customer": "cus_bad_promo",
+                    "metadata": {
+                        "plan_code": "pro",
+                        "period": "month",
+                        "promo_code_id": "not-a-uuid",
+                    },
+                }
+            },
+        },
+    )
+    await apply_stripe_event(db_session, event)
+
+    sub = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.stripe_subscription_id == "sub_bad_promo")
+        )
+    ).scalar_one()
+    assert sub.plan_id == pro.id
+    assert sub.promo_code_id is None
 
 
 @pytest.mark.asyncio
