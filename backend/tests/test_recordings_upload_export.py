@@ -413,11 +413,11 @@ async def test_save_transcript_records_weekly_usage_without_double_counting(
 
 
 @pytest.mark.asyncio
-async def test_save_transcript_empty_segments_returns_ready_recording(
+async def test_save_transcript_empty_segments_marks_recording_failed(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Saving a transcript with no segments should still finalize the recording cleanly."""
+    """Saving a transcript with no speech must not create a ready empty recording."""
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
@@ -428,10 +428,10 @@ async def test_save_transcript_empty_segments_returns_ready_recording(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
+    assert data["status"] == "failed"
     assert data["segments"] == []
-    assert data["failure_code"] is None
-    assert data["failure_message"] is None
+    assert data["failure_code"] == "transcript_empty"
+    assert data["failure_message"] == "We could not detect clear speech in this recording."
 
 
 # ---------------------------------------------------------------------------

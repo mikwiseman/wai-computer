@@ -889,11 +889,11 @@ async def test_save_transcript_unexpected_error_marks_failed(
 # ---------------------------------------------------------------------------
 
 
-async def test_save_transcript_empty_segments_marks_ready(
+async def test_save_transcript_empty_segments_marks_failed(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """Saving an empty transcript should still finalize the recording as ready."""
+    """Saving an empty transcript should surface a visible failure state."""
     rec = await _create_recording(client, auth_headers, title="Empty Transcript")
 
     response = await client.post(
@@ -905,5 +905,5 @@ async def test_save_transcript_empty_segments_marks_ready(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "ready"
-    assert data["failure_code"] is None
+    assert data["status"] == "failed"
+    assert data["failure_code"] == "transcript_empty"

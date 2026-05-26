@@ -10,6 +10,14 @@ PROD_ROOT="${PROD_ROOT:-<remote-root>}"
 PROD_ENV_FILE="${PROD_ENV_FILE:-<remote-env-file>}"
 PROD_ENV_DIR=$(dirname "$PROD_ENV_FILE")
 LEGACY_ENV_FILE=""
+GIT_SHA="${GIT_SHA:-}"
+GIT_DIRTY="${GIT_DIRTY:-false}"
+
+if [[ -z "$GIT_SHA" ]]; then
+  echo "ERROR: GIT_SHA is required for production builds" >&2
+  exit 1
+fi
+export GIT_SHA GIT_DIRTY
 
 wait_for_service() {
   local name="$1"

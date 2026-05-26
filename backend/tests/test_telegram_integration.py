@@ -1054,7 +1054,7 @@ async def test_webhook_rejects_unconfigured_and_bad_payload(client, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_import_media_no_speech_marks_recording_ready(
+async def test_import_media_no_speech_marks_recording_failed(
     db_session: AsyncSession,
     monkeypatch,
     tmp_path,
@@ -1086,7 +1086,8 @@ async def test_import_media_no_speech_marks_recording_ready(
         language="auto",
     )
 
-    assert result.recording.status == RecordingStatus.READY.value
+    assert result.recording.status == RecordingStatus.FAILED.value
+    assert result.recording.failure_code == "transcript_empty"
     assert result.transcript == ""
     assert result.summary is None
 

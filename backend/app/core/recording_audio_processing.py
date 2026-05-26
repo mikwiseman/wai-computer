@@ -54,6 +54,7 @@ NO_SPEECH_PLACEHOLDERS = {
     "silent audio",
     "typing",
 }
+EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
 
 
 def copy_locale_from_recording_language(
@@ -83,6 +84,20 @@ def apply_no_speech_result(
         copy_locale_from_recording_language(recording.language, fallback_language)
     ]
     recording.title = copy["title"]
+    recording.failure_message = copy["message"]
+
+
+def apply_no_speech_failure(
+    recording: Recording,
+    fallback_language: str | None = None,
+) -> None:
+    copy = NO_SPEECH_COPY[
+        copy_locale_from_recording_language(recording.language, fallback_language)
+    ]
+    if not recording.title:
+        recording.title = copy["title"]
+    recording.status = RecordingStatus.FAILED.value
+    recording.failure_code = EMPTY_TRANSCRIPT_FAILURE_CODE
     recording.failure_message = copy["message"]
 
 
@@ -317,12 +332,10 @@ async def process_staged_recording_upload(
                 transcript_end_ms=max_end_ms,
                 segment_count=0,
             )
-            apply_no_speech_result(recording, user_default_language)
-            recording.status = RecordingStatus.READY.value
-            recording.failure_code = None
+            apply_no_speech_failure(recording, user_default_language)
             await db.commit()
             delete_staged_file(staged_path)
-            logger.info("audio processing completed with no speech")
+            logger.warning("audio processing failed with empty transcript")
             return
 
         speaker_assignments: dict[str, tuple[UUID, float] | None] = {}

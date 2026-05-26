@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 FROM python:3.12-slim
 
 WORKDIR /app
+ARG GIT_SHA=""
+ARG GIT_DIRTY="false"
+ENV GIT_SHA=${GIT_SHA}
+ENV GIT_DIRTY=${GIT_DIRTY}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \

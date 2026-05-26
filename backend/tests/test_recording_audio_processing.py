@@ -377,7 +377,7 @@ async def test_process_staged_recording_upload_keeps_retryable_failure_in_proces
         ),
     ],
 )
-async def test_process_staged_recording_upload_applies_no_speech_copy_without_title_generation(
+async def test_process_staged_recording_upload_fails_empty_transcript_without_title_generation(
     db_session: AsyncSession,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -442,7 +442,8 @@ async def test_process_staged_recording_upload_applies_no_speech_copy_without_ti
         .scalars()
         .all()
     )
-    assert recording.status == RecordingStatus.READY.value
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "transcript_empty"
     assert recording.title == expected_title
     assert recording.failure_message == expected_message
     assert segments == []

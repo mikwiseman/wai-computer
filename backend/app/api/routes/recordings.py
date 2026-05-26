@@ -28,7 +28,7 @@ from app.core.observability import (
     safe_text_digest,
 )
 from app.core.recording_audio_processing import (
-    apply_no_speech_result,
+    apply_no_speech_failure,
     delete_staged_file,
     is_no_speech_placeholder,
     reset_recording_processing_state,
@@ -792,12 +792,12 @@ async def _persist_client_segments(
             recording.duration_seconds = (
                 max(segment.end_ms for segment in nonempty_segments) // 1000
             )
-        recording.status = RecordingStatus.READY.value
-        recording.failure_code = None
-        if recording.title:
+        if recording.segments:
+            recording.status = RecordingStatus.READY.value
+            recording.failure_code = None
             recording.failure_message = None
         else:
-            apply_no_speech_result(recording, fallback_language)
+            apply_no_speech_failure(recording, fallback_language)
         await db.commit()
         return ""
 

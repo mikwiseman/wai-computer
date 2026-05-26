@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
 from time import perf_counter
@@ -56,6 +57,26 @@ initialize_sentry(
     traces_sample_rate=app_settings.sentry_traces_sample_rate,
     profiles_sample_rate=app_settings.sentry_profiles_sample_rate,
 )
+
+
+async def _health_database_metadata(
+    session_factory: Callable[[], object],
+) -> dict[str, str | None]:
+    """Verify DB connectivity and expose the applied Alembic schema revision."""
+    from sqlalchemy import text
+
+    async with session_factory() as session:
+        execute: Callable[..., Awaitable[object]] = session.execute
+        await execute(text("SELECT 1"))
+        schema_revision = None
+        try:
+            result = await execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+            scalar = getattr(result, "scalar_one_or_none", None)
+            if callable(scalar):
+                schema_revision = scalar()
+        except Exception:
+            logger.warning("database schema revision unavailable", exc_info=True)
+        return {"database": "connected", "schema_revision": schema_revision}
 
 
 @asynccontextmanager
@@ -181,13 +202,15 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint with database connectivity verification."""
-    from sqlalchemy import text
-
     from app.db.session import async_session_maker
 
-    async with async_session_maker() as session:
-        await session.execute(text("SELECT 1"))
-    return {"status": "healthy", "database": "connected"}
+    database = await _health_database_metadata(async_session_maker)
+    return {
+        "status": "healthy",
+        **database,
+        "git_sha": app_settings.git_sha,
+        "git_dirty": app_settings.git_dirty,
+    }
 
 
 @app.get("/health/live")

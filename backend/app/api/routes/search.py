@@ -142,6 +142,24 @@ async def hybrid_search(
         lexical_count AS (
             SELECT COUNT(*) as total FROM lexical_results
         ),
+        semantic_results AS (
+            SELECT
+                id,
+                recording_id,
+                speaker,
+                content,
+                start_ms,
+                end_ms,
+                recording_title,
+                recording_type,
+                1 - (embedding <=> CAST(:embedding AS vector)) as score
+            FROM search_scope
+            WHERE (SELECT total FROM lexical_count) = 0
+              AND embedding IS NOT NULL
+              AND 1 - (embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
+            ORDER BY embedding <=> CAST(:embedding AS vector)
+            LIMIT :semantic_limit
+        ),
         combined AS (
             SELECT
                 id,
@@ -164,11 +182,8 @@ async def hybrid_search(
                 end_ms,
                 recording_title,
                 recording_type,
-                1 - (embedding <=> CAST(:embedding AS vector)) as score
-            FROM search_scope
-            WHERE (SELECT total FROM lexical_count) = 0
-              AND embedding IS NOT NULL
-              AND 1 - (embedding <=> CAST(:embedding AS vector)) > :semantic_threshold
+                score
+            FROM semantic_results
         )
         SELECT
             c.id,
@@ -194,6 +209,7 @@ async def hybrid_search(
             "embedding": query_embedding,
             "limit": limit,
             "offset": offset,
+            "semantic_limit": limit + offset,
             "semantic_threshold": HYBRID_SEMANTIC_THRESHOLD,
         },
     )

@@ -37,7 +37,10 @@ public actor OpenAIRealtimeTranscriptionSession: ProviderSession {
         self.sampleRate = sampleRate
         self.urlSession = urlSession
 
-        let (stream, continuation) = AsyncStream.makeStream(of: TranscriptionEvent.self)
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: TranscriptionEvent.self,
+            bufferingPolicy: .bufferingNewest(256)
+        )
         self.events = stream
         self.eventContinuation = continuation
     }

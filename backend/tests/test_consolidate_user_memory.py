@@ -176,3 +176,37 @@ class TestConsolidator:
         assert result.get("skipped") is True
         # The LLM was NOT called — empty material short-circuits.
         assert fake.calls == []
+
+    async def test_ignores_deleted_conversation_messages(self, db_session):
+        """Soft-deleted conversations must not be consolidated into durable memory."""
+        now = datetime.now(timezone.utc)
+        user = User(
+            email=f"deleted-conv-{uuid4().hex}@example.com",
+            password_hash="x",
+        )
+        db_session.add(user)
+        await db_session.flush()
+        conv = Conversation(user_id=user.id, deleted_at=now - timedelta(minutes=1))
+        db_session.add(conv)
+        await db_session.flush()
+        db_session.add(
+            ChatMessage(
+                conversation_id=conv.id,
+                role="user",
+                content="Private deleted conversation should stay out of memory.",
+                created_at=now,
+            )
+        )
+        await db_session.flush()
+
+        fake = _FakeOpenAI(
+            payload={
+                "updates": [
+                    {"block": "human", "operation": "append", "content": "leak"}
+                ]
+            }
+        )
+        result = await _consolidate_one_user(db_session, user.id, openai_client=fake)
+
+        assert result.get("skipped") is True
+        assert fake.calls == []

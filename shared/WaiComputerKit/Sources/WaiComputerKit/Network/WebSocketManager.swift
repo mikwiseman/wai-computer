@@ -1549,7 +1549,10 @@ public actor WebSocketManager {
         if _eventStream != nil, eventContinuation != nil {
             return
         }
-        let (stream, continuation) = AsyncStream.makeStream(of: WebSocketEvent.self)
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: WebSocketEvent.self,
+            bufferingPolicy: .bufferingNewest(256)
+        )
         _eventStream = stream
         eventContinuation = continuation
     }

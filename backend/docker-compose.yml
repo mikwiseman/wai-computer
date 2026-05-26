@@ -54,7 +54,11 @@ services:
     restart: unless-stopped
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+        GIT_DIRTY: ${GIT_DIRTY:-false}
     container_name: waicomputer-api
     env_file:
       - ${WAICOMPUTER_ENV_FILE:-.env}
@@ -62,6 +66,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
       REDIS_URL: redis://redis:6379/0
+      GIT_SHA: ${GIT_SHA:-}
+      GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
     networks:
@@ -174,7 +180,11 @@ services:
     restart: unless-stopped
 
   celery-worker:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+        GIT_DIRTY: ${GIT_DIRTY:-false}
     container_name: waicomputer-celery-worker
     env_file:
       - ${WAICOMPUTER_ENV_FILE:-.env}
@@ -182,6 +192,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
       REDIS_URL: redis://redis:6379/0
+      GIT_SHA: ${GIT_SHA:-}
+      GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
     networks:

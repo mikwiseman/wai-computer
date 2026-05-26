@@ -89,6 +89,10 @@ async def test_health_endpoint_returns_healthy_when_db_ok(db_session: Any) -> No
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "healthy"
+    assert body["database"] == "connected"
+    assert "schema_revision" in body
+    assert "git_sha" in body
+    assert body["git_dirty"] is False
 
 
 # ---------------------------------------------------------------------------
