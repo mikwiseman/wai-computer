@@ -9,7 +9,7 @@ from uuid import UUID
 
 from billiard.exceptions import SoftTimeLimitExceeded
 
-from app.core.observability import fingerprint_text
+from app.core.observability import capture_sentry_anomaly, fingerprint_text
 from app.core.recording_audio_processing import (
     delete_staged_file,
     mark_recording_processing_failed,
@@ -108,7 +108,20 @@ def process_staged_recording_upload(
             getattr(self.request, "id", None),
         )
     except SoftTimeLimitExceeded:
+        retry_count = int(getattr(self.request, "retries", 0) or 0)
         asyncio.run(_mark_processing_timeout(recording_id=recording_id))
+        capture_sentry_anomaly(
+            "recording.processing.timeout",
+            "Recording processing task timed out",
+            category="recording",
+            extras={
+                "recording_id": recording_id,
+                "task_id": getattr(self.request, "id", None),
+                "retries": retry_count,
+                "content_type": content_type,
+            },
+            level="error",
+        )
         raise
     except Exception as exc:
         retry_count = int(getattr(self.request, "retries", 0) or 0)
@@ -124,6 +137,7 @@ def process_staged_recording_upload(
             )
             raise self.retry(exc=exc)
         if is_retryable_exception(exc):
+            error_fingerprint = fingerprint_text(str(exc))
             logger.error(
                 "recording processing task retries exhausted recording_id=%s task_id=%s "
                 "retries=%s error_type=%s error_fingerprint=%s",
@@ -131,7 +145,21 @@ def process_staged_recording_upload(
                 getattr(self.request, "id", None),
                 retry_count,
                 type(exc).__name__,
-                fingerprint_text(str(exc)),
+                error_fingerprint,
+            )
+            capture_sentry_anomaly(
+                "recording.processing.retry_exhausted",
+                "Recording processing retries exhausted",
+                category="recording",
+                extras={
+                    "recording_id": recording_id,
+                    "task_id": getattr(self.request, "id", None),
+                    "retries": retry_count,
+                    "error_type": type(exc).__name__,
+                    "error_fingerprint": error_fingerprint,
+                    "content_type": content_type,
+                },
+                level="error",
             )
             asyncio.run(
                 _mark_processing_failed_after_retries(recording_id=recording_id)

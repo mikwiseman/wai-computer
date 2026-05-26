@@ -29,7 +29,14 @@ The admin observability snapshot is aggregate-only. It includes:
 
 ## Sentry Event Contract
 
-Alertable business anomalies must set `alert_code` in Sentry extras. The helper copies it to a Sentry tag.
+Alertable business anomalies must set `alert_code` in Sentry extras. The backend
+`capture_sentry_anomaly(...)` helper emits both a breadcrumb and a warning/error
+message, then copies stable fields such as `alert_code`, `provider`, `model`,
+`platform`, `purpose`, `failure_code`, and `status_code` to Sentry tags.
+
+Normal successful lifecycle events should stay as breadcrumbs/logs. Only
+user-visible anomalies, sustained degradation, timeout, retry exhaustion, or
+privacy-safe business failures should become Sentry events.
 
 ## Sentry Projects
 
@@ -49,11 +56,39 @@ Production backend env must contain `SENTRY_DSN=<backend DSN ending in /<sentry-
 
 Current alert codes:
 
+- `companion.turn.failed`
+- `companion.turn.slow`
+- `dictation.first_token.slow`
+- `dictation.session.failed_cluster`
+- `dictation.total_latency.slow`
+- `realtime.session_mint.failed`
+- `realtime.session_mint.slow`
+- `recording.embeddings.degraded`
+- `recording.file_stt.slow`
+- `recording.processing.failed`
+- `recording.processing.retry_exhausted`
+- `recording.processing.slow`
 - `recording.processing.stuck`
+- `recording.processing.timeout`
+- `recording.staged_file.missing`
 - `recording.transcript.low_coverage`
+- `recording.transcript.empty`
 - `recording.upload.size_mismatch`
+- `recording.title_generation.degraded`
+- `recording.voice_identification.degraded`
+- `search.query.slow`
 
 Use Sentry issue or metric alerts on `environment:production` with these tags. Keep alert rules focused on user-visible failure modes, not every debug counter.
+
+Current latency thresholds:
+
+- file STT slow: `max(120s, audio_duration_seconds * 3)`
+- end-to-end recording processing slow: `max(300s, effective_duration_seconds * 4)`
+- realtime session mint slow: `2s`
+- native dictation first token slow: `3s`
+- native dictation total hotkey-to-insertion slow: `8s`
+- backend search query slow: `5s`
+- companion turn slow: `30s`
 
 ## Required Sentry Rules
 
@@ -61,8 +96,14 @@ Create or verify these rules in every production Sentry project:
 
 - Critical errors: `level:error environment:production`
 - Recording stuck: `alert_code:recording.processing.stuck environment:production`
+- Recording processing slow/timeout/retry exhausted: `alert_code:recording.processing.slow OR alert_code:recording.processing.timeout OR alert_code:recording.processing.retry_exhausted environment:production`
+- File STT slow: `alert_code:recording.file_stt.slow environment:production`
 - Low transcript coverage: `alert_code:recording.transcript.low_coverage environment:production`
+- Empty transcript spike: `alert_code:recording.transcript.empty environment:production`
 - Upload size mismatch spike: `alert_code:recording.upload.size_mismatch environment:production`
+- Dictation latency: `alert_code:dictation.first_token.slow OR alert_code:dictation.total_latency.slow environment:production`
+- Realtime session mint failures: `alert_code:realtime.session_mint.failed environment:production`
+- Companion/search latency: `alert_code:companion.turn.slow OR alert_code:search.query.slow environment:production`
 - Native crash-free sessions below target for macOS, iOS, Android, Windows when those projects are active.
 
 Notification target should be a team channel first. Page only on critical recording ingestion or sustained API errors.

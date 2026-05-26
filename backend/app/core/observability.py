@@ -61,6 +61,15 @@ TEXT_KEY_FRAGMENTS = (
     "message",
 )
 FILENAME_KEY_FRAGMENTS = ("filename", "file_name")
+SENTRY_TAG_KEYS = (
+    "alert_code",
+    "provider",
+    "model",
+    "platform",
+    "purpose",
+    "failure_code",
+    "status_code",
+)
 
 
 class RequestContextFilter(logging.Filter):
@@ -468,16 +477,21 @@ def add_sentry_breadcrumb(
     )
 
 
+def _set_sentry_scope_metadata(scope: Any, sanitized: dict[str, Any]) -> None:
+    for key, value in sanitized.items():
+        scope.set_extra(key, value)
+    for key in SENTRY_TAG_KEYS:
+        value = sanitized.get(key)
+        if value is not None and value != "":
+            scope.set_tag(key, str(value))
+
+
 def capture_sentry_exception(error: Exception, *, extras: dict[str, Any] | None = None) -> None:
     """Capture an exception with sanitized extras."""
     if extras:
         with sentry_sdk.new_scope() as scope:
             sanitized = sanitize_sentry_value(extras, key="extras")
-            for key, value in sanitized.items():
-                scope.set_extra(key, value)
-            alert_code = sanitized.get("alert_code")
-            if isinstance(alert_code, str) and alert_code:
-                scope.set_tag("alert_code", alert_code)
+            _set_sentry_scope_metadata(scope, sanitized)
             sentry_sdk.capture_exception(error)
         return
 
@@ -495,12 +509,27 @@ def capture_sentry_message(
     if extras:
         with sentry_sdk.new_scope() as scope:
             sanitized = sanitize_sentry_value(extras, key="extras")
-            for key, value in sanitized.items():
-                scope.set_extra(key, value)
-            alert_code = sanitized.get("alert_code")
-            if isinstance(alert_code, str) and alert_code:
-                scope.set_tag("alert_code", alert_code)
+            _set_sentry_scope_metadata(scope, sanitized)
             sentry_sdk.capture_message(safe_message, level=level)
         return
 
     sentry_sdk.capture_message(safe_message, level=level)
+
+
+def capture_sentry_anomaly(
+    alert_code: str,
+    message: str,
+    *,
+    category: str,
+    extras: dict[str, Any] | None = None,
+    level: str = "warning",
+) -> None:
+    """Capture an alertable anomaly and leave a breadcrumb in the current trace."""
+    payload = {"alert_code": alert_code, **(extras or {})}
+    add_sentry_breadcrumb(
+        category=category,
+        message=message,
+        level=level,
+        data=payload,
+    )
+    capture_sentry_message(message, level=level, extras=payload)
