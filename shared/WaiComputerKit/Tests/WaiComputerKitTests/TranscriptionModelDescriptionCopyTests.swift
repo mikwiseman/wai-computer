@@ -26,9 +26,9 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
     func testEnglishDescriptionPreservesServerCopy() {
         let serverDescription = "Default file transcription model with multilingual diarization."
         let option = TranscriptionModelOption(
-            provider: "elevenlabs",
-            model: "scribe_v2",
-            label: "ElevenLabs Scribe v2",
+            provider: "openai",
+            model: "gpt-4o-transcribe-diarize",
+            label: "OpenAI GPT-4o Transcribe Diarize",
             description: serverDescription
         )
 
@@ -39,6 +39,26 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
         )
 
         XCTAssertEqual(description, serverDescription)
+    }
+
+    func testRussianFileSTTDescriptionUsesOpenAICopy() {
+        let option = TranscriptionModelOption(
+            provider: "openai",
+            model: "gpt-4o-transcribe-diarize",
+            label: "OpenAI GPT-4o Transcribe Diarize",
+            description: "Fixed full-session transcription model with speaker diarization."
+        )
+
+        let description = TranscriptionModelDescriptionCopy.description(
+            for: option,
+            context: .fileSTT,
+            languageCode: "ru"
+        )
+
+        XCTAssertEqual(
+            description,
+            "По умолчанию для полной расшифровки записи. Модель OpenAI для файловой транскрибации с разделением по говорящим."
+        )
     }
 
     func testContextDifferentiatesRepeatedProviderModelPairs() {

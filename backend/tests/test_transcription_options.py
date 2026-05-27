@@ -30,13 +30,15 @@ from app.core.transcription_options import (
 
 def test_model_option_as_dict_returns_all_fields() -> None:
     opt = ModelOption(
-        provider="elevenlabs", model="scribe_v2", label="Scribe v2",
+        provider="openai",
+        model="gpt-4o-transcribe-diarize",
+        label="GPT-4o Transcribe Diarize",
         description="Default file STT",
     )
     assert opt.as_dict() == {
-        "provider": "elevenlabs",
-        "model": "scribe_v2",
-        "label": "Scribe v2",
+        "provider": "openai",
+        "model": "gpt-4o-transcribe-diarize",
+        "label": "GPT-4o Transcribe Diarize",
         "description": "Default file STT",
     }
 
@@ -79,8 +81,8 @@ def test_default_stt_model_set_matches_stable_release_choice() -> None:
         "gpt-realtime-whisper",
     )
     assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
-        "elevenlabs",
-        "scribe_v2",
+        "openai",
+        "gpt-4o-transcribe-diarize",
     )
 
 
@@ -91,7 +93,6 @@ def test_default_stt_model_set_matches_stable_release_choice() -> None:
 
 def test_normalize_provider_lowercases_and_trims() -> None:
     assert normalize_provider("  OpenAI  ") == "openai"
-    assert normalize_provider("ElevenLabs") == "elevenlabs"
 
 
 def test_normalize_provider_rejects_empty() -> None:
@@ -122,18 +123,19 @@ def test_normalize_model_rejects_empty() -> None:
 def test_is_valid_option_matches_registered() -> None:
     assert is_valid_option("dictation_live_stt", "openai", "gpt-realtime-whisper")
     assert is_valid_option("recording_live_stt", "openai", "gpt-realtime-whisper")
-    assert is_valid_option("file_stt", "elevenlabs", "scribe_v2")
+    assert is_valid_option("file_stt", "openai", "gpt-4o-transcribe-diarize")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
 
 
 def test_is_valid_option_normalizes_input() -> None:
     assert is_valid_option("dictation_live_stt", "OPENAI", " gpt-realtime-whisper ")
-    assert is_valid_option("file_stt", "ElevenLabs", "scribe_v2")
+    assert is_valid_option("file_stt", " OpenAI ", " gpt-4o-transcribe-diarize ")
 
 
 def test_is_valid_option_rejects_unknown() -> None:
     assert not is_valid_option("dictation_live_stt", "elevenlabs", "scribe_v1")
     assert not is_valid_option("file_stt", "openai", "whisper-1")
+    assert not is_valid_option("file_stt", "elevenlabs", "scribe_v2")
     # Provider not in the realtime pool
     assert not is_valid_option("dictation_live_stt", "soniox", "stt-async-v4")
     assert not is_valid_option("dictation_live_stt", "legacy-live", "legacy-model")
@@ -226,10 +228,10 @@ def test_options_response_file_stt_only_fixed_model() -> None:
     out = options_response()
     assert out["file_stt"] == [
         {
-            "provider": "elevenlabs",
-            "model": "scribe_v2",
-            "label": "ElevenLabs Scribe v2",
-            "description": "Fixed file transcription model with diarization.",
+            "provider": "openai",
+            "model": "gpt-4o-transcribe-diarize",
+            "label": "OpenAI GPT-4o Transcribe Diarize",
+            "description": "Fixed full-session transcription model with speaker diarization.",
         }
     ]
 
@@ -246,9 +248,9 @@ def test_provider_is_configured_checks_required_key_names() -> None:
         },
     )()
 
-    assert provider_is_configured("elevenlabs", settings)
-    assert provider_is_configured("deepgram", settings)
-    assert provider_is_configured("soniox", settings)
+    assert not provider_is_configured("elevenlabs", settings)
+    assert not provider_is_configured("deepgram", settings)
+    assert not provider_is_configured("soniox", settings)
     assert not provider_is_configured("openai", settings)
     assert not provider_is_configured("unknown", settings)
 
@@ -259,7 +261,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
         (),
         {
             "elevenlabs_api_key": "xi-key",
-            "openai_api_key": "",
+            "openai_api_key": "openai-test-key",
             "deepgram_api_key": "deepgram-test-key",
             "soniox_api_key": "",
         },
@@ -267,10 +269,10 @@ def test_options_response_filters_unconfigured_providers() -> None:
 
     out = options_response(settings=settings, configured_only=True)
 
-    assert out["dictation_live_stt"] == []
-    assert out["recording_live_stt"] == []
-    assert {entry["provider"] for entry in out["file_stt"]} == {"elevenlabs"}
-    assert out["dictation_post_filter"] == []
+    assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"openai"}
+    assert {entry["provider"] for entry in out["recording_live_stt"]} == {"openai"}
+    assert {entry["provider"] for entry in out["file_stt"]} == {"openai"}
+    assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"openai"}
 
 
 def test_validate_configured_option_rejects_missing_provider_key() -> None:
@@ -308,7 +310,7 @@ def test_validate_configured_option_returns_valid_configured_option() -> None:
 
     assert validate_configured_option(
         "file_stt",
-        " ElevenLabs ",
-        "scribe_v2",
+        " OpenAI ",
+        "gpt-4o-transcribe-diarize",
         settings=settings,
-    ) == ("elevenlabs", "scribe_v2")
+    ) == ("openai", "gpt-4o-transcribe-diarize")
