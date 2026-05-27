@@ -9,17 +9,17 @@ public class OpenAISessionTests
 {
     private static RealtimeTranscriptionSessionConfig Cfg() => new(
         RealtimeProvider.OpenAi,
-        Token: "sk-test",
-        ExpiresInSeconds: 3600,
+        Token: "openai-client-secret",
+        ExpiresInSeconds: 900,
         SampleRate: 24000,
         AudioFormat: "pcm_24000",
         Language: "multi",
         Channels: 1,
-        Model: "gpt-4o-mini-transcribe-2025-12-15",
+        Model: "gpt-realtime-whisper",
         KeepAliveIntervalSeconds: null,
         CommitStrategy: CommitStrategy.Manual,
         NoVerbatim: false,
-        WebSocketUrl: "wss://api.openai.test/v1/realtime",
+        WebSocketUrl: "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
         AuthScheme: AuthScheme.Bearer);
 
     [Fact]
@@ -31,7 +31,7 @@ public class OpenAISessionTests
         transport.SentText.Should().ContainSingle(s =>
             s.Contains("\"type\":\"session.update\"")
             && s.Contains("\"type\":\"transcription\"")
-            && s.Contains("\"model\":\"gpt-4o-mini-transcribe-2025-12-15\""));
+            && s.Contains("\"model\":\"gpt-realtime-whisper\""));
     }
 
     [Fact]

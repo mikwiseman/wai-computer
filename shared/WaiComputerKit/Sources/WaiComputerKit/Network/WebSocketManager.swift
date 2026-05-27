@@ -539,19 +539,19 @@ public actor WebSocketManager {
     }
 
     private func handleOpenAIDelta(_ payload: [String: Any]) {
-        let delta = (payload["delta"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let delta = payload["delta"] as? String ?? ""
         guard !delta.isEmpty else { return }
 
         let itemID = payload["item_id"] as? String ?? "default"
-        let transcript = ((transcriptByItemID[itemID] ?? "") + delta)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcript = (transcriptByItemID[itemID] ?? "") + delta
         transcriptByItemID[itemID] = transcript
         lastTranscriptReceivedAt = reconnectClock.now
+        let displayText = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayText.isEmpty else { return }
 
         let lastEndMs = collectedSegments.last?.endMs ?? 0
         eventContinuation?.yield(.transcript(LiveTranscriptSegment(
-            text: transcript,
+            text: displayText,
             speaker: nil,
             isFinal: false,
             startMs: lastEndMs,

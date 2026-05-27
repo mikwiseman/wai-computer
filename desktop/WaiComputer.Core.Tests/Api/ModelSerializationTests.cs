@@ -66,25 +66,25 @@ public class ModelSerializationTests
     {
         const string body = """
         {
-          "provider": "elevenlabs",
-          "token": "tok-abc",
+          "provider": "openai",
+          "token": "openai-client-secret",
           "expires_in_seconds": 900,
-          "sample_rate": 16000,
-          "audio_format": "pcm_16000",
+          "sample_rate": 24000,
+          "audio_format": "pcm_24000",
           "language": "multi",
           "channels": 1,
-          "model": "model-x",
+          "model": "gpt-realtime-whisper",
           "keep_alive_interval_seconds": null,
-          "commit_strategy": null,
+          "commit_strategy": "manual",
           "no_verbatim": false,
-          "websocket_url": null,
-          "auth_scheme": "query_token"
+          "websocket_url": "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+          "auth_scheme": "bearer"
         }
         """;
         var cfg = JsonSerializer.Deserialize<RealtimeTranscriptionSessionConfig>(body, WaiJson.Options)!;
-        cfg.Provider.Should().Be(RealtimeProvider.ElevenLabs);
-        cfg.AuthScheme.Should().Be(AuthScheme.QueryToken);
-        cfg.SampleRate.Should().Be(16000);
+        cfg.Provider.Should().Be(RealtimeProvider.OpenAi);
+        cfg.AuthScheme.Should().Be(AuthScheme.Bearer);
+        cfg.SampleRate.Should().Be(24000);
     }
 
     [Fact]

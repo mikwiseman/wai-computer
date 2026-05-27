@@ -241,6 +241,26 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segment?.isFinal, false)
     }
 
+    func testOpenAIDeltaAccumulatorPreservesProviderWhitespace() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(config(language: "en"))
+
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hello"}
+        """)
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":" world"}
+        """)
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1"}
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.map(\.text), ["Hello world"])
+    }
+
     func testDuplicateOpenAIFinalTranscriptsAreDeduped() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
@@ -435,6 +455,23 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.count, 1)
         XCTAssertEqual(segments.first?.text, "Provider backed final.")
         XCTAssertNil(segments.first?.speaker)
+    }
+
+    func testProviderBackedOpenAIDeltaAccumulatorPreservesProviderWhitespace() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+
+        await session.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hello"}
+        """)
+        await session.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":" world"}
+        """)
+        await session.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1"}
+        """)
+
+        let segments = await session.testingCollectedSegments()
+        XCTAssertEqual(segments.map(\.text), ["Hello world"])
     }
 
     func testProviderBackedDuplicateOpenAIFinalTranscriptsAreDeduped() async {

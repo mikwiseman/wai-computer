@@ -1,12 +1,13 @@
 """Curated transcription and dictation processing settings.
 
-Three scenarios, three fixed model slots:
+Fixed model slots:
 
 - **Dictation realtime** favours low latency, turn detection, and short
   push-to-talk sessions.
 - **Recording realtime** favours stable long-running streaming, live captions,
   and diarization.
 - **Batch** populates ``file_stt`` for uploaded audio.
+- **Dictation cleanup** post-processes dictated text after live STT.
 """
 
 from __future__ import annotations
