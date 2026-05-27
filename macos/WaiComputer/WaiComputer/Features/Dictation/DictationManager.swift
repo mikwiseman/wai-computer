@@ -18,11 +18,14 @@ private final class DictationAudioSendCounter: @unchecked Sendable {
         lock.unlock()
     }
 
-    func record(bytes byteCount: Int) {
+    @discardableResult
+    func record(bytes byteCount: Int, chunks chunkCount: Int = 1) -> (chunks: Int, bytes: Int) {
         lock.lock()
-        chunks += 1
+        chunks += chunkCount
         bytes += byteCount
+        let snapshot = (chunks, bytes)
         lock.unlock()
+        return snapshot
     }
 
     func snapshot() -> (chunks: Int, bytes: Int) {
@@ -74,6 +77,8 @@ final class DictationManager: ObservableObject {
     static let enabledDefaultsKey = "dictationEnabled"
     private static let liveSTTProvider = "openai"
     private static let liveSTTModel = "gpt-realtime-whisper"
+    private static let liveSTTSampleRate = 24_000
+    private static let startupAudioMaxBufferedBytes = liveSTTSampleRate * 2 * 30
 
     @Published var hotkeyChoice: String {
         didSet {
@@ -459,6 +464,58 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
+            let capture = makeCapture(sampleRate: Self.liveSTTSampleRate)
+            providerCapture = capture
+            let startupAudioBuffer = DictationStartupAudioBuffer(
+                maxBufferedBytes: Self.startupAudioMaxBufferedBytes
+            )
+            let encoder = RealtimePCMEncoder(
+                targetSampleRate: Self.liveSTTSampleRate,
+                channels: 1
+            )
+            let audioCounter = audioSendCounter
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, weak capture, startupAudioBuffer, session] in
+                guard let capture else { return }
+                var liveSent = 0
+                for await buffer in capture.audioBuffers {
+                    guard !Task.isCancelled else { return }
+                    guard let data = encoder.encode(buffer) else { continue }
+                    do {
+                        let result = try await startupAudioBuffer.append(data)
+                        if case .sent(let bytes) = result {
+                            liveSent += 1
+                            let snapshot = audioCounter.record(bytes: bytes)
+                            if snapshot.chunks == 1 {
+                                session.event(.audioFirstChunkSent, data: [
+                                    "provider": Self.liveSTTProvider,
+                                    "bytes": bytes,
+                                    "startupBuffered": false,
+                                ])
+                            }
+                            if liveSent <= 3 || liveSent % 20 == 0 {
+                                NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, bytes, Self.liveSTTProvider)
+                            }
+                        }
+                    } catch {
+                        NSLog("[Dictation/Provider] startup audio send failed provider=%@: %@", Self.liveSTTProvider, String(describing: error))
+                        await MainActor.run {
+                            guard let self else { return }
+                            self.error = error.userFacingMessage(context: .dictation)
+                            self.instrumentationSession?.failure(error, extras: ["stage": "startup_audio"])
+                            self.instrumentationSession = nil
+                            Task { await self.cancelDictation() }
+                        }
+                        return
+                    }
+                }
+                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", Self.liveSTTProvider, liveSent)
+            }
+            try await capture.startRecording()
+            session.event(.audioLeaseAcquired, data: [
+                "sampleRate": Self.liveSTTSampleRate,
+                "startupBuffered": true,
+            ])
+
             refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
 
             let language = currentDictationLanguage()
@@ -467,12 +524,21 @@ final class DictationManager: ObservableObject {
                 session: session,
                 apiClient: apiClient
             )
+            guard state == .connecting else {
+                await startupAudioBuffer.close()
+                return
+            }
 
             guard sessionConfig.provider == Self.liveSTTProvider else {
                 throw ProviderError.unsupportedModel(sessionConfig.provider)
             }
             guard sessionConfig.model == Self.liveSTTModel else {
                 throw ProviderError.unsupportedModel(sessionConfig.model)
+            }
+            guard sessionConfig.sampleRate == Self.liveSTTSampleRate else {
+                throw ProviderError.transcriberInternal(
+                    message: "OpenAI realtime session returned unsupported sample_rate=\(sessionConfig.sampleRate)"
+                )
             }
 
             let keyTerms = dictionaryStore?.vocabularyList ?? []
@@ -495,42 +561,30 @@ final class DictationManager: ObservableObject {
                 }
             }
 
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            providerCapture = capture
-
-            let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
-            async let captureStarted: Void = capture.startRecording()
-            async let providerOpened: Void = provider.open()
-            _ = try await (captureStarted, providerOpened)
-            session.event(.providerOpened)
-
-            let audioCounter = audioSendCounter
-            providerAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture, session] in
-                guard let provider, let capture else { return }
-                var liveSent = 0
-                for await buffer in capture.audioBuffers {
-                    guard !Task.isCancelled else { return }
-                    guard let data = encoder.encode(buffer) else { continue }
-                    do {
-                        try await provider.send(pcm16: data)
-                        liveSent += 1
-                        audioCounter.record(bytes: data.count)
-                        if liveSent == 1 {
-                            session.event(.audioFirstChunkSent, data: [
-                                "provider": sessionConfig.provider,
-                                "bytes": data.count,
-                            ])
-                        }
-                        if liveSent <= 3 || liveSent % 20 == 0 {
-                            NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, data.count, sessionConfig.provider)
-                        }
-                    } catch {
-                        NSLog("[Dictation/Provider] send #%d failed provider=%@: %@", liveSent, sessionConfig.provider, String(describing: error))
-                        return
-                    }
-                }
-                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", sessionConfig.provider, liveSent)
+            try await provider.open()
+            guard state == .connecting else {
+                await startupAudioBuffer.close()
+                return
             }
+            let startupFlush = try await startupAudioBuffer.startStreaming(to: provider)
+            if startupFlush.bytes > 0 {
+                let snapshot = audioCounter.record(
+                    bytes: startupFlush.bytes,
+                    chunks: startupFlush.chunks
+                )
+                if snapshot.chunks == startupFlush.chunks {
+                    session.event(.audioFirstChunkSent, data: [
+                        "provider": sessionConfig.provider,
+                        "bytes": startupFlush.bytes,
+                        "startupBuffered": true,
+                        "startupBufferedChunks": startupFlush.chunks,
+                    ])
+                }
+            }
+            session.event(.providerOpened, data: [
+                "startupBufferedBytes": startupFlush.bytes,
+                "startupBufferedChunks": startupFlush.chunks,
+            ])
 
             startTimer()
             setState(.listening)
