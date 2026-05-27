@@ -23,10 +23,10 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "openai"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "gpt-realtime-whisper"
-DEFAULT_RECORDING_LIVE_STT_PROVIDER = "openai"
-DEFAULT_RECORDING_LIVE_STT_MODEL = "gpt-realtime-whisper"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "deepgram"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "nova-3"
+DEFAULT_RECORDING_LIVE_STT_PROVIDER = "deepgram"
+DEFAULT_RECORDING_LIVE_STT_MODEL = "nova-3"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
@@ -51,19 +51,19 @@ class ModelOption:
 
 _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="openai",
-        model="gpt-realtime-whisper",
-        label="OpenAI GPT Realtime Whisper",
-        description="Fixed streaming speech-to-text model for live dictation.",
+        provider="deepgram",
+        model="nova-3",
+        label="Deepgram Nova-3",
+        description="Fixed low-latency streaming speech-to-text model for live dictation.",
     ),
 )
 
 _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="openai",
-        model="gpt-realtime-whisper",
-        label="OpenAI GPT Realtime Whisper",
-        description="Fixed streaming speech-to-text model for live recording.",
+        provider="deepgram",
+        model="nova-3",
+        label="Deepgram Nova-3",
+        description="Fixed low-latency streaming speech-to-text model for live recording.",
     ),
 )
 
@@ -90,6 +90,7 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
 }
 
 _PROVIDER_KEY_BY_NAME = {
+    "deepgram": "deepgram_api_key",
     "elevenlabs": "elevenlabs_api_key",
     "openai": "openai_api_key",
 }

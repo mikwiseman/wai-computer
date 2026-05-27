@@ -248,7 +248,6 @@
     <string name="language_de">German</string>
     <string name="language_ja">Japanese</string>
     <string name="language_ko">Korean</string>
-    <string name="language_zh">Chinese</string>
     <string name="status_ready">Ready</string>
     <string name="status_processing">Processing</string>
     <string name="status_pending_upload">Pending upload</string>

@@ -4,38 +4,48 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.deepgram import build_realtime_websocket_url
 from app.core.realtime_transcription import (
     RealtimeTranscriptionSession,
-    _build_openai_realtime_session,
+    _build_deepgram_realtime_session,
     create_realtime_transcription_session,
 )
 
-OPENAI_REALTIME_MODEL = "gpt-realtime-whisper"
+DEEPGRAM_REALTIME_MODEL = "nova-3"
 
 
 @pytest.mark.asyncio
-async def test_create_realtime_transcription_session_uses_openai_recording_defaults():
+async def test_create_realtime_transcription_session_uses_deepgram_recording_defaults():
     with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(return_value="ek_openai"),
+        "app.core.realtime_transcription.create_temporary_token",
+        new=AsyncMock(return_value=("dg_token", 60)),
     ):
         session = await create_realtime_transcription_session(language="multi", channels=1)
 
     assert session == RealtimeTranscriptionSession(
-        provider="openai",
-        token="ek_openai",
+        provider="deepgram",
+        token="dg_token",
         expires_in_seconds=60,
-        sample_rate=24_000,
-        audio_format="pcm_24000",
+        sample_rate=16_000,
+        audio_format="linear16",
         language="multi",
         channels=1,
-        model=OPENAI_REALTIME_MODEL,
-        keep_alive_interval_seconds=None,
-        commit_strategy="manual",
+        model=DEEPGRAM_REALTIME_MODEL,
+        keep_alive_interval_seconds=4,
+        commit_strategy=None,
         no_verbatim=False,
-        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
+        websocket_url=build_realtime_websocket_url(
+            language="multi",
+            channels=1,
+            purpose="recording",
+            model=DEEPGRAM_REALTIME_MODEL,
+        ),
         auth_scheme="bearer",
     )
+    assert "smart_format=true" in session.websocket_url
+    assert "interim_results=true" in session.websocket_url
+    assert "utterances=true" in session.websocket_url
+    assert "endpointing=100" in session.websocket_url
 
 
 @pytest.mark.asyncio
@@ -50,108 +60,82 @@ async def test_create_realtime_transcription_session_ignores_user_recording_choi
     )()
 
     with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(return_value="ek_openai"),
+        "app.core.realtime_transcription.create_temporary_token",
+        new=AsyncMock(return_value=("dg_token", 60)),
     ):
         session = await create_realtime_transcription_session(
-            language="ru",
+            language="ru-RU",
             channels=2,
             purpose="recording",
             user=user,
         )
 
-    assert session.provider == "openai"
-    assert session.model == OPENAI_REALTIME_MODEL
+    assert session.provider == "deepgram"
+    assert session.model == DEEPGRAM_REALTIME_MODEL
     assert session.language == "ru"
     assert session.channels == 1
-    assert session.token == "ek_openai"
+    assert session.token == "dg_token"
     assert session.auth_scheme == "bearer"
+    assert "endpointing=300" in session.websocket_url
+    assert "numerals=true" in session.websocket_url
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_ignores_removed_realtime_user_model():
-    user = type(
-        "User",
-        (),
-        {
-            "dictation_live_stt_provider": "legacy-live",
-            "dictation_live_stt_model": "legacy-model",
-        },
-    )()
-
+async def test_create_dictation_session_adds_english_dictation_params():
     with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(return_value="ek_openai"),
+        "app.core.realtime_transcription.create_temporary_token",
+        new=AsyncMock(return_value=("dg_token", 60)),
     ):
         session = await create_realtime_transcription_session(
-            language="en",
+            language="en-US",
             channels=1,
             purpose="dictation",
-            user=user,
         )
 
-    assert session.provider == "openai"
-    assert session.model == OPENAI_REALTIME_MODEL
+    assert session.provider == "deepgram"
+    assert session.model == DEEPGRAM_REALTIME_MODEL
+    assert "dictation=true" in session.websocket_url
+    assert "punctuate=true" in session.websocket_url
+    assert "numerals=true" in session.websocket_url
+    assert "utterances=true" not in session.websocket_url
 
 
 @pytest.mark.asyncio
-async def test_create_dictation_session_normalizes_language_and_channels():
+async def test_create_dictation_session_skips_english_only_dictation_for_multi():
     with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(return_value="ek_openai"),
+        "app.core.realtime_transcription.create_temporary_token",
+        new=AsyncMock(return_value=("dg_token", 60)),
     ):
         session = await create_realtime_transcription_session(
-            language=" RU ",
-            channels=0,
+            language="   ",
+            channels=1,
             purpose="dictation",
         )
 
-    assert session.provider == "openai"
-    assert session.language == "ru"
-    assert session.channels == 1
+    assert session.language == "multi"
+    assert "dictation=true" not in session.websocket_url
+    assert "punctuate=true" not in session.websocket_url
+    assert "numerals=true" in session.websocket_url
+    assert "endpointing=100" in session.websocket_url
 
 
 @pytest.mark.asyncio
-async def test_create_recording_session_ignores_removed_user_choice():
-    user = type(
-        "User",
-        (),
-        {
-            "recording_live_stt_provider": "removed-live-provider",
-            "recording_live_stt_model": "removed-live-model",
-        },
-    )()
-
+async def test_build_deepgram_realtime_session_requires_api_key():
     with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(return_value="ek_openai"),
+        "app.core.realtime_transcription.create_temporary_token",
+        new=AsyncMock(side_effect=ValueError("DEEPGRAM_API_KEY not configured")),
     ):
-        session = await create_realtime_transcription_session(
-            language="EN",
-            channels=2,
-            purpose="recording",
-            user=user,
-        )
-
-    assert session.provider == "openai"
-    assert session.language == "en"
-    assert session.channels == 1
-    assert session.no_verbatim is False
-    assert session.auth_scheme == "bearer"
+        with pytest.raises(ValueError, match="DEEPGRAM_API_KEY not configured"):
+            await _build_deepgram_realtime_session(
+                "ru",
+                1,
+                model=DEEPGRAM_REALTIME_MODEL,
+                purpose="recording",
+            )
 
 
 @pytest.mark.asyncio
-async def test_build_openai_realtime_session_requires_api_key():
-    with patch(
-        "app.core.realtime_transcription.create_realtime_client_secret",
-        new=AsyncMock(side_effect=ValueError("OPENAI_API_KEY not configured")),
-    ):
-        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
-            await _build_openai_realtime_session("ru", 1, model=OPENAI_REALTIME_MODEL)
-
-
-@pytest.mark.asyncio
-async def test_create_realtime_transcription_session_rejects_non_openai_runtime():
+async def test_create_realtime_transcription_session_rejects_non_deepgram_runtime():
     with patch(
         "app.core.realtime_transcription.validate_option",
         return_value=("removed-provider", "removed-model"),
@@ -164,7 +148,7 @@ async def test_create_realtime_transcription_session_rejects_non_openai_runtime(
 
 
 def test_realtime_transcription_router_exposes_only_session_mint_endpoint():
-    """Live STT is a single backend-minted OpenAI path, not provider proxy routing."""
+    """Live STT is a single backend-minted Deepgram path, not provider proxy routing."""
     from app.api.routes.realtime_transcription import router
 
     route_paths = {getattr(route, "path", None) for route in router.routes}

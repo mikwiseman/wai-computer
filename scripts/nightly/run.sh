@@ -23,13 +23,13 @@ JSON_REPORT="$NIGHTLY_DIR/.artifacts/last-report.json"
 MD_REPORT="$NIGHTLY_DIR/.artifacts/last-report.md"
 mkdir -p "$NIGHTLY_DIR/.artifacts"
 
-echo "==> OpenAI realtime dictation production path"
+echo "==> Deepgram Nova-3 realtime dictation production path"
 if python "$ROOT_DIR/scripts/evaluate-realtime-dictation.py" --output "$JSON_REPORT" 2>&1 | tee "$LOG_FILE"; then
-  echo "==> OpenAI realtime PASS"
+  echo "==> Deepgram realtime PASS"
   rc=0
 else
   rc=$?
-  echo "==> OpenAI realtime FAIL (exit=$rc)"
+  echo "==> Deepgram realtime FAIL (exit=$rc)"
 fi
 
 if [[ -f "$JSON_REPORT" ]]; then

@@ -5,24 +5,24 @@ import XCTest
 final class WebSocketManagerExtendedTests: XCTestCase {
 
     private func config(
-        provider: String = "openai",
-        token: String = "openai-client-secret",
+        provider: String = "deepgram",
+        token: String = "deepgram-temp-token",
         language: String = "multi",
         channels: Int = 1,
-        model: String = "gpt-realtime-whisper",
-        websocketURL: String? = "wss://api.openai.com/v1/realtime?intent=transcription",
+        model: String = "nova-3",
+        websocketURL: String? = "wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16",
         authScheme: String? = "bearer"
     ) -> RealtimeTranscriptionSessionConfig {
         RealtimeTranscriptionSessionConfig(
             provider: provider,
             token: token,
-            expiresInSeconds: 900,
-            sampleRate: 24_000,
-            audioFormat: "pcm_24000",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16",
             language: language,
             channels: channels,
             model: model,
-            commitStrategy: "manual",
+            keepAliveIntervalSeconds: 4,
             websocketURL: websocketURL,
             authScheme: authScheme
         )
@@ -37,16 +37,15 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(segments.isEmpty)
     }
 
-    func testOpenAIRequestUsesConfiguredWebSocketURLAndBearerAuth() async throws {
+    func testDeepgramRequestUsesConfiguredWebSocketURLAndBearerAuth() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
         let request = try await manager.testingRequestForRealtimeSession(config())
 
-        XCTAssertEqual(request.url?.host, "api.openai.com")
-        XCTAssertEqual(request.url?.path, "/v1/realtime")
-        XCTAssertEqual(request.url?.query, "intent=transcription")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-client-secret")
+        XCTAssertEqual(request.url?.host, "api.deepgram.com")
+        XCTAssertEqual(request.url?.path, "/v1/listen")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer deepgram-temp-token")
     }
 
     func testRealtimeSessionRequestRejectsLegacyLiveProviders() async throws {
@@ -76,144 +75,104 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         do {
             _ = try await manager.testingRequestForRealtimeSession(config(authScheme: "basic"))
-            XCTFail("Expected non-bearer OpenAI auth to be rejected")
+            XCTFail("Expected non-bearer Deepgram auth to be rejected")
         } catch WebSocketConnectionError.tokenFetchFailed(let message) {
-            XCTAssertTrue(message.contains("Unsupported auth scheme for openai: basic"))
+            XCTAssertTrue(message.contains("Unsupported auth scheme for deepgram: basic"))
         } catch {
             XCTFail("Expected tokenFetchFailed, got \(error)")
         }
     }
 
-    func testOpenAIAudioAppendMessageUsesRealtimePayloadShape() async throws {
+    func testDeepgramFinalizeControlMessageShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
-        let message = await manager.testingMakeOpenAIAudioAppendMessage(data: Data([0x01, 0x02, 0x03]))
+        let message = await manager.testingDeepgramFinalizeMessage()
         let payload = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
         )
 
-        XCTAssertEqual(payload["type"] as? String, "input_audio_buffer.append")
-        XCTAssertEqual(payload["audio"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
+        XCTAssertEqual(payload["type"] as? String, "Finalize")
     }
 
-    func testOpenAIAudioChunkerBuffersSub20MsFrames() async throws {
+    func testDeepgramAudioChunkerBuffersSub20MsFrames() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         var pending = Data()
 
         let first = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 480),
+            appending: Data(repeating: 0x01, count: 320),
             forceFlush: false,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
         let second = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x02, count: 480),
+            appending: Data(repeating: 0x02, count: 320),
             forceFlush: false,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
 
         XCTAssertTrue(first.isEmpty)
-        XCTAssertEqual(second.map(\.count), [960])
+        XCTAssertEqual(second.map(\.count), [640])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testOpenAIAudioChunkerPadsFinalShortFrame() async throws {
+    func testDeepgramAudioChunkerPadsFinalShortFrame() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         var pending = Data()
 
         _ = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 240),
+            appending: Data(repeating: 0x01, count: 160),
             forceFlush: false,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
         let flushed = await manager.testingPCMAudioChunks(
             pending: &pending,
             appending: Data(),
             forceFlush: true,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
 
-        XCTAssertEqual(flushed.map(\.count), [960])
+        XCTAssertEqual(flushed.map(\.count), [640])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testOpenAISessionUpdateUsesRealtimeTranscriptionShape() async throws {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(
-            apiClient: apiClient,
-            language: "multi",
-            channels: 1,
-            keyTerms: ["WaiComputer", "waicomputer", "Anthropic"]
-        )
-
-        let message = await manager.testingMakeOpenAISessionUpdateMessage(config())
-        let payload = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
-        )
-        let session = try XCTUnwrap(payload["session"] as? [String: Any])
-        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
-        let input = try XCTUnwrap(audio["input"] as? [String: Any])
-        let format = try XCTUnwrap(input["format"] as? [String: Any])
-        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
-
-        XCTAssertEqual(payload["type"] as? String, "session.update")
-        XCTAssertEqual(session["type"] as? String, "transcription")
-        XCTAssertEqual(format["type"] as? String, "audio/pcm")
-        XCTAssertEqual(format["rate"] as? Int, 24_000)
-        XCTAssertEqual(transcription["model"] as? String, "gpt-realtime-whisper")
-        XCTAssertEqual(transcription["delay"] as? String, "low")
-        XCTAssertNil(transcription["language"])
-        XCTAssertTrue(input["turn_detection"] is NSNull)
-        XCTAssertNil(transcription["prompts"])
-    }
-
-    func testOpenAISessionUpdateNormalisesLanguageHint() async throws {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient)
-
-        let message = await manager.testingMakeOpenAISessionUpdateMessage(config(language: "ru-RU"))
-        let payload = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
-        )
-        let session = try XCTUnwrap(payload["session"] as? [String: Any])
-        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
-        let input = try XCTUnwrap(audio["input"] as? [String: Any])
-        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
-
-        XCTAssertEqual(transcription["language"] as? String, "ru")
-    }
-
-    func testOpenAICompletedTranscriptCollectsSegment() async {
+    func testDeepgramFinalTranscriptCollectsSegment() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         _ = await manager.events
         await manager.testingSetSessionConfig(config(language: "en"))
 
-        await manager.testingHandleOpenAIMessage("""
+        await manager.testingHandleDeepgramMessage("""
         {
-            "type": "conversation.item.input_audio_transcription.completed",
-            "item_id": "item_1",
-            "transcript": "Hello world."
+            "type": "Results",
+            "is_final": true,
+            "start": 1.2,
+            "duration": 0.8,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Hello world.", "confidence": 0.98}
+                ]
+            }
         }
         """)
 
         let segments = await manager.collectedSegments
         XCTAssertEqual(segments.count, 1)
         XCTAssertEqual(segments.first?.text, "Hello world.")
-        XCTAssertNil(segments.first?.speaker)
-        XCTAssertEqual(segments.first?.confidence, 0)
+        XCTAssertEqual(segments.first?.startMs, 1_200)
+        XCTAssertEqual(segments.first?.endMs, 2_000)
+        XCTAssertEqual(segments.first?.confidence, 0.98)
     }
 
-    func testOpenAIDeltaTranscriptYieldsInterimEvent() async {
+    func testDeepgramInterimTranscriptYieldsEvent() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         let stream = await manager.events
@@ -229,11 +188,17 @@ final class WebSocketManagerExtendedTests: XCTestCase {
             return nil
         }
 
-        await manager.testingHandleOpenAIMessage("""
+        await manager.testingHandleDeepgramMessage("""
         {
-            "type": "conversation.item.input_audio_transcription.delta",
-            "item_id": "item_1",
-            "delta": "partial text"
+            "type": "Results",
+            "is_final": false,
+            "start": 0,
+            "duration": 0.5,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "partial text", "confidence": 0.7}
+                ]
+            }
         }
         """)
 
@@ -242,38 +207,17 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segment?.isFinal, false)
     }
 
-    func testOpenAIDeltaAccumulatorPreservesProviderWhitespace() async {
+    func testDuplicateDeepgramFinalTranscriptsAreDeduped() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         _ = await manager.events
         await manager.testingSetSessionConfig(config(language: "en"))
 
-        await manager.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hello"}
-        """)
-        await manager.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":" world"}
-        """)
-        await manager.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1"}
-        """)
-
-        let segments = await manager.collectedSegments
-        XCTAssertEqual(segments.map(\.text), ["Hello world"])
-    }
-
-    func testDuplicateOpenAIFinalTranscriptsAreDeduped() async {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient)
-        _ = await manager.events
-        await manager.testingSetSessionConfig(config(language: "en"))
-
-        await manager.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":"Same final."}
-        """)
-        await manager.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Same final."}
-        """)
+        let message = """
+        {"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"Same final.","confidence":0.9}]}}
+        """
+        await manager.testingHandleDeepgramMessage(message)
+        await manager.testingHandleDeepgramMessage(message)
 
         let segments = await manager.collectedSegments
         XCTAssertEqual(segments.map(\.text), ["Same final."])
@@ -374,82 +318,71 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         }
     }
 
-    func testProviderBackedOpenAIRequiresServerMintedWebSocketURL() async throws {
+    func testProviderBackedDeepgramRequiresServerMintedWebSocketURL() async throws {
         let session = ProviderBackedRealtimeSession(config: config(websocketURL: nil))
 
         do {
             _ = try await session.testingRequest()
-            XCTFail("Expected missing OpenAI websocket URL to throw")
+            XCTFail("Expected missing Deepgram websocket URL to throw")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("OpenAI realtime session is missing server-minted websocket URL"))
+            XCTAssertTrue(String(describing: error).contains("Deepgram realtime session is missing server-minted websocket URL"))
         }
     }
 
-    func testProviderBackedOpenAIRequiresBearerAuth() async throws {
+    func testProviderBackedDeepgramRequiresBearerAuth() async throws {
         let session = ProviderBackedRealtimeSession(config: config(authScheme: "basic"))
 
         do {
             _ = try await session.testingRequest()
-            XCTFail("Expected non-bearer OpenAI auth to throw")
+            XCTFail("Expected non-bearer Deepgram auth to throw")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("OpenAI realtime session has unsupported auth scheme: basic"))
+            XCTAssertTrue(String(describing: error).contains("Deepgram realtime session has unsupported auth scheme: basic"))
         }
     }
 
-    func testProviderBackedOpenAISessionUpdateUsesRealtimeTranscriptionShape() async throws {
-        let session = ProviderBackedRealtimeSession(
-            config: config(language: "ru-RU"),
-            keyTerms: ["Mikhail", "mikhail", "WaiComputer"]
-        )
+    func testProviderBackedDeepgramFinalizePayload() async throws {
+        let session = ProviderBackedRealtimeSession(config: config(language: "ru"))
 
-        let payload = await session.testingOpenAISessionUpdatePayload()
-        let sessionPayload = try XCTUnwrap(payload["session"] as? [String: Any])
-        let audio = try XCTUnwrap(sessionPayload["audio"] as? [String: Any])
-        let input = try XCTUnwrap(audio["input"] as? [String: Any])
-        let format = try XCTUnwrap(input["format"] as? [String: Any])
-        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
+        let payload = await session.testingDeepgramFinalizePayload()
 
-        XCTAssertEqual(sessionPayload["type"] as? String, "transcription")
-        XCTAssertEqual(format["type"] as? String, "audio/pcm")
-        XCTAssertEqual(format["rate"] as? Int, 24_000)
-        XCTAssertEqual(transcription["model"] as? String, "gpt-realtime-whisper")
-        XCTAssertEqual(transcription["delay"] as? String, "low")
-        XCTAssertEqual(transcription["language"] as? String, "ru")
-        XCTAssertTrue(input["turn_detection"] is NSNull)
-        XCTAssertNil(transcription["prompts"])
+        XCTAssertEqual(payload["type"] as? String, "Finalize")
     }
 
-    func testProviderBackedOpenAIAudioChunkerBuffersAndPadsFinalShortFrame() async throws {
+    func testProviderBackedDeepgramAudioChunkerBuffersAndPadsFinalShortFrame() async throws {
         var pending = Data()
 
         let first = ProviderBackedRealtimeSession.pcmAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 480),
+            appending: Data(repeating: 0x01, count: 320),
             forceFlush: false,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
         let flushed = ProviderBackedRealtimeSession.pcmAudioChunks(
             pending: &pending,
             appending: Data(),
             forceFlush: true,
-            sampleRate: 24_000,
+            sampleRate: 16_000,
             channels: 1
         )
 
         XCTAssertTrue(first.isEmpty)
-        XCTAssertEqual(flushed.map(\.count), [960])
+        XCTAssertEqual(flushed.map(\.count), [640])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testProviderBackedOpenAICompletedTranscriptCollectsSegment() async {
+    func testProviderBackedDeepgramFinalTranscriptCollectsSegment() async {
         let session = ProviderBackedRealtimeSession(config: config(language: "en"))
 
-        await session.testingHandleOpenAIMessage("""
+        await session.testingHandleDeepgramMessage("""
         {
-            "type": "conversation.item.input_audio_transcription.completed",
-            "item_id": "item_1",
-            "transcript": "Provider backed final."
+            "type": "Results",
+            "is_final": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Provider backed final.", "confidence": 0.95}
+                ]
+            }
         }
         """)
 
@@ -459,32 +392,14 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertNil(segments.first?.speaker)
     }
 
-    func testProviderBackedOpenAIDeltaAccumulatorPreservesProviderWhitespace() async {
+    func testProviderBackedDuplicateDeepgramFinalTranscriptsAreDeduped() async {
         let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        let message = """
+        {"type":"Results","is_final":true,"channel":{"alternatives":[{"transcript":"Same provider final.","confidence":0.9}]}}
+        """
 
-        await session.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":"Hello"}
-        """)
-        await session.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.delta","item_id":"item_1","delta":" world"}
-        """)
-        await session.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"item_1"}
-        """)
-
-        let segments = await session.testingCollectedSegments()
-        XCTAssertEqual(segments.map(\.text), ["Hello world"])
-    }
-
-    func testProviderBackedDuplicateOpenAIFinalTranscriptsAreDeduped() async {
-        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
-
-        await session.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":"Same provider final."}
-        """)
-        await session.testingHandleOpenAIMessage("""
-        {"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Same provider final."}
-        """)
+        await session.testingHandleDeepgramMessage(message)
+        await session.testingHandleDeepgramMessage(message)
 
         let segments = await session.testingCollectedSegments()
         XCTAssertEqual(segments.map(\.text), ["Same provider final."])

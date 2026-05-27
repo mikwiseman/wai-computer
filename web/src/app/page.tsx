@@ -539,8 +539,8 @@ export default function Home() {
               Which models power transcription?
             </dt>
             <dd className={styles.faqAnswer}>
-              Realtime dictation and live recording use OpenAI GPT Realtime
-              Whisper. Full-session transcription uses ElevenLabs Scribe v2.
+              Realtime dictation and live recording use Deepgram Nova-3.
+              Full-session transcription uses ElevenLabs Scribe v2.
               See the current stack check at /benchmarks/dictation.
             </dd>
           </div>

@@ -55,8 +55,8 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 - Global keyboard shortcuts
 
 ### Backend
-- OpenAI realtime speech-to-text for live dictation and recording captions
-- OpenAI diarized file transcription for full recording processing
+- Deepgram Nova-3 realtime speech-to-text for live dictation and recording captions
+- ElevenLabs Scribe v2 file transcription for full recording processing
 - ElevenLabs realtime voice sessions
 - OpenAI Responses API for summarization, entity extraction, Companion, and dictation cleanup
 - PostgreSQL with pgvector for hybrid search
@@ -255,7 +255,7 @@ To capture audio from Zoom/Meet/etc:
 - **Frontend**: SwiftUI (iOS 17+, macOS 14+)
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
-- **Transcription**: OpenAI `gpt-realtime-whisper` for dictation/live STT, ElevenLabs `scribe_v2` for full file STT
+- **Transcription**: Deepgram `nova-3` for dictation/live STT, ElevenLabs `scribe_v2` for full file STT
 - **AI**: OpenAI Responses API
 - **Audio Codec**: Opus (16kHz, mono)
 - **Deploy**: Cloudflare Pages + Workers

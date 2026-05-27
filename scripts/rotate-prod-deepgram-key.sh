@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rotate the production ElevenLabs API key in the root-owned runtime env file on
+# Rotate the production Deepgram API key in the root-owned runtime env file on
 # the VPS without echoing the key.
 
 set -euo pipefail
@@ -19,15 +19,15 @@ if [[ ! -f "${SSH_KEY_PATH}" ]]; then
   exit 1
 fi
 
-read -r -s -p "New ELEVENLABS_API_KEY: " ELEVENLABS_API_KEY
+read -r -s -p "New DEEPGRAM_API_KEY: " DEEPGRAM_API_KEY
 echo
 
-if [[ -z "${ELEVENLABS_API_KEY}" ]]; then
+if [[ -z "${DEEPGRAM_API_KEY}" ]]; then
   echo "ERROR: key cannot be empty" >&2
   exit 1
 fi
 
-export ELEVENLABS_API_KEY
+export DEEPGRAM_API_KEY
 if ! ssh \
   -i "${SSH_KEY_PATH}" \
   -o BatchMode=yes \
@@ -49,18 +49,18 @@ ssh \
 import os
 import sys
 
-key = os.environ["ELEVENLABS_API_KEY"]
+key = os.environ["DEEPGRAM_API_KEY"]
 lines = sys.stdin.read().splitlines()
 
 updated = False
 for index, line in enumerate(lines):
-    if line.startswith("ELEVENLABS_API_KEY="):
-        lines[index] = f"ELEVENLABS_API_KEY={key}"
+    if line.startswith("DEEPGRAM_API_KEY="):
+        lines[index] = f"DEEPGRAM_API_KEY={key}"
         updated = True
         break
 
 if not updated:
-    lines.append(f"ELEVENLABS_API_KEY={key}")
+    lines.append(f"DEEPGRAM_API_KEY={key}")
 
 content = "\n".join(lines).rstrip("\n") + "\n"
 print(content, end="")
@@ -76,6 +76,6 @@ print(content, end="")
        cat >\"\$tmp\";
        install -m 600 -o root -g root \"\$tmp\" \"${REMOTE_ENV_FILE}\";
        rm -f \"\$tmp\";
-       grep -Eq '^ELEVENLABS_API_KEY=.+' \"${REMOTE_ENV_FILE}\""
+       grep -Eq '^DEEPGRAM_API_KEY=.+' \"${REMOTE_ENV_FILE}\""
 
-echo "Rotated ELEVENLABS_API_KEY in ${VPS_HOST}:${REMOTE_ENV_FILE}"
+echo "Rotated DEEPGRAM_API_KEY in ${VPS_HOST}:${REMOTE_ENV_FILE}"

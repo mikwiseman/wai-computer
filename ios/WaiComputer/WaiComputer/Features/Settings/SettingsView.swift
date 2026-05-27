@@ -219,7 +219,6 @@ struct TranscriptionSettingsView: View {
         ("German", "de"),
         ("French", "fr"),
         ("Japanese", "ja"),
-        ("Chinese", "zh"),
     ]
 
     var body: some View {

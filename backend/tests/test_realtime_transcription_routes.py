@@ -28,18 +28,18 @@ def mock_authenticated_user():
 @pytest.mark.asyncio
 async def test_realtime_transcription_session_returns_provider_payload(mock_authenticated_user):
     session = RealtimeTranscriptionSession(
-        provider="openai",
-        token="ek_openai",
+        provider="deepgram",
+        token="dg_token",
         expires_in_seconds=60,
-        sample_rate=24_000,
-        audio_format="pcm_24000",
+        sample_rate=16_000,
+        audio_format="linear16",
         language="multi",
         channels=1,
-        model="gpt-realtime-whisper",
-        keep_alive_interval_seconds=None,
-        commit_strategy="manual",
+        model="nova-3",
+        keep_alive_interval_seconds=4,
+        commit_strategy=None,
         no_verbatim=False,
-        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
+        websocket_url="wss://api.deepgram.com/v1/listen?model=nova-3",
         auth_scheme="bearer",
     )
 
@@ -58,12 +58,13 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "openai"
-    assert payload["token"] == "ek_openai"
-    assert payload["model"] == "gpt-realtime-whisper"
-    assert payload["sample_rate"] == 24_000
-    assert payload["audio_format"] == "pcm_24000"
-    assert payload["commit_strategy"] == "manual"
+    assert payload["provider"] == "deepgram"
+    assert payload["token"] == "dg_token"
+    assert payload["model"] == "nova-3"
+    assert payload["sample_rate"] == 16_000
+    assert payload["audio_format"] == "linear16"
+    assert payload["keep_alive_interval_seconds"] == 4
+    assert payload["commit_strategy"] is None
     assert payload["no_verbatim"] is False
     assert payload["auth_scheme"] == "bearer"
 
@@ -73,17 +74,18 @@ async def test_realtime_transcription_session_reports_slow_session_mint(
     mock_authenticated_user,
 ):
     session = RealtimeTranscriptionSession(
-        provider="openai",
-        token="ek_openai",
+        provider="deepgram",
+        token="dg_token",
         expires_in_seconds=60,
-        sample_rate=24_000,
-        audio_format="pcm_24000",
+        sample_rate=16_000,
+        audio_format="linear16",
         language="multi",
         channels=1,
-        model="gpt-realtime-whisper",
-        commit_strategy="manual",
+        model="nova-3",
+        keep_alive_interval_seconds=4,
+        commit_strategy=None,
         no_verbatim=False,
-        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
+        websocket_url="wss://api.deepgram.com/v1/listen?model=nova-3",
         auth_scheme="bearer",
     )
     captured: dict[str, object] = {}
@@ -123,8 +125,8 @@ async def test_realtime_transcription_session_reports_slow_session_mint(
     assert captured["code"] == "realtime.session_mint.slow"
     assert captured["category"] == "transcription.session"
     assert captured["extras"] is not None
-    assert captured["extras"]["provider"] == "openai"
-    assert captured["extras"]["model"] == "gpt-realtime-whisper"
+    assert captured["extras"]["provider"] == "deepgram"
+    assert captured["extras"]["model"] == "nova-3"
     assert captured["extras"]["latency_ms"] == 3_000
 
 
@@ -134,7 +136,7 @@ async def test_realtime_transcription_session_returns_503_on_missing_config(
 ):
     with patch(
         "app.api.routes.realtime_transcription.create_realtime_transcription_session",
-        new=AsyncMock(side_effect=ValueError("OPENAI_API_KEY not configured")),
+        new=AsyncMock(side_effect=ValueError("DEEPGRAM_API_KEY not configured")),
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

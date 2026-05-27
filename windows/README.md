@@ -11,7 +11,7 @@ Velopack.
 
 - **.NET 9** + **WinUI 3** (Windows App SDK 1.6+)
 - **NAudio** for WASAPI capture + WasapiLoopbackCapture (system audio)
-- **System.Net.WebSockets** for OpenAI `gpt-realtime-whisper` realtime transcription
+- **System.Net.WebSockets** for Deepgram `nova-3` realtime transcription
 - **H.NotifyIcon** for the system tray
 - **Velopack** for stable + beta auto-update channels
 - **Sentry** for error monitoring with PII sanitisation

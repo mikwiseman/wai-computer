@@ -5,7 +5,7 @@ namespace WaiComputer.Core.Api.Models;
 [JsonConverter(typeof(JsonStringEnumConverter<RealtimeProvider>))]
 public enum RealtimeProvider
 {
-    [JsonStringEnumMemberName("openai")] OpenAi,
+    [JsonStringEnumMemberName("deepgram")] Deepgram,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<AuthScheme>))]

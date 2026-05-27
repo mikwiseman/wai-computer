@@ -8,9 +8,9 @@ final class TokenVaultTests: XCTestCase {
     private func makeToken(
         value: String = "tok-abc",
         livesForSeconds: Double = 600,
-        provider: String = "openai",
-        model: String = "gpt-realtime-whisper",
-        sampleRate: Int = 24_000
+        provider: String = "deepgram",
+        model: String = "nova-3",
+        sampleRate: Int = 16_000
     ) -> TokenVault.Token {
         let now = ContinuousClock().now
         return TokenVault.Token(
@@ -36,8 +36,8 @@ final class TokenVaultTests: XCTestCase {
         let token = TokenVault.Token(
             value: "expired",
             expiresAt: now.advanced(by: .seconds(-1)),
-            provider: "openai",
-            model: "gpt-realtime-whisper"
+            provider: "deepgram",
+            model: "nova-3"
         )
         XCTAssertFalse(token.isAlive(forNow: now))
     }
@@ -48,8 +48,8 @@ final class TokenVaultTests: XCTestCase {
         let token = TokenVault.Token(
             value: "soon",
             expiresAt: now.advanced(by: .seconds(20)),
-            provider: "openai",
-            model: "gpt-realtime-whisper"
+            provider: "deepgram",
+            model: "nova-3"
         )
         XCTAssertFalse(token.isAlive(forNow: now), "token within safety margin treated as dead")
     }
@@ -59,8 +59,8 @@ final class TokenVaultTests: XCTestCase {
         let token = TokenVault.Token(
             value: "x",
             expiresAt: now.advanced(by: .seconds(20)),
-            provider: "openai",
-            model: "gpt-realtime-whisper"
+            provider: "deepgram",
+            model: "nova-3"
         )
         XCTAssertTrue(token.isAlive(forNow: now, safety: .seconds(5)), "5s margin allows 20s-from-expiry to be alive")
         XCTAssertFalse(token.isAlive(forNow: now, safety: .seconds(25)))
@@ -168,11 +168,11 @@ final class TokenVaultTests: XCTestCase {
         let token = TokenVault.Token(
             value: "abc",
             expiresAt: ContinuousClock().now.advanced(by: .seconds(60)),
-            provider: "openai",
-            model: "gpt-realtime-whisper"
+            provider: "deepgram",
+            model: "nova-3"
         )
         XCTAssertNil(token.endpoint)
-        XCTAssertEqual(token.sampleRate, 24_000, "default sampleRate is 24kHz")
+        XCTAssertEqual(token.sampleRate, 16_000, "default sampleRate is 16kHz")
     }
 }
 

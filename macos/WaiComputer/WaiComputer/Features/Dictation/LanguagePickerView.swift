@@ -156,7 +156,6 @@ struct LanguagePickerView: View {
         case "it": return "Итальянский"
         case "pt": return "Португальский"
         case "ja": return "Японский"
-        case "zh": return "Китайский"
         case "ko": return "Корейский"
         case "hi": return "Хинди"
         case "ar": return "Арабский"

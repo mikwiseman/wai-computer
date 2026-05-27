@@ -66,25 +66,25 @@ public class ModelSerializationTests
     {
         const string body = """
         {
-          "provider": "openai",
-          "token": "openai-client-secret",
-          "expires_in_seconds": 900,
-          "sample_rate": 24000,
-          "audio_format": "pcm_24000",
+          "provider": "deepgram",
+          "token": "deepgram-temporary-token",
+          "expires_in_seconds": 60,
+          "sample_rate": 16000,
+          "audio_format": "linear16",
           "language": "multi",
           "channels": 1,
-          "model": "gpt-realtime-whisper",
-          "keep_alive_interval_seconds": null,
-          "commit_strategy": "manual",
+          "model": "nova-3",
+          "keep_alive_interval_seconds": 4,
+          "commit_strategy": null,
           "no_verbatim": false,
-          "websocket_url": "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+          "websocket_url": "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi",
           "auth_scheme": "bearer"
         }
         """;
         var cfg = JsonSerializer.Deserialize<RealtimeTranscriptionSessionConfig>(body, WaiJson.Options)!;
-        cfg.Provider.Should().Be(RealtimeProvider.OpenAi);
+        cfg.Provider.Should().Be(RealtimeProvider.Deepgram);
         cfg.AuthScheme.Should().Be(AuthScheme.Bearer);
-        cfg.SampleRate.Should().Be(24000);
+        cfg.SampleRate.Should().Be(16000);
     }
 
     [Fact]

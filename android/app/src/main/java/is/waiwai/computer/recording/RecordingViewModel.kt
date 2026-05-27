@@ -51,7 +51,7 @@ class RecordingViewModel(
     private val syncScheduler: PendingSyncWorkerScheduler,
     private val audioRecorderFactory: () -> AudioRecorder = { AndroidAudioRecorder(application) },
     private val webSocketFactory: (String) -> RealtimeWebSocketManager = { language ->
-        OpenAIRealtimeWebSocketManager(waiApi, language)
+        DeepgramRealtimeWebSocketManager(waiApi, language)
     },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RecordingUiState())

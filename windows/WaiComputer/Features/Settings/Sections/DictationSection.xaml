@@ -10,7 +10,7 @@
             <ComboBoxItem Content="Right Ctrl" /><ComboBoxItem Content="Right Win" />
             <ComboBoxItem Content="Caps Lock" /><ComboBoxItem Content="Ctrl + Alt" />
         </ComboBox>
-        <TextBlock Text="Live transcription: OpenAI GPT Realtime Whisper" />
+        <TextBlock Text="Live transcription: Deepgram Nova-3" />
         <ToggleSwitch Header="Post-filter dictated text" IsOn="False" />
     </StackPanel>
 </UserControl>

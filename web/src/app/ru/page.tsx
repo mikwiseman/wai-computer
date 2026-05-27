@@ -556,10 +556,9 @@ export default function RuHome() {
               Какие модели используются для расшифровки?
             </dt>
             <dd className={styles.faqAnswer}>
-              Для realtime-диктовки и живой записи используется OpenAI GPT
-              Realtime Whisper. Для полной расшифровки записи используется
-              ElevenLabs Scribe v2. Текущая проверка стека —
-              /ru/benchmarks/dictation.
+              Для realtime-диктовки и живой записи используется Deepgram
+              Nova-3. Для полной расшифровки записи используется ElevenLabs
+              Scribe v2. Текущая проверка стека — /ru/benchmarks/dictation.
             </dd>
           </div>
           <div className={styles.faqItem}>
