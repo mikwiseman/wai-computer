@@ -252,6 +252,7 @@ class MacRecordingViewModel: ObservableObject {
         if testingMode.isRecordingFlow {
             currentRecordingId = MacUITestFixtures.completedRecording.id
             currentTranscript = "UI test live transcript."
+            committedTranscript = currentTranscript
             duration = TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0)
             setPhase(.recording)
             isLoading = false
