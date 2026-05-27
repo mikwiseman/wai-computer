@@ -24,6 +24,7 @@ final class DictationLanguageStoreTests: XCTestCase {
 
         XCTAssertTrue(store.selectedLanguages.isEmpty)
         XCTAssertEqual(store.wireLanguageTag, "")
+        XCTAssertEqual(defaults.string(forKey: DictationLanguageStore.legacyKey), "multi")
     }
 
     func testSelectingLanguagePersistsSingleOpenAIHint() {
@@ -61,10 +62,45 @@ final class DictationLanguageStoreTests: XCTestCase {
     func testLegacyMultiselectStorageMigratesToAutoDetect() throws {
         let encoded = try JSONEncoder().encode(["en", "ru"])
         defaults.set(encoded, forKey: DictationLanguageStore.userDefaultsKey)
+        defaults.set("ru", forKey: DictationLanguageStore.legacyKey)
 
         let store = DictationLanguageStore(defaults: defaults)
 
         XCTAssertTrue(store.selectedLanguages.isEmpty)
         XCTAssertEqual(store.wireLanguageTag, "")
+        XCTAssertEqual(defaults.string(forKey: DictationLanguageStore.legacyKey), "multi")
+        let persisted = try XCTUnwrap(defaults.data(forKey: DictationLanguageStore.userDefaultsKey))
+        let decoded = try JSONDecoder().decode([String].self, from: persisted)
+        XCTAssertEqual(decoded, [])
+    }
+
+    func testProviderLanguageUsesSelectedStoreBeforeStaleLegacyKey() {
+        defaults.set("ru", forKey: DictationLanguageStore.legacyKey)
+        let store = DictationLanguageStore(defaults: defaults)
+
+        store.toggle("en", defaults: defaults)
+
+        XCTAssertEqual(
+            DictationLanguageSelectionPolicy.providerLanguage(store: store, defaults: defaults),
+            "en"
+        )
+    }
+
+    func testProviderLanguageNormalizesLegacyValueWhenStoreIsUnavailable() {
+        defaults.set(" RU ", forKey: DictationLanguageStore.legacyKey)
+
+        XCTAssertEqual(
+            DictationLanguageSelectionPolicy.providerLanguage(store: nil, defaults: defaults),
+            "ru"
+        )
+    }
+
+    func testProviderLanguageTreatsBlankLegacyValueAsAutoDetect() {
+        defaults.set("  ", forKey: DictationLanguageStore.legacyKey)
+
+        XCTAssertEqual(
+            DictationLanguageSelectionPolicy.providerLanguage(store: nil, defaults: defaults),
+            "multi"
+        )
     }
 }

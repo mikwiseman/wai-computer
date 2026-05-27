@@ -302,7 +302,7 @@ class MacRecordingViewModel: ObservableObject {
             }
 
             // Create recording on server
-            let language = UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+            let language = DictationLanguageSelectionPolicy.providerLanguage(store: nil)
             recording = try await apiClient.createRecording(
                 type: recordingType,
                 language: language,
