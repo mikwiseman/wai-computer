@@ -5,6 +5,7 @@ import Link from "next/link";
 import { login, register, requestMagicLink, requestPasswordReset } from "@/lib/api";
 import type { AuthLocale } from "@/lib/auth-locale";
 import { ApiError } from "@/lib/http";
+import { PasswordField } from "@/components/PasswordField";
 
 type Mode = "login" | "register";
 type Locale = AuthLocale;
@@ -301,18 +302,18 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
 
       {passwordMode ? (
         <form onSubmit={onPasswordSubmit} className="auth-form">
-          <label htmlFor="password">
-            <span>{copy.password}</span>
-            <input
-              id="password"
-              data-testid="auth-password"
-              name="password"
-              type="password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
+          <PasswordField
+            id="password"
+            name="password"
+            data-testid="auth-password"
+            label={copy.password}
+            value={password}
+            onChange={setPassword}
+            locale={locale}
+            showStrength={mode === "register"}
+            required
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
+          />
 
           <button
             className="primary-button"

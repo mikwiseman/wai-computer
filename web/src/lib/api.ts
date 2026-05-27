@@ -17,10 +17,13 @@ import type {
   BulkOperationResponse,
   DictationBenchmarkBattleResponse,
   DictationBenchmarkVoteResponse,
+  DictationDictionaryWord,
+  DictationEntry,
   Entity,
   EntityDetail,
   EntityType,
   ExportFormat,
+  Folder,
   KeywordsResponse,
   McpConnection,
   MessageResponse,
@@ -230,11 +233,21 @@ export function getRecording(recordingId: string): Promise<RecordingDetail> {
 
 export function updateRecording(
   recordingId: string,
-  input: { title?: string | null; type?: RecordingType },
+  input: { title?: string | null; type?: RecordingType; folder_id?: string | null },
 ): Promise<Recording> {
   return apiFetch<Recording>(`/api/recordings/${recordingId}`, {
     method: "PATCH",
     body: JSON.stringify(input),
+  });
+}
+
+export function assignRecordingToFolder(
+  recordingId: string,
+  folderId: string | null,
+): Promise<Recording> {
+  return apiFetch<Recording>(`/api/recordings/${recordingId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ folder_id: folderId }),
   });
 }
 
@@ -594,4 +607,67 @@ export function createApiKey(name: string, expiresAt?: string | null): Promise<A
 
 export function revokeApiKey(id: string): Promise<void> {
   return apiFetch<void>(`/api/api-keys/${encodeURIComponent(id)}/revoke`, { method: "POST" });
+}
+
+export function listFolders(): Promise<Folder[]> {
+  return apiFetch<Folder[]>("/api/folders");
+}
+
+export function createFolder(name: string): Promise<Folder> {
+  return apiFetch<Folder>("/api/folders", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function renameFolder(id: string, name: string): Promise<Folder> {
+  return apiFetch<Folder>(`/api/folders/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteFolder(id: string): Promise<void> {
+  return apiFetch<void>(`/api/folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listDictationEntries(): Promise<DictationEntry[]> {
+  return apiFetch<DictationEntry[]>("/api/dictation/entries");
+}
+
+export function listDictionaryWords(): Promise<DictationDictionaryWord[]> {
+  return apiFetch<DictationDictionaryWord[]>("/api/dictation/dictionary");
+}
+
+export function createDictionaryWord(input: {
+  word: string;
+  replacement?: string | null;
+}): Promise<DictationDictionaryWord> {
+  return apiFetch<DictationDictionaryWord>("/api/dictation/dictionary", {
+    method: "POST",
+    body: JSON.stringify({
+      client_word_id: cryptoRandomUUID(),
+      word: input.word,
+      replacement: input.replacement ?? null,
+      occurred_at: new Date().toISOString(),
+    }),
+  });
+}
+
+export function deleteDictionaryWord(id: string): Promise<void> {
+  return apiFetch<void>(`/api/dictation/dictionary/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+// Minimal UUID v4 generator usable both in the browser and in the jsdom test env.
+// Backend treats `client_word_id` as the idempotency key; any RFC4122 UUID works.
+function cryptoRandomUUID(): string {
+  const g = globalThis as { crypto?: { randomUUID?: () => string } };
+  if (g.crypto && typeof g.crypto.randomUUID === "function") {
+    return g.crypto.randomUUID();
+  }
+  // RFC4122-ish fallback — only used in environments without `crypto.randomUUID`.
+  const hex = (n: number) => Math.floor(Math.random() * 16 ** n).toString(16).padStart(n, "0");
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-${(8 + Math.floor(Math.random() * 4)).toString(16)}${hex(3)}-${hex(12)}`;
 }

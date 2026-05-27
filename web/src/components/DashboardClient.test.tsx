@@ -31,6 +31,15 @@ const mockRevokeMcpConnection = vi.fn();
 const mockListApiKeys = vi.fn();
 const mockCreateApiKey = vi.fn();
 const mockRevokeApiKey = vi.fn();
+const mockListFolders = vi.fn();
+const mockCreateFolder = vi.fn();
+const mockRenameFolder = vi.fn();
+const mockDeleteFolder = vi.fn();
+const mockAssignRecordingToFolder = vi.fn();
+const mockListDictationEntries = vi.fn();
+const mockListDictionaryWords = vi.fn();
+const mockCreateDictionaryWord = vi.fn();
+const mockDeleteDictionaryWord = vi.fn();
 const mockReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -65,6 +74,15 @@ vi.mock("@/lib/api", () => ({
   listApiKeys: (...args: unknown[]) => mockListApiKeys(...args),
   createApiKey: (...args: unknown[]) => mockCreateApiKey(...args),
   revokeApiKey: (...args: unknown[]) => mockRevokeApiKey(...args),
+  listFolders: (...args: unknown[]) => mockListFolders(...args),
+  createFolder: (...args: unknown[]) => mockCreateFolder(...args),
+  renameFolder: (...args: unknown[]) => mockRenameFolder(...args),
+  deleteFolder: (...args: unknown[]) => mockDeleteFolder(...args),
+  assignRecordingToFolder: (...args: unknown[]) => mockAssignRecordingToFolder(...args),
+  listDictationEntries: (...args: unknown[]) => mockListDictationEntries(...args),
+  listDictionaryWords: (...args: unknown[]) => mockListDictionaryWords(...args),
+  createDictionaryWord: (...args: unknown[]) => mockCreateDictionaryWord(...args),
+  deleteDictionaryWord: (...args: unknown[]) => mockDeleteDictionaryWord(...args),
 }));
 
 const baseUser = {
@@ -195,6 +213,28 @@ function arrangeHappyPathMocks() {
   mockListApiKeys.mockResolvedValue([]);
   mockCreateApiKey.mockResolvedValue({});
   mockRevokeApiKey.mockResolvedValue(undefined);
+  mockListFolders.mockResolvedValue([]);
+  mockCreateFolder.mockImplementation(async (name: string) => ({
+    id: `folder-${name.toLowerCase().replace(/\s+/g, "-")}`,
+    name,
+    created_at: "2026-05-27T00:00:00Z",
+  }));
+  mockRenameFolder.mockImplementation(async (id: string, name: string) => ({
+    id,
+    name,
+    created_at: "2026-05-27T00:00:00Z",
+  }));
+  mockDeleteFolder.mockResolvedValue(undefined);
+  mockAssignRecordingToFolder.mockResolvedValue(undefined);
+  mockListDictationEntries.mockResolvedValue([]);
+  mockListDictionaryWords.mockResolvedValue([]);
+  mockCreateDictionaryWord.mockImplementation(async (input: { word: string; replacement?: string | null }) => ({
+    client_word_id: `word-${input.word}`,
+    word: input.word,
+    replacement: input.replacement ?? null,
+    occurred_at: "2026-05-27T00:00:00Z",
+  }));
+  mockDeleteDictionaryWord.mockResolvedValue(undefined);
 }
 
 function createDeferred<T>() {
@@ -263,8 +303,20 @@ describe("DashboardClient", () => {
       mockListApiKeys,
       mockCreateApiKey,
       mockRevokeApiKey,
+      mockListFolders,
+      mockCreateFolder,
+      mockRenameFolder,
+      mockDeleteFolder,
+      mockAssignRecordingToFolder,
+      mockListDictationEntries,
+      mockListDictionaryWords,
+      mockCreateDictionaryWord,
+      mockDeleteDictionaryWord,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
+    mockListFolders.mockResolvedValue([]);
+    mockListDictationEntries.mockResolvedValue([]);
+    mockListDictionaryWords.mockResolvedValue([]);
   });
 
   it("redirects to login when initialize gets 401", async () => {
@@ -1133,6 +1185,202 @@ describe("DashboardClient", () => {
     await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
     await waitFor(() => {
       expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+    });
+  });
+
+  // --- Sidebar surface parity with Mac (Folders, Dictation History, Dictionary) ---
+
+  it("renders the new sidebar entries: history and dictionary tabs and Folders group", async () => {
+    arrangeHappyPathMocks();
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    expect(screen.getByTestId("tab-history")).toBeInTheDocument();
+    expect(screen.getByTestId("tab-dictionary")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-folders-label")).toBeInTheDocument();
+    expect(screen.getByTestId("open-create-folder")).toBeInTheDocument();
+  });
+
+  // --- Folder creation flow ---
+
+  it("creates a folder via the sidebar group, calling createFolder", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+    mockCreateFolder.mockResolvedValueOnce({
+      id: "folder-1",
+      name: "Work",
+      created_at: "2026-05-27T00:00:00Z",
+    });
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("open-create-folder"));
+    await user.type(screen.getByTestId("new-folder-name"), "Work");
+    await user.click(screen.getByTestId("submit-create-folder"));
+
+    await waitFor(() => {
+      expect(mockCreateFolder).toHaveBeenCalledWith("Work");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Folder created.");
+    });
+
+    // Folder appears in the sidebar list
+    await waitFor(() => {
+      expect(screen.getByTestId("sidebar-folder-folder-1")).toBeInTheDocument();
+    });
+  });
+
+  // --- Keyboard shortcut: '/' focuses the search input ---
+
+  it("'/' key switches to search view and focuses the search input", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    // Trigger '/' globally — the keydown listener handles it.
+    await user.keyboard("/");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("search-query")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByTestId("search-query"));
+    });
+  });
+
+  // --- Keyboard shortcut: '?' toggles the cheatsheet modal ---
+
+  it("'?' key toggles the keyboard shortcuts cheatsheet", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    expect(screen.queryByTestId("shortcuts-modal")).not.toBeInTheDocument();
+
+    // '?' is Shift+/ — keyboard("?") emits that.
+    await user.keyboard("?");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("shortcuts-modal")).toBeInTheDocument();
+    });
+
+    // Closing via the button.
+    await user.click(screen.getByTestId("shortcuts-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("shortcuts-modal")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Keyboard shortcuts are suppressed inside inputs ---
+
+  it("does not fire shortcuts while typing in an input", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSearchView(user);
+
+    const queryInput = screen.getByTestId("search-query");
+    queryInput.focus();
+    await user.keyboard("/");
+
+    // Cheatsheet should still be closed
+    expect(screen.queryByTestId("shortcuts-modal")).not.toBeInTheDocument();
+    // The slash should have been typed into the input, not consumed
+    expect(queryInput).toHaveValue("/");
+  });
+
+  // --- Dictation History falls back to the unavailable empty state on 404 ---
+
+  it("falls back to 'coming soon' empty state when dictation history endpoint 404s", async () => {
+    arrangeHappyPathMocks();
+    mockListDictationEntries.mockRejectedValueOnce(new ApiError(404, "Not Found"));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("tab-history"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("history-unavailable")).toBeInTheDocument();
+    });
+  });
+
+  // --- Dictionary view renders existing words and supports adding new ones ---
+
+  it("renders existing dictionary words and creates new ones", async () => {
+    arrangeHappyPathMocks();
+    mockListDictionaryWords.mockResolvedValueOnce([
+      {
+        client_word_id: "w-1",
+        word: "WaiComputer",
+        replacement: "Wai Computer",
+        occurred_at: "2026-05-26T00:00:00Z",
+      },
+    ]);
+    mockCreateDictionaryWord.mockResolvedValueOnce({
+      client_word_id: "w-2",
+      word: "k8s",
+      replacement: "Kubernetes",
+      occurred_at: "2026-05-27T00:00:00Z",
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("tab-dictionary"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dictionary-word-w-1")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByTestId("new-dictionary-word"), "k8s");
+    await user.type(screen.getByTestId("new-dictionary-replacement"), "Kubernetes");
+    await user.click(screen.getByTestId("add-dictionary-word"));
+
+    await waitFor(() => {
+      expect(mockCreateDictionaryWord).toHaveBeenCalledWith({
+        word: "k8s",
+        replacement: "Kubernetes",
+      });
+      expect(screen.getByTestId("dictionary-word-w-2")).toBeInTheDocument();
+    });
+  });
+
+  // --- Folder selection switches the workspace title and filters recordings ---
+
+  it("opens a folder from the sidebar and shows the folder name in the workspace header", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListRecordings.mockResolvedValueOnce([
+      { ...baseRecording, id: "r-folded", title: "Inside Work", folder_id: "folder-work" },
+      { ...baseRecording, id: "r-loose", title: "Outside", folder_id: null },
+    ]);
+
+    const user = userEvent.setup();
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sidebar-folder-folder-work")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("open-folder-folder-work"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Work");
+      expect(screen.getByTestId("select-recording-r-folded")).toBeInTheDocument();
+      expect(screen.queryByTestId("select-recording-r-loose")).not.toBeInTheDocument();
     });
   });
 });

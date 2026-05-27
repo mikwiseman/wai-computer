@@ -1,13 +1,24 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   changePassword,
   claimTelegramLinkCode,
+  createDictionaryWord,
   createEntity,
+  createFolder,
   createRecording,
+  deleteDictionaryWord,
   deleteEntity,
+  deleteFolder,
   deleteRecording,
   fulltextSearch,
   generateSummary,
@@ -16,9 +27,13 @@ import {
   getSettings,
   getTelegramLinkStatus,
   listActionItems,
+  listDictationEntries,
+  listDictionaryWords,
   listEntities,
+  listFolders,
   listRecordings,
   logout,
+  renameFolder,
   restoreRecording,
   search,
   semanticSearch,
@@ -34,10 +49,14 @@ import { RecorderPanel } from "@/components/RecorderPanel";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
+import { PasswordField } from "@/components/PasswordField";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
+  DictationDictionaryWord,
+  DictationEntry,
   Entity,
+  Folder,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -49,7 +68,17 @@ import type {
 } from "@/lib/types";
 
 type SearchMode = "hybrid" | "semantic" | "fts";
-type DashboardView = "wai" | "library" | "trash" | "search" | "actions" | "topics" | "settings";
+type DashboardView =
+  | "wai"
+  | "library"
+  | "folder"
+  | "trash"
+  | "search"
+  | "history"
+  | "dictionary"
+  | "actions"
+  | "topics"
+  | "settings";
 type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
 
@@ -68,11 +97,77 @@ interface DashboardCopy {
   nav: {
     wai: { label: string; detail: string };
     library: { label: string; detail: string };
+    folders: { label: string };
     trash: { label: string; detail: string };
     search: { label: string; detail: string };
+    history: { label: string; detail: string };
+    dictionary: { label: string; detail: string };
     actions: { label: string; detail: string };
     topics: { label: string; detail: string };
     settings: { label: string; detail: string };
+  };
+  // Folder management
+  folders: {
+    addAriaLabel: string;
+    addPlaceholder: string;
+    addSubmit: string;
+    addCancel: string;
+    addError: string;
+    rename: string;
+    delete: string;
+    deleteConfirmTitle: (name: string) => string;
+    deleteConfirmBody: string;
+    deleteConfirmAction: string;
+    deleteConfirmCancel: string;
+    renameTitle: (name: string) => string;
+    renameAction: string;
+    renameCancel: string;
+    created: string;
+    renamed: string;
+    deleted: string;
+    emptyHint: string;
+    folderEmptyTitle: string;
+    folderEmptyBody: string;
+  };
+  // Dictation history view
+  history: {
+    title: string;
+    subtitle: string;
+    emptyTitle: string;
+    emptyBody: string;
+    notAvailableTitle: string;
+    notAvailableBody: string;
+    durationLabel: string;
+    wordsLabel: (n: number) => string;
+    refresh: string;
+  };
+  // Dictionary view
+  dictionary: {
+    title: string;
+    subtitle: string;
+    wordColumn: string;
+    replacementColumn: string;
+    addPlaceholderWord: string;
+    addPlaceholderReplacement: string;
+    addAction: string;
+    deleteAction: string;
+    created: string;
+    deleted: string;
+    emptyTitle: string;
+    emptyBody: string;
+    notAvailableTitle: string;
+    notAvailableBody: string;
+    refresh: string;
+    enterWord: string;
+    inputWordsRow: string;
+  };
+  // Keyboard shortcuts cheatsheet
+  shortcuts: {
+    open: string;
+    title: string;
+    close: string;
+    rows: Array<{ keys: string; description: string }>;
+    notice: string;
   };
   // Library
   library: {
@@ -181,11 +276,81 @@ const COPY: Record<Locale, DashboardCopy> = {
     nav: {
       wai: { label: "Wai", detail: "Ask anything about what you said" },
       library: { label: "All Recordings", detail: "Every note, meeting, and reflection" },
+      folders: { label: "Folders" },
       trash: { label: "Trash", detail: "Restore or delete forever" },
       search: { label: "Search", detail: "Find a moment across transcripts" },
+      history: { label: "Dictation History", detail: "Voice to text inserts" },
+      dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
       actions: { label: "Action Items", detail: "Follow-ups pulled from your notes" },
       topics: { label: "Topics", detail: "People, projects, and ideas you mention" },
       settings: { label: "Settings", detail: "Account, dictation, and integrations" },
+    },
+    folders: {
+      addAriaLabel: "New folder",
+      addPlaceholder: "Folder name",
+      addSubmit: "Create",
+      addCancel: "Cancel",
+      addError: "Enter a folder name.",
+      rename: "Rename",
+      delete: "Delete",
+      deleteConfirmTitle: (name) => `Delete folder “${name}”?`,
+      deleteConfirmBody:
+        "Recordings inside this folder will be moved out of it. The recordings themselves are kept.",
+      deleteConfirmAction: "Delete folder",
+      deleteConfirmCancel: "Cancel",
+      renameTitle: (name) => `Rename “${name}”`,
+      renameAction: "Save",
+      renameCancel: "Cancel",
+      created: "Folder created.",
+      renamed: "Folder renamed.",
+      deleted: "Folder deleted.",
+      emptyHint: "No folders yet — create one to organize recordings.",
+      folderEmptyTitle: "No Recordings in This Folder",
+      folderEmptyBody: "Move a recording into this folder from the recording detail view.",
+    },
+    history: {
+      title: "Dictation History",
+      subtitle: "Every voice-to-text insert from Mac, Windows, and Linux.",
+      emptyTitle: "No Dictation Yet",
+      emptyBody: "Open WaiComputer on Mac or Windows to start dictating.",
+      notAvailableTitle: "Dictation History Coming Soon",
+      notAvailableBody:
+        "Your dictation history isn't synced to the web dashboard yet. Use the Mac, Windows, or Linux apps.",
+      durationLabel: "duration",
+      wordsLabel: (n) => `${n} ${n === 1 ? "word" : "words"}`,
+      refresh: "Refresh",
+    },
+    dictionary: {
+      title: "Dictionary",
+      subtitle: "Custom replacements applied to your dictated text.",
+      wordColumn: "Word",
+      replacementColumn: "Replacement",
+      addPlaceholderWord: "Word or phrase",
+      addPlaceholderReplacement: "Replacement (optional)",
+      addAction: "Add",
+      deleteAction: "Delete",
+      created: "Word added.",
+      deleted: "Word removed.",
+      emptyTitle: "No Custom Words",
+      emptyBody: "Add words you want corrected or auto-replaced when dictating.",
+      notAvailableTitle: "Dictionary Coming Soon",
+      notAvailableBody:
+        "Custom dictation dictionary editing on the web is coming. Use the Mac app for now.",
+      refresh: "Refresh",
+      enterWord: "Enter a word.",
+      inputWordsRow: "Add a dictionary word",
+    },
+    shortcuts: {
+      open: "Keyboard shortcuts",
+      title: "Keyboard shortcuts",
+      close: "Close",
+      rows: [
+        { keys: "/", description: "Focus search" },
+        { keys: "n", description: "New recording" },
+        { keys: "Esc", description: "Clear selection / close dialogs" },
+        { keys: "?", description: "Show this cheatsheet" },
+      ],
+      notice: "Shortcuts are disabled while typing in inputs.",
     },
     library: {
       title: "All Recordings",
@@ -290,11 +455,82 @@ const COPY: Record<Locale, DashboardCopy> = {
     nav: {
       wai: { label: "Wai", detail: "Спросите о чём угодно из ваших записей" },
       library: { label: "Все записи", detail: "Все заметки, встречи и размышления" },
+      folders: { label: "Папки" },
       trash: { label: "Корзина", detail: "Восстановить или удалить навсегда" },
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
+      history: { label: "История диктовки", detail: "Голос превращённый в текст" },
+      dictionary: { label: "Словарь", detail: "Свои замены для диктовки" },
       actions: { label: "Задачи", detail: "Действия, извлечённые из ваших записей" },
       topics: { label: "Темы", detail: "Люди, проекты и идеи, о которых вы говорите" },
       settings: { label: "Настройки", detail: "Аккаунт, диктовка и интеграции" },
+    },
+    folders: {
+      addAriaLabel: "Новая папка",
+      addPlaceholder: "Название папки",
+      addSubmit: "Создать",
+      addCancel: "Отмена",
+      addError: "Введите название папки.",
+      rename: "Переименовать",
+      delete: "Удалить",
+      deleteConfirmTitle: (name) => `Удалить папку «${name}»?`,
+      deleteConfirmBody:
+        "Записи из этой папки останутся, но будут вынесены за её пределы.",
+      deleteConfirmAction: "Удалить папку",
+      deleteConfirmCancel: "Отмена",
+      renameTitle: (name) => `Переименовать «${name}»`,
+      renameAction: "Сохранить",
+      renameCancel: "Отмена",
+      created: "Папка создана.",
+      renamed: "Папка переименована.",
+      deleted: "Папка удалена.",
+      emptyHint: "Папок пока нет — создайте, чтобы упорядочить записи.",
+      folderEmptyTitle: "В этой папке записей нет",
+      folderEmptyBody: "Перенесите запись в эту папку из карточки записи.",
+    },
+    history: {
+      title: "История диктовки",
+      subtitle: "Каждый текст, продиктованный голосом, из Mac, Windows и Linux.",
+      emptyTitle: "Истории пока нет",
+      emptyBody: "Откройте WaiComputer на Mac или Windows, чтобы начать.",
+      notAvailableTitle: "История диктовки скоро появится",
+      notAvailableBody:
+        "Пока история диктовки не синхронизируется с веб-дашбордом. Используйте Mac, Windows или Linux.",
+      durationLabel: "длительность",
+      wordsLabel: (n) =>
+        `${n} ${n === 1 ? "слово" : n >= 2 && n <= 4 ? "слова" : "слов"}`,
+      refresh: "Обновить",
+    },
+    dictionary: {
+      title: "Словарь",
+      subtitle: "Свои замены, применяемые к продиктованному тексту.",
+      wordColumn: "Слово",
+      replacementColumn: "Замена",
+      addPlaceholderWord: "Слово или фраза",
+      addPlaceholderReplacement: "Замена (необязательно)",
+      addAction: "Добавить",
+      deleteAction: "Удалить",
+      created: "Слово добавлено.",
+      deleted: "Слово удалено.",
+      emptyTitle: "Своих слов пока нет",
+      emptyBody: "Добавьте слова, которые нужно исправлять или заменять при диктовке.",
+      notAvailableTitle: "Словарь скоро появится",
+      notAvailableBody:
+        "Редактирование словаря на вебе скоро. Пока используйте приложение Mac.",
+      refresh: "Обновить",
+      enterWord: "Введите слово.",
+      inputWordsRow: "Добавить слово в словарь",
+    },
+    shortcuts: {
+      open: "Горячие клавиши",
+      title: "Горячие клавиши",
+      close: "Закрыть",
+      rows: [
+        { keys: "/", description: "Сфокусировать поиск" },
+        { keys: "n", description: "Новая запись" },
+        { keys: "Esc", description: "Сбросить выбор / закрыть диалоги" },
+        { keys: "?", description: "Показать этот список" },
+      ],
+      notice: "Горячие клавиши не срабатывают, когда вы печатаете в полях.",
     },
     library: {
       title: "Все записи",
@@ -491,6 +727,34 @@ export function DashboardClient() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityName, setEntityName] = useState("");
 
+  // Folders
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [isFolderCreatorOpen, setIsFolderCreatorOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [folderRenameTarget, setFolderRenameTarget] = useState<Folder | null>(null);
+  const [folderRenameValue, setFolderRenameValue] = useState("");
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState<Folder | null>(null);
+
+  // Dictation history
+  const [dictationEntries, setDictationEntries] = useState<DictationEntry[]>([]);
+  const [dictationEntriesLoading, setDictationEntriesLoading] = useState(false);
+  const [dictationEntriesLoadedOnce, setDictationEntriesLoadedOnce] = useState(false);
+  const [dictationEntriesUnavailable, setDictationEntriesUnavailable] = useState(false);
+
+  // Dictionary words
+  const [dictionaryWords, setDictionaryWords] = useState<DictationDictionaryWord[]>([]);
+  const [dictionaryLoading, setDictionaryLoading] = useState(false);
+  const [dictionaryLoadedOnce, setDictionaryLoadedOnce] = useState(false);
+  const [dictionaryUnavailable, setDictionaryUnavailable] = useState(false);
+  const [newWord, setNewWord] = useState("");
+  const [newReplacement, setNewReplacement] = useState("");
+
+  // Keyboard / shortcut affordances
+  const [isShortcutCheatsheetOpen, setIsShortcutCheatsheetOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const recorderPaneRef = useRef<HTMLDivElement | null>(null);
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("wai");
@@ -536,6 +800,59 @@ export function DashboardClient() {
     setEntities(response);
   }
 
+  async function loadFoldersState() {
+    try {
+      const folderList = await listFolders();
+      setFolders(folderList);
+    } catch (error: unknown) {
+      // 404 means the route isn't deployed yet — keep folders empty rather
+      // than blowing up the dashboard. Other errors surface as a message.
+      if (error instanceof ApiError && error.status === 404) {
+        setFolders([]);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function loadDictationEntriesState() {
+    setDictationEntriesLoading(true);
+    try {
+      const entries = await listDictationEntries();
+      setDictationEntries(entries);
+      setDictationEntriesUnavailable(false);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        setDictationEntries([]);
+        setDictationEntriesUnavailable(true);
+      } else {
+        setMessage(formatError(error));
+      }
+    } finally {
+      setDictationEntriesLoading(false);
+      setDictationEntriesLoadedOnce(true);
+    }
+  }
+
+  async function loadDictionaryState() {
+    setDictionaryLoading(true);
+    try {
+      const words = await listDictionaryWords();
+      setDictionaryWords(words);
+      setDictionaryUnavailable(false);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        setDictionaryWords([]);
+        setDictionaryUnavailable(true);
+      } else {
+        setMessage(formatError(error));
+      }
+    } finally {
+      setDictionaryLoading(false);
+      setDictionaryLoadedOnce(true);
+    }
+  }
+
   async function loadAccountSettings() {
     setSettingsLoading(true);
     try {
@@ -564,7 +881,12 @@ export function DashboardClient() {
       }
       const currentUser = await getCurrentUser();
       setUser(currentUser);
-      await Promise.all([loadRecordingsState(), loadActionItemsState(), loadEntitiesState()]);
+      await Promise.all([
+        loadRecordingsState(),
+        loadActionItemsState(),
+        loadEntitiesState(),
+        loadFoldersState(),
+      ]);
     } catch (error: unknown) {
       const text = formatError(error);
       if (error instanceof ApiError && error.status === 401) {
@@ -602,6 +924,16 @@ export function DashboardClient() {
       document.removeEventListener("visibilitychange", refreshTelegramStatus);
     };
   }, [view, telegramStatus?.linked, telegramPairing]);
+
+  useEffect(() => {
+    if (view !== "history" || dictationEntriesLoadedOnce || dictationEntriesLoading) return;
+    void loadDictationEntriesState();
+  }, [view, dictationEntriesLoadedOnce, dictationEntriesLoading]);
+
+  useEffect(() => {
+    if (view !== "dictionary" || dictionaryLoadedOnce || dictionaryLoading) return;
+    void loadDictionaryState();
+  }, [view, dictionaryLoadedOnce, dictionaryLoading]);
 
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -855,6 +1187,178 @@ export function DashboardClient() {
     }
   }
 
+  // Folder handlers ---------------------------------------------------------
+  async function handleCreateFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = newFolderName.trim();
+    if (!trimmed) {
+      setMessage(copy.folders.addError);
+      return;
+    }
+    setMessage(null);
+    try {
+      const folder = await createFolder(trimmed);
+      setFolders((current) =>
+        [...current, folder].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setNewFolderName("");
+      setIsFolderCreatorOpen(false);
+      setMessage(copy.folders.created);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleConfirmRenameFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!folderRenameTarget) return;
+    const trimmed = folderRenameValue.trim();
+    if (!trimmed) {
+      setMessage(copy.folders.addError);
+      return;
+    }
+    setMessage(null);
+    try {
+      const updated = await renameFolder(folderRenameTarget.id, trimmed);
+      setFolders((current) =>
+        current
+          .map((folder) => (folder.id === updated.id ? updated : folder))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setFolderRenameTarget(null);
+      setFolderRenameValue("");
+      setMessage(copy.folders.renamed);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleConfirmDeleteFolder() {
+    if (!folderDeleteTarget) return;
+    setMessage(null);
+    try {
+      await deleteFolder(folderDeleteTarget.id);
+      setFolders((current) =>
+        current.filter((folder) => folder.id !== folderDeleteTarget.id),
+      );
+      if (activeFolderId === folderDeleteTarget.id) {
+        setActiveFolderId(null);
+        setView("library");
+      }
+      await loadRecordingsState();
+      setFolderDeleteTarget(null);
+      setMessage(copy.folders.deleted);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  function openFolder(folderId: string) {
+    setActiveFolderId(folderId);
+    setView("folder");
+    setSelectedRecording(null);
+    setSelectedMode("active");
+  }
+
+  // Dictionary handlers -----------------------------------------------------
+  async function handleCreateDictionaryWord(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = newWord.trim();
+    if (!trimmed) {
+      setMessage(copy.dictionary.enterWord);
+      return;
+    }
+    setMessage(null);
+    try {
+      const word = await createDictionaryWord({
+        word: trimmed,
+        replacement: newReplacement.trim() || null,
+      });
+      setDictionaryWords((current) => [...current, word]);
+      setNewWord("");
+      setNewReplacement("");
+      setMessage(copy.dictionary.created);
+    } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 404) {
+        setDictionaryUnavailable(true);
+      }
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleDeleteDictionaryWord(wordId: string) {
+    setMessage(null);
+    try {
+      await deleteDictionaryWord(wordId);
+      setDictionaryWords((current) =>
+        current.filter((word) => word.client_word_id !== wordId),
+      );
+      setMessage(copy.dictionary.deleted);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  // Keyboard shortcut wiring ------------------------------------------------
+  const focusSearchInput = useCallback(() => {
+    setView("search");
+    setIsShortcutCheatsheetOpen(false);
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+  }, []);
+
+  const focusRecorder = useCallback(() => {
+    setView("library");
+    setSelectedRecording(null);
+    setSelectedMode("active");
+    setIsShortcutCheatsheetOpen(false);
+    setTimeout(() => {
+      const node = recorderPaneRef.current?.querySelector<HTMLElement>(
+        "input, button, [tabindex]",
+      );
+      node?.focus();
+    }, 0);
+  }, []);
+
+  const clearAll = useCallback(() => {
+    if (isShortcutCheatsheetOpen) {
+      setIsShortcutCheatsheetOpen(false);
+      return;
+    }
+    if (folderRenameTarget) {
+      setFolderRenameTarget(null);
+      setFolderRenameValue("");
+      return;
+    }
+    if (folderDeleteTarget) {
+      setFolderDeleteTarget(null);
+      return;
+    }
+    if (isFolderCreatorOpen) {
+      setIsFolderCreatorOpen(false);
+      setNewFolderName("");
+      return;
+    }
+    setSelectedRecording(null);
+  }, [
+    isShortcutCheatsheetOpen,
+    folderRenameTarget,
+    folderDeleteTarget,
+    isFolderCreatorOpen,
+  ]);
+
+  const toggleCheatsheet = useCallback(() => {
+    setIsShortcutCheatsheetOpen((current) => !current);
+  }, []);
+
+  useKeyboardShortcuts({
+    "/": focusSearchInput,
+    n: focusRecorder,
+    Escape: clearAll,
+    "?": toggleCheatsheet,
+  });
+
   if (initializing) {
     return (
       <div className="loading-screen">
@@ -879,6 +1383,18 @@ export function DashboardClient() {
     },
     { key: "search", label: copy.nav.search.label, detail: copy.nav.search.detail, count: null },
     {
+      key: "history",
+      label: copy.nav.history.label,
+      detail: copy.nav.history.detail,
+      count: null,
+    },
+    {
+      key: "dictionary",
+      label: copy.nav.dictionary.label,
+      detail: copy.nav.dictionary.detail,
+      count: null,
+    },
+    {
       key: "actions",
       label: copy.nav.actions.label,
       detail: copy.nav.actions.detail,
@@ -898,6 +1414,17 @@ export function DashboardClient() {
     },
   ] as const;
 
+  const currentFolder = activeFolderId
+    ? folders.find((folder) => folder.id === activeFolderId) ?? null
+    : null;
+  const folderFilteredRecordings = recordings.filter(
+    (recording) => recording.folder_id === activeFolderId,
+  );
+  const workspaceTitle =
+    view === "folder" && currentFolder
+      ? currentFolder.name
+      : navigation.find((item) => item.key === view)?.label ?? copy.fallbackTitle;
+
   return (
     <div className="web-app-shell">
       <aside className="app-sidebar" aria-label="WaiComputer navigation">
@@ -910,30 +1437,149 @@ export function DashboardClient() {
         </div>
 
         <nav className="sidebar-nav">
-          {navigation.map((item) => (
-            <button
-              key={item.key}
-              data-testid={`tab-${item.key}`}
-              type="button"
-              className="sidebar-nav__item"
-              aria-current={view === item.key ? "page" : undefined}
-              onClick={() => {
-                setView(item.key);
-                if (item.key === "trash") {
-                  void loadTrashRecordingsState();
-                }
-              }}
-            >
-              <span>
-                <strong>{item.label}</strong>
-                <small>{item.detail}</small>
-              </span>
-              {item.count !== null ? <em>{item.count}</em> : null}
-            </button>
-          ))}
+          {navigation.map((item) => {
+            const node = (
+              <button
+                key={item.key}
+                data-testid={`tab-${item.key}`}
+                type="button"
+                className="sidebar-nav__item"
+                aria-current={view === item.key ? "page" : undefined}
+                onClick={() => {
+                  setActiveFolderId(null);
+                  setView(item.key);
+                  if (item.key === "trash") {
+                    void loadTrashRecordingsState();
+                  }
+                }}
+              >
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </span>
+                {item.count !== null ? <em>{item.count}</em> : null}
+              </button>
+            );
+            if (item.key !== "library") {
+              return node;
+            }
+            return (
+              <div key={item.key} className="sidebar-folder-group">
+                {node}
+                <div className="sidebar-folder-group__header">
+                  <small data-testid="sidebar-folders-label">
+                    {copy.nav.folders.label}
+                  </small>
+                  <button
+                    type="button"
+                    data-testid="open-create-folder"
+                    className="ghost-button compact-button"
+                    aria-label={copy.folders.addAriaLabel}
+                    onClick={() => {
+                      setIsFolderCreatorOpen(true);
+                      setNewFolderName("");
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+                {isFolderCreatorOpen ? (
+                  <form
+                    className="sidebar-folder-create"
+                    data-testid="create-folder-form"
+                    onSubmit={handleCreateFolder}
+                  >
+                    <input
+                      type="text"
+                      data-testid="new-folder-name"
+                      placeholder={copy.folders.addPlaceholder}
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.target.value)}
+                    />
+                    <div className="row-actions">
+                      <button
+                        type="submit"
+                        data-testid="submit-create-folder"
+                        className="ghost-button compact-button"
+                      >
+                        {copy.folders.addSubmit}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button compact-button"
+                        onClick={() => {
+                          setIsFolderCreatorOpen(false);
+                          setNewFolderName("");
+                        }}
+                      >
+                        {copy.folders.addCancel}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+                <ul className="sidebar-folder-list" data-testid="sidebar-folder-list">
+                  {folders.length === 0 && !isFolderCreatorOpen ? (
+                    <li className="sidebar-folder-list__empty">
+                      <small>{copy.folders.emptyHint}</small>
+                    </li>
+                  ) : null}
+                  {folders.map((folder) => (
+                    <li
+                      key={folder.id}
+                      className="sidebar-folder-list__item"
+                      data-testid={`sidebar-folder-${folder.id}`}
+                    >
+                      <button
+                        type="button"
+                        data-testid={`open-folder-${folder.id}`}
+                        className="sidebar-folder-list__open"
+                        aria-current={
+                          view === "folder" && activeFolderId === folder.id
+                            ? "page"
+                            : undefined
+                        }
+                        onClick={() => openFolder(folder.id)}
+                      >
+                        {folder.name}
+                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          data-testid={`rename-folder-${folder.id}`}
+                          className="ghost-button compact-button"
+                          onClick={() => {
+                            setFolderRenameTarget(folder);
+                            setFolderRenameValue(folder.name);
+                          }}
+                        >
+                          {copy.folders.rename}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`delete-folder-${folder.id}`}
+                          className="ghost-button compact-button danger-button"
+                          onClick={() => setFolderDeleteTarget(folder)}
+                        >
+                          {copy.folders.delete}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-footer">
+          <button
+            data-testid="open-shortcuts"
+            type="button"
+            className="ghost-button"
+            onClick={toggleCheatsheet}
+          >
+            {copy.shortcuts.open}
+          </button>
           <button
             data-testid="reload-dashboard"
             type="button"
@@ -957,7 +1603,7 @@ export function DashboardClient() {
       <main className="workspace">
         <header className="workspace-header">
           <div>
-            <h2>{navigation.find((item) => item.key === view)?.label ?? copy.fallbackTitle}</h2>
+            <h2 data-testid="workspace-title">{workspaceTitle}</h2>
           </div>
           {refreshing ? <p data-testid="dashboard-refreshing">{copy.refreshing}</p> : null}
         </header>
@@ -970,18 +1616,143 @@ export function DashboardClient() {
 
         {view === "wai" ? <WaiView recordings={recordings} locale={locale} /> : null}
         {view === "library" ? renderLibrary("active", recordings) : null}
+        {view === "folder"
+          ? renderLibrary("active", folderFilteredRecordings, { isFolder: true })
+          : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
+        {view === "history" ? renderHistoryView() : null}
+        {view === "dictionary" ? renderDictionaryView() : null}
         {view === "actions" ? renderActionsView() : null}
         {view === "topics" ? renderTopicsView() : null}
         {view === "settings" ? renderSettingsView() : null}
       </main>
+
+      {folderRenameTarget ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="folder-rename-modal"
+        >
+          <form className="modal-card" onSubmit={handleConfirmRenameFolder}>
+            <h3>{copy.folders.renameTitle(folderRenameTarget.name)}</h3>
+            <input
+              type="text"
+              data-testid="folder-rename-input"
+              value={folderRenameValue}
+              onChange={(event) => setFolderRenameValue(event.target.value)}
+            />
+            <div className="row-actions">
+              <button
+                type="submit"
+                data-testid="folder-rename-submit"
+                className="ghost-button compact-button"
+              >
+                {copy.folders.renameAction}
+              </button>
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => {
+                  setFolderRenameTarget(null);
+                  setFolderRenameValue("");
+                }}
+              >
+                {copy.folders.renameCancel}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {folderDeleteTarget ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="folder-delete-modal"
+        >
+          <div className="modal-card">
+            <h3>{copy.folders.deleteConfirmTitle(folderDeleteTarget.name)}</h3>
+            <p>{copy.folders.deleteConfirmBody}</p>
+            <div className="row-actions">
+              <button
+                type="button"
+                data-testid="folder-delete-confirm"
+                className="ghost-button compact-button danger-button"
+                onClick={() => void handleConfirmDeleteFolder()}
+              >
+                {copy.folders.deleteConfirmAction}
+              </button>
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => setFolderDeleteTarget(null)}
+              >
+                {copy.folders.deleteConfirmCancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isShortcutCheatsheetOpen ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="shortcuts-modal"
+        >
+          <div className="modal-card">
+            <h3>{copy.shortcuts.title}</h3>
+            <ul className="shortcut-list">
+              {copy.shortcuts.rows.map((row) => (
+                <li key={row.keys}>
+                  <kbd>{row.keys}</kbd>
+                  <span>{row.description}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="settings-note">{copy.shortcuts.notice}</p>
+            <div className="row-actions">
+              <button
+                type="button"
+                data-testid="shortcuts-close"
+                className="ghost-button compact-button"
+                onClick={() => setIsShortcutCheatsheetOpen(false)}
+              >
+                {copy.shortcuts.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
-  function renderLibrary(mode: DetailMode, items: Recording[]) {
+  function renderLibrary(
+    mode: DetailMode,
+    items: Recording[],
+    options?: { isFolder?: boolean },
+  ) {
     const isTrash = mode === "trash";
-    const title = isTrash ? copy.library.trashTitle : copy.library.title;
+    const isFolder = options?.isFolder ?? false;
+    const title = isFolder
+      ? currentFolder?.name ?? copy.library.title
+      : isTrash
+        ? copy.library.trashTitle
+        : copy.library.title;
+    const emptyTitle = isFolder
+      ? copy.folders.folderEmptyTitle
+      : isTrash
+        ? copy.library.trashEmptyTitle
+        : copy.library.emptyTitle;
+    const emptyBody = isFolder
+      ? copy.folders.folderEmptyBody
+      : isTrash
+        ? copy.library.trashEmptyBody
+        : copy.library.emptyBody;
 
     return (
       <div className="library-grid">
@@ -1007,8 +1778,8 @@ export function DashboardClient() {
 
           {items.length === 0 ? (
             <div className="empty-state">
-              <h3>{isTrash ? copy.library.trashEmptyTitle : copy.library.emptyTitle}</h3>
-              <p>{isTrash ? copy.library.trashEmptyBody : copy.library.emptyBody}</p>
+              <h3>{emptyTitle}</h3>
+              <p>{emptyBody}</p>
             </div>
           ) : (
             <ul className="recording-list" data-testid="recording-list">
@@ -1083,20 +1854,22 @@ export function DashboardClient() {
               <p>{copy.library.selectTrashBody}</p>
             </div>
           ) : (
-            <NewRecordingPane
-              title={recordingTitle}
-              type={recordingType}
-              copy={copy}
-              onTitleChange={setRecordingTitle}
-              onTypeChange={setRecordingType}
-              onSubmit={handleCreateRecording}
-              onComplete={async (detail) => {
-                setSelectedRecording(detail);
-                setSelectedMode("active");
-                await loadRecordingsState();
-              }}
-              onError={setMessage}
-            />
+            <div ref={recorderPaneRef}>
+              <NewRecordingPane
+                title={recordingTitle}
+                type={recordingType}
+                copy={copy}
+                onTitleChange={setRecordingTitle}
+                onTypeChange={setRecordingType}
+                onSubmit={handleCreateRecording}
+                onComplete={async (detail) => {
+                  setSelectedRecording(detail);
+                  setSelectedMode("active");
+                  await loadRecordingsState();
+                }}
+                onError={setMessage}
+              />
+            </div>
           )}
         </section>
       </div>
@@ -1108,6 +1881,7 @@ export function DashboardClient() {
       <section className="tool-panel">
         <form className="search-form" onSubmit={handleSearch}>
           <input
+            ref={searchInputRef}
             data-testid="search-query"
             placeholder={copy.search.placeholder}
             value={searchQuery}
@@ -1161,6 +1935,152 @@ export function DashboardClient() {
             <p>{copy.search.noResultsBody}</p>
           </div>
         ) : null}
+      </section>
+    );
+  }
+
+  function renderHistoryView() {
+    return (
+      <section className="tool-panel" data-testid="history-panel">
+        <header className="panel-header">
+          <div>
+            <h3>{copy.history.title}</h3>
+            <p className="muted-text">{copy.history.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            data-testid="history-refresh"
+            disabled={dictationEntriesLoading}
+            onClick={() => void loadDictationEntriesState()}
+          >
+            {copy.history.refresh}
+          </button>
+        </header>
+        {dictationEntriesUnavailable ? (
+          <div className="empty-state" data-testid="history-unavailable">
+            <h3>{copy.history.notAvailableTitle}</h3>
+            <p>{copy.history.notAvailableBody}</p>
+          </div>
+        ) : dictationEntriesLoading && dictationEntries.length === 0 ? (
+          <p className="muted-text" data-testid="history-loading">
+            {copy.loadingDashboard}
+          </p>
+        ) : dictationEntries.length === 0 ? (
+          <div className="empty-state" data-testid="history-empty">
+            <h3>{copy.history.emptyTitle}</h3>
+            <p>{copy.history.emptyBody}</p>
+          </div>
+        ) : (
+          <ul className="dictation-history-list" data-testid="history-list">
+            {dictationEntries.map((entry) => (
+              <li
+                key={entry.client_entry_id}
+                data-testid={`history-entry-${entry.client_entry_id}`}
+              >
+                <p className="dictation-history__text">
+                  {entry.cleaned_text ?? entry.raw_text}
+                </p>
+                <p className="metadata-row">
+                  <span>{formatDate(entry.occurred_at, locale)}</span>
+                  {entry.duration_seconds > 0 ? (
+                    <span>
+                      {copy.history.durationLabel} {formatDuration(Math.round(entry.duration_seconds))}
+                    </span>
+                  ) : null}
+                  <span>{copy.history.wordsLabel(entry.word_count)}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }
+
+  function renderDictionaryView() {
+    return (
+      <section className="tool-panel" data-testid="dictionary-panel">
+        <header className="panel-header">
+          <div>
+            <h3>{copy.dictionary.title}</h3>
+            <p className="muted-text">{copy.dictionary.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            data-testid="dictionary-refresh"
+            disabled={dictionaryLoading}
+            onClick={() => void loadDictionaryState()}
+          >
+            {copy.dictionary.refresh}
+          </button>
+        </header>
+
+        <form
+          className="search-form"
+          onSubmit={handleCreateDictionaryWord}
+          aria-label={copy.dictionary.inputWordsRow}
+        >
+          <input
+            type="text"
+            data-testid="new-dictionary-word"
+            placeholder={copy.dictionary.addPlaceholderWord}
+            value={newWord}
+            onChange={(event) => setNewWord(event.target.value)}
+          />
+          <input
+            type="text"
+            data-testid="new-dictionary-replacement"
+            placeholder={copy.dictionary.addPlaceholderReplacement}
+            value={newReplacement}
+            onChange={(event) => setNewReplacement(event.target.value)}
+          />
+          <button data-testid="add-dictionary-word" type="submit">
+            {copy.dictionary.addAction}
+          </button>
+        </form>
+
+        {dictionaryUnavailable ? (
+          <div className="empty-state" data-testid="dictionary-unavailable">
+            <h3>{copy.dictionary.notAvailableTitle}</h3>
+            <p>{copy.dictionary.notAvailableBody}</p>
+          </div>
+        ) : dictionaryLoading && dictionaryWords.length === 0 ? (
+          <p className="muted-text" data-testid="dictionary-loading">
+            {copy.loadingDashboard}
+          </p>
+        ) : dictionaryWords.length === 0 ? (
+          <div className="empty-state" data-testid="dictionary-empty">
+            <h3>{copy.dictionary.emptyTitle}</h3>
+            <p>{copy.dictionary.emptyBody}</p>
+          </div>
+        ) : (
+          <ul className="dictionary-list" data-testid="dictionary-list">
+            <li className="dictionary-list__head">
+              <strong>{copy.dictionary.wordColumn}</strong>
+              <strong>{copy.dictionary.replacementColumn}</strong>
+              <span aria-hidden="true" />
+            </li>
+            {dictionaryWords.map((word) => (
+              <li
+                key={word.client_word_id}
+                data-testid={`dictionary-word-${word.client_word_id}`}
+              >
+                <span>{word.word}</span>
+                <span>{word.replacement ?? ""}</span>
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  data-testid={`delete-dictionary-${word.client_word_id}`}
+                  onClick={() => void handleDeleteDictionaryWord(word.client_word_id)}
+                >
+                  {copy.dictionary.deleteAction}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     );
   }
@@ -1290,27 +2210,28 @@ export function DashboardClient() {
               {copy.settings.magicLinkNote}
             </p>
           ) : (
-            <label>
-              <span>{copy.settings.currentPassword}</span>
-              <input
-                data-testid="current-password"
-                type="password"
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-                required
-              />
-            </label>
-          )}
-          <label>
-            <span>{copy.settings.newPassword}</span>
-            <input
-              data-testid="new-password"
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
+            <PasswordField
+              id="settings-current-password"
+              data-testid="current-password"
+              label={copy.settings.currentPassword}
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              locale={locale}
               required
+              autoComplete="current-password"
             />
-          </label>
+          )}
+          <PasswordField
+            id="settings-new-password"
+            data-testid="new-password"
+            label={copy.settings.newPassword}
+            value={newPassword}
+            onChange={setNewPassword}
+            locale={locale}
+            showStrength
+            required
+            autoComplete="new-password"
+          />
           <button data-testid="change-password" type="submit">
             {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
           </button>
@@ -1447,4 +2368,55 @@ function NewRecordingPane({
       </form>
     </section>
   );
+}
+
+// useKeyboardShortcuts ----------------------------------------------------
+// Maps single-character keys (case-insensitive) to handlers.
+// Skips firing when the user is typing in inputs, textareas, contenteditable
+// elements, or while holding modifiers (Cmd/Ctrl/Alt) that would steal the
+// keypress for the browser.
+
+type KeyboardShortcutMap = Record<string, () => void>;
+
+function useKeyboardShortcuts(shortcuts: KeyboardShortcutMap): void {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+          return;
+        }
+        if (target.isContentEditable) {
+          return;
+        }
+      }
+
+      const candidates: string[] = [event.key];
+      // Accept "?" both as direct event.key on US keyboards and as
+      // Shift+/ which is the OS-level chord.
+      if (event.key === "/" && event.shiftKey) {
+        candidates.push("?");
+      }
+      // Normalize Escape to a single canonical key.
+      if (event.key === "Esc") {
+        candidates.push("Escape");
+      }
+
+      for (const candidate of candidates) {
+        const handler = shortcuts[candidate];
+        if (handler) {
+          event.preventDefault();
+          handler();
+          return;
+        }
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shortcuts]);
 }

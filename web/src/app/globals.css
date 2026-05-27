@@ -2430,3 +2430,481 @@ a.primary-button[aria-disabled="true"]:hover {
     overflow-x: auto;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Print stylesheet — applies to /share/[token], /privacy, /terms and other
+ * editorial surfaces. Targets:
+ *   - share page: global classnames (.shared-page, .shared-note, .shared-section…)
+ *   - legal pages: CSS-module classes via [class*="legalShell|legalContent|…"]
+ * The .nav / .footer / .pricing-page selectors are safety-net rules — they
+ * only fire if those surfaces are rendered when the user prints (they are
+ * scoped CSS-module classes on landing/pricing in normal flow, so harmless
+ * elsewhere).
+ * ------------------------------------------------------------------------- */
+
+/* === Sidebar folders (Sprint 3) ======================================= */
+
+.sidebar-folder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sidebar-folder-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.55rem 0.68rem 0.25rem;
+}
+
+.sidebar-folder-group__header small {
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-folder-group__header .compact-button {
+  min-height: 22px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.85rem;
+}
+
+.sidebar-folder-create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.25rem 0.4rem 0.5rem;
+}
+
+.sidebar-folder-create input {
+  font-size: 0.85rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.sidebar-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0 0.25rem 0.4rem;
+}
+
+.sidebar-folder-list__empty {
+  padding: 0.35rem 0.5rem 0.55rem;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+
+.sidebar-folder-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  border-radius: 6px;
+  padding: 0.15rem 0.25rem;
+}
+
+.sidebar-folder-list__item:hover {
+  background: var(--panel-subtle);
+}
+
+.sidebar-folder-list__open {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 540;
+  text-align: left;
+  padding: 0.32rem 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-folder-list__open[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 660;
+}
+
+.sidebar-folder-list__item .row-actions {
+  flex-wrap: nowrap;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.sidebar-folder-list__item:hover .row-actions,
+.sidebar-folder-list__item:focus-within .row-actions {
+  opacity: 1;
+}
+
+.sidebar-folder-list__item .compact-button {
+  font-size: 0.72rem;
+  padding: 0.18rem 0.4rem;
+  min-height: 20px;
+}
+
+/* === In-product modals (Sprint 3) ===================================== */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 17, 19, 0.45);
+  padding: 1.2rem;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: modal-fade-in 0.14s ease-out;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-card {
+  width: min(100%, 440px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  padding: 1.25rem 1.3rem;
+}
+
+.modal-card h2,
+.modal-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.modal-card .row-actions {
+  padding: 0;
+  justify-content: flex-end;
+}
+
+/* === Keyboard shortcut cheatsheet (Sprint 3) ========================== */
+
+.shortcut-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shortcut-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border-radius: 8px;
+  background: var(--panel-subtle);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.shortcut-list kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0.18rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: 0 1px 0 var(--border-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* === Dictation history + dictionary views (Sprint 3) ================== */
+
+.dictation-history-list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dictation-history-list li {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.85rem 1rem;
+}
+
+.dictation-history-list p {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.dictation-history-list small {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.dictionary-list {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dictionary-list li {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.5rem 0.75rem;
+}
+
+.dictionary-list__head {
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--ink-faint);
+  font-size: 0.74rem;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.75rem !important;
+}
+
+.dictionary-list input {
+  font-size: 0.9rem;
+  padding: 0.4rem 0.55rem;
+}
+
+@media (max-width: 700px) {
+  .dictionary-list li {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-folder-list__item .row-actions {
+    opacity: 1;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  /* Reset to black on white across every printable surface. */
+  body,
+  .shared-page,
+  .auth-page,
+  .pricing-page,
+  [class*="legalPage"] {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide chrome / promo / navigation that does not belong on paper. */
+  .nav,
+  .footer,
+  .shared-note__download,
+  .shared-note__download-error,
+  [data-testid="shared-cta"],
+  .locale-switcher,
+  .shared-note__brand,
+  [class*="backLink"],
+  footer[role="contentinfo"] {
+    display: none !important;
+  }
+
+  /* Constrain content to the printable column and strip decorative chrome. */
+  main,
+  .shared-note,
+  article,
+  [class*="legalShell"],
+  [class*="legalContent"] {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .shared-page,
+  [class*="legalPage"] {
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .shared-note__header,
+  .shared-section {
+    padding: 0 0 1rem !important;
+    border: 0 !important;
+  }
+
+  .shared-section + .shared-section {
+    border-top: 1px solid #ccc !important;
+    padding-top: 1rem !important;
+  }
+
+  /* Editorial typography — legal copy and transcripts should read like a
+   * printed document. System serif fallbacks only, no @font-face on print. */
+  body,
+  .shared-note,
+  [class*="legalContent"] p,
+  [class*="legalContent"] li,
+  .shared-section,
+  .transcript-row,
+  .reading-list,
+  .reading-stack {
+    font-family: "Times New Roman", "New York", Georgia, serif !important;
+    font-size: 12pt !important;
+    line-height: 1.5 !important;
+    color: black !important;
+  }
+
+  h1,
+  h2,
+  h3,
+  .shared-note h1,
+  [class*="legalHeader"] h1,
+  [class*="legalContent"] h2 {
+    color: black !important;
+    font-family: "Times New Roman", "New York", Georgia, serif !important;
+  }
+
+  .shared-note h1,
+  [class*="legalHeader"] h1 {
+    font-size: 22pt !important;
+    line-height: 1.15 !important;
+    margin-bottom: 0.4rem !important;
+  }
+
+  .shared-section h2,
+  [class*="legalContent"] h2 {
+    font-size: 13pt !important;
+    text-transform: none !important;
+    color: black !important;
+    margin-top: 0.8rem !important;
+  }
+
+  /* Speaker chips — keep visible, monochrome outline only. */
+  .speaker-chip,
+  .speaker-chip-wrapper {
+    background: transparent !important;
+    color: black !important;
+    border: 1px solid black !important;
+    box-shadow: none !important;
+  }
+
+  /* Keep mono spans (timestamps, code) in monospace but strip background. */
+  .mono,
+  code,
+  pre,
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace !important;
+    background: transparent !important;
+    color: black !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  /* Action card status dots — render as solid black for completed,
+   * outlined for pending; backgrounds gone. */
+  .action-card,
+  .action-list__item {
+    background: transparent !important;
+    padding: 0.4rem 0 !important;
+  }
+
+  .action-card__status {
+    border-color: black !important;
+    background: transparent !important;
+  }
+
+  .action-card__status.is-complete {
+    background: black !important;
+    border-color: black !important;
+  }
+
+  .metadata-row {
+    color: black !important;
+  }
+
+  .muted-text,
+  .empty-state,
+  [class*="updated"] {
+    color: black !important;
+  }
+
+  /* Links — underline, inherit color, surface the destination URL after
+   * external links inside transcript / legal copy. */
+  a {
+    color: inherit !important;
+    text-decoration: underline !important;
+  }
+
+  .shared-section a[href^="http"]::after,
+  [class*="legalContent"] a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    word-break: break-all;
+  }
+
+  .shared-section a[href^="mailto:"]::after,
+  [class*="legalContent"] a[href^="mailto:"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    word-break: break-all;
+  }
+
+  /* Page break hygiene — keep headings with their first paragraph and
+   * avoid orphaned single lines at the bottom of a page. */
+  h1,
+  h2,
+  h3 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .transcript-row,
+  .action-card,
+  [class*="legalContent"] section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Hide the brand mark glyph (mask SVG won't print reliably anyway). */
+  .brand-mark,
+  .app-glyph {
+    display: none !important;
+  }
+}

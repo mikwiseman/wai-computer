@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { getApiBaseUrl } from "@/lib/http";
+import { PasswordField } from "@/components/PasswordField";
 
 type Locale = "en" | "ru";
 
@@ -114,28 +115,28 @@ export function ResetPasswordClient({ token, locale }: ResetPasswordClientProps)
       <h1>{copy.title}</h1>
       {!isSuccess ? (
         <form onSubmit={onSubmit} className="auth-form">
-          <label htmlFor="reset-password">
-            <span>{copy.password}</span>
-            <input
-              id="reset-password"
-              data-testid="reset-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
-          <label htmlFor="reset-password-confirm">
-            <span>{copy.confirm}</span>
-            <input
-              id="reset-password-confirm"
-              data-testid="reset-password-confirm"
-              type="password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              required
-            />
-          </label>
+          <PasswordField
+            id="reset-password"
+            data-testid="reset-password"
+            label={copy.password}
+            value={password}
+            onChange={setPassword}
+            locale={normalizedLocale}
+            showStrength
+            required
+            autoComplete="new-password"
+          />
+          <PasswordField
+            id="reset-password-confirm"
+            data-testid="reset-password-confirm"
+            label={copy.confirm}
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            locale={normalizedLocale}
+            showStrength={false}
+            required
+            autoComplete="new-password"
+          />
           <button
             className="primary-button"
             data-testid="reset-password-submit"

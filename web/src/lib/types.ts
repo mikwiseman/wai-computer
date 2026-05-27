@@ -523,3 +523,25 @@ export interface ApiKey {
 export interface ApiKeyCreated extends ApiKey {
   token: string;
 }
+
+export interface Folder {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface DictationEntry {
+  client_entry_id: string;
+  raw_text: string;
+  cleaned_text: string | null;
+  duration_seconds: number;
+  word_count: number;
+  occurred_at: string;
+}
+
+export interface DictationDictionaryWord {
+  client_word_id: string;
+  word: string;
+  replacement: string | null;
+  occurred_at: string;
+}
