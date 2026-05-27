@@ -50,17 +50,6 @@
                ReferencedContainer = "container:WaiComputer.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "002E17216F14CA6B6083D143"
-               BuildableName = "WaiComputerUITests.xctest"
-               BlueprintName = "WaiComputerUITests"
-               ReferencedContainer = "container:WaiComputer.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

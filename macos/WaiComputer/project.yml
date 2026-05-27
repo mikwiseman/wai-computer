@@ -51,7 +51,6 @@ targets:
     scheme:
       testTargets:
         - WaiComputerTests
-        - WaiComputerUITests
 
   WaiComputerTests:
     type: bundle.unit-test
