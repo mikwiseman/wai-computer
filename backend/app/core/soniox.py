@@ -139,6 +139,8 @@ def _build_segments_from_tokens(tokens: list[dict[str, Any]]) -> list[Transcript
         # distort segment boundaries if mixed with original-speech tokens.
         if token.get("translation_status") == "translation":
             continue
+        if text.startswith("<"):
+            continue
         speaker_value = token.get("speaker")
         speaker = f"Speaker {speaker_value}" if speaker_value is not None else None
         confidence = float(token.get("confidence", 0.0) or 0.0)

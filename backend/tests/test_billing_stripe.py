@@ -9,10 +9,11 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+import stripe
 from sqlalchemy import select
 
 from app.billing.providers.base import ProviderEvent, ProviderUnavailableError
-from app.billing.providers.stripe_provider import StripeProvider
+from app.billing.providers.stripe_provider import StripeProvider, _normalize_status
 from app.billing.service import apply_stripe_event
 from app.models.billing import (
     BillingEvent,
@@ -62,6 +63,10 @@ def test_stripe_provider_returns_client_when_configured():
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     client = p._client_or_raise()
     assert client is not None
+
+
+def test_normalize_status_preserves_missing_status():
+    assert _normalize_status(None) is None
 
 
 @pytest.mark.asyncio
@@ -115,6 +120,38 @@ async def test_resolve_price_id_raises_provider_unavailable_when_plan_missing(
 
 
 @pytest.mark.asyncio
+async def test_resolve_price_id_returns_configured_yearly_price(monkeypatch):
+    pro = Plan(code="pro", name="Pro", stripe_price_id_yearly="price_year")
+
+    class FakeResult:
+        def scalar_one_or_none(self):
+            return pro
+
+    class FakeSession:
+        async def execute(self, _statement):
+            return FakeResult()
+
+    @asynccontextmanager
+    async def fake_get_db_context():
+        yield FakeSession()
+
+    monkeypatch.setattr("app.db.session.get_db_context", fake_get_db_context)
+
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+
+    assert await p._resolve_price_id(plan_code="pro", period="year") == "price_year"
+
+
+@pytest.mark.asyncio
+async def test_parse_webhook_rejects_missing_webhook_secret():
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="")
+    p._webhook_secret = ""
+
+    with pytest.raises(ProviderUnavailableError, match="STRIPE_WEBHOOK_SECRET"):
+        await p.parse_webhook(raw_body=b"{}", headers={"stripe-signature": "sig"})
+
+
+@pytest.mark.asyncio
 async def test_parse_webhook_rejects_missing_signature():
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     with pytest.raises(ValueError, match="Missing Stripe-Signature"):
@@ -151,6 +188,52 @@ async def test_parse_webhook_extracts_subscription_event():
     assert result.subscription_id_provider == "sub_123"
     assert result.customer_id_provider == "cus_abc"
     assert result.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_parse_webhook_extracts_invoice_event_from_recursive_payload():
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+
+    class FakeEvent:
+        def to_dict_recursive(self):
+            return {
+                "type": "invoice.paid",
+                "data": {
+                    "object": {
+                        "subscription": "sub_invoice",
+                        "customer": "cus_invoice",
+                    }
+                },
+            }
+
+    with patch.object(p, "_client_or_raise") as m_client:
+        m_client.return_value.construct_event.return_value = FakeEvent()
+        result = await p.parse_webhook(
+            raw_body=b'{"x":1}',
+            headers={"Stripe-Signature": "t=1,v1=fake"},
+        )
+
+    assert result.type == "invoice.paid"
+    assert result.subscription_id_provider == "sub_invoice"
+    assert result.customer_id_provider == "cus_invoice"
+    assert result.status is None
+
+
+@pytest.mark.asyncio
+async def test_parse_webhook_wraps_invalid_signature_error():
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+
+    with patch.object(p, "_client_or_raise") as m_client:
+        m_client.return_value.construct_event.side_effect = stripe.SignatureVerificationError(
+            "bad signature",
+            "sig",
+            "payload",
+        )
+        with pytest.raises(ValueError, match="Invalid Stripe webhook signature"):
+            await p.parse_webhook(
+                raw_body=b'{"x":1}',
+                headers={"stripe-signature": "t=1,v1=fake"},
+            )
 
 
 @pytest.mark.asyncio
@@ -270,6 +353,129 @@ async def test_create_checkout_attaches_percent_discount_coupon(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_checkout_enables_automatic_tax(monkeypatch):
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    captured_session: dict = {}
+
+    class FakeSession:
+        id = "cs_tax"
+        url = "https://checkout.stripe.test/tax"
+
+    class FakeSessions:
+        async def create_async(self, *, params):
+            captured_session.update(params)
+            return FakeSession()
+
+    class FakeCheckout:
+        sessions = FakeSessions()
+
+    class FakeV1:
+        checkout = FakeCheckout()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    async def fake_resolve_price_id(*, plan_code: str, period: str) -> str:
+        return "price_test_pro_month"
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+    monkeypatch.setattr(p, "_resolve_price_id", fake_resolve_price_id)
+    monkeypatch.setattr(
+        "app.billing.providers.stripe_provider.get_settings",
+        lambda: type("S", (), {"stripe_automatic_tax": True})(),
+    )
+
+    await p.create_checkout(
+        plan_code="pro",
+        period="month",
+        user_email="billing@example.test",
+        user_id="user-1",
+        success_url="https://wai.computer/billing/success",
+        cancel_url="https://wai.computer/billing/cancel",
+    )
+
+    assert captured_session["automatic_tax"] == {"enabled": True}
+
+
+@pytest.mark.asyncio
+async def test_stripe_customer_portal_and_invoice_helpers(monkeypatch):
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    calls: list[tuple[str, dict]] = []
+
+    class FakeCustomer:
+        id = "cus_new"
+
+    class FakePortalSession:
+        url = "https://billing.stripe.test/session"
+
+    class FakeInvoiceWithToDict:
+        def to_dict(self):
+            return {"id": "in_to_dict"}
+
+    class FakeInvoiceWithRecursive:
+        def to_dict_recursive(self):
+            return {"id": "in_recursive"}
+
+    class FakeCustomers:
+        async def create_async(self, *, params):
+            calls.append(("customer", params))
+            return FakeCustomer()
+
+    class FakePortalSessions:
+        async def create_async(self, *, params):
+            calls.append(("portal", params))
+            return FakePortalSession()
+
+    class FakeBillingPortal:
+        sessions = FakePortalSessions()
+
+    class FakeInvoices:
+        async def list_async(self, *, params):
+            calls.append(("invoices", params))
+            return type(
+                "InvoiceListing",
+                (),
+                {
+                    "data": [
+                        FakeInvoiceWithToDict(),
+                        FakeInvoiceWithRecursive(),
+                        {"id": "in_mapping"},
+                    ]
+                },
+            )()
+
+    class FakeV1:
+        customers = FakeCustomers()
+        billing_portal = FakeBillingPortal()
+        invoices = FakeInvoices()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+
+    customer_id = await p.ensure_customer(user_id="user-1", email="billing@example.test")
+    portal_url = await p.create_portal_session(
+        customer_id="cus_new",
+        return_url="https://wai.computer/settings",
+    )
+    invoices = await p.list_customer_invoices(customer_id="cus_new", limit=3)
+
+    assert customer_id == "cus_new"
+    assert portal_url == "https://billing.stripe.test/session"
+    assert invoices == [
+        {"id": "in_to_dict"},
+        {"id": "in_recursive"},
+        {"id": "in_mapping"},
+    ]
+    assert calls == [
+        ("customer", {"email": "billing@example.test", "metadata": {"user_id": "user-1"}}),
+        ("portal", {"customer": "cus_new", "return_url": "https://wai.computer/settings"}),
+        ("invoices", {"customer": "cus_new", "limit": 3}),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_stripe_admin_subscription_and_refund_operations(monkeypatch):
     p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
     calls: list[tuple[str, str, dict | None]] = []
@@ -319,6 +525,34 @@ async def test_stripe_admin_subscription_and_refund_operations(monkeypatch):
         ),
     ]
     assert refund == {"id": "re_123", "status": "succeeded"}
+
+
+@pytest.mark.asyncio
+async def test_refund_payment_handles_recursive_and_mapping_results(monkeypatch):
+    p = StripeProvider(secret_key="sk_test_x", webhook_secret="whsec_x")
+    results: list[object] = []
+
+    class FakeRecursiveRefund:
+        def to_dict_recursive(self):
+            return {"id": "re_recursive"}
+
+    class FakeRefunds:
+        async def create_async(self, *, params: dict):
+            return results.pop(0)
+
+    class FakeV1:
+        refunds = FakeRefunds()
+
+    class FakeClient:
+        v1 = FakeV1()
+
+    monkeypatch.setattr(p, "_client_or_raise", lambda: FakeClient())
+
+    results.append(FakeRecursiveRefund())
+    assert await p.refund_payment("pi_recursive") == {"id": "re_recursive"}
+
+    results.append({"id": "re_mapping"})
+    assert await p.refund_payment("pi_mapping") == {"id": "re_mapping"}
 
 
 # ----- service event handlers ---------------------------------------------

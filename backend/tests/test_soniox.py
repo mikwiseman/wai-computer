@@ -247,6 +247,8 @@ async def test_transcribe_audio_file_skips_translation_tokens():
                 {"text": "Hola", "start_ms": 0, "end_ms": 400, "confidence": 0.9, "speaker": 1},
                 # Translation-only token has no usable timestamps and should be skipped.
                 {"text": " Hello", "translation_status": "translation", "speaker": 1},
+                # Provider control tokens are not transcript speech.
+                {"text": "<fin>", "start_ms": 400, "end_ms": 400, "confidence": 1.0, "speaker": 1},
                 {"text": " mundo", "start_ms": 400, "end_ms": 800, "confidence": 0.9, "speaker": 1},
             ]
         },

@@ -491,6 +491,17 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             return
         }
         let words = payload["words"] as? [[String: Any]] ?? []
+        if !words.isEmpty {
+            for segment in RealtimeTranscriptSegmentAssembler.deepgramSegments(
+                from: words,
+                fallbackTranscript: transcript,
+                fallbackConfidence: payload["confidence"] as? Double,
+                fallbackStartMs: collectedSegments.last?.endMs ?? 0
+            ) {
+                appendFinal(segment)
+            }
+            return
+        }
         appendFinal(
             text: transcript,
             speaker: Self.speakerLabel(words.first?["speaker"]),
@@ -510,15 +521,22 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let tokens = json["tokens"] as? [[String: Any]] ?? []
         let finalTokens = tokens.filter { ($0["is_final"] as? Bool) == true }
         let nonFinalTokens = tokens.filter { ($0["is_final"] as? Bool) != true }
-        if finalTokens.contains(where: { (($0["text"] as? String) ?? "").hasPrefix("<") }) {
+        if (json["finished"] as? Bool) == true
+            || finalTokens.contains(where: { (($0["text"] as? String) ?? "") == "<fin>" }) {
             markTranscriptEvent(finalizationMarker: true)
         }
-        if let segment = sonioxSegment(from: finalTokens, isFinal: true) {
-            collectedSegments.append(segment)
-            markTranscriptEvent()
-            eventContinuation.yield(.committed(segment))
+        for segment in RealtimeTranscriptSegmentAssembler.sonioxSegments(
+            from: finalTokens,
+            isFinal: true,
+            fallbackStartMs: collectedSegments.last?.endMs ?? 0
+        ) {
+            appendFinal(segment)
         }
-        if let segment = sonioxSegment(from: nonFinalTokens, isFinal: false) {
+        for segment in RealtimeTranscriptSegmentAssembler.sonioxSegments(
+            from: nonFinalTokens,
+            isFinal: false,
+            fallbackStartMs: collectedSegments.last?.endMs ?? 0
+        ) {
             markTranscriptEvent()
             eventContinuation.yield(.interim(text: segment.text, language: nil))
         }
@@ -550,23 +568,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         }
     }
 
-    private func sonioxSegment(from tokens: [[String: Any]], isFinal: Bool) -> LiveTranscriptSegment? {
-        let speechTokens = tokens.filter {
-            ($0["translation_status"] as? String) != "translation"
-                && (($0["text"] as? String)?.hasPrefix("<") != true)
-        }
-        let text = speechTokens.compactMap { $0["text"] as? String }
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        return LiveTranscriptSegment(
-            text: text,
-            speaker: Self.speakerLabel(speechTokens.first?["speaker"]),
-            isFinal: isFinal,
-            startMs: Self.providerMs(speechTokens.first?["start_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
-            endMs: Self.providerMs(speechTokens.last?["end_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
-            confidence: Self.averageConfidence(speechTokens) ?? 0
-        )
+    private func appendFinal(_ segment: LiveTranscriptSegment) {
+        collectedSegments.append(segment)
+        markTranscriptEvent()
+        eventContinuation.yield(.committed(segment))
     }
 
     private func appendFinal(

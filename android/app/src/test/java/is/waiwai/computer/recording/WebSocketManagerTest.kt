@@ -19,6 +19,53 @@ class WebSocketManagerTest {
     private val api = mockk<WaiApi>(relaxed = true)
 
     @Test
+    fun `close drain waits for provider finalization marker after client close`() {
+        val startedAt = 1_000L
+        assertTrue(
+            ElevenLabsWebSocketManager.shouldKeepWaitingForCloseDrain(
+                nowMs = startedAt + 2_499,
+                deadlineMs = startedAt + 5_000,
+                startedAtMs = startedAt,
+                lastTranscriptEventAtMs = null,
+                finalizationMarkerReceived = false,
+            ),
+        )
+        assertFalse(
+            ElevenLabsWebSocketManager.shouldKeepWaitingForCloseDrain(
+                nowMs = startedAt + 650,
+                deadlineMs = startedAt + 5_000,
+                startedAtMs = startedAt,
+                lastTranscriptEventAtMs = null,
+                finalizationMarkerReceived = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `close drain waits for quiet window after transcript activity`() {
+        val startedAt = 1_000L
+        val transcriptAt = startedAt + 700
+        assertTrue(
+            ElevenLabsWebSocketManager.shouldKeepWaitingForCloseDrain(
+                nowMs = transcriptAt + 899,
+                deadlineMs = startedAt + 5_000,
+                startedAtMs = startedAt,
+                lastTranscriptEventAtMs = transcriptAt,
+                finalizationMarkerReceived = false,
+            ),
+        )
+        assertFalse(
+            ElevenLabsWebSocketManager.shouldKeepWaitingForCloseDrain(
+                nowMs = transcriptAt + 900,
+                deadlineMs = startedAt + 5_000,
+                startedAtMs = startedAt,
+                lastTranscriptEventAtMs = transcriptAt,
+                finalizationMarkerReceived = false,
+            ),
+        )
+    }
+
+    @Test
     fun `build url uses language detection for multi mode`() {
         val manager = ElevenLabsWebSocketManager(api, language = "multi")
         val url = manager.buildElevenLabsUrl(
@@ -325,6 +372,36 @@ class WebSocketManagerTest {
     }
 
     @Test
+    fun `Deepgram final transcript splits mixed speaker words`() = runTest {
+        val manager = ElevenLabsWebSocketManager(api, language = "en")
+        manager.handleDeepgramMessage(
+            """
+            {
+              "type":"Results",
+              "is_final":true,
+              "channel":{
+                "alternatives":[{
+                  "transcript":"Alice starts. Bob answers.",
+                  "confidence":0.91,
+                  "words":[
+                    {"word":"Alice","start":0.0,"end":0.3,"confidence":0.9,"speaker":0},
+                    {"punctuated_word":"starts.","start":0.3,"end":0.7,"confidence":0.92,"speaker":0},
+                    {"word":"Bob","start":0.8,"end":1.0,"confidence":0.89,"speaker":1},
+                    {"punctuated_word":"answers.","start":1.0,"end":1.4,"confidence":0.9,"speaker":1}
+                  ]
+                }]
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("Alice starts.", "Bob answers."), manager.collectedSegments.map { it.text })
+        assertEquals(listOf("Speaker 0", "Speaker 1"), manager.collectedSegments.map { it.speaker })
+        assertEquals(listOf(0, 800), manager.collectedSegments.map { it.startMs })
+        assertEquals(listOf(700, 1400), manager.collectedSegments.map { it.endMs })
+    }
+
+    @Test
     fun `Soniox final tokens emit final segment`() = runTest {
         val manager = ElevenLabsWebSocketManager(api, language = "ru")
         manager.handleSonioxMessage(
@@ -347,6 +424,29 @@ class WebSocketManagerTest {
         assertTrue(segment.isFinal)
         assertEquals(800, segment.endMs)
         assertEquals(1, manager.collectedSegments.size)
+    }
+
+    @Test
+    fun `Soniox final tokens split mixed speakers`() = runTest {
+        val manager = ElevenLabsWebSocketManager(api, language = "ru")
+        manager.handleSonioxMessage(
+            """
+            {
+              "tokens":[
+                {"text":"Алиса","is_final":true,"start_ms":0,"end_ms":300,"confidence":0.93,"speaker":1},
+                {"text":" начала.","is_final":true,"start_ms":300,"end_ms":700,"confidence":0.95,"speaker":1},
+                {"text":" Боб","is_final":true,"start_ms":800,"end_ms":1000,"confidence":0.91,"speaker":2},
+                {"text":" ответил.","is_final":true,"start_ms":1000,"end_ms":1400,"confidence":0.9,"speaker":2},
+                {"text":"<fin>","is_final":true,"start_ms":1400,"end_ms":1400,"confidence":1.0,"speaker":2}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("Алиса начала.", "Боб ответил."), manager.collectedSegments.map { it.text })
+        assertEquals(listOf("Speaker 1", "Speaker 2"), manager.collectedSegments.map { it.speaker })
+        assertEquals(listOf(0, 800), manager.collectedSegments.map { it.startMs })
+        assertEquals(listOf(700, 1400), manager.collectedSegments.map { it.endMs })
     }
 
     @Test

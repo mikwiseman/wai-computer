@@ -298,7 +298,7 @@ async def transcribe_audio_file(
         "model_id": model or settings.elevenlabs_speech_to_text_model,
         "timestamps_granularity": "word",
         "diarize": "true" if (resolved_channels or 1) <= 1 else "false",
-        "tag_audio_events": "true",
+        "tag_audio_events": "false",
     }
     if settings.elevenlabs_no_verbatim:
         form_data["no_verbatim"] = "true"
