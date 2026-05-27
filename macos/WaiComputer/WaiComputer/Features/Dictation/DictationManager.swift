@@ -474,7 +474,8 @@ final class DictationManager: ObservableObject {
                 channels: 1
             )
             let audioCounter = audioSendCounter
-            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, weak capture, startupAudioBuffer, session] in
+            let liveProvider = Self.liveSTTProvider
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, weak capture, startupAudioBuffer, session, liveProvider] in
                 guard let capture else { return }
                 var liveSent = 0
                 for await buffer in capture.audioBuffers {
@@ -487,28 +488,29 @@ final class DictationManager: ObservableObject {
                             let snapshot = audioCounter.record(bytes: bytes)
                             if snapshot.chunks == 1 {
                                 session.event(.audioFirstChunkSent, data: [
-                                    "provider": Self.liveSTTProvider,
+                                    "provider": liveProvider,
                                     "bytes": bytes,
                                     "startupBuffered": false,
                                 ])
                             }
                             if liveSent <= 3 || liveSent % 20 == 0 {
-                                NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, bytes, Self.liveSTTProvider)
+                                NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, bytes, liveProvider)
                             }
                         }
                     } catch {
-                        NSLog("[Dictation/Provider] startup audio send failed provider=%@: %@", Self.liveSTTProvider, String(describing: error))
+                        NSLog("[Dictation/Provider] startup audio send failed provider=%@: %@", liveProvider, String(describing: error))
+                        let manager = self
                         await MainActor.run {
-                            guard let self else { return }
-                            self.error = error.userFacingMessage(context: .dictation)
-                            self.instrumentationSession?.failure(error, extras: ["stage": "startup_audio"])
-                            self.instrumentationSession = nil
-                            Task { await self.cancelDictation() }
+                            guard let manager else { return }
+                            manager.error = error.userFacingMessage(context: .dictation)
+                            manager.instrumentationSession?.failure(error, extras: ["stage": "startup_audio"])
+                            manager.instrumentationSession = nil
+                            Task { await manager.cancelDictation() }
                         }
                         return
                     }
                 }
-                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", Self.liveSTTProvider, liveSent)
+                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", liveProvider, liveSent)
             }
             try await capture.startRecording()
             session.event(.audioLeaseAcquired, data: [
