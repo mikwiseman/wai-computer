@@ -371,7 +371,7 @@ click_element() {
   coords="$(element_center_coords "$json_path" "$element_id")"
   [[ -n "$coords" && "$coords" != "null" ]] || die "Missing coordinates for $name ($element_id)"
   peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
-  if ! peekaboo click --on "$element_id" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
+  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --bring-to-current-space --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
