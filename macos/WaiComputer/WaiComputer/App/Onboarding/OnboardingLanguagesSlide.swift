@@ -2,13 +2,14 @@ import SwiftUI
 import WaiComputerKit
 
 /// Onboarding language picker slide. Sits between Allow and Hotkey so the
-/// user can narrow STT to specific languages (lower latency, fewer
+/// user can narrow STT to one specific language (lower latency, fewer
 /// false-positive switches) or leave on auto-detect (multi). Reuses the
 /// LanguagePickerView from Settings — single source of truth.
 struct OnboardingLanguagesSlide: View {
     let isActive: Bool
     @ObservedObject var store: DictationLanguageStore
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var dictationManager: DictationManager
 
     var body: some View {
         VStack(spacing: 24) {
@@ -30,7 +31,12 @@ struct OnboardingLanguagesSlide: View {
             }
 
             ScrollView {
-                LanguagePickerView(store: store)
+                LanguagePickerView(
+                    store: store,
+                    onSelectionChanged: {
+                        dictationManager.prefetchSessionConfigForCurrentLanguage(reason: "onboarding_language_changed")
+                    }
+                )
                     .padding(.horizontal, 4)
             }
             .frame(maxWidth: 520, maxHeight: 360)

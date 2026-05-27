@@ -103,4 +103,34 @@ final class DictationLanguageStoreTests: XCTestCase {
             "multi"
         )
     }
+
+    func testInitialSettingsIngestDoesNotClearPrefetchedRealtimeConfig() {
+        XCTAssertFalse(
+            DictationSessionConfigInvalidationPolicy.shouldClearVault(
+                previousProvider: nil,
+                previousModel: nil,
+                nextProvider: "openai",
+                nextModel: "gpt-realtime-whisper"
+            )
+        )
+    }
+
+    func testSettingsIngestClearsRealtimeConfigOnlyWhenProviderOrModelChanges() {
+        XCTAssertFalse(
+            DictationSessionConfigInvalidationPolicy.shouldClearVault(
+                previousProvider: "openai",
+                previousModel: "gpt-realtime-whisper",
+                nextProvider: "openai",
+                nextModel: "gpt-realtime-whisper"
+            )
+        )
+        XCTAssertTrue(
+            DictationSessionConfigInvalidationPolicy.shouldClearVault(
+                previousProvider: "openai",
+                previousModel: "legacy-live",
+                nextProvider: "openai",
+                nextModel: "gpt-realtime-whisper"
+            )
+        )
+    }
 }

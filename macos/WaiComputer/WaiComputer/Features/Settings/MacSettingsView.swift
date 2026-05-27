@@ -211,8 +211,13 @@ struct MacSettingsView: View {
             appearanceSection
 
             Section {
-                LanguagePickerView(store: languageStore)
-                    .padding(.vertical, 4)
+                LanguagePickerView(
+                    store: languageStore,
+                    onSelectionChanged: {
+                        dictationManager.prefetchSessionConfigForCurrentLanguage(reason: "settings_language_changed")
+                    }
+                )
+                .padding(.vertical, 4)
             } header: {
                 Text("settings.dictationLanguages.title", bundle: .main)
                     .waiSectionHeader()

@@ -10,10 +10,16 @@ struct LanguagePickerView: View {
     /// Optional cap on the visible list; nil shows all entries. Onboarding
     /// uses a smaller cap to keep the screen tidy; Settings shows all.
     let maxVisibleLanguages: Int?
+    let onSelectionChanged: (() -> Void)?
 
-    init(store: DictationLanguageStore, maxVisibleLanguages: Int? = nil) {
+    init(
+        store: DictationLanguageStore,
+        maxVisibleLanguages: Int? = nil,
+        onSelectionChanged: (() -> Void)? = nil
+    ) {
         self.store = store
         self.maxVisibleLanguages = maxVisibleLanguages
+        self.onSelectionChanged = onSelectionChanged
     }
 
     private var entries: [DictationLanguageCatalog.Entry] {
@@ -39,6 +45,7 @@ struct LanguagePickerView: View {
         Button {
             if !store.isAutoDetect {
                 store.setAutoDetect()
+                onSelectionChanged?()
             }
         } label: {
             HStack(spacing: Spacing.md) {
@@ -77,6 +84,7 @@ struct LanguagePickerView: View {
         let isSelected = store.selectedLanguages.contains(entry.code)
         return Button {
             store.toggle(entry.code)
+            onSelectionChanged?()
         } label: {
             HStack(spacing: Spacing.md) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
