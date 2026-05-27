@@ -22,7 +22,6 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 import websockets
@@ -36,7 +35,7 @@ FIXTURE_TEXT_RU = (
 )
 FIXTURE_VOICE_RU = "Milena"
 EXPECTED_TAIL = "последнюю фразу"
-SAMPLE_RATE = 16_000
+SAMPLE_RATE = 24_000
 BYTES_PER_SAMPLE = 2
 CHUNK_MS = 100
 FINAL_SILENCE_MS = 240
@@ -53,10 +52,7 @@ class ModelCandidate:
 
 
 DEFAULT_CANDIDATES = (
-    ModelCandidate("elevenlabs", "scribe_v2_realtime"),
-    ModelCandidate("soniox", "stt-rt-v4"),
-    ModelCandidate("deepgram", "flux-general-multi"),
-    ModelCandidate("inworld", "inworld/inworld-stt-1"),
+    ModelCandidate("openai", "gpt-realtime-whisper"),
 )
 
 
@@ -69,7 +65,10 @@ def require_command(name: str) -> str:
 
 def ensure_fixture(path: Path) -> bytes:
     if path.exists():
-        return wav_pcm(path)
+        try:
+            return wav_pcm(path)
+        except RuntimeError:
+            path.unlink()
 
     require_command("say")
     require_command("afconvert")
@@ -203,78 +202,40 @@ def elapsed_ms(start: float) -> int:
     return round((time.perf_counter() - start) * 1000)
 
 
-def elevenlabs_url(config: dict[str, Any]) -> str:
-    query = {
-        "model_id": config["model"],
-        "token": config["token"],
-        "include_timestamps": "true",
-        "audio_format": "pcm_16000",
-    }
-    if config.get("language") in {"", "multi", "auto", "und"}:
-        query["include_language_detection"] = "true"
-    else:
-        query["language_code"] = config["language"]
-    if config.get("commit_strategy"):
-        query["commit_strategy"] = config["commit_strategy"]
-    if config.get("no_verbatim"):
-        query["no_verbatim"] = "true"
-    return f"wss://api.elevenlabs.io/v1/speech-to-text/realtime?{urlencode(query)}"
-
-
 def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
     provider = config["provider"]
-    if provider == "elevenlabs":
-        return elevenlabs_url(config), {}
+    if provider != "openai":
+        raise RuntimeError(f"Unsupported realtime provider from backend: {provider}")
     url = config.get("websocket_url")
     if not url:
         raise RuntimeError(f"{provider} config did not include websocket_url")
-    headers: dict[str, str] = {}
-    if config.get("auth_scheme") == "bearer":
-        headers["Authorization"] = f"Bearer {config['token']}"
-    elif config.get("auth_scheme") == "basic":
-        headers["Authorization"] = str(config["token"])
-    elif config.get("auth_scheme") in {"message_api_key", None, "query_token"}:
-        pass
-    else:
+    if config.get("auth_scheme") != "bearer":
         raise RuntimeError(f"Unsupported auth_scheme={config.get('auth_scheme')}")
-    return url, headers
+    return url, {"Authorization": f"Bearer {config['token']}"}
 
 
-def soniox_config(config: dict[str, Any]) -> str:
+def openai_session_update(config: dict[str, Any]) -> str:
+    transcription: dict[str, Any] = {"model": config["model"]}
     language = str(config.get("language") or "multi").strip().lower()
-    auto = language in {"", "multi", "auto", "und"}
-    payload: dict[str, Any] = {
-        "api_key": config["token"],
-        "model": config["model"],
-        "audio_format": "pcm_s16le",
-        "sample_rate": config["sample_rate"],
-        "num_channels": config["channels"],
-        "enable_speaker_diarization": True,
-        "enable_language_identification": auto,
-        "enable_endpoint_detection": True,
-        "max_endpoint_delay_ms": 500,
-    }
-    if not auto:
-        payload["language_hints"] = [language]
-    return json.dumps(payload)
+    if language not in {"", "multi", "auto", "und"}:
+        transcription["language"] = language.split("-", 1)[0]
 
-
-def inworld_config(config: dict[str, Any]) -> str:
-    language = str(config.get("language") or "").strip().lower()
-    if language in {"multi", "und", "auto"}:
-        language = ""
-    if "-" in language:
-        language = language.split("-", 1)[0]
     return json.dumps(
         {
-            "transcribeConfig": {
-                "modelId": config["model"],
-                "language": language,
-                "audioEncoding": "LINEAR16",
-                "sampleRateHertz": config["sample_rate"],
-                "numberOfChannels": config["channels"],
-                "inactivityTimeoutSeconds": 60,
-            }
+            "type": "session.update",
+            "session": {
+                "type": "transcription",
+                "audio": {
+                    "input": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": config["sample_rate"],
+                        },
+                        "transcription": transcription,
+                        "turn_detection": None,
+                    }
+                },
+            },
         }
     )
 
@@ -290,47 +251,16 @@ def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool]:
     except json.JSONDecodeError:
         return None, False
 
-    if provider == "elevenlabs":
-        message_type = payload.get("message_type") or payload.get("type")
-        if message_type == "partial_transcript":
-            return cleaned(payload.get("text")), False
-        if message_type in {"committed_transcript", "committed_transcript_with_timestamps"}:
-            text = cleaned(payload.get("text"))
-            if text:
-                return text, True
-            words = payload.get("words") or []
-            return cleaned("".join(word.get("text", "") for word in words if word.get("type") != "spacing")), True
-        return None, False
-
-    if provider == "deepgram":
-        if payload.get("type") == "Results":
-            alternatives = ((payload.get("channel") or {}).get("alternatives") or [])
-            text = cleaned((alternatives[0] if alternatives else {}).get("transcript"))
-            return text, bool(payload.get("is_final") or payload.get("speech_final"))
-        if payload.get("type") == "TurnInfo":
-            return cleaned(payload.get("transcript")), payload.get("event") == "EndOfTurn"
-        return cleaned(payload.get("transcript")), True
-
-    if provider == "soniox":
-        tokens = payload.get("tokens") or []
-        final = [token for token in tokens if token.get("is_final") is True]
-        non_final = [token for token in tokens if token.get("is_final") is not True]
-        if final:
-            return soniox_text(final), True
-        if non_final:
-            return soniox_text(non_final), False
-        return None, False
-
-    if provider == "inworld":
-        transcription = payload.get("transcription")
-        if not isinstance(transcription, dict):
-            result = payload.get("result")
-            if isinstance(result, dict):
-                transcription = result.get("transcription")
-        if isinstance(transcription, dict):
-            return cleaned(transcription.get("text") or transcription.get("transcript")), bool(
-                transcription.get("is_final") or transcription.get("isFinal")
-            )
+    if provider == "openai":
+        message_type = payload.get("type")
+        if message_type == "conversation.item.input_audio_transcription.delta":
+            return cleaned(payload.get("delta")), False
+        if message_type == "conversation.item.input_audio_transcription.completed":
+            return cleaned(payload.get("transcript")), True
+        if message_type == "error":
+            error = payload.get("error")
+            if isinstance(error, dict):
+                raise RuntimeError(error.get("message") or error.get("code") or "OpenAI realtime error")
     return None, False
 
 
@@ -339,16 +269,6 @@ def cleaned(value: Any) -> str | None:
         return None
     value = " ".join(value.split()).strip()
     return value or None
-
-
-def soniox_text(tokens: list[dict[str, Any]]) -> str | None:
-    text = "".join(
-        str(token.get("text") or "")
-        for token in tokens
-        if not str(token.get("text") or "").startswith("<")
-        and token.get("translation_status") != "translation"
-    )
-    return cleaned(text)
 
 
 async def stream_provider(config: dict[str, Any], pcm: bytes, press_started: float) -> dict[str, Any]:
@@ -365,53 +285,40 @@ async def stream_provider(config: dict[str, Any], pcm: bytes, press_started: flo
             return
         final_segments.append(text)
 
-    async with websockets.connect(url, additional_headers=headers or None, max_size=8 * 1024 * 1024) as ws:
+    async with websockets.connect(url, additional_headers=headers, max_size=8 * 1024 * 1024) as ws:
         connect_ms = elapsed_ms(connect_started)
-        if provider == "soniox":
-            await ws.send(soniox_config(config))
-        elif provider == "inworld":
-            await ws.send(inworld_config(config))
+        await ws.send(openai_session_update(config))
 
         async def send_loop() -> None:
+            uncommitted_bytes = 0
+            commit_threshold = int(config["sample_rate"]) * max(int(config["channels"]), 1) * BYTES_PER_SAMPLE
             for chunk in chunks(pcm):
-                if provider == "elevenlabs":
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "message_type": "input_audio_chunk",
-                                "audio_base_64": base64.b64encode(chunk).decode(),
-                                "sample_rate": SAMPLE_RATE,
-                                "commit": False,
-                            }
-                        )
-                    )
-                elif provider == "inworld":
-                    await ws.send(json.dumps({"audioChunk": {"content": base64.b64encode(chunk).decode()}}))
-                else:
-                    await ws.send(chunk)
-                await asyncio.sleep(CHUNK_MS / 1000)
-
-            if provider == "elevenlabs":
                 await ws.send(
                     json.dumps(
                         {
-                            "message_type": "input_audio_chunk",
-                            "audio_base_64": base64.b64encode(b"\x00" * 640).decode(),
-                            "sample_rate": SAMPLE_RATE,
-                            "commit": True,
+                            "type": "input_audio_buffer.append",
+                            "audio": base64.b64encode(chunk).decode(),
                         }
                     )
                 )
-            elif provider == "deepgram":
-                await ws.send(silence())
-                await ws.send(json.dumps({"type": "CloseStream"}))
-            elif provider == "soniox":
-                await ws.send(silence())
-                await ws.send(json.dumps({"type": "finalize"}))
-                await ws.send("")
-            elif provider == "inworld":
-                await ws.send(json.dumps({"endTurn": {}}))
-                await ws.send(json.dumps({"closeStream": {}}))
+                uncommitted_bytes += len(chunk)
+                if uncommitted_bytes >= commit_threshold:
+                    await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                    uncommitted_bytes = 0
+                await asyncio.sleep(CHUNK_MS / 1000)
+
+            tail = silence()
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "input_audio_buffer.append",
+                        "audio": base64.b64encode(tail).decode(),
+                    }
+                )
+            )
+            uncommitted_bytes += len(tail)
+            if uncommitted_bytes > 0:
+                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
 
         async def receive_loop() -> None:
             nonlocal first_text_ms, first_final_ms, partial_text

@@ -43,7 +43,7 @@ async def test_dictation_benchmark_battle_runs_for_anonymous_visitors(
 ):
     monkeypatch.setattr(
         "app.api.routes.benchmarks.get_settings",
-        lambda: _settings(elevenlabs_api_key="xi"),
+        lambda: _settings(openai_api_key="sk"),
     )
 
     async def fake_transcribe_audio_file(*args, **kwargs):
@@ -81,7 +81,7 @@ async def test_dictation_benchmark_battle_runs_configured_file_providers(
 ):
     monkeypatch.setattr(
         "app.api.routes.benchmarks.get_settings",
-        lambda: _settings(elevenlabs_api_key="xi", soniox_api_key="sx"),
+        lambda: _settings(openai_api_key="sk", soniox_api_key="sx"),
     )
     calls: list[tuple[str, str]] = []
 
@@ -116,10 +116,10 @@ async def test_dictation_benchmark_battle_runs_configured_file_providers(
     data = response.json()
     assert data["language"] == "ru"
     assert {(candidate["provider"], candidate["model"]) for candidate in data["candidates"]} == {
-        ("elevenlabs", "scribe_v2"),
+        ("openai", "gpt-4o-transcribe-diarize"),
     }
     assert {(provider, model) for provider, model in calls} == {
-        ("elevenlabs", "scribe_v2"),
+        ("openai", "gpt-4o-transcribe-diarize"),
     }
     assert all(candidate["status"] == "ok" for candidate in data["candidates"])
     assert all("transcript" in candidate["transcript"] for candidate in data["candidates"])
@@ -133,7 +133,7 @@ async def test_dictation_benchmark_battle_returns_provider_errors_per_candidate(
 ):
     monkeypatch.setattr(
         "app.api.routes.benchmarks.get_settings",
-        lambda: _settings(elevenlabs_api_key="xi"),
+        lambda: _settings(openai_api_key="sk"),
     )
 
     async def fake_transcribe_audio_file(*args, **kwargs):
@@ -169,8 +169,8 @@ async def test_dictation_benchmark_vote_persists_metadata_only(
         json={
             "battle_id": "battle-1",
             "selected_candidate_id": "candidate-a",
-            "selected_provider": "ElevenLabs",
-            "selected_model": "scribe_v2",
+            "selected_provider": "OpenAI",
+            "selected_model": "gpt-4o-transcribe-diarize",
             "language": " RU ",
             "candidate_count": 1,
         },
@@ -185,8 +185,8 @@ async def test_dictation_benchmark_vote_persists_metadata_only(
     vote = result.scalar_one()
     assert vote.battle_id == "battle-1"
     assert vote.selected_candidate_id == "candidate-a"
-    assert vote.selected_provider == "elevenlabs"
-    assert vote.selected_model == "scribe_v2"
+    assert vote.selected_provider == "openai"
+    assert vote.selected_model == "gpt-4o-transcribe-diarize"
     assert vote.language == "ru"
     assert vote.candidate_count == 1
     assert vote.user_id is not None
@@ -202,8 +202,8 @@ async def test_dictation_benchmark_vote_accepts_anonymous_visitors(
         json={
             "battle_id": "battle-1",
             "selected_candidate_id": "candidate-a",
-            "selected_provider": "ElevenLabs",
-            "selected_model": "scribe_v2",
+            "selected_provider": "OpenAI",
+            "selected_model": "gpt-4o-transcribe-diarize",
             "language": "multi",
             "candidate_count": 1,
         },
@@ -217,7 +217,7 @@ async def test_dictation_benchmark_vote_accepts_anonymous_visitors(
     )
     vote = result.scalar_one()
     assert vote.user_id is None
-    assert vote.selected_provider == "elevenlabs"
+    assert vote.selected_provider == "openai"
 
 
 @pytest.mark.asyncio
@@ -364,7 +364,7 @@ async def test_dictation_benchmark_battle_rejects_invalid_uploads(
 ):
     monkeypatch.setattr(
         "app.api.routes.benchmarks.get_settings",
-        lambda: _settings(elevenlabs_api_key="xi"),
+        lambda: _settings(openai_api_key="sk"),
     )
 
     unsupported = await client.post(

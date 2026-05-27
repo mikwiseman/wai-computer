@@ -1,44 +1,44 @@
-"""Tests for the active transcription runtime."""
+"""Tests for the active file transcription runtime."""
 
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
+OPENAI_FILE_STT_MODEL = "gpt-4o-transcribe-diarize"
+
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_elevenlabs():
-    with (
-        patch(
-            "app.core.transcription.elevenlabs_transcribe_audio_file",
-            new=AsyncMock(return_value=["ok"]),
-        ) as mock_elevenlabs,
-    ):
+async def test_transcription_dispatches_to_openai_file_stt():
+    with patch(
+        "app.core.transcription.openai_transcribe_audio_file",
+        new=AsyncMock(return_value=["ok"]),
+    ) as mock_openai:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(b"audio", language="ru", content_type="audio/mp3")
 
     assert result == ["ok"]
-    mock_elevenlabs.assert_awaited_once_with(
+    mock_openai.assert_awaited_once_with(
         b"audio",
         language="ru",
         content_type="audio/mp3",
         channels=None,
-        model="scribe_v2",
+        model=OPENAI_FILE_STT_MODEL,
     )
 
 
 @pytest.mark.asyncio
-async def test_transcription_ignores_deepgram_user_choice():
+async def test_transcription_ignores_removed_user_file_stt_choice():
     user = type(
         "User",
         (),
-        {"file_stt_provider": "deepgram", "file_stt_model": "nova-3"},
+        {"file_stt_provider": "elevenlabs", "file_stt_model": "scribe_v2"},
     )()
     with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["elevenlabs-ok"]),
-    ) as mock_elevenlabs:
+        "app.core.transcription.openai_transcribe_audio_file",
+        new=AsyncMock(return_value=["openai-ok"]),
+    ) as mock_openai:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(
@@ -49,45 +49,28 @@ async def test_transcription_ignores_deepgram_user_choice():
             user=user,
         )
 
-    assert result == ["elevenlabs-ok"]
-    mock_elevenlabs.assert_awaited_once_with(
+    assert result == ["openai-ok"]
+    mock_openai.assert_awaited_once_with(
         b"audio",
         language="en",
         content_type="audio/wav",
         channels=1,
-        model="scribe_v2",
+        model=OPENAI_FILE_STT_MODEL,
     )
 
 
 @pytest.mark.asyncio
-async def test_transcription_ignores_soniox_user_choice():
-    user = type(
-        "User",
-        (),
-        {"file_stt_provider": "soniox", "file_stt_model": "stt-async-v4"},
-    )()
-    with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["elevenlabs-ok"]),
-    ) as mock_elevenlabs:
-        from app.core.transcription import transcribe_audio_file
+async def test_transcription_rejects_explicit_elevenlabs_file_stt():
+    from app.core.transcription import transcribe_audio_file
 
-        result = await transcribe_audio_file(
+    with pytest.raises(ValueError, match="Unsupported file_stt option"):
+        await transcribe_audio_file(
             b"audio",
             language="en",
             content_type="audio/wav",
-            channels=1,
-            user=user,
+            provider="elevenlabs",
+            model="scribe_v2",
         )
-
-    assert result == ["elevenlabs-ok"]
-    mock_elevenlabs.assert_awaited_once_with(
-        b"audio",
-        language="en",
-        content_type="audio/wav",
-        channels=1,
-        model="scribe_v2",
-    )
 
 
 @pytest.mark.asyncio
@@ -119,59 +102,26 @@ async def test_transcription_rejects_explicit_deepgram_file_stt():
 
 
 @pytest.mark.asyncio
-async def test_transcription_ignores_dropped_openai_user_choice():
-    """User-persisted file STT choices no longer select the runtime model."""
-    user = type(
-        "User",
-        (),
-        {"file_stt_provider": "openai", "file_stt_model": "retired-batch-stt"},
-    )()
-    with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["elevenlabs-ok"]),
-    ):
-        from app.core.transcription import transcribe_audio_file
-
-        result = await transcribe_audio_file(b"audio", user=user)
-
-    assert result == ["elevenlabs-ok"]
-
-
-@pytest.mark.asyncio
-async def test_transcription_ignores_unsupported_user_choice():
-    user = type("User", (), {"file_stt_provider": "elevenlabs", "file_stt_model": "bad-model"})()
-    with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["elevenlabs-ok"]),
-    ):
-        from app.core.transcription import transcribe_audio_file
-
-        result = await transcribe_audio_file(b"audio", user=user)
-
-    assert result == ["elevenlabs-ok"]
-
-
-@pytest.mark.asyncio
-async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_fallback():
+async def test_transcription_surfaces_openai_quota_issue_without_provider_fallback():
     response = httpx.Response(
-        401,
+        429,
         json={
-            "detail": {
-                "type": "payment_required",
-                "code": "payment_issue",
-                "message": "Complete the latest invoice to continue usage.",
+            "error": {
+                "type": "insufficient_quota",
+                "code": "insufficient_quota",
+                "message": "You exceeded your current quota.",
             }
         },
-        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        request=httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions"),
     )
     error = httpx.HTTPStatusError(
-        "Client error '401 Unauthorized'",
+        "Client error '429 Too Many Requests'",
         request=response.request,
         response=response,
     )
 
     with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        "app.core.transcription.openai_transcribe_audio_file",
         new=AsyncMock(side_effect=error),
     ):
         from app.core.transcription import transcribe_audio_file
@@ -186,9 +136,9 @@ async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_
 
 
 @pytest.mark.asyncio
-async def test_transcription_reraises_unexpected_elevenlabs_failure_without_fallback(caplog):
+async def test_transcription_reraises_unexpected_openai_failure_without_fallback(caplog):
     with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        "app.core.transcription.openai_transcribe_audio_file",
         new=AsyncMock(side_effect=RuntimeError("socket closed")),
     ):
         from app.core.transcription import transcribe_audio_file
@@ -204,7 +154,7 @@ async def test_transcription_reraises_unexpected_elevenlabs_failure_without_fall
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "file STT failed" in messages
-    assert "provider=elevenlabs" in messages
+    assert "provider=openai" in messages
     assert "error_type=RuntimeError" in messages
     assert "secret-audio-bytes" not in messages
 
@@ -214,7 +164,7 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
     from app.core.transcript_utils import TranscriptResult
 
     with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        "app.core.transcription.openai_transcribe_audio_file",
         new=AsyncMock(
             return_value=[
                 TranscriptResult(
@@ -235,7 +185,7 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "file STT completed" in messages
-    assert "provider=elevenlabs" in messages
+    assert "provider=openai" in messages
     assert "segment_count=1" in messages
     assert "private transcript" not in messages
     assert "secret-audio-bytes" not in messages
@@ -272,7 +222,7 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
     )
     monkeypatch.setattr(
         transcription,
-        "elevenlabs_transcribe_audio_file",
+        "openai_transcribe_audio_file",
         AsyncMock(
             return_value=[
                 TranscriptResult(
@@ -301,8 +251,8 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
             "message": "File transcription latency exceeded threshold",
             "category": "recording",
             "extras": {
-                "provider": "elevenlabs",
-                "model": "scribe_v2",
+                "provider": "openai",
+                "model": OPENAI_FILE_STT_MODEL,
                 "latency_ms": 121_000,
                 "slow_threshold_ms": 120_000,
                 "audio_duration_seconds": 30,
@@ -324,11 +274,11 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
 
 
 @pytest.mark.asyncio
-async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
+async def test_transcription_does_not_fallback_for_openai_bad_request():
     response = httpx.Response(
         400,
-        json={"detail": {"message": "Invalid language_code"}},
-        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        json={"error": {"message": "Invalid language"}},
+        request=httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions"),
     )
     error = httpx.HTTPStatusError(
         "Client error '400 Bad Request'",
@@ -337,53 +287,53 @@ async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
     )
 
     with patch(
-        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        "app.core.transcription.openai_transcribe_audio_file",
         new=AsyncMock(side_effect=error),
     ):
         from app.core.transcription import transcribe_audio_file
 
         with pytest.raises(httpx.HTTPStatusError):
-            await transcribe_audio_file(b"wav", language="auto", content_type="audio/wav")
+            await transcribe_audio_file(b"wav", language="not-a-language", content_type="audio/wav")
 
 
-def test_elevenlabs_error_code_handles_unstructured_error_payloads():
-    from app.core.transcription import _elevenlabs_error_code
+def test_provider_error_code_handles_unstructured_error_payloads():
+    from app.core.transcription import _provider_error_code
 
     invalid_json_response = httpx.Response(
         503,
         content=b"not-json",
-        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        request=httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions"),
     )
     invalid_json_error = httpx.HTTPStatusError(
         "Service unavailable",
         request=invalid_json_response.request,
         response=invalid_json_response,
     )
-    assert _elevenlabs_error_code(invalid_json_error) is None
+    assert _provider_error_code(invalid_json_error) is None
 
     list_response = httpx.Response(
         401,
         json=["bad"],
-        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+        request=httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions"),
     )
     list_error = httpx.HTTPStatusError(
         "Unauthorized",
         request=list_response.request,
         response=list_response,
     )
-    assert _elevenlabs_error_code(list_error) is None
+    assert _provider_error_code(list_error) is None
 
-    detail_response = httpx.Response(
-        402,
-        json={"detail": {"status": "payment_issue"}},
-        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    error_response = httpx.Response(
+        429,
+        json={"error": {"code": "insufficient_quota"}},
+        request=httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions"),
     )
-    detail_error = httpx.HTTPStatusError(
-        "Payment required",
-        request=detail_response.request,
-        response=detail_response,
+    error = httpx.HTTPStatusError(
+        "Quota exceeded",
+        request=error_response.request,
+        response=error_response,
     )
-    assert _elevenlabs_error_code(detail_error) == "payment_issue"
+    assert _provider_error_code(error) == "insufficient_quota"
 
 
 @pytest.mark.asyncio
@@ -395,4 +345,8 @@ async def test_transcription_rejects_provider_left_after_validation(monkeypatch)
     from app.core.transcription import transcribe_audio_file
 
     with pytest.raises(ValueError, match="Unsupported file_stt_provider: bogus"):
-        await transcribe_audio_file(b"audio", provider="elevenlabs", model="scribe_v2")
+        await transcribe_audio_file(
+            b"audio",
+            provider="openai",
+            model=OPENAI_FILE_STT_MODEL,
+        )

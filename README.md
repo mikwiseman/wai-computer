@@ -55,8 +55,9 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 - Global keyboard shortcuts
 
 ### Backend
-- Real-time audio streaming via WebSocket
-- ElevenLabs realtime voice + speech-to-text
+- OpenAI realtime speech-to-text for live dictation and recording captions
+- OpenAI diarized file transcription for full recording processing
+- ElevenLabs realtime voice sessions
 - OpenAI Responses API for summarization, entity extraction, Companion, and dictation cleanup
 - PostgreSQL with pgvector for hybrid search
 - Redis for agent scheduling and deploy/runtime coordination
@@ -168,8 +169,10 @@ Web app default routes:
 # Required
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer
 JWT_SECRET=your-secure-secret
-ELEVENLABS_API_KEY=your-elevenlabs-key
 OPENAI_API_KEY=your-openai-key
+
+# Optional - realtime voice sessions
+ELEVENLABS_API_KEY=your-elevenlabs-key
 
 # Optional - Email (magic links)
 RESEND_API_KEY=your-resend-api-key
@@ -252,7 +255,7 @@ To capture audio from Zoom/Meet/etc:
 - **Frontend**: SwiftUI (iOS 17+, macOS 14+)
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
-- **Transcription**: ElevenLabs realtime + upload speech-to-text
+- **Transcription**: OpenAI `gpt-realtime-whisper` for live STT, OpenAI `gpt-4o-transcribe-diarize` for full file STT
 - **AI**: OpenAI Responses API
 - **Audio Codec**: Opus (16kHz, mono)
 - **Deploy**: Cloudflare Pages + Workers

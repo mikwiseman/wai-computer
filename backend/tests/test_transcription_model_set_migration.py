@@ -220,6 +220,32 @@ def test_openai_realtime_whisper_default_migration_resets_live_users(monkeypatch
     assert defaults["recording_live_stt_model"] == "gpt-realtime-whisper"
 
 
+def test_openai_file_stt_default_migration_resets_file_users(monkeypatch):
+    """May 27 file STT swap should overwrite persisted file STT users to OpenAI."""
+    migration = _load_migration("20260527_200000_openai_file_stt_defaults.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 1
+    statement = str(executed[0])
+    assert "file_stt_provider = :provider" in statement
+    assert "file_stt_model = :model" in statement
+    assert "WHERE" not in statement
+
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["file_stt_provider"] == "openai"
+    assert defaults["file_stt_model"] == "gpt-4o-transcribe-diarize"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WaiComputer nightly QA harness — entry point for hourly cron iteration.
+# WaiComputer nightly realtime dictation QA harness.
 # See scripts/nightly/README.md.
 set -euo pipefail
 
@@ -15,31 +15,58 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-# Idempotent install: only if websockets is missing.
-python -c 'import websockets' 2>/dev/null || pip install --quiet --disable-pip-version-check 'websockets>=13'
-
-# Sanity check key file exists before any network call.
-if [[ ! -f "$HOME/.config/waicomputer/inworld.env" ]]; then
-  echo "ERROR: $HOME/.config/waicomputer/inworld.env missing." >&2
-  echo "Fetch with: ssh root@157.180.47.68 'grep ^INWORLD_API_KEY= /etc/waicomputer/backend.env' > $HOME/.config/waicomputer/inworld.env && chmod 600 $HOME/.config/waicomputer/inworld.env" >&2
-  exit 2
-fi
+# Idempotent install: only if the network deps are missing.
+python -c 'import httpx, websockets' 2>/dev/null || pip install --quiet --disable-pip-version-check 'httpx>=0.26' 'websockets>=13'
 
 LOG_FILE="$NIGHTLY_DIR/.artifacts/last-run.log"
+JSON_REPORT="$NIGHTLY_DIR/.artifacts/last-report.json"
+MD_REPORT="$NIGHTLY_DIR/.artifacts/last-report.md"
 mkdir -p "$NIGHTLY_DIR/.artifacts"
 
-echo "==> Tier 1 (Inworld TTS+STT round trip)"
-if python "$NIGHTLY_DIR/runner.py" 2>&1 | tee "$LOG_FILE"; then
-  echo "==> Tier 1 PASS"
+echo "==> OpenAI realtime dictation production path"
+if python "$ROOT_DIR/scripts/evaluate-realtime-dictation.py" --output "$JSON_REPORT" 2>&1 | tee "$LOG_FILE"; then
+  echo "==> OpenAI realtime PASS"
   rc=0
 else
   rc=$?
-  echo "==> Tier 1 FAIL (exit=$rc)"
+  echo "==> OpenAI realtime FAIL (exit=$rc)"
 fi
 
-if [[ "${NIGHTLY_TIER2:-0}" == "1" ]]; then
-  echo "==> Tier 2 (real macOS app) — not yet implemented in this iteration"
+if [[ -f "$JSON_REPORT" ]]; then
+  python - "$JSON_REPORT" "$MD_REPORT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+payload = json.loads(source.read_text(encoding="utf-8"))
+lines = [
+    "# WaiComputer realtime dictation QA",
+    "",
+    f"- Generated: `{payload.get('generated_at', '-')}`",
+    f"- Base URL: `{payload.get('base_url', '-')}`",
+    f"- Fixture seconds: `{payload.get('fixture_seconds', '-')}`",
+    "",
+    "| Mode | Provider | Model | OK | First text p50 | Final p50 | WER p50 |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+]
+for row in payload.get("summary", []):
+    lines.append(
+        "| {mode} | {provider} | `{model}` | {ok_runs}/{runs} | {first} ms | {final} ms | {wer} |".format(
+            mode=row.get("mode", "-"),
+            provider=row.get("provider", "-"),
+            model=row.get("model", "-"),
+            ok_runs=row.get("ok_runs", 0),
+            runs=row.get("runs", 0),
+            first=row.get("median_first_text_ms"),
+            final=row.get("median_final_ms"),
+            wer=row.get("median_wer"),
+        )
+    )
+target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 fi
 
-echo "==> Report: $NIGHTLY_DIR/.artifacts/last-report.md"
+echo "==> Report: $MD_REPORT"
 exit "$rc"
