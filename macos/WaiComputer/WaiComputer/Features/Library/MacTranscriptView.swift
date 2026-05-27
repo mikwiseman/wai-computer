@@ -4,7 +4,7 @@ import WaiComputerKit
 
 struct MacTranscriptView: View {
     let segments: [Segment]
-    var status: RecordingStatus = .ready
+    var availability: MacTranscriptAvailability = .content
     var localRecoveryManifest: RecordingBackupManifest?
     var recordingId: String?
     var onAssigned: ((RecordingDetail) -> Void)?
@@ -44,14 +44,14 @@ struct MacTranscriptView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if isSavedLocally {
+        if availability == .savedLocally {
             ContentUnavailableView(
                 t("Saved locally", "Сохранено локально"),
                 systemImage: "externaldrive",
                 description: Text(savedLocallyDescription)
             )
             .accessibilityIdentifier("transcript-local-recovery-state")
-        } else if isProcessing {
+        } else if availability == .processing {
             ContentUnavailableView(
                 t("Transcript is processing", "Расшифровка готовится"),
                 systemImage: "hourglass",
@@ -71,17 +71,6 @@ struct MacTranscriptView: View {
         }
     }
 
-    private var isSavedLocally: Bool {
-        guard let localRecoveryManifest, status != .failed else { return false }
-        switch localRecoveryManifest.syncState {
-        case .serverProcessing, .remoteReady:
-            return false
-        case .localRecording, .localReady, .uploading, .retryableFailure,
-             .permanentFailure, .authenticationRequired:
-            return true
-        }
-    }
-
     private var savedLocallyDescription: String {
         if localRecoveryManifest?.requiresAuthentication == true {
             return t(
@@ -95,19 +84,16 @@ struct MacTranscriptView: View {
                 "Эта запись требует внимания перед синхронизацией."
             )
         }
+        if localRecoveryManifest?.isServerProcessing == true {
+            return t(
+                "Audio is stored on this Mac while server processing finishes. WaiComputer will keep checking automatically.",
+                "Аудио сохранено на этом Mac, пока сервер завершает обработку. WaiComputer продолжит проверять автоматически."
+            )
+        }
         return t(
             "This recording is stored on this Mac. WaiComputer will sync it automatically when the connection is available.",
             "Эта запись сохранена на этом Mac. WaiComputer синхронизирует ее автоматически, когда соединение будет доступно."
         )
-    }
-
-    private var isProcessing: Bool {
-        switch status {
-        case .pendingUpload, .uploading, .processing:
-            return true
-        case .ready, .failed:
-            return false
-        }
     }
 
     private var transcriptText: String {

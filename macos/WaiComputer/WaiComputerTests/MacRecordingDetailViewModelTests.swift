@@ -1,10 +1,25 @@
 import XCTest
-import WaiComputerKit
+@testable import WaiComputerKit
 
 @MainActor
 final class MacRecordingDetailViewModelTests: XCTestCase {
+    private var backupRoot: URL!
+
+    override func setUp() {
+        super.setUp()
+        backupRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacRecordingDetailViewModelTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+        RecordingBackupStore.overrideBaseDirectory = backupRoot
+    }
+
     override func tearDown() {
         MacRecordingDetailMockURLProtocol.requestHandler = nil
+        RecordingBackupStore.overrideBaseDirectory = nil
+        if let backupRoot {
+            try? FileManager.default.removeItem(at: backupRoot)
+        }
         super.tearDown()
     }
 
@@ -68,6 +83,33 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.recordingDetail?.status, .processing)
         XCTAssertEqual(viewModel.recordingDetail?.segments.map(\.content), ["Recovered local transcript."])
         XCTAssertEqual(viewModel.recordingDetail?.segments.first?.rawLabel, "speaker_1")
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    func testServerProcessingLocalAudioBackupUsesSavedLocallyAvailability() async throws {
+        let recordingId = "server-processing-local-audio-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            recordingType: .meeting,
+            durationSeconds: 4,
+            segments: []
+        )
+        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+
+        let viewModel = MacRecordingDetailViewModel()
+        let apiClient = makeAPIClient(
+            statusCode: 200,
+            body: makeRecordingDetailJSON(id: recordingId, status: "processing", segments: [])
+        )
+
+        await viewModel.load(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertEqual(viewModel.localRecoveryManifest?.syncState, .serverProcessing)
+        XCTAssertEqual(viewModel.recordingDetail?.segments.count, 0)
+        XCTAssertEqual(viewModel.transcriptAvailability, .savedLocally)
         XCTAssertFalse(viewModel.isLoading)
     }
 

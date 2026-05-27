@@ -312,6 +312,68 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
+    func testServerProcessingAudioBackupPollsStatusWhenLocalSegmentsAreUnreadable() async throws {
+        let recordingId = "pending-sync-server-processing-corrupt-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data("fake wav bytes".utf8).write(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Audio backup",
+            recordingType: .meeting,
+            durationSeconds: 42,
+            transcript: nil,
+            segments: [
+                LiveTranscriptSegment(
+                    text: "Persisted before upload",
+                    speaker: nil,
+                    isFinal: true,
+                    startMs: 0,
+                    endMs: 1_000,
+                    confidence: 1
+                )
+            ]
+        )
+        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+        let backup = try XCTUnwrap(RecordingBackupStore.existingBackup(recordingId: recordingId))
+        try Data("{not-json".utf8).write(to: backup.segmentsFileURL)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "server processing backup removed after ready")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)")
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId, status: "ready"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 2)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
     func testPendingRecordingSyncPrefersAudioUploadWhenBackupHasAudioFile() async throws {
         let recordingId = "pending-sync-audio-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
@@ -407,6 +469,73 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(300))
 
         XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertEqual(manifest.syncState, .serverProcessing)
+    }
+
+    func testServerProcessingFailureAllowsNextPassToReuploadAudio() async throws {
+        let recordingId = "pending-sync-server-processing-failed-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try Data("fake-wav".utf8).write(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Audio retry",
+            recordingType: .note,
+            durationSeconds: 7,
+            transcript: nil,
+            segments: []
+        )
+        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let sawFailurePoll = expectation(description: "server processing status returned failed")
+        let synced = expectation(description: "audio retry synced")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let counter = RequestCounter()
+        MockURLProtocol.requestHandler = { request in
+            let requestNumber = counter.increment()
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            if requestNumber == 1 {
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)")
+                sawFailurePoll.fulfill()
+                return (response, self.responsePayload(recordingId: recordingId, status: "failed"))
+            }
+
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+            return (response, self.responsePayload(recordingId: recordingId, status: "ready"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [sawFailurePoll], timeout: 2)
+
+        try await waitForManifestState(.retryableFailure, recordingId: recordingId)
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 2)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
     func testPendingRecordingSyncSkipsInProgressAudioBackup() async throws {
@@ -729,7 +858,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
         try await Task.sleep(for: .milliseconds(500))
 
-        var manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
         XCTAssertTrue(manifest.requiresAuthentication)
         XCTAssertFalse(manifest.isPermanentFailure)
 
@@ -925,6 +1054,24 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: id2))
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: id3))
     }
+}
+
+private func waitForManifestState(
+    _ state: RecordingBackupSyncState,
+    recordingId: String,
+    timeout: TimeInterval = 1
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        if manifest.syncState == state {
+            return
+        }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+
+    let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+    XCTFail("Expected \(state.rawValue), got \(manifest.syncState.rawValue)")
 }
 
 private final class SendableSet: @unchecked Sendable {

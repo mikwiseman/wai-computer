@@ -150,3 +150,19 @@ def test_embedding_backfill_task_is_registered_for_periodic_repair():
         in celery_app_module.celery_app.tasks
     )
     assert "embedding-backfill-every-30-minutes" in celery_app_module.celery_app.conf.beat_schedule
+
+
+def test_recording_processing_recovery_task_is_registered_for_periodic_repair():
+    import app.tasks.recording_audio_processing  # noqa: F401
+
+    assert (
+        "app.tasks.recording_audio_processing.recover_stale_recording_processing"
+        in celery_app_module.celery_app.tasks
+    )
+    schedule = celery_app_module.celery_app.conf.beat_schedule[
+        "recording-processing-recovery-every-minute"
+    ]
+    assert (
+        schedule["task"]
+        == "app.tasks.recording_audio_processing.recover_stale_recording_processing"
+    )

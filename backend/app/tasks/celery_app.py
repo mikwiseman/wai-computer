@@ -64,6 +64,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.billing_renewals.charge_due_tinkoff_renewals",
         "schedule": timedelta(minutes=15),
     },
+    "recording-processing-recovery-every-minute": {
+        "task": "app.tasks.recording_audio_processing.recover_stale_recording_processing",
+        "schedule": timedelta(minutes=1),
+    },
 }
 
 

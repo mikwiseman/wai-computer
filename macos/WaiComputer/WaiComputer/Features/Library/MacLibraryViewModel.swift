@@ -82,13 +82,7 @@ class MacLibraryViewModel: ObservableObject {
                 backupManifests.compactMap { element in
                     let recordingId = element.key
                     let manifest = element.value
-                    guard let message = manifest.lastErrorMessage?
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                          !message.isEmpty
-                    else {
-                        return nil
-                    }
-                    return recordingId
+                    return shouldShowLocalRecoveryMarker(for: manifest) ? recordingId : nil
                 }
             )
 
@@ -308,5 +302,9 @@ class MacLibraryViewModel: ObservableObject {
         case .ready, .failed:
             return false
         }
+    }
+
+    private func shouldShowLocalRecoveryMarker(for manifest: RecordingBackupManifest) -> Bool {
+        manifest.syncState != .remoteReady
     }
 }
