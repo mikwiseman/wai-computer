@@ -55,6 +55,67 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
         XCTAssertEqual(fresh.config.token, "token-2")
     }
 
+    func testTakeDuringInFlightPrefetchConsumesWithoutLeavingTokenCached() async throws {
+        let mintCount = SessionConfigMintCounter()
+        let vault = RealtimeTranscriptionSessionConfigVault { _ in
+            await mintCount.increment()
+            let count = await mintCount.count()
+            try await Task.sleep(for: .milliseconds(120))
+            return Self.config(token: "token-\(count)")
+        }
+
+        await vault.prefetch(for: key)
+        try await waitUntil { await mintCount.count() == 1 }
+
+        let first = try await vault.take(
+            for: key,
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
+        )
+        let second = try await vault.take(
+            for: key,
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
+        )
+
+        XCTAssertTrue(first.prefetched)
+        XCTAssertEqual(first.config.token, "token-1")
+        XCTAssertFalse(second.prefetched)
+        XCTAssertEqual(second.config.token, "token-2")
+        let count = await mintCount.count()
+        XCTAssertEqual(count, 2)
+    }
+
+    func testConcurrentTakesDuringInFlightPrefetchDoNotShareToken() async throws {
+        let mintCount = SessionConfigMintCounter()
+        let vault = RealtimeTranscriptionSessionConfigVault { _ in
+            await mintCount.increment()
+            let count = await mintCount.count()
+            try await Task.sleep(for: .milliseconds(120))
+            return Self.config(token: "token-\(count)")
+        }
+
+        await vault.prefetch(for: key)
+        try await waitUntil { await mintCount.count() == 1 }
+
+        async let first = vault.take(
+            for: key,
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
+        )
+        async let second = vault.take(
+            for: key,
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
+        )
+        let results = try await [first, second]
+
+        XCTAssertEqual(Set(results.map(\.config.token)), ["token-1", "token-2"])
+        XCTAssertEqual(results.filter(\.prefetched).count, 1)
+        let count = await mintCount.count()
+        XCTAssertEqual(count, 2)
+    }
+
     func testTakeRejectsCachedConfigForDifferentProviderAndMintsFresh() async throws {
         let mintCount = SessionConfigMintCounter()
         let vault = RealtimeTranscriptionSessionConfigVault { _ in
@@ -123,6 +184,21 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             websocketURL: "wss://api.openai.com/v1/realtime?intent=transcription",
             authScheme: "bearer"
         )
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        condition: @escaping () async -> Bool
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while clock.now < deadline {
+            if await condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for condition")
     }
 }
 
