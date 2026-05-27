@@ -613,30 +613,61 @@ final class DictationManager: ObservableObject {
         log.info("Transcribed \(trimmedText.count) characters")
 
         // Apply dictionary replacements
-        var textToInsert = dictionaryStore?.applyReplacements(to: trimmedText) ?? trimmedText
+        let rawText = dictionaryStore?.applyReplacements(to: trimmedText) ?? trimmedText
 
-        // AI cleanup (optional)
-        let rawText = textToInsert
-        if aiCleanupEnabled, let apiClient {
-            do {
-                // Pass the dictionary's vocabulary list so the cleanup pass
-                // preserves user-curated spellings exactly (proper nouns,
-                // jargon, custom terminology that the LLM might otherwise
-                // "correct" away).
-                let vocabulary = dictionaryStore?.vocabularyList ?? []
-                let cleaned = try await apiClient.cleanupDictation(
-                    text: trimmedText,
-                    vocabulary: vocabulary
-                )
-                textToInsert = cleaned
-                log.info("AI cleanup: \(trimmedText.count) → \(cleaned.count) chars (vocab=\(vocabulary.count))")
-            } catch {
-                log.warning("AI cleanup failed, using raw transcript")
-                if let apiError = error as? APIError, case .unauthorized = apiError {
-                    self.error = apiError.userFacingMessage(context: .dictation)
+        // AI cleanup (optional). If enabled, cleanup is part of the requested
+        // output contract: failure is surfaced instead of silently inserting
+        // raw text that the user explicitly asked us to post-process.
+        let cleanupEnabled = aiCleanupEnabled
+        var cleanedText: String?
+        var cleanupError: Error?
+        if cleanupEnabled {
+            if let apiClient {
+                do {
+                    // Pass the dictionary's vocabulary list so the cleanup pass
+                    // preserves user-curated spellings exactly (proper nouns,
+                    // jargon, custom terminology that the LLM might otherwise
+                    // "correct" away).
+                    let vocabulary = dictionaryStore?.vocabularyList ?? []
+                    cleanedText = try await apiClient.cleanupDictation(
+                        text: rawText,
+                        vocabulary: vocabulary
+                    )
+                    log.info("AI cleanup: \(rawText.count) → \(cleanedText?.count ?? 0) chars (vocab=\(vocabulary.count))")
+                } catch {
+                    cleanupError = error
                 }
-                // Continue with raw text
+            } else {
+                cleanupError = NSError(
+                    domain: "is.waiwai.computer.dictation.cleanup",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "AI cleanup is enabled but the API client is unavailable."]
+                )
             }
+        }
+
+        let textToInsert: String
+        do {
+            textToInsert = try DictationCleanupPolicy.textToInsert(
+                rawText: rawText,
+                cleanupEnabled: cleanupEnabled,
+                cleanedText: cleanedText,
+                cleanupError: cleanupError
+            )
+        } catch {
+            log.error("AI cleanup failed")
+            self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: [
+                "stage": "cleanup",
+                "rawChars": rawText.count,
+            ])
+            instrumentationSession = nil
+            SentryHelper.captureError(error, extras: [
+                "context": "dictation.cleanup",
+                "rawChars": rawText.count,
+            ])
+            await cleanup()
+            return
         }
 
         // Publish the final text so observers (onboarding sandbox, future

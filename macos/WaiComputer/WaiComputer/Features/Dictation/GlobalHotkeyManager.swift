@@ -300,6 +300,29 @@ enum DictationFinalizationPolicy {
     static let captureTailDelay: Duration = .milliseconds(450)
 }
 
+enum DictationCleanupPolicy {
+    static func textToInsert(
+        rawText: String,
+        cleanupEnabled: Bool,
+        cleanedText: String?,
+        cleanupError: Error?
+    ) throws -> String {
+        guard cleanupEnabled else { return rawText }
+        if let cleanupError {
+            throw cleanupError
+        }
+        guard let cleanedText,
+              !cleanedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(
+                domain: "is.waiwai.computer.dictation.cleanup",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Dictation cleanup did not return text."]
+            )
+        }
+        return cleanedText
+    }
+}
+
 enum DictationHotkey: String, CaseIterable, Identifiable {
     case rightOption = "right_option"
     case leftOption = "left_option"
