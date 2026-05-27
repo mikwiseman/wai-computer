@@ -43,10 +43,15 @@ public actor RealtimeTranscriptionSessionConfigVault {
         let mintedAt: ContinuousClock.Instant
     }
 
+    private struct InFlightMint: Sendable {
+        let id: UUID
+        let key: Key
+        let task: Task<Entry, Error>
+    }
+
     private let minter: Minter
     private var cached: Entry?
-    private var inFlightKey: Key?
-    private var inFlight: Task<Entry, Error>?
+    private var inFlight: InFlightMint?
 
     public init(minter: @escaping Minter) {
         self.minter = minter
@@ -57,12 +62,20 @@ public actor RealtimeTranscriptionSessionConfigVault {
         if let cached, cached.key == key, isAlive(cached, now: now) {
             return
         }
-        if inFlightKey == key, inFlight != nil {
+        if inFlight?.key == key {
             return
         }
-        Task { [weak self] in
-            guard let self else { return }
-            _ = try? await self.mintAndCache(for: key)
+
+        let task = makeMintTask(for: key)
+        let id = UUID()
+        inFlight = InFlightMint(id: id, key: key, task: task)
+        Task { [weak self, task] in
+            do {
+                let entry = try await task.value
+                await self?.finishInFlight(id: id, entry: entry)
+            } catch {
+                await self?.discardInFlight(id: id)
+            }
         }
     }
 
@@ -88,48 +101,79 @@ public actor RealtimeTranscriptionSessionConfigVault {
             cached = nil
         }
 
-        let entry = try await mintFresh(for: key)
-        if matches(entry.config, expectedProvider: expectedProvider, expectedModel: expectedModel) {
-            return TakeResult(config: entry.config, prefetched: false, tokenAgeMilliseconds: 0)
+        if let active = inFlight, active.key == key {
+            inFlight = nil
+            let entry = try await active.task.value
+            return try takeResult(
+                for: entry,
+                prefetched: true,
+                now: ContinuousClock().now,
+                expectedProvider: expectedProvider,
+                expectedModel: expectedModel
+            )
         }
 
-        throw RealtimeTranscriptionSessionConfigVaultError.unexpectedProvider(
+        let entry = try await mintFresh(for: key)
+        return try takeResult(
+            for: entry,
+            prefetched: false,
+            now: ContinuousClock().now,
             expectedProvider: expectedProvider,
-            expectedModel: expectedModel,
-            actualProvider: entry.config.provider,
-            actualModel: entry.config.model
+            expectedModel: expectedModel
         )
     }
 
     public func clear() {
         cached = nil
-        inFlight?.cancel()
+        inFlight?.task.cancel()
         inFlight = nil
-        inFlightKey = nil
     }
 
-    private func mintAndCache(for key: Key) async throws -> Entry {
-        let entry = try await mintFresh(for: key)
-        cached = entry
-        return entry
+    private func makeMintTask(for key: Key) -> Task<Entry, Error> {
+        let minter = self.minter
+        return Task<Entry, Error> {
+            let config = try await minter(key)
+            return Entry(key: key, config: config, mintedAt: ContinuousClock().now)
+        }
     }
 
     private func mintFresh(for key: Key) async throws -> Entry {
-        if let inFlight, inFlightKey == key {
-            return try await inFlight.value
+        let task = makeMintTask(for: key)
+        return try await task.value
+    }
+
+    private func finishInFlight(id: UUID, entry: Entry) {
+        guard let active = inFlight, active.id == id else { return }
+        cached = entry
+        inFlight = nil
+    }
+
+    private func discardInFlight(id: UUID) {
+        guard let active = inFlight, active.id == id else { return }
+        inFlight = nil
+    }
+
+    private func takeResult(
+        for entry: Entry,
+        prefetched: Bool,
+        now: ContinuousClock.Instant,
+        expectedProvider: String?,
+        expectedModel: String?
+    ) throws -> TakeResult {
+        guard matches(entry.config, expectedProvider: expectedProvider, expectedModel: expectedModel) else {
+            throw RealtimeTranscriptionSessionConfigVaultError.unexpectedProvider(
+                expectedProvider: expectedProvider,
+                expectedModel: expectedModel,
+                actualProvider: entry.config.provider,
+                actualModel: entry.config.model
+            )
         }
 
-        let task = Task<Entry, Error> {
-            let config = try await self.minter(key)
-            return Entry(key: key, config: config, mintedAt: ContinuousClock().now)
-        }
-        inFlight = task
-        inFlightKey = key
-        defer {
-            inFlight = nil
-            inFlightKey = nil
-        }
-        return try await task.value
+        return TakeResult(
+            config: entry.config,
+            prefetched: prefetched,
+            tokenAgeMilliseconds: prefetched ? milliseconds(from: entry.mintedAt.duration(to: now)) : 0
+        )
     }
 
     private func isAlive(_ entry: Entry, now: ContinuousClock.Instant) -> Bool {
