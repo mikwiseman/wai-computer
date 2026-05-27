@@ -25,7 +25,9 @@ final class DictationLanguageStore: ObservableObject {
     @Published private(set) var selectedLanguages: Set<String>
 
     init(defaults: UserDefaults = .standard) {
-        self.selectedLanguages = Self.loadOrMigrate(from: defaults)
+        let loaded = Self.loadOrMigrate(from: defaults)
+        self.selectedLanguages = loaded
+        Self.persist(loaded, defaults: defaults)
     }
 
     /// What we actually send to the upstream STT provider. Empty string for
@@ -66,6 +68,10 @@ final class DictationLanguageStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist(_ languages: Set<String>, defaults: UserDefaults) {
+        Self.persist(languages, defaults: defaults)
+    }
+
+    private static func persist(_ languages: Set<String>, defaults: UserDefaults) {
         let array = Array(languages).sorted()
         if let data = try? JSONEncoder().encode(array) {
             defaults.set(data, forKey: Self.userDefaultsKey)
@@ -100,6 +106,34 @@ final class DictationLanguageStore: ObservableObject {
     }
 
     private static func normalizedLanguage(_ language: String) -> String? {
+        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty || normalized == "multi" || normalized == "auto" ? nil : normalized
+    }
+}
+
+@MainActor
+enum DictationLanguageSelectionPolicy {
+    static func providerLanguage(
+        store: DictationLanguageStore?,
+        defaults: UserDefaults = .standard
+    ) -> String {
+        if let store {
+            return providerLanguage(fromWireTag: store.wireLanguageTag)
+        }
+        return providerLanguage(
+            fromWireTag: defaults.string(forKey: DictationLanguageStore.legacyKey)
+        )
+    }
+
+    static func providerLanguage(fromWireTag tag: String?) -> String {
+        guard let normalized = normalizedProviderLanguage(tag) else {
+            return "multi"
+        }
+        return normalized
+    }
+
+    private static func normalizedProviderLanguage(_ language: String?) -> String? {
+        guard let language else { return nil }
         let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty || normalized == "multi" || normalized == "auto" ? nil : normalized
     }

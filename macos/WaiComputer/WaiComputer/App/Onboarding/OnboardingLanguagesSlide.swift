@@ -19,8 +19,8 @@ struct OnboardingLanguagesSlide: View {
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
                 Text(t(
-                    "One language gives the lowest latency. Several languages let you switch naturally. You can change this later in Settings.",
-                    "Один язык дает минимальную задержку. Несколько языков позволяют свободно переключаться. Это можно изменить позже в настройках."
+                    "One language gives the lowest latency. Auto-detect lets you switch naturally. You can change this later in Settings.",
+                    "Один язык дает минимальную задержку. Автоопределение позволяет свободно переключаться. Это можно изменить позже в настройках."
                 ))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)

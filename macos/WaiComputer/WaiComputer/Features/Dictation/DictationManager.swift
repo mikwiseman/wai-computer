@@ -752,11 +752,7 @@ final class DictationManager: ObservableObject {
     }
 
     private func currentDictationLanguage() -> String {
-        if let store = languageStore {
-            let tag = store.wireLanguageTag
-            return tag.isEmpty ? "multi" : tag
-        }
-        return UserDefaults.standard.string(forKey: "transcriptionLanguage") ?? "multi"
+        DictationLanguageSelectionPolicy.providerLanguage(store: languageStore)
     }
 
     private func makeCapture(sampleRate: Int) -> MicrophoneCapture {
