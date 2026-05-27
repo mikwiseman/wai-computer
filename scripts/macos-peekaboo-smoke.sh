@@ -25,6 +25,7 @@ mkdir -p "$ORIGINAL_ENV_DIR"
 
 TARGET_BUNDLE_ID=""
 TARGET_APP_REF=""
+TARGET_WINDOW_ID=""
 
 log() {
   printf '[peekaboo-smoke] %s\n' "$*" >&2
@@ -199,9 +200,30 @@ launch_fixture_app() {
   open -n "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
   wait_for_app_running "$TARGET_BUNDLE_ID"
   TARGET_APP_REF="PID:$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
-  peekaboo app switch --to "$TARGET_APP_REF" --verify --json > "$RUN_DIR/switch-$scenario.json"
-  peekaboo window set-bounds --app "$TARGET_APP_REF" --x 80 --y 80 --width 1220 --height 708 --json \
+  refresh_target_window_id "$scenario"
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --verify --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json"
+  peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
     > "$RUN_DIR/window-$scenario.json"
+  sleep 0.8
+}
+
+refresh_target_window_id() {
+  local name="$1"
+  local windows_json="$RUN_DIR/windows-$name.json"
+
+  peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"
+  TARGET_WINDOW_ID="$(jq -r '
+    first(
+      .data.windows[]?
+      | select(.title == "WaiComputer")
+      | select((.bounds[1][0] // 0) > 500)
+      | .windowID
+    ) // ""
+  ' "$windows_json")"
+  [[ -n "$TARGET_WINDOW_ID" ]] || {
+    cat "$windows_json" >&2
+    die "Unable to find WaiComputer main window for $TARGET_APP_REF"
+  }
 }
 
 wait_for_app_running() {
@@ -223,7 +245,7 @@ capture_ui() {
   local json_path="$RUN_DIR/$name.json"
   local image_path="$RUN_DIR/$name.png"
 
-  peekaboo see --app "$TARGET_APP_REF" --json --annotate --path "$image_path" > "$json_path"
+  peekaboo see --window-id "$TARGET_WINDOW_ID" --json --annotate --path "$image_path" > "$json_path"
   jq -e '.success == true' "$json_path" >/dev/null || {
     cat "$json_path" >&2
     die "Peekaboo capture failed: $name"
@@ -282,20 +304,24 @@ element_id_by_identifier() {
   local json_path="$1"
   local identifier="$2"
   jq -r --arg identifier "$identifier" '
-    .data.ui_elements[]?
-    | select(.identifier == $identifier)
-    | .id
-  ' "$json_path" | head -n 1
+    first(
+      .data.ui_elements[]?
+      | select(.identifier == $identifier)
+      | .id
+    ) // ""
+  ' "$json_path"
 }
 
 element_id_by_label() {
   local json_path="$1"
   local label="$2"
   jq -r --arg label "$label" '
-    .data.ui_elements[]?
-    | select((.label // "") == $label or (.description // "") == $label)
-    | .id
-  ' "$json_path" | head -n 1
+    first(
+      .data.ui_elements[]?
+      | select((.label // "") == $label or (.description // "") == $label)
+      | .id
+    ) // ""
+  ' "$json_path"
 }
 
 element_id_by_identifier_label_role() {
@@ -305,12 +331,14 @@ element_id_by_identifier_label_role() {
   local role="$4"
   jq -r --arg identifier "$identifier" --arg label "$label" --arg role "$role" '
     ($role | ascii_downcase) as $expectedRole
-    | .data.ui_elements[]?
-    | select(.identifier == $identifier)
-    | select((.label // "") == $label or (.description // "") == $label)
-    | select(((.role_description // .role // "") | ascii_downcase | contains($expectedRole)))
-    | .id
-  ' "$json_path" | head -n 1
+    | first(
+        .data.ui_elements[]?
+        | select(.identifier == $identifier)
+        | select((.label // "") == $label or (.description // "") == $label)
+        | select(((.role_description // .role // "") | ascii_downcase | contains($expectedRole)))
+        | .id
+      ) // ""
+  ' "$json_path"
 }
 
 snapshot_id() {
@@ -321,10 +349,12 @@ element_center_coords() {
   local json_path="$1"
   local element_id="$2"
   jq -r --arg element_id "$element_id" '
-    .data.ui_elements[]?
-    | select(.id == $element_id)
-    | "\((.bounds.x + (.bounds.width / 2)) | floor),\((.bounds.y + (.bounds.height / 2)) | floor)"
-  ' "$json_path" | head -n 1
+    first(
+      .data.ui_elements[]?
+      | select(.id == $element_id)
+      | "\((.bounds.x + (.bounds.width / 2)) | floor),\((.bounds.y + (.bounds.height / 2)) | floor)"
+    ) // ""
+  ' "$json_path"
 }
 
 click_element() {
@@ -336,8 +366,8 @@ click_element() {
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
   coords="$(element_center_coords "$json_path" "$element_id")"
   [[ -n "$coords" && "$coords" != "null" ]] || die "Missing coordinates for $name ($element_id)"
-  peekaboo app switch --to "$TARGET_APP_REF" --verify --json > "$RUN_DIR/switch-before-$name.json"
-  if ! peekaboo click --on "$element_id" --app "$TARGET_APP_REF" --bring-to-current-space --wait-for 5000 --json \
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --verify --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json"
+  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
@@ -369,7 +399,7 @@ run_main_search_smoke() {
   json_path="$(wait_for_ui_text search-ready "Search recordings")"
   search_field="$(element_id_by_label "$json_path" "Search recordings...")"
   click_element "$json_path" "$search_field" search-field
-  if ! peekaboo type "search" --app "$TARGET_APP_REF" --profile linear --delay 0 --json \
+  if ! peekaboo type "search" --window-id "$TARGET_WINDOW_ID" --profile linear --delay 0 --json \
     > "$RUN_DIR/type-search-query.json"; then
     cat "$RUN_DIR/type-search-query.json" >&2
     die "Typing search query failed"
