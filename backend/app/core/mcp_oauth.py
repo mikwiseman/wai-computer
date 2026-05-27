@@ -151,6 +151,26 @@ def resource_matches(value: str | None) -> bool:
     )
 
 
+def _resource_or_default(value: str | None) -> str:
+    if value is None:
+        return get_settings().mcp_resource_url_resolved
+    if not resource_matches(value):
+        raise AuthorizeError("invalid_request", "Invalid MCP resource parameter")
+    return value
+
+
+def _refresh_scopes_or_existing(
+    requested_scopes: list[str],
+    existing_scopes: list[str],
+) -> list[str]:
+    if not requested_scopes:
+        return existing_scopes
+    invalid = sorted(set(requested_scopes) - set(existing_scopes))
+    if invalid:
+        raise TokenError("invalid_scope", f"Unsupported MCP scope: {' '.join(invalid)}")
+    return requested_scopes
+
+
 def _client_from_model(client: McpOAuthClient) -> OAuthClientInformationFull:
     return OAuthClientInformationFull(
         client_id=client.client_id,
@@ -438,8 +458,7 @@ class WaiComputerMcpOAuthProvider(
         client: OAuthClientInformationFull,
         params: AuthorizationParams,
     ) -> str:
-        if not resource_matches(params.resource):
-            raise AuthorizeError("invalid_request", "Invalid or missing MCP resource parameter")
+        resource = _resource_or_default(params.resource)
 
         request_token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
@@ -454,7 +473,7 @@ class WaiComputerMcpOAuthProvider(
                     code_challenge=params.code_challenge,
                     redirect_uri=str(params.redirect_uri),
                     redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
-                    resource=params.resource or settings.mcp_resource_url_resolved,
+                    resource=resource,
                     csrf_token=csrf_token,
                     expires_at=_now()
                     + timedelta(minutes=settings.mcp_authorization_request_expire_minutes),
@@ -600,12 +619,13 @@ class WaiComputerMcpOAuthProvider(
             db_token = result.scalar_one_or_none()
             if db_token is None:
                 raise TokenError("invalid_grant", "refresh token does not exist")
+            refreshed_scopes = _refresh_scopes_or_existing(scopes, db_token.scopes)
             db_token.revoked_at = _now()
             return await self._issue_token_pair(
                 db,
                 client_id=db_token.client_id,
                 user_id=db_token.user_id,
-                scopes=scopes,
+                scopes=refreshed_scopes,
                 resource=db_token.resource,
             )
 
