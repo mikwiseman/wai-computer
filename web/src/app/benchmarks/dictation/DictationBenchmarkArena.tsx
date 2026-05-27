@@ -2,14 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ApiError, getApiBaseUrl } from "@/lib/http";
+import { ApiError } from "@/lib/http";
 import { createDictationBenchmarkBattle, submitDictationBenchmarkVote } from "@/lib/api";
 import type { DictationBenchmarkBattleResponse, DictationBenchmarkCandidate } from "@/lib/types";
 import styles from "./benchmark.module.css";
 
 type RecorderState = "idle" | "recording" | "uploading" | "done" | "error";
-type ResultMode = "live" | "full";
-type CandidateStatus = "standby" | "listening" | "running" | "ok" | "error";
+type CandidateStatus = "standby" | "running" | "ok" | "error";
 type BattleCandidate = Omit<DictationBenchmarkCandidate, "status"> & { status: CandidateStatus };
 
 type ArenaCopy = {
@@ -56,56 +55,45 @@ type ArenaCopy = {
   liveConnectionFailed: string;
 };
 
-type RailStatus = CandidateStatus;
+type AudioContextConstructor = new () => AudioContext;
 
-type RailModel = {
-  id: string;
-  label: string;
-  status: RailStatus;
-};
-
-const arenaModels: RailModel[] = [
-  { id: "elevenlabs", label: "ElevenLabs", status: "standby" },
-  { id: "soniox", label: "Soniox", status: "standby" },
-  { id: "deepgram", label: "Deepgram", status: "standby" },
-];
-
+const arenaModels = [{ id: "elevenlabs", label: "ElevenLabs", status: "standby" as CandidateStatus }];
 const idleWaveLevels = Array.from({ length: 26 }, (_, index) => 0.22 + ((index * 17) % 54) / 100);
 
 const defaultCopy: ArenaCopy = {
-  eyebrow: "Live arena",
-  title: "Dictate once, compare blind outputs",
-  start: "Start dictation battle",
-  stop: "Stop and compare",
+  eyebrow: "File STT check",
+  title: "Record once, verify full transcription",
+  start: "Start recording",
+  stop: "Stop and transcribe",
   steps: {
     record: "Record",
-    run: "Run",
-    vote: "Vote",
+    run: "Transcribe",
+    vote: "Review",
   },
   statuses: {
     idle: "Ready",
     recording: "Recording",
-    uploading: "Running models",
-    done: "Choose the best transcript",
+    uploading: "Transcribing",
+    done: "Transcript ready",
     error: "Needs attention",
   },
-  signInMessage: "Sign in to run a private live benchmark.",
+  signInMessage: "Sign in to run a private transcription check.",
   signIn: "Sign in",
   modelHidden: "Model hidden",
   selected: "Selected",
   savingVote: "Saving",
-  voteSaved: "Vote saved",
-  pickWinner: "Pick winner",
+  voteSaved: "Saved",
+  pickWinner: "Confirm",
   newRound: "New round",
   recordingHint: "Speak naturally. Stop when the phrase is complete.",
-  recordingLiveHint: "Recording live. Speak naturally, then stop to run every model on the same audio.",
-  runningHint: "Same audio is now racing through the models.",
-  resultsHint: "Names stay hidden until you pick a winner.",
+  recordingLiveHint: "Speak naturally. Stop when the phrase is complete.",
+  runningHint: "The same audio is being transcribed by the active file STT model.",
+  resultsHint: "Review the transcript before confirming.",
   privateRound: "Private round. Audio is used for this request only.",
-  sameAudio: "One audio sample, all models.",
-  blindVote: "Blind vote before reveal.",
+  sameAudio: "One audio sample.",
+  blindVote: "Single active file STT model.",
   languageLabel: "Language",
-  runningModelsLabel: "Running models",
+  runningModelsLabel: "Active model",
   outputsReadyLabel: "outputs ready",
   wordsLabel: "words",
   languageOptions: [
@@ -114,41 +102,17 @@ const defaultCopy: ArenaCopy = {
     { label: "Russian", value: "ru" },
   ],
   micUnavailable: "Microphone recording is not available in this browser.",
-  micPermissionDenied: "Microphone access was blocked. Allow microphone access in the browser, then start a new battle.",
-  emptyRecording: "No audio was captured. Start a new battle and speak for at least a second.",
-  requestFailed: "Benchmark request failed.",
-  voteFailed: "Vote was not saved.",
+  micPermissionDenied: "Microphone access was blocked. Allow microphone access in the browser, then start a new round.",
+  emptyRecording: "No audio was captured. Start a new round and speak for at least a second.",
+  requestFailed: "Transcription request failed.",
+  voteFailed: "Confirmation was not saved.",
   transcribingSameAudio: "Transcribing the same audio...",
-  waitingForVote: "Waiting for your blind vote.",
+  waitingForVote: "Waiting for review.",
   livePass: "Live pass",
   fullPass: "Full pass",
-  liveWaiting: "Listening for live transcript...",
+  liveWaiting: "Waiting for transcript...",
   liveConnectionFailed: "Live benchmark connection failed.",
 };
-
-type LiveBattleEvent =
-  | {
-      type: "battle_started";
-      battle_id: string;
-      language: string;
-      candidates: BattleCandidate[];
-    }
-  | {
-      type: "candidate_status" | "candidate_update" | "candidate_error";
-      battle_id: string;
-      candidate: BattleCandidate;
-      is_final?: boolean;
-    }
-  | {
-      type: "battle_finished";
-      battle_id: string;
-    }
-  | {
-      type: "battle_error";
-      message: string;
-    };
-
-type AudioContextConstructor = new () => AudioContext;
 
 function isPermissionDenied(error: unknown): boolean {
   if (!error || typeof error !== "object") {
@@ -164,31 +128,9 @@ function isPermissionDenied(error: unknown): boolean {
   );
 }
 
-function buildLiveBattleWebSocketUrl(language: string): string {
-  const apiBase = getApiBaseUrl();
-  const url = new URL(`${apiBase}/api/benchmarks/dictation/live-battle`, window.location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("language", language);
-  return url.toString();
-}
-
 function getAudioContextConstructor(): AudioContextConstructor | undefined {
   return window.AudioContext
     ?? (window as typeof window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext;
-}
-
-function pcm16FromFloat32(input: Float32Array, sourceSampleRate: number): ArrayBuffer {
-  const targetSampleRate = 16_000;
-  const ratio = sourceSampleRate / targetSampleRate;
-  const outputLength = Math.max(1, Math.floor(input.length / ratio));
-  const output = new ArrayBuffer(outputLength * 2);
-  const view = new DataView(output);
-  for (let index = 0; index < outputLength; index += 1) {
-    const sourceIndex = Math.min(input.length - 1, Math.floor(index * ratio));
-    const sample = Math.max(-1, Math.min(1, input[sourceIndex] ?? 0));
-    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-  }
-  return output;
 }
 
 export function DictationBenchmarkArena({
@@ -201,18 +143,11 @@ export function DictationBenchmarkArena({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const liveAudioContextRef = useRef<AudioContext | null>(null);
-  const liveSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const liveProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const liveSocketRef = useRef<WebSocket | null>(null);
   const analyserFrameRef = useRef<number | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [battle, setBattle] = useState<DictationBenchmarkBattleResponse | null>(null);
-  const [liveBattleId, setLiveBattleId] = useState<string | null>(null);
-  const [liveCandidates, setLiveCandidates] = useState<BattleCandidate[]>([]);
-  const [resultMode, setResultMode] = useState<ResultMode>("live");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [language, setLanguage] = useState("multi");
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -234,11 +169,8 @@ export function DictationBenchmarkArena({
   useEffect(() => {
     return () => {
       stopAudioMeter();
-      closeLiveBattleStream();
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-    // Unmount cleanup must run once; refs hold the live audio/socket resources.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const elapsedLabel = useMemo(() => {
@@ -294,128 +226,6 @@ export function DictationBenchmarkArena({
     }
   }
 
-  function updateLiveCandidate(candidate: BattleCandidate) {
-    setLiveCandidates((current) => {
-      const index = current.findIndex((item) => item.id === candidate.id);
-      if (index === -1) {
-        return [...current, candidate];
-      }
-      const next = [...current];
-      next[index] = {
-        ...next[index],
-        ...candidate,
-        transcript: candidate.transcript ?? next[index].transcript,
-      };
-      return next;
-    });
-  }
-
-  function handleLiveBattleEvent(event: LiveBattleEvent) {
-    if (event.type === "battle_started") {
-      setLiveBattleId(event.battle_id);
-      setLiveCandidates(event.candidates);
-      setResultMode("live");
-      return;
-    }
-    if (event.type === "candidate_status" || event.type === "candidate_update" || event.type === "candidate_error") {
-      updateLiveCandidate(event.candidate);
-      return;
-    }
-    if (event.type === "battle_finished") {
-      setLiveCandidates((current) =>
-        current.map((candidate) =>
-          candidate.status === "running" && candidate.transcript
-            ? { ...candidate, status: "ok" }
-            : candidate,
-        ),
-      );
-      return;
-    }
-    if (event.type === "battle_error") {
-      setError(event.message);
-      setState("error");
-    }
-  }
-
-  async function startLiveBattleStream(stream: MediaStream) {
-    closeLiveBattleStream();
-    if (!("WebSocket" in window)) {
-      throw new Error(copy.liveConnectionFailed);
-    }
-    const socket = new WebSocket(buildLiveBattleWebSocketUrl(language));
-    socket.binaryType = "arraybuffer";
-    liveSocketRef.current = socket;
-
-    socket.onmessage = (message) => {
-      if (typeof message.data !== "string") {
-        return;
-      }
-      try {
-        handleLiveBattleEvent(JSON.parse(message.data) as LiveBattleEvent);
-      } catch {
-        setError(copy.liveConnectionFailed);
-      }
-    };
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error(copy.liveConnectionFailed)), 5000);
-      socket.onopen = () => {
-        window.clearTimeout(timeout);
-        resolve();
-      };
-      socket.onerror = () => {
-        window.clearTimeout(timeout);
-        reject(new Error(copy.liveConnectionFailed));
-      };
-    });
-    socket.onerror = () => {
-      setError(copy.liveConnectionFailed);
-    };
-
-    const AudioContextConstructor = getAudioContextConstructor();
-    if (!AudioContextConstructor) {
-      throw new Error(copy.micUnavailable);
-    }
-    const context = new AudioContextConstructor();
-    const source = context.createMediaStreamSource(stream);
-    const processor = context.createScriptProcessor(2048, 1, 1);
-    processor.onaudioprocess = (event) => {
-      const output = event.outputBuffer.getChannelData(0);
-      output.fill(0);
-      if (socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(pcm16FromFloat32(event.inputBuffer.getChannelData(0), context.sampleRate));
-    };
-    source.connect(processor);
-    processor.connect(context.destination);
-    liveAudioContextRef.current = context;
-    liveSourceRef.current = source;
-    liveProcessorRef.current = processor;
-  }
-
-  function finishLiveBattleStream() {
-    liveProcessorRef.current?.disconnect();
-    liveSourceRef.current?.disconnect();
-    liveProcessorRef.current = null;
-    liveSourceRef.current = null;
-    void liveAudioContextRef.current?.close();
-    liveAudioContextRef.current = null;
-    const socket = liveSocketRef.current;
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "finish" }));
-    }
-  }
-
-  function closeLiveBattleStream() {
-    finishLiveBattleStream();
-    const socket = liveSocketRef.current;
-    if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
-      socket.close();
-    }
-    liveSocketRef.current = null;
-  }
-
   async function uploadAudio(audio: File) {
     setState("uploading");
     setError(null);
@@ -432,7 +242,6 @@ export function DictationBenchmarkArena({
       setSelectedId(null);
       setSavingVoteId(null);
       setSavedVoteId(null);
-      setResultMode("full");
       setState("done");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -454,9 +263,6 @@ export function DictationBenchmarkArena({
     }
 
     setBattle(null);
-    setLiveBattleId(null);
-    setLiveCandidates([]);
-    setResultMode("live");
     setError(null);
     setSelectedId(null);
     setSavingVoteId(null);
@@ -466,7 +272,6 @@ export function DictationBenchmarkArena({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      await startLiveBattleStream(stream);
       startAudioMeter(stream);
       const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((candidate) =>
         MediaRecorder.isTypeSupported(candidate),
@@ -482,7 +287,6 @@ export function DictationBenchmarkArena({
         const blobType = recorder.mimeType || mimeType || "audio/webm";
         const extension = blobType.includes("mp4") ? "m4a" : "webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
-        finishLiveBattleStream();
         streamRef.current?.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
         stopAudioMeter();
@@ -499,7 +303,6 @@ export function DictationBenchmarkArena({
       setState("recording");
     } catch (err) {
       stopAudioMeter();
-      closeLiveBattleStream();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
       setError(isPermissionDenied(err) ? copy.micPermissionDenied : copy.micUnavailable);
@@ -545,39 +348,26 @@ export function DictationBenchmarkArena({
   }
 
   const revealed = selectedId !== null;
-  const showRunningPlaceholders = state === "uploading" && !battle && liveCandidates.length === 0;
-  const activeCandidates: BattleCandidate[] =
-    resultMode === "live" && liveCandidates.length > 0
-      ? liveCandidates
-      : (battle?.candidates as BattleCandidate[] | undefined) ?? [];
-  const activeBattleId = resultMode === "live" ? liveBattleId : battle?.battle_id;
-  const activeLanguage = resultMode === "full" && battle ? battle.language : language;
+  const showRunningPlaceholders = state === "uploading" && !battle;
+  const activeCandidates: BattleCandidate[] = (battle?.candidates as BattleCandidate[] | undefined) ?? [];
   const readyCount = activeCandidates.filter((candidate) => candidate.status === "ok").length;
   const totalCount = activeCandidates.length || battle?.candidates.length || 0;
-  const railModels: RailModel[] = activeCandidates.length > 0
+  const railModels = activeCandidates.length > 0
     ? activeCandidates.map((candidate) => ({
-        id: candidate.id,
-        label: revealed ? candidate.label : copy.modelHidden,
-        status: candidate.status,
-      }))
-    : battle
-    ? battle.candidates.map((candidate) => ({
         id: candidate.id,
         label: revealed ? candidate.label : copy.modelHidden,
         status: candidate.status,
       }))
     : arenaModels.map((model) => ({
         ...model,
-        status: state === "uploading" ? "running" : state === "recording" ? "listening" : "standby",
+        status: state === "uploading" ? "running" as CandidateStatus : state === "recording" ? "running" as CandidateStatus : "standby" as CandidateStatus,
       }));
   const hint =
     state === "done"
       ? `${readyCount}/${totalCount} ${copy.outputsReadyLabel}. ${copy.resultsHint}`
       : state === "uploading"
         ? copy.runningHint
-        : state === "recording"
-          ? copy.recordingLiveHint
-          : copy.recordingHint;
+        : copy.recordingHint;
 
   return (
     <section className={styles.arena} id="arena" aria-labelledby="arena-title">
@@ -611,8 +401,6 @@ export function DictationBenchmarkArena({
           <div className={styles.battleStrip} aria-label="Battle mechanics">
             <span>{copy.sameAudio}</span>
             <strong>A</strong>
-            <strong>B</strong>
-            <strong>C</strong>
             <span>{copy.blindVote}</span>
           </div>
           <p className={styles.recorderHint}>{hint}</p>
@@ -692,33 +480,6 @@ export function DictationBenchmarkArena({
         </div>
       ) : null}
 
-      {liveCandidates.length > 0 && battle ? (
-        <div className={styles.resultTabs} role="tablist" aria-label="Benchmark result mode">
-          <button
-            type="button"
-            data-active={resultMode === "live"}
-            onClick={() => {
-              setResultMode("live");
-              setSelectedId(null);
-              setSavedVoteId(null);
-            }}
-          >
-            {copy.livePass}
-          </button>
-          <button
-            type="button"
-            data-active={resultMode === "full"}
-            onClick={() => {
-              setResultMode("full");
-              setSelectedId(null);
-              setSavedVoteId(null);
-            }}
-          >
-            {copy.fullPass}
-          </button>
-        </div>
-      ) : null}
-
       {activeCandidates.length > 0 ? (
         <div className={styles.candidateGrid}>
           {activeCandidates.map((candidate, index) => (
@@ -736,15 +497,15 @@ export function DictationBenchmarkArena({
               </p>
               <div className={styles.candidateFooter}>
                 <span>
-                  {candidate.latency_ms ?? "—"} ms · {candidate.word_count ?? "—"} {copy.wordsLabel}
+                  {candidate.latency_ms ?? "-"} ms · {candidate.word_count ?? "-"} {copy.wordsLabel}
                 </span>
                 <button
                   type="button"
                   className={selectedId === candidate.id ? styles.voteSelected : styles.voteButton}
                   disabled={candidate.status !== "ok"}
                   onClick={() => {
-                    if (activeBattleId) {
-                      void pickWinner(candidate, activeBattleId, activeCandidates.length, activeLanguage);
+                    if (battle) {
+                      void pickWinner(candidate, battle.battle_id, activeCandidates.length, battle.language);
                     }
                   }}
                 >

@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — live/file transcription, LLM, dictation cleanup, and embeddings.
+    # OpenAI — live transcription, LLM, dictation cleanup, and embeddings.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
@@ -55,19 +55,8 @@ class Settings(BaseSettings):
     elevenlabs_conversation_agent_id: str = ""
     elevenlabs_recording_agent_id: str = ""
     elevenlabs_speech_to_text_model: str = "scribe_v2"
-    elevenlabs_realtime_speech_to_text_model: str = "scribe_v2_realtime"
     elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
-
-    # Deepgram (batch STT + server-proxied realtime; API key stays backend-only)
-    deepgram_api_key: str = ""
-    deepgram_file_stt_model: str = "nova-3"
-    deepgram_realtime_proxy_token_ttl_seconds: int = 10 * 60
-
-    # Soniox (direct realtime + async batch)
-    soniox_api_key: str = ""
-    soniox_realtime_stt_model: str = "stt-rt-v4"
-    soniox_file_stt_model: str = "stt-async-v4"
 
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"

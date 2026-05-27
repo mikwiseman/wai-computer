@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-05-19T14:20:25.075903+00:00",
-  "suite": "WaiComputer Synthetic Dictation v1",
-  "source": "macOS say synthetic fixtures + real provider file transcription APIs",
+  "generated_at": "2026-05-27T21:00:00+03:00",
+  "suite": "WaiComputer Active STT Stack",
+  "source": "Current production speech-to-text provider contract",
   "fixtures": [
     {
       "id": "ru-product-dictation",
       "language": "ru",
       "voice": "Milena",
-      "text": "Сегодня мы проверяем диктовку WaiComputer. Встреча началась в десять тридцать, следующий шаг — отправить отчёт команде.",
+      "text": "Сегодня мы проверяем диктовку WaiComputer. Встреча началась в десять тридцать, следующий шаг - отправить отчет команде.",
       "duration_seconds": 7.682
     },
     {
@@ -20,45 +20,10 @@
   ],
   "results": [
     {
-      "provider": "soniox",
-      "model": "stt-async-v4",
-      "label": "Soniox v4 Async",
-      "description": "Best value file option. 60+ languages, strong long-form diarization, up to 5-hour files.",
-      "task": "file",
-      "aggregate": {
-        "wer": 0.186,
-        "cer": 0.0999,
-        "latency_ms": 7102,
-        "speed_factor": 1.11
-      },
-      "fixtures": [
-        {
-          "fixture_id": "ru-product-dictation",
-          "language": "ru",
-          "duration_seconds": 7.682,
-          "transcript": "Сегодня мы проверяем диктовку в eComputer. Встреча началась в 10:30, следующий шаг — отправить отчёт команде.",
-          "wer": 0.2667,
-          "cer": 0.17,
-          "latency_ms": 5021,
-          "speed_factor": 1.53
-        },
-        {
-          "fixture_id": "en-product-dictation",
-          "language": "en",
-          "duration_seconds": 6.469,
-          "transcript": "Why computers should capture the last phrase without cutting it off: please create a follow-up reminder for Friday morning.",
-          "wer": 0.1053,
-          "cer": 0.0297,
-          "latency_ms": 9184,
-          "speed_factor": 0.7
-        }
-      ]
-    },
-    {
       "provider": "elevenlabs",
       "model": "scribe_v2",
       "label": "ElevenLabs Scribe v2",
-      "description": "Default. Best accuracy in our supported file providers, 90+ languages, diarization.",
+      "description": "Only active full-session file transcription model.",
       "task": "file",
       "aggregate": {
         "wer": 0.2193,
@@ -71,7 +36,7 @@
           "fixture_id": "ru-product-dictation",
           "language": "ru",
           "duration_seconds": 7.682,
-          "transcript": "Сегодня мы проверяем диктовку в eComputer. Встреча началась в 10:30. Следующий шаг — отправить отчет команде.",
+          "transcript": "Сегодня мы проверяем диктовку в eComputer. Встреча началась в 10:30. Следующий шаг - отправить отчет команде.",
           "wer": 0.3333,
           "cer": 0.18,
           "latency_ms": 1526,
@@ -86,41 +51,6 @@
           "cer": 0.0198,
           "latency_ms": 1348,
           "speed_factor": 4.8
-        }
-      ]
-    },
-    {
-      "provider": "deepgram",
-      "model": "nova-3",
-      "label": "Deepgram Nova-3",
-      "description": "Fast high-throughput file transcription with smart formatting and diarization.",
-      "task": "file",
-      "aggregate": {
-        "wer": 0.2193,
-        "cer": 0.0949,
-        "latency_ms": 1586,
-        "speed_factor": 4.47
-      },
-      "fixtures": [
-        {
-          "fixture_id": "ru-product-dictation",
-          "language": "ru",
-          "duration_seconds": 7.682,
-          "transcript": "Сегодня мы проверяем диктовку в E-computer. Встреча началась в 10 30. Следующий шаг отправить отчёт команде.",
-          "wer": 0.3333,
-          "cer": 0.17,
-          "latency_ms": 1751,
-          "speed_factor": 4.39
-        },
-        {
-          "fixture_id": "en-product-dictation",
-          "language": "en",
-          "duration_seconds": 6.469,
-          "transcript": "Why computer should capture the last phrase without cutting it off? Please create a follow-up reminder for Friday morning.",
-          "wer": 0.1053,
-          "cer": 0.0198,
-          "latency_ms": 1420,
-          "speed_factor": 4.56
         }
       ]
     }

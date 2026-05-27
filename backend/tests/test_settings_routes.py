@@ -113,8 +113,8 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["dictation_live_stt_model"] == "gpt-realtime-whisper"
     assert data["recording_live_stt_provider"] == "openai"
     assert data["recording_live_stt_model"] == "gpt-realtime-whisper"
-    assert data["file_stt_provider"] == "openai"
-    assert data["file_stt_model"] == "gpt-4o-transcribe-diarize"
+    assert data["file_stt_provider"] == "elevenlabs"
+    assert data["file_stt_model"] == "scribe_v2"
     assert data["dictation_post_filter_enabled"] is False
     assert data["dictation_post_filter_provider"] == "openai"
     assert data["dictation_post_filter_model"] == "gpt-5.5"
@@ -335,8 +335,6 @@ async def test_get_transcription_options_returns_curated_choices(
         {
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "openai-test-key",
-            "deepgram_api_key": "deepgram-test-key",
-            "soniox_api_key": "soniox-key",
         },
     )()
     monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
@@ -363,15 +361,15 @@ async def test_get_transcription_options_returns_curated_choices(
     ]
     assert data["file_stt"] == [
         {
-            "provider": "openai",
-            "model": "gpt-4o-transcribe-diarize",
-            "label": "OpenAI GPT-4o Transcribe Diarize",
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "label": "ElevenLabs Scribe v2",
             "description": "Fixed full-session transcription model with speaker diarization.",
         }
     ]
     assert data["dictation_post_filter"][0]["model"] == "gpt-5.5"
     assert all(
-        option["model"] != "scribe_v2"
+        option["model"] != "removed-file-model"
         for group in data.values()
         for option in group
     )
@@ -390,8 +388,6 @@ async def test_get_transcription_options_hides_unconfigured_providers(
         {
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "",
-            "deepgram_api_key": "",
-            "soniox_api_key": "",
         },
     )()
     monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
@@ -402,7 +398,14 @@ async def test_get_transcription_options_hides_unconfigured_providers(
     data = response.json()
     assert data["dictation_live_stt"] == []
     assert data["recording_live_stt"] == []
-    assert data["file_stt"] == []
+    assert data["file_stt"] == [
+        {
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "label": "ElevenLabs Scribe v2",
+            "description": "Fixed full-session transcription model with speaker diarization.",
+        }
+    ]
     assert data["dictation_post_filter"] == []
 
 
@@ -415,8 +418,8 @@ async def test_update_transcription_settings_rejects_model_changes(client: Async
         "/api/settings",
         headers=headers,
         json={
-            "file_stt_provider": "openai",
-            "file_stt_model": "gpt-4o-transcribe-diarize",
+            "file_stt_provider": "elevenlabs",
+            "file_stt_model": "scribe_v2",
         },
     )
 
@@ -424,7 +427,7 @@ async def test_update_transcription_settings_rejects_model_changes(client: Async
     assert response.json()["detail"] == "Transcription models are managed by WaiComputer."
 
     get_response = await client.get("/api/settings", headers=headers)
-    assert get_response.json()["file_stt_model"] == "gpt-4o-transcribe-diarize"
+    assert get_response.json()["file_stt_model"] == "scribe_v2"
 
 
 @pytest.mark.asyncio
@@ -454,7 +457,7 @@ async def test_update_transcription_settings_rejects_mismatched_pair(client: Asy
     response = await client.patch(
         "/api/settings",
         headers=headers,
-        json={"file_stt_provider": "openai"},
+        json={"file_stt_provider": "elevenlabs"},
     )
 
     assert response.status_code == 422

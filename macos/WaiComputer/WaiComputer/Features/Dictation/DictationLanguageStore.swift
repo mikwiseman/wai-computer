@@ -6,15 +6,13 @@ private let langLog = Logger(subsystem: "is.waiwai.computer.app", category: "dic
 /// Source of truth for the user's dictation language preference.
 ///
 /// Storage model is a `Set<String>` of BCP-47 codes persisted as a JSON array
-/// in UserDefaults under `dictationLanguages`. Three modes derive from the
-/// set's cardinality:
+/// in UserDefaults under `dictationLanguages`. Two modes derive from the set's
+/// cardinality:
 ///
 ///   - **0 entries**: auto-detect any language. Wire tag is `""`; provider
 ///     adapters omit the language hint when using auto-detect.
 ///   - **1 entry**: single-language mode — send that BCP-47 code as a hint
 ///     for the lowest possible latency on supported models.
-///   - **2+ entries**: multilingual mode — also send `""`. The set is
-///     remembered for UI display and future per-model multi-language config.
 ///
 /// Migration from the legacy single `transcriptionLanguage` string runs once
 /// on first read. The legacy key stays in place so older builds that still
@@ -31,7 +29,7 @@ final class DictationLanguageStore: ObservableObject {
     }
 
     /// What we actually send to the upstream STT provider. Empty string for
-    /// auto-detect (0 or 2+ languages); the single code for 1-language mode.
+    /// auto-detect; the single code for 1-language mode.
     var wireLanguageTag: String {
         if selectedLanguages.count == 1, let only = selectedLanguages.first {
             return only
@@ -46,19 +44,19 @@ final class DictationLanguageStore: ObservableObject {
     }
 
     func setLanguages(_ languages: Set<String>, defaults: UserDefaults = .standard) {
-        selectedLanguages = languages
-        persist(languages, defaults: defaults)
-        langLog.info("Dictation languages updated: \(languages.sorted().joined(separator: ","), privacy: .public)")
+        let normalized = Self.normalizedSelection(languages)
+        selectedLanguages = normalized
+        persist(normalized, defaults: defaults)
+        langLog.info("Dictation languages updated: \(normalized.sorted().joined(separator: ","), privacy: .public)")
     }
 
     func toggle(_ language: String, defaults: UserDefaults = .standard) {
-        var next = selectedLanguages
-        if next.contains(language) {
-            next.remove(language)
+        guard let normalized = Self.normalizedLanguage(language) else { return }
+        if selectedLanguages == [normalized] {
+            setAutoDetect(defaults: defaults)
         } else {
-            next.insert(language)
+            setLanguages([normalized], defaults: defaults)
         }
-        setLanguages(next, defaults: defaults)
     }
 
     func setAutoDetect(defaults: UserDefaults = .standard) {
@@ -73,8 +71,7 @@ final class DictationLanguageStore: ObservableObject {
             defaults.set(data, forKey: Self.userDefaultsKey)
         }
         // Mirror to legacy single-string key so older code paths reading
-        // `transcriptionLanguage` keep working — pick the first entry, or
-        // "multi" for auto-detect.
+        // `transcriptionLanguage` keep working.
         let legacyValue = languages.count == 1 ? languages.first! : "multi"
         defaults.set(legacyValue, forKey: Self.legacyKey)
     }
@@ -82,7 +79,7 @@ final class DictationLanguageStore: ObservableObject {
     private static func loadOrMigrate(from defaults: UserDefaults) -> Set<String> {
         if let data = defaults.data(forKey: userDefaultsKey),
            let array = try? JSONDecoder().decode([String].self, from: data) {
-            return Set(array)
+            return normalizedSelection(Set(array))
         }
         // First-run migration: read legacy key.
         if let legacy = defaults.string(forKey: legacyKey) {
@@ -90,10 +87,21 @@ final class DictationLanguageStore: ObservableObject {
             case "multi", "":
                 return []
             default:
-                return [legacy]
+                return normalizedSelection([legacy])
             }
         }
         return []  // Default to auto-detect if nothing stored.
+    }
+
+    private static func normalizedSelection(_ languages: Set<String>) -> Set<String> {
+        let cleaned = Set(languages.compactMap(normalizedLanguage))
+        guard cleaned.count == 1, let only = cleaned.first else { return [] }
+        return [only]
+    }
+
+    private static func normalizedLanguage(_ language: String) -> String? {
+        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty || normalized == "multi" || normalized == "auto" ? nil : normalized
     }
 }
 

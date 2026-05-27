@@ -20,29 +20,14 @@ type BenchmarkResult = {
 
 const modelMatrix = [
   {
-    name: "ElevenLabs Scribe v2",
-    fit: "High-accuracy multilingual option for realtime recording and file transcription; slower dictation finalization.",
-    tags: ["realtime", "file"],
-  },
-  {
-    name: "Soniox v4",
-    fit: "Default realtime dictation model after our startup eval: fast first text, explicit finalization, strong Russian fixture WER.",
-    tags: ["dictation", "realtime", "file"],
-  },
-  {
-    name: "Deepgram Nova-3",
-    fit: "High-throughput full-transcript and file transcription model.",
-    tags: ["file", "full transcript"],
-  },
-  {
-    name: "Deepgram Flux",
-    fit: "Fastest first-text candidate for live battles and short agent-style utterances.",
-    tags: ["dictation", "realtime"],
-  },
-  {
     name: "OpenAI GPT Realtime Whisper",
-    fit: "Realtime Whisper path for live dictation; not a file model.",
+    fit: "Only active realtime speech-to-text path for dictation and live recording.",
     tags: ["dictation", "realtime"],
+  },
+  {
+    name: "ElevenLabs Scribe v2",
+    fit: "Only active full-session file transcription model.",
+    tags: ["file", "full transcript"],
   },
 ];
 
@@ -85,19 +70,18 @@ export default function DictationBenchmarkPage() {
           <div className={styles.heroCopy}>
             <h1>WaiComputer Dictation Arena</h1>
             <p className={styles.heroText}>
-              Synthetic fixtures track repeatable accuracy and latency. The live arena lets
-              testers dictate once, watch realtime models respond, then compare full transcripts
-              from the same audio.
+              Synthetic fixtures track repeatable accuracy and latency for the locked speech
+              stack: OpenAI realtime for live text and ElevenLabs Scribe v2 for full transcripts.
             </p>
             <div className={styles.heroActions}>
-              <Link href="#arena">Start live battle</Link>
+              <Link href="#arena">Start check</Link>
               <Link href="#leaderboard">View leaderboard</Link>
             </div>
           </div>
           <aside className={styles.arenaPreview} aria-label="Live dictation battle preview">
             <div className={styles.previewHeader}>
-              <span>Blind model battle</span>
-              <span className={styles.previewLive}>live</span>
+              <span>Active STT stack</span>
+              <span className={styles.previewLive}>locked</span>
             </div>
             <div className={styles.previewChart}>
               {previewRows.map((result, index) => (
@@ -112,10 +96,10 @@ export default function DictationBenchmarkPage() {
               ))}
             </div>
             <div className={styles.previewBattle} aria-hidden="true">
-              {["A", "B", "C"].map((letter) => (
+              {["A"].map((letter) => (
                 <div className={styles.previewCard} key={letter}>
                   <span>{letter}</span>
-                  <p>Model hidden until the tester votes.</p>
+                  <p>ElevenLabs Scribe v2 verifies full-session file STT.</p>
                 </div>
               ))}
             </div>

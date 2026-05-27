@@ -23,7 +23,7 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
         data=b"audio",
         content_type="audio/wav",
         language="auto",
-        user=SimpleNamespace(file_stt_provider="deepgram", file_stt_model="nova-3"),
+        user=SimpleNamespace(file_stt_provider="removed-provider", file_stt_model="removed-model"),
     )
 
     assert len(calls) == 1

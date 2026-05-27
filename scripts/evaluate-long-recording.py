@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evaluate production long-recording transcription end to end.
 
-The script registers an isolated temporary account, switches its file STT
+The script registers an isolated temporary account, pins the active file STT
 model, uploads the same synthetic multi-speaker recording through the real
 production API, then checks transcript quality, diarization, generated title,
 summary, and exports.
@@ -66,8 +66,6 @@ class Scenario:
 
 DEFAULT_CANDIDATES = (
     ModelCandidate("elevenlabs", "scribe_v2", "ElevenLabs Scribe v2"),
-    ModelCandidate("soniox", "stt-async-v4", "Soniox v4 Async"),
-    ModelCandidate("deepgram", "nova-3", "Deepgram Nova-3"),
 )
 
 

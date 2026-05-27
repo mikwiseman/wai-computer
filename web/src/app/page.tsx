@@ -539,9 +539,9 @@ export default function Home() {
               Which models power transcription?
             </dt>
             <dd className={styles.faqAnswer}>
-              We benchmark every leading dictation model and ship the winner.
-              Today: Soniox v4 for realtime, ElevenLabs Scribe v2 and Deepgram
-              Nova-3 for batch. See the full leaderboard at /benchmarks/dictation.
+              Realtime dictation and live recording use OpenAI GPT Realtime
+              Whisper. Full-session transcription uses ElevenLabs Scribe v2.
+              See the current stack check at /benchmarks/dictation.
             </dd>
           </div>
           <div className={styles.faqItem}>

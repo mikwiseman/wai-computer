@@ -6,12 +6,12 @@ from time import perf_counter
 
 import httpx
 
+from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
     fingerprint_text,
 )
-from app.core.openai_transcription import transcribe_audio_file as openai_transcribe_audio_file
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription_options import (
     DEFAULT_FILE_STT_MODEL,
@@ -81,7 +81,7 @@ async def transcribe_audio_file(
     provider = provider or DEFAULT_FILE_STT_PROVIDER
     selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
-    if provider != "openai":
+    if provider != "elevenlabs":
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")
     started_at = perf_counter()
     audio_bytes = len(audio_data)
@@ -99,7 +99,7 @@ async def transcribe_audio_file(
     )
 
     try:
-        results = await openai_transcribe_audio_file(
+        results = await elevenlabs_transcribe_audio_file(
             audio_data,
             language=language,
             content_type=content_type,

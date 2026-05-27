@@ -556,10 +556,10 @@ export default function RuHome() {
               Какие модели используются для расшифровки?
             </dt>
             <dd className={styles.faqAnswer}>
-              Мы тестируем все ведущие модели и берём победителя. Сегодня:
-              Soniox v4 для realtime, ElevenLabs Scribe v2 и Deepgram Nova-3
-              для пакетной обработки. Полный лидерборд —
-              на /ru/benchmarks/dictation.
+              Для realtime-диктовки и живой записи используется OpenAI GPT
+              Realtime Whisper. Для полной расшифровки записи используется
+              ElevenLabs Scribe v2. Текущая проверка стека —
+              /ru/benchmarks/dictation.
             </dd>
           </div>
           <div className={styles.faqItem}>

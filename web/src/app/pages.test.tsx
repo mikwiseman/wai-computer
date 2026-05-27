@@ -415,10 +415,10 @@ describe("app pages", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Start dictation battle/i }),
+      screen.getByRole("button", { name: /Start recording/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("WaiComputer Synthetic Dictation v1")).toBeInTheDocument();
-    expect(screen.getAllByText("Soniox v4 Async").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("WaiComputer Active STT Stack")).toBeInTheDocument();
+    expect(screen.getAllByText("ElevenLabs Scribe v2").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Russian dictation benchmark page", () => {
@@ -430,7 +430,7 @@ describe("app pages", () => {
         name: /WaiComputer Арена диктовки/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Начать dictation battle/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Начать запись/i })).toBeInTheDocument();
   });
 
   it("renders localized billing result pages", async () => {
