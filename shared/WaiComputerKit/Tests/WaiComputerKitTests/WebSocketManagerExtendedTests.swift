@@ -404,6 +404,52 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.first?.confidence, 0.91)
     }
 
+    func testDeepgramFinalTranscriptSplitsMixedSpeakerWords() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "deepgram",
+            token: "dg-token",
+            expiresInSeconds: 900,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "en",
+            channels: 1,
+            model: "nova-3",
+            keepAliveIntervalSeconds: 8,
+            commitStrategy: "vad",
+            noVerbatim: false,
+            websocketURL: "wss://api.deepgram.com/v1/listen?model=nova-3",
+            authScheme: "bearer"
+        ))
+
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type":"Results",
+            "is_final":true,
+            "channel":{
+                "alternatives":[{
+                    "transcript":"Alice starts. Bob answers.",
+                    "confidence":0.91,
+                    "words":[
+                        {"word":"Alice","start":0.0,"end":0.3,"confidence":0.9,"speaker":0},
+                        {"punctuated_word":"starts.","start":0.3,"end":0.7,"confidence":0.92,"speaker":0},
+                        {"word":"Bob","start":0.8,"end":1.0,"confidence":0.89,"speaker":1},
+                        {"punctuated_word":"answers.","start":1.0,"end":1.4,"confidence":0.9,"speaker":1}
+                    ]
+                }]
+            }
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.map(\.text), ["Alice starts.", "Bob answers."])
+        XCTAssertEqual(segments.map(\.speaker), ["Speaker 0", "Speaker 1"])
+        XCTAssertEqual(segments.map(\.startMs), [0, 800])
+        XCTAssertEqual(segments.map(\.endMs), [700, 1400])
+    }
+
     func testDeepgramFluxTurnInfoUpdatesStayInterimUntilEndOfTurn() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
@@ -506,6 +552,36 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.map(\.text), ["Привет"])
         XCTAssertTrue(sawTranscript)
         XCTAssertTrue(sawFinalMarker)
+    }
+
+    func testProviderBackedSonioxIgnoresNonFinalizationControlTokens() async {
+        let session = ProviderBackedRealtimeSession(config: RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        ))
+
+        await session.testingHandleSonioxMessage("""
+        {
+            "tokens": [
+                {"text":"<note>","is_final":true,"start_ms":0,"end_ms":0,"confidence":1.0}
+            ],
+            "finished": false
+        }
+        """)
+
+        let segments = await session.testingCollectedSegments()
+        let sawFinalMarker = await session.testingHasFinalizationMarker()
+
+        XCTAssertTrue(segments.isEmpty)
+        XCTAssertFalse(sawFinalMarker)
     }
 
     func testProviderBackedInworldAudioChunkerBuffersSub20MsFrames() {
@@ -681,6 +757,43 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.first?.speaker, "Speaker 1")
         XCTAssertEqual(segments.first?.endMs, 800)
         XCTAssertEqual(segments.first?.confidence ?? 0, 0.94, accuracy: 0.001)
+    }
+
+    func testSonioxFinalTokensSplitMixedSpeakers() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        _ = await manager.events
+        await manager.testingSetSessionConfig(RealtimeTranscriptionSessionConfig(
+            provider: "soniox",
+            token: "sx-temp",
+            expiresInSeconds: 60,
+            sampleRate: 16_000,
+            audioFormat: "linear16_16000",
+            language: "ru",
+            channels: 1,
+            model: "stt-rt-v4",
+            websocketURL: "wss://stt-rt.soniox.com/transcribe-websocket",
+            authScheme: "message_api_key"
+        ))
+
+        await manager.testingHandleSonioxMessage("""
+        {
+            "tokens": [
+                {"text":"Алиса","is_final":true,"start_ms":0,"end_ms":300,"confidence":0.93,"speaker":1},
+                {"text":" начала.","is_final":true,"start_ms":300,"end_ms":700,"confidence":0.95,"speaker":1},
+                {"text":" Боб","is_final":true,"start_ms":800,"end_ms":1000,"confidence":0.91,"speaker":2},
+                {"text":" ответил.","is_final":true,"start_ms":1000,"end_ms":1400,"confidence":0.9,"speaker":2},
+                {"text":"<fin>","is_final":true,"start_ms":1400,"end_ms":1400,"confidence":1.0,"speaker":2}
+            ],
+            "finished": false
+        }
+        """)
+
+        let segments = await manager.collectedSegments
+        XCTAssertEqual(segments.map(\.text), ["Алиса начала.", "Боб ответил."])
+        XCTAssertEqual(segments.map(\.speaker), ["Speaker 1", "Speaker 2"])
+        XCTAssertEqual(segments.map(\.startMs), [0, 800])
+        XCTAssertEqual(segments.map(\.endMs), [700, 1400])
     }
 
     func testTimestampedCommittedTranscriptReplacesPlainDuplicate() async {

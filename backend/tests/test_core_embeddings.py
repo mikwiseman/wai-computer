@@ -44,6 +44,13 @@ async def test_generate_embedding_calls_openai_with_model_and_dims(mock_openai_c
     assert len(result) == 1536
 
 
+async def test_generate_embedding_reraises_provider_error(mock_openai_client):
+    mock_openai_client.embeddings.create.side_effect = RuntimeError("provider unavailable")
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await generate_embedding("hello world")
+
+
 async def test_generate_embeddings_batches_multiple_texts(mock_openai_client):
     fake = [[0.1] * 1536, [0.2] * 1536]
     mock_openai_client.embeddings.create.return_value = MagicMock(
@@ -58,6 +65,13 @@ async def test_generate_embeddings_batches_multiple_texts(mock_openai_client):
         dimensions=1536,
     )
     assert result == fake
+
+
+async def test_generate_embeddings_reraises_provider_error(mock_openai_client):
+    mock_openai_client.embeddings.create.side_effect = RuntimeError("provider unavailable")
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await generate_embeddings(["a", "b"])
 
 
 def test_format_embedding_produces_postgres_vector_string():

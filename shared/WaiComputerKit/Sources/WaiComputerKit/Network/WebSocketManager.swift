@@ -124,6 +124,7 @@ public actor WebSocketManager {
     private let maxBufferChunks = 300 // ~30s of audio at ~100ms/chunk
     private var endOfStreamRequested = false
     private var endOfStreamSent = false
+    private var providerFinalizationReceived = false
     private static let inworldMinAudioChunkBytes = 16_000 * 2 * 20 / 1000
     private static let inworldMaxAudioChunkBytes = 16_000 * 2
 
@@ -190,6 +191,7 @@ public actor WebSocketManager {
         reconnectTask = nil
         endOfStreamRequested = false
         endOfStreamSent = false
+        providerFinalizationReceived = false
 
         let sessionConfig = if let providedSessionConfig {
             providedSessionConfig
@@ -300,7 +302,7 @@ public actor WebSocketManager {
                 deadline: deadline,
                 startedAt: startedAt,
                 lastTranscriptEventAt: lastTranscriptReceivedAt,
-                finalizationMarkerReceived: endOfStreamSent
+                finalizationMarkerReceived: providerFinalizationReceived
             ) {
                 break
             }
@@ -308,7 +310,7 @@ public actor WebSocketManager {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
-        let didFinalize = endOfStreamSent
+        let didFinalize = endOfStreamSent && providerFinalizationReceived
         disconnect()
         return didFinalize
     }
@@ -786,6 +788,9 @@ public actor WebSocketManager {
             openAIInterimByItem[itemId] = nil
             guard !transcript.isEmpty else { return }
             lastTranscriptReceivedAt = reconnectClock.now
+            if endOfStreamRequested {
+                providerFinalizationReceived = true
+            }
             let lastEndMs = collectedSegments.last?.endMs ?? 0
             let segment = LiveTranscriptSegment(
                 text: transcript,
@@ -864,6 +869,9 @@ public actor WebSocketManager {
 
         if isFinal {
             lastTranscriptReceivedAt = reconnectClock.now
+            if endOfStreamRequested {
+                providerFinalizationReceived = true
+            }
             let startMs = Self.inworldTimestampMs(
                 words?.first?["start_ms"]
                     ?? words?.first?["startMs"]
@@ -940,6 +948,11 @@ public actor WebSocketManager {
             return
         }
 
+        if messageType == "Metadata" {
+            providerFinalizationReceived = true
+            return
+        }
+
         if messageType == "TurnInfo" {
             handleDeepgramTranscript(json, isFinal: (json["event"] as? String) == "EndOfTurn")
             return
@@ -975,6 +988,27 @@ public actor WebSocketManager {
         guard !transcript.isEmpty else { return }
 
         let words = payload["words"] as? [[String: Any]] ?? []
+        if isFinal, !words.isEmpty {
+            let segments = RealtimeTranscriptSegmentAssembler.deepgramSegments(
+                from: words,
+                fallbackTranscript: transcript,
+                fallbackConfidence: payload["confidence"] as? Double,
+                fallbackStartMs: collectedSegments.last?.endMs ?? 0
+            )
+            if !segments.isEmpty {
+                lastTranscriptReceivedAt = reconnectClock.now
+                if endOfStreamRequested {
+                    providerFinalizationReceived = true
+                }
+                for segment in segments {
+                    if let emittedSegment = collectCommittedSegment(segment, kind: .timestamped) {
+                        eventContinuation?.yield(.transcript(emittedSegment))
+                    }
+                }
+                return
+            }
+        }
+
         let startMs = Self.secondsTimestampMs(words.first?["start"]) ?? (collectedSegments.last?.endMs ?? 0)
         let endMs = Self.secondsTimestampMs(words.last?["end"]) ?? startMs
         let confidence = (payload["confidence"] as? Double)
@@ -991,6 +1025,9 @@ public actor WebSocketManager {
         )
         if isFinal {
             lastTranscriptReceivedAt = reconnectClock.now
+            if endOfStreamRequested {
+                providerFinalizationReceived = true
+            }
             if let emittedSegment = collectCommittedSegment(segment, kind: .timestamped) {
                 eventContinuation?.yield(.transcript(emittedSegment))
             }
@@ -1021,43 +1058,41 @@ public actor WebSocketManager {
             return
         }
 
+        if (json["finished"] as? Bool) == true {
+            providerFinalizationReceived = true
+        }
+
         let tokens = json["tokens"] as? [[String: Any]] ?? []
         guard !tokens.isEmpty else { return }
 
         let finalTokens = tokens.filter { ($0["is_final"] as? Bool) == true }
         let nonFinalTokens = tokens.filter { ($0["is_final"] as? Bool) != true }
 
-        if let finalSegment = sonioxSegment(from: finalTokens, isFinal: true) {
+        if finalTokens.contains(where: { (($0["text"] as? String) ?? "") == "<fin>" }) {
+            providerFinalizationReceived = true
+        }
+
+        let finalSegments = RealtimeTranscriptSegmentAssembler.sonioxSegments(
+            from: finalTokens,
+            isFinal: true,
+            fallbackStartMs: collectedSegments.last?.endMs ?? 0
+        )
+        if !finalSegments.isEmpty {
             lastTranscriptReceivedAt = reconnectClock.now
-            if let emittedSegment = collectCommittedSegment(finalSegment, kind: .timestamped) {
-                eventContinuation?.yield(.transcript(emittedSegment))
+            for finalSegment in finalSegments {
+                if let emittedSegment = collectCommittedSegment(finalSegment, kind: .timestamped) {
+                    eventContinuation?.yield(.transcript(emittedSegment))
+                }
             }
         }
 
-        if let nonFinalSegment = sonioxSegment(from: nonFinalTokens, isFinal: false) {
+        for nonFinalSegment in RealtimeTranscriptSegmentAssembler.sonioxSegments(
+            from: nonFinalTokens,
+            isFinal: false,
+            fallbackStartMs: collectedSegments.last?.endMs ?? 0
+        ) {
             eventContinuation?.yield(.transcript(nonFinalSegment))
         }
-    }
-
-    private func sonioxSegment(from tokens: [[String: Any]], isFinal: Bool) -> LiveTranscriptSegment? {
-        let speechTokens = tokens.filter { token in
-            (token["translation_status"] as? String) != "translation"
-                && ((token["text"] as? String)?.hasPrefix("<") != true)
-        }
-        let transcript = speechTokens
-            .compactMap { $0["text"] as? String }
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcript.isEmpty else { return nil }
-
-        return LiveTranscriptSegment(
-            text: transcript,
-            speaker: Self.speakerLabel(speechTokens.first?["speaker"]),
-            isFinal: isFinal,
-            startMs: Self.integerTimestampMs(speechTokens.first?["start_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
-            endMs: Self.integerTimestampMs(speechTokens.last?["end_ms"]) ?? (collectedSegments.last?.endMs ?? 0),
-            confidence: Self.averageConfidence(speechTokens) ?? 0.0
-        )
     }
 
     private static func speakerLabel(_ value: Any?) -> String? {
@@ -1651,6 +1686,7 @@ public actor WebSocketManager {
         sendCount = 0
         endOfStreamRequested = false
         endOfStreamSent = false
+        providerFinalizationReceived = false
     }
 
     func testingYieldEvent(_ event: WebSocketEvent) {

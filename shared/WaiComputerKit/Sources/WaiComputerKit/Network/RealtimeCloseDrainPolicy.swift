@@ -2,7 +2,7 @@ import Foundation
 
 enum RealtimeCloseDrainPolicy {
     static let minimumWait: Duration = .milliseconds(650)
-    static let noTranscriptWait: Duration = .milliseconds(1500)
+    static let noTranscriptWait: Duration = .milliseconds(2500)
     static let quietWindow: Duration = .milliseconds(900)
 
     static func shouldKeepWaiting(

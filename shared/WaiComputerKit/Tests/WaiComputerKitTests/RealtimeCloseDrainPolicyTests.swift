@@ -7,14 +7,14 @@ final class RealtimeCloseDrainPolicyTests: XCTestCase {
         let startedAt = clock.now
 
         XCTAssertTrue(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(1499),
+            now: startedAt + .milliseconds(2499),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,
             finalizationMarkerReceived: false
         ))
         XCTAssertFalse(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt + .milliseconds(1500),
+            now: startedAt + .milliseconds(2500),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,

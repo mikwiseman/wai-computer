@@ -360,9 +360,14 @@ async def test_register_rate_limit_blocks_after_exceeded(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_magic_link_rate_limit_blocks_after_exceeded(client: AsyncClient):
+async def test_magic_link_rate_limit_blocks_after_exceeded(client: AsyncClient, monkeypatch):
     """Magic link should return 429 after 3 attempts per minute."""
-    # Use up the 3 allowed attempts (they'll fail with email sending but still count)
+    async def fake_send_magic_link_email(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("app.core.email.send_magic_link_email", fake_send_magic_link_email)
+
+    # Use up the 3 allowed attempts.
     for i in range(3):
         email = f"ratelimit-magic-{uuid4().hex[:8]}@example.com"
         await client.post(

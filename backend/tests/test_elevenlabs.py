@@ -307,6 +307,7 @@ async def test_transcribe_audio_file_handles_single_payload_and_raw_audio():
     assert len(results) == 1
     assert results[0].text == "hello raw"
     assert post.await_args.kwargs["data"]["no_verbatim"] == "true"
+    assert post.await_args.kwargs["data"]["tag_audio_events"] == "false"
     assert post.await_args.kwargs["data"]["file_format"] == "pcm_s16le_16"
     assert post.await_args.kwargs["files"]["file"][0] == "recording.raw"
 
