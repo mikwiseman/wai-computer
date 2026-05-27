@@ -9,14 +9,12 @@ private let langLog = Logger(subsystem: "is.waiwai.computer.app", category: "dic
 /// in UserDefaults under `dictationLanguages`. Three modes derive from the
 /// set's cardinality:
 ///
-///   - **0 entries**: auto-detect any language. Wire tag is `""` which
-///     ElevenLabs Scribe v2 (and Soniox v4 RT, when re-enabled) treat as
-///     multilingual auto-detect.
+///   - **0 entries**: auto-detect any language. Wire tag is `""`, which Inworld
+///     treats as multilingual auto-detect.
 ///   - **1 entry**: single-language mode — send that BCP-47 code as a hint
 ///     for the lowest possible latency on supported models.
 ///   - **2+ entries**: multilingual mode — also send `""`. The set is
-///     remembered for UI display + future per-model multi-language config
-///     (Inworld/Soniox can take multiple language hints; ElevenLabs cannot).
+///     remembered for UI display and future per-model multi-language config.
 ///
 /// Migration from the legacy single `transcriptionLanguage` string runs once
 /// on first read. The legacy key stays in place so older builds that still

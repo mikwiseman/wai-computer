@@ -14,7 +14,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private var webSocket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var collectedSegments: [LiveTranscriptSegment] = []
-    private var interimByItem: [String: String] = [:]
     private var inworldPendingAudio = Data()
     private var isClosing = false
     private var didSendEndTurn = false
@@ -45,84 +44,32 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         task.resume()
         startReceiveLoop(for: task)
 
-        switch config.provider {
-        case "openai":
-            try await task.send(.string(Self.encodeJSON(openAISessionUpdatePayload())))
-        case "inworld":
-            try await task.send(.string(Self.encodeJSON(inworldTranscribeConfigPayload())))
-        case "soniox":
-            try await task.send(.string(Self.encodeJSON(sonioxRealtimeConfigPayload())))
-        default:
-            break
-        }
-        eventContinuation.yield(.opened(sessionId: config.provider))
+        try await task.send(.string(Self.encodeJSON(inworldTranscribeConfigPayload())))
+        eventContinuation.yield(.opened(sessionId: "inworld"))
     }
 
     public func send(pcm16: Data) async throws {
         guard let webSocket else {
-            throw ProviderError.transcriberInternal(message: "\(config.provider) socket is not open")
+            throw ProviderError.transcriberInternal(message: "Inworld socket is not open")
         }
-        switch config.provider {
-        case "openai":
-            let audio = WebSocketManager.openAI24kMonoPCM(
-                from16kPCM: pcm16,
-                channels: config.channels
-            )
+        for chunk in Self.inworldAudioChunks(
+            pending: &inworldPendingAudio,
+            appending: pcm16,
+            forceFlush: false,
+            sampleRate: config.sampleRate,
+            channels: config.channels
+        ) {
             try await webSocket.send(.string(Self.encodeJSON([
-                "type": "input_audio_buffer.append",
-                "audio": audio.base64EncodedString(),
+                "audioChunk": ["content": chunk.base64EncodedString()]
             ])))
-        case "inworld":
-            for chunk in Self.inworldAudioChunks(
-                pending: &inworldPendingAudio,
-                appending: pcm16,
-                forceFlush: false,
-                sampleRate: config.sampleRate,
-                channels: config.channels
-            ) {
-                try await webSocket.send(.string(Self.encodeJSON([
-                    "audioChunk": ["content": chunk.base64EncodedString()]
-                ])))
-            }
-        case "deepgram", "soniox":
-            try await webSocket.send(.data(pcm16))
-        case "elevenlabs":
-            try await webSocket.send(.string(Self.encodeJSON([
-                "message_type": "input_audio_chunk",
-                "audio_base_64": pcm16.base64EncodedString(),
-                "sample_rate": config.sampleRate,
-                "commit": false,
-            ])))
-        default:
-            throw ProviderError.unsupportedModel(config.provider)
         }
     }
 
     public func endTurn() async throws {
         guard !didSendEndTurn, let webSocket else { return }
         didSendEndTurn = true
-        switch config.provider {
-        case "openai":
-            try await webSocket.send(.string(Self.encodeJSON(["type": "input_audio_buffer.commit"])))
-        case "inworld":
-            try await flushInworldPendingAudio(to: webSocket)
-            try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
-        case "deepgram":
-            try await webSocket.send(.string(Self.encodeJSON(["type": "CloseStream"])))
-        case "soniox":
-            let silenceBytes = max(1, config.sampleRate / 5) * 2
-            try await webSocket.send(.data(Data(repeating: 0, count: silenceBytes)))
-            try await webSocket.send(.string(Self.encodeJSON(["type": "finalize"])))
-        case "elevenlabs":
-            try await webSocket.send(.string(Self.encodeJSON([
-                "message_type": "input_audio_chunk",
-                "audio_base_64": Data(repeating: 0, count: 640).base64EncodedString(),
-                "sample_rate": config.sampleRate,
-                "commit": true,
-            ])))
-        default:
-            break
-        }
+        try await flushInworldPendingAudio(to: webSocket)
+        try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
     }
 
     public func close(timeout: Duration = .seconds(5)) async throws -> [LiveTranscriptSegment] {
@@ -133,11 +80,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             return collectedSegments
         }
         try? await endTurn()
-        if config.provider == "inworld" {
-            try? await webSocket?.send(.string(Self.encodeJSON(["closeStream": [String: Any]()])))
-        } else if config.provider == "soniox" {
-            try? await webSocket?.send(.string(""))
-        }
+        try? await webSocket?.send(.string(Self.encodeJSON(["closeStream": [String: Any]()])))
 
         let clock = ContinuousClock()
         let startedAt = clock.now
@@ -172,29 +115,14 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private func makeRequest() throws -> URLRequest {
         try validateServerMintedRouting()
 
-        let url: URL
-        if config.provider == "elevenlabs" {
-            url = try elevenLabsURL()
-        } else {
-            guard let urlString = config.websocketURL,
-                  let parsed = URL(string: urlString) else {
-                throw WebSocketConnectionError.invalidURL
-            }
-            url = parsed
+        guard let urlString = config.websocketURL,
+              let url = URL(string: urlString) else {
+            throw WebSocketConnectionError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
-        switch config.authScheme {
-        case "bearer":
-            request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
-        case "basic":
-            request.setValue(config.token, forHTTPHeaderField: "Authorization")
-        case "message_api_key", "query_token", nil:
-            break
-        case let scheme?:
-            throw ProviderError.transcriberInternal(message: "Unsupported auth scheme: \(scheme)")
-        }
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
         return request
     }
 
@@ -202,36 +130,17 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let token = config.token.trimmingCharacters(in: .whitespacesAndNewlines)
         let websocketURL = config.websocketURL?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        switch config.provider {
-        case "inworld":
-            guard websocketURL?.isEmpty == false else {
-                throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted websocket URL")
-            }
-            guard !token.isEmpty else {
-                throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted token")
-            }
-            guard config.authScheme == "bearer" || config.authScheme == "basic" else {
-                throw ProviderError.transcriberInternal(message: "Inworld realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
-            }
-        case "soniox":
-            guard websocketURL?.isEmpty == false else {
-                throw ProviderError.transcriberInternal(message: "Soniox realtime session is missing server-minted websocket URL")
-            }
-            guard !token.isEmpty else {
-                throw ProviderError.transcriberInternal(message: "Soniox realtime session is missing server-minted token")
-            }
-            guard config.authScheme == "message_api_key" else {
-                throw ProviderError.transcriberInternal(message: "Soniox realtime session must use server-minted message_api_key auth")
-            }
-        case "elevenlabs":
-            guard !token.isEmpty else {
-                throw ProviderError.transcriberInternal(message: "ElevenLabs realtime session is missing server-minted query token")
-            }
-            guard config.authScheme == nil || config.authScheme == "query_token" else {
-                throw ProviderError.transcriberInternal(message: "ElevenLabs realtime session must use server-minted query_token auth")
-            }
-        default:
-            break
+        guard config.provider == "inworld" else {
+            throw ProviderError.unsupportedModel(config.provider)
+        }
+        guard websocketURL?.isEmpty == false else {
+            throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted websocket URL")
+        }
+        guard !token.isEmpty else {
+            throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted token")
+        }
+        guard config.authScheme == "bearer" else {
+            throw ProviderError.transcriberInternal(message: "Inworld realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
         }
     }
 
@@ -249,58 +158,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         }
     }
 
-    private func elevenLabsURL() throws -> URL {
-        var components = URLComponents(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")
-        var queryItems = [
-            URLQueryItem(name: "model_id", value: config.model),
-            URLQueryItem(name: "token", value: config.token),
-            URLQueryItem(name: "include_timestamps", value: "true"),
-            URLQueryItem(name: "audio_format", value: "pcm_16000"),
-        ]
-        if config.language == "multi" {
-            queryItems.append(URLQueryItem(name: "include_language_detection", value: "true"))
-        } else {
-            queryItems.append(URLQueryItem(name: "language_code", value: config.language))
-        }
-        if let commitStrategy = config.commitStrategy, !commitStrategy.isEmpty {
-            queryItems.append(URLQueryItem(name: "commit_strategy", value: commitStrategy))
-        }
-        if config.noVerbatim == true {
-            queryItems.append(URLQueryItem(name: "no_verbatim", value: "true"))
-        }
-        for term in InworldProviderSession.cappedKeyTerms(keyTerms) {
-            queryItems.append(URLQueryItem(name: "keyterms", value: term))
-        }
-        components?.queryItems = queryItems
-        guard let url = components?.url else {
-            throw WebSocketConnectionError.invalidURL
-        }
-        return url
-    }
-
-    private func openAISessionUpdatePayload() -> [String: Any] {
-        var transcription: [String: Any] = ["model": config.model]
-        if !config.language.isEmpty, config.language != "multi" {
-            transcription["language"] = config.language
-        }
-        return [
-            "type": "session.update",
-            "session": [
-                "type": "transcription",
-                "audio": [
-                    "input": [
-                        "format": [
-                            "type": "audio/pcm",
-                            "rate": config.sampleRate,
-                        ],
-                        "transcription": transcription,
-                        "turn_detection": NSNull(),
-                    ],
-                ],
-            ],
-        ]
-    }
-
     private func inworldTranscribeConfigPayload() -> [String: Any] {
         let language = normalisedProviderLanguage(config.language)
         var transcribeConfig: [String: Any] = [
@@ -313,30 +170,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         ]
         InworldProviderSession.applyPromptHints(from: keyTerms, to: &transcribeConfig)
         return ["transcribeConfig": transcribeConfig]
-    }
-
-    private func sonioxRealtimeConfigPayload() -> [String: Any] {
-        let language = config.language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let autoLanguage = language.isEmpty || language == "multi" || language == "auto" || language == "und"
-        var payload: [String: Any] = [
-            "api_key": config.token,
-            "model": config.model,
-            "audio_format": "pcm_s16le",
-            "sample_rate": config.sampleRate,
-            "num_channels": config.channels,
-            "enable_speaker_diarization": true,
-            "enable_language_identification": autoLanguage,
-            "enable_endpoint_detection": true,
-            "max_endpoint_delay_ms": 500,
-        ]
-        if !autoLanguage {
-            payload["language_hints"] = [language]
-        }
-        let terms = InworldProviderSession.cappedKeyTerms(keyTerms)
-        if !terms.isEmpty {
-            payload["context"] = ["terms": terms]
-        }
-        return payload
     }
 
     private func normalisedProviderLanguage(_ language: String) -> String {
@@ -385,45 +218,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
-        switch config.provider {
-        case "openai":
-            handleOpenAI(json)
-        case "inworld":
-            handleInworld(json)
-        case "deepgram":
-            handleDeepgram(json)
-        case "soniox":
-            handleSoniox(json)
-        case "elevenlabs":
-            handleElevenLabs(json)
-        default:
-            break
-        }
-    }
-
-    private func handleOpenAI(_ json: [String: Any]) {
-        guard let type = json["type"] as? String else { return }
-        switch type {
-        case "conversation.item.input_audio_transcription.delta":
-            let itemId = json["item_id"] as? String ?? "unknown"
-            let delta = json["delta"] as? String ?? ""
-            guard !delta.isEmpty else { return }
-            let current = (interimByItem[itemId] ?? "") + delta
-            interimByItem[itemId] = current
-            markTranscriptEvent()
-            eventContinuation.yield(.interim(text: current, language: nil))
-        case "conversation.item.input_audio_transcription.completed":
-            let itemId = json["item_id"] as? String ?? "unknown"
-            let transcript = (json["transcript"] as? String ?? interimByItem[itemId] ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            interimByItem[itemId] = nil
-            appendFinal(text: transcript, speaker: nil, startMs: collectedSegments.last?.endMs ?? 0, endMs: collectedSegments.last?.endMs ?? 0, confidence: 0)
-        case "error":
-            let message = (json["error"] as? [String: Any])?["message"] as? String ?? "OpenAI realtime error"
-            eventContinuation.yield(.providerWarning(.transcriberInternal(message: message)))
-        default:
-            break
-        }
+        handleInworld(json)
     }
 
     private func handleInworld(_ json: [String: Any]) {
@@ -455,117 +250,20 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         appendFinal(
             text: transcript,
             speaker: Self.speakerLabel(words?.first?["speaker"] ?? words?.first?["speaker_id"]),
-            startMs: Self.providerMs(words?.first?["start_ms"] ?? words?.first?["startMs"] ?? words?.first?["start"]),
-            endMs: Self.providerMs(words?.last?["end_ms"] ?? words?.last?["endMs"] ?? words?.last?["end"]),
+            startMs: Self.providerMs(
+                words?.first?["start_ms"]
+                    ?? words?.first?["startMs"]
+                    ?? words?.first?["start_time_ms"]
+                    ?? words?.first?["start"]
+            ),
+            endMs: Self.providerMs(
+                words?.last?["end_ms"]
+                    ?? words?.last?["endMs"]
+                    ?? words?.last?["end_time_ms"]
+                    ?? words?.last?["end"]
+            ),
             confidence: (payload["confidence"] as? Double) ?? 0
         )
-    }
-
-    private func handleDeepgram(_ json: [String: Any]) {
-        let type = json["type"] as? String
-        if type == "Results",
-           let channel = json["channel"] as? [String: Any],
-           let alternatives = channel["alternatives"] as? [[String: Any]],
-           let alternative = alternatives.first {
-            handleDeepgramTranscript(
-                alternative,
-                isFinal: (json["is_final"] as? Bool) ?? (json["speech_final"] as? Bool) ?? false
-            )
-        } else if type == "TurnInfo" {
-            handleDeepgramTranscript(json, isFinal: (json["event"] as? String) == "EndOfTurn")
-        } else if json["transcript"] is String {
-            handleDeepgramTranscript(json, isFinal: true)
-        } else if type == "Error" || json["error"] != nil {
-            eventContinuation.yield(.providerWarning(.transcriberInternal(
-                message: json["message"] as? String ?? json["description"] as? String ?? "Deepgram realtime error"
-            )))
-        }
-    }
-
-    private func handleDeepgramTranscript(_ payload: [String: Any], isFinal: Bool) {
-        let transcript = (payload["transcript"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcript.isEmpty else { return }
-        if !isFinal {
-            markTranscriptEvent()
-            eventContinuation.yield(.interim(text: transcript, language: nil))
-            return
-        }
-        let words = payload["words"] as? [[String: Any]] ?? []
-        if !words.isEmpty {
-            for segment in RealtimeTranscriptSegmentAssembler.deepgramSegments(
-                from: words,
-                fallbackTranscript: transcript,
-                fallbackConfidence: payload["confidence"] as? Double,
-                fallbackStartMs: collectedSegments.last?.endMs ?? 0
-            ) {
-                appendFinal(segment)
-            }
-            return
-        }
-        appendFinal(
-            text: transcript,
-            speaker: Self.speakerLabel(words.first?["speaker"]),
-            startMs: Self.secondsMs(words.first?["start"]),
-            endMs: Self.secondsMs(words.last?["end"]),
-            confidence: (payload["confidence"] as? Double) ?? Self.averageConfidence(words) ?? 0
-        )
-    }
-
-    private func handleSoniox(_ json: [String: Any]) {
-        if let errorCode = json["error_code"] as? String, !errorCode.isEmpty {
-            eventContinuation.yield(.providerWarning(.transcriberInternal(
-                message: json["error_message"] as? String ?? "Soniox realtime error: \(errorCode)"
-            )))
-            return
-        }
-        let tokens = json["tokens"] as? [[String: Any]] ?? []
-        let finalTokens = tokens.filter { ($0["is_final"] as? Bool) == true }
-        let nonFinalTokens = tokens.filter { ($0["is_final"] as? Bool) != true }
-        if (json["finished"] as? Bool) == true
-            || finalTokens.contains(where: { (($0["text"] as? String) ?? "") == "<fin>" }) {
-            markTranscriptEvent(finalizationMarker: true)
-        }
-        for segment in RealtimeTranscriptSegmentAssembler.sonioxSegments(
-            from: finalTokens,
-            isFinal: true,
-            fallbackStartMs: collectedSegments.last?.endMs ?? 0
-        ) {
-            appendFinal(segment)
-        }
-        for segment in RealtimeTranscriptSegmentAssembler.sonioxSegments(
-            from: nonFinalTokens,
-            isFinal: false,
-            fallbackStartMs: collectedSegments.last?.endMs ?? 0
-        ) {
-            markTranscriptEvent()
-            eventContinuation.yield(.interim(text: segment.text, language: nil))
-        }
-    }
-
-    private func handleElevenLabs(_ json: [String: Any]) {
-        let type = (json["message_type"] as? String) ?? (json["type"] as? String) ?? ""
-        switch type {
-        case "partial_transcript":
-            let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                markTranscriptEvent()
-                eventContinuation.yield(.interim(text: text, language: nil))
-            }
-        case "committed_transcript", "committed_transcript_with_timestamps":
-            let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let words = (json["words"] as? [[String: Any]] ?? []).filter { ($0["type"] as? String) != "spacing" }
-            appendFinal(
-                text: text,
-                speaker: nil,
-                startMs: Self.secondsMs(words.first?["start"]),
-                endMs: Self.secondsMs(words.last?["end"]),
-                confidence: Self.elevenLabsConfidence(words)
-            )
-        default:
-            if type.hasSuffix("error") || type.contains("_error") {
-                eventContinuation.yield(.providerWarning(.transcriberInternal(message: type)))
-            }
-        }
     }
 
     private func appendFinal(_ segment: LiveTranscriptSegment) {
@@ -583,6 +281,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     ) {
         let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return }
+        if let last = collectedSegments.last,
+           Self.normalizedTranscriptText(last.text) == Self.normalizedTranscriptText(transcript) {
+            return
+        }
         markTranscriptEvent()
         let fallbackStart = collectedSegments.last?.endMs ?? 0
         let segment = LiveTranscriptSegment(
@@ -629,40 +331,30 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     private static func providerMs(_ value: Any?) -> Int? {
         guard let value else { return nil }
-        if let int = value as? Int { return int }
-        if let number = value as? NSNumber { return number.intValue }
-        if let double = value as? Double { return Int(double) }
-        if let string = value as? String { return Int(string) }
-        return nil
-    }
-
-    private static func secondsMs(_ value: Any?) -> Int? {
-        guard let value else { return nil }
-        if let double = value as? Double { return Int(double * 1000) }
-        if let number = value as? NSNumber { return Int(number.doubleValue * 1000) }
-        if let string = value as? String, let double = Double(string) { return Int(double * 1000) }
-        return nil
-    }
-
-    private static func averageConfidence(_ words: [[String: Any]]) -> Double? {
-        let values = words.compactMap { word -> Double? in
-            if let double = word["confidence"] as? Double { return double }
-            if let number = word["confidence"] as? NSNumber { return number.doubleValue }
-            return nil
+        let numeric: Double?
+        if let double = value as? Double {
+            numeric = double
+        } else if let int = value as? Int {
+            numeric = Double(int)
+        } else if let number = value as? NSNumber {
+            numeric = number.doubleValue
+        } else if let string = value as? String {
+            numeric = Double(string)
+        } else {
+            numeric = nil
         }
-        guard !values.isEmpty else { return nil }
-        return values.reduce(0, +) / Double(values.count)
+        guard var resolved = numeric else { return nil }
+        if resolved >= 0, resolved < 10_000, resolved.rounded(.towardZero) != resolved {
+            resolved *= 1_000
+        }
+        return Int(resolved)
     }
 
-    private static func elevenLabsConfidence(_ words: [[String: Any]]) -> Double {
-        let logprobs = words.compactMap { word -> Double? in
-            if let double = word["logprob"] as? Double { return double }
-            if let number = word["logprob"] as? NSNumber { return number.doubleValue }
-            return nil
-        }
-        guard !logprobs.isEmpty else { return 0 }
-        let average = logprobs.reduce(0, +) / Double(logprobs.count)
-        return max(0, min(1, 1 + average / 10))
+    private static func normalizedTranscriptText(_ text: String) -> String {
+        text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func encodeJSON(_ payload: [String: Any]) -> String {
@@ -707,18 +399,11 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         return chunks
     }
 
-    func testingHandleDeepgramMessage(_ text: String) {
+    func testingHandleInworldMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
-        handleDeepgram(json)
-    }
-
-    func testingHandleSonioxMessage(_ text: String) {
-        guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
-        handleSoniox(json)
+        handleInworld(json)
     }
 
     func testingCollectedSegments() -> [LiveTranscriptSegment] {
