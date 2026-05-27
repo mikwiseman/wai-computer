@@ -68,6 +68,21 @@ final class LibraryUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(processingState, in: app, timeout: 5))
         XCTAssertFalse(app.staticTexts["No Transcript"].exists)
+
+        let listTitle = app.descendants(matching: .any)
+            .matching(identifier: "library-list-title")
+            .firstMatch
+        XCTAssertTrue(waitForElement(listTitle, in: app, timeout: 3))
+
+        let detailTitle = app.descendants(matching: .any)
+            .matching(identifier: "recording-title")
+            .firstMatch
+        XCTAssertTrue(waitForElement(detailTitle, in: app, timeout: 3))
+        XCTAssertLessThanOrEqual(
+            detailTitle.frame.minY,
+            listTitle.frame.minY + 80,
+            "Recording detail title should stay top-aligned with the list header, not centered in the detail pane."
+        )
     }
 
     @MainActor

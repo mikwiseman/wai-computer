@@ -740,7 +740,7 @@ struct MacMainView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             if recordingViewModel.shouldPresentLiveView {
                 LiveRecordingView()
                     .zIndex(2)
