@@ -200,7 +200,9 @@ struct MacRecordingDetailView: View {
 
     private var detailRefreshKey: String {
         let status = viewModel.recordingDetail?.status.rawValue ?? "none"
-        return "\(recordingId)-\(status)"
+        let summaryStatus = viewModel.recordingDetail?.summaryGeneration?.status ?? "none"
+        let summaryStage = viewModel.recordingDetail?.summaryGeneration?.stage ?? "none"
+        return "\(recordingId)-\(status)-\(summaryStatus)-\(summaryStage)"
     }
 
     private func copyToClipboard(_ text: String, section: String) {
@@ -522,14 +524,18 @@ struct MacRecordingDetailView: View {
 
     @ViewBuilder
     private func summaryTab(_ detail: RecordingDetail) -> some View {
+        let generationState = detail.summaryGeneration
         let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id) ||
-            appState.isSummaryGenerationActive(for: detail.id)
-        let isSummaryBlockedByAnotherRecording = appState.isAnySummaryGenerationActive &&
-            !appState.isSummaryGenerationActive(for: detail.id)
+            generationState?.isActive == true
+        let generationFailed = generationState?.isFailed == true
 
         if let summary = detail.summary {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
+                    if isGeneratingSummary {
+                        summaryGenerationProgress(state: generationState)
+                    }
+
                     HStack {
                         Text(t("Summary", "Сводка"))
                             .waiSectionHeader()
@@ -608,35 +614,90 @@ struct MacRecordingDetailView: View {
 
                 Button(action: {
                     Task {
-                        guard appState.beginSummaryGeneration(recordingId: detail.id) else { return }
-                        defer {
-                            appState.finishSummaryGeneration(recordingId: detail.id)
-                        }
-                        await viewModel.generateSummary(
+                        await viewModel.startSummaryGeneration(
                             recordingId: detail.id,
                             apiClient: appState.getAPIClient()
                         )
                     }
                 }) {
-                    Text(t("Generate Summary", "Сгенерировать сводку"))
+                    Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary || isSummaryBlockedByAnotherRecording))
-                .disabled(isGeneratingSummary || isSummaryBlockedByAnotherRecording)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+                .disabled(isGeneratingSummary)
 
                 if isGeneratingSummary {
-                    ProgressView(t("Generating summary...", "Генерируем сводку..."))
-                } else if isSummaryBlockedByAnotherRecording {
-                    Text(t(
-                        "Another summary is generating. Wait for it to finish.",
-                        "Другая сводка уже генерируется. Дождись завершения."
-                    ))
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textSecondary)
+                    summaryGenerationProgress(state: generationState)
+                } else if generationFailed {
+                    summaryGenerationFailure(state: generationState)
                 }
                 Spacer()
             }
             .accessibilityIdentifier("summary-empty-state")
         }
+    }
+
+    private func summaryGenerationButtonTitle(isGenerating: Bool, failed: Bool) -> String {
+        if isGenerating {
+            return t("Generating Summary", "Генерируем сводку")
+        }
+        if failed {
+            return t("Try Again", "Повторить")
+        }
+        return t("Generate Summary", "Сгенерировать сводку")
+    }
+
+    private func summaryGenerationStatusText(_ state: SummaryGenerationState?) -> String {
+        guard let state else {
+            return t("Starting summary generation...", "Запускаем генерацию сводки...")
+        }
+
+        switch state.status {
+        case "queued":
+            return t("Summary generation is queued.", "Генерация сводки в очереди.")
+        case "running":
+            switch state.stage {
+            case "preparing_transcript":
+                return t("Preparing transcript...", "Подготавливаем расшифровку...")
+            case "saving_summary":
+                return t("Saving summary...", "Сохраняем сводку...")
+            default:
+                return t("Generating summary...", "Генерируем сводку...")
+            }
+        default:
+            return t("Generating summary...", "Генерируем сводку...")
+        }
+    }
+
+    private func summaryGenerationFailureText(_ state: SummaryGenerationState?) -> String {
+        let message = state?.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let message, !message.isEmpty {
+            return message
+        }
+        return t("Summary generation failed.", "Не удалось сгенерировать сводку.")
+    }
+
+    private func summaryGenerationProgress(state: SummaryGenerationState?) -> some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            ProgressView()
+                .controlSize(.small)
+            Text(summaryGenerationStatusText(state))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("summary-generation-progress")
+    }
+
+    private func summaryGenerationFailure(state: SummaryGenerationState?) -> some View {
+        Text(summaryGenerationFailureText(state))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.recording)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("summary-generation-failure")
     }
 
     private func recordingTypeLabel(_ type: RecordingType) -> String {

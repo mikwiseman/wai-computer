@@ -151,6 +151,21 @@ export interface Summary {
   sentiment: string | null;
 }
 
+export interface SummaryGeneration {
+  job_id: string | null;
+  recording_id: string;
+  status: "not_started" | "queued" | "running" | "succeeded" | "failed";
+  stage: string;
+  progress_percent: number;
+  message: string;
+  requested_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
 export interface ActionItem {
   id: string;
   recording_id: string;
@@ -187,6 +202,7 @@ export interface Highlight {
 export interface RecordingDetail extends Recording {
   segments: Segment[];
   summary: Summary | null;
+  summary_generation?: SummaryGeneration | null;
   action_items: ActionItem[];
   highlights: Highlight[];
 }

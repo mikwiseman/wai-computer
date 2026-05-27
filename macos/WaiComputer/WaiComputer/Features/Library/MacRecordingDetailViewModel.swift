@@ -109,12 +109,15 @@ class MacRecordingDetailViewModel: ObservableObject {
         fixtureDetail: (() async -> RecordingDetail?)? = nil
     ) async {
         guard recordingDetail?.id == recordingId else { return }
-        guard shouldAutoRefresh(for: recordingDetail?.status) else { return }
+        guard shouldAutoRefresh(detail: recordingDetail) else { return }
 
         while !Task.isCancelled,
               recordingDetail?.id == recordingId,
-              shouldAutoRefresh(for: recordingDetail?.status) {
-            try? await Task.sleep(for: .seconds(recordingDetail?.status == .processing ? 4 : 2))
+              shouldAutoRefresh(detail: recordingDetail) {
+            let delay: Duration = recordingDetail?.summaryGeneration?.isActive == true
+                ? .seconds(2)
+                : .seconds(recordingDetail?.status == .processing ? 4 : 2)
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             await load(
                 recordingId: recordingId,
@@ -122,6 +125,26 @@ class MacRecordingDetailViewModel: ObservableObject {
                 fixtureDetail: fixtureDetail,
                 showLoading: false
             )
+        }
+    }
+
+    func startSummaryGeneration(recordingId id: String, apiClient: APIClient) async {
+        generatingSummaryRecordingId = id
+        defer {
+            if generatingSummaryRecordingId == id {
+                generatingSummaryRecordingId = nil
+            }
+        }
+
+        do {
+            let state = try await apiClient.startSummaryGeneration(recordingId: id)
+            if recordingDetail?.id == id {
+                recordingDetail = recordingDetail?.withSummaryGeneration(state)
+                selectedTab = .summary
+            }
+            await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
         }
     }
 
@@ -134,10 +157,14 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
 
         do {
-            _ = try await apiClient.generateSummary(recordingId: id)
+            let summary = try await apiClient.generateSummary(recordingId: id)
+            if recordingDetail?.id == id {
+                recordingDetail = recordingDetail?.withSummary(summary)
+                selectedTab = .summary
+            }
             let detail = try await apiClient.getRecording(id: id)
             if recordingDetail?.id == id {
-                applyFetchedDetail(detail)
+                applyFetchedDetail(detail.summary == nil ? detail.withSummary(summary) : detail)
                 selectedTab = .summary
             }
         } catch {
@@ -193,8 +220,12 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
     }
 
-    private func shouldAutoRefresh(for status: RecordingStatus?) -> Bool {
-        switch status {
+    private func shouldAutoRefresh(detail: RecordingDetail?) -> Bool {
+        if detail?.summaryGeneration?.isActive == true {
+            return true
+        }
+
+        switch detail?.status {
         case .pendingUpload, .uploading, .processing:
             return true
         case .ready, .failed, .none:
@@ -253,6 +284,7 @@ class MacRecordingDetailViewModel: ObservableObject {
                     createdAt: detail.createdAt,
                     segments: segments,
                     summary: detail.summary,
+                    summaryGeneration: detail.summaryGeneration,
                     actionItems: detail.actionItems,
                     highlights: detail.highlights
                 ),

@@ -2,11 +2,23 @@
 
 import enum
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, false
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    false,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +35,15 @@ class RecordingStatus(str, enum.Enum):
     UPLOADING = "uploading"
     PROCESSING = "processing"
     READY = "ready"
+    FAILED = "failed"
+
+
+class SummaryGenerationStatus(str, enum.Enum):
+    """Lifecycle states for manual summary generation jobs."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 
@@ -98,6 +119,12 @@ class Recording(Base, UUIDMixin, TimestampMixin):
     )
     summary: Mapped["Summary | None"] = relationship(
         "Summary", back_populates="recording", cascade="all, delete-orphan", uselist=False
+    )
+    summary_generation_jobs: Mapped[list["SummaryGenerationJob"]] = relationship(
+        "SummaryGenerationJob",
+        back_populates="recording",
+        cascade="all, delete-orphan",
+        order_by="desc(SummaryGenerationJob.created_at)",
     )
     action_items: Mapped[list["ActionItem"]] = relationship(
         "ActionItem", back_populates="recording", cascade="all, delete-orphan"
@@ -193,6 +220,76 @@ class Summary(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     recording: Mapped["Recording"] = relationship("Recording", back_populates="summary")
+
+
+class SummaryGenerationJob(Base, UUIDMixin, TimestampMixin):
+    """Durable server-side state for manual summary generation."""
+
+    __tablename__ = "summary_generation_jobs"
+    __table_args__ = (
+        Index("ix_summary_generation_jobs_recording_id", "recording_id"),
+        Index("ix_summary_generation_jobs_user_id", "user_id"),
+        Index("ix_summary_generation_jobs_status", "status"),
+        Index(
+            "ux_summary_generation_jobs_active_recording",
+            "recording_id",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    recording_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recordings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=SummaryGenerationStatus.QUEUED.value,
+        server_default=SummaryGenerationStatus.QUEUED.value,
+    )
+    stage: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="queued",
+        server_default="queued",
+    )
+    progress_percent: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=5,
+        server_default="5",
+    )
+    transcript_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_id: Mapped[str | None] = mapped_column(String(255))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    recording: Mapped["Recording"] = relationship(
+        "Recording",
+        back_populates="summary_generation_jobs",
+    )
+    user: Mapped["User"] = relationship("User")
 
 
 class ActionItem(Base, UUIDMixin, TimestampMixin):

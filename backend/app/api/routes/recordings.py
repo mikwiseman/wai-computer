@@ -4,7 +4,7 @@ import logging
 import re
 import secrets
 from collections import Counter, defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Literal
@@ -13,7 +13,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -34,7 +35,16 @@ from app.core.recording_audio_processing import (
     is_no_speech_placeholder,
     reset_recording_processing_state,
 )
-from app.core.summarizer import generate_title, resolve_highlight_timestamps, summarize_transcript
+from app.core.summarizer import generate_title, summarize_transcript
+from app.core.summary_generation import (
+    apply_summary_result,
+    build_summary_transcript,
+    latest_summary_generation_job,
+    load_active_summary_generation_job,
+    resolve_summary_language_preference,
+    resolve_summary_style_preference,
+    summary_transcript_hash,
+)
 from app.models.highlight import Highlight
 from app.models.person import Person
 from app.models.recording import (
@@ -45,6 +55,8 @@ from app.models.recording import (
     RecordingStatus,
     Segment,
     Summary,
+    SummaryGenerationJob,
+    SummaryGenerationStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +90,23 @@ class SummaryResponse(BaseModel):
     topics: list[str] | None
     people_mentioned: list[str] | None
     sentiment: str | None
+
+
+class SummaryGenerationResponse(BaseModel):
+    """Durable state for a recording summary generation request."""
+
+    job_id: str | None
+    recording_id: str
+    status: str
+    stage: str
+    progress_percent: int
+    message: str
+    requested_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    failed_at: datetime | None
+    error_code: str | None
+    error_message: str | None
 
 
 class ActionItemResponse(BaseModel):
@@ -244,6 +273,7 @@ class RecordingDetailResponse(RecordingResponse):
 
     segments: list[SegmentResponse]
     summary: SummaryResponse | None
+    summary_generation: SummaryGenerationResponse
     action_items: list[ActionItemResponse]
     highlights: list[HighlightResponse]
 
@@ -424,33 +454,63 @@ def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
     )
 
 
-def _resolve_summary_language_preference(
-    preferred_language: str | None,
-    recording_language: str | None,
-    default_language: str | None,
-) -> str:
-    """Choose the summary language, defaulting to the transcript language."""
-    normalized_preference = (preferred_language or "").strip().lower()
-    if normalized_preference and normalized_preference != "auto":
-        return normalized_preference
-
-    normalized_recording_language = (recording_language or "").strip().lower()
-    if normalized_recording_language and normalized_recording_language != "multi":
-        return normalized_recording_language
-
-    normalized_default_language = (default_language or "").strip().lower()
-    if normalized_default_language and normalized_default_language not in {"auto", "multi"}:
-        return normalized_default_language
-
-    return "auto"
+def _summary_generation_message(status_value: str, stage: str) -> str:
+    if status_value == "not_started":
+        return "Summary has not been generated."
+    if status_value == SummaryGenerationStatus.QUEUED.value:
+        return "Summary generation is queued."
+    if status_value == SummaryGenerationStatus.RUNNING.value:
+        if stage == "preparing_transcript":
+            return "Preparing transcript for summary generation."
+        if stage == "saving_summary":
+            return "Saving generated summary."
+        return "Generating summary."
+    if status_value == SummaryGenerationStatus.SUCCEEDED.value:
+        return "Summary is ready."
+    if status_value == SummaryGenerationStatus.FAILED.value:
+        return "Summary generation failed."
+    return "Summary generation status is unknown."
 
 
-def _resolve_summary_style_preference(preferred_style: str | None) -> str:
-    """Use the saved style when present; otherwise fall back to the default style."""
-    normalized_style = (preferred_style or "").strip().lower()
-    if normalized_style in {"brief", "medium", "detailed"}:
-        return normalized_style
-    return "medium"
+def _serialize_summary_generation(
+    *,
+    recording_id: UUID,
+    summary: Summary | None,
+    job: SummaryGenerationJob | None,
+) -> SummaryGenerationResponse:
+    if job is None:
+        status_value = "succeeded" if summary is not None else "not_started"
+        progress = 100 if summary is not None else 0
+        stage = "complete" if summary is not None else "idle"
+        return SummaryGenerationResponse(
+            job_id=None,
+            recording_id=str(recording_id),
+            status=status_value,
+            stage=stage,
+            progress_percent=progress,
+            message=_summary_generation_message(status_value, stage),
+            requested_at=None,
+            started_at=None,
+            completed_at=None,
+            failed_at=None,
+            error_code=None,
+            error_message=None,
+        )
+
+    return SummaryGenerationResponse(
+        job_id=str(job.id),
+        recording_id=str(job.recording_id),
+        status=job.status,
+        stage=job.stage,
+        progress_percent=job.progress_percent,
+        message=_summary_generation_message(job.status, job.stage),
+        requested_at=job.requested_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        failed_at=job.failed_at,
+        error_code=job.error_code,
+        error_message=job.error_message,
+    )
 
 
 def _serialize_action_item(action_item: ActionItem) -> ActionItemResponse:
@@ -526,6 +586,11 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
             for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
         summary=_serialize_summary(recording.summary),
+        summary_generation=_serialize_summary_generation(
+            recording_id=recording.id,
+            summary=recording.summary,
+            job=latest_summary_generation_job(recording),
+        ),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
         highlights=[_serialize_highlight(h) for h in recording.highlights],
     )
@@ -536,6 +601,7 @@ def _recording_detail_load_options():
     return (
         selectinload(Recording.segments).selectinload(Segment.person),
         selectinload(Recording.summary),
+        selectinload(Recording.summary_generation_jobs),
         selectinload(Recording.action_items),
         selectinload(Recording.highlights),
     )
@@ -938,6 +1004,16 @@ async def enqueue_recording_audio_processing(
             "staged_size_bytes": staged_size_bytes,
         },
     )
+
+
+def enqueue_summary_generation(job_id: UUID) -> str:
+    from app.tasks.celery_app import celery_app
+
+    result = celery_app.send_task(
+        "app.tasks.summary_generation.generate_recording_summary",
+        kwargs={"job_id": str(job_id)},
+    )
+    return str(result.id)
 
 
 @router.get("", response_model=list[RecordingResponse])
@@ -2204,6 +2280,130 @@ async def get_summary(
     return summary
 
 
+@router.get("/{recording_id}/summary-generation", response_model=SummaryGenerationResponse)
+async def get_summary_generation(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryGenerationResponse:
+    """Get durable summary generation state for a recording."""
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.summary),
+            selectinload(Recording.summary_generation_jobs),
+        )
+    )
+    recording = result.scalar_one_or_none()
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    return _serialize_summary_generation(
+        recording_id=recording.id,
+        summary=recording.summary,
+        job=latest_summary_generation_job(recording),
+    )
+
+
+@router.post(
+    "/{recording_id}/summary-generation",
+    response_model=SummaryGenerationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_summary_generation(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryGenerationResponse:
+    """Start or reuse durable summary generation for a recording."""
+    recording_result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.segments),
+            selectinload(Recording.summary),
+            selectinload(Recording.summary_generation_jobs),
+        )
+        .with_for_update()
+    )
+    recording = recording_result.scalar_one_or_none()
+    if recording is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    if not recording.segments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transcript segments to summarize",
+        )
+
+    active_job = await load_active_summary_generation_job(
+        db,
+        recording_id=recording.id,
+        user_id=user.id,
+    )
+    if active_job is not None:
+        return _serialize_summary_generation(
+            recording_id=recording.id,
+            summary=recording.summary,
+            job=active_job,
+        )
+
+    transcript = build_summary_transcript(recording.segments)
+    job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(transcript),
+    )
+    db.add(job)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        active_job = await load_active_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user.id,
+        )
+        if active_job is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Summary generation already changed",
+            )
+        return _serialize_summary_generation(
+            recording_id=recording_id,
+            summary=None,
+            job=active_job,
+        )
+    await db.commit()
+
+    try:
+        job.task_id = enqueue_summary_generation(job.id)
+    except Exception as exc:
+        logger.exception("Failed to enqueue summary generation for recording %s", recording_id)
+        job.status = SummaryGenerationStatus.FAILED.value
+        job.stage = "failed"
+        job.progress_percent = 100
+        job.error_code = "summary_enqueue_failed"
+        job.error_message = "Failed to start summary generation."
+        job.failed_at = datetime.now(timezone.utc)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to start summary generation",
+        ) from exc
+
+    await db.commit()
+    return _serialize_summary_generation(
+        recording_id=recording.id,
+        summary=recording.summary,
+        job=job,
+    )
+
+
 class AssignSpeakerRequest(BaseModel):
     """Assign all segments matching ``raw_label`` in this recording to a Person."""
 
@@ -2334,18 +2534,13 @@ async def generate_summary(
             detail="No transcript segments to summarize",
         )
 
-    # Build transcript text
-    transcript_lines = []
-    for segment in sorted(recording.segments, key=lambda x: x.start_ms or 0):
-        speaker = segment.speaker or "Speaker"
-        transcript_lines.append(f"{speaker}: {segment.content}")
-    transcript = "\n".join(transcript_lines)
-    summary_language = _resolve_summary_language_preference(
+    transcript = build_summary_transcript(recording.segments)
+    summary_language = resolve_summary_language_preference(
         user.summary_language,
         recording.language,
         user.default_language,
     )
-    summary_style = _resolve_summary_style_preference(user.summary_style)
+    summary_style = resolve_summary_style_preference(user.summary_style)
 
     try:
         summary_result = await summarize_transcript(
@@ -2355,101 +2550,7 @@ async def generate_summary(
             instructions=user.summary_instructions,
         )
 
-        if recording.summary:
-            recording.summary.summary = summary_result.summary
-            recording.summary.key_points = summary_result.key_points
-            recording.summary.decisions = summary_result.decisions
-            recording.summary.topics = summary_result.topics
-            recording.summary.people_mentioned = summary_result.people_mentioned
-            recording.summary.sentiment = summary_result.sentiment
-        else:
-            summary = Summary(
-                recording_id=recording.id,
-                summary=summary_result.summary,
-                key_points=summary_result.key_points,
-                decisions=summary_result.decisions,
-                topics=summary_result.topics,
-                people_mentioned=summary_result.people_mentioned,
-                sentiment=summary_result.sentiment,
-            )
-            db.add(summary)
-            recording.summary = summary
-
-        if not recording.title:
-            recording.title = summary_result.title
-
-        await db.execute(
-            delete(ActionItem).where(
-                ActionItem.recording_id == recording.id,
-                ActionItem.source == "generated",
-            )
-        )
-
-        for item in summary_result.action_items:
-            task = str(item.get("task", "")).strip()
-            if not task:
-                continue
-
-            due_raw = item.get("due")
-            due_date: date | None = None
-            if isinstance(due_raw, date):
-                due_date = due_raw
-            elif isinstance(due_raw, str) and due_raw:
-                try:
-                    due_date = date.fromisoformat(due_raw)
-                except ValueError:
-                    due_date = None
-
-            priority = item.get("priority", "medium")
-            if priority not in {"high", "medium", "low"}:
-                priority = "medium"
-
-            db.add(
-                ActionItem(
-                    recording_id=recording.id,
-                    task=task,
-                    owner=item.get("owner"),
-                    due_date=due_date,
-                    priority=priority,
-                    source="generated",
-                )
-            )
-
-        await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
-
-        raw_highlights = summary_result.highlights or []
-        if raw_highlights:
-            segment_dicts = [
-                {
-                    "content": seg.content,
-                    "start_ms": seg.start_ms,
-                    "end_ms": seg.end_ms,
-                }
-                for seg in sorted(recording.segments, key=lambda x: x.start_ms or 0)
-            ]
-            resolved = resolve_highlight_timestamps(raw_highlights, segment_dicts)
-            for hl in resolved:
-                category = str(hl.get("category", "insight")).strip()[:30]
-                title = str(hl.get("title", "")).strip()
-                if not title:
-                    continue
-                importance = hl.get("importance", "medium")
-                if importance not in {"high", "medium", "low"}:
-                    importance = "medium"
-                db.add(
-                    Highlight(
-                        recording_id=recording.id,
-                        category=category,
-                        title=title[:500],
-                        description=hl.get("description"),
-                        speaker=hl.get("speaker"),
-                        start_ms=hl.get("start_ms"),
-                        end_ms=hl.get("end_ms"),
-                        importance=importance,
-                    )
-                )
-
-        await db.flush()
+        await apply_summary_result(db, recording=recording, summary_result=summary_result)
 
         summary = _serialize_summary(recording.summary)
         if summary is None:

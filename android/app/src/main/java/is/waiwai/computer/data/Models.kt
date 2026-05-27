@@ -124,9 +124,32 @@ data class RecordingDetail(
     @SerialName("created_at") val createdAt: String,
     val segments: List<Segment> = emptyList(),
     val summary: Summary? = null,
+    @SerialName("summary_generation") val summaryGeneration: SummaryGeneration? = null,
     @SerialName("action_items") val actionItems: List<ActionItem> = emptyList(),
     val highlights: List<RecordingHighlight> = emptyList(),
 )
+
+@Serializable
+data class SummaryGeneration(
+    @SerialName("job_id") val jobId: String? = null,
+    @SerialName("recording_id") val recordingId: String,
+    val status: String,
+    val stage: String = "idle",
+    @SerialName("progress_percent") val progressPercent: Int = 0,
+    val message: String = "",
+    @SerialName("requested_at") val requestedAt: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("completed_at") val completedAt: String? = null,
+    @SerialName("failed_at") val failedAt: String? = null,
+    @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+) {
+    val isActive: Boolean
+        get() = status == "queued" || status == "running"
+
+    val isFailed: Boolean
+        get() = status == "failed"
+}
 
 @Serializable
 data class Segment(

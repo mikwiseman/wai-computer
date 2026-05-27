@@ -37,6 +37,8 @@ from app.models.recording import (
     RecordingShare,
     Segment,
     Summary,
+    SummaryGenerationJob,
+    SummaryGenerationStatus,
 )
 from app.models.refresh_token import RefreshToken
 from app.models.telegram import (
@@ -72,6 +74,8 @@ __all__ = [
     "Folder",
     "Segment",
     "Summary",
+    "SummaryGenerationJob",
+    "SummaryGenerationStatus",
     "ActionItem",
     "Highlight",
     "Person",

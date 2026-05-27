@@ -868,6 +868,14 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(recordingId)/generate-summary")
     }
 
+    public func getSummaryGeneration(recordingId: String) async throws -> SummaryGenerationState {
+        return try await request(.GET, path: "/api/recordings/\(recordingId)/summary-generation")
+    }
+
+    public func startSummaryGeneration(recordingId: String) async throws -> SummaryGenerationState {
+        return try await request(.POST, path: "/api/recordings/\(recordingId)/summary-generation")
+    }
+
     /// Export recording transcript in the given format (markdown, txt, srt).
     public func exportRecording(id: String, format: String) async throws -> String {
         let path = "/api/recordings/\(id)/export"

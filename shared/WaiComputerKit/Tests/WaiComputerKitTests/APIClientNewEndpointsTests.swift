@@ -36,6 +36,89 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    // MARK: - Recordings
+
+    func testStartSummaryGenerationUsesDurableEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-1/summary-generation")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 202,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "job_id": "job-1",
+              "recording_id": "rec-1",
+              "status": "queued",
+              "stage": "queued",
+              "progress_percent": 5,
+              "message": "Summary generation is queued.",
+              "requested_at": "2026-05-27T09:00:00Z",
+              "started_at": null,
+              "completed_at": null,
+              "failed_at": null,
+              "error_code": null,
+              "error_message": null
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let state = try await client.startSummaryGeneration(recordingId: "rec-1")
+
+        XCTAssertEqual(state.jobId, "job-1")
+        XCTAssertEqual(state.recordingId, "rec-1")
+        XCTAssertEqual(state.status, "queued")
+        XCTAssertEqual(state.progressPercent, 5)
+        XCTAssertTrue(state.isActive)
+    }
+
+    func testGetSummaryGenerationUsesDurableEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings/rec-1/summary-generation")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "job_id": "job-1",
+              "recording_id": "rec-1",
+              "status": "failed",
+              "stage": "failed",
+              "progress_percent": 100,
+              "message": "Summary generation failed.",
+              "requested_at": "2026-05-27T09:00:00Z",
+              "started_at": "2026-05-27T09:00:02Z",
+              "completed_at": null,
+              "failed_at": "2026-05-27T09:00:05Z",
+              "error_code": "summarization_failed",
+              "error_message": "We couldn't generate the summary right now. Please try again."
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let state = try await client.getSummaryGeneration(recordingId: "rec-1")
+
+        XCTAssertEqual(state.jobId, "job-1")
+        XCTAssertEqual(state.status, "failed")
+        XCTAssertEqual(state.errorCode, "summarization_failed")
+        XCTAssertTrue(state.isFailed)
+    }
+
     // MARK: - Companion
 
     func testPatchCompanionChatSendsRenameBody() async throws {
