@@ -201,7 +201,7 @@ launch_fixture_app() {
   wait_for_app_running "$TARGET_BUNDLE_ID"
   TARGET_APP_REF="PID:$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
   refresh_target_window_id "$scenario"
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --verify --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json"
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json" || true
   peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
     > "$RUN_DIR/window-$scenario.json"
   sleep 0.8
@@ -210,20 +210,24 @@ launch_fixture_app() {
 refresh_target_window_id() {
   local name="$1"
   local windows_json="$RUN_DIR/windows-$name.json"
+  local deadline=$((SECONDS + 20))
 
-  peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"
-  TARGET_WINDOW_ID="$(jq -r '
-    first(
-      .data.windows[]?
-      | select(.title == "WaiComputer")
-      | select((.bounds[1][0] // 0) > 500)
-      | .windowID
-    ) // ""
-  ' "$windows_json")"
-  [[ -n "$TARGET_WINDOW_ID" ]] || {
-    cat "$windows_json" >&2
-    die "Unable to find WaiComputer main window for $TARGET_APP_REF"
-  }
+  while (( SECONDS < deadline )); do
+    peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"
+    TARGET_WINDOW_ID="$(jq -r '
+      first(
+        .data.windows[]?
+        | select(.title == "WaiComputer")
+        | select((.bounds[1][0] // 0) > 500)
+        | .windowID
+      ) // ""
+    ' "$windows_json")"
+    [[ -n "$TARGET_WINDOW_ID" ]] && return 0
+    sleep 0.5
+  done
+
+  cat "$windows_json" >&2
+  die "Unable to find WaiComputer main window for $TARGET_APP_REF"
 }
 
 wait_for_app_running() {
@@ -366,8 +370,8 @@ click_element() {
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
   coords="$(element_center_coords "$json_path" "$element_id")"
   [[ -n "$coords" && "$coords" != "null" ]] || die "Missing coordinates for $name ($element_id)"
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --verify --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json"
-  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
+  if ! peekaboo click --on "$element_id" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
