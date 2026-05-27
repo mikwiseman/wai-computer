@@ -10,10 +10,7 @@
             <ComboBoxItem Content="Right Ctrl" /><ComboBoxItem Content="Right Win" />
             <ComboBoxItem Content="Caps Lock" /><ComboBoxItem Content="Ctrl + Alt" />
         </ComboBox>
-        <ComboBox Header="Provider" SelectedIndex="0">
-            <ComboBoxItem Content="ElevenLabs" /><ComboBoxItem Content="OpenAI" />
-            <ComboBoxItem Content="Inworld" /><ComboBoxItem Content="Deepgram" />
-        </ComboBox>
+        <TextBlock Text="Live transcription: OpenAI GPT Realtime Whisper" />
         <ToggleSwitch Header="Post-filter dictated text" IsOn="False" />
     </StackPanel>
 </UserControl>

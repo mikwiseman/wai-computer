@@ -280,15 +280,15 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     }
 
     private func handleOpenAIDelta(_ payload: [String: Any]) {
-        let delta = (payload["delta"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let delta = payload["delta"] as? String ?? ""
         guard !delta.isEmpty else { return }
         let itemID = payload["item_id"] as? String ?? "default"
-        let transcript = ((transcriptByItemID[itemID] ?? "") + delta)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcript = (transcriptByItemID[itemID] ?? "") + delta
         transcriptByItemID[itemID] = transcript
         markTranscriptEvent()
-        eventContinuation.yield(.interim(text: transcript, language: nil))
+        let displayText = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayText.isEmpty else { return }
+        eventContinuation.yield(.interim(text: displayText, language: nil))
     }
 
     private func handleOpenAICompleted(_ payload: [String: Any]) {

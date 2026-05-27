@@ -42,7 +42,7 @@ class RealtimeTranscriptionSession:
     commit_strategy: str | None = None
     no_verbatim: bool = True
     websocket_url: str | None = None
-    auth_scheme: str = "query_token"
+    auth_scheme: str = "bearer"
 
 
 async def _build_openai_realtime_session(

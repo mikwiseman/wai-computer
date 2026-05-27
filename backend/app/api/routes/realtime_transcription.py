@@ -43,7 +43,7 @@ class RealtimeTranscriptionSessionResponse(BaseModel):
     commit_strategy: str | None = None
     no_verbatim: bool
     websocket_url: str | None = None
-    auth_scheme: str = "query_token"
+    auth_scheme: str = "bearer"
 
 
 @router.post("/session", response_model=RealtimeTranscriptionSessionResponse)
