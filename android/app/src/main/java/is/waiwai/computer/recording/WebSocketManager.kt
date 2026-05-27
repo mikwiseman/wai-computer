@@ -73,6 +73,8 @@ class ElevenLabsWebSocketManager(
     private var connected = false
     private var currentConfig: RealtimeTranscriptionSessionConfig? = null
     private val openAIInterimByItem = mutableMapOf<String, String>()
+    private var openAIUncommittedAudioBytes = 0
+    private var openAIPendingCommitCount = 0
 
     override suspend fun connect() {
         collectedSegments.clear()
@@ -81,13 +83,17 @@ class ElevenLabsWebSocketManager(
         endOfStreamSent = false
         providerFinalizationReceived = false
         lastTranscriptReceivedAtMs = null
+        openAIUncommittedAudioBytes = 0
+        openAIPendingCommitCount = 0
         openSocket(freshSession())
     }
 
     override suspend fun sendAudio(data: ByteArray) {
         bufferAudioChunk(data)
         val socket = webSocket ?: return
-        if (currentConfig?.provider == "deepgram" || currentConfig?.provider == "soniox") {
+        if (currentConfig?.provider == "openai") {
+            sendOpenAIAudio(socket, data)
+        } else if (currentConfig?.provider == "deepgram" || currentConfig?.provider == "soniox") {
             socket.send(data.toByteString())
         } else {
             socket.send(makeAudioMessage(data, commit = false))
@@ -157,14 +163,6 @@ class ElevenLabsWebSocketManager(
             .build()
     }
 
-    internal fun buildInworldRequest(config: RealtimeTranscriptionSessionConfig): Request {
-        val url = requireNotNull(config.websocketUrl) { "Missing Inworld realtime websocket URL" }
-        return Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer ${config.token}")
-            .build()
-    }
-
     internal fun buildDeepgramRequest(config: RealtimeTranscriptionSessionConfig): Request {
         val url = requireNotNull(config.websocketUrl) { "Missing Deepgram realtime websocket URL" }
         return Request.Builder()
@@ -184,10 +182,6 @@ class ElevenLabsWebSocketManager(
         when (currentConfig?.provider) {
             "openai" -> {
                 handleOpenAIMessage(text)
-                return
-            }
-            "inworld" -> {
-                handleInworldMessage(text)
                 return
             }
             "deepgram" -> {
@@ -263,6 +257,12 @@ class ElevenLabsWebSocketManager(
                 val itemId = payload.string("item_id") ?: "unknown"
                 val transcript = (payload.string("transcript") ?: openAIInterimByItem[itemId]).orEmpty().trim()
                 openAIInterimByItem.remove(itemId)
+                if (openAIPendingCommitCount > 0) {
+                    openAIPendingCommitCount -= 1
+                }
+                if (endOfStreamRequested && endOfStreamSent && openAIPendingCommitCount == 0) {
+                    providerFinalizationReceived = true
+                }
                 if (transcript.isBlank()) return
                 val endMs = collectedSegments.lastOrNull()?.endMs ?: 0
                 val segment = LiveTranscriptSegment(
@@ -282,75 +282,6 @@ class ElevenLabsWebSocketManager(
                     ?: "OpenAI realtime transcription error"
                 scheduleReconnect(IllegalStateException(message))
             }
-        }
-    }
-
-    internal fun handleInworldMessage(text: String) {
-        val payload = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
-        val transcription = payload["transcription"]?.jsonObject
-            ?: payload["result"]?.jsonObject?.get("transcription")?.jsonObject
-        if (transcription != null) {
-            handleInworldTranscription(transcription)
-            return
-        }
-        val error = payload["error"]?.jsonObject
-        if (error != null) {
-            scheduleReconnect(
-                IllegalStateException(
-                    error.string("message")
-                        ?: error.string("error_message")
-                        ?: "Inworld realtime transcription error",
-                ),
-            )
-        }
-    }
-
-    private fun handleInworldTranscription(payload: JsonObject) {
-        val transcript = (payload.string("text") ?: payload.string("transcript")).orEmpty().trim()
-        if (transcript.isBlank()) return
-        val isFinal = payload.boolean("is_final") ?: payload.boolean("isFinal") ?: false
-        val confidence = payload.double("confidence") ?: 0.0
-        if (isFinal) {
-            val words = payload["words"]?.jsonArray?.mapNotNull { it as? JsonObject }
-                ?: payload["word_timestamps"]?.jsonArray?.mapNotNull { it as? JsonObject }
-                ?: payload["wordTimestamps"]?.jsonArray?.mapNotNull { it as? JsonObject }
-                ?: emptyList()
-            val startMs = inworldTimestampMs(
-                words.firstOrNull()?.get("start_ms")
-                    ?: words.firstOrNull()?.get("startMs")
-                    ?: words.firstOrNull()?.get("start_time_ms")
-                    ?: words.firstOrNull()?.get("start"),
-            ) ?: (collectedSegments.lastOrNull()?.endMs ?: 0)
-            val endMs = inworldTimestampMs(
-                words.lastOrNull()?.get("end_ms")
-                    ?: words.lastOrNull()?.get("endMs")
-                    ?: words.lastOrNull()?.get("end_time_ms")
-                    ?: words.lastOrNull()?.get("end"),
-            ) ?: startMs
-            val segment = LiveTranscriptSegment(
-                text = transcript,
-                speaker = words.firstOrNull()?.string("speaker") ?: words.firstOrNull()?.string("speaker_id"),
-                isFinal = true,
-                startMs = startMs,
-                endMs = endMs,
-                confidence = confidence,
-            )
-            collectedSegments += segment
-            markTranscriptReceived(finalizationMarker = endOfStreamRequested)
-            events.tryEmit(WsEvent.Transcript(segment))
-        } else {
-            events.tryEmit(
-                WsEvent.Transcript(
-                    LiveTranscriptSegment(
-                        text = transcript,
-                        speaker = null,
-                        isFinal = false,
-                        startMs = collectedSegments.lastOrNull()?.endMs ?: 0,
-                        endMs = collectedSegments.lastOrNull()?.endMs ?: 0,
-                        confidence = confidence,
-                    ),
-                ),
-            )
         }
     }
 
@@ -593,7 +524,6 @@ class ElevenLabsWebSocketManager(
         currentConfig = config
         val request = when (config.provider) {
             "openai" -> buildOpenAIRequest(config)
-            "inworld" -> buildInworldRequest(config)
             "deepgram" -> buildDeepgramRequest(config)
             "soniox" -> buildSonioxRequest(config)
             else -> Request.Builder().url(buildElevenLabsUrl(config)).build()
@@ -605,9 +535,6 @@ class ElevenLabsWebSocketManager(
                     connected = true
                     if (config.provider == "openai") {
                         webSocket.send(makeOpenAISessionUpdateMessage(config))
-                    }
-                    if (config.provider == "inworld") {
-                        webSocket.send(makeInworldTranscribeConfigMessage(config))
                     }
                     if (config.provider == "soniox") {
                         webSocket.send(makeSonioxRealtimeConfigMessage(config))
@@ -655,7 +582,9 @@ class ElevenLabsWebSocketManager(
         val socket = webSocket ?: return
         while (audioBuffer.isNotEmpty()) {
             val chunk = audioBuffer.removeFirst()
-            if (currentConfig?.provider == "deepgram" || currentConfig?.provider == "soniox") {
+            if (currentConfig?.provider == "openai") {
+                sendOpenAIAudio(socket, chunk)
+            } else if (currentConfig?.provider == "deepgram" || currentConfig?.provider == "soniox") {
                 socket.send(chunk.toByteString())
             } else {
                 socket.send(makeAudioMessage(chunk, commit = false))
@@ -666,10 +595,12 @@ class ElevenLabsWebSocketManager(
     private suspend fun sendCommitChunkIfNeeded() {
         if (!endOfStreamRequested || endOfStreamSent || !connected) return
         when (currentConfig?.provider) {
-            "openai" -> webSocket?.send("""{"type":"input_audio_buffer.commit"}""")
-            "inworld" -> {
-                webSocket?.send("""{"endTurn":{}}""")
-                webSocket?.send("""{"closeStream":{}}""")
+            "openai" -> {
+                if (openAIUncommittedAudioBytes > 0) {
+                    commitOpenAIAudioBuffer()
+                } else if (openAIPendingCommitCount == 0) {
+                    providerFinalizationReceived = true
+                }
             }
             "deepgram" -> webSocket?.send("""{"type":"CloseStream"}""")
             "soniox" -> {
@@ -681,6 +612,28 @@ class ElevenLabsWebSocketManager(
             else -> webSocket?.send(makeAudioMessage(ByteArray(640), commit = true))
         }
         endOfStreamSent = true
+    }
+
+    private fun sendOpenAIAudio(socket: WebSocket, data: ByteArray) {
+        socket.send(makeOpenAIAudioAppendMessage(data))
+        openAIUncommittedAudioBytes += openAI24kMonoPCM(data).size
+        if (openAIUncommittedAudioBytes >= openAIAutoCommitBytes()) {
+            commitOpenAIAudioBuffer(socket)
+        }
+    }
+
+    private fun openAIAutoCommitBytes(): Int {
+        val config = currentConfig
+        return (config?.sampleRate ?: 24_000).coerceAtLeast(1) *
+            (config?.channels ?: 1).coerceAtLeast(1) *
+            2
+    }
+
+    private fun commitOpenAIAudioBuffer(socket: WebSocket? = webSocket) {
+        if (openAIUncommittedAudioBytes <= 0) return
+        socket?.send("""{"type":"input_audio_buffer.commit"}""")
+        openAIUncommittedAudioBytes = 0
+        openAIPendingCommitCount += 1
     }
 
     private fun markTranscriptReceived(finalizationMarker: Boolean = false) {
@@ -697,8 +650,6 @@ class ElevenLabsWebSocketManager(
             } else {
                 makeOpenAIAudioAppendMessage(data)
             }
-        } else if (currentConfig?.provider == "inworld") {
-            makeInworldAudioChunkMessage(data)
         } else if (currentConfig?.provider == "deepgram" || currentConfig?.provider == "soniox") {
             error("Binary audio path must be used for ${currentConfig?.provider}")
         } else {
@@ -718,29 +669,6 @@ class ElevenLabsWebSocketManager(
             """"model":"${config.model}""""
         }
         return """{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":${config.sampleRate}},"transcription":{$transcription},"turn_detection":null}}}}"""
-    }
-
-    internal fun makeInworldTranscribeConfigMessage(config: RealtimeTranscriptionSessionConfig): String {
-        val languageValue = when {
-            config.language == "multi" || config.language == "und" -> ""
-            "-" in config.language -> config.language.substringBefore("-")
-            else -> config.language
-        }
-        return buildString {
-            append("{\"transcribeConfig\":{")
-            append("\"modelId\":\"").append(config.model).append("\",")
-            append("\"language\":\"").append(languageValue).append("\",")
-            append("\"audioEncoding\":\"LINEAR16\",")
-            append("\"sampleRateHertz\":").append(config.sampleRate).append(",")
-            append("\"numberOfChannels\":").append(config.channels).append(",")
-            append("\"inactivityTimeoutSeconds\":60")
-            append("}}")
-        }
-    }
-
-    internal fun makeInworldAudioChunkMessage(data: ByteArray): String {
-        val audioBase64 = java.util.Base64.getEncoder().encodeToString(data)
-        return """{"audioChunk":{"content":"$audioBase64"}}"""
     }
 
     internal fun makeSonioxRealtimeConfigMessage(config: RealtimeTranscriptionSessionConfig): String {
@@ -820,15 +748,6 @@ class ElevenLabsWebSocketManager(
     private fun JsonObject.double(key: String): Double? = (this[key] as? JsonPrimitive)?.doubleOrNull
 
     private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
-
-    private fun inworldTimestampMs(value: JsonElement?): Int? {
-        val primitive = value as? JsonPrimitive ?: return null
-        var numeric = primitive.doubleOrNull ?: primitive.contentOrNull?.toDoubleOrNull() ?: return null
-        if (numeric >= 0 && numeric < 10_000 && numeric % 1.0 != 0.0) {
-            numeric *= 1_000
-        }
-        return numeric.toInt()
-    }
 
     private fun secondsTimestampMs(value: JsonElement?): Int? {
         val primitive = value as? JsonPrimitive ?: return null

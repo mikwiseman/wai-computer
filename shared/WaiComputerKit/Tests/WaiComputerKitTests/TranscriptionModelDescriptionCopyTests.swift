@@ -4,10 +4,10 @@ import XCTest
 final class TranscriptionModelDescriptionCopyTests: XCTestCase {
     func testRussianDescriptionUsesClientCopyForKnownOptions() {
         let option = TranscriptionModelOption(
-            provider: "inworld",
-            model: "inworld/inworld-stt-1",
-            label: "Inworld STT-1",
-            description: "Default for dictation. Inworld first-party model for configurable turn-taking and voice-profile-aware transcription."
+            provider: "openai",
+            model: "gpt-realtime-whisper",
+            label: "OpenAI GPT Realtime Whisper",
+            description: "Default for dictation. OpenAI realtime Whisper model for streaming speech recognition."
         )
 
         let description = TranscriptionModelDescriptionCopy.description(
@@ -18,7 +18,7 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для диктовки. Собственная модель Inworld с настраиваемым определением пауз и учетом голосового профиля."
+            "По умолчанию для диктовки. Realtime-модель OpenAI Whisper для потокового распознавания речи."
         )
         XCTAssertFalse(description.contains("Default for dictation"))
     }
@@ -43,10 +43,10 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
     func testContextDifferentiatesRepeatedProviderModelPairs() {
         let option = TranscriptionModelOption(
-            provider: "inworld",
-            model: "inworld/inworld-stt-1",
-            label: "Inworld STT-1",
-            description: "Default for live recording. Inworld first-party model for configurable turn-taking and voice-profile-aware transcription."
+            provider: "openai",
+            model: "gpt-realtime-whisper",
+            label: "OpenAI GPT Realtime Whisper",
+            description: "Default for live recording. OpenAI realtime Whisper model for streaming speech recognition."
         )
 
         let description = TranscriptionModelDescriptionCopy.description(
@@ -57,7 +57,7 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для живой записи. Собственная модель Inworld с настраиваемым определением пауз и учетом голосового профиля."
+            "По умолчанию для живой записи. Realtime-модель OpenAI Whisper для потокового распознавания речи."
         )
     }
 }

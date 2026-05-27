@@ -71,7 +71,7 @@ GitHub Actions are intentionally not used for Android release builds in this rep
 | Personal info — Email address | Collected, required for account, encrypted in transit, encrypted at rest, can be deleted by user. |
 | App activity — App interactions | Collected, optional, for app functionality + analytics. |
 | App info & performance — Crash logs | Collected, optional, for app functionality (Sentry). |
-| Audio files — Voice / sound recordings | Collected, required for the core transcription feature; encrypted in transit + at rest; user can delete in-app; shared with speech-to-text providers (ElevenLabs / OpenAI / Inworld) for the duration of the transcription. |
+| Audio files — Voice / sound recordings | Collected, required for the core transcription feature; encrypted in transit + at rest; user can delete in-app; shared with speech-to-text providers (ElevenLabs / OpenAI) for the duration of the transcription. |
 | Files & docs — Audio import | User picks files via system file picker; not collected outside the import flow. |
 | Account deletion | Yes — Settings → Delete account is fully implemented. Also reachable from the web at https://wai.computer/settings. |
 

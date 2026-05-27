@@ -22,10 +22,10 @@ TranscriptionOptionGroup = Literal[
 ]
 
 
-DEFAULT_DICTATION_LIVE_STT_PROVIDER = "inworld"
-DEFAULT_DICTATION_LIVE_STT_MODEL = "inworld/inworld-stt-1"
-DEFAULT_RECORDING_LIVE_STT_PROVIDER = "inworld"
-DEFAULT_RECORDING_LIVE_STT_MODEL = "inworld/inworld-stt-1"
+DEFAULT_DICTATION_LIVE_STT_PROVIDER = "openai"
+DEFAULT_DICTATION_LIVE_STT_MODEL = "gpt-realtime-whisper"
+DEFAULT_RECORDING_LIVE_STT_PROVIDER = "openai"
+DEFAULT_RECORDING_LIVE_STT_MODEL = "gpt-realtime-whisper"
 DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
 DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
@@ -50,19 +50,19 @@ class ModelOption:
 
 _DICTATION_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="inworld",
-        model="inworld/inworld-stt-1",
-        label="Inworld STT-1",
-        description="Fixed low-latency model for live dictation.",
+        provider="openai",
+        model="gpt-realtime-whisper",
+        label="OpenAI GPT Realtime Whisper",
+        description="Fixed streaming speech-to-text model for live dictation.",
     ),
 )
 
 _RECORDING_REALTIME_OPTIONS: tuple[ModelOption, ...] = (
     ModelOption(
-        provider="inworld",
-        model="inworld/inworld-stt-1",
-        label="Inworld STT-1",
-        description="Fixed realtime model for live recording.",
+        provider="openai",
+        model="gpt-realtime-whisper",
+        label="OpenAI GPT Realtime Whisper",
+        description="Fixed streaming speech-to-text model for live recording.",
     ),
 )
 
@@ -91,7 +91,6 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
 _PROVIDER_KEY_BY_NAME = {
     "elevenlabs": "elevenlabs_api_key",
     "deepgram": "deepgram_api_key",
-    "inworld": "inworld_api_key",
     "openai": "openai_api_key",
     "soniox": "soniox_api_key",
 }

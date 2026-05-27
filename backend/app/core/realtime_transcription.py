@@ -1,8 +1,8 @@
 """Realtime speech-to-text session minting.
 
-The product has one live STT runtime: Inworld STT-1. The native apps connect
-directly to the provider WebSocket with a short-lived server-minted token, so
-clients never receive the long-lived provider API key.
+The product has one live STT runtime: OpenAI gpt-realtime-whisper. The native
+apps connect directly to the provider WebSocket with a short-lived server-minted
+token, so clients never receive the long-lived provider API key.
 """
 
 from __future__ import annotations
@@ -10,9 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.config import get_settings
-from app.core.inworld import build_session as build_inworld_session
-from app.core.inworld import mint_client_jwt as mint_inworld_client_jwt
+from app.core.openai_transcription import (
+    OPENAI_REALTIME_SAMPLE_RATE,
+    OPENAI_REALTIME_TOKEN_TTL_SECONDS,
+    create_realtime_client_secret,
+    realtime_websocket_url,
+)
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
     DEFAULT_DICTATION_LIVE_STT_PROVIDER,
@@ -21,8 +24,6 @@ from app.core.transcription_options import (
     validate_option,
 )
 from app.models.user import User
-
-DEFAULT_SAMPLE_RATE = 16_000
 
 
 @dataclass(frozen=True)
@@ -44,42 +45,30 @@ class RealtimeTranscriptionSession:
     auth_scheme: str = "query_token"
 
 
-async def _build_inworld_realtime_session(
+async def _build_openai_realtime_session(
     language: str,
     channels: int,
     *,
     model: str,
 ) -> RealtimeTranscriptionSession:
-    settings = get_settings()
-    if not settings.inworld_api_key:
-        raise ValueError("INWORLD_API_KEY not configured")
-
-    jwt = await mint_inworld_client_jwt(
-        api_key=settings.inworld_api_key,
-        workspace=settings.inworld_workspace,
-    )
-    inworld = build_inworld_session(
-        api_key=settings.inworld_api_key,
-        auth_header=f"Bearer {jwt.token}",
-        expires_in_seconds=jwt.expires_in_seconds,
-        model_id=model,
+    token = await create_realtime_client_secret(
+        model=model,
         language=language,
-        sample_rate=DEFAULT_SAMPLE_RATE,
-        channels=channels,
     )
+    del channels
     return RealtimeTranscriptionSession(
-        provider="inworld",
-        token=jwt.token,
-        expires_in_seconds=inworld.expires_in_seconds,
-        sample_rate=inworld.sample_rate_hertz,
-        audio_format="linear16_16000",
-        language=inworld.language,
-        channels=inworld.number_of_channels,
-        model=inworld.model_id,
+        provider="openai",
+        token=token,
+        expires_in_seconds=OPENAI_REALTIME_TOKEN_TTL_SECONDS,
+        sample_rate=OPENAI_REALTIME_SAMPLE_RATE,
+        audio_format="pcm_24000",
+        language=language,
+        channels=1,
+        model=model,
         keep_alive_interval_seconds=None,
-        commit_strategy="vad",
+        commit_strategy="manual",
         no_verbatim=False,
-        websocket_url=inworld.websocket_url,
+        websocket_url=realtime_websocket_url(model),
         auth_scheme="bearer",
     )
 
@@ -100,7 +89,9 @@ async def create_realtime_transcription_session(
     del user
 
     resolved_language = language.strip().lower() or "multi"
-    resolved_channels = max(1, channels)
+    # OpenAI Realtime transcription docs specify mono PCM for audio/pcm.
+    resolved_channels = 1
+    del channels
 
     if purpose == "dictation":
         provider, model = validate_option(
@@ -117,10 +108,10 @@ async def create_realtime_transcription_session(
         )
         unsupported_message = f"Unsupported recording_live_stt_provider: {provider}."
 
-    if provider != "inworld":
+    if provider != "openai":
         raise ValueError(unsupported_message)
 
-    return await _build_inworld_realtime_session(
+    return await _build_openai_realtime_session(
         resolved_language,
         resolved_channels,
         model=model,

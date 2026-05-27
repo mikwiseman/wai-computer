@@ -17,8 +17,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let result = try await vault.take(
             for: key,
-            expectedProvider: "inworld",
-            expectedModel: "inworld/inworld-stt-1"
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
         )
 
         XCTAssertEqual(result.config.token, "fresh")
@@ -40,13 +40,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let prefetched = try await vault.take(
             for: key,
-            expectedProvider: "inworld",
-            expectedModel: "inworld/inworld-stt-1"
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
         )
         let fresh = try await vault.take(
             for: key,
-            expectedProvider: "inworld",
-            expectedModel: "inworld/inworld-stt-1"
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
         )
 
         XCTAssertTrue(prefetched.prefetched)
@@ -71,8 +71,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let result = try await vault.take(
             for: key,
-            expectedProvider: "inworld",
-            expectedModel: "inworld/inworld-stt-1"
+            expectedProvider: "openai",
+            expectedModel: "gpt-realtime-whisper"
         )
 
         XCTAssertEqual(result.config.token, "fresh")
@@ -105,8 +105,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
     private static func config(
         token: String,
-        provider: String = "inworld",
-        model: String = "inworld/inworld-stt-1",
+        provider: String = "openai",
+        model: String = "gpt-realtime-whisper",
         language: String = "multi",
         expiresInSeconds: Int = 120
     ) -> RealtimeTranscriptionSessionConfig {
@@ -114,12 +114,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             provider: provider,
             token: token,
             expiresInSeconds: expiresInSeconds,
-            sampleRate: 16_000,
-            audioFormat: "linear16_16000",
+            sampleRate: 24_000,
+            audioFormat: "pcm_24000",
             language: language,
             channels: 1,
             model: model,
-            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            commitStrategy: "manual",
+            websocketURL: "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
             authScheme: "bearer"
         )
     }

@@ -3,96 +3,23 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 
-from app.core.realtime_transcription import (
-    _build_inworld_realtime_session,
-    create_realtime_transcription_session,
-)
+from app.core.realtime_transcription import create_realtime_transcription_session
+
+OPENAI_REALTIME_MODEL = "gpt-realtime-whisper"
 
 
-def _patch_inworld_mint(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    language: str = "multi",
-    channels: int = 1,
-) -> None:
+def _patch_openai_mint(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    mint = AsyncMock(return_value="ek_openai")
     monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(inworld_api_key="iw-key:iw-secret", inworld_workspace=""),
+        "app.core.realtime_transcription.create_realtime_client_secret",
+        mint,
     )
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.mint_inworld_client_jwt",
-        AsyncMock(return_value=SimpleNamespace(token="iw-jwt", expires_in_seconds=840)),
-    )
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.build_inworld_session",
-        lambda **kw: SimpleNamespace(
-            auth_header="Bearer iw-jwt",
-            websocket_url="wss://iw/x",
-            model_id="inworld/inworld-stt-1",
-            language=language,
-            audio_encoding="LINEAR16",
-            sample_rate_hertz=16000,
-            number_of_channels=channels,
-            expires_in_seconds=840,
-        ),
-    )
-
-
-@pytest.mark.asyncio
-async def test_build_inworld_requires_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(inworld_api_key="", inworld_workspace=""),
-    )
-    with pytest.raises(ValueError, match="INWORLD_API_KEY"):
-        await _build_inworld_realtime_session(
-            "en", 1, model="inworld/inworld-stt-1",
-        )
-
-
-@pytest.mark.asyncio
-async def test_build_inworld_returns_bearer_jwt_session(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(inworld_api_key="iw-key:iw-secret", inworld_workspace=""),
-    )
-    fake_jwt = SimpleNamespace(token="iw-jwt", expires_in_seconds=840)
-    fake_inworld = SimpleNamespace(
-        auth_header="Bearer iw-jwt",
-        websocket_url="wss://iw/x",
-        model_id="inworld/inworld-stt-1",
-        language="en",
-        audio_encoding="LINEAR16",
-        sample_rate_hertz=16000,
-        number_of_channels=1,
-        expires_in_seconds=840,
-    )
-    with (
-        patch(
-            "app.core.realtime_transcription.mint_inworld_client_jwt",
-            new=AsyncMock(return_value=fake_jwt),
-        ),
-        patch(
-            "app.core.realtime_transcription.build_inworld_session",
-            return_value=fake_inworld,
-        ),
-    ):
-        session = await _build_inworld_realtime_session(
-            "en", 1, model="inworld/inworld-stt-1",
-        )
-    assert session.provider == "inworld"
-    assert session.token == "iw-jwt"
-    assert session.auth_scheme == "bearer"
-    assert session.websocket_url == "wss://iw/x"
+    return mint
 
 
 def _make_user(
@@ -118,10 +45,11 @@ def _make_user(
         ("elevenlabs", "scribe_v2_realtime"),
         ("deepgram", "flux-general-multi"),
         ("soniox", "stt-rt-v4"),
-        ("inworld", "inworld/inworld-stt-1"),
+        ("legacy-live", "legacy-model"),
+        ("openai", OPENAI_REALTIME_MODEL),
     ],
 )
-async def test_dispatch_dictation_ignores_saved_model_and_uses_inworld(
+async def test_dispatch_dictation_ignores_saved_model_and_uses_openai(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
     model: str,
@@ -130,13 +58,18 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_inworld(
         dictation_provider=provider,
         dictation_model=model,
     )
-    _patch_inworld_mint(monkeypatch)
+    mint = _patch_openai_mint(monkeypatch)
+
     session = await create_realtime_transcription_session(
         purpose="dictation", user=user,
     )
-    assert session.provider == "inworld"
-    assert session.model == "inworld/inworld-stt-1"
+
+    assert session.provider == "openai"
+    assert session.model == OPENAI_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
+    assert session.sample_rate == 24_000
+    assert session.channels == 1
+    mint.assert_awaited_once_with(model=OPENAI_REALTIME_MODEL, language="multi")
 
 
 @pytest.mark.asyncio
@@ -146,10 +79,11 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_inworld(
         ("elevenlabs", "scribe_v2_realtime"),
         ("deepgram", "nova-3"),
         ("soniox", "stt-rt-v4"),
-        ("inworld", "inworld/inworld-stt-1"),
+        ("legacy-live", "legacy-model"),
+        ("openai", OPENAI_REALTIME_MODEL),
     ],
 )
-async def test_dispatch_recording_ignores_saved_model_and_uses_inworld(
+async def test_dispatch_recording_ignores_saved_model_and_uses_openai(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
     model: str,
@@ -158,24 +92,28 @@ async def test_dispatch_recording_ignores_saved_model_and_uses_inworld(
         recording_provider=provider,
         recording_model=model,
     )
-    _patch_inworld_mint(monkeypatch)
+    _patch_openai_mint(monkeypatch)
+
     session = await create_realtime_transcription_session(
-        purpose="recording", user=user,
+        purpose="recording", user=user, channels=2,
     )
-    assert session.provider == "inworld"
-    assert session.model == "inworld/inworld-stt-1"
+
+    assert session.provider == "openai"
+    assert session.model == OPENAI_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
+    assert session.channels == 1
 
 
 @pytest.mark.asyncio
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_inworld_mint(monkeypatch)
+    _patch_openai_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="recording", user=None,
     )
-    assert session.provider == "inworld"
+
+    assert session.provider == "openai"
     assert session.auth_scheme == "bearer"
 
 
@@ -183,12 +121,13 @@ async def test_dispatch_recording_with_no_user_uses_defaults(
 async def test_dispatch_dictation_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_inworld_mint(monkeypatch)
+    _patch_openai_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="dictation", user=None,
     )
-    assert session.provider == "inworld"
-    assert session.model == "inworld/inworld-stt-1"
+
+    assert session.provider == "openai"
+    assert session.model == OPENAI_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
 
 
@@ -196,19 +135,24 @@ async def test_dispatch_dictation_with_no_user_uses_defaults(
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_inworld_mint(monkeypatch, language="en")
+    mint = _patch_openai_mint(monkeypatch)
+
     session = await create_realtime_transcription_session(
         language="  EN  ", purpose="recording", user=None,
     )
+
     assert session.language == "en"
+    mint.assert_awaited_once_with(model=OPENAI_REALTIME_MODEL, language="en")
 
 
 @pytest.mark.asyncio
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_inworld_mint(monkeypatch)
+    _patch_openai_mint(monkeypatch)
+
     session = await create_realtime_transcription_session(
         language="   ", purpose="recording", user=None,
     )
+
     assert session.language == "multi"

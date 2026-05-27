@@ -101,39 +101,16 @@ class WebSocketManagerTest {
                 audioFormat = "pcm_24000",
                 language = "multi",
                 channels = 1,
-                model = "gpt-4o-mini-transcribe-2025-12-15",
-                websocketUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-transcribe-2025-12-15",
+                model = "gpt-realtime-whisper",
+                websocketUrl = "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
                 authScheme = "bearer",
             ),
         )
 
         assertEquals("api.openai.com", request.url.host)
         assertEquals("/v1/realtime", request.url.encodedPath)
-        assertEquals("gpt-4o-mini-transcribe-2025-12-15", request.url.queryParameter("model"))
+        assertEquals("gpt-realtime-whisper", request.url.queryParameter("model"))
         assertEquals("Bearer eph_secret", request.header("Authorization"))
-    }
-
-    @Test
-    fun `build Inworld request uses bearer auth and configured websocket URL`() {
-        val manager = ElevenLabsWebSocketManager(api, language = "multi")
-        val request = manager.buildInworldRequest(
-            RealtimeTranscriptionSessionConfig(
-                provider = "inworld",
-                token = "iw-jwt",
-                expiresInSeconds = 60,
-                sampleRate = 16_000,
-                audioFormat = "linear16_16000",
-                language = "multi",
-                channels = 1,
-                model = "inworld/inworld-stt-1",
-                websocketUrl = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-                authScheme = "bearer",
-            ),
-        )
-
-        assertEquals("api.inworld.ai", request.url.host)
-        assertEquals("/stt/v1/transcribe:streamBidirectional", request.url.encodedPath)
-        assertEquals("Bearer iw-jwt", request.header("Authorization"))
     }
 
     @Test
@@ -195,42 +172,6 @@ class WebSocketManagerTest {
     }
 
     @Test
-    fun `Inworld audio chunk uses provider payload shape`() {
-        val manager = ElevenLabsWebSocketManager(api, language = "multi")
-        val message = manager.makeInworldAudioChunkMessage(byteArrayOf(1, 2, 3))
-        val payload = Json.parseToJsonElement(message).jsonObject
-        val audio = payload["audioChunk"]?.jsonObject?.get("content")?.jsonPrimitive?.contentOrNull.orEmpty()
-
-        assertEquals("AQID", audio)
-    }
-
-    @Test
-    fun `Inworld transcribe config uses current camelCase wire shape`() {
-        val manager = ElevenLabsWebSocketManager(api, language = "multi")
-        val message = manager.makeInworldTranscribeConfigMessage(
-            RealtimeTranscriptionSessionConfig(
-                provider = "inworld",
-                token = "iw-jwt",
-                expiresInSeconds = 60,
-                sampleRate = 16_000,
-                audioFormat = "linear16_16000",
-                language = "multi",
-                channels = 1,
-                model = "inworld/inworld-stt-1",
-                websocketUrl = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-                authScheme = "bearer",
-            ),
-        )
-        val payload = Json.parseToJsonElement(message).jsonObject
-        val config = payload["transcribeConfig"]!!.jsonObject
-
-        assertEquals("inworld/inworld-stt-1", config["modelId"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("LINEAR16", config["audioEncoding"]?.jsonPrimitive?.contentOrNull)
-        assertEquals("", config["language"]?.jsonPrimitive?.contentOrNull)
-        assertFalse(payload.containsKey("transcribe_config"))
-    }
-
-    @Test
     fun `Soniox realtime config uses temporary key message shape`() {
         val manager = ElevenLabsWebSocketManager(api, language = "multi")
         val message = manager.makeSonioxRealtimeConfigMessage(
@@ -279,61 +220,6 @@ class WebSocketManagerTest {
         assertTrue(event is WsEvent.Transcript)
         val segment = (event as WsEvent.Transcript).segment
         assertEquals("hello world", segment.text)
-        assertTrue(segment.isFinal)
-        assertEquals(1, manager.collectedSegments.size)
-    }
-
-    @Test
-    fun `Inworld final transcript emits final segment`() = runTest {
-        val manager = ElevenLabsWebSocketManager(api, language = "en")
-        manager.handleInworldMessage(
-            """
-            {
-              "transcription":{
-                "text":"hello world",
-                "is_final":true,
-                "confidence":0.92,
-                "words":[
-                  {"start_ms":100,"end_ms":400,"speaker":"Speaker 1"},
-                  {"start_ms":450,"end_ms":900,"speaker":"Speaker 1"}
-                ]
-              }
-            }
-            """.trimIndent(),
-        )
-
-        val event = manager.events.replayCache.lastOrNull()
-        assertTrue(event is WsEvent.Transcript)
-        val segment = (event as WsEvent.Transcript).segment
-        assertEquals("hello world", segment.text)
-        assertEquals("Speaker 1", segment.speaker)
-        assertTrue(segment.isFinal)
-        assertEquals(100, segment.startMs)
-        assertEquals(900, segment.endMs)
-        assertEquals(1, manager.collectedSegments.size)
-    }
-
-    @Test
-    fun `Inworld wrapped result transcript emits final segment`() = runTest {
-        val manager = ElevenLabsWebSocketManager(api, language = "en")
-        manager.handleInworldMessage(
-            """
-            {
-              "result":{
-                "transcription":{
-                  "transcript":"This is an in-world real-time smoke test.",
-                  "isFinal":true,
-                  "wordTimestamps":[]
-                }
-              }
-            }
-            """.trimIndent(),
-        )
-
-        val event = manager.events.replayCache.lastOrNull()
-        assertTrue(event is WsEvent.Transcript)
-        val segment = (event as WsEvent.Transcript).segment
-        assertEquals("This is an in-world real-time smoke test.", segment.text)
         assertTrue(segment.isFinal)
         assertEquals(1, manager.collectedSegments.size)
     }

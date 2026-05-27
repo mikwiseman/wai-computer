@@ -29,7 +29,6 @@ def _settings(**overrides: str) -> SimpleNamespace:
         "elevenlabs_api_key": "",
         "openai_api_key": "",
         "deepgram_api_key": "",
-        "inworld_api_key": "",
         "soniox_api_key": "",
         "elevenlabs_no_verbatim": False,
     }
@@ -231,8 +230,8 @@ async def test_dictation_benchmark_vote_accepts_live_models(
         json={
             "battle_id": "live-battle-1",
             "selected_candidate_id": "candidate-c",
-            "selected_provider": "inworld",
-            "selected_model": "inworld/inworld-stt-1",
+            "selected_provider": "openai",
+            "selected_model": "gpt-realtime-whisper",
             "language": "ru",
             "candidate_count": 1,
         },
@@ -244,8 +243,8 @@ async def test_dictation_benchmark_vote_accepts_live_models(
         select(DictationBenchmarkVote).where(DictationBenchmarkVote.id == vote_id)
     )
     vote = result.scalar_one()
-    assert vote.selected_provider == "inworld"
-    assert vote.selected_model == "inworld/inworld-stt-1"
+    assert vote.selected_provider == "openai"
+    assert vote.selected_model == "gpt-realtime-whisper"
 
 
 @pytest.mark.asyncio
@@ -274,7 +273,6 @@ def test_configured_live_benchmark_models_uses_live_provider_pool():
         elevenlabs_api_key="xi",
         soniox_api_key="sx",
         deepgram_api_key="dg",
-        inworld_api_key="iw",
     )
 
     models = configured_live_benchmark_models(settings=settings)

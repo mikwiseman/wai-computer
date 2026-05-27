@@ -1,6 +1,6 @@
 """Soniox direct speech-to-text client.
 
-Soniox is integrated directly rather than through Inworld:
+Soniox is integrated directly through its public API:
 
 - ``stt-rt-v4`` for realtime WebSocket dictation/recording.
 - ``stt-async-v4`` for batch file transcription.

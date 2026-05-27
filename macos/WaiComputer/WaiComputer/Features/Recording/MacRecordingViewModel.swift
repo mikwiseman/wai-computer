@@ -333,13 +333,16 @@ class MacRecordingViewModel: ObservableObject {
                 try await capture.startRecording()
             }
 
-            // Now we know the real channel count — create WebSocket with correct params
+            // Now we know the real channel count. Local persistence keeps the
+            // capture channel layout; OpenAI realtime uses the server-declared
+            // PCM format from the minted session.
             let channels = audioChannels
             let channelMode = isDualMixedToMono ? "mono-mix" : channels > 1 ? "multichannel" : "mono"
             audioLog.info("Audio capture channels=\(channels, privacy: .public) mode=\(channelMode, privacy: .public)")
 
             let ws = WebSocketManager(apiClient: apiClient, language: language, channels: channels)
             self.webSocketManager = ws
+            var liveEncoder: RealtimePCMEncoder?
 
             // Set up event stream BEFORE connecting
             let eventStream = await ws.events
@@ -355,7 +358,16 @@ class MacRecordingViewModel: ObservableObject {
             // Connect to the configured realtime transcription provider.
             var isLiveTranscriptionActive = true
             do {
-                try await ws.connect()
+                let liveSessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+                    language: language,
+                    channels: channels,
+                    purpose: .recording
+                )
+                liveEncoder = RealtimePCMEncoder(
+                    targetSampleRate: liveSessionConfig.sampleRate,
+                    channels: liveSessionConfig.channels
+                )
+                try await ws.connect(using: liveSessionConfig)
             } catch {
                 audioLog.warning("Live transcription unavailable at recording start")
                 SentryHelper.addBreadcrumb(
@@ -373,6 +385,7 @@ class MacRecordingViewModel: ObservableObject {
 
             let encoder = AudioEncoder(channels: channels)
             audioEncoder = encoder
+            let realtimeEncoder = liveEncoder
 
             // Create local audio file writer for persistence (local-first)
             try RecordingBackupStore.ensureDirectoryForRecording(recordingId: recordingId)
@@ -402,7 +415,10 @@ class MacRecordingViewModel: ObservableObject {
 
                         if isLiveTranscriptionActive {
                             do {
-                                try await ws.sendAudio(data: data)
+                                guard let liveData = realtimeEncoder?.encode(buffer) else {
+                                    throw WebSocketConnectionError.serverError("Failed to encode realtime audio")
+                                }
+                                try await ws.sendAudio(data: liveData)
                             } catch {
                                 audioLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording

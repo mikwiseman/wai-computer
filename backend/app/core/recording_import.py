@@ -265,13 +265,11 @@ async def _transcribe(
     language: str,
     user: User,
 ) -> list[TranscriptResult]:
+    del user
     return await transcribe_audio_file(
         data,
         language=language,
         content_type=content_type,
-        user=user,
-        provider=user.file_stt_provider,
-        model=user.file_stt_model,
     )
 
 

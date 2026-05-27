@@ -89,8 +89,8 @@ async def lifespan(app: FastAPI):
         )
     if not app_settings.openai_api_key:
         logger.warning(
-            "OPENAI_API_KEY is not configured — Companion, summarization, dictation "
-            "cleanup, and embeddings will not work"
+            "OPENAI_API_KEY is not configured — realtime transcription, Companion, "
+            "summarization, dictation cleanup, and embeddings will not work"
         )
     if app_settings.realtime_voice_provider != "elevenlabs":
         logger.warning(

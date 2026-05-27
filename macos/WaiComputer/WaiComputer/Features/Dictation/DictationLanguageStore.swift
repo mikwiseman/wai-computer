@@ -9,8 +9,8 @@ private let langLog = Logger(subsystem: "is.waiwai.computer.app", category: "dic
 /// in UserDefaults under `dictationLanguages`. Three modes derive from the
 /// set's cardinality:
 ///
-///   - **0 entries**: auto-detect any language. Wire tag is `""`, which Inworld
-///     treats as multilingual auto-detect.
+///   - **0 entries**: auto-detect any language. Wire tag is `""`; provider
+///     adapters omit the language hint when using auto-detect.
 ///   - **1 entry**: single-language mode — send that BCP-47 code as a hint
 ///     for the lowest possible latency on supported models.
 ///   - **2+ entries**: multilingual mode — also send `""`. The set is

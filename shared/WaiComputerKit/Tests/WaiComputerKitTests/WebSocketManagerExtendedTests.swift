@@ -5,23 +5,24 @@ import XCTest
 final class WebSocketManagerExtendedTests: XCTestCase {
 
     private func config(
-        provider: String = "inworld",
-        token: String = "jwt-token",
+        provider: String = "openai",
+        token: String = "openai-client-secret",
         language: String = "multi",
         channels: Int = 1,
-        model: String = "inworld/inworld-stt-1",
-        websocketURL: String? = "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+        model: String = "gpt-realtime-whisper",
+        websocketURL: String? = "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
         authScheme: String? = "bearer"
     ) -> RealtimeTranscriptionSessionConfig {
         RealtimeTranscriptionSessionConfig(
             provider: provider,
             token: token,
             expiresInSeconds: 900,
-            sampleRate: 16_000,
-            audioFormat: "linear16_16000",
+            sampleRate: 24_000,
+            audioFormat: "pcm_24000",
             language: language,
             channels: channels,
             model: model,
+            commitStrategy: "manual",
             websocketURL: websocketURL,
             authScheme: authScheme
         )
@@ -36,22 +37,23 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(segments.isEmpty)
     }
 
-    func testInworldRequestUsesConfiguredWebSocketURLAndBearerAuth() async throws {
+    func testOpenAIRequestUsesConfiguredWebSocketURLAndBearerAuth() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
         let request = try await manager.testingRequestForRealtimeSession(config())
 
-        XCTAssertEqual(request.url?.host, "api.inworld.ai")
-        XCTAssertEqual(request.url?.path, "/stt/v1/transcribe:streamBidirectional")
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-token")
+        XCTAssertEqual(request.url?.host, "api.openai.com")
+        XCTAssertEqual(request.url?.path, "/v1/realtime")
+        XCTAssertEqual(request.url?.query, "model=gpt-realtime-whisper")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-client-secret")
     }
 
     func testRealtimeSessionRequestRejectsLegacyLiveProviders() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
-        for provider in ["openai", "deepgram", "soniox", "elevenlabs"] {
+        for provider in ["legacy-provider", "deepgram", "soniox", "elevenlabs"] {
             do {
                 _ = try await manager.testingRequestForRealtimeSession(config(
                     provider: provider,
@@ -74,69 +76,77 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         do {
             _ = try await manager.testingRequestForRealtimeSession(config(authScheme: "basic"))
-            XCTFail("Expected non-bearer Inworld auth to be rejected")
+            XCTFail("Expected non-bearer OpenAI auth to be rejected")
         } catch WebSocketConnectionError.tokenFetchFailed(let message) {
-            XCTAssertTrue(message.contains("Unsupported auth scheme for inworld: basic"))
+            XCTAssertTrue(message.contains("Unsupported auth scheme for openai: basic"))
         } catch {
             XCTFail("Expected tokenFetchFailed, got \(error)")
         }
     }
 
-    func testInworldAudioChunkMessageUsesProviderPayloadShape() async throws {
+    func testOpenAIAudioAppendMessageUsesRealtimePayloadShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
-        let message = await manager.testingMakeInworldAudioChunkMessage(data: Data([0x01, 0x02, 0x03]))
+        let message = await manager.testingMakeOpenAIAudioAppendMessage(data: Data([0x01, 0x02, 0x03]))
         let payload = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
         )
-        let audioChunk = try XCTUnwrap(payload["audioChunk"] as? [String: Any])
 
-        XCTAssertEqual(audioChunk["content"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
+        XCTAssertEqual(payload["type"] as? String, "input_audio_buffer.append")
+        XCTAssertEqual(payload["audio"] as? String, Data([0x01, 0x02, 0x03]).base64EncodedString())
     }
 
-    func testInworldAudioChunkerBuffersSub20MsFrames() async throws {
+    func testOpenAIAudioChunkerBuffersSub20MsFrames() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         var pending = Data()
 
-        let first = await manager.testingInworldAudioChunks(
+        let first = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 320),
-            forceFlush: false
+            appending: Data(repeating: 0x01, count: 480),
+            forceFlush: false,
+            sampleRate: 24_000,
+            channels: 1
         )
-        let second = await manager.testingInworldAudioChunks(
+        let second = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x02, count: 320),
-            forceFlush: false
+            appending: Data(repeating: 0x02, count: 480),
+            forceFlush: false,
+            sampleRate: 24_000,
+            channels: 1
         )
 
         XCTAssertTrue(first.isEmpty)
-        XCTAssertEqual(second.map(\.count), [640])
+        XCTAssertEqual(second.map(\.count), [960])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testInworldAudioChunkerPadsFinalShortFrame() async throws {
+    func testOpenAIAudioChunkerPadsFinalShortFrame() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         var pending = Data()
 
-        _ = await manager.testingInworldAudioChunks(
+        _ = await manager.testingPCMAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 160),
-            forceFlush: false
+            appending: Data(repeating: 0x01, count: 240),
+            forceFlush: false,
+            sampleRate: 24_000,
+            channels: 1
         )
-        let flushed = await manager.testingInworldAudioChunks(
+        let flushed = await manager.testingPCMAudioChunks(
             pending: &pending,
             appending: Data(),
-            forceFlush: true
+            forceFlush: true,
+            sampleRate: 24_000,
+            channels: 1
         )
 
-        XCTAssertEqual(flushed.map(\.count), [640])
+        XCTAssertEqual(flushed.map(\.count), [960])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testInworldTranscribeConfigUsesCurrentCamelCaseWireShape() async throws {
+    func testOpenAISessionUpdateUsesRealtimeTranscriptionShape() async throws {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(
             apiClient: apiClient,
@@ -145,76 +155,64 @@ final class WebSocketManagerExtendedTests: XCTestCase {
             keyTerms: ["WaiComputer", "waicomputer", "Anthropic"]
         )
 
-        let message = await manager.testingMakeInworldTranscribeConfigMessage(config())
+        let message = await manager.testingMakeOpenAISessionUpdateMessage(config())
         let payload = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
         )
-        let transcribeConfig = try XCTUnwrap(payload["transcribeConfig"] as? [String: Any])
+        let session = try XCTUnwrap(payload["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let format = try XCTUnwrap(input["format"] as? [String: Any])
+        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
 
-        XCTAssertEqual(transcribeConfig["modelId"] as? String, "inworld/inworld-stt-1")
-        XCTAssertEqual(transcribeConfig["audioEncoding"] as? String, "LINEAR16")
-        XCTAssertEqual(transcribeConfig["sampleRateHertz"] as? Int, 16_000)
-        XCTAssertEqual(transcribeConfig["numberOfChannels"] as? Int, 1)
-        XCTAssertEqual(transcribeConfig["language"] as? String, "")
-        XCTAssertEqual(transcribeConfig["prompts"] as? [String], ["WaiComputer", "Anthropic"])
-        XCTAssertNil(transcribeConfig["context"])
-        XCTAssertNil(payload["transcribe_config"])
+        XCTAssertEqual(payload["type"] as? String, "session.update")
+        XCTAssertEqual(session["type"] as? String, "transcription")
+        XCTAssertEqual(format["type"] as? String, "audio/pcm")
+        XCTAssertEqual(format["rate"] as? Int, 24_000)
+        XCTAssertEqual(transcription["model"] as? String, "gpt-realtime-whisper")
+        XCTAssertNil(transcription["language"])
+        XCTAssertTrue(input["turn_detection"] is NSNull)
+        XCTAssertNil(transcription["prompts"])
     }
 
-    func testInworldFinalTranscriptCollectsSegment() async {
+    func testOpenAISessionUpdateNormalisesLanguageHint() async throws {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        let message = await manager.testingMakeOpenAISessionUpdateMessage(config(language: "ru-RU"))
+        let payload = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        )
+        let session = try XCTUnwrap(payload["session"] as? [String: Any])
+        let audio = try XCTUnwrap(session["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
+
+        XCTAssertEqual(transcription["language"] as? String, "ru")
+    }
+
+    func testOpenAICompletedTranscriptCollectsSegment() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         _ = await manager.events
         await manager.testingSetSessionConfig(config(language: "en"))
 
-        await manager.testingHandleInworldMessage("""
+        await manager.testingHandleOpenAIMessage("""
         {
-            "transcription": {
-                "text": "Hello world.",
-                "is_final": true,
-                "confidence": 0.92,
-                "words": [
-                    {"start_ms": 100, "end_ms": 400, "speaker": "Speaker 1"},
-                    {"start_ms": 450, "end_ms": 900, "speaker": "Speaker 1"}
-                ]
-            }
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "item_1",
+            "transcript": "Hello world."
         }
         """)
 
         let segments = await manager.collectedSegments
         XCTAssertEqual(segments.count, 1)
         XCTAssertEqual(segments.first?.text, "Hello world.")
-        XCTAssertEqual(segments.first?.speaker, "Speaker 1")
-        XCTAssertEqual(segments.first?.startMs, 100)
-        XCTAssertEqual(segments.first?.endMs, 900)
-        XCTAssertEqual(segments.first?.confidence, 0.92)
+        XCTAssertNil(segments.first?.speaker)
+        XCTAssertEqual(segments.first?.confidence, 0)
     }
 
-    func testInworldWrappedResultTranscriptCollectsSegment() async {
-        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
-        let manager = WebSocketManager(apiClient: apiClient)
-        _ = await manager.events
-        await manager.testingSetSessionConfig(config(language: "en"))
-
-        await manager.testingHandleInworldMessage("""
-        {
-            "result": {
-                "transcription": {
-                    "transcript": "This is an Inworld realtime smoke test.",
-                    "isFinal": true,
-                    "wordTimestamps": []
-                }
-            }
-        }
-        """)
-
-        let segments = await manager.collectedSegments
-        XCTAssertEqual(segments.count, 1)
-        XCTAssertEqual(segments.first?.text, "This is an Inworld realtime smoke test.")
-        XCTAssertEqual(segments.first?.isFinal, true)
-    }
-
-    func testInworldInterimTranscriptYieldsEvent() async {
+    func testOpenAIDeltaTranscriptYieldsInterimEvent() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         let stream = await manager.events
@@ -230,8 +228,12 @@ final class WebSocketManagerExtendedTests: XCTestCase {
             return nil
         }
 
-        await manager.testingHandleInworldMessage("""
-        {"transcription":{"transcript":"partial text","isFinal":false,"confidence":0.3}}
+        await manager.testingHandleOpenAIMessage("""
+        {
+            "type": "conversation.item.input_audio_transcription.delta",
+            "item_id": "item_1",
+            "delta": "partial text"
+        }
         """)
 
         let segment = await task.value
@@ -239,17 +241,17 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segment?.isFinal, false)
     }
 
-    func testDuplicateInworldFinalTranscriptsAreDeduped() async {
+    func testDuplicateOpenAIFinalTranscriptsAreDeduped() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
         _ = await manager.events
         await manager.testingSetSessionConfig(config(language: "en"))
 
-        await manager.testingHandleInworldMessage("""
-        {"transcription":{"transcript":"Same final.","isFinal":true,"wordTimestamps":[]}}
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":"Same final."}
         """)
-        await manager.testingHandleInworldMessage("""
-        {"transcription":{"transcript":"Same final.","isFinal":true,"wordTimestamps":[]}}
+        await manager.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Same final."}
         """)
 
         let segments = await manager.collectedSegments
@@ -334,7 +336,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
     }
 
     func testProviderBackedRequestRejectsLegacyLiveProviders() async throws {
-        for provider in ["openai", "deepgram", "soniox", "elevenlabs"] {
+        for provider in ["legacy-provider", "deepgram", "soniox", "elevenlabs"] {
             let session = ProviderBackedRealtimeSession(config: config(
                 provider: provider,
                 token: "legacy-token",
@@ -351,96 +353,98 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         }
     }
 
-    func testProviderBackedInworldRequiresServerMintedWebSocketURL() async throws {
+    func testProviderBackedOpenAIRequiresServerMintedWebSocketURL() async throws {
         let session = ProviderBackedRealtimeSession(config: config(websocketURL: nil))
 
         do {
             _ = try await session.testingRequest()
-            XCTFail("Expected missing Inworld websocket URL to throw")
+            XCTFail("Expected missing OpenAI websocket URL to throw")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("Inworld realtime session is missing server-minted websocket URL"))
+            XCTAssertTrue(String(describing: error).contains("OpenAI realtime session is missing server-minted websocket URL"))
         }
     }
 
-    func testProviderBackedInworldRequiresBearerAuth() async throws {
+    func testProviderBackedOpenAIRequiresBearerAuth() async throws {
         let session = ProviderBackedRealtimeSession(config: config(authScheme: "basic"))
 
         do {
             _ = try await session.testingRequest()
-            XCTFail("Expected non-bearer Inworld auth to throw")
+            XCTFail("Expected non-bearer OpenAI auth to throw")
         } catch {
-            XCTAssertTrue(String(describing: error).contains("Inworld realtime session has unsupported auth scheme: basic"))
+            XCTAssertTrue(String(describing: error).contains("OpenAI realtime session has unsupported auth scheme: basic"))
         }
     }
 
-    func testProviderBackedInworldTranscribeConfigUsesPromptsField() async throws {
+    func testProviderBackedOpenAISessionUpdateUsesRealtimeTranscriptionShape() async throws {
         let session = ProviderBackedRealtimeSession(
             config: config(language: "ru-RU"),
             keyTerms: ["Mikhail", "mikhail", "WaiComputer"]
         )
 
-        let payload = await session.testingInworldTranscribeConfigPayload()
-        let transcribeConfig = try XCTUnwrap(payload["transcribeConfig"] as? [String: Any])
+        let payload = await session.testingOpenAISessionUpdatePayload()
+        let sessionPayload = try XCTUnwrap(payload["session"] as? [String: Any])
+        let audio = try XCTUnwrap(sessionPayload["audio"] as? [String: Any])
+        let input = try XCTUnwrap(audio["input"] as? [String: Any])
+        let format = try XCTUnwrap(input["format"] as? [String: Any])
+        let transcription = try XCTUnwrap(input["transcription"] as? [String: Any])
 
-        XCTAssertEqual(transcribeConfig["language"] as? String, "ru")
-        XCTAssertEqual(transcribeConfig["prompts"] as? [String], ["Mikhail", "WaiComputer"])
-        XCTAssertNil(transcribeConfig["context"])
+        XCTAssertEqual(sessionPayload["type"] as? String, "transcription")
+        XCTAssertEqual(format["type"] as? String, "audio/pcm")
+        XCTAssertEqual(format["rate"] as? Int, 24_000)
+        XCTAssertEqual(transcription["model"] as? String, "gpt-realtime-whisper")
+        XCTAssertEqual(transcription["language"] as? String, "ru")
+        XCTAssertTrue(input["turn_detection"] is NSNull)
+        XCTAssertNil(transcription["prompts"])
     }
 
-    func testProviderBackedInworldAudioChunkerBuffersAndPadsFinalShortFrame() async throws {
+    func testProviderBackedOpenAIAudioChunkerBuffersAndPadsFinalShortFrame() async throws {
         var pending = Data()
 
-        let first = ProviderBackedRealtimeSession.inworldAudioChunks(
+        let first = ProviderBackedRealtimeSession.pcmAudioChunks(
             pending: &pending,
-            appending: Data(repeating: 0x01, count: 320),
+            appending: Data(repeating: 0x01, count: 480),
             forceFlush: false,
-            sampleRate: 16_000,
+            sampleRate: 24_000,
             channels: 1
         )
-        let flushed = ProviderBackedRealtimeSession.inworldAudioChunks(
+        let flushed = ProviderBackedRealtimeSession.pcmAudioChunks(
             pending: &pending,
             appending: Data(),
             forceFlush: true,
-            sampleRate: 16_000,
+            sampleRate: 24_000,
             channels: 1
         )
 
         XCTAssertTrue(first.isEmpty)
-        XCTAssertEqual(flushed.map(\.count), [640])
+        XCTAssertEqual(flushed.map(\.count), [960])
         XCTAssertTrue(pending.isEmpty)
     }
 
-    func testProviderBackedInworldFinalTranscriptCollectsSegment() async {
+    func testProviderBackedOpenAICompletedTranscriptCollectsSegment() async {
         let session = ProviderBackedRealtimeSession(config: config(language: "en"))
 
-        await session.testingHandleInworldMessage("""
+        await session.testingHandleOpenAIMessage("""
         {
-            "transcription": {
-                "transcript": "Provider backed final.",
-                "isFinal": true,
-                "wordTimestamps": [
-                    {"start": 0.2, "end": 0.9, "speaker": "Speaker 1"}
-                ]
-            }
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "item_1",
+            "transcript": "Provider backed final."
         }
         """)
 
         let segments = await session.testingCollectedSegments()
         XCTAssertEqual(segments.count, 1)
         XCTAssertEqual(segments.first?.text, "Provider backed final.")
-        XCTAssertEqual(segments.first?.speaker, "Speaker 1")
-        XCTAssertEqual(segments.first?.startMs, 200)
-        XCTAssertEqual(segments.first?.endMs, 900)
+        XCTAssertNil(segments.first?.speaker)
     }
 
-    func testProviderBackedDuplicateInworldFinalTranscriptsAreDeduped() async {
+    func testProviderBackedDuplicateOpenAIFinalTranscriptsAreDeduped() async {
         let session = ProviderBackedRealtimeSession(config: config(language: "en"))
 
-        await session.testingHandleInworldMessage("""
-        {"transcription":{"transcript":"Same provider final.","isFinal":true,"wordTimestamps":[]}}
+        await session.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"a","transcript":"Same provider final."}
         """)
-        await session.testingHandleInworldMessage("""
-        {"transcription":{"transcript":"Same provider final.","isFinal":true,"wordTimestamps":[]}}
+        await session.testingHandleOpenAIMessage("""
+        {"type":"conversation.item.input_audio_transcription.completed","item_id":"b","transcript":"Same provider final."}
         """)
 
         let segments = await session.testingCollectedSegments()

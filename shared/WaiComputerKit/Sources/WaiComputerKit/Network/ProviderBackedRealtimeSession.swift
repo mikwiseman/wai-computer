@@ -8,13 +8,15 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
     private let config: RealtimeTranscriptionSessionConfig
-    private let keyTerms: [String]
     private let urlSession: URLSession
 
     private var webSocket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var collectedSegments: [LiveTranscriptSegment] = []
-    private var inworldPendingAudio = Data()
+    private var pendingAudio = Data()
+    private var uncommittedAudioBytes = 0
+    private var pendingCommitCount = 0
+    private var transcriptByItemID: [String: String] = [:]
     private var isClosing = false
     private var didSendEndTurn = false
     private var lastTranscriptEventAt: ContinuousClock.Instant?
@@ -26,7 +28,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         urlSession: URLSession = .shared
     ) {
         self.config = config
-        self.keyTerms = keyTerms
         self.urlSession = urlSession
         let (stream, continuation) = AsyncStream.makeStream(
             of: TranscriptionEvent.self,
@@ -34,6 +35,12 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         )
         self.events = stream
         self.eventContinuation = continuation
+
+        if !keyTerms.isEmpty {
+            providerRealtimeLog.info(
+                "[OpenAI] key terms ignored for gpt-realtime-whisper count=\(keyTerms.count, privacy: .public)"
+            )
+        }
     }
 
     public func open() async throws {
@@ -44,32 +51,41 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         task.resume()
         startReceiveLoop(for: task)
 
-        try await task.send(.string(Self.encodeJSON(inworldTranscribeConfigPayload())))
-        eventContinuation.yield(.opened(sessionId: "inworld"))
+        try await task.send(.string(Self.encodeJSON(openAISessionUpdatePayload())))
+        eventContinuation.yield(.opened(sessionId: "openai"))
     }
 
     public func send(pcm16: Data) async throws {
         guard let webSocket else {
-            throw ProviderError.transcriberInternal(message: "Inworld socket is not open")
+            throw ProviderError.transcriberInternal(message: "OpenAI realtime socket is not open")
         }
-        for chunk in Self.inworldAudioChunks(
-            pending: &inworldPendingAudio,
+        for chunk in Self.pcmAudioChunks(
+            pending: &pendingAudio,
             appending: pcm16,
             forceFlush: false,
             sampleRate: config.sampleRate,
             channels: config.channels
         ) {
             try await webSocket.send(.string(Self.encodeJSON([
-                "audioChunk": ["content": chunk.base64EncodedString()]
+                "type": "input_audio_buffer.append",
+                "audio": chunk.base64EncodedString(),
             ])))
+            uncommittedAudioBytes += chunk.count
+            if shouldAutoCommitAudio() {
+                try await commitAudioBuffer(to: webSocket)
+            }
         }
     }
 
     public func endTurn() async throws {
         guard !didSendEndTurn, let webSocket else { return }
         didSendEndTurn = true
-        try await flushInworldPendingAudio(to: webSocket)
-        try await webSocket.send(.string(Self.encodeJSON(["endTurn": [String: Any]()])))
+        try await flushPendingAudio(to: webSocket)
+        if uncommittedAudioBytes > 0 {
+            try await commitAudioBuffer(to: webSocket)
+        } else if pendingCommitCount == 0 {
+            finalizationMarkerReceived = true
+        }
     }
 
     public func close(timeout: Duration = .seconds(5)) async throws -> [LiveTranscriptSegment] {
@@ -80,7 +96,6 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             return collectedSegments
         }
         try? await endTurn()
-        try? await webSocket?.send(.string(Self.encodeJSON(["closeStream": [String: Any]()])))
 
         let clock = ContinuousClock()
         let startedAt = clock.now
@@ -105,7 +120,9 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     public func cancel() async {
         guard !isClosing else { return }
         isClosing = true
-        inworldPendingAudio = Data()
+        pendingAudio = Data()
+        uncommittedAudioBytes = 0
+        pendingCommitCount = 0
         webSocket?.cancel(with: .goingAway, reason: nil)
         receiveTask?.cancel()
         eventContinuation.yield(.closed(reason: .clientRequested))
@@ -130,52 +147,79 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let token = config.token.trimmingCharacters(in: .whitespacesAndNewlines)
         let websocketURL = config.websocketURL?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard config.provider == "inworld" else {
+        guard config.provider == "openai" else {
             throw ProviderError.unsupportedModel(config.provider)
         }
         guard websocketURL?.isEmpty == false else {
-            throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted websocket URL")
+            throw ProviderError.transcriberInternal(message: "OpenAI realtime session is missing server-minted websocket URL")
         }
         guard !token.isEmpty else {
-            throw ProviderError.transcriberInternal(message: "Inworld realtime session is missing server-minted token")
+            throw ProviderError.transcriberInternal(message: "OpenAI realtime session is missing server-minted token")
         }
         guard config.authScheme == "bearer" else {
-            throw ProviderError.transcriberInternal(message: "Inworld realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
+            throw ProviderError.transcriberInternal(message: "OpenAI realtime session has unsupported auth scheme: \(config.authScheme ?? "nil")")
         }
     }
 
-    private func flushInworldPendingAudio(to webSocket: URLSessionWebSocketTask) async throws {
-        for chunk in Self.inworldAudioChunks(
-            pending: &inworldPendingAudio,
+    private func flushPendingAudio(to webSocket: URLSessionWebSocketTask) async throws {
+        for chunk in Self.pcmAudioChunks(
+            pending: &pendingAudio,
             appending: Data(),
             forceFlush: true,
             sampleRate: config.sampleRate,
             channels: config.channels
         ) {
             try await webSocket.send(.string(Self.encodeJSON([
-                "audioChunk": ["content": chunk.base64EncodedString()]
+                "type": "input_audio_buffer.append",
+                "audio": chunk.base64EncodedString(),
             ])))
+            uncommittedAudioBytes += chunk.count
         }
     }
 
-    private func inworldTranscribeConfigPayload() -> [String: Any] {
-        let language = normalisedProviderLanguage(config.language)
-        var transcribeConfig: [String: Any] = [
-            "modelId": config.model,
-            "language": language,
-            "audioEncoding": "LINEAR16",
-            "sampleRateHertz": config.sampleRate,
-            "numberOfChannels": config.channels,
-            "inactivityTimeoutSeconds": 60,
-        ]
-        InworldProviderSession.applyPromptHints(from: keyTerms, to: &transcribeConfig)
-        return ["transcribeConfig": transcribeConfig]
+    private func shouldAutoCommitAudio() -> Bool {
+        uncommittedAudioBytes >= openAIAutoCommitBytes()
     }
 
-    private func normalisedProviderLanguage(_ language: String) -> String {
+    private func openAIAutoCommitBytes() -> Int {
+        max(1, config.sampleRate) * max(1, config.channels) * 2
+    }
+
+    private func commitAudioBuffer(to webSocket: URLSessionWebSocketTask) async throws {
+        guard uncommittedAudioBytes > 0 else { return }
+        try await webSocket.send(.string(Self.encodeJSON(["type": "input_audio_buffer.commit"])))
+        uncommittedAudioBytes = 0
+        pendingCommitCount += 1
+    }
+
+    private func openAISessionUpdatePayload() -> [String: Any] {
+        var transcription: [String: Any] = ["model": config.model]
+        if let language = normalisedProviderLanguage(config.language) {
+            transcription["language"] = language
+        }
+
+        return [
+            "type": "session.update",
+            "session": [
+                "type": "transcription",
+                "audio": [
+                    "input": [
+                        "format": [
+                            "type": "audio/pcm",
+                            "rate": config.sampleRate,
+                        ],
+                        "transcription": transcription,
+                        "turn_detection": NSNull(),
+                    ],
+                ],
+            ],
+        ]
+    }
+
+    private func normalisedProviderLanguage(_ language: String) -> String? {
         switch language {
-        case "multi", "und":
-            return ""
+        case "multi", "und", "":
+            return nil
         case let other where other.contains("-"):
             return String(other.split(separator: "-").first ?? Substring(other))
         default:
@@ -218,52 +262,55 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
-        handleInworld(json)
+        handleOpenAI(json)
     }
 
-    private func handleInworld(_ json: [String: Any]) {
-        if let transcription = json["transcription"] as? [String: Any] {
-            handleInworldTranscription(transcription)
-        } else if let result = json["result"] as? [String: Any],
-                  let transcription = result["transcription"] as? [String: Any] {
-            handleInworldTranscription(transcription)
-        } else if let error = json["error"] as? [String: Any] {
-            eventContinuation.yield(.providerWarning(.transcriberInternal(
-                message: error["message"] as? String ?? "Inworld realtime error"
-            )))
+    private func handleOpenAI(_ json: [String: Any]) {
+        let type = json["type"] as? String
+        switch type {
+        case "conversation.item.input_audio_transcription.delta":
+            handleOpenAIDelta(json)
+        case "conversation.item.input_audio_transcription.completed":
+            handleOpenAICompleted(json)
+        case "error":
+            eventContinuation.yield(.providerWarning(Self.openAIProviderError(json["error"])))
+        default:
+            break
         }
     }
 
-    private func handleInworldTranscription(_ payload: [String: Any]) {
-        let transcript = ((payload["text"] as? String) ?? (payload["transcript"] as? String) ?? "")
+    private func handleOpenAIDelta(_ payload: [String: Any]) {
+        let delta = (payload["delta"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !transcript.isEmpty else { return }
-        let isFinal = (payload["is_final"] as? Bool) ?? (payload["isFinal"] as? Bool) ?? false
-        if !isFinal {
-            markTranscriptEvent()
-            eventContinuation.yield(.interim(text: transcript, language: nil))
-            return
+        guard !delta.isEmpty else { return }
+        let itemID = payload["item_id"] as? String ?? "default"
+        let transcript = ((transcriptByItemID[itemID] ?? "") + delta)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptByItemID[itemID] = transcript
+        markTranscriptEvent()
+        eventContinuation.yield(.interim(text: transcript, language: nil))
+    }
+
+    private func handleOpenAICompleted(_ payload: [String: Any]) {
+        let itemID = payload["item_id"] as? String ?? "default"
+        let transcript = ((payload["transcript"] as? String) ?? transcriptByItemID[itemID] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptByItemID[itemID] = nil
+        if pendingCommitCount > 0 {
+            pendingCommitCount -= 1
         }
-        let words = payload["words"] as? [[String: Any]]
-            ?? payload["word_timestamps"] as? [[String: Any]]
-            ?? payload["wordTimestamps"] as? [[String: Any]]
+        if didSendEndTurn && pendingCommitCount == 0 {
+            finalizationMarkerReceived = true
+        }
+        guard !transcript.isEmpty else { return }
         appendFinal(
             text: transcript,
-            speaker: Self.speakerLabel(words?.first?["speaker"] ?? words?.first?["speaker_id"]),
-            startMs: Self.providerMs(
-                words?.first?["start_ms"]
-                    ?? words?.first?["startMs"]
-                    ?? words?.first?["start_time_ms"]
-                    ?? words?.first?["start"]
-            ),
-            endMs: Self.providerMs(
-                words?.last?["end_ms"]
-                    ?? words?.last?["endMs"]
-                    ?? words?.last?["end_time_ms"]
-                    ?? words?.last?["end"]
-            ),
-            confidence: (payload["confidence"] as? Double) ?? 0
+            speaker: nil,
+            startMs: nil,
+            endMs: nil,
+            confidence: 0
         )
+        markTranscriptEvent()
     }
 
     private func appendFinal(_ segment: LiveTranscriptSegment) {
@@ -312,42 +359,24 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         eventContinuation.finish()
     }
 
-    private static func speakerLabel(_ value: Any?) -> String? {
-        guard let value else { return nil }
-        if let string = value as? String {
-            if string.lowercased().hasPrefix("speaker") {
-                return string
-            }
-            return "Speaker \(string)"
+    private static func openAIProviderError(_ value: Any?) -> ProviderError {
+        let payload = value as? [String: Any]
+        let code = (payload?["code"] as? String)?.lowercased()
+            ?? (payload?["type"] as? String)?.lowercased()
+            ?? "unknown"
+        let message = payload?["message"] as? String
+        switch code {
+        case "invalid_api_key", "authentication_error", "unauthorized":
+            return .authError(server: message)
+        case "insufficient_quota", "billing_hard_limit_reached":
+            return .quotaExceeded
+        case "rate_limit_exceeded":
+            return .rateLimited(retryAfterMs: nil)
+        case "unsupported_model":
+            return .unsupportedModel(message ?? "")
+        default:
+            return .transcriberInternal(message: message ?? code)
         }
-        if let int = value as? Int {
-            return "Speaker \(int)"
-        }
-        if let number = value as? NSNumber {
-            return "Speaker \(number.intValue)"
-        }
-        return nil
-    }
-
-    private static func providerMs(_ value: Any?) -> Int? {
-        guard let value else { return nil }
-        let numeric: Double?
-        if let double = value as? Double {
-            numeric = double
-        } else if let int = value as? Int {
-            numeric = Double(int)
-        } else if let number = value as? NSNumber {
-            numeric = number.doubleValue
-        } else if let string = value as? String {
-            numeric = Double(string)
-        } else {
-            numeric = nil
-        }
-        guard var resolved = numeric else { return nil }
-        if resolved >= 0, resolved < 10_000, resolved.rounded(.towardZero) != resolved {
-            resolved *= 1_000
-        }
-        return Int(resolved)
     }
 
     private static func normalizedTranscriptText(_ text: String) -> String {
@@ -362,7 +391,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         return String(data: data, encoding: .utf8)!
     }
 
-    static func inworldAudioChunks(
+    static func pcmAudioChunks(
         pending: inout Data,
         appending data: Data,
         forceFlush: Bool,
@@ -399,11 +428,11 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         return chunks
     }
 
-    func testingHandleInworldMessage(_ text: String) {
+    func testingHandleOpenAIMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
-        handleInworld(json)
+        handleOpenAI(json)
     }
 
     func testingCollectedSegments() -> [LiveTranscriptSegment] {
@@ -418,8 +447,8 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         finalizationMarkerReceived
     }
 
-    func testingInworldTranscribeConfigPayload() -> [String: Any] {
-        inworldTranscribeConfigPayload()
+    func testingOpenAISessionUpdatePayload() -> [String: Any] {
+        openAISessionUpdatePayload()
     }
 
     func testingRequest() throws -> URLRequest {

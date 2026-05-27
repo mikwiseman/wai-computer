@@ -763,27 +763,30 @@ final class APIClientNewEndpointsTests: XCTestCase {
             )!
             let payload = """
             {
-                "provider":"inworld",
-                "token":"jwt_123",
+                "provider":"openai",
+                "token":"client_secret_123",
                 "expires_in_seconds":900,
-                "sample_rate":16000,
-                "audio_format":"linear16_16000",
+                "sample_rate":24000,
+                "audio_format":"pcm_24000",
                 "language":"multi",
                 "channels":1,
-                "model":"inworld/inworld-stt-1",
-                "websocket_url":"wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-                "auth_scheme":"bearer"
+                "model":"gpt-realtime-whisper",
+                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "auth_scheme":"bearer",
+                "commit_strategy":"manual"
             }
             """.data(using: .utf8)!
             return (response, payload)
         }
 
         let config = try await client.createRealtimeTranscriptionSession(language: "multi", channels: 1)
-        XCTAssertEqual(config.provider, "inworld")
-        XCTAssertEqual(config.token, "jwt_123")
-        XCTAssertEqual(config.model, "inworld/inworld-stt-1")
-        XCTAssertEqual(config.websocketURL, "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional")
+        XCTAssertEqual(config.provider, "openai")
+        XCTAssertEqual(config.token, "client_secret_123")
+        XCTAssertEqual(config.sampleRate, 24_000)
+        XCTAssertEqual(config.model, "gpt-realtime-whisper")
+        XCTAssertEqual(config.websocketURL, "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper")
         XCTAssertEqual(config.authScheme, "bearer")
+        XCTAssertEqual(config.commitStrategy, "manual")
     }
 
     func testCreateRealtimeTranscriptionSessionSendsDictationPurpose() async throws {
@@ -804,16 +807,17 @@ final class APIClientNewEndpointsTests: XCTestCase {
             )!
             let payload = """
             {
-                "provider":"inworld",
-                "token":"jwt_test",
+                "provider":"openai",
+                "token":"client_secret_test",
                 "expires_in_seconds":900,
-                "sample_rate":16000,
-                "audio_format":"linear16_16000",
+                "sample_rate":24000,
+                "audio_format":"pcm_24000",
                 "language":"multi",
                 "channels":1,
-                "model":"inworld/inworld-stt-1",
-                "websocket_url":"wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
-                "auth_scheme":"bearer"
+                "model":"gpt-realtime-whisper",
+                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "auth_scheme":"bearer",
+                "commit_strategy":"manual"
             }
             """.data(using: .utf8)!
             return (response, payload)
@@ -824,8 +828,8 @@ final class APIClientNewEndpointsTests: XCTestCase {
             channels: 1,
             purpose: .dictation
         )
-        XCTAssertEqual(config.provider, "inworld")
-        XCTAssertEqual(config.sampleRate, 16_000)
+        XCTAssertEqual(config.provider, "openai")
+        XCTAssertEqual(config.sampleRate, 24_000)
         XCTAssertEqual(config.authScheme, "bearer")
     }
 
