@@ -373,13 +373,12 @@ click_element() {
   local json_path="$1"
   local element_id="$2"
   local name="$3"
-  local coords
+  local fresh_snapshot
 
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
-  coords="$(element_center_coords "$json_path" "$element_id")"
-  [[ -n "$coords" && "$coords" != "null" ]] || die "Missing coordinates for $name ($element_id)"
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
-  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --bring-to-current-space --wait-for 5000 --json \
+  fresh_snapshot="$(snapshot_id "$json_path")"
+  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id for $name"
+  if ! peekaboo click --snapshot "$fresh_snapshot" --on "$element_id" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
@@ -391,12 +390,25 @@ click_element() {
 }
 
 click_identifier() {
-  local json_path="$1"
+  local _previous_json_path="$1"
   local identifier="$2"
-  local element_id
+  local json_path element_id
 
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$identifier.json" || true
+  json_path="$(capture_ui "before-click-$identifier")"
   element_id="$(element_id_by_identifier "$json_path" "$identifier")"
   click_element "$json_path" "$element_id" "$identifier"
+}
+
+click_label() {
+  local label="$1"
+  local name="$2"
+  local json_path element_id
+
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
+  json_path="$(capture_ui "before-click-$name")"
+  element_id="$(element_id_by_label "$json_path" "$label")"
+  click_element "$json_path" "$element_id" "$name"
 }
 
 click_query() {
@@ -439,9 +451,9 @@ run_main_search_smoke() {
   ui_contains "$json_path" "sidebar-settings" || die "Settings sidebar item missing"
   ui_contains "$json_path" "import-audio-button" || die "Import button missing"
 
-  click_query "Search" sidebar-search
+  click_identifier "$json_path" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search recordings")"
-  click_query "Search recordings..." search-field
+  click_label "Search recordings..." search-field
   if ! peekaboo type "search" --app "$TARGET_APP_REF" --profile linear --delay 0 --json \
     > "$RUN_DIR/type-search-query.json"; then
     cat "$RUN_DIR/type-search-query.json" >&2
@@ -454,7 +466,7 @@ run_main_search_smoke() {
   json_path="$(wait_for_ui_text search-results "Weekly Team Standup")"
   ui_contains "$json_path" "%" && die "Search result should not expose a percent relevance score"
 
-  click_query "Weekly Team Standup" search-result-row
+  click_identifier "$json_path" search-result-row-rec-1
   wait_for_ui_text search-result-detail "Good morning everyone"
 }
 
@@ -463,10 +475,10 @@ run_recording_flow_smoke() {
 
   launch_fixture_app recording_flow en
   json_path="$(wait_for_ui_text recording-flow-ready "Record")"
-  click_query "Record" start-recording-button
+  click_identifier "$json_path" start-recording-button
 
   json_path="$(wait_for_ui_text recording-flow-live "UI test live transcript")"
-  click_query "Stop" stop-recording-button
+  click_identifier "$json_path" stop-recording-button
   wait_for_ui_text recording-flow-detail "UI test finalized transcript."
 }
 
