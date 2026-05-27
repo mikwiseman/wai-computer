@@ -109,10 +109,10 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["summary_language"] == "auto"
     assert data["summary_style"] == "medium"
     assert data["summary_instructions"] is None
-    assert data["dictation_live_stt_provider"] == "inworld"
-    assert data["dictation_live_stt_model"] == "inworld/inworld-stt-1"
-    assert data["recording_live_stt_provider"] == "inworld"
-    assert data["recording_live_stt_model"] == "inworld/inworld-stt-1"
+    assert data["dictation_live_stt_provider"] == "openai"
+    assert data["dictation_live_stt_model"] == "gpt-realtime-whisper"
+    assert data["recording_live_stt_provider"] == "openai"
+    assert data["recording_live_stt_model"] == "gpt-realtime-whisper"
     assert data["file_stt_provider"] == "elevenlabs"
     assert data["file_stt_model"] == "scribe_v2"
     assert data["dictation_post_filter_enabled"] is False
@@ -336,7 +336,6 @@ async def test_get_transcription_options_returns_curated_choices(
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "sk-key",
             "deepgram_api_key": "dg-key",
-            "inworld_api_key": "iw:key",
             "soniox_api_key": "soniox-key",
         },
     )()
@@ -348,18 +347,18 @@ async def test_get_transcription_options_returns_curated_choices(
     data = response.json()
     assert data["dictation_live_stt"] == [
         {
-            "provider": "inworld",
-            "model": "inworld/inworld-stt-1",
-            "label": "Inworld STT-1",
-            "description": "Fixed low-latency model for live dictation.",
+            "provider": "openai",
+            "model": "gpt-realtime-whisper",
+            "label": "OpenAI GPT Realtime Whisper",
+            "description": "Fixed streaming speech-to-text model for live dictation.",
         }
     ]
     assert data["recording_live_stt"] == [
         {
-            "provider": "inworld",
-            "model": "inworld/inworld-stt-1",
-            "label": "Inworld STT-1",
-            "description": "Fixed realtime model for live recording.",
+            "provider": "openai",
+            "model": "gpt-realtime-whisper",
+            "label": "OpenAI GPT Realtime Whisper",
+            "description": "Fixed streaming speech-to-text model for live recording.",
         }
     ]
     assert data["file_stt"] == [
@@ -392,7 +391,6 @@ async def test_get_transcription_options_hides_unconfigured_providers(
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "",
             "deepgram_api_key": "",
-            "inworld_api_key": "",
             "soniox_api_key": "",
         },
     )()

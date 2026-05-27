@@ -145,10 +145,10 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "summary_language":"en",
           "summary_style":"bullet",
           "summary_instructions":"focus on actions",
-          "dictation_live_stt_provider":"inworld",
-          "dictation_live_stt_model":"inworld/inworld-stt-1",
-          "recording_live_stt_provider":"inworld",
-          "recording_live_stt_model":"inworld/inworld-stt-1",
+          "dictation_live_stt_provider":"openai",
+          "dictation_live_stt_model":"gpt-realtime-whisper",
+          "recording_live_stt_provider":"openai",
+          "recording_live_stt_model":"gpt-realtime-whisper",
           "file_stt_provider":"elevenlabs",
           "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":true,
@@ -161,8 +161,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(s.summaryLanguage, "en")
         XCTAssertEqual(s.summaryStyle, "bullet")
         XCTAssertEqual(s.summaryInstructions, "focus on actions")
-        XCTAssertEqual(s.dictationLiveSTTProvider, "inworld")
-        XCTAssertEqual(s.dictationLiveSTTModel, "inworld/inworld-stt-1")
+        XCTAssertEqual(s.dictationLiveSTTProvider, "openai")
+        XCTAssertEqual(s.dictationLiveSTTModel, "gpt-realtime-whisper")
         XCTAssertTrue(s.dictationPostFilterEnabled)
     }
 
@@ -171,8 +171,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
         {
           "default_language":"en", "summary_language":"en", "summary_style":"bullet",
           "summary_instructions":null,
-          "dictation_live_stt_provider":"inworld", "dictation_live_stt_model":"inworld/inworld-stt-1",
-          "recording_live_stt_provider":"inworld", "recording_live_stt_model":"inworld/inworld-stt-1",
+          "dictation_live_stt_provider":"openai", "dictation_live_stt_model":"gpt-realtime-whisper",
+          "recording_live_stt_provider":"openai", "recording_live_stt_model":"gpt-realtime-whisper",
           "file_stt_provider":"elevenlabs", "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":false,
           "dictation_post_filter_provider":"o", "dictation_post_filter_model":"m"
@@ -208,10 +208,10 @@ final class UserEntityDictationModelsTests: XCTestCase {
 
     func testTranscriptionModelOptionIdCompositesProviderAndModel() {
         let opt = TranscriptionModelOption(
-            provider: "inworld", model: "inworld/inworld-stt-1",
-            label: "Inworld STT", description: "Realtime STT"
+            provider: "openai", model: "gpt-realtime-whisper",
+            label: "OpenAI GPT Realtime Whisper", description: "Realtime STT"
         )
-        XCTAssertEqual(opt.id, "inworld:inworld/inworld-stt-1")
+        XCTAssertEqual(opt.id, "openai:gpt-realtime-whisper")
     }
 
     func testTranscriptionModelOptionHashable() {

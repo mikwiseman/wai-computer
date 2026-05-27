@@ -1,8 +1,7 @@
 import Foundation
 import AVFoundation
 
-/// Audio encoder that converts PCM buffers to 16-bit PCM data for transmission.
-/// The backend expects raw linear16 PCM at 16kHz.
+/// Audio encoder that converts PCM buffers to 16-bit PCM data for local recording and upload.
 public final class AudioEncoder: @unchecked Sendable {
     public let sampleRate: Int
     public let channels: Int
@@ -16,8 +15,8 @@ public final class AudioEncoder: @unchecked Sendable {
 
     /// Encode PCM audio buffer to 16-bit linear PCM data.
     /// Handles mono and non-interleaved multichannel buffers.
-    /// For multichannel, interleaves channels into [L0,R0,L1,R1,...] — the
-    /// linear16 layout the backend and downstream Inworld STT expect.
+    /// For multichannel, interleaves channels into [L0,R0,L1,R1,...] so the
+    /// persisted linear16 recording keeps the capture channel layout.
     public func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floatData = buffer.floatChannelData else { return nil }
 

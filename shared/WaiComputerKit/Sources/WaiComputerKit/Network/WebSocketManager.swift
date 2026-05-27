@@ -65,10 +65,10 @@ public enum WebSocketEvent: Sendable {
     case reconnectionFailed(Error?)
 }
 
-/// WebSocket manager for Inworld realtime speech-to-text streaming.
+/// WebSocket manager for OpenAI realtime speech-to-text streaming.
 ///
-/// The manager asks the backend for a short-lived Inworld session, then streams
-/// 16 kHz LINEAR16 PCM audio directly to the provider.
+/// The manager asks the backend for a short-lived OpenAI session, then streams
+/// provider-configured LINEAR16 PCM audio directly to the Realtime API.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "is.waiwai.computer.kit", category: "websocket")
     private let apiClient: APIClient
@@ -84,7 +84,10 @@ public actor WebSocketManager {
     private var transcriptionSession: RealtimeTranscriptionSessionConfig?
     private let reconnectClock = ContinuousClock()
     private var lastTranscriptReceivedAt: ContinuousClock.Instant?
-    private var inworldPendingAudio = Data()
+    private var pendingAudio = Data()
+    private var uncommittedAudioBytes = 0
+    private var pendingCommitCount = 0
+    private var transcriptByItemID: [String: String] = [:]
 
     // MARK: - Reconnection state
 
@@ -103,8 +106,6 @@ public actor WebSocketManager {
     private var endOfStreamRequested = false
     private var endOfStreamSent = false
     private var providerFinalizationReceived = false
-    private static let inworldMinAudioChunkBytes = 16_000 * 2 * 20 / 1000
-    private static let inworldMaxAudioChunkBytes = 16_000 * 2
 
     /// All final transcript segments collected during this session.
     /// Preserved across reconnections so no transcript data is lost.
@@ -157,7 +158,10 @@ public actor WebSocketManager {
         sendCount = 0
         collectedSegments = []
         lastTranscriptReceivedAt = nil
-        inworldPendingAudio = Data()
+        pendingAudio = Data()
+        uncommittedAudioBytes = 0
+        pendingCommitCount = 0
+        transcriptByItemID = [:]
         reconnectAttempt = 0
         audioBuffer = []
         isReconnecting = false
@@ -191,7 +195,7 @@ public actor WebSocketManager {
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
         }
-        try await sendInworldTranscribeConfig(sessionConfig)
+        try await sendOpenAISessionConfig(sessionConfig)
 
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
@@ -342,7 +346,7 @@ public actor WebSocketManager {
     private func requestForRealtimeSession(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) throws -> URLRequest {
-        guard sessionConfig.provider == "inworld" else {
+        guard sessionConfig.provider == "openai" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(sessionConfig.provider)"
             )
@@ -353,11 +357,11 @@ public actor WebSocketManager {
             throw WebSocketConnectionError.invalidURL
         }
         guard sessionConfig.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-            throw WebSocketConnectionError.tokenFetchFailed("Inworld realtime session is missing server-minted token")
+            throw WebSocketConnectionError.tokenFetchFailed("OpenAI realtime session is missing server-minted token")
         }
         guard sessionConfig.authScheme == "bearer" else {
             throw WebSocketConnectionError.tokenFetchFailed(
-                "Unsupported auth scheme for inworld: \(sessionConfig.authScheme ?? "nil")"
+                "Unsupported auth scheme for openai: \(sessionConfig.authScheme ?? "nil")"
             )
         }
         var request = URLRequest(url: url)
@@ -371,48 +375,62 @@ public actor WebSocketManager {
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
 
-        guard transcriptionSession?.provider == "inworld" else {
+        guard transcriptionSession?.provider == "openai" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(transcriptionSession?.provider ?? "nil")"
             )
         }
-        try await sendInworldAudio(data, forceFlush: false)
+        try await sendOpenAIAudio(data, forceFlush: false)
     }
 
-    private func makeInworldAudioChunkMessage(data: Data) -> String {
+    private func makeOpenAIAudioAppendMessage(data: Data) -> String {
         let payload: [String: Any] = [
-            "audioChunk": [
-                "content": data.base64EncodedString()
-            ]
+            "type": "input_audio_buffer.append",
+            "audio": data.base64EncodedString(),
         ]
         return Self.encodeJSONPayload(payload)
     }
 
-    private func makeInworldTranscribeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
-        let normalisedLanguage: String
-        switch sessionConfig.language {
-        case "multi", "und":
-            normalisedLanguage = ""
-        case let other where other.contains("-"):
-            normalisedLanguage = String(other.split(separator: "-").first ?? Substring(other))
-        default:
-            normalisedLanguage = sessionConfig.language
+    private func makeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        var transcription: [String: Any] = ["model": sessionConfig.model]
+        if let language = normalisedProviderLanguage(sessionConfig.language) {
+            transcription["language"] = language
         }
 
-        var transcribeConfig: [String: Any] = [
-            "modelId": sessionConfig.model,
-            "language": normalisedLanguage,
-            "audioEncoding": "LINEAR16",
-            "sampleRateHertz": sessionConfig.sampleRate,
-            "numberOfChannels": sessionConfig.channels,
-            "inactivityTimeoutSeconds": 60,
-        ]
-        InworldProviderSession.applyPromptHints(from: keyTerms, to: &transcribeConfig)
+        if !keyTerms.isEmpty {
+            wsLog.info(
+                "[OpenAI] key terms ignored for gpt-realtime-whisper count=\(self.keyTerms.count, privacy: .public)"
+            )
+        }
 
         let payload: [String: Any] = [
-            "transcribeConfig": transcribeConfig
+            "type": "session.update",
+            "session": [
+                "type": "transcription",
+                "audio": [
+                    "input": [
+                        "format": [
+                            "type": "audio/pcm",
+                            "rate": sessionConfig.sampleRate,
+                        ],
+                        "transcription": transcription,
+                        "turn_detection": NSNull(),
+                    ],
+                ],
+            ],
         ]
         return Self.encodeJSONPayload(payload)
+    }
+
+    private func normalisedProviderLanguage(_ language: String) -> String? {
+        switch language {
+        case "multi", "und", "":
+            return nil
+        case let other where other.contains("-"):
+            return String(other.split(separator: "-").first ?? Substring(other))
+        default:
+            return language
+        }
     }
 
     /// Serialize a websocket payload to a JSON string.
@@ -427,12 +445,12 @@ public actor WebSocketManager {
         return String(data: jsonData, encoding: .utf8)!
     }
 
-    func testingMakeInworldAudioChunkMessage(data: Data) -> String {
-        makeInworldAudioChunkMessage(data: data)
+    func testingMakeOpenAIAudioAppendMessage(data: Data) -> String {
+        makeOpenAIAudioAppendMessage(data: data)
     }
 
-    func testingMakeInworldTranscribeConfigMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
-        makeInworldTranscribeConfigMessage(sessionConfig)
+    func testingMakeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
+        makeOpenAISessionUpdateMessage(sessionConfig)
     }
 
     func testingSetSessionConfig(_ sessionConfig: RealtimeTranscriptionSessionConfig) {
@@ -489,27 +507,21 @@ public actor WebSocketManager {
     }
 
     private func handleIncomingMessage(_ text: String) {
-        handleInworldMessage(text)
+        handleOpenAIMessage(text)
     }
 
-    private func handleInworldMessage(_ text: String) {
+    private func handleOpenAIMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
-        if let transcription = json["transcription"] as? [String: Any] {
-            handleInworldTranscription(transcription)
-            return
-        }
-        if let result = json["result"] as? [String: Any],
-           let transcription = result["transcription"] as? [String: Any] {
-            handleInworldTranscription(transcription)
-            return
-        }
-        if let error = json["error"] as? [String: Any] {
-            let message = error["message"] as? String
-                ?? error["error_message"] as? String
-                ?? "Inworld realtime transcription error"
+        switch json["type"] as? String {
+        case "conversation.item.input_audio_transcription.delta":
+            handleOpenAIDelta(json)
+        case "conversation.item.input_audio_transcription.completed":
+            handleOpenAICompleted(json)
+        case "error":
+            let message = Self.openAIProviderErrorMessage(json["error"])
             let serverError = WebSocketConnectionError.serverError(message)
             if reconnectEnabled {
                 startReconnection(afterError: serverError)
@@ -521,82 +533,67 @@ public actor WebSocketManager {
                     finishEventStream: false
                 )
             }
+        default:
+            break
         }
     }
 
-    private func handleInworldTranscription(_ payload: [String: Any]) {
-        let transcript = ((payload["text"] as? String) ?? (payload["transcript"] as? String) ?? "")
+    private func handleOpenAIDelta(_ payload: [String: Any]) {
+        let delta = (payload["delta"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !delta.isEmpty else { return }
+
+        let itemID = payload["item_id"] as? String ?? "default"
+        let transcript = ((transcriptByItemID[itemID] ?? "") + delta)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptByItemID[itemID] = transcript
+        lastTranscriptReceivedAt = reconnectClock.now
+
+        let lastEndMs = collectedSegments.last?.endMs ?? 0
+        eventContinuation?.yield(.transcript(LiveTranscriptSegment(
+            text: transcript,
+            speaker: nil,
+            isFinal: false,
+            startMs: lastEndMs,
+            endMs: lastEndMs,
+            confidence: 0
+        )))
+    }
+
+    private func handleOpenAICompleted(_ payload: [String: Any]) {
+        let itemID = payload["item_id"] as? String ?? "default"
+        let transcript = ((payload["transcript"] as? String) ?? transcriptByItemID[itemID] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        transcriptByItemID[itemID] = nil
+        if pendingCommitCount > 0 {
+            pendingCommitCount -= 1
+        }
+        lastTranscriptReceivedAt = reconnectClock.now
+        if endOfStreamRequested && endOfStreamSent && pendingCommitCount == 0 {
+            providerFinalizationReceived = true
+        }
         guard !transcript.isEmpty else { return }
 
-        let isFinal = (payload["is_final"] as? Bool) ?? (payload["isFinal"] as? Bool) ?? false
-        let confidence = (payload["confidence"] as? Double) ?? 0.0
-        let words = payload["words"] as? [[String: Any]]
-            ?? payload["word_timestamps"] as? [[String: Any]]
-            ?? payload["wordTimestamps"] as? [[String: Any]]
-
-        if isFinal {
-            lastTranscriptReceivedAt = reconnectClock.now
-            if endOfStreamRequested {
-                providerFinalizationReceived = true
-            }
-            let startMs = Self.inworldTimestampMs(
-                words?.first?["start_ms"]
-                    ?? words?.first?["startMs"]
-                    ?? words?.first?["start_time_ms"]
-                    ?? words?.first?["start"]
-            ) ?? (collectedSegments.last?.endMs ?? 0)
-            let endMs = Self.inworldTimestampMs(
-                words?.last?["end_ms"]
-                    ?? words?.last?["endMs"]
-                    ?? words?.last?["end_time_ms"]
-                    ?? words?.last?["end"]
-            ) ?? startMs
-            let speaker = words?.first?["speaker"] as? String
-                ?? words?.first?["speaker_id"] as? String
-            let segment = LiveTranscriptSegment(
-                text: transcript,
-                speaker: speaker,
-                isFinal: true,
-                startMs: startMs,
-                endMs: endMs,
-                confidence: confidence
-            )
-            if let emittedSegment = collectCommittedSegment(segment) {
-                eventContinuation?.yield(.transcript(emittedSegment))
-            }
-        } else {
-            let lastEndMs = collectedSegments.last?.endMs ?? 0
-            eventContinuation?.yield(.transcript(LiveTranscriptSegment(
-                text: transcript,
-                speaker: nil,
-                isFinal: false,
-                startMs: lastEndMs,
-                endMs: lastEndMs,
-                confidence: confidence
-            )))
+        let startMs = collectedSegments.last?.endMs ?? 0
+        let segment = LiveTranscriptSegment(
+            text: transcript,
+            speaker: nil,
+            isFinal: true,
+            startMs: startMs,
+            endMs: startMs,
+            confidence: 0
+        )
+        if let emittedSegment = collectCommittedSegment(segment) {
+            eventContinuation?.yield(.transcript(emittedSegment))
         }
     }
 
-    private static func inworldTimestampMs(_ value: Any?) -> Int? {
-        guard let value else { return nil }
-        let numeric: Double?
-        if let double = value as? Double {
-            numeric = double
-        } else if let int = value as? Int {
-            numeric = Double(int)
-        } else if let number = value as? NSNumber {
-            numeric = number.doubleValue
-        } else if let string = value as? String {
-            numeric = Double(string)
-        } else {
-            numeric = nil
-        }
-        guard var resolved = numeric else { return nil }
-        if resolved >= 0, resolved < 10_000, resolved.rounded(.towardZero) != resolved {
-            resolved *= 1_000
-        }
-        return Int(resolved)
+    private static func openAIProviderErrorMessage(_ value: Any?) -> String {
+        let payload = value as? [String: Any]
+        return payload?["message"] as? String
+            ?? payload?["code"] as? String
+            ?? payload?["type"] as? String
+            ?? "OpenAI realtime transcription error"
     }
 
     private func collectCommittedSegment(_ segment: LiveTranscriptSegment) -> LiveTranscriptSegment? {
@@ -714,7 +711,7 @@ public actor WebSocketManager {
                 receiveTask = Task { [weak self] in
                     await self?.receiveMessages(forConnection: thisConnection)
                 }
-                try await sendInworldTranscribeConfig(sessionConfig)
+                try await sendOpenAISessionConfig(sessionConfig)
 
                 // Replay buffered audio
                 let bufferedChunks = audioBuffer
@@ -762,19 +759,22 @@ public actor WebSocketManager {
     private func sendCommitChunkIfNeeded() async throws {
         guard endOfStreamRequested, !endOfStreamSent else { return }
         guard let webSocket else { return }
-        guard transcriptionSession?.provider == "inworld" else {
+        guard transcriptionSession?.provider == "openai" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(transcriptionSession?.provider ?? "nil")"
             )
         }
 
-        try await flushInworldPendingAudio()
-        try await webSocket.send(.string("{\"endTurn\":{}}"))
-        try await webSocket.send(.string("{\"closeStream\":{}}"))
+        try await flushOpenAIPendingAudio()
+        if uncommittedAudioBytes > 0 {
+            try await commitOpenAIAudioBuffer(to: webSocket)
+        } else if pendingCommitCount == 0 {
+            providerFinalizationReceived = true
+        }
         endOfStreamSent = true
         reconnectEnabled = false
         cancelReconnection(clearBufferedAudio: false)
-        wsLog.debug("Sent endTurn and closeStream to Inworld")
+        wsLog.debug("Committed input audio buffer to OpenAI")
     }
 
     private func cancelReconnection(clearBufferedAudio: Bool = true) {
@@ -783,52 +783,82 @@ public actor WebSocketManager {
         reconnectTask = nil
         if clearBufferedAudio {
             audioBuffer = []
-            inworldPendingAudio = Data()
+            pendingAudio = Data()
+            uncommittedAudioBytes = 0
         }
     }
 
-    private func sendInworldAudio(_ data: Data, forceFlush: Bool) async throws {
+    private func sendOpenAIAudio(_ data: Data, forceFlush: Bool) async throws {
         guard let webSocket else {
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
-        for chunk in Self.inworldAudioChunks(
-            pending: &inworldPendingAudio,
+        let config = transcriptionSession
+        for chunk in Self.pcmAudioChunks(
+            pending: &pendingAudio,
             appending: data,
-            forceFlush: forceFlush
+            forceFlush: forceFlush,
+            sampleRate: config?.sampleRate ?? 24_000,
+            channels: config?.channels ?? 1
         ) {
-            try await webSocket.send(.string(makeInworldAudioChunkMessage(data: chunk)))
+            try await webSocket.send(.string(makeOpenAIAudioAppendMessage(data: chunk)))
+            uncommittedAudioBytes += chunk.count
+            if shouldAutoCommitOpenAIAudio() {
+                try await commitOpenAIAudioBuffer(to: webSocket)
+            }
         }
     }
 
-    private func flushInworldPendingAudio() async throws {
-        guard !inworldPendingAudio.isEmpty else { return }
-        try await sendInworldAudio(Data(), forceFlush: true)
+    private func flushOpenAIPendingAudio() async throws {
+        guard !pendingAudio.isEmpty else { return }
+        try await sendOpenAIAudio(Data(), forceFlush: true)
     }
 
-    static func inworldAudioChunks(
+    private func shouldAutoCommitOpenAIAudio() -> Bool {
+        uncommittedAudioBytes >= openAIAutoCommitBytes()
+    }
+
+    private func openAIAutoCommitBytes() -> Int {
+        let config = transcriptionSession
+        return max(1, config?.sampleRate ?? 24_000) * max(1, config?.channels ?? 1) * 2
+    }
+
+    private func commitOpenAIAudioBuffer(to webSocket: URLSessionWebSocketTask) async throws {
+        guard uncommittedAudioBytes > 0 else { return }
+        try await webSocket.send(.string(Self.encodeJSONPayload(["type": "input_audio_buffer.commit"])))
+        uncommittedAudioBytes = 0
+        pendingCommitCount += 1
+    }
+
+    static func pcmAudioChunks(
         pending: inout Data,
         appending data: Data,
-        forceFlush: Bool
+        forceFlush: Bool,
+        sampleRate: Int,
+        channels: Int
     ) -> [Data] {
         if !data.isEmpty {
             pending.append(data)
         }
 
+        let bytesPerSecond = max(1, sampleRate) * max(1, channels) * 2
+        let minChunkBytes = max(1, bytesPerSecond * 20 / 1_000)
+        let maxChunkBytes = bytesPerSecond
+
         var chunks: [Data] = []
-        while pending.count >= inworldMaxAudioChunkBytes {
-            chunks.append(Data(pending.prefix(inworldMaxAudioChunkBytes)))
-            pending.removeFirst(inworldMaxAudioChunkBytes)
+        while pending.count >= maxChunkBytes {
+            chunks.append(Data(pending.prefix(maxChunkBytes)))
+            pending.removeFirst(maxChunkBytes)
         }
 
         if forceFlush {
             guard !pending.isEmpty else { return chunks }
             var chunk = pending
             pending.removeAll(keepingCapacity: true)
-            if chunk.count < inworldMinAudioChunkBytes {
-                chunk.append(Data(repeating: 0, count: inworldMinAudioChunkBytes - chunk.count))
+            if chunk.count < minChunkBytes {
+                chunk.append(Data(repeating: 0, count: minChunkBytes - chunk.count))
             }
             chunks.append(chunk)
-        } else if pending.count >= inworldMinAudioChunkBytes {
+        } else if pending.count >= minChunkBytes {
             chunks.append(pending)
             pending = Data()
         }
@@ -876,15 +906,15 @@ public actor WebSocketManager {
         endOfStreamRequested
     }
 
-    func testingHandleInworldMessage(_ text: String) {
-        handleInworldMessage(text)
+    func testingHandleOpenAIMessage(_ text: String) {
+        handleOpenAIMessage(text)
     }
 
-    private func sendInworldTranscribeConfig(
+    private func sendOpenAISessionConfig(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) async throws {
         guard let webSocket else { return }
-        try await webSocket.send(.string(makeInworldTranscribeConfigMessage(sessionConfig)))
+        try await webSocket.send(.string(makeOpenAISessionUpdateMessage(sessionConfig)))
     }
 
     private func closeConnection(
@@ -901,7 +931,10 @@ public actor WebSocketManager {
         receiveTask?.cancel()
         receiveTask = nil
         transcriptionSession = nil
-        inworldPendingAudio = Data()
+        pendingAudio = Data()
+        uncommittedAudioBytes = 0
+        pendingCommitCount = 0
+        transcriptByItemID = [:]
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))
@@ -923,11 +956,19 @@ public actor WebSocketManager {
         eventContinuation?.yield(event)
     }
 
-    func testingInworldAudioChunks(
+    func testingPCMAudioChunks(
         pending: inout Data,
         appending data: Data,
-        forceFlush: Bool
+        forceFlush: Bool,
+        sampleRate: Int = 24_000,
+        channels: Int = 1
     ) -> [Data] {
-        Self.inworldAudioChunks(pending: &pending, appending: data, forceFlush: forceFlush)
+        Self.pcmAudioChunks(
+            pending: &pending,
+            appending: data,
+            forceFlush: forceFlush,
+            sampleRate: sampleRate,
+            channels: channels
+        )
     }
 }

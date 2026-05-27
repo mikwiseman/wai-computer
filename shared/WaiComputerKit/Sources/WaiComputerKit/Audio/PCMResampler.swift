@@ -1,9 +1,9 @@
 import Foundation
 import AVFoundation
 
-/// Thin wrapper around `AVAudioConverter` for downsampling native capture audio
-/// to provider-configured Float32 PCM. Realtime STT consumes 16 kHz mono today,
-/// but the target rate is supplied by the caller instead of being hard-coded.
+/// Thin wrapper around `AVAudioConverter` for resampling native capture audio
+/// to provider-configured Float32 PCM. Realtime STT uses the target rate
+/// supplied by the caller instead of a hard-coded recording-upload format.
 ///
 /// **Why not arithmetic decimation?** The previous implementation averaged
 /// adjacent samples (44.1/48 kHz → 16 kHz). That is a low-pass-free averaging

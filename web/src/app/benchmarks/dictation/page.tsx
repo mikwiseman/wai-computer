@@ -40,8 +40,8 @@ const modelMatrix = [
     tags: ["dictation", "realtime"],
   },
   {
-    name: "Inworld STT-1",
-    fit: "Realtime experiment path through Inworld’s STT stack; not a file model.",
+    name: "OpenAI GPT Realtime Whisper",
+    fit: "Realtime Whisper path for live dictation; not a file model.",
     tags: ["dictation", "realtime"],
   },
 ];

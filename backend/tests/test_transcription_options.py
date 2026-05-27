@@ -71,12 +71,12 @@ def test_defaults_are_registered_options() -> None:
 
 def test_default_stt_model_set_matches_stable_release_choice() -> None:
     assert (DEFAULT_DICTATION_LIVE_STT_PROVIDER, DEFAULT_DICTATION_LIVE_STT_MODEL) == (
-        "inworld",
-        "inworld/inworld-stt-1",
+        "openai",
+        "gpt-realtime-whisper",
     )
     assert (DEFAULT_RECORDING_LIVE_STT_PROVIDER, DEFAULT_RECORDING_LIVE_STT_MODEL) == (
-        "inworld",
-        "inworld/inworld-stt-1",
+        "openai",
+        "gpt-realtime-whisper",
     )
     assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
         "elevenlabs",
@@ -120,14 +120,14 @@ def test_normalize_model_rejects_empty() -> None:
 
 
 def test_is_valid_option_matches_registered() -> None:
-    assert is_valid_option("dictation_live_stt", "inworld", "inworld/inworld-stt-1")
-    assert is_valid_option("recording_live_stt", "inworld", "inworld/inworld-stt-1")
+    assert is_valid_option("dictation_live_stt", "openai", "gpt-realtime-whisper")
+    assert is_valid_option("recording_live_stt", "openai", "gpt-realtime-whisper")
     assert is_valid_option("file_stt", "elevenlabs", "scribe_v2")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
 
 
 def test_is_valid_option_normalizes_input() -> None:
-    assert is_valid_option("dictation_live_stt", "INWORLD", " inworld/inworld-stt-1 ")
+    assert is_valid_option("dictation_live_stt", "OPENAI", " gpt-realtime-whisper ")
     assert is_valid_option("file_stt", "ElevenLabs", "scribe_v2")
 
 
@@ -136,12 +136,13 @@ def test_is_valid_option_rejects_unknown() -> None:
     assert not is_valid_option("file_stt", "openai", "whisper-1")
     # Provider not in the realtime pool
     assert not is_valid_option("dictation_live_stt", "soniox", "stt-async-v4")
+    assert not is_valid_option("dictation_live_stt", "legacy-live", "legacy-model")
 
 
 def test_realtime_pools_are_task_specific() -> None:
     """Dictation and recording are locked to the same fixed realtime model."""
-    assert is_valid_option("dictation_live_stt", "inworld", "inworld/inworld-stt-1")
-    assert is_valid_option("recording_live_stt", "inworld", "inworld/inworld-stt-1")
+    assert is_valid_option("dictation_live_stt", "openai", "gpt-realtime-whisper")
+    assert is_valid_option("recording_live_stt", "openai", "gpt-realtime-whisper")
     assert not is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert not is_valid_option("dictation_live_stt", "deepgram", "nova-3")
     assert not is_valid_option("dictation_live_stt", "soniox", "stt-rt-v4")
@@ -155,9 +156,9 @@ def test_realtime_pools_are_task_specific() -> None:
 
 
 def test_validate_option_returns_normalized() -> None:
-    provider, model = validate_option("dictation_live_stt", "  INWORLD  ", "inworld/inworld-stt-1")
-    assert provider == "inworld"
-    assert model == "inworld/inworld-stt-1"
+    provider, model = validate_option("dictation_live_stt", "  OPENAI  ", "gpt-realtime-whisper")
+    assert provider == "openai"
+    assert model == "gpt-realtime-whisper"
 
 
 def test_validate_option_raises_for_unknown() -> None:
@@ -205,18 +206,18 @@ def test_options_response_stt_groups_are_fixed() -> None:
     out = options_response()
     assert out["dictation_live_stt"] == [
         {
-            "provider": "inworld",
-            "model": "inworld/inworld-stt-1",
-            "label": "Inworld STT-1",
-            "description": "Fixed low-latency model for live dictation.",
+            "provider": "openai",
+            "model": "gpt-realtime-whisper",
+            "label": "OpenAI GPT Realtime Whisper",
+            "description": "Fixed streaming speech-to-text model for live dictation.",
         }
     ]
     assert out["recording_live_stt"] == [
         {
-            "provider": "inworld",
-            "model": "inworld/inworld-stt-1",
-            "label": "Inworld STT-1",
-            "description": "Fixed realtime model for live recording.",
+            "provider": "openai",
+            "model": "gpt-realtime-whisper",
+            "label": "OpenAI GPT Realtime Whisper",
+            "description": "Fixed streaming speech-to-text model for live recording.",
         }
     ]
 
@@ -241,7 +242,6 @@ def test_provider_is_configured_checks_required_key_names() -> None:
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "",
             "deepgram_api_key": "dg-key",
-            "inworld_api_key": "",
             "soniox_api_key": "soniox-key",
         },
     )()
@@ -250,7 +250,7 @@ def test_provider_is_configured_checks_required_key_names() -> None:
     assert provider_is_configured("deepgram", settings)
     assert provider_is_configured("soniox", settings)
     assert not provider_is_configured("openai", settings)
-    assert not provider_is_configured("inworld", settings)
+    assert not provider_is_configured("unknown", settings)
 
 
 def test_options_response_filters_unconfigured_providers() -> None:
@@ -261,7 +261,6 @@ def test_options_response_filters_unconfigured_providers() -> None:
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "",
             "deepgram_api_key": "dg-key",
-            "inworld_api_key": "",
             "soniox_api_key": "",
         },
     )()
@@ -282,7 +281,6 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
             "elevenlabs_api_key": "",
             "openai_api_key": "",
             "deepgram_api_key": "",
-            "inworld_api_key": "",
             "soniox_api_key": "",
         },
     )()
@@ -290,7 +288,27 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
     with pytest.raises(ValueError, match="not configured"):
         validate_configured_option(
             "dictation_live_stt",
-            "inworld",
-            "inworld/inworld-stt-1",
+            "openai",
+            "gpt-realtime-whisper",
             settings=settings,
         )
+
+
+def test_validate_configured_option_returns_valid_configured_option() -> None:
+    settings = type(
+        "Settings",
+        (),
+        {
+            "elevenlabs_api_key": "xi-key",
+            "openai_api_key": "sk-test",
+            "deepgram_api_key": "",
+            "soniox_api_key": "",
+        },
+    )()
+
+    assert validate_configured_option(
+        "file_stt",
+        " ElevenLabs ",
+        "scribe_v2",
+        settings=settings,
+    ) == ("elevenlabs", "scribe_v2")

@@ -36,7 +36,7 @@ public actor TokenVault {
             provider: String,
             model: String,
             endpoint: URL? = nil,
-            sampleRate: Int = 16_000
+            sampleRate: Int = 24_000
         ) {
             self.value = value
             self.expiresAt = expiresAt

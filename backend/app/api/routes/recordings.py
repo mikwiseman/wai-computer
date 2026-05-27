@@ -35,7 +35,13 @@ from app.core.recording_audio_processing import (
     is_no_speech_placeholder,
     reset_recording_processing_state,
 )
-from app.core.summarizer import generate_title, summarize_transcript
+from app.core.summarizer import (
+    generate_title,
+    summarize_transcript,
+)
+from app.core.summarizer import (
+    resolve_highlight_timestamps as _resolve_highlight_timestamps,
+)
 from app.core.summary_generation import (
     apply_summary_result,
     build_summary_transcript,
@@ -63,6 +69,11 @@ logger = logging.getLogger(__name__)
 app_settings = get_settings()
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
+
+# Kept as a route-level patch point for older tests and integrations that
+# exercised summary highlight timestamping before durable summary generation
+# moved the persistence logic into app.core.summary_generation.
+resolve_highlight_timestamps = _resolve_highlight_timestamps
 
 
 class SegmentResponse(BaseModel):

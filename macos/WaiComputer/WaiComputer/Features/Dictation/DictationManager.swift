@@ -72,8 +72,8 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let enabledDefaultsKey = "dictationEnabled"
-    private static let liveSTTProvider = "inworld"
-    private static let liveSTTModel = "inworld/inworld-stt-1"
+    private static let liveSTTProvider = "openai"
+    private static let liveSTTModel = "gpt-realtime-whisper"
 
     @Published var hotkeyChoice: String {
         didSet {
@@ -152,7 +152,7 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Dictation pipeline
 
-    // Inworld-backed realtime dictation path.
+    // OpenAI-backed realtime dictation path.
     private var providerSession: (any ProviderSession)?
     private var providerCapture: MicrophoneCapture?
     private var providerAudioTask: Task<Void, Never>?
@@ -932,7 +932,7 @@ final class DictationManager: ObservableObject {
         }
     }
 
-    // MARK: - Provider Events (Inworld)
+    // MARK: - Provider Events
 
     /// Track whether the first transcript token has arrived this session so
     /// we can emit a `firstTokenReceived` instrumentation event at the
@@ -971,10 +971,10 @@ final class DictationManager: ObservableObject {
             // session: bad token, hit billing wall, model misconfigured,
             // or the per-session time limit was reached. Everything else
             // (insufficientAudioActivity, rateLimited, chunkSizeExceeded,
-            // commitThrottled, malformedFrame, transcriberInternal — most
-            // notably the `default` mapping for unknown Inworld codes) is
-            // surfaced as a hint but the overlay stays open and the audio
-            // pump keeps trying. PTT still fails-fast across the board
+            // commitThrottled, malformedFrame, transcriberInternal, or other
+            // provider-internal warnings) is surfaced as a hint but the
+            // overlay stays open and the audio pump keeps trying. PTT still
+            // fails-fast across the board
             // because the user is actively holding the key and a frozen
             // overlay would be confusing.
             if state == .listening {

@@ -186,6 +186,30 @@ async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_
 
 
 @pytest.mark.asyncio
+async def test_transcription_reraises_unexpected_elevenlabs_failure_without_fallback(caplog):
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(side_effect=RuntimeError("socket closed")),
+    ):
+        from app.core.transcription import transcribe_audio_file
+
+        caplog.set_level("ERROR", logger="app.core.transcription")
+        with pytest.raises(RuntimeError, match="socket closed"):
+            await transcribe_audio_file(
+                b"secret-audio-bytes",
+                language="ru",
+                content_type="audio/wav",
+                channels=1,
+            )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "file STT failed" in messages
+    assert "provider=elevenlabs" in messages
+    assert "error_type=RuntimeError" in messages
+    assert "secret-audio-bytes" not in messages
+
+
+@pytest.mark.asyncio
 async def test_transcription_logs_provider_latency_without_audio_or_error_body(caplog):
     from app.core.transcript_utils import TranscriptResult
 

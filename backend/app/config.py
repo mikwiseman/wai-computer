@@ -44,15 +44,11 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — LLM (Companion + summarization + dictation cleanup) and embeddings.
+    # OpenAI — realtime transcription, LLM, dictation cleanup, and embeddings.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
-
-    # Inworld AI (first-party STT experiments; realtime only)
-    inworld_api_key: str = ""
-    inworld_workspace: str = ""
 
     # ElevenLabs
     elevenlabs_api_key: str = ""

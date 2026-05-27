@@ -190,6 +190,36 @@ def test_lock_transcription_models_migration_resets_all_users(monkeypatch):
     assert defaults["dictation_post_filter_model"] == "gpt-5.5"
 
 
+def test_openai_realtime_whisper_default_migration_resets_live_users(monkeypatch):
+    """May 27 realtime swap should overwrite all live STT users to OpenAI."""
+    migration = _load_migration("20260527_190000_openai_realtime_whisper_defaults.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 1
+    statement = str(executed[0])
+    assert "dictation_live_stt_provider = :provider" in statement
+    assert "dictation_live_stt_model = :model" in statement
+    assert "recording_live_stt_provider = :provider" in statement
+    assert "recording_live_stt_model = :model" in statement
+    assert "WHERE" not in statement
+
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["dictation_live_stt_provider"] == "openai"
+    assert defaults["dictation_live_stt_model"] == "gpt-realtime-whisper"
+    assert defaults["recording_live_stt_provider"] == "openai"
+    assert defaults["recording_live_stt_model"] == "gpt-realtime-whisper"
+
+
 def test_drop_deprecated_stt_models_migration_resets_users(monkeypatch):
     """May 18 cleanup must reset users on dropped models to the ElevenLabs defaults."""
     migration = _load_migration("20260518_160000_drop_deprecated_stt_models.py")

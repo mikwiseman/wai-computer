@@ -134,8 +134,9 @@ class RecordingViewModel: ObservableObject {
             currentRecordingId = recordingId
 
             // Create a provider-backed realtime transcription connection.
-            let ws = WebSocketManager(apiClient: apiClient, language: language)
+            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: 1)
             self.webSocketManager = ws
+            var liveEncoder: RealtimePCMEncoder?
             let eventStream = await ws.events
 
             transcriptTask = Task { [weak self] in
@@ -149,7 +150,16 @@ class RecordingViewModel: ObservableObject {
             // Connect to the configured transcription provider.
             var isLiveTranscriptionActive = true
             do {
-                try await ws.connect()
+                let liveSessionConfig = try await apiClient.createRealtimeTranscriptionSession(
+                    language: language,
+                    channels: 1,
+                    purpose: .recording
+                )
+                liveEncoder = RealtimePCMEncoder(
+                    targetSampleRate: liveSessionConfig.sampleRate,
+                    channels: liveSessionConfig.channels
+                )
+                try await ws.connect(using: liveSessionConfig)
             } catch {
                 recordingLog.warning("Live transcription unavailable at recording start recordingId=\(recordingId, privacy: .public)")
                 SentryHelper.addBreadcrumb(
@@ -169,6 +179,7 @@ class RecordingViewModel: ObservableObject {
             let encoder = AudioEncoder()
             audioCapture = capture
             audioEncoder = encoder
+            let realtimeEncoder = liveEncoder
 
             // Create local audio file writer for persistence (local-first)
             try RecordingBackupStore.ensureDirectoryForRecording(recordingId: recordingId)
@@ -187,7 +198,10 @@ class RecordingViewModel: ObservableObject {
                         
                         if isLiveTranscriptionActive {
                             do {
-                                try await ws.sendAudio(data: data)
+                                guard let liveData = realtimeEncoder?.encode(buffer) else {
+                                    throw WebSocketConnectionError.serverError("Failed to encode realtime audio")
+                                }
+                                try await ws.sendAudio(data: liveData)
                             } catch {
                                 recordingLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
