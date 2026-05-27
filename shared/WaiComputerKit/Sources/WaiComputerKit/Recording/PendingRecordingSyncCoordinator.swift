@@ -210,6 +210,13 @@ public actor PendingRecordingSyncCoordinator {
                 )
                 try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
                 log.error("Marked \(backup.recordingId) as permanent failure (too large)")
+            case .httpError(let statusCode, _) where statusCode == 404:
+                _ = try? RecordingBackupStore.recordSaveFailure(
+                    recordingId: backup.recordingId,
+                    message: "This recording was deleted from the server."
+                )
+                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+                log.error("Marked \(backup.recordingId) as permanent failure (deleted on server)")
             default:
                 _ = try? RecordingBackupStore.recordSaveFailure(
                     recordingId: backup.recordingId,

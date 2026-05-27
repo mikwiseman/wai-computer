@@ -11,9 +11,18 @@ from app.core.observability import capture_sentry_message
 from app.models.recording import Recording, RecordingStatus
 
 INTERRUPTED_PROCESSING_FAILURE_CODE = "processing_interrupted"
-INTERRUPTED_PROCESSING_FAILURE_MESSAGE = (
-    "Обработка была прервана. Импортируй файл ещё раз."
-)
+
+INTERRUPTED_PROCESSING_FAILURE_MESSAGES = {
+    "en": "Processing was interrupted. Please re-import the file.",
+    "ru": "Обработка была прервана. Импортируй файл ещё раз.",
+}
+
+
+def _interrupted_failure_message(language: str | None) -> str:
+    normalized = (language or "").strip().lower()
+    if normalized.startswith("ru"):
+        return INTERRUPTED_PROCESSING_FAILURE_MESSAGES["ru"]
+    return INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
 
 
 async def mark_stale_processing_recordings(
@@ -45,7 +54,7 @@ async def mark_stale_processing_recordings(
         .values(
             status=RecordingStatus.FAILED.value,
             failure_code=INTERRUPTED_PROCESSING_FAILURE_CODE,
-            failure_message=INTERRUPTED_PROCESSING_FAILURE_MESSAGE,
+            failure_message=INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"],
         )
     )
     await db.commit()

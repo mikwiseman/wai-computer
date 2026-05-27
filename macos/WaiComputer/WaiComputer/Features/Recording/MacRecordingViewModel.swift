@@ -398,6 +398,10 @@ class MacRecordingViewModel: ObservableObject {
             // Start the audio-sending loop
             audioLog.info("Starting recording audio task")
             var bufferCount = 0
+            let diskFullMessage = t(
+                "Disk is full. Recording stopped to preserve what was captured.",
+                "Диск заполнен. Запись остановлена для сохранения того, что успели записать."
+            )
             audioTask = Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 audioLog.info("Recording audio task started")
@@ -411,7 +415,12 @@ class MacRecordingViewModel: ObservableObject {
                             audioLog.debug("Encoded recording audio bytes=\(data.count, privacy: .public)")
                         }
                         // Local-first: always write to disk before sending over network
-                        fileWriter.writeEncodedPCM(data)
+                        let wrote = fileWriter.writeEncodedPCM(data)
+                        if !wrote {
+                            audioLog.error("Disk write failed — stopping recording to preserve data")
+                            await MainActor.run { self.error = diskFullMessage }
+                            return
+                        }
 
                         if isLiveTranscriptionActive {
                             do {
