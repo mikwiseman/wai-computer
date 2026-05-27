@@ -112,11 +112,8 @@ async def test_create_realtime_client_secret_requires_openai_api_key():
             )
 
 
-def test_realtime_websocket_url_uses_requested_model():
-    assert (
-        realtime_websocket_url("gpt-realtime-whisper")
-        == "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper"
-    )
+def test_realtime_websocket_url_uses_transcription_intent():
+    assert realtime_websocket_url() == "wss://api.openai.com/v1/realtime?intent=transcription"
 
 
 @pytest.mark.asyncio

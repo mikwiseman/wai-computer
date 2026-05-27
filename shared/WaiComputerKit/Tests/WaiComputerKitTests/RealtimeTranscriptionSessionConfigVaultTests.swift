@@ -120,7 +120,7 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             channels: 1,
             model: model,
             commitStrategy: "manual",
-            websocketURL: "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+            websocketURL: "wss://api.openai.com/v1/realtime?intent=transcription",
             authScheme: "bearer"
         )
     }

@@ -765,13 +765,13 @@ final class APIClientNewEndpointsTests: XCTestCase {
             {
                 "provider":"openai",
                 "token":"client_secret_123",
-                "expires_in_seconds":900,
+                "expires_in_seconds":60,
                 "sample_rate":24000,
                 "audio_format":"pcm_24000",
                 "language":"multi",
                 "channels":1,
                 "model":"gpt-realtime-whisper",
-                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "websocket_url":"wss://api.openai.com/v1/realtime?intent=transcription",
                 "auth_scheme":"bearer",
                 "commit_strategy":"manual"
             }
@@ -784,7 +784,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(config.token, "client_secret_123")
         XCTAssertEqual(config.sampleRate, 24_000)
         XCTAssertEqual(config.model, "gpt-realtime-whisper")
-        XCTAssertEqual(config.websocketURL, "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper")
+        XCTAssertEqual(config.websocketURL, "wss://api.openai.com/v1/realtime?intent=transcription")
         XCTAssertEqual(config.authScheme, "bearer")
         XCTAssertEqual(config.commitStrategy, "manual")
     }
@@ -809,13 +809,13 @@ final class APIClientNewEndpointsTests: XCTestCase {
             {
                 "provider":"openai",
                 "token":"client_secret_test",
-                "expires_in_seconds":900,
+                "expires_in_seconds":60,
                 "sample_rate":24000,
                 "audio_format":"pcm_24000",
                 "language":"multi",
                 "channels":1,
                 "model":"gpt-realtime-whisper",
-                "websocket_url":"wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+                "websocket_url":"wss://api.openai.com/v1/realtime?intent=transcription",
                 "auth_scheme":"bearer",
                 "commit_strategy":"manual"
             }

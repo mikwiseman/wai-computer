@@ -68,7 +68,7 @@ async def _build_openai_realtime_session(
         keep_alive_interval_seconds=None,
         commit_strategy="manual",
         no_verbatim=False,
-        websocket_url=realtime_websocket_url(model),
+        websocket_url=realtime_websocket_url(),
         auth_scheme="bearer",
     )
 
