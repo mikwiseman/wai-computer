@@ -334,7 +334,7 @@ class MacRecordingViewModel: ObservableObject {
             }
 
             // Now we know the real channel count. Local persistence keeps the
-            // capture channel layout; OpenAI realtime uses the server-declared
+            // capture channel layout; realtime STT uses the server-declared
             // PCM format from the minted session.
             let channels = audioChannels
             let channelMode = isDualMixedToMono ? "mono-mix" : channels > 1 ? "multichannel" : "mono"

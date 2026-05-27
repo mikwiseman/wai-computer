@@ -9,8 +9,8 @@ private let langLog = Logger(subsystem: "is.waiwai.computer.app", category: "dic
 /// in UserDefaults under `dictationLanguages`. Two modes derive from the set's
 /// cardinality:
 ///
-///   - **0 entries**: auto-detect any language. Wire tag is `""`; provider
-///     adapters omit the language hint when using auto-detect.
+///   - **0 entries**: multilingual auto-detect. Wire tag is `""`; provider
+///     adapters send the provider's explicit multilingual mode.
 ///   - **1 entry**: single-language mode — send that BCP-47 code as a hint
 ///     for the lowest possible latency on supported models.
 ///
@@ -171,7 +171,6 @@ struct DictationLanguageCatalog {
         .init(code: "it", englishName: "Italian", nativeName: "Italiano"),
         .init(code: "pt", englishName: "Portuguese", nativeName: "Português"),
         .init(code: "ja", englishName: "Japanese", nativeName: "日本語"),
-        .init(code: "zh", englishName: "Chinese", nativeName: "中文"),
         .init(code: "ko", englishName: "Korean", nativeName: "한국어"),
         .init(code: "hi", englishName: "Hindi", nativeName: "हिन्दी"),
         .init(code: "ar", englishName: "Arabic", nativeName: "العربية"),

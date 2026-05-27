@@ -73,12 +73,12 @@ def test_defaults_are_registered_options() -> None:
 
 def test_default_stt_model_set_matches_stable_release_choice() -> None:
     assert (DEFAULT_DICTATION_LIVE_STT_PROVIDER, DEFAULT_DICTATION_LIVE_STT_MODEL) == (
-        "openai",
-        "gpt-realtime-whisper",
+        "deepgram",
+        "nova-3",
     )
     assert (DEFAULT_RECORDING_LIVE_STT_PROVIDER, DEFAULT_RECORDING_LIVE_STT_MODEL) == (
-        "openai",
-        "gpt-realtime-whisper",
+        "deepgram",
+        "nova-3",
     )
     assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
         "elevenlabs",
@@ -121,14 +121,14 @@ def test_normalize_model_rejects_empty() -> None:
 
 
 def test_is_valid_option_matches_registered() -> None:
-    assert is_valid_option("dictation_live_stt", "openai", "gpt-realtime-whisper")
-    assert is_valid_option("recording_live_stt", "openai", "gpt-realtime-whisper")
+    assert is_valid_option("dictation_live_stt", "deepgram", "nova-3")
+    assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert is_valid_option("file_stt", "elevenlabs", "scribe_v2")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
 
 
 def test_is_valid_option_normalizes_input() -> None:
-    assert is_valid_option("dictation_live_stt", "OPENAI", " gpt-realtime-whisper ")
+    assert is_valid_option("dictation_live_stt", "DEEPGRAM", " nova-3 ")
     assert is_valid_option("file_stt", " ElevenLabs ", " scribe_v2 ")
 
 
@@ -143,8 +143,8 @@ def test_is_valid_option_rejects_unknown() -> None:
 
 def test_realtime_pools_are_task_specific() -> None:
     """Dictation and recording are locked to the same fixed realtime model."""
-    assert is_valid_option("dictation_live_stt", "openai", "gpt-realtime-whisper")
-    assert is_valid_option("recording_live_stt", "openai", "gpt-realtime-whisper")
+    assert is_valid_option("dictation_live_stt", "deepgram", "nova-3")
+    assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert not is_valid_option("recording_live_stt", "removed-live-provider", "removed-live-model")
     assert not is_valid_option("dictation_live_stt", "removed-live-provider", "removed-live-model")
     assert not is_valid_option("file_stt", "removed-file-provider", "removed-file-model")
@@ -156,9 +156,9 @@ def test_realtime_pools_are_task_specific() -> None:
 
 
 def test_validate_option_returns_normalized() -> None:
-    provider, model = validate_option("dictation_live_stt", "  OPENAI  ", "gpt-realtime-whisper")
-    assert provider == "openai"
-    assert model == "gpt-realtime-whisper"
+    provider, model = validate_option("dictation_live_stt", "  DEEPGRAM  ", "nova-3")
+    assert provider == "deepgram"
+    assert model == "nova-3"
 
 
 def test_validate_option_raises_for_unknown() -> None:
@@ -206,18 +206,18 @@ def test_options_response_stt_groups_are_fixed() -> None:
     out = options_response()
     assert out["dictation_live_stt"] == [
         {
-            "provider": "openai",
-            "model": "gpt-realtime-whisper",
-            "label": "OpenAI GPT Realtime Whisper",
-            "description": "Fixed streaming speech-to-text model for live dictation.",
+            "provider": "deepgram",
+            "model": "nova-3",
+            "label": "Deepgram Nova-3",
+            "description": "Fixed low-latency streaming speech-to-text model for live dictation.",
         }
     ]
     assert out["recording_live_stt"] == [
         {
-            "provider": "openai",
-            "model": "gpt-realtime-whisper",
-            "label": "OpenAI GPT Realtime Whisper",
-            "description": "Fixed streaming speech-to-text model for live recording.",
+            "provider": "deepgram",
+            "model": "nova-3",
+            "label": "Deepgram Nova-3",
+            "description": "Fixed low-latency streaming speech-to-text model for live recording.",
         }
     ]
 
@@ -240,10 +240,12 @@ def test_provider_is_configured_checks_required_key_names() -> None:
         (),
         {
             "elevenlabs_api_key": "xi-key",
+            "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "",
         },
     )()
 
+    assert provider_is_configured("deepgram", settings)
     assert provider_is_configured("elevenlabs", settings)
     assert not provider_is_configured("removed-provider", settings)
     assert not provider_is_configured("openai", settings)
@@ -256,14 +258,15 @@ def test_options_response_filters_unconfigured_providers() -> None:
         (),
         {
             "elevenlabs_api_key": "xi-key",
+            "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "openai-test-key",
         },
     )()
 
     out = options_response(settings=settings, configured_only=True)
 
-    assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"openai"}
-    assert {entry["provider"] for entry in out["recording_live_stt"]} == {"openai"}
+    assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"deepgram"}
+    assert {entry["provider"] for entry in out["recording_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["file_stt"]} == {"elevenlabs"}
     assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"openai"}
 
@@ -274,6 +277,7 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
         (),
         {
             "elevenlabs_api_key": "",
+            "deepgram_api_key": "",
             "openai_api_key": "",
         },
     )()
@@ -281,8 +285,8 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
     with pytest.raises(ValueError, match="not configured"):
         validate_configured_option(
             "dictation_live_stt",
-            "openai",
-            "gpt-realtime-whisper",
+            "deepgram",
+            "nova-3",
             settings=settings,
         )
 
@@ -293,6 +297,7 @@ def test_validate_configured_option_returns_valid_configured_option() -> None:
         (),
         {
             "elevenlabs_api_key": "xi-key",
+            "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "sk-test",
         },
     )()

@@ -1,8 +1,8 @@
 """Realtime speech-to-text session minting.
 
-The product has one live STT runtime: OpenAI gpt-realtime-whisper. The native
-apps connect directly to the provider WebSocket with a short-lived server-minted
-token, so clients never receive the long-lived provider API key.
+The product has one live STT runtime: Deepgram Nova-3. Native apps connect
+directly to the provider WebSocket with a short-lived server-minted token, so
+clients never receive the long-lived provider API key.
 """
 
 from __future__ import annotations
@@ -10,11 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.core.openai_transcription import (
-    OPENAI_REALTIME_SAMPLE_RATE,
-    OPENAI_REALTIME_TOKEN_TTL_SECONDS,
-    create_realtime_client_secret,
-    realtime_websocket_url,
+from app.core.deepgram import (
+    DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS,
+    DEEPGRAM_REALTIME_CHANNELS,
+    DEEPGRAM_REALTIME_ENCODING,
+    DEEPGRAM_REALTIME_SAMPLE_RATE,
+    build_realtime_websocket_url,
+    create_temporary_token,
+    normalize_deepgram_language,
 )
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
@@ -45,30 +48,36 @@ class RealtimeTranscriptionSession:
     auth_scheme: str = "bearer"
 
 
-async def _build_openai_realtime_session(
+async def _build_deepgram_realtime_session(
     language: str,
     channels: int,
     *,
     model: str,
+    purpose: Literal["recording", "dictation"],
 ) -> RealtimeTranscriptionSession:
-    token = await create_realtime_client_secret(
-        model=model,
-        language=language,
-    )
+    resolved_language = normalize_deepgram_language(language)
+    resolved_channels = DEEPGRAM_REALTIME_CHANNELS
     del channels
-    return RealtimeTranscriptionSession(
-        provider="openai",
-        token=token,
-        expires_in_seconds=OPENAI_REALTIME_TOKEN_TTL_SECONDS,
-        sample_rate=OPENAI_REALTIME_SAMPLE_RATE,
-        audio_format="pcm_24000",
-        language=language,
-        channels=1,
+    token, expires_in = await create_temporary_token()
+    websocket_url = build_realtime_websocket_url(
+        language=resolved_language,
+        channels=resolved_channels,
+        purpose=purpose,
         model=model,
-        keep_alive_interval_seconds=None,
-        commit_strategy="manual",
+    )
+    return RealtimeTranscriptionSession(
+        provider="deepgram",
+        token=token,
+        expires_in_seconds=expires_in,
+        sample_rate=DEEPGRAM_REALTIME_SAMPLE_RATE,
+        audio_format=DEEPGRAM_REALTIME_ENCODING,
+        language=resolved_language,
+        channels=resolved_channels,
+        model=model,
+        keep_alive_interval_seconds=DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS,
+        commit_strategy=None,
         no_verbatim=False,
-        websocket_url=realtime_websocket_url(),
+        websocket_url=websocket_url,
         auth_scheme="bearer",
     )
 
@@ -88,10 +97,8 @@ async def create_realtime_transcription_session(
     """
     del user
 
-    resolved_language = language.strip().lower() or "multi"
-    # OpenAI Realtime transcription docs specify mono PCM for audio/pcm.
-    resolved_channels = 1
-    del channels
+    resolved_language = normalize_deepgram_language(language)
+    resolved_channels = DEEPGRAM_REALTIME_CHANNELS
 
     if purpose == "dictation":
         provider, model = validate_option(
@@ -108,11 +115,12 @@ async def create_realtime_transcription_session(
         )
         unsupported_message = f"Unsupported recording_live_stt_provider: {provider}."
 
-    if provider != "openai":
+    if provider != "deepgram":
         raise ValueError(unsupported_message)
 
-    return await _build_openai_realtime_session(
+    return await _build_deepgram_realtime_session(
         resolved_language,
         resolved_channels,
         model=model,
+        purpose=purpose,
     )

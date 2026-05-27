@@ -16,7 +16,10 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -24,6 +27,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString.Companion.toByteString
 
 sealed interface WsEvent {
     data object Connected : WsEvent
@@ -43,7 +47,7 @@ interface RealtimeWebSocketManager {
     suspend fun disconnect()
 }
 
-class OpenAIRealtimeWebSocketManager(
+class DeepgramRealtimeWebSocketManager(
     private val waiApi: WaiApi,
     private val language: String,
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -57,6 +61,7 @@ class OpenAIRealtimeWebSocketManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var webSocket: WebSocket? = null
     private var reconnectJob: Job? = null
+    private var keepAliveJob: Job? = null
     private var reconnectAttempt = 0
     private val audioBuffer = ArrayDeque<ByteArray>()
     private var endOfStreamRequested = false
@@ -65,9 +70,7 @@ class OpenAIRealtimeWebSocketManager(
     private var lastTranscriptReceivedAtMs: Long? = null
     private var connected = false
     private var currentConfig: RealtimeTranscriptionSessionConfig? = null
-    private val openAIInterimByItem = mutableMapOf<String, String>()
-    private var openAIUncommittedAudioBytes = 0
-    private var openAIPendingCommitCount = 0
+    private var hasSentAudioSinceLastFinalize = false
 
     override suspend fun connect() {
         collectedSegments.clear()
@@ -76,26 +79,24 @@ class OpenAIRealtimeWebSocketManager(
         endOfStreamSent = false
         providerFinalizationReceived = false
         lastTranscriptReceivedAtMs = null
-        openAIInterimByItem.clear()
-        openAIUncommittedAudioBytes = 0
-        openAIPendingCommitCount = 0
+        hasSentAudioSinceLastFinalize = false
         openSocket(freshSession())
     }
 
     override suspend fun sendAudio(data: ByteArray) {
         bufferAudioChunk(data)
         val socket = webSocket ?: return
-        sendOpenAIAudio(socket, data)
+        sendDeepgramAudio(socket, data)
     }
 
     override suspend fun finishStreaming(timeoutMillis: Long): Boolean {
         endOfStreamRequested = true
-        sendCommitChunkIfNeeded()
+        sendFinalizeIfNeeded()
         val startedAt = System.currentTimeMillis()
         val deadline = startedAt + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             if (endOfStreamRequested && !endOfStreamSent && connected) {
-                sendCommitChunkIfNeeded()
+                sendFinalizeIfNeeded()
             }
             if (!shouldKeepWaitingForCloseDrain(
                     nowMs = System.currentTimeMillis(),
@@ -109,6 +110,7 @@ class OpenAIRealtimeWebSocketManager(
             }
             delay(100)
         }
+        webSocket?.send("""{"type":"CloseStream"}""")
         disconnect()
         return endOfStreamSent && providerFinalizationReceived
     }
@@ -116,23 +118,25 @@ class OpenAIRealtimeWebSocketManager(
     override suspend fun disconnect() {
         reconnectJob?.cancel()
         reconnectJob = null
+        keepAliveJob?.cancel()
+        keepAliveJob = null
         webSocket?.close(1000, "done")
         webSocket = null
         connected = false
     }
 
-    internal fun buildOpenAIRequest(config: RealtimeTranscriptionSessionConfig): Request {
-        require(config.provider == "openai") {
+    internal fun buildDeepgramRequest(config: RealtimeTranscriptionSessionConfig): Request {
+        require(config.provider == "deepgram") {
             "Unsupported realtime transcription provider: ${config.provider}"
         }
-        require(config.model == "gpt-realtime-whisper") {
+        require(config.model == "nova-3") {
             "Unsupported realtime transcription model: ${config.model}"
         }
         require(config.authScheme == "bearer") {
-            "Unsupported OpenAI auth scheme: ${config.authScheme}"
+            "Unsupported Deepgram auth scheme: ${config.authScheme}"
         }
-        val url = requireNotNull(config.websocketUrl) { "Missing OpenAI realtime websocket URL" }
-        require(config.token.isNotBlank()) { "Missing OpenAI realtime token" }
+        val url = requireNotNull(config.websocketUrl) { "Missing Deepgram realtime websocket URL" }
+        require(config.token.isNotBlank()) { "Missing Deepgram realtime token" }
         return Request.Builder()
             .url(url)
             .header("Authorization", "Bearer ${config.token}")
@@ -140,60 +144,59 @@ class OpenAIRealtimeWebSocketManager(
     }
 
     internal fun handleIncomingMessage(text: String) {
-        handleOpenAIMessage(text)
+        handleDeepgramMessage(text)
     }
 
-    internal fun handleOpenAIMessage(text: String) {
+    internal fun handleDeepgramMessage(text: String) {
         val payload = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         when (payload.string("type")) {
-            "conversation.item.input_audio_transcription.delta" -> {
-                val itemId = payload.string("item_id") ?: "unknown"
-                val delta = payload.string("delta").orEmpty()
-                if (delta.isBlank()) return
-                val current = openAIInterimByItem[itemId].orEmpty() + delta
-                openAIInterimByItem[itemId] = current
-                events.tryEmit(
-                    WsEvent.Transcript(
-                        LiveTranscriptSegment(
-                            text = current,
-                            isFinal = false,
-                            startMs = collectedSegments.lastOrNull()?.endMs ?: 0,
-                            endMs = collectedSegments.lastOrNull()?.endMs ?: 0,
-                            confidence = 0.0,
-                        ),
-                    ),
-                )
-            }
-            "conversation.item.input_audio_transcription.completed" -> {
-                val itemId = payload.string("item_id") ?: "unknown"
-                val transcript = (payload.string("transcript") ?: openAIInterimByItem[itemId]).orEmpty().trim()
-                openAIInterimByItem.remove(itemId)
-                if (openAIPendingCommitCount > 0) {
-                    openAIPendingCommitCount -= 1
-                }
-                if (endOfStreamRequested && endOfStreamSent && openAIPendingCommitCount == 0) {
-                    providerFinalizationReceived = true
-                }
-                if (transcript.isBlank()) return
-                val endMs = collectedSegments.lastOrNull()?.endMs ?: 0
-                val segment = LiveTranscriptSegment(
-                    text = transcript,
-                    speaker = null,
-                    isFinal = true,
-                    startMs = endMs,
-                    endMs = endMs,
-                    confidence = 0.0,
-                )
-                collectedSegments += segment
-                markTranscriptReceived(finalizationMarker = endOfStreamRequested)
-                events.tryEmit(WsEvent.Transcript(segment))
-            }
-            "error" -> {
-                val message = payload["error"]?.jsonObject?.string("message")
-                    ?: "OpenAI realtime transcription error"
+            "Results" -> handleDeepgramResults(payload)
+            "UtteranceEnd" -> markTranscriptReceived()
+            "Metadata" -> markTranscriptReceived(finalizationMarker = true)
+            "Error",
+            "error",
+            -> {
+                val message = payload.string("message")
+                    ?: payload.string("description")
+                    ?: payload.string("reason")
+                    ?: "Deepgram realtime transcription error"
                 scheduleReconnect(IllegalStateException(message))
             }
         }
+    }
+
+    private fun handleDeepgramResults(payload: JsonObject) {
+        val alternative = payload["channel"]?.jsonObject
+            ?.get("alternatives")?.jsonArray
+            ?.firstOrNull()?.jsonObject
+            ?: return
+        val transcript = alternative.string("transcript").orEmpty().trim()
+        if (transcript.isBlank()) return
+
+        val isFinal = payload.boolean("is_final")
+        val fromFinalize = payload.boolean("from_finalize")
+        val startMs = payload.double("start").toMilliseconds()
+        val durationMs = payload.double("duration").toMilliseconds()
+        val confidence = alternative.double("confidence") ?: 0.0
+        if (fromFinalize || (endOfStreamRequested && endOfStreamSent && isFinal)) {
+            providerFinalizationReceived = true
+        }
+        markTranscriptReceived()
+
+        val segment = LiveTranscriptSegment(
+            text = transcript,
+            speaker = null,
+            isFinal = isFinal,
+            startMs = startMs,
+            endMs = startMs + durationMs,
+            confidence = confidence,
+        )
+        if (isFinal) {
+            val previous = collectedSegments.lastOrNull()?.text?.normalizedTranscript()
+            if (previous == segment.text.normalizedTranscript()) return
+            collectedSegments += segment
+        }
+        events.tryEmit(WsEvent.Transcript(segment))
     }
 
     private suspend fun freshSession(): RealtimeTranscriptionSessionConfig {
@@ -202,17 +205,17 @@ class OpenAIRealtimeWebSocketManager(
 
     private suspend fun openSocket(config: RealtimeTranscriptionSessionConfig) {
         currentConfig = config
-        val request = buildOpenAIRequest(config)
+        val request = buildDeepgramRequest(config)
         webSocket = okHttpClient.newWebSocket(
             request,
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     connected = true
-                    webSocket.send(makeOpenAISessionUpdateMessage(config))
+                    startKeepAlive(config.keepAliveIntervalSeconds)
                     events.tryEmit(if (reconnectAttempt > 0) WsEvent.Reconnected else WsEvent.Connected)
                     scope.launch {
                         replayBufferedAudio()
-                        sendCommitChunkIfNeeded()
+                        sendFinalizeIfNeeded()
                     }
                 }
 
@@ -222,15 +225,29 @@ class OpenAIRealtimeWebSocketManager(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     connected = false
+                    keepAliveJob?.cancel()
                     events.tryEmit(WsEvent.Disconnected(t))
                     scheduleReconnect(t)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     connected = false
+                    keepAliveJob?.cancel()
                 }
             },
         )
+    }
+
+    private fun startKeepAlive(intervalSeconds: Int?) {
+        keepAliveJob?.cancel()
+        val seconds = intervalSeconds ?: return
+        if (seconds <= 0) return
+        keepAliveJob = scope.launch {
+            while (true) {
+                delay(seconds * 1_000L)
+                webSocket?.send("""{"type":"KeepAlive"}""")
+            }
+        }
     }
 
     private fun scheduleReconnect(cause: Throwable) {
@@ -251,41 +268,24 @@ class OpenAIRealtimeWebSocketManager(
         if (!connected) return
         val socket = webSocket ?: return
         while (audioBuffer.isNotEmpty()) {
-            sendOpenAIAudio(socket, audioBuffer.removeFirst())
+            sendDeepgramAudio(socket, audioBuffer.removeFirst())
         }
     }
 
-    private suspend fun sendCommitChunkIfNeeded() {
+    private suspend fun sendFinalizeIfNeeded() {
         if (!endOfStreamRequested || endOfStreamSent || !connected) return
-        if (openAIUncommittedAudioBytes > 0) {
-            commitOpenAIAudioBuffer()
-        } else if (openAIPendingCommitCount == 0) {
+        if (hasSentAudioSinceLastFinalize) {
+            webSocket?.send("""{"type":"Finalize"}""")
+        } else {
             providerFinalizationReceived = true
         }
         endOfStreamSent = true
     }
 
-    private fun sendOpenAIAudio(socket: WebSocket, data: ByteArray) {
-        val pcm24k = openAI24kMonoPCM(data)
-        socket.send(makeOpenAIAudioAppendMessage(pcm24k, already24k = true))
-        openAIUncommittedAudioBytes += pcm24k.size
-        if (openAIUncommittedAudioBytes >= openAIAutoCommitBytes()) {
-            commitOpenAIAudioBuffer(socket)
-        }
-    }
-
-    private fun openAIAutoCommitBytes(): Int {
-        val config = currentConfig
-        return (config?.sampleRate ?: 24_000).coerceAtLeast(1) *
-            (config?.channels ?: 1).coerceAtLeast(1) *
-            2
-    }
-
-    private fun commitOpenAIAudioBuffer(socket: WebSocket? = webSocket) {
-        if (openAIUncommittedAudioBytes <= 0) return
-        socket?.send("""{"type":"input_audio_buffer.commit"}""")
-        openAIUncommittedAudioBytes = 0
-        openAIPendingCommitCount += 1
+    private fun sendDeepgramAudio(socket: WebSocket, data: ByteArray) {
+        if (data.isEmpty()) return
+        socket.send(data.toByteString())
+        hasSentAudioSinceLastFinalize = true
     }
 
     private fun markTranscriptReceived(finalizationMarker: Boolean = false) {
@@ -293,57 +293,6 @@ class OpenAIRealtimeWebSocketManager(
         if (finalizationMarker) {
             providerFinalizationReceived = true
         }
-    }
-
-    internal fun makeOpenAIAudioAppendMessage(data: ByteArray): String {
-        return makeOpenAIAudioAppendMessage(data, already24k = false)
-    }
-
-    private fun makeOpenAIAudioAppendMessage(data: ByteArray, already24k: Boolean): String {
-        val pcm = if (already24k) data else openAI24kMonoPCM(data)
-        val audioBase64 = java.util.Base64.getEncoder().encodeToString(pcm)
-        return """{"type":"input_audio_buffer.append","audio":"$audioBase64"}"""
-    }
-
-    internal fun makeOpenAISessionUpdateMessage(config: RealtimeTranscriptionSessionConfig): String {
-        val language = normalizedProviderLanguage(config.language)
-        val transcription = if (language != null) {
-            """"model":"${config.model}","delay":"$OPENAI_TRANSCRIPTION_DELAY","language":"$language""""
-        } else {
-            """"model":"${config.model}","delay":"$OPENAI_TRANSCRIPTION_DELAY""""
-        }
-        return """{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":${config.sampleRate}},"transcription":{$transcription},"turn_detection":null}}}}"""
-    }
-
-    private fun normalizedProviderLanguage(raw: String): String? {
-        val normalized = raw.trim().lowercase().replace("_", "-")
-        if (normalized.isBlank() || normalized == "multi" || normalized == "auto" || normalized == "und") {
-            return null
-        }
-        return normalized.substringBefore("-")
-    }
-
-    internal fun openAI24kMonoPCM(data: ByteArray): ByteArray {
-        if (data.size < 4) return data
-        val sourceSamples = ShortArray(data.size / 2)
-        for (index in sourceSamples.indices) {
-            val low = data[index * 2].toInt() and 0xff
-            val high = data[index * 2 + 1].toInt()
-            sourceSamples[index] = ((high shl 8) or low).toShort()
-        }
-        val outputCount = sourceSamples.size * 24_000 / 16_000
-        val output = ByteArray(outputCount * 2)
-        for (index in 0 until outputCount) {
-            val sourcePosition = index * 16_000.0 / 24_000.0
-            val lower = sourcePosition.toInt().coerceAtMost(sourceSamples.lastIndex)
-            val upper = (lower + 1).coerceAtMost(sourceSamples.lastIndex)
-            val fraction = sourcePosition - lower
-            val interpolated = sourceSamples[lower] + (sourceSamples[upper] - sourceSamples[lower]) * fraction
-            val sample = interpolated.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
-            output[index * 2] = (sample.toInt() and 0xff).toByte()
-            output[index * 2 + 1] = ((sample.toInt() shr 8) and 0xff).toByte()
-        }
-        return output
     }
 
     private fun bufferAudioChunk(data: ByteArray) {
@@ -360,13 +309,16 @@ class OpenAIRealtimeWebSocketManager(
     }
 
     private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+    private fun JsonObject.boolean(key: String): Boolean = this[key]?.jsonPrimitive?.booleanOrNull == true
+    private fun JsonObject.double(key: String): Double? = this[key]?.jsonPrimitive?.doubleOrNull
+    private fun Double?.toMilliseconds(): Int = ((this ?: 0.0) * 1_000.0).toInt()
+    private fun String.normalizedTranscript(): String = trim().split(Regex("\\s+")).joinToString(" ")
 
     companion object {
         private const val MAX_RECONNECT_ATTEMPTS = 10
         private const val MINIMUM_CLOSE_WAIT_MS = 650L
         private const val NO_TRANSCRIPT_CLOSE_WAIT_MS = 2_500L
         private const val TRANSCRIPT_QUIET_WINDOW_MS = 900L
-        private const val OPENAI_TRANSCRIPTION_DELAY = "low"
 
         internal fun shouldKeepWaitingForCloseDrain(
             nowMs: Long,

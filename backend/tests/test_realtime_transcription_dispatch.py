@@ -10,13 +10,13 @@ import pytest
 
 from app.core.realtime_transcription import create_realtime_transcription_session
 
-OPENAI_REALTIME_MODEL = "gpt-realtime-whisper"
+DEEPGRAM_REALTIME_MODEL = "nova-3"
 
 
-def _patch_openai_mint(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    mint = AsyncMock(return_value="ek_openai")
+def _patch_deepgram_mint(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    mint = AsyncMock(return_value=("dg_token", 60))
     monkeypatch.setattr(
-        "app.core.realtime_transcription.create_realtime_client_secret",
+        "app.core.realtime_transcription.create_temporary_token",
         mint,
     )
     return mint
@@ -43,10 +43,10 @@ def _make_user(
     ("provider", "model"),
     [
         ("legacy-live", "legacy-model"),
-        ("openai", OPENAI_REALTIME_MODEL),
+        ("deepgram", DEEPGRAM_REALTIME_MODEL),
     ],
 )
-async def test_dispatch_dictation_ignores_saved_model_and_uses_openai(
+async def test_dispatch_dictation_ignores_saved_model_and_uses_deepgram(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
     model: str,
@@ -55,18 +55,18 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_openai(
         dictation_provider=provider,
         dictation_model=model,
     )
-    mint = _patch_openai_mint(monkeypatch)
+    mint = _patch_deepgram_mint(monkeypatch)
 
     session = await create_realtime_transcription_session(
         purpose="dictation", user=user,
     )
 
-    assert session.provider == "openai"
-    assert session.model == OPENAI_REALTIME_MODEL
+    assert session.provider == "deepgram"
+    assert session.model == DEEPGRAM_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
-    assert session.sample_rate == 24_000
+    assert session.sample_rate == 16_000
     assert session.channels == 1
-    mint.assert_awaited_once_with(model=OPENAI_REALTIME_MODEL, language="multi")
+    mint.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -74,10 +74,10 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_openai(
     ("provider", "model"),
     [
         ("legacy-live", "legacy-model"),
-        ("openai", OPENAI_REALTIME_MODEL),
+        ("deepgram", DEEPGRAM_REALTIME_MODEL),
     ],
 )
-async def test_dispatch_recording_ignores_saved_model_and_uses_openai(
+async def test_dispatch_recording_ignores_saved_model_and_uses_deepgram(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
     model: str,
@@ -86,14 +86,14 @@ async def test_dispatch_recording_ignores_saved_model_and_uses_openai(
         recording_provider=provider,
         recording_model=model,
     )
-    _patch_openai_mint(monkeypatch)
+    _patch_deepgram_mint(monkeypatch)
 
     session = await create_realtime_transcription_session(
         purpose="recording", user=user, channels=2,
     )
 
-    assert session.provider == "openai"
-    assert session.model == OPENAI_REALTIME_MODEL
+    assert session.provider == "deepgram"
+    assert session.model == DEEPGRAM_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
     assert session.channels == 1
 
@@ -102,12 +102,12 @@ async def test_dispatch_recording_ignores_saved_model_and_uses_openai(
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_openai_mint(monkeypatch)
+    _patch_deepgram_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="recording", user=None,
     )
 
-    assert session.provider == "openai"
+    assert session.provider == "deepgram"
     assert session.auth_scheme == "bearer"
 
 
@@ -115,13 +115,13 @@ async def test_dispatch_recording_with_no_user_uses_defaults(
 async def test_dispatch_dictation_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_openai_mint(monkeypatch)
+    _patch_deepgram_mint(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="dictation", user=None,
     )
 
-    assert session.provider == "openai"
-    assert session.model == OPENAI_REALTIME_MODEL
+    assert session.provider == "deepgram"
+    assert session.model == DEEPGRAM_REALTIME_MODEL
     assert session.auth_scheme == "bearer"
 
 
@@ -129,24 +129,25 @@ async def test_dispatch_dictation_with_no_user_uses_defaults(
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    mint = _patch_openai_mint(monkeypatch)
+    _patch_deepgram_mint(monkeypatch)
 
     session = await create_realtime_transcription_session(
         language="  EN  ", purpose="recording", user=None,
     )
 
     assert session.language == "en"
-    mint.assert_awaited_once_with(model=OPENAI_REALTIME_MODEL, language="en")
+    assert "language=en" in session.websocket_url
 
 
 @pytest.mark.asyncio
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_openai_mint(monkeypatch)
+    _patch_deepgram_mint(monkeypatch)
 
     session = await create_realtime_transcription_session(
         language="   ", purpose="recording", user=None,
     )
 
     assert session.language == "multi"
+    assert "language=multi" in session.websocket_url

@@ -75,9 +75,9 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let enabledDefaultsKey = "dictationEnabled"
-    private static let liveSTTProvider = "openai"
-    private static let liveSTTModel = "gpt-realtime-whisper"
-    private static let liveSTTSampleRate = 24_000
+    private static let liveSTTProvider = "deepgram"
+    private static let liveSTTModel = "nova-3"
+    private static let liveSTTSampleRate = 16_000
     private static let startupAudioMaxBufferedBytes = liveSTTSampleRate * 2 * 30
 
     @Published var hotkeyChoice: String {
@@ -159,7 +159,7 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Dictation pipeline
 
-    // OpenAI-backed realtime dictation path.
+    // Provider-backed realtime dictation path.
     private var providerSession: (any ProviderSession)?
     private var providerCapture: MicrophoneCapture?
     private var providerAudioTask: Task<Void, Never>?
@@ -539,7 +539,7 @@ final class DictationManager: ObservableObject {
             }
             guard sessionConfig.sampleRate == Self.liveSTTSampleRate else {
                 throw ProviderError.transcriberInternal(
-                    message: "OpenAI realtime session returned unsupported sample_rate=\(sessionConfig.sampleRate)"
+                    message: "Deepgram realtime session returned unsupported sample_rate=\(sessionConfig.sampleRate)"
                 )
             }
 

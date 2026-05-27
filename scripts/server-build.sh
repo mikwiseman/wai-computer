@@ -92,6 +92,7 @@ require_env_key POSTGRES_DB
 require_env_key JWT_SECRET
 require_env_key FRONTEND_URL
 require_env_key CORS_ORIGINS
+require_env_key DEEPGRAM_API_KEY
 require_env_key ELEVENLABS_API_KEY
 require_env_key AUTH_COOKIE_DOMAIN
 require_env_key SENTRY_DSN

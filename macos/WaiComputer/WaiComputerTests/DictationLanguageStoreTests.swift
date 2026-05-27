@@ -27,7 +27,7 @@ final class DictationLanguageStoreTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: DictationLanguageStore.legacyKey), "multi")
     }
 
-    func testSelectingLanguagePersistsSingleOpenAIHint() {
+    func testSelectingLanguagePersistsSingleProviderHint() {
         let store = DictationLanguageStore(defaults: defaults)
 
         store.toggle("ru", defaults: defaults)
@@ -109,8 +109,8 @@ final class DictationLanguageStoreTests: XCTestCase {
             DictationSessionConfigInvalidationPolicy.shouldClearVault(
                 previousProvider: nil,
                 previousModel: nil,
-                nextProvider: "openai",
-                nextModel: "gpt-realtime-whisper"
+                nextProvider: "deepgram",
+                nextModel: "nova-3"
             )
         )
     }
@@ -118,18 +118,18 @@ final class DictationLanguageStoreTests: XCTestCase {
     func testSettingsIngestClearsRealtimeConfigOnlyWhenProviderOrModelChanges() {
         XCTAssertFalse(
             DictationSessionConfigInvalidationPolicy.shouldClearVault(
-                previousProvider: "openai",
-                previousModel: "gpt-realtime-whisper",
-                nextProvider: "openai",
-                nextModel: "gpt-realtime-whisper"
+                previousProvider: "deepgram",
+                previousModel: "nova-3",
+                nextProvider: "deepgram",
+                nextModel: "nova-3"
             )
         )
         XCTAssertTrue(
             DictationSessionConfigInvalidationPolicy.shouldClearVault(
-                previousProvider: "openai",
+                previousProvider: "deepgram",
                 previousModel: "legacy-live",
-                nextProvider: "openai",
-                nextModel: "gpt-realtime-whisper"
+                nextProvider: "deepgram",
+                nextModel: "nova-3"
             )
         )
     }

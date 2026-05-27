@@ -44,11 +44,14 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — live transcription, LLM, dictation cleanup, and embeddings.
+    # OpenAI — LLM, dictation cleanup, and embeddings.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
+
+    # Deepgram — realtime dictation and live transcription.
+    deepgram_api_key: str = ""
 
     # ElevenLabs
     elevenlabs_api_key: str = ""

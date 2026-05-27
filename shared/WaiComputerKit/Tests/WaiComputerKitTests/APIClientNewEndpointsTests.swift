@@ -763,30 +763,30 @@ final class APIClientNewEndpointsTests: XCTestCase {
             )!
             let payload = """
             {
-                "provider":"openai",
-                "token":"client_secret_123",
+                "provider":"deepgram",
+                "token":"dg_token_123",
                 "expires_in_seconds":60,
-                "sample_rate":24000,
-                "audio_format":"pcm_24000",
+                "sample_rate":16000,
+                "audio_format":"linear16",
                 "language":"multi",
                 "channels":1,
-                "model":"gpt-realtime-whisper",
-                "websocket_url":"wss://api.openai.com/v1/realtime?intent=transcription",
+                "model":"nova-3",
+                "websocket_url":"wss://api.deepgram.com/v1/listen?model=nova-3",
                 "auth_scheme":"bearer",
-                "commit_strategy":"manual"
+                "keep_alive_interval_seconds":4
             }
             """.data(using: .utf8)!
             return (response, payload)
         }
 
         let config = try await client.createRealtimeTranscriptionSession(language: "multi", channels: 1)
-        XCTAssertEqual(config.provider, "openai")
-        XCTAssertEqual(config.token, "client_secret_123")
-        XCTAssertEqual(config.sampleRate, 24_000)
-        XCTAssertEqual(config.model, "gpt-realtime-whisper")
-        XCTAssertEqual(config.websocketURL, "wss://api.openai.com/v1/realtime?intent=transcription")
+        XCTAssertEqual(config.provider, "deepgram")
+        XCTAssertEqual(config.token, "dg_token_123")
+        XCTAssertEqual(config.sampleRate, 16_000)
+        XCTAssertEqual(config.model, "nova-3")
+        XCTAssertEqual(config.websocketURL, "wss://api.deepgram.com/v1/listen?model=nova-3")
         XCTAssertEqual(config.authScheme, "bearer")
-        XCTAssertEqual(config.commitStrategy, "manual")
+        XCTAssertEqual(config.keepAliveIntervalSeconds, 4)
     }
 
     func testCreateRealtimeTranscriptionSessionSendsDictationPurpose() async throws {
@@ -807,17 +807,17 @@ final class APIClientNewEndpointsTests: XCTestCase {
             )!
             let payload = """
             {
-                "provider":"openai",
-                "token":"client_secret_test",
+                "provider":"deepgram",
+                "token":"dg_token_test",
                 "expires_in_seconds":60,
-                "sample_rate":24000,
-                "audio_format":"pcm_24000",
+                "sample_rate":16000,
+                "audio_format":"linear16",
                 "language":"multi",
                 "channels":1,
-                "model":"gpt-realtime-whisper",
-                "websocket_url":"wss://api.openai.com/v1/realtime?intent=transcription",
+                "model":"nova-3",
+                "websocket_url":"wss://api.deepgram.com/v1/listen?model=nova-3",
                 "auth_scheme":"bearer",
-                "commit_strategy":"manual"
+                "keep_alive_interval_seconds":4
             }
             """.data(using: .utf8)!
             return (response, payload)
@@ -828,8 +828,8 @@ final class APIClientNewEndpointsTests: XCTestCase {
             channels: 1,
             purpose: .dictation
         )
-        XCTAssertEqual(config.provider, "openai")
-        XCTAssertEqual(config.sampleRate, 24_000)
+        XCTAssertEqual(config.provider, "deepgram")
+        XCTAssertEqual(config.sampleRate, 16_000)
         XCTAssertEqual(config.authScheme, "bearer")
     }
 

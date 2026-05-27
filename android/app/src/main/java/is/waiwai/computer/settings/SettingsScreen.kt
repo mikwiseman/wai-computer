@@ -97,7 +97,7 @@ fun SettingsScreen(
     }
 
     val languageOptions = remember {
-        listOf("multi", "en", "ru", "es", "fr", "de", "ja", "ko", "zh")
+        listOf("multi", "en", "ru", "es", "fr", "de", "ja", "ko")
     }
 
     fun saveAccountSettings(request: UpdateSettingsRequest) {
@@ -517,6 +517,5 @@ private fun languageLabel(code: String): String = when (code) {
     "de" -> stringResource(R.string.language_de)
     "ja" -> stringResource(R.string.language_ja)
     "ko" -> stringResource(R.string.language_ko)
-    "zh" -> stringResource(R.string.language_zh)
     else -> code
 }

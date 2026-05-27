@@ -19,7 +19,7 @@ type BenchmarkResult = {
 
 const modelMatrix = [
   {
-    name: "OpenAI GPT Realtime Whisper",
+    name: "Deepgram Nova-3",
     fit: "Единственный активный realtime speech-to-text путь для диктовки и живой записи.",
     tags: ["диктовка", "realtime"],
   },

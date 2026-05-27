@@ -4,10 +4,10 @@ import XCTest
 final class TranscriptionModelDescriptionCopyTests: XCTestCase {
     func testRussianDescriptionUsesClientCopyForKnownOptions() {
         let option = TranscriptionModelOption(
-            provider: "openai",
-            model: "gpt-realtime-whisper",
-            label: "OpenAI GPT Realtime Whisper",
-            description: "Default for dictation. OpenAI realtime Whisper model for streaming speech recognition."
+            provider: "deepgram",
+            model: "nova-3",
+            label: "Deepgram Nova-3",
+            description: "Default for dictation. Deepgram Nova-3 for streaming speech recognition."
         )
 
         let description = TranscriptionModelDescriptionCopy.description(
@@ -18,7 +18,7 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для диктовки. Realtime-модель OpenAI Whisper для потокового распознавания речи."
+            "По умолчанию для диктовки. Deepgram Nova-3 для быстрого потокового распознавания речи."
         )
         XCTAssertFalse(description.contains("Default for dictation"))
     }
@@ -63,10 +63,10 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
     func testContextDifferentiatesRepeatedProviderModelPairs() {
         let option = TranscriptionModelOption(
-            provider: "openai",
-            model: "gpt-realtime-whisper",
-            label: "OpenAI GPT Realtime Whisper",
-            description: "Default for live recording. OpenAI realtime Whisper model for streaming speech recognition."
+            provider: "deepgram",
+            model: "nova-3",
+            label: "Deepgram Nova-3",
+            description: "Default for live recording. Deepgram Nova-3 for streaming speech recognition."
         )
 
         let description = TranscriptionModelDescriptionCopy.description(
@@ -77,7 +77,7 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для живой записи. Realtime-модель OpenAI Whisper для потокового распознавания речи."
+            "По умолчанию для живой записи. Deepgram Nova-3 для быстрого потокового распознавания речи."
         )
     }
 }

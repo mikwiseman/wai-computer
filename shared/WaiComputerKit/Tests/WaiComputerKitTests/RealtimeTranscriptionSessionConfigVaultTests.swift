@@ -17,8 +17,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let result = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
 
         XCTAssertEqual(result.config.token, "fresh")
@@ -40,13 +40,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let prefetched = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
         let fresh = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
 
         XCTAssertTrue(prefetched.prefetched)
@@ -69,13 +69,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let first = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
         let second = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
 
         XCTAssertTrue(first.prefetched)
@@ -100,13 +100,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         async let first = vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
         async let second = vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
         let results = try await [first, second]
 
@@ -132,8 +132,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let result = try await vault.take(
             for: key,
-            expectedProvider: "openai",
-            expectedModel: "gpt-realtime-whisper"
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
         )
 
         XCTAssertEqual(result.config.token, "fresh")
@@ -166,8 +166,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
     private static func config(
         token: String,
-        provider: String = "openai",
-        model: String = "gpt-realtime-whisper",
+        provider: String = "deepgram",
+        model: String = "nova-3",
         language: String = "multi",
         expiresInSeconds: Int = 120
     ) -> RealtimeTranscriptionSessionConfig {
@@ -175,13 +175,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             provider: provider,
             token: token,
             expiresInSeconds: expiresInSeconds,
-            sampleRate: 24_000,
-            audioFormat: "pcm_24000",
+            sampleRate: 16_000,
+            audioFormat: "linear16",
             language: language,
             channels: 1,
             model: model,
             commitStrategy: "manual",
-            websocketURL: "wss://api.openai.com/v1/realtime?intent=transcription",
+            websocketURL: "wss://api.deepgram.com/v1/listen?model=nova-3",
             authScheme: "bearer"
         )
     }

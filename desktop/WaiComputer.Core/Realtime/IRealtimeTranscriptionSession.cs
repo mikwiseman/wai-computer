@@ -5,7 +5,7 @@ namespace WaiComputer.Core.Realtime;
 /// <summary>
 /// Common surface for a per-provider realtime transcription session.
 /// Implementations encode the provider's auth scheme, audio framing
-/// (binary vs base64-in-JSON), and commit strategy.
+/// and finalization strategy.
 /// </summary>
 public interface IRealtimeTranscriptionSession : IAsyncDisposable
 {
@@ -23,13 +23,11 @@ public interface IRealtimeTranscriptionSession : IAsyncDisposable
 
     Task OpenAsync(CancellationToken ct);
     /// <summary>
-    /// Push a 16-bit signed PCM chunk to the provider. The chunk format and
-    /// transport encoding (binary vs base64 inside JSON) are provider-specific.
+    /// Push a 16-bit signed PCM chunk to the provider.
     /// </summary>
     Task SendPcmAsync(ReadOnlyMemory<byte> pcm16Mono, CancellationToken ct);
     /// <summary>
-    /// Tell the provider the speaker has finished. Only meaningful for
-    /// <c>CommitStrategy.Manual</c> providers (currently OpenAI).
+    /// Tell the provider to finalize the current audio buffer.
     /// </summary>
     Task EndTurnAsync();
     Task CloseAsync(TimeSpan timeout);

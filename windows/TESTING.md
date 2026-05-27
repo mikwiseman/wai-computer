@@ -144,7 +144,7 @@ Each macOS feature must have a Windows test that validates the same contract:
 | `Sanitizer` in `SentryHelper.swift` | `Core/Monitoring/Sanitizer.cs` | `SanitizerTests` |
 | `AudioFileWriter.swift` | `Core/Audio/AudioFileWriter.cs` | `AudioFileWriterTests` |
 | `DualAudioCapture.swift` (mixer math) | `Core/Audio/AudioMixer.cs` | `AudioMixerTests` |
-| `OpenAIRealtimeTranscriptionSession.swift` | `Core/Realtime/OpenAISession.cs` | `OpenAISessionTests` |
+| `ProviderBackedRealtimeSession.swift` | `Core/Realtime/DeepgramSession.cs` | `DeepgramSessionTests` |
 | `RecordingBackupStore.swift` | `Core/Recording/RecordingBackupStore.cs` | `RecordingBackupStoreTests` |
 | `GlobalHotkeyManager.swift` (state machine) | `Core/Hotkey/HotkeyStateMachine.cs` | `HotkeyStateMachineTests` |
 | `TextInserter.swift` | `Core/Input/TextInserter.cs` | (Win-only integration; manual + UI test) |

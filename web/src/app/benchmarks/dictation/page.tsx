@@ -20,7 +20,7 @@ type BenchmarkResult = {
 
 const modelMatrix = [
   {
-    name: "OpenAI GPT Realtime Whisper",
+    name: "Deepgram Nova-3",
     fit: "Only active realtime speech-to-text path for dictation and live recording.",
     tags: ["dictation", "realtime"],
   },
@@ -71,7 +71,7 @@ export default function DictationBenchmarkPage() {
             <h1>WaiComputer Dictation Arena</h1>
             <p className={styles.heroText}>
               Synthetic fixtures track repeatable accuracy and latency for the locked speech
-              stack: OpenAI realtime for live text and ElevenLabs Scribe v2 for full transcripts.
+              stack: Deepgram Nova-3 for live text and ElevenLabs Scribe v2 for full transcripts.
             </p>
             <div className={styles.heroActions}>
               <Link href="#arena">Start check</Link>

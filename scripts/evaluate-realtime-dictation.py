@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
+import contextlib
 import json
 import shutil
 import subprocess
@@ -34,7 +34,7 @@ FIXTURE_TEXT_RU = (
 )
 FIXTURE_VOICE_RU = "Milena"
 EXPECTED_TAIL = "последнюю фразу"
-SAMPLE_RATE = 24_000
+SAMPLE_RATE = 16_000
 BYTES_PER_SAMPLE = 2
 CHUNK_MS = 100
 FINAL_SILENCE_MS = 240
@@ -51,7 +51,7 @@ class ModelCandidate:
 
 
 DEFAULT_CANDIDATES = (
-    ModelCandidate("openai", "gpt-realtime-whisper"),
+    ModelCandidate("deepgram", "nova-3"),
 )
 LEGAL_ACCEPTANCE = {
     "accepted_legal_terms": True,
@@ -93,7 +93,7 @@ def ensure_fixture(path: Path) -> bytes:
 def wav_pcm(path: Path) -> bytes:
     with wave.open(str(path), "rb") as wav:
         if wav.getframerate() != SAMPLE_RATE or wav.getnchannels() != 1 or wav.getsampwidth() != 2:
-            raise RuntimeError(f"Fixture must be 24 kHz mono int16 WAV: {path}")
+            raise RuntimeError(f"Fixture must be 16 kHz mono int16 WAV: {path}")
         return wav.readframes(wav.getnframes())
 
 
@@ -218,7 +218,7 @@ def elapsed_ms(start: float) -> int:
 
 def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
     provider = config["provider"]
-    if provider != "openai":
+    if provider != "deepgram":
         raise RuntimeError(f"Unsupported realtime provider from backend: {provider}")
     url = config.get("websocket_url")
     if not url:
@@ -228,56 +228,35 @@ def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
     return url, {"Authorization": f"Bearer {config['token']}"}
 
 
-def openai_session_update(config: dict[str, Any]) -> str:
-    transcription: dict[str, Any] = {"model": config["model"], "delay": "low"}
-    language = str(config.get("language") or "multi").strip().lower()
-    if language not in {"", "multi", "auto", "und"}:
-        transcription["language"] = language.split("-", 1)[0]
-
-    return json.dumps(
-        {
-            "type": "session.update",
-            "session": {
-                "type": "transcription",
-                "audio": {
-                    "input": {
-                        "format": {
-                            "type": "audio/pcm",
-                            "rate": config["sample_rate"],
-                        },
-                        "transcription": transcription,
-                        "turn_detection": None,
-                    }
-                },
-            },
-        }
-    )
-
-
-def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool]:
+def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool, bool]:
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("utf-8")
         except UnicodeDecodeError:
-            return None, False
+            return None, False, False
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
-        return None, False
+        return None, False, False
 
-    if provider == "openai":
+    if provider == "deepgram":
         message_type = payload.get("type")
-        if message_type == "conversation.item.input_audio_transcription.delta":
-            return cleaned(payload.get("delta")), False
-        if message_type == "conversation.item.input_audio_transcription.completed":
-            return cleaned(payload.get("transcript")), True
-        if message_type == "error":
-            error = payload.get("error")
-            if isinstance(error, dict):
-                raise RuntimeError(
-                    error.get("message") or error.get("code") or "OpenAI realtime error"
-                )
-    return None, False
+        if message_type == "Results":
+            alternatives = payload.get("channel", {}).get("alternatives", [])
+            alternative = alternatives[0] if alternatives else {}
+            is_final = bool(payload.get("is_final"))
+            from_finalize = bool(payload.get("from_finalize"))
+            return cleaned(alternative.get("transcript")), is_final, from_finalize
+        if message_type == "Metadata":
+            return None, False, True
+        if message_type in {"Error", "error"}:
+            raise RuntimeError(
+                payload.get("message")
+                or payload.get("description")
+                or payload.get("reason")
+                or "Deepgram realtime error"
+            )
+    return None, False, False
 
 
 def cleaned(value: Any) -> str | None:
@@ -299,6 +278,8 @@ async def stream_provider(
     partial_text = ""
     first_text_ms: int | None = None
     first_final_ms: int | None = None
+    send_done = asyncio.Event()
+    finalization_marker_received = False
 
     def append_final(text: str) -> None:
         if final_segments and normalize(final_segments[-1]) == normalize(text):
@@ -307,49 +288,35 @@ async def stream_provider(
 
     async with websockets.connect(url, additional_headers=headers, max_size=8 * 1024 * 1024) as ws:
         connect_ms = elapsed_ms(connect_started)
-        await ws.send(openai_session_update(config))
+
+        async def keep_alive_loop() -> None:
+            interval = int(config.get("keep_alive_interval_seconds") or 4)
+            while True:
+                await asyncio.sleep(max(interval, 1))
+                await ws.send(json.dumps({"type": "KeepAlive"}))
 
         async def send_loop() -> None:
-            uncommitted_bytes = 0
-            commit_threshold = (
-                int(config["sample_rate"]) * max(int(config["channels"]), 1) * BYTES_PER_SAMPLE
-            )
-            for chunk in chunks(pcm):
-                await ws.send(
-                    json.dumps(
-                        {
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(chunk).decode(),
-                        }
-                    )
-                )
-                uncommitted_bytes += len(chunk)
-                if uncommitted_bytes >= commit_threshold:
-                    await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-                    uncommitted_bytes = 0
-                await asyncio.sleep(CHUNK_MS / 1000)
-
-            tail = silence()
-            await ws.send(
-                json.dumps(
-                    {
-                        "type": "input_audio_buffer.append",
-                        "audio": base64.b64encode(tail).decode(),
-                    }
-                )
-            )
-            uncommitted_bytes += len(tail)
-            if uncommitted_bytes > 0:
-                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+            try:
+                for chunk in chunks(pcm):
+                    await ws.send(chunk)
+                    await asyncio.sleep(CHUNK_MS / 1000)
+                await ws.send(silence())
+                await ws.send(json.dumps({"type": "Finalize"}))
+            finally:
+                send_done.set()
 
         async def receive_loop() -> None:
-            nonlocal first_text_ms, first_final_ms, partial_text
+            nonlocal first_text_ms, first_final_ms, partial_text, finalization_marker_received
             while True:
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=8)
+                    timeout = 2.5 if send_done.is_set() else 8
+                    raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
                 except (TimeoutError, ConnectionClosed):
                     return
-                text, is_final = parse_message(provider, raw)
+                text, is_final, finalization_marker = parse_message(provider, raw)
+                finalization_marker_received = finalization_marker_received or finalization_marker
+                if finalization_marker_received and not text:
+                    return
                 if not text:
                     continue
                 if first_text_ms is None:
@@ -357,9 +324,12 @@ async def stream_provider(
                 if is_final:
                     append_final(text)
                     first_final_ms = first_final_ms or elapsed_ms(press_started)
+                    if transcript_ok(" ".join(final_segments)):
+                        return
                 else:
                     partial_text = text
 
+        keep_alive_task = asyncio.create_task(keep_alive_loop())
         send_task = asyncio.create_task(send_loop())
         receive_task = asyncio.create_task(receive_loop())
         await send_task
@@ -368,6 +338,11 @@ async def stream_provider(
         except TimeoutError:
             receive_task.cancel()
             await asyncio.gather(receive_task, return_exceptions=True)
+        finally:
+            keep_alive_task.cancel()
+            await asyncio.gather(keep_alive_task, return_exceptions=True)
+            with contextlib.suppress(Exception):
+                await ws.send(json.dumps({"type": "CloseStream"}))
 
     transcript = " ".join(final_segments).strip() or partial_text
     quality = transcript_metrics(transcript)

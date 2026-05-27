@@ -71,9 +71,9 @@ def test_disable_dictation_post_filter_default_migration(monkeypatch):
     assert str(altered[0]["kwargs"]["server_default"]) == "false"
 
 
-def test_openai_realtime_whisper_default_migration_resets_live_users(monkeypatch):
-    """May 27 realtime swap should overwrite all live STT users to OpenAI."""
-    migration = _load_migration("20260527_190000_openai_realtime_whisper_defaults.py")
+def test_deepgram_nova3_default_migration_resets_live_users(monkeypatch):
+    """May 27 realtime swap should overwrite all live STT users to Deepgram."""
+    migration = _load_migration("20260527_220000_deepgram_realtime_nova3_defaults.py")
     executed: list[TextClause] = []
     altered: list[dict[str, object]] = []
 
@@ -95,10 +95,10 @@ def test_openai_realtime_whisper_default_migration_resets_live_users(monkeypatch
     assert "WHERE" not in statement
 
     defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
-    assert defaults["dictation_live_stt_provider"] == "openai"
-    assert defaults["dictation_live_stt_model"] == "gpt-realtime-whisper"
-    assert defaults["recording_live_stt_provider"] == "openai"
-    assert defaults["recording_live_stt_model"] == "gpt-realtime-whisper"
+    assert defaults["dictation_live_stt_provider"] == "deepgram"
+    assert defaults["dictation_live_stt_model"] == "nova-3"
+    assert defaults["recording_live_stt_provider"] == "deepgram"
+    assert defaults["recording_live_stt_model"] == "nova-3"
 
 
 def test_elevenlabs_file_stt_default_migration_resets_file_users(monkeypatch):

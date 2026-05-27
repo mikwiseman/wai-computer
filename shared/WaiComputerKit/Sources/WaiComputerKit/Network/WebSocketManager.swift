@@ -65,13 +65,12 @@ public enum WebSocketEvent: Sendable {
     case reconnectionFailed(Error?)
 }
 
-/// WebSocket manager for OpenAI realtime speech-to-text streaming.
+/// WebSocket manager for Deepgram realtime speech-to-text streaming.
 ///
-/// The manager asks the backend for a short-lived OpenAI session, then streams
-/// provider-configured LINEAR16 PCM audio directly to the Realtime API.
+/// The manager asks the backend for a short-lived Deepgram token, then streams
+/// provider-configured LINEAR16 PCM audio directly to Deepgram.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "is.waiwai.computer.kit", category: "websocket")
-    private let openAIRealtimeTranscriptionDelay = "low"
     private let apiClient: APIClient
     private let language: String
     private let channels: Int
@@ -80,6 +79,7 @@ public actor WebSocketManager {
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
     private var receiveTask: Task<Void, Never>?
+    private var keepAliveTask: Task<Void, Never>?
     private var connectionId: UInt64 = 0
     private var sendCount = 0
     private var transcriptionSession: RealtimeTranscriptionSessionConfig?
@@ -88,7 +88,7 @@ public actor WebSocketManager {
     private var pendingAudio = Data()
     private var uncommittedAudioBytes = 0
     private var pendingCommitCount = 0
-    private var transcriptByItemID: [String: String] = [:]
+    private var hasSentAudioSinceLastFinalize = false
 
     // MARK: - Reconnection state
 
@@ -162,7 +162,7 @@ public actor WebSocketManager {
         pendingAudio = Data()
         uncommittedAudioBytes = 0
         pendingCommitCount = 0
-        transcriptByItemID = [:]
+        hasSentAudioSinceLastFinalize = false
         reconnectAttempt = 0
         audioBuffer = []
         isReconnecting = false
@@ -196,7 +196,7 @@ public actor WebSocketManager {
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
         }
-        try await sendOpenAISessionConfig(sessionConfig)
+        startKeepAlive(forConnection: thisConnection, intervalSeconds: sessionConfig.keepAliveIntervalSeconds)
 
         // Enable auto-reconnection after successful initial setup
         reconnectEnabled = true
@@ -288,6 +288,7 @@ public actor WebSocketManager {
         }
 
         let didFinalize = endOfStreamSent && providerFinalizationReceived
+        await sendDeepgramCloseStreamIfNeeded()
         disconnect()
         return didFinalize
     }
@@ -347,7 +348,7 @@ public actor WebSocketManager {
     private func requestForRealtimeSession(
         _ sessionConfig: RealtimeTranscriptionSessionConfig
     ) throws -> URLRequest {
-        guard sessionConfig.provider == "openai" else {
+        guard sessionConfig.provider == "deepgram" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(sessionConfig.provider)"
             )
@@ -358,11 +359,11 @@ public actor WebSocketManager {
             throw WebSocketConnectionError.invalidURL
         }
         guard sessionConfig.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-            throw WebSocketConnectionError.tokenFetchFailed("OpenAI realtime session is missing server-minted token")
+            throw WebSocketConnectionError.tokenFetchFailed("Deepgram realtime session is missing server-minted token")
         }
         guard sessionConfig.authScheme == "bearer" else {
             throw WebSocketConnectionError.tokenFetchFailed(
-                "Unsupported auth scheme for openai: \(sessionConfig.authScheme ?? "nil")"
+                "Unsupported auth scheme for deepgram: \(sessionConfig.authScheme ?? "nil")"
             )
         }
         var request = URLRequest(url: url)
@@ -376,65 +377,12 @@ public actor WebSocketManager {
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
 
-        guard transcriptionSession?.provider == "openai" else {
+        guard transcriptionSession?.provider == "deepgram" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(transcriptionSession?.provider ?? "nil")"
             )
         }
-        try await sendOpenAIAudio(data, forceFlush: false)
-    }
-
-    private func makeOpenAIAudioAppendMessage(data: Data) -> String {
-        let payload: [String: Any] = [
-            "type": "input_audio_buffer.append",
-            "audio": data.base64EncodedString(),
-        ]
-        return Self.encodeJSONPayload(payload)
-    }
-
-    private func makeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
-        var transcription: [String: Any] = [
-            "model": sessionConfig.model,
-            "delay": openAIRealtimeTranscriptionDelay,
-        ]
-        if let language = normalisedProviderLanguage(sessionConfig.language) {
-            transcription["language"] = language
-        }
-
-        if !keyTerms.isEmpty {
-            wsLog.info(
-                "[OpenAI] key terms ignored for gpt-realtime-whisper count=\(self.keyTerms.count, privacy: .public)"
-            )
-        }
-
-        let payload: [String: Any] = [
-            "type": "session.update",
-            "session": [
-                "type": "transcription",
-                "audio": [
-                    "input": [
-                        "format": [
-                            "type": "audio/pcm",
-                            "rate": sessionConfig.sampleRate,
-                        ],
-                        "transcription": transcription,
-                        "turn_detection": NSNull(),
-                    ],
-                ],
-            ],
-        ]
-        return Self.encodeJSONPayload(payload)
-    }
-
-    private func normalisedProviderLanguage(_ language: String) -> String? {
-        switch language {
-        case "multi", "und", "":
-            return nil
-        case let other where other.contains("-"):
-            return String(other.split(separator: "-").first ?? Substring(other))
-        default:
-            return language
-        }
+        try await sendDeepgramAudio(data, forceFlush: false)
     }
 
     /// Serialize a websocket payload to a JSON string.
@@ -449,12 +397,8 @@ public actor WebSocketManager {
         return String(data: jsonData, encoding: .utf8)!
     }
 
-    func testingMakeOpenAIAudioAppendMessage(data: Data) -> String {
-        makeOpenAIAudioAppendMessage(data: data)
-    }
-
-    func testingMakeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
-        makeOpenAISessionUpdateMessage(sessionConfig)
+    func testingDeepgramFinalizeMessage() -> String {
+        Self.encodeJSONPayload(["type": "Finalize"])
     }
 
     func testingSetSessionConfig(_ sessionConfig: RealtimeTranscriptionSessionConfig) {
@@ -511,21 +455,23 @@ public actor WebSocketManager {
     }
 
     private func handleIncomingMessage(_ text: String) {
-        handleOpenAIMessage(text)
+        handleDeepgramMessage(text)
     }
 
-    private func handleOpenAIMessage(_ text: String) {
+    private func handleDeepgramMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
         switch json["type"] as? String {
-        case "conversation.item.input_audio_transcription.delta":
-            handleOpenAIDelta(json)
-        case "conversation.item.input_audio_transcription.completed":
-            handleOpenAICompleted(json)
-        case "error":
-            let message = Self.openAIProviderErrorMessage(json["error"])
+        case "Results":
+            handleDeepgramResults(json)
+        case "UtteranceEnd":
+            lastTranscriptReceivedAt = reconnectClock.now
+        case "Metadata":
+            providerFinalizationReceived = true
+        case "Error", "error":
+            let message = Self.deepgramProviderErrorMessage(json)
             let serverError = WebSocketConnectionError.serverError(message)
             if reconnectEnabled {
                 startReconnection(afterError: serverError)
@@ -542,62 +488,61 @@ public actor WebSocketManager {
         }
     }
 
-    private func handleOpenAIDelta(_ payload: [String: Any]) {
-        let delta = payload["delta"] as? String ?? ""
-        guard !delta.isEmpty else { return }
-
-        let itemID = payload["item_id"] as? String ?? "default"
-        let transcript = (transcriptByItemID[itemID] ?? "") + delta
-        transcriptByItemID[itemID] = transcript
-        lastTranscriptReceivedAt = reconnectClock.now
-        let displayText = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !displayText.isEmpty else { return }
-
-        let lastEndMs = collectedSegments.last?.endMs ?? 0
-        eventContinuation?.yield(.transcript(LiveTranscriptSegment(
-            text: displayText,
-            speaker: nil,
-            isFinal: false,
-            startMs: lastEndMs,
-            endMs: lastEndMs,
-            confidence: 0
-        )))
-    }
-
-    private func handleOpenAICompleted(_ payload: [String: Any]) {
-        let itemID = payload["item_id"] as? String ?? "default"
-        let transcript = ((payload["transcript"] as? String) ?? transcriptByItemID[itemID] ?? "")
+    private func handleDeepgramResults(_ payload: [String: Any]) {
+        guard let channel = payload["channel"] as? [String: Any],
+              let alternatives = channel["alternatives"] as? [[String: Any]],
+              let alternative = alternatives.first
+        else { return }
+        let transcript = (alternative["transcript"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptByItemID[itemID] = nil
-        if pendingCommitCount > 0 {
-            pendingCommitCount -= 1
-        }
-        lastTranscriptReceivedAt = reconnectClock.now
-        if endOfStreamRequested && endOfStreamSent && pendingCommitCount == 0 {
-            providerFinalizationReceived = true
-        }
         guard !transcript.isEmpty else { return }
 
-        let startMs = collectedSegments.last?.endMs ?? 0
+        let isFinal = payload["is_final"] as? Bool ?? false
+        let fromFinalize = payload["from_finalize"] as? Bool ?? false
+        let startMs = Self.secondsToMilliseconds(payload["start"] as? Double)
+        let durationMs = Self.secondsToMilliseconds(payload["duration"] as? Double)
+        let confidence = alternative["confidence"] as? Double ?? 0
+        lastTranscriptReceivedAt = reconnectClock.now
+        if fromFinalize || (endOfStreamRequested && endOfStreamSent && isFinal) {
+            providerFinalizationReceived = true
+        }
+
         let segment = LiveTranscriptSegment(
             text: transcript,
             speaker: nil,
-            isFinal: true,
+            isFinal: isFinal,
             startMs: startMs,
-            endMs: startMs,
-            confidence: 0
+            endMs: startMs + durationMs,
+            confidence: confidence
         )
-        if let emittedSegment = collectCommittedSegment(segment) {
+        if isFinal, let emittedSegment = collectCommittedSegment(segment) {
             eventContinuation?.yield(.transcript(emittedSegment))
+        } else if !isFinal {
+            eventContinuation?.yield(.transcript(segment))
         }
     }
 
-    private static func openAIProviderErrorMessage(_ value: Any?) -> String {
-        let payload = value as? [String: Any]
-        return payload?["message"] as? String
-            ?? payload?["code"] as? String
-            ?? payload?["type"] as? String
-            ?? "OpenAI realtime transcription error"
+    private static func secondsToMilliseconds(_ seconds: Double?) -> Int {
+        guard let seconds else { return 0 }
+        return Int((seconds * 1_000).rounded())
+    }
+
+    private static func deepgramProviderErrorMessage(_ payload: [String: Any]) -> String {
+        if let message = payload["message"] as? String {
+            return message
+        }
+        if let error = payload["error"] as? String {
+            return error
+        }
+        if let error = payload["error"] as? [String: Any] {
+            return error["message"] as? String
+                ?? error["description"] as? String
+                ?? error["reason"] as? String
+                ?? "Deepgram realtime transcription error"
+        }
+        return payload["description"] as? String
+            ?? payload["reason"] as? String
+            ?? "Deepgram realtime transcription error"
     }
 
     private func collectCommittedSegment(_ segment: LiveTranscriptSegment) -> LiveTranscriptSegment? {
@@ -625,6 +570,8 @@ public actor WebSocketManager {
         isReconnecting = true
 
         // Clean up current socket without finishing the event continuation
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         receiveTask?.cancel()
@@ -715,7 +662,10 @@ public actor WebSocketManager {
                 receiveTask = Task { [weak self] in
                     await self?.receiveMessages(forConnection: thisConnection)
                 }
-                try await sendOpenAISessionConfig(sessionConfig)
+                startKeepAlive(
+                    forConnection: thisConnection,
+                    intervalSeconds: sessionConfig.keepAliveIntervalSeconds
+                )
 
                 // Replay buffered audio
                 let bufferedChunks = audioBuffer
@@ -744,6 +694,8 @@ public actor WebSocketManager {
             } catch {
                 wsLog.error("Reconnect attempt \(self.reconnectAttempt) failed")
                 // Clean up failed connection attempt
+                keepAliveTask?.cancel()
+                keepAliveTask = nil
                 webSocket?.cancel(with: .goingAway, reason: nil)
                 webSocket = nil
                 receiveTask?.cancel()
@@ -763,22 +715,22 @@ public actor WebSocketManager {
     private func sendCommitChunkIfNeeded() async throws {
         guard endOfStreamRequested, !endOfStreamSent else { return }
         guard let webSocket else { return }
-        guard transcriptionSession?.provider == "openai" else {
+        guard transcriptionSession?.provider == "deepgram" else {
             throw WebSocketConnectionError.tokenFetchFailed(
                 "Unsupported transcription provider: \(transcriptionSession?.provider ?? "nil")"
             )
         }
 
-        try await flushOpenAIPendingAudio()
-        if uncommittedAudioBytes > 0 {
-            try await commitOpenAIAudioBuffer(to: webSocket)
-        } else if pendingCommitCount == 0 {
+        try await flushDeepgramPendingAudio()
+        if hasSentAudioSinceLastFinalize {
+            try await sendDeepgramFinalize(to: webSocket)
+        } else {
             providerFinalizationReceived = true
         }
         endOfStreamSent = true
         reconnectEnabled = false
         cancelReconnection(clearBufferedAudio: false)
-        wsLog.debug("Committed input audio buffer to OpenAI")
+        wsLog.debug("Sent Deepgram Finalize")
     }
 
     private func cancelReconnection(clearBufferedAudio: Bool = true) {
@@ -789,10 +741,11 @@ public actor WebSocketManager {
             audioBuffer = []
             pendingAudio = Data()
             uncommittedAudioBytes = 0
+            hasSentAudioSinceLastFinalize = false
         }
     }
 
-    private func sendOpenAIAudio(_ data: Data, forceFlush: Bool) async throws {
+    private func sendDeepgramAudio(_ data: Data, forceFlush: Bool) async throws {
         guard let webSocket else {
             throw APIError.networkError(URLError(.notConnectedToInternet))
         }
@@ -801,36 +754,44 @@ public actor WebSocketManager {
             pending: &pendingAudio,
             appending: data,
             forceFlush: forceFlush,
-            sampleRate: config?.sampleRate ?? 24_000,
+            sampleRate: config?.sampleRate ?? 16_000,
             channels: config?.channels ?? 1
-        ) {
-            try await webSocket.send(.string(makeOpenAIAudioAppendMessage(data: chunk)))
+        ) where !chunk.isEmpty {
+            try await webSocket.send(.data(chunk))
             uncommittedAudioBytes += chunk.count
-            if shouldAutoCommitOpenAIAudio() {
-                try await commitOpenAIAudioBuffer(to: webSocket)
+            hasSentAudioSinceLastFinalize = true
+        }
+    }
+
+    private func flushDeepgramPendingAudio() async throws {
+        guard !pendingAudio.isEmpty else { return }
+        try await sendDeepgramAudio(Data(), forceFlush: true)
+    }
+
+    private func sendDeepgramFinalize(to webSocket: URLSessionWebSocketTask) async throws {
+        try await webSocket.send(.string(Self.encodeJSONPayload(["type": "Finalize"])))
+    }
+
+    private func sendDeepgramCloseStreamIfNeeded() async {
+        guard let webSocket else { return }
+        try? await webSocket.send(.string(Self.encodeJSONPayload(["type": "CloseStream"])))
+    }
+
+    private func startKeepAlive(forConnection expectedId: UInt64, intervalSeconds: Int?) {
+        keepAliveTask?.cancel()
+        guard let intervalSeconds, intervalSeconds > 0 else { return }
+        keepAliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(intervalSeconds))
+                guard !Task.isCancelled else { return }
+                await self?.sendKeepAliveIfCurrentConnection(expectedId)
             }
         }
     }
 
-    private func flushOpenAIPendingAudio() async throws {
-        guard !pendingAudio.isEmpty else { return }
-        try await sendOpenAIAudio(Data(), forceFlush: true)
-    }
-
-    private func shouldAutoCommitOpenAIAudio() -> Bool {
-        uncommittedAudioBytes >= openAIAutoCommitBytes()
-    }
-
-    private func openAIAutoCommitBytes() -> Int {
-        let config = transcriptionSession
-        return max(1, config?.sampleRate ?? 24_000) * max(1, config?.channels ?? 1) * 2
-    }
-
-    private func commitOpenAIAudioBuffer(to webSocket: URLSessionWebSocketTask) async throws {
-        guard uncommittedAudioBytes > 0 else { return }
-        try await webSocket.send(.string(Self.encodeJSONPayload(["type": "input_audio_buffer.commit"])))
-        uncommittedAudioBytes = 0
-        pendingCommitCount += 1
+    private func sendKeepAliveIfCurrentConnection(_ expectedId: UInt64) async {
+        guard connectionId == expectedId, let webSocket else { return }
+        try? await webSocket.send(.string(Self.encodeJSONPayload(["type": "KeepAlive"])))
     }
 
     static func pcmAudioChunks(
@@ -910,15 +871,8 @@ public actor WebSocketManager {
         endOfStreamRequested
     }
 
-    func testingHandleOpenAIMessage(_ text: String) {
-        handleOpenAIMessage(text)
-    }
-
-    private func sendOpenAISessionConfig(
-        _ sessionConfig: RealtimeTranscriptionSessionConfig
-    ) async throws {
-        guard let webSocket else { return }
-        try await webSocket.send(.string(makeOpenAISessionUpdateMessage(sessionConfig)))
+    func testingHandleDeepgramMessage(_ text: String) {
+        handleDeepgramMessage(text)
     }
 
     private func closeConnection(
@@ -932,13 +886,15 @@ public actor WebSocketManager {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
 
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         transcriptionSession = nil
         pendingAudio = Data()
         uncommittedAudioBytes = 0
         pendingCommitCount = 0
-        transcriptByItemID = [:]
+        hasSentAudioSinceLastFinalize = false
 
         if emitDisconnected {
             eventContinuation?.yield(.disconnected(error))
@@ -964,7 +920,7 @@ public actor WebSocketManager {
         pending: inout Data,
         appending data: Data,
         forceFlush: Bool,
-        sampleRate: Int = 24_000,
+        sampleRate: Int = 16_000,
         channels: Int = 1
     ) -> [Data] {
         Self.pcmAudioChunks(
