@@ -5,17 +5,13 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import urlencode
 
-import httpx
-
 from app.config import get_settings
 
-DEEPGRAM_API_BASE = "https://api.deepgram.com"
 DEEPGRAM_REALTIME_WS_URL = "wss://api.deepgram.com/v1/listen"
 DEEPGRAM_REALTIME_MODEL = "nova-3"
 DEEPGRAM_REALTIME_SAMPLE_RATE = 16_000
 DEEPGRAM_REALTIME_CHANNELS = 1
 DEEPGRAM_REALTIME_ENCODING = "linear16"
-DEEPGRAM_TOKEN_TTL_SECONDS = 60
 DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS = 4
 DEEPGRAM_UTTERANCE_END_MS = 1_000
 DEEPGRAM_ENDPOINTING_MS = 300
@@ -131,7 +127,7 @@ _SUPPORTED_NOVA3_LANGUAGES = {
 }
 
 
-def _require_api_key() -> str:
+def require_deepgram_api_key() -> str:
     settings = get_settings()
     if not settings.deepgram_api_key:
         raise ValueError("DEEPGRAM_API_KEY not configured")
@@ -148,6 +144,13 @@ def normalize_deepgram_language(language: str | None) -> str:
     if base_language in _SUPPORTED_NOVA3_LANGUAGES:
         return base_language
     return normalized
+
+
+def validate_deepgram_language(language: str | None) -> str:
+    normalized = normalize_deepgram_language(language)
+    if normalized == "multi" or normalized in _SUPPORTED_NOVA3_LANGUAGES:
+        return normalized
+    raise ValueError(f"Unsupported Deepgram language: {normalized}")
 
 
 def supports_numerals(language: str) -> bool:
@@ -190,26 +193,3 @@ def build_realtime_websocket_url(
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     return f"{DEEPGRAM_REALTIME_WS_URL}?{urlencode(params)}"
-
-
-async def create_temporary_token(ttl_seconds: int = DEEPGRAM_TOKEN_TTL_SECONDS) -> tuple[str, int]:
-    api_key = _require_api_key()
-    payload = {"ttl_seconds": ttl_seconds}
-    async with httpx.AsyncClient(base_url=DEEPGRAM_API_BASE, timeout=15.0) as client:
-        response = await client.post(
-            "/v1/auth/grant",
-            headers={"Authorization": f"Token {api_key}"},
-            json=payload,
-        )
-        response.raise_for_status()
-        body = response.json()
-
-    if not isinstance(body, dict):
-        raise RuntimeError("Deepgram returned an invalid token grant response")
-    token = body.get("access_token")
-    expires_in = body.get("expires_in", ttl_seconds)
-    if not isinstance(token, str) or not token:
-        raise RuntimeError("Deepgram returned an invalid temporary token")
-    if not isinstance(expires_in, int | float) or expires_in <= 0:
-        raise RuntimeError("Deepgram returned an invalid token expiration")
-    return token, int(expires_in)

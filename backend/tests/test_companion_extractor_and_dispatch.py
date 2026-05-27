@@ -149,10 +149,16 @@ async def test_execute_tool_raises_for_unknown_tool(
 @pytest.mark.asyncio
 async def test_execute_tool_dispatches_to_search_transcripts(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = User(email="exec-search@example.com", password_hash="hash")
     db_session.add(user)
     await db_session.flush()
+
+    async def fake_retrieve_context(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr("app.core.companion.retrieve_context", fake_retrieve_context)
 
     result = await _execute_tool(
         "search_transcripts",

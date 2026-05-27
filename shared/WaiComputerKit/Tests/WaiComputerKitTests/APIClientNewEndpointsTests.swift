@@ -771,7 +771,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "language":"multi",
                 "channels":1,
                 "model":"nova-3",
-                "websocket_url":"wss://api.deepgram.com/v1/listen?model=nova-3",
+                "websocket_url":"wss://wai.computer/api/transcription/stream",
                 "auth_scheme":"bearer",
                 "keep_alive_interval_seconds":4
             }
@@ -784,7 +784,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(config.token, "dg_token_123")
         XCTAssertEqual(config.sampleRate, 16_000)
         XCTAssertEqual(config.model, "nova-3")
-        XCTAssertEqual(config.websocketURL, "wss://api.deepgram.com/v1/listen?model=nova-3")
+        XCTAssertEqual(config.websocketURL, "wss://wai.computer/api/transcription/stream")
         XCTAssertEqual(config.authScheme, "bearer")
         XCTAssertEqual(config.keepAliveIntervalSeconds, 4)
     }
@@ -815,7 +815,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "language":"multi",
                 "channels":1,
                 "model":"nova-3",
-                "websocket_url":"wss://api.deepgram.com/v1/listen?model=nova-3",
+                "websocket_url":"wss://wai.computer/api/transcription/stream",
                 "auth_scheme":"bearer",
                 "keep_alive_interval_seconds":4
             }

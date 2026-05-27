@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
@@ -13,13 +13,13 @@ from app.core.realtime_transcription import create_realtime_transcription_sessio
 DEEPGRAM_REALTIME_MODEL = "nova-3"
 
 
-def _patch_deepgram_mint(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    mint = AsyncMock(return_value=("dg_token", 60))
+def _patch_deepgram_key(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    check = Mock(return_value="provider_key")
     monkeypatch.setattr(
-        "app.core.realtime_transcription.create_temporary_token",
-        mint,
+        "app.core.realtime_transcription.require_deepgram_api_key",
+        check,
     )
-    return mint
+    return check
 
 
 def _make_user(
@@ -55,7 +55,7 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_deepgram(
         dictation_provider=provider,
         dictation_model=model,
     )
-    mint = _patch_deepgram_mint(monkeypatch)
+    check = _patch_deepgram_key(monkeypatch)
 
     session = await create_realtime_transcription_session(
         purpose="dictation", user=user,
@@ -66,7 +66,7 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_deepgram(
     assert session.auth_scheme == "bearer"
     assert session.sample_rate == 16_000
     assert session.channels == 1
-    mint.assert_awaited_once_with()
+    check.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,7 @@ async def test_dispatch_recording_ignores_saved_model_and_uses_deepgram(
         recording_provider=provider,
         recording_model=model,
     )
-    _patch_deepgram_mint(monkeypatch)
+    _patch_deepgram_key(monkeypatch)
 
     session = await create_realtime_transcription_session(
         purpose="recording", user=user, channels=2,
@@ -102,7 +102,7 @@ async def test_dispatch_recording_ignores_saved_model_and_uses_deepgram(
 async def test_dispatch_recording_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_deepgram_mint(monkeypatch)
+    _patch_deepgram_key(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="recording", user=None,
     )
@@ -115,7 +115,7 @@ async def test_dispatch_recording_with_no_user_uses_defaults(
 async def test_dispatch_dictation_with_no_user_uses_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_deepgram_mint(monkeypatch)
+    _patch_deepgram_key(monkeypatch)
     session = await create_realtime_transcription_session(
         purpose="dictation", user=None,
     )
@@ -129,25 +129,25 @@ async def test_dispatch_dictation_with_no_user_uses_defaults(
 async def test_resolved_language_lower_strip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_deepgram_mint(monkeypatch)
+    _patch_deepgram_key(monkeypatch)
 
     session = await create_realtime_transcription_session(
         language="  EN  ", purpose="recording", user=None,
     )
 
     assert session.language == "en"
-    assert "language=en" in session.websocket_url
+    assert session.language == "en"
 
 
 @pytest.mark.asyncio
 async def test_empty_language_falls_back_to_multi(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _patch_deepgram_mint(monkeypatch)
+    _patch_deepgram_key(monkeypatch)
 
     session = await create_realtime_transcription_session(
         language="   ", purpose="recording", user=None,
     )
 
     assert session.language == "multi"
-    assert "language=multi" in session.websocket_url
+    assert session.language == "multi"

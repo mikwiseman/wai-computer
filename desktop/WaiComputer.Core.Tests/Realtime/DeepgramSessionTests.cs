@@ -19,7 +19,7 @@ public class DeepgramSessionTests
         KeepAliveIntervalSeconds: 4,
         CommitStrategy: null,
         NoVerbatim: false,
-        WebSocketUrl: "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&smart_format=true",
+        WebSocketUrl: "wss://wai.computer/api/transcription/stream",
         AuthScheme: AuthScheme.Bearer);
 
     [Fact]

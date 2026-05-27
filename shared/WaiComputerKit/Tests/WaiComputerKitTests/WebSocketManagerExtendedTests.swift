@@ -10,7 +10,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         language: String = "multi",
         channels: Int = 1,
         model: String = "nova-3",
-        websocketURL: String? = "wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16",
+        websocketURL: String? = "wss://wai.computer/api/transcription/stream",
         authScheme: String? = "bearer"
     ) -> RealtimeTranscriptionSessionConfig {
         RealtimeTranscriptionSessionConfig(
@@ -43,8 +43,8 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         let request = try await manager.testingRequestForRealtimeSession(config())
 
-        XCTAssertEqual(request.url?.host, "api.deepgram.com")
-        XCTAssertEqual(request.url?.path, "/v1/listen")
+        XCTAssertEqual(request.url?.host, "wai.computer")
+        XCTAssertEqual(request.url?.path, "/api/transcription/stream")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer deepgram-temp-token")
     }
 
@@ -221,6 +221,30 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         let segments = await manager.collectedSegments
         XCTAssertEqual(segments.map(\.text), ["Same final."])
+    }
+
+    func testDeepgramEmptyFinalizeFrameMarksProviderFinalization() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        await manager.testingSetSessionConfig(config(language: "en"))
+
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "from_finalize": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "", "confidence": 0}
+                ]
+            }
+        }
+        """)
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        XCTAssertTrue(finalized)
+        let segments = await manager.collectedSegments
+        XCTAssertTrue(segments.isEmpty)
     }
 
     func testEventStreamRemainsUsableAfterDisconnect() async {
@@ -403,5 +427,27 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         let segments = await session.testingCollectedSegments()
         XCTAssertEqual(segments.map(\.text), ["Same provider final."])
+    }
+
+    func testProviderBackedEmptyFinalizeFrameMarksFinalization() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "from_finalize": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "", "confidence": 0}
+                ]
+            }
+        }
+        """)
+
+        let finalized = await session.testingHasFinalizationMarker()
+        XCTAssertTrue(finalized)
+        let segments = await session.testingCollectedSegments()
+        XCTAssertTrue(segments.isEmpty)
     }
 }

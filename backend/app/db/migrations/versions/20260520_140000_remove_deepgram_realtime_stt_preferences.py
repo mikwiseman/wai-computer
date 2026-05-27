@@ -4,10 +4,9 @@ Revision ID: 20260520_140000
 Revises: 20260520_130000
 Create Date: 2026-05-20 14:00:00.000000+00:00
 
-Deepgram remains available for file transcription via Nova-3. Realtime
-Deepgram is not exposed until the production key can mint /v1/auth/grant
-tokens, so reset users pinned to Deepgram realtime entries back to the
-ElevenLabs realtime default.
+Deepgram remains available for file transcription via Nova-3. This historical
+migration removed an earlier realtime Deepgram preference exposure and reset
+users pinned to those entries back to the ElevenLabs realtime default.
 """
 
 from typing import Sequence, Union  # noqa: F401
