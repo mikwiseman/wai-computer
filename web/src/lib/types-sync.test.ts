@@ -9,10 +9,13 @@ import type {
   AnalyticsResponse,
   BulkOperationResponse,
   DailyBreakdown,
+  DictationDictionaryWord,
+  DictationEntry,
   DigestActionItem,
   DigestHighlight,
   Entity,
   EntityDetail,
+  Folder,
   Highlight,
   HighlightCategory,
   HighlightImportance,
@@ -616,5 +619,55 @@ describe("types-sync: BulkOperationResponse and AnalyticsResponse", () => {
       "by_type",
       "by_week",
     ]);
+  });
+});
+
+describe("types-sync: Folder", () => {
+  it("Folder matches backend FolderResponse schema", () => {
+    const folder: Folder = {
+      id: "folder-1",
+      name: "Work",
+      created_at: "2026-05-27T00:00:00Z",
+    };
+    expectExactKeys(folder, ["id", "name", "created_at"]);
+  });
+});
+
+describe("types-sync: DictationEntry", () => {
+  it("DictationEntry matches backend DictationEntryResponse schema", () => {
+    const entry: DictationEntry = {
+      client_entry_id: "uuid-1",
+      raw_text: "hello world",
+      cleaned_text: "Hello, world.",
+      duration_seconds: 1.4,
+      word_count: 2,
+      occurred_at: "2026-05-27T00:00:00Z",
+    };
+    expectExactKeys(entry, [
+      "client_entry_id",
+      "raw_text",
+      "cleaned_text",
+      "duration_seconds",
+      "word_count",
+      "occurred_at",
+    ]);
+
+    const withNullCleaned: DictationEntry = { ...entry, cleaned_text: null };
+    expect(withNullCleaned.cleaned_text).toBeNull();
+  });
+});
+
+describe("types-sync: DictationDictionaryWord", () => {
+  it("DictationDictionaryWord matches backend DictionaryWordResponse schema", () => {
+    const word: DictationDictionaryWord = {
+      client_word_id: "uuid-2",
+      word: "k8s",
+      replacement: "Kubernetes",
+      occurred_at: "2026-05-27T00:00:00Z",
+    };
+    expectExactKeys(word, ["client_word_id", "word", "replacement", "occurred_at"]);
+
+    const withNullReplacement: DictationDictionaryWord = { ...word, replacement: null };
+    expect(withNullReplacement.replacement).toBeNull();
   });
 });

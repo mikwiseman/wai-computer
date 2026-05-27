@@ -601,3 +601,139 @@ Caveats:
 - I did NOT touch `web/src/styles/tokens.css` (Agent G's file) — the picker assumes it provides `--surface-soft`, `--surface-strong`, `--border`, `--accent`, `--accent-contrast`, `--accent-strong`, `--ring`, plus the `[data-accent="…"]` / `[data-theme="…"]` selectors. Inline fallbacks in `ThemeAccentPicker.module.css` keep the picker readable even if a token name shifts.
 - Settings heading copy `"Appearance" / "Внешний вид"` is inline in `DashboardClient.tsx`. If Agent F is centralising all dashboard COPY, this can be moved into `COPY[locale].settings.appearanceHeading` later; behaviour is unchanged.
 - The debounced PATCH fires only on a real user change (not on the hydration-from-storage `setState`), so first paint doesn't generate a hot 404 on every dashboard mount.
+
+## Agent I — done
+
+Scope: Sprint 2 #12 — rebuild landing as a real marketing page in both EN and RU, mirroring the polish level of the benchmarks page.
+
+Files modified:
+
+- `web/src/app/page.tsx` — kept the existing hero (icon + headline + subhead + Mac DMG + iPhone TestFlight CTAs) at the top, then appended six new marketing sections: (A) **Platform availability grid** — 5-card row (Mac live link, iPhone TestFlight link, Android/Windows/Linux disabled cards) each with an inline SVG icon (no new asset files), title, status pill (Available now / Beta / Coming soon), and a one-line subtitle; the Mac card links to `/releases/macos/WaiComputer-latest.dmg`, the iPhone card to TestFlight, the rest are non-interactive `<div aria-disabled="true">`. (B) **Three feature cards** with inline mic/search/brain SVG icons and copy "Record any moment" / "Search across everything" / "Ask Wai anything". (C) **Product screenshot strip** — two `next/image` figures using `/screenshots/dashboard-library.png` and `/screenshots/recording-detail.png` with the caption "WaiComputer on the web — Mac, iPhone, and any browser." (D) **Benchmarks teaser** — dark card (`#111216` bg, white text, `#a99dff` eyebrow) with copy "We tested every leading dictation model. WaiComputer ships the one that won." and a "See the benchmark →" CTA pointing to `/benchmarks/dictation`. (E) **Pricing teaser** — Free ($0) and Pro ($12/mo) side-by-side mini cards using `--accent-soft` highlight on Pro, plus a "See full pricing →" link to `/pricing`. (F) **FAQ** — five `<dt>` / `<dd>` pairs answering record, privacy, models, export, offline. Footer updated to `© {CURRENT_YEAR} WaiWai` (was bare `© WaiWai`).
+- `web/src/app/ru/page.tsx` — mirror of the EN page with translated copy (vy-form throughout). RU "Coming soon" pills read «Скоро», "Available now" reads «Доступно», "Beta" reads «Бета». Feature/FAQ/teaser copy translated to natural Russian marketing register; benchmarks teaser CTA points to `/ru/benchmarks/dictation`; pricing teaser link points to `/ru/pricing`; Pro mini-card shows `1290 ₽/мес`.
+- `web/src/app/page.module.css` — extended the existing stylesheet (kept all hero/footer/nav classes intact) with new sections that consume `--bg`, `--panel`, `--panel-subtle`, `--ink`, `--ink-soft`, `--ink-faint`, `--border`, `--border-strong`, `--accent`, `--accent-soft`, `--accent-strong`, `--accent-contrast`, `--warm`, `--warm-soft`. Uses `clamp()` for type and gap sizes (`clamp(1.7rem, 4vw, 2.6rem)` for section headings, etc.). Responsive breakpoints: `≤960 px` drops platform grid from 5 → 3 cols and feature/screenshot grids to 1 col; `≤700 px` collapses platform grid + pricing teaser to single column; `≤560 px` stacks nav and shrinks the hero icon. The benchmark card uses hard-coded dark palette (`#111216` bg, `#fff` CTA) intentionally — that card is *always* dark, matching the visual language of the benchmarks page itself.
+- `web/src/app/pages.test.tsx` — rewrote the two landing assertions ("renders landing with hero, platform grid, …" and "renders Russian landing with full marketing sections"). New assertions cover: hero CTA test-ids unchanged, three "Coming soon" / «Скоро» pills exist, all 5 platform names render in DOM, three feature `<h3>` headings present, `benchmark-cta` test-id links to the locale's benchmark page, `pricing-link` test-id links to the locale's pricing page, FAQ contains its expected first-question text. Existing nav-link assertions for Pricing/Benchmark/Sign-in left in place.
+- `web/public/screenshots/dashboard-library.png` (NEW, 187 kB, 1400×875) — cropped from `audit/12-dashboard-library.png` (originally 1440×4335 full-page capture). Used `sips --cropToHeightWidth 900 1440` to take the top viewport, then `sips -Z 1400` for the final width. Visually shows the EN library view with the recording list and the empty Record-in-browser column.
+- `web/public/screenshots/recording-detail.png` (NEW, 352 kB, 1400×875) — `sips -Z 1400` of `audit/19-recording-detail-transcript-wide.png` (originally 1600×1000). Visually shows the recording detail with the live transcript pane and the sidebar.
+
+Verification:
+
+- `cd web && pnpm lint` — clean. Three pre-existing warnings remain (`BillingResultCard.tsx` unused type, `BillingDashboard.tsx` unused `nextChargeDate`, `DashboardClient.tsx:604` missing-dep). None of those files are in this agent's scope.
+- `cd web && pnpm build` — clean, 27 routes generated, `/` and `/ru` listed.
+- `pnpm vitest run` — 308 / 308 tests pass across 31 files. The rewritten landing tests cover both EN and RU sections; suite-wide nothing else regresses.
+- Playwright visual check at 1440 × 900 and 390 × 844 (viewport) confirms: hero unchanged, platform grid renders 5 cards in a row on desktop and collapses to a single column on mobile, feature trio renders side-by-side and stacks on narrow viewports, screenshot strip shows both images, dark benchmark card has clear contrast against the warm-grey page, pricing teaser is balanced, FAQ list is readable. Both EN and RU paths verified; no console errors beyond the pre-existing 1-warning that already lived on `/`.
+
+Caveats:
+
+- Both EN and RU landing pages keep their dual `<picture>` adaptive icon (Agent A's pattern) for the hero. Platform icons inside the new grid are **inline SVGs** (`currentColor`) — no new image assets shipped, no `next/image` overhead, theme-aware via the inherited `--ink` color. Mac, iPhone, Android, Windows, Linux icons are minimal stylized line/fill marks; they are intentionally not vendor-accurate logos (no Apple Inc. / Microsoft / Google trademarks were used) — replaceable with brand-approved marks later if legal review wants them.
+- The screenshot strip uses **cropped product screenshots from the audit folder**, not freshly captured marketing shots. They contain real test-account data (recording titles in Russian, the EN/RU mixed library, no PII). When the dashboard rebuild from Agents G/H lands, regenerate these from the new design rather than the May-26 audit. Filenames are stable (`dashboard-library.png`, `recording-detail.png`), so a swap is one `sips` invocation.
+- `next/image` is used for the strip screenshots so the build pipeline produces optimized variants. The figure wrappers (`.screenFrame`) still set `max-width: 100%` on `img` because `next/image` injects a wrapper `<span>` and the auto width/height can otherwise overflow.
+- I did NOT touch `globals.css`, `layout.tsx`, dashboard, billing, pricing, or any shared component — per the task scope guard. The footer year (`{CURRENT_YEAR}`) renders the current year client-side from `new Date().getFullYear()` at module evaluation time on the server (route is `ƒ` dynamic), so the year is correct per request.
+- The pricing teaser hard-codes Free `$0` / Pro `$12/mo` (EN) and `0 ₽` / `1290 ₽/мес` (RU) so the landing can render without hitting the billing API. Pricing source of truth still lives in `PricingCards.tsx` (Agent E's scope); when prices change there, mirror them in `page.tsx` and `ru/page.tsx`. A future improvement is to extract pricing constants into a shared module.
+- The FAQ uses a `<dl>` / `<dt>` / `<dd>` structure (semantic, accessible, no JS) rather than an interactive accordion. Tradeoff: all five answers visible at once means the page is longer; the upside is no client JS, no animation jank, no aria-controls / aria-expanded plumbing.
+- "Coming soon" platform cards are `<div aria-disabled="true">` rather than `<a aria-disabled>` because the audit explicitly asked for non-clickable cards. If we ever want to capture interest, swap to a "Notify me" mailto or waitlist link.
+
+## Agent N — done
+
+Shipped a single `@media print` block at the bottom of `web/src/app/globals.css` (lines 2434–2643, +211 lines) for `/share/[token]`, `/privacy`, `/terms`. Rules:
+
+- `@page { size: A4; margin: 18mm 16mm; }`
+- Black-on-white reset on `body, .shared-page, .auth-page, .pricing-page, [class*="legalPage"]`
+- `display: none` on `.nav`, `.footer`, `.shared-note__download`, `.shared-note__download-error`, `[data-testid="shared-cta"]`, `.locale-switcher`, `.shared-note__brand`, `[class*="backLink"]`, `footer[role="contentinfo"]`, `.brand-mark`, `.app-glyph`
+- Full-width column reset on `main`, `.shared-note`, `article`, `[class*="legalShell"]`, `[class*="legalContent"]` — no margin, padding, border, shadow, background
+- Serif body type (`"Times New Roman", "New York", Georgia, serif`), 12pt / 1.5
+- `.shared-note h1`, `[class*="legalHeader"] h1` → 22pt; `.shared-section h2`, `[class*="legalContent"] h2` → 13pt
+- `.speaker-chip` / `.speaker-chip-wrapper` → transparent bg, black border, black text
+- `.mono` / `code` / `pre` / `kbd` → keep monospace, strip background and border
+- `.action-card` flattened (no panel-raised bg); status dot → outline for pending, solid black for completed
+- `a` inherits color + underlines; external + mailto links inside `.shared-section` or `[class*="legalContent"]` append ` (href)` via `::after` so URLs survive paper
+- `h1/h2/h3 { page-break-after: avoid }`, `p/li { orphans: 3; widows: 3 }`, `.transcript-row` / `.action-card` / `[class*="legalContent"] section { page-break-inside: avoid }`
+
+CSS-modules note: `/privacy` and `/terms` use `legal.module.css` (hashed `legalPage`, `legalShell`, `legalContent`, `legalHeader`, `backLink`, `updated`), so the print block targets them via `[class*="…"]` substring selectors — survives the Next.js hash suffix without touching the module file.
+
+New e2e: `web/tests/e2e/print.spec.ts` — three Playwright tests (`/privacy`, `/terms`, `/share/${AUDIT_SHARE_TOKEN ?? "LCxhDCuT9r0QUGlrDTx8dyBBan1X3bn1"}`) that `emulateMedia({ media: "print" })`, assert body becomes white + black + serif, check that nav / locale switcher / share download / share CTA / legal back-link are `display: none`, and screenshot to `tests/e2e/snapshots/print-{privacy,terms,share}.png`. The share test `test.skip()`s gracefully if the seeded token 404s or the API is unreachable in the test env. Per AGENTS.md, e2e is NOT wired into the CI gate yet — this file runs locally with `pnpm test:e2e`.
+
+Gates:
+
+- `cd web && pnpm lint` — no new errors. Pre-existing warnings only (Sprint 1/2 leftovers in `BillingResultCard.tsx`, `DashboardClient.tsx`).
+- `cd web && pnpm build` — clean, all 27 routes still generate, no print-rule warnings from Next/PostCSS.
+- `cd web && pnpm test:unit` — 323/324 pass. The one failing test (`DashboardClient.test.tsx:305 — dashboard-refreshing text`) is **NOT** caused by Agent N — confirmed by stashing `web/src/app/globals.css` and `web/tests/e2e/print.spec.ts` (my only files): the same test still fails on the same line. It is owned by another agent's in-flight changes to `web/src/components/DashboardClient.tsx`. Print stylesheet does not touch dashboard markup.
+
+## Agent M — done
+
+Scope: Sprint 3 P2 #18 — Password strength meter + "show password" eye toggle on `/register`, `/auth/reset`, and Dashboard Settings → Account password change.
+
+Files created:
+
+- `web/src/components/PasswordField.tsx` — NEW reusable client component. Renders the same `<label><span>{label}</span><input/></label>` shape as `AuthForm`'s existing fields, but wraps the `<input>` in a `position: relative` `<span>` containing an inline-SVG eye/eye-off button (no icon library) anchored to the right edge. Click toggles input `type` between `password` and `text`. Optional `showStrength` prop renders a 4-segment bar + caption beneath the input. Bar is `role="meter"` with `aria-valuemin=0`, `aria-valuemax=4`, `aria-valuenow={score}`, `aria-valuetext={label}`. Toggle button gets `aria-pressed`, `aria-label`, and localized titles ("Show password" / "Hide password" / "Показать пароль" / "Скрыть пароль"). Inline styles only (no `globals.css` / `tokens.css` edits per scope guard); consumes the design tokens directly (`--danger`, `--warm`, `--accent`, `--success`, `--panel-subtle`, `--ink-soft`, `--font-caption-size`).
+- `web/src/components/PasswordField.test.tsx` — NEW. 16 unit tests: input is `type=password` by default; eye click toggles to `text`; second click toggles back; RU aria-label; meter not rendered when `showStrength=false`; meter renders with the right `data-score` / `aria-valuetext` for each of the 4 buckets (Weak / Fair / Good / Strong); plus 7 direct `scorePassword(...)` tests covering 0/1/2/3/4 and edge cases (length ≥ 14 with only 3 classes → 3, not 4).
+
+Files modified:
+
+- `web/src/components/AuthForm.tsx` — added `import { PasswordField } from "@/components/PasswordField"` and replaced the inline password `<label>…<input type="password"/>` (around line 305) with `<PasswordField … locale={locale} showStrength={mode === "register"} autoComplete={...} />`. `data-testid="auth-password"` preserved on the input. Existing 14 tests still pass.
+- `web/src/app/auth/reset/ResetPasswordClient.tsx` — both fields now use `PasswordField`. New-password field has `showStrength`; confirm field has `showStrength={false}`. `data-testid="reset-password"` and `"reset-password-confirm"` preserved on the inputs. Existing 2 tests still pass.
+- `web/src/components/DashboardClient.tsx` — surgical: only the `<form className="settings-form" onSubmit={handleChangePassword}>` block touched. Both Current password (no meter) and New password (`showStrength`) use `PasswordField`. `data-testid="current-password"` / `"new-password"` preserved.
+
+Strength algorithm (inline in `PasswordField.tsx`, ~30 lines):
+
+- Classes counted: lowercase / uppercase / digits / symbols (`/[^A-Za-z0-9]/`).
+- `score = 0` when empty; `4` (Strong) when `len ≥ 14` AND all 4 classes; `3` (Good) when `len ≥ 10` AND ≥ 3 classes; `2` (Fair) when `len ≥ 8` AND ≥ 2 classes; `1` (Weak) otherwise.
+- Segment fill colors: weak = `--danger`, fair = `--warm`, good = `--accent`, strong = `--success`. Unfilled segments use `--panel-subtle`.
+
+Verification:
+
+- `cd web && npx eslint src/components/PasswordField.tsx src/components/PasswordField.test.tsx src/components/AuthForm.tsx src/app/auth/reset/ResetPasswordClient.tsx` → clean.
+- `cd web && pnpm lint` → 0 new errors. 16 pre-existing warnings (unused imports in `BillingResultCard.tsx` and `DashboardClient.tsx`, `react-hooks/exhaustive-deps` in `DashboardClient.tsx`) are from other agents' in-flight work.
+- `cd web && npx vitest run src/components/PasswordField.test.tsx src/components/AuthForm.test.tsx src/app/auth/reset/ResetPasswordClient.test.tsx` → 32/32 pass (16 + 14 + 2).
+- `cd web && pnpm build` and full `pnpm test:unit` currently fail because Agent K's in-flight refactor in `DashboardClient.tsx` references an undefined `useKeyboardShortcuts(...)` (line 1358). Confirmed not Agent M's regression by temporarily reverting only the `PasswordField` use inside the password-change form: the same 22 `DashboardClient.test.tsx` failures (all `ReferenceError: useKeyboardShortcuts is not defined`) and the same `npx tsc --noEmit` error persist. `git stash` of all my changes plus Agent K's still passes the build, confirming Agent K's `useKeyboardShortcuts` reference is the blocker. PasswordField itself emits no TS errors (`npx tsc --noEmit 2>&1 | grep PasswordField` is empty).
+
+Caveats:
+
+- All styling for `PasswordField` is inline because the task scope guard forbade editing `globals.css` and `tokens.css`. If/when a future agent adds a `.password-field` CSS rule, the constants at the top of `PasswordField.tsx` (`WRAP_STYLE`, `INPUT_STYLE`, `TOGGLE_STYLE`, `METER_WRAP_STYLE`, `METER_BAR_STYLE`, `SEGMENT_BASE_STYLE`, `CAPTION_STYLE`) are the natural homes to refactor into class selectors.
+- The eye toggle uses inline SVG (no icon library, no new asset). Two icons: `EyeIcon` (open) and `EyeOffIcon` (slashed). Both 18×18 px stroke-1.8, `currentColor`, so they inherit the toggle's `color: var(--ink-soft)` and adapt to the theme.
+- The caption label below the meter is `aria-hidden="true"` because the same text is already exposed via `aria-valuetext` on the meter (avoids double-announce on screen readers).
+- The meter consumes `aria-describedby` of the input via a `useId()` so SR users get the strength caption announced when the password field is focused.
+- I did NOT add an "OAuth" or any new auth surface — Sprint 3 explicitly says "no OAuth in this sprint (no credentials yet)".
+- The confirm field on `/auth/reset` is `showStrength={false}` but still gets the eye toggle — symmetrical UX, no duplicate strength feedback. Matches the task spec.
+- `PasswordField` exports both the component and the pure `scorePassword(value)` helper. The helper has its own 7 unit-test assertions on top of the 9 component-level integration tests (16 total in `PasswordField.test.tsx`).
+
+Scope discipline: only `web/src/app/globals.css` was edited and `web/tests/e2e/print.spec.ts` was added. No other file in the repo was modified.
+
+## Agent K — done
+
+Files modified (Agent K owns these for Sprint 3):
+
+- `web/src/lib/types.ts` — added `Folder`, `DictationEntry`, `DictationDictionaryWord` matching the backend response shapes from `backend/app/api/routes/folders.py` and `backend/app/api/routes/dictation.py`.
+- `web/src/lib/api.ts` — added `listFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `assignRecordingToFolder`, `listDictationEntries`, `listDictionaryWords`, `createDictionaryWord`, `deleteDictionaryWord`. Extended `updateRecording` to accept `folder_id`. Added a tiny `cryptoRandomUUID` shim for jsdom test envs (used by `createDictionaryWord` to mint the backend's idempotency key client-side).
+- `web/src/lib/api.test.ts` — added 11 new assertions covering the new API helpers.
+- `web/src/lib/types-sync.test.ts` — added 3 new describe blocks for `Folder`, `DictationEntry`, `DictationDictionaryWord` to lock in the backend response shape.
+- `web/src/components/DashboardClient.tsx` — substantial:
+  - Sidebar reworked: now has `wai / library / [folders group] / trash / search / history / dictionary / actions / topics / settings`. Folders live inside an expandable group beneath "All Recordings"; the `+` button opens an inline create-folder form; each folder row exposes Rename and Delete (both via modal confirms).
+  - Two new views: `history` (read-only paginated list of dictation entries) and `dictionary` (table-style CRUD with EN+RU strings localized).
+  - Folder filtering: clicking a folder switches view to `folder` and shows recordings filtered by `recording.folder_id === activeFolderId`, with the folder's name in the workspace header.
+  - Folder rename / delete use the existing `modal-backdrop` + `modal-card` pattern (no `window.prompt` / `window.confirm`).
+  - Keyboard shortcuts: `/` focuses search input (auto-switching view); `n` switches to library + focuses recorder pane; `Esc` clears selection / closes whichever modal is open; `?` toggles a cheatsheet modal. Wired via a new `useKeyboardShortcuts` hook defined at the bottom of `DashboardClient.tsx`. The hook skips firing when the user is in an `<input>`, `<textarea>`, `<select>`, or contentEditable element, and also bails on Cmd/Ctrl/Alt to avoid stealing browser shortcuts.
+  - All new copy localized in both EN and RU.
+- `web/src/components/DashboardClient.test.tsx` — added 7 new tests (sidebar surface, folder creation, `/` shortcut focuses search input, `?` toggles cheatsheet, shortcuts skip inputs, history 404 fallback, dictionary list/create, folder open switches workspace header).
+
+Faked behind a graceful 404 fallback (route exists in backend but agent K was told to handle 404 gracefully):
+
+- `GET /api/dictation/entries` and `GET /api/dictation/dictionary` — if either returns 404 we render the localized "Coming soon" empty state (`history-unavailable` / `dictionary-unavailable`) instead of crashing. Both routes DO exist in `backend/app/api/routes/dictation.py` (confirmed with `grep` on `@router.get("/entries")` and `@router.get("/dictionary")`), so in production this fallback never triggers — it's protection for older deployments.
+
+No backend endpoints missing — all routes Agent K relies on already exist:
+
+- `GET/POST /api/folders` and `PATCH/DELETE /api/folders/{id}` in `backend/app/api/routes/folders.py`.
+- `GET/POST /api/dictation/entries` and `GET/POST /api/dictation/dictionary` (and matching `DELETE /{client_id}`) in `backend/app/api/routes/dictation.py`. The POST entries route is gated behind the word-quota check; web doesn't write entries today, only reads them.
+- `PATCH /api/recordings/{id}` already accepts `folder_id` (`backend/app/api/routes/recordings.py:1658`).
+
+Verification:
+
+- `cd web && pnpm lint` → 0 errors, 2 pre-existing warnings.
+- `cd web && pnpm build` → compiled successfully, TypeScript clean, all 27 routes built.
+- `cd web && pnpm test:unit` → 345 / 345 pass (was 332 before; added 13 new tests across `api.test.ts`, `types-sync.test.ts`, `DashboardClient.test.tsx`).
+
+Caveats:
+
+- All styling for new UI (`sidebar-folder-group`, `sidebar-folder-list`, `modal-backdrop`, `modal-card`, `shortcut-list`, `dictation-history-list`, `dictionary-list`) is currently unstyled — these class names land on raw HTML until another agent adds the matching CSS. Task scope guard prohibited editing `globals.css` / `tokens.css`. The structure is solid (semantic HTML, keyboard-accessible, properly aria-labelled) so a follow-up CSS pass is the only finishing step.
+- Inline folder assignment from a recording-detail panel is not yet wired — the `assignRecordingToFolder` API helper is in place and tested, but no UI surface uses it yet. Agent owning `RecordingDetailPanel.tsx` should add a folder selector there.
+- The `n` shortcut focuses whichever interactive element the recorder pane mounts first; once a richer recorder UI lands it may want a dedicated `data-shortcut-target` selector instead of the generic `input, button, [tabindex]` query.
+- Folder counts are NOT shown in the sidebar group (Mac shows them; we omit for v1.0 to avoid extra `listRecordings({folder_id})` requests). Future work: derive the count from the in-memory `recordings` array.

@@ -536,4 +536,79 @@ describe("api client wrappers", () => {
     await api.getSharedRecording("share-token");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/shared/share-token");
   });
+
+  it("calls listFolders", async () => {
+    await api.listFolders();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/folders");
+  });
+
+  it("calls createFolder", async () => {
+    await api.createFolder("Work");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/folders", {
+      method: "POST",
+      body: JSON.stringify({ name: "Work" }),
+    });
+  });
+
+  it("calls renameFolder", async () => {
+    await api.renameFolder("folder-1", "Personal");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/folders/folder-1", {
+      method: "PATCH",
+      body: JSON.stringify({ name: "Personal" }),
+    });
+  });
+
+  it("calls deleteFolder", async () => {
+    await api.deleteFolder("folder-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/folders/folder-1", {
+      method: "DELETE",
+    });
+  });
+
+  it("calls assignRecordingToFolder with folder_id", async () => {
+    await api.assignRecordingToFolder("rec1", "folder-1");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1", {
+      method: "PATCH",
+      body: JSON.stringify({ folder_id: "folder-1" }),
+    });
+  });
+
+  it("calls assignRecordingToFolder with null clears the folder", async () => {
+    await api.assignRecordingToFolder("rec1", null);
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec1", {
+      method: "PATCH",
+      body: JSON.stringify({ folder_id: null }),
+    });
+  });
+
+  it("calls listDictationEntries", async () => {
+    await api.listDictationEntries();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/dictation/entries");
+  });
+
+  it("calls listDictionaryWords", async () => {
+    await api.listDictionaryWords();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/dictation/dictionary");
+  });
+
+  it("calls createDictionaryWord with client_word_id and timestamp", async () => {
+    await api.createDictionaryWord({ word: "k8s", replacement: "Kubernetes" });
+    expect(mockedApiFetch).toHaveBeenCalledTimes(1);
+    const [path, init] = mockedApiFetch.mock.calls[0];
+    expect(path).toBe("/api/dictation/dictionary");
+    expect(init?.method).toBe("POST");
+    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    expect(body.word).toBe("k8s");
+    expect(body.replacement).toBe("Kubernetes");
+    expect(typeof body.client_word_id).toBe("string");
+    expect((body.client_word_id as string).length).toBeGreaterThan(0);
+    expect(typeof body.occurred_at).toBe("string");
+  });
+
+  it("calls deleteDictionaryWord", async () => {
+    await api.deleteDictionaryWord("word-id");
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/dictation/dictionary/word-id", {
+      method: "DELETE",
+    });
+  });
 });
