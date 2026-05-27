@@ -1,11 +1,16 @@
 """Tests for realtime transcription session routes."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.core.realtime_transcription import RealtimeTranscriptionSession
+from app.core.realtime_transcription import (
+    RealtimeTranscriptionProxyClaims,
+    RealtimeTranscriptionSession,
+    decode_realtime_proxy_token,
+)
 from app.main import app
 
 
@@ -43,20 +48,28 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
         auth_scheme="bearer",
     )
 
+    mint = AsyncMock(return_value=session)
     with patch(
         "app.api.routes.realtime_transcription.create_realtime_transcription_session",
-        new=AsyncMock(return_value=session),
+        new=mint,
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post(
                 "/api/transcription/session",
-                headers={"Authorization": "Bearer fake-token"},
+                headers={
+                    "Authorization": "Bearer fake-token",
+                    "X-Forwarded-Proto": "https",
+                    "X-Forwarded-Host": "wai.computer",
+                },
                 json={"language": "multi", "channels": 1},
             )
 
     assert response.status_code == 200
+    assert mint.await_args.kwargs["websocket_url"] == (
+        "wss://wai.computer/api/transcription/stream"
+    )
     payload = response.json()
     assert payload["provider"] == "deepgram"
     assert payload["token"] == "dg_token"
@@ -67,6 +80,37 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
     assert payload["commit_strategy"] is None
     assert payload["no_verbatim"] is False
     assert payload["auth_scheme"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_realtime_transcription_session_mints_local_proxy_token(
+    mock_authenticated_user,
+):
+    with patch(
+        "app.core.realtime_transcription.require_deepgram_api_key",
+        return_value="provider_key",
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/transcription/session",
+                headers={
+                    "Authorization": "Bearer fake-token",
+                    "X-Forwarded-Proto": "https",
+                    "X-Forwarded-Host": "wai.computer",
+                },
+                json={"language": "ru", "channels": 1, "purpose": "dictation"},
+            )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["websocket_url"] == "wss://wai.computer/api/transcription/stream"
+    assert payload["auth_scheme"] == "bearer"
+    assert payload["model"] == "nova-3"
+    claims = decode_realtime_proxy_token(payload["token"])
+    assert claims.language == "ru"
+    assert claims.purpose == "dictation"
 
 
 @pytest.mark.asyncio
@@ -176,7 +220,7 @@ async def test_realtime_transcription_session_captures_sentry_on_unexpected_erro
             response = await client.post(
                 "/api/transcription/session",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"language": "multi", "channels": 2},
+                json={"language": "multi", "channels": 1},
             )
 
     assert response.status_code == 503
@@ -187,7 +231,7 @@ async def test_realtime_transcription_session_captures_sentry_on_unexpected_erro
     assert captured["extras"] is not None
     assert captured["extras"]["alert_code"] == "realtime.session_mint.failed"
     assert captured["extras"]["language"] == "multi"
-    assert captured["extras"]["channels"] == 2
+    assert captured["extras"]["channels"] == 1
     assert captured["extras"]["purpose"] == "recording"
     assert isinstance(captured["extras"]["latency_ms"], int)
 
@@ -205,3 +249,279 @@ async def test_realtime_transcription_session_requires_auth():
         )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_realtime_transcription_session_rejects_stereo_request(mock_authenticated_user):
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/transcription/session",
+            headers={"Authorization": "Bearer fake-token"},
+            json={"language": "en", "channels": 2},
+        )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_realtime_transcription_session_rejects_unsupported_language(
+    mock_authenticated_user,
+):
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/transcription/session",
+            headers={"Authorization": "Bearer fake-token"},
+            json={"language": "zz-TEST", "channels": 1},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported live transcription language."
+
+
+class FakeWebSocket:
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        self.headers = headers or {}
+        self.accepted = False
+        self.closed_codes: list[int] = []
+        self.json_payloads: list[dict[str, object]] = []
+        self.sent_bytes: list[bytes] = []
+        self.sent_text: list[str] = []
+        self._receive_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def close(self, *, code: int) -> None:
+        self.closed_codes.append(code)
+
+    async def send_json(self, payload: dict[str, object]) -> None:
+        self.json_payloads.append(payload)
+
+    async def send_bytes(self, payload: bytes) -> None:
+        self.sent_bytes.append(payload)
+
+    async def send_text(self, payload: str) -> None:
+        self.sent_text.append(payload)
+
+    async def receive(self) -> dict[str, object]:
+        return await self._receive_queue.get()
+
+    def queue_receive(self, message: dict[str, object]) -> None:
+        self._receive_queue.put_nowait(message)
+
+
+class FakeProvider:
+    def __init__(self, messages: list[bytes | str] | None = None) -> None:
+        self.messages = messages or []
+        self.sent: list[bytes | str] = []
+        self.closed = False
+
+    async def send(self, payload: bytes | str) -> None:
+        self.sent.append(payload)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def __aiter__(self):
+        self._iterator = iter(self.messages)
+        return self
+
+    async def __anext__(self) -> bytes | str:
+        try:
+            return next(self._iterator)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class FakeProviderConnection:
+    def __init__(self, provider: FakeProvider) -> None:
+        self.provider = provider
+
+    async def __aenter__(self) -> FakeProvider:
+        return self.provider
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class FailingProviderConnection:
+    async def __aenter__(self):
+        raise RuntimeError("provider offline")
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+def _claims() -> RealtimeTranscriptionProxyClaims:
+    return RealtimeTranscriptionProxyClaims(
+        subject="user-transcription",
+        language="ru",
+        channels=1,
+        model="nova-3",
+        purpose="dictation",
+    )
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_closes_without_bearer_token():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket()
+
+    await route.stream_realtime_transcription(websocket)
+
+    assert websocket.accepted is False
+    assert websocket.closed_codes == [1008]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_closes_on_invalid_proxy_token():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer invalid"})
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        side_effect=ValueError("bad token"),
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.accepted is False
+    assert websocket.closed_codes == [1008]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_reports_provider_config_error_without_secret():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        side_effect=ValueError("DEEPGRAM_API_KEY not configured"),
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.accepted is True
+    assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_connects_to_deepgram_with_server_api_key():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = FakeProvider(messages=[b'{"type":"Metadata"}', '{"type":"Results"}'])
+    connect_calls: list[dict[str, object]] = []
+
+    def fake_connect(url: str, **kwargs):
+        connect_calls.append({"url": url, **kwargs})
+        return FakeProviderConnection(provider)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        new=fake_connect,
+    ), patch(
+        "app.api.routes.realtime_transcription._websockets_header_kwarg",
+        return_value="additional_headers",
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.accepted is True
+    assert websocket.sent_bytes == [b'{"type":"Metadata"}']
+    assert websocket.sent_text == ['{"type":"Results"}']
+    assert websocket.closed_codes == [1000]
+    assert connect_calls
+    assert "model=nova-3" in str(connect_calls[0]["url"])
+    assert connect_calls[0]["additional_headers"] == {
+        "Authorization": "Token server-provider-key"
+    }
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_reports_provider_connect_failure():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    captured: dict[str, object] = {}
+
+    def fake_capture(error: Exception, *, extras: dict[str, object] | None = None) -> None:
+        captured["error"] = error
+        captured["extras"] = extras
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FailingProviderConnection(),
+    ), patch(
+        "app.api.routes.realtime_transcription.capture_sentry_exception",
+        new=fake_capture,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert isinstance(captured["error"], RuntimeError)
+    assert captured["extras"] is not None
+    assert captured["extras"]["alert_code"] == "realtime.stream.failed"
+    assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_client_to_provider_forwards_audio_and_control_messages():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket()
+    provider = FakeProvider()
+    websocket.queue_receive({"type": "websocket.receive", "bytes": b"pcm"})
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"KeepAlive"}'})
+    websocket.queue_receive({"type": "lifespan.noop"})
+    websocket.queue_receive({"type": "websocket.disconnect"})
+
+    await route._client_to_provider(websocket, provider)
+
+    assert provider.sent == [b"pcm", '{"type":"KeepAlive"}']
+    assert provider.closed is True
+
+
+@pytest.mark.asyncio
+async def test_provider_to_client_forwards_binary_and_text_messages():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket()
+    provider = FakeProvider(messages=[b"binary", "text"])
+
+    await route._provider_to_client(websocket, provider)
+
+    assert websocket.sent_bytes == [b"binary"]
+    assert websocket.sent_text == ["text"]
+
+
+@pytest.mark.asyncio
+async def test_close_websocket_ignores_already_closed_runtime_error():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = MagicMock()
+    websocket.close = AsyncMock(side_effect=RuntimeError("already closed"))
+
+    await route._close_websocket(websocket, code=1000)
+
+    websocket.close.assert_awaited_once_with(code=1000)

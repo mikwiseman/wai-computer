@@ -3,7 +3,7 @@
 
 The script registers an isolated temporary account, switches its dictation
 model, mints a client-safe realtime session through the production API, then
-connects to the actual provider WebSocket and streams the same synthetic audio.
+connects to the returned backend realtime WebSocket and streams the same synthetic audio.
 It reports cold-start and prefetched-start timings without printing secrets.
 """
 

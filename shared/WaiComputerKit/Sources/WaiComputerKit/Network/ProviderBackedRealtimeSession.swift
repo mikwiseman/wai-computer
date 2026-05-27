@@ -244,18 +244,20 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
               let alternatives = channel["alternatives"] as? [[String: Any]],
               let alternative = alternatives.first
         else { return }
+        let isFinal = payload["is_final"] as? Bool ?? false
+        let fromFinalize = payload["from_finalize"] as? Bool ?? false
+        if fromFinalize || (didSendEndTurn && isFinal) {
+            markTranscriptEvent(finalizationMarker: true)
+        }
+
         let transcript = (alternative["transcript"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return }
 
-        let isFinal = payload["is_final"] as? Bool ?? false
-        let fromFinalize = payload["from_finalize"] as? Bool ?? false
         let startMs = Self.secondsToMilliseconds(payload["start"] as? Double)
         let durationMs = Self.secondsToMilliseconds(payload["duration"] as? Double)
         let confidence = alternative["confidence"] as? Double ?? 0
-        if fromFinalize || (didSendEndTurn && isFinal) {
-            markTranscriptEvent(finalizationMarker: true)
-        } else {
+        if !fromFinalize && !(didSendEndTurn && isFinal) {
             markTranscriptEvent()
         }
 

@@ -65,10 +65,8 @@ class WebSocketManagerTest {
         val manager = DeepgramRealtimeWebSocketManager(api, language = "multi")
         val request = manager.buildDeepgramRequest(deepgramConfig())
 
-        assertEquals("api.deepgram.com", request.url.host)
-        assertEquals("/v1/listen", request.url.encodedPath)
-        assertEquals("nova-3", request.url.queryParameter("model"))
-        assertEquals("multi", request.url.queryParameter("language"))
+        assertEquals("wai.computer", request.url.host)
+        assertEquals("/api/transcription/stream", request.url.encodedPath)
         assertEquals("Bearer deepgram-temporary-token", request.header("Authorization"))
     }
 
@@ -129,7 +127,7 @@ class WebSocketManagerTest {
         channels = 1,
         model = model,
         keepAliveIntervalSeconds = 4,
-        websocketUrl = "wss://api.deepgram.com/v1/listen?model=nova-3&language=$language&encoding=linear16&sample_rate=16000&channels=1",
+        websocketUrl = "wss://wai.computer/api/transcription/stream",
         authScheme = "bearer",
     )
 }

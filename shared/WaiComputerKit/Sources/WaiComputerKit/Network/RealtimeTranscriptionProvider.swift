@@ -1,10 +1,9 @@
 import Foundation
 
 /// Provider-agnostic interface for realtime speech-to-text. The dictation
-/// flow uses this lower-level provider abstraction for direct provider
-/// sessions, while recording and account-selected live transcription use
-/// `WebSocketManager` because the backend already returns a provider-specific
-/// realtime session.
+/// flow uses this lower-level provider abstraction for backend-minted
+/// provider sessions, while recording live transcription uses
+/// `WebSocketManager` for reconnect and buffering behavior.
 public protocol RealtimeTranscriptionProvider: Sendable {
     var name: String { get }
     func openSession(

@@ -4,9 +4,9 @@ Hourly realtime dictation QA loop. Runs as a cron-fired agent iteration. Complem
 
 ## What this harness does
 
-Each iteration generates a local macOS `say` fixture, mints the production Deepgram Nova-3 realtime session through `https://wai.computer/api/transcription/session`, streams PCM audio to the returned provider WebSocket, computes word/character error rate and latency, then writes a structured report.
+Each iteration generates a local macOS `say` fixture, mints the production Deepgram Nova-3 realtime session through `https://wai.computer/api/transcription/session`, streams PCM audio to the returned backend realtime WebSocket, computes word/character error rate and latency, then writes a structured report.
 
-The harness intentionally uses the same server-minted Deepgram realtime path as the native app. It does not maintain separate direct-provider credentials.
+The harness intentionally uses the same server-minted backend Deepgram proxy path as the native app. It does not maintain separate direct-provider credentials.
 
 ## Outputs
 

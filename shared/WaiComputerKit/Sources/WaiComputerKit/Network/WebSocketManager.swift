@@ -67,8 +67,9 @@ public enum WebSocketEvent: Sendable {
 
 /// WebSocket manager for Deepgram realtime speech-to-text streaming.
 ///
-/// The manager asks the backend for a short-lived Deepgram token, then streams
-/// provider-configured LINEAR16 PCM audio directly to Deepgram.
+/// The manager asks the backend for a short-lived WaiComputer realtime token,
+/// then streams provider-configured LINEAR16 PCM audio through the backend
+/// Deepgram proxy.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "is.waiwai.computer.kit", category: "websocket")
     private let apiClient: APIClient
@@ -493,19 +494,21 @@ public actor WebSocketManager {
               let alternatives = channel["alternatives"] as? [[String: Any]],
               let alternative = alternatives.first
         else { return }
+        let isFinal = payload["is_final"] as? Bool ?? false
+        let fromFinalize = payload["from_finalize"] as? Bool ?? false
+        if fromFinalize || (endOfStreamRequested && endOfStreamSent && isFinal) {
+            lastTranscriptReceivedAt = reconnectClock.now
+            providerFinalizationReceived = true
+        }
+
         let transcript = (alternative["transcript"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !transcript.isEmpty else { return }
 
-        let isFinal = payload["is_final"] as? Bool ?? false
-        let fromFinalize = payload["from_finalize"] as? Bool ?? false
         let startMs = Self.secondsToMilliseconds(payload["start"] as? Double)
         let durationMs = Self.secondsToMilliseconds(payload["duration"] as? Double)
         let confidence = alternative["confidence"] as? Double ?? 0
         lastTranscriptReceivedAt = reconnectClock.now
-        if fromFinalize || (endOfStreamRequested && endOfStreamSent && isFinal) {
-            providerFinalizationReceived = true
-        }
 
         let segment = LiveTranscriptSegment(
             text: transcript,
@@ -873,6 +876,10 @@ public actor WebSocketManager {
 
     func testingHandleDeepgramMessage(_ text: String) {
         handleDeepgramMessage(text)
+    }
+
+    func testingProviderFinalizationReceived() -> Bool {
+        providerFinalizationReceived
     }
 
     private func closeConnection(
