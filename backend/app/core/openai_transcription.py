@@ -15,7 +15,7 @@ from app.core.transcript_utils import TranscriptResult
 OPENAI_API_BASE = "https://api.openai.com"
 OPENAI_REALTIME_WS_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_REALTIME_SAMPLE_RATE = 24_000
-OPENAI_REALTIME_TOKEN_TTL_SECONDS = 15 * 60
+OPENAI_REALTIME_TOKEN_TTL_SECONDS = 60
 OPENAI_MAX_TRANSCRIPTION_FILE_BYTES = 24 * 1024 * 1024
 OPENAI_TRANSCODE_CHUNK_MS = 60 * 60 * 1000
 OPENAI_TRANSCODE_BITRATE = "24k"
@@ -119,8 +119,8 @@ async def create_realtime_client_secret(*, model: str, language: str) -> str:
     return value
 
 
-def realtime_websocket_url(model: str) -> str:
-    return f"{OPENAI_REALTIME_WS_URL}?model={model}"
+def realtime_websocket_url() -> str:
+    return f"{OPENAI_REALTIME_WS_URL}?intent=transcription"
 
 
 def _file_stt_upload_filename(content_type: str) -> str:

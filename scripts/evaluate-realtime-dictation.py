@@ -27,7 +27,6 @@ import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_TEXT_RU = (
     "Сегодня мы проверяем быстрый старт диктовки WaiComputer. "
@@ -54,6 +53,11 @@ class ModelCandidate:
 DEFAULT_CANDIDATES = (
     ModelCandidate("openai", "gpt-realtime-whisper"),
 )
+LEGAL_ACCEPTANCE = {
+    "accepted_legal_terms": True,
+    "legal_terms_version": "2026-05-22",
+    "legal_privacy_version": "2026-05-22",
+}
 
 
 def require_command(name: str) -> str:
@@ -154,29 +158,39 @@ def transcript_metrics(text: str) -> dict[str, float | None]:
 async def register_user(client: httpx.AsyncClient) -> dict[str, str]:
     email = f"dictation-eval-{uuid.uuid4().hex[:12]}@example.com"
     password = f"eval-{uuid.uuid4().hex}"
-    response = await client.post("/api/auth/register", json={"email": email, "password": password})
+    response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, **LEGAL_ACCEPTANCE},
+    )
     response.raise_for_status()
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
-async def patch_model(
+async def assert_model(
     client: httpx.AsyncClient,
     headers: dict[str, str],
     candidate: ModelCandidate,
 ) -> None:
-    response = await client.patch(
-        "/api/settings",
-        headers=headers,
-        json={
-            "dictation_live_stt_provider": candidate.provider,
-            "dictation_live_stt_model": candidate.model,
-        },
-    )
+    response = await client.get("/api/settings", headers=headers)
     response.raise_for_status()
+    settings = response.json()
+    actual = (
+        settings.get("dictation_live_stt_provider"),
+        settings.get("dictation_live_stt_model"),
+    )
+    expected = (candidate.provider, candidate.model)
+    if actual != expected:
+        raise RuntimeError(
+            f"Production dictation model is {actual[0]}/{actual[1]}, "
+            f"expected {expected[0]}/{expected[1]}."
+        )
 
 
-async def timed_settings(client: httpx.AsyncClient, headers: dict[str, str]) -> tuple[dict[str, Any], int]:
+async def timed_settings(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+) -> tuple[dict[str, Any], int]:
     start = time.perf_counter()
     response = await client.get("/api/settings", headers=headers)
     response.raise_for_status()
@@ -260,7 +274,9 @@ def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool]:
         if message_type == "error":
             error = payload.get("error")
             if isinstance(error, dict):
-                raise RuntimeError(error.get("message") or error.get("code") or "OpenAI realtime error")
+                raise RuntimeError(
+                    error.get("message") or error.get("code") or "OpenAI realtime error"
+                )
     return None, False
 
 
@@ -271,7 +287,11 @@ def cleaned(value: Any) -> str | None:
     return value or None
 
 
-async def stream_provider(config: dict[str, Any], pcm: bytes, press_started: float) -> dict[str, Any]:
+async def stream_provider(
+    config: dict[str, Any],
+    pcm: bytes,
+    press_started: float,
+) -> dict[str, Any]:
     provider = config["provider"]
     url, headers = websocket_target(config)
     connect_started = time.perf_counter()
@@ -291,7 +311,9 @@ async def stream_provider(config: dict[str, Any], pcm: bytes, press_started: flo
 
         async def send_loop() -> None:
             uncommitted_bytes = 0
-            commit_threshold = int(config["sample_rate"]) * max(int(config["channels"]), 1) * BYTES_PER_SAMPLE
+            commit_threshold = (
+                int(config["sample_rate"]) * max(int(config["channels"]), 1) * BYTES_PER_SAMPLE
+            )
             for chunk in chunks(pcm):
                 await ws.send(
                     json.dumps(
@@ -370,7 +392,7 @@ async def run_one(
     language: str,
     mode: str,
 ) -> dict[str, Any]:
-    await patch_model(client, headers, candidate)
+    await assert_model(client, headers, candidate)
     prefetch_ms: int | None = None
     prefetched_config: dict[str, Any] | None = None
     if mode == "prefetched":
@@ -401,7 +423,11 @@ async def run_one(
         "first_text_ms": stream["first_text_ms"],
         "first_final_ms": stream["first_final_ms"],
         "final_ms": stream["final_ms"],
-        "speed_factor": round(audio_seconds / (stream["final_ms"] / 1000), 2) if stream["final_ms"] else None,
+        "speed_factor": (
+            round(audio_seconds / (stream["final_ms"] / 1000), 2)
+            if stream["final_ms"]
+            else None
+        ),
         "word_count": stream["word_count"],
         "ok": stream["ok"],
         "wer": stream["wer"],
@@ -423,7 +449,9 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "model": model,
                 "runs": len(rows),
                 "ok_runs": sum(1 for row in rows if row["ok"]),
-                "median_first_text_ms": median(row["first_text_ms"] for row in rows if row["first_text_ms"] is not None),
+                "median_first_text_ms": median(
+                    row["first_text_ms"] for row in rows if row["first_text_ms"] is not None
+                ),
                 "median_final_ms": median(row["final_ms"] for row in rows),
                 "median_connect_ms": median(row["connect_ms"] for row in rows),
                 "median_mint_ms": median(row["mint_ms"] for row in rows),
@@ -467,7 +495,10 @@ async def async_main() -> None:
     parser.add_argument("--base-url", default="https://wai.computer")
     parser.add_argument("--language", default="ru")
     parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--output", default=str(ROOT / "artifacts/benchmarks/realtime-dictation-eval.json"))
+    parser.add_argument(
+        "--output",
+        default=str(ROOT / "artifacts/benchmarks/realtime-dictation-eval.json"),
+    )
     parser.add_argument("--fixture", default=str(ROOT / ".tmp/dictation-eval/ru-startup.wav"))
     args = parser.parse_args()
 
@@ -490,7 +521,8 @@ async def async_main() -> None:
                             "error": str(exc),
                         }
                     results.append(result)
-                    print(json.dumps({k: v for k, v in result.items() if k != "transcript"}, ensure_ascii=False), flush=True)
+                    printable_result = {k: v for k, v in result.items() if k != "transcript"}
+                    print(json.dumps(printable_result, ensure_ascii=False), flush=True)
 
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

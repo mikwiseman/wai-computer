@@ -30,7 +30,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
     session = RealtimeTranscriptionSession(
         provider="openai",
         token="ek_openai",
-        expires_in_seconds=900,
+        expires_in_seconds=60,
         sample_rate=24_000,
         audio_format="pcm_24000",
         language="multi",
@@ -39,7 +39,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
         keep_alive_interval_seconds=None,
         commit_strategy="manual",
         no_verbatim=False,
-        websocket_url="wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
         auth_scheme="bearer",
     )
 
@@ -75,7 +75,7 @@ async def test_realtime_transcription_session_reports_slow_session_mint(
     session = RealtimeTranscriptionSession(
         provider="openai",
         token="ek_openai",
-        expires_in_seconds=900,
+        expires_in_seconds=60,
         sample_rate=24_000,
         audio_format="pcm_24000",
         language="multi",
@@ -83,7 +83,7 @@ async def test_realtime_transcription_session_reports_slow_session_mint(
         model="gpt-realtime-whisper",
         commit_strategy="manual",
         no_verbatim=False,
-        websocket_url="wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
         auth_scheme="bearer",
     )
     captured: dict[str, object] = {}

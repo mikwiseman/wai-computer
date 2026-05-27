@@ -10,7 +10,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         language: String = "multi",
         channels: Int = 1,
         model: String = "gpt-realtime-whisper",
-        websocketURL: String? = "wss://api.openai.com/v1/realtime?model=gpt-realtime-whisper",
+        websocketURL: String? = "wss://api.openai.com/v1/realtime?intent=transcription",
         authScheme: String? = "bearer"
     ) -> RealtimeTranscriptionSessionConfig {
         RealtimeTranscriptionSessionConfig(
@@ -45,7 +45,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         XCTAssertEqual(request.url?.host, "api.openai.com")
         XCTAssertEqual(request.url?.path, "/v1/realtime")
-        XCTAssertEqual(request.url?.query, "model=gpt-realtime-whisper")
+        XCTAssertEqual(request.url?.query, "intent=transcription")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer openai-client-secret")
     }
 

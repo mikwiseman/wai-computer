@@ -24,7 +24,7 @@ async def test_create_realtime_transcription_session_uses_openai_recording_defau
     assert session == RealtimeTranscriptionSession(
         provider="openai",
         token="ek_openai",
-        expires_in_seconds=900,
+        expires_in_seconds=60,
         sample_rate=24_000,
         audio_format="pcm_24000",
         language="multi",
@@ -33,7 +33,7 @@ async def test_create_realtime_transcription_session_uses_openai_recording_defau
         keep_alive_interval_seconds=None,
         commit_strategy="manual",
         no_verbatim=False,
-        websocket_url=f"wss://api.openai.com/v1/realtime?model={OPENAI_REALTIME_MODEL}",
+        websocket_url="wss://api.openai.com/v1/realtime?intent=transcription",
         auth_scheme="bearer",
     )
 
