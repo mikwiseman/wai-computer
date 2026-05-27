@@ -4,9 +4,11 @@ import {
   cancelBillingSubscription,
   claimBillingPromoCode,
   createBillingCheckout,
+  getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
   listBillingPlans,
+  switchBillingPlan,
 } from "./billing";
 
 vi.mock("./http", () => ({
@@ -56,6 +58,17 @@ describe("billing api wrappers", () => {
     });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/billing/cancel", {
       method: "POST",
+    });
+  });
+
+  it("calls invoices and switch-plan endpoints", async () => {
+    await getBillingInvoices();
+    await switchBillingPlan("yearly");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/billing/invoices");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/billing/switch-plan", {
+      method: "POST",
+      body: JSON.stringify({ period: "yearly" }),
     });
   });
 });

@@ -33,6 +33,7 @@ import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
+import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { ApiError } from "@/lib/http";
 import type {
   ActionItem,
@@ -1247,6 +1248,11 @@ export function DashboardClient() {
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
+        <section className="settings-form" data-testid="appearance-settings">
+          <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
+          <ThemeAccentPicker locale={locale} />
+        </section>
+
         <div className="settings-form">
           <h3>{copy.settings.dictationHeading}</h3>
           {settingsLoading ? (

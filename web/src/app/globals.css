@@ -1,52 +1,10 @@
-:root {
-  color-scheme: light;
-  --bg: #f7f7f5;
-  --panel: #ffffff;
-  --panel-subtle: #f1f3f2;
-  --panel-raised: #fbfbfa;
-  --ink: #191a1f;
-  --ink-soft: #626a73;
-  --ink-faint: #9199a2;
-  --accent: #2f756d;
-  --accent-strong: #245e57;
-  --accent-contrast: #ffffff;
-  --accent-soft: rgba(47, 117, 109, 0.12);
-  --warm: #b86f2e;
-  --warm-soft: rgba(184, 111, 46, 0.12);
-  --border: #dcdfdf;
-  --border-strong: #c9cecf;
-  --danger: #ba3d37;
-  --success: #17765a;
-  --shadow: 0 16px 44px rgba(24, 26, 31, 0.06);
-  --color-text-primary: var(--ink);
-  --color-text-secondary: var(--ink-soft);
-  --color-border: var(--border);
-  --color-surface: var(--panel);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #101214;
-    --panel: #171a1d;
-    --panel-subtle: #202528;
-    --panel-raised: #131619;
-    --ink: #f3f5f2;
-    --ink-soft: #c2cac7;
-    --ink-faint: #8d9996;
-    --accent: #73d2c3;
-    --accent-strong: #96e4d8;
-    --accent-contrast: #071513;
-    --accent-soft: rgba(115, 210, 195, 0.16);
-    --warm: #e0a15d;
-    --warm-soft: rgba(224, 161, 93, 0.18);
-    --border: #30383b;
-    --border-strong: #495458;
-    --danger: #ff8a82;
-    --success: #80d8ba;
-    --shadow: 0 20px 56px rgba(0, 0, 0, 0.34);
-  }
-}
+/*
+ * All design tokens (spacing, type scale, radius, shadow, accents, theme
+ * colors, light + dark variants) now live in `src/styles/tokens.css`, which
+ * is imported once in `src/app/layout.tsx` BEFORE this file. The selectors
+ * below consume those custom properties; never redefine `--accent`, `--bg`,
+ * etc. here — add new tokens to `tokens.css` instead.
+ */
 
 * {
   box-sizing: border-box;
@@ -64,7 +22,7 @@ body {
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-space-grotesk), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-family-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -188,7 +146,7 @@ h4 {
   align-items: center;
   gap: 0.7rem;
   color: var(--ink);
-  font-size: 0.95rem;
+  font-size: var(--font-body-large-size);
   font-weight: 760;
 }
 
@@ -221,7 +179,7 @@ h4 {
 .auth-form label span,
 .settings-form span {
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   font-weight: 720;
 }
 
@@ -231,7 +189,7 @@ h4 {
   align-items: start;
   gap: 0.6rem;
   color: var(--ink-soft);
-  font-size: 0.84rem;
+  font-size: var(--font-body-small-size);
   line-height: 1.45;
 }
 
@@ -256,7 +214,7 @@ h4 {
 .auth-card__secondary a,
 .auth-card--compact a {
   color: var(--accent-strong);
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
   font-weight: 680;
 }
 
@@ -264,7 +222,7 @@ h4 {
   border-radius: 8px;
   background: var(--panel-subtle);
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
   padding: 0.75rem;
 }
 
@@ -363,7 +321,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .compact-button {
   min-height: 30px;
   padding: 0.35rem 0.55rem;
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
 }
 
 .danger-button {
@@ -371,7 +329,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-family-mono);
 }
 
 .muted-text {
@@ -384,7 +342,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-wrap: wrap;
   gap: 0.5rem;
   color: var(--ink-soft);
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
   line-height: 1.4;
 }
 
@@ -403,7 +361,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border-radius: 999px;
   background: var(--panel-subtle);
   color: var(--ink-soft);
-  font-size: 0.75rem;
+  font-size: var(--font-label-size);
   font-weight: 650;
   padding: 0.2rem 0.55rem;
   text-transform: capitalize;
@@ -414,7 +372,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .dashboard-message {
   border-radius: 8px;
   padding: 0.65rem 0.8rem;
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
 }
 
 .inline-alert {
@@ -476,7 +434,7 @@ a.primary-button[aria-disabled="true"]:hover {
   max-width: 170px;
   overflow: hidden;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -512,13 +470,13 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .sidebar-nav__item strong {
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
 }
 
 .sidebar-nav__item small {
   margin-top: 0.1rem;
   color: var(--ink-soft);
-  font-size: 0.75rem;
+  font-size: var(--font-label-size);
   font-weight: 500;
 }
 
@@ -527,7 +485,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border-radius: 999px;
   background: var(--panel);
   color: var(--ink-soft);
-  font-size: 0.75rem;
+  font-size: var(--font-label-size);
   font-style: normal;
   text-align: center;
   padding: 0.15rem 0.35rem;
@@ -604,7 +562,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .panel-header p {
   margin-top: 0.15rem;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
 }
 
 .recording-list {
@@ -649,7 +607,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .recording-row strong {
   overflow: hidden;
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -658,7 +616,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .recording-row small {
   margin-top: 0.25rem;
   color: var(--ink-soft);
-  font-size: 0.76rem;
+  font-size: var(--font-label-size);
 }
 
 .row-actions {
@@ -714,7 +672,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .settings-note {
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: var(--font-body-size);
   line-height: 1.45;
   margin: 0;
 }
@@ -726,7 +684,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .settings-model-field small {
   color: var(--ink-soft);
-  font-size: 0.8rem;
+  font-size: var(--font-label-size);
   line-height: 1.35;
 }
 
@@ -753,7 +711,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .telegram-code-form small {
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   line-height: 1.35;
 }
 
@@ -862,7 +820,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .section-heading-row h3,
 .note-section h4 {
   color: var(--ink-faint);
-  font-size: 0.72rem;
+  font-size: var(--font-label-size);
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -876,7 +834,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .transcript-row p,
 .note-section p,
 .reading-list {
-  font-size: 0.98rem;
+  font-size: var(--font-body-large-size);
   line-height: 1.75;
 }
 
@@ -945,7 +903,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .qa-panel__header p {
   margin-top: 0.2rem;
   color: var(--ink-soft);
-  font-size: 0.86rem;
+  font-size: var(--font-body-small-size);
 }
 
 .qa-scope {
@@ -959,7 +917,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .qa-scope > span {
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   font-weight: 650;
 }
 
@@ -971,7 +929,7 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--panel-raised);
   color: var(--ink-soft);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   padding: 0.3rem 0.55rem;
 }
 
@@ -1026,7 +984,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .source-card h3 {
-  font-size: 0.86rem;
+  font-size: var(--font-body-small-size);
 }
 
 .source-card h3 span,
@@ -1112,8 +1070,8 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-soft, var(--panel));
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-body-small-size);
   overflow-x: auto;
   white-space: nowrap;
 }
@@ -1133,7 +1091,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .mcp-client-guide p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 0.88rem;
+  font-size: var(--font-body-size);
   line-height: 1.45;
 }
 
@@ -1148,14 +1106,14 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-soft, var(--panel));
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
   line-height: 1.45;
   overflow-x: auto;
   white-space: pre;
 }
 
 .mcp-snippet code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family-mono);
 }
 
 .mcp-external-link {
@@ -1174,13 +1132,13 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .mcp-connections h4 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--font-body-large-size);
 }
 
 .mcp-connections-error {
   margin: 0;
   color: var(--danger, #b3261e);
-  font-size: 0.85rem;
+  font-size: var(--font-body-small-size);
 }
 
 .mcp-connection-rows {
@@ -1210,12 +1168,12 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .mcp-connection-name {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--font-body-size);
 }
 
 .mcp-connection-detail {
   color: var(--ink-soft);
-  font-size: 0.8rem;
+  font-size: var(--font-label-size);
   overflow-wrap: anywhere;
 }
 
@@ -1236,7 +1194,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-soft, var(--panel));
-  font-size: 0.85rem;
+  font-size: var(--font-body-small-size);
 }
 
 .api-key-created {
@@ -1250,7 +1208,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .api-key-created-note {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
   color: var(--ink-soft);
 }
 
@@ -1265,8 +1223,8 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.82rem;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-body-small-size);
 }
 
 .shared-page {
@@ -1310,7 +1268,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .shared-note__brand span {
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
 }
 
 .shared-note h1 {
@@ -1325,7 +1283,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .shared-note__download-error {
   color: var(--danger);
-  font-size: 0.86rem;
+  font-size: var(--font-body-small-size);
 }
 
 .shared-section {
@@ -1340,7 +1298,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .shared-section h2 {
   color: var(--ink-faint);
-  font-size: 0.76rem;
+  font-size: var(--font-label-size);
   text-transform: uppercase;
 }
 
@@ -1397,13 +1355,13 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.25rem;
   color: var(--ink-soft);
-  font-size: 0.86rem;
+  font-size: var(--font-body-small-size);
   text-align: center;
 }
 
 .upload-zone__formats {
   color: var(--ink-faint);
-  font-size: 0.74rem;
+  font-size: var(--font-label-size);
 }
 
 .upload-zone__spinner {
@@ -1436,7 +1394,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .recorder-panel--processing {
   justify-content: center;
   color: var(--accent);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
 }
 
 .recorder-panel__indicator {
@@ -1449,7 +1407,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .recorder-panel__time {
   min-width: 3rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-family-mono);
   font-size: 1.1rem;
 }
 
@@ -1631,7 +1589,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .pricing-save {
-  font-size: 0.75rem;
+  font-size: var(--font-label-size);
   margin-left: 0.5rem;
   opacity: 0.7;
 }
@@ -1725,7 +1683,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .pricing-vat {
   margin: -0.85rem 0 1.25rem;
   color: var(--color-text-secondary);
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
 }
 
 .pricing-provider,
@@ -1743,7 +1701,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .pricing-provider legend,
 .billing-provider legend {
   padding: 0 0.25rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-body-small-size);
   color: var(--color-text-secondary);
   font-weight: 500;
 }
@@ -1753,7 +1711,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
-  font-size: 0.9375rem;
+  font-size: var(--font-body-large-size);
   cursor: pointer;
   min-width: 0;
   white-space: normal;
@@ -1782,7 +1740,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .pricing-error {
   margin-top: 0.75rem;
   color: var(--danger);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
 }
 
 .billing-dashboard {
@@ -1825,7 +1783,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .billing-usage h2 {
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-secondary);
@@ -1840,7 +1798,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .billing-caption {
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
 }
 
 .billing-upgrade,
@@ -1873,7 +1831,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .billing-promo label span {
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
   font-weight: 600;
 }
 
@@ -1958,7 +1916,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-heading p {
   margin: 0 0 0.35rem;
   color: var(--color-text-secondary);
-  font-size: 0.8rem;
+  font-size: var(--font-label-size);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1989,7 +1947,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .admin-form label span {
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
 }
 
 .admin-form input,
@@ -2036,7 +1994,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-result > span {
   display: block;
   color: var(--color-text-secondary);
-  font-size: 0.875rem;
+  font-size: var(--font-body-size);
   font-weight: 700;
 }
 
@@ -2123,7 +2081,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-kicker {
   margin: 0 0 0.28rem;
   color: var(--ink-soft);
-  font-size: 0.74rem;
+  font-size: var(--font-label-size);
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -2203,7 +2161,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-once span {
   display: block;
   color: var(--ink-soft);
-  font-size: 0.76rem;
+  font-size: var(--font-label-size);
   font-weight: 680;
 }
 
@@ -2217,7 +2175,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-detail-panel h3,
 .admin-billing-head h3 {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: var(--font-body-large-size);
 }
 
 .admin-metric-table dl,
@@ -2239,7 +2197,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-metric-table dt,
 .admin-detail-list dt {
   color: var(--ink-soft);
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
 }
 
 .admin-metric-table dd,
@@ -2263,12 +2221,12 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .admin-mini-table th {
   color: var(--ink-soft);
-  font-size: 0.74rem;
+  font-size: var(--font-label-size);
   font-weight: 740;
 }
 
 .admin-mini-table td {
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
   font-weight: 650;
 }
 
@@ -2287,7 +2245,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .admin-inline-form label span {
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: var(--font-label-size);
   font-weight: 680;
 }
 
@@ -2338,13 +2296,13 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .admin-table th {
   color: var(--ink-soft);
-  font-size: 0.76rem;
+  font-size: var(--font-label-size);
   font-weight: 740;
   text-transform: uppercase;
 }
 
 .admin-table td {
-  font-size: 0.86rem;
+  font-size: var(--font-body-small-size);
 }
 
 .admin-code-cell {
@@ -2416,7 +2374,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-billing-head p {
   margin: 0.25rem 0 0;
   color: var(--ink-soft);
-  font-size: 0.82rem;
+  font-size: var(--font-body-small-size);
 }
 
 @media (max-width: 980px) {

@@ -1,0 +1,533 @@
+/*
+ * WaiComputer — Design Tokens
+ *
+ * Single source of truth for spacing, typography, radius, shadow, accents,
+ * and theme variables. Mirrors `macos/WaiComputer/WaiComputer/Core/DesignSystem.swift`
+ * so a value set in the Mac app can be matched 1:1 on web.
+ *
+ * Override via `data-theme="light|dark|system"` and `data-accent="<name>"` on
+ * <html>. The defaults below preserve the current web behaviour (teal accent +
+ * follow OS theme) so this file ships visually identical to the prod baseline.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------------------------------------------------------------------
+   * Spacing — 8 pt grid (mirror Swift `enum Spacing`)
+   * --------------------------------------------------------------------- */
+  --space-xxs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --space-xxxl: 48px;
+  --space-huge: 64px;
+
+  /* ---------------------------------------------------------------------
+   * Type families
+   * --------------------------------------------------------------------- */
+  /* Sans — matches body font; falls back to system stack if Space Grotesk
+   * doesn't load. Same chain as `body` in globals.css. */
+  --font-family-sans: var(--font-space-grotesk), system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Serif — mirrors Mac `.system(design: .serif)` (New York on Apple,
+   * Iowan Old Style on iOS, Georgia/Times elsewhere). Used for editorial
+   * display headings (transcripts, recording detail headings, share view). */
+  --font-family-serif: "New York", "Iowan Old Style", Georgia, "Times New Roman",
+    Times, serif;
+  /* Mono — durations, timestamps, code snippets. */
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---------------------------------------------------------------------
+   * Type scale — 13 named tokens (mirror Swift `enum Typography`).
+   * Pattern: each token exposes `--font-size-*` + `--font-line-*` so callers
+   * can compose them precisely, and a CSS `font` shorthand-friendly
+   * `--font-*` that pairs them via `var()`.
+   * --------------------------------------------------------------------- */
+
+  /* Display Large — 32pt bold serif. Recording title in detail. */
+  --font-display-large-size: 32px;
+  --font-display-large-line: 1.05;
+  --font-display-large-weight: 700;
+  --font-display-large: var(--font-display-large-weight)
+    var(--font-display-large-size) / var(--font-display-large-line)
+    var(--font-family-serif);
+
+  /* Display Medium — 26pt semibold serif. Page headings. */
+  --font-display-medium-size: 26px;
+  --font-display-medium-line: 1.1;
+  --font-display-medium-weight: 600;
+  --font-display-medium: var(--font-display-medium-weight)
+    var(--font-display-medium-size) / var(--font-display-medium-line)
+    var(--font-family-serif);
+
+  /* Display Small — 22pt semibold serif. Section headings. */
+  --font-display-small-size: 22px;
+  --font-display-small-line: 1.15;
+  --font-display-small-weight: 600;
+  --font-display-small: var(--font-display-small-weight)
+    var(--font-display-small-size) / var(--font-display-small-line)
+    var(--font-family-serif);
+
+  /* Heading Large — 18pt semibold sans. Section headers. */
+  --font-heading-large-size: 18px;
+  --font-heading-large-line: 1.25;
+  --font-heading-large-weight: 600;
+  --font-heading-large: var(--font-heading-large-weight)
+    var(--font-heading-large-size) / var(--font-heading-large-line)
+    var(--font-family-sans);
+
+  /* Heading Medium — 15pt semibold sans. List row titles, search input. */
+  --font-heading-medium-size: 15px;
+  --font-heading-medium-line: 1.3;
+  --font-heading-medium-weight: 600;
+  --font-heading-medium: var(--font-heading-medium-weight)
+    var(--font-heading-medium-size) / var(--font-heading-medium-line)
+    var(--font-family-sans);
+
+  /* Heading Small — 13pt semibold sans. Small headers, buttons. */
+  --font-heading-small-size: 13px;
+  --font-heading-small-line: 1.35;
+  --font-heading-small-weight: 600;
+  --font-heading-small: var(--font-heading-small-weight)
+    var(--font-heading-small-size) / var(--font-heading-small-line)
+    var(--font-family-sans);
+
+  /* Body Large — 15pt regular sans. Input field text. */
+  --font-body-large-size: 15px;
+  --font-body-large-line: 1.5;
+  --font-body-large-weight: 400;
+  --font-body-large: var(--font-body-large-weight) var(--font-body-large-size) /
+    var(--font-body-large-line) var(--font-family-sans);
+
+  /* Body — 14pt regular sans. Default body. */
+  --font-body-size: 14px;
+  --font-body-line: 1.5;
+  --font-body-weight: 400;
+  --font-body: var(--font-body-weight) var(--font-body-size) /
+    var(--font-body-line) var(--font-family-sans);
+
+  /* Body Small — 13pt regular sans. Secondary body. */
+  --font-body-small-size: 13px;
+  --font-body-small-line: 1.5;
+  --font-body-small-weight: 400;
+  --font-body-small: var(--font-body-small-weight) var(--font-body-small-size) /
+    var(--font-body-small-line) var(--font-family-sans);
+
+  /* Reading — 15pt regular sans, generous line-height for transcripts and
+   * summaries. Mac uses `.lineSpacing(6)` which translates to ~1.7 leading. */
+  --font-reading-size: 15px;
+  --font-reading-line: 1.7;
+  --font-reading-weight: 400;
+  --font-reading: var(--font-reading-weight) var(--font-reading-size) /
+    var(--font-reading-line) var(--font-family-sans);
+
+  /* Label — 12pt medium sans. Metadata, dates. */
+  --font-label-size: 12px;
+  --font-label-line: 1.4;
+  --font-label-weight: 500;
+  --font-label: var(--font-label-weight) var(--font-label-size) /
+    var(--font-label-line) var(--font-family-sans);
+
+  /* Label Small — 11pt medium sans, uppercase + tracked. Section headers. */
+  --font-label-small-size: 11px;
+  --font-label-small-line: 1.4;
+  --font-label-small-weight: 500;
+  --font-label-small-tracking: 0.08em;
+  --font-label-small: var(--font-label-small-weight)
+    var(--font-label-small-size) / var(--font-label-small-line)
+    var(--font-family-sans);
+
+  /* Caption — 11pt regular sans. Smallest text. */
+  --font-caption-size: 11px;
+  --font-caption-line: 1.4;
+  --font-caption-weight: 400;
+  --font-caption: var(--font-caption-weight) var(--font-caption-size) /
+    var(--font-caption-line) var(--font-family-sans);
+
+  /* Mono — 13pt regular mono. Durations, timestamps. */
+  --font-mono-size: 13px;
+  --font-mono-line: 1.5;
+  --font-mono-weight: 400;
+  --font-mono: var(--font-mono-weight) var(--font-mono-size) /
+    var(--font-mono-line) var(--font-family-mono);
+
+  /* Mono Large — 15pt medium mono. Recording timer. */
+  --font-mono-large-size: 15px;
+  --font-mono-large-line: 1.5;
+  --font-mono-large-weight: 500;
+  --font-mono-large: var(--font-mono-large-weight) var(--font-mono-large-size) /
+    var(--font-mono-large-line) var(--font-family-mono);
+
+  /* ---------------------------------------------------------------------
+   * Radius — globals.css uses 8 px ubiquitously; keep that default.
+   * --------------------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* ---------------------------------------------------------------------
+   * Shadow — 3-step elevation. Light variants live in :root; dark variants
+   * live in the dark-theme block below.
+   * --------------------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgba(24, 26, 31, 0.04),
+    0 4px 12px rgba(24, 26, 31, 0.04);
+  --shadow-2: 0 8px 24px rgba(24, 26, 31, 0.06);
+  --shadow-3: 0 16px 44px rgba(24, 26, 31, 0.08);
+
+  /* ---------------------------------------------------------------------
+   * Accents — 7 named accents (6 from Mac + teal for web parity).
+   *
+   * Mac default is amber; current web default is teal (#2f756d). We define
+   * all accents here but keep teal as the active default at the bottom of
+   * the :root block. Switching is done by setting `data-accent="<name>"`
+   * on <html> (or any ancestor) — see the dispatch selectors below.
+   * --------------------------------------------------------------------- */
+
+  /* Teal — current web default. */
+  --accent-teal: #2f756d;
+  --accent-teal-strong: #245e57;
+  --accent-teal-soft: rgba(47, 117, 109, 0.12);
+  --accent-teal-contrast: #ffffff;
+
+  /* Amber — Mac default, mirrors `systemOrange`. */
+  --accent-amber: #ff9500;
+  --accent-amber-strong: #d97a00;
+  --accent-amber-soft: rgba(255, 149, 0, 0.12);
+  --accent-amber-contrast: #1f1300;
+
+  /* Blue — mirrors `systemBlue`. */
+  --accent-blue: #007aff;
+  --accent-blue-strong: #0058c7;
+  --accent-blue-soft: rgba(0, 122, 255, 0.12);
+  --accent-blue-contrast: #ffffff;
+
+  /* Green — mirrors `systemGreen`. */
+  --accent-green: #34c759;
+  --accent-green-strong: #248a3d;
+  --accent-green-soft: rgba(52, 199, 89, 0.12);
+  --accent-green-contrast: #052614;
+
+  /* Violet — mirrors `systemPurple`. */
+  --accent-violet: #af52de;
+  --accent-violet-strong: #893bb3;
+  --accent-violet-soft: rgba(175, 82, 222, 0.12);
+  --accent-violet-contrast: #ffffff;
+
+  /* Rose — mirrors `systemPink`. */
+  --accent-rose: #ff2d55;
+  --accent-rose-strong: #c91d3f;
+  --accent-rose-soft: rgba(255, 45, 85, 0.12);
+  --accent-rose-contrast: #ffffff;
+
+  /* Graphite — mirrors `systemGray`. Neutral / focused-work choice. */
+  --accent-graphite: #8e8e93;
+  --accent-graphite-strong: #5e5e62;
+  --accent-graphite-soft: rgba(142, 142, 147, 0.14);
+  --accent-graphite-contrast: #ffffff;
+
+  /* ---------------------------------------------------------------------
+   * Active accent — defaults to teal so visual output matches the current
+   * prod baseline. `data-accent="<name>"` selectors below override these.
+   * --------------------------------------------------------------------- */
+  --accent: var(--accent-teal);
+  --accent-strong: var(--accent-teal-strong);
+  --accent-soft: var(--accent-teal-soft);
+  --accent-contrast: var(--accent-teal-contrast);
+
+  /* ---------------------------------------------------------------------
+   * Theme — light surfaces & ink, plus the legacy aliases used across
+   * globals.css. Dark surfaces are defined in the dark-theme blocks below.
+   * --------------------------------------------------------------------- */
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --panel-subtle: #f1f3f2;
+  --panel-raised: #fbfbfa;
+  --ink: #191a1f;
+  --ink-soft: #626a73;
+  --ink-faint: #9199a2;
+  --warm: #b86f2e;
+  --warm-soft: rgba(184, 111, 46, 0.12);
+  --border: #dcdfdf;
+  --border-strong: #c9cecf;
+  --danger: #ba3d37;
+  --success: #17765a;
+
+  /* Active shadow alias — defaults to the medium step which matches the
+   * pre-token `--shadow: 0 16px 44px rgba(24,26,31,0.06)` value as closely
+   * as possible without changing visual output. */
+  --shadow: var(--shadow-3);
+
+  /* Legacy semantic aliases retained for in-place refactor of globals.css. */
+  --color-text-primary: var(--ink);
+  --color-text-secondary: var(--ink-soft);
+  --color-border: var(--border);
+  --color-surface: var(--panel);
+}
+
+/* -----------------------------------------------------------------------
+ * Accent dispatch — set `data-accent` on <html> (or any ancestor) to swap
+ * the active accent palette without touching individual rules.
+ *
+ *   <html data-accent="amber"> ... </html>
+ *
+ * `teal` is the active default in :root; redefining it here keeps the
+ * selector list symmetrical and makes the picker logic uniform.
+ * ----------------------------------------------------------------------- */
+[data-accent="teal"] {
+  --accent: var(--accent-teal);
+  --accent-strong: var(--accent-teal-strong);
+  --accent-soft: var(--accent-teal-soft);
+  --accent-contrast: var(--accent-teal-contrast);
+}
+[data-accent="amber"] {
+  --accent: var(--accent-amber);
+  --accent-strong: var(--accent-amber-strong);
+  --accent-soft: var(--accent-amber-soft);
+  --accent-contrast: var(--accent-amber-contrast);
+}
+[data-accent="blue"] {
+  --accent: var(--accent-blue);
+  --accent-strong: var(--accent-blue-strong);
+  --accent-soft: var(--accent-blue-soft);
+  --accent-contrast: var(--accent-blue-contrast);
+}
+[data-accent="green"] {
+  --accent: var(--accent-green);
+  --accent-strong: var(--accent-green-strong);
+  --accent-soft: var(--accent-green-soft);
+  --accent-contrast: var(--accent-green-contrast);
+}
+[data-accent="violet"] {
+  --accent: var(--accent-violet);
+  --accent-strong: var(--accent-violet-strong);
+  --accent-soft: var(--accent-violet-soft);
+  --accent-contrast: var(--accent-violet-contrast);
+}
+[data-accent="rose"] {
+  --accent: var(--accent-rose);
+  --accent-strong: var(--accent-rose-strong);
+  --accent-soft: var(--accent-rose-soft);
+  --accent-contrast: var(--accent-rose-contrast);
+}
+[data-accent="graphite"] {
+  --accent: var(--accent-graphite);
+  --accent-strong: var(--accent-graphite-strong);
+  --accent-soft: var(--accent-graphite-soft);
+  --accent-contrast: var(--accent-graphite-contrast);
+}
+
+/* -----------------------------------------------------------------------
+ * Dark theme — applied either explicitly (`data-theme="dark"` or the
+ * `theme-dark` class on :root) OR implicitly via prefers-color-scheme when
+ * the user has not chosen an override (`data-theme="system"` — default).
+ *
+ * Mirrors the pre-token dark block in globals.css line-for-line so visual
+ * output is identical to the audit baseline screenshots.
+ * ----------------------------------------------------------------------- */
+
+[data-theme="dark"],
+:root.theme-dark {
+  color-scheme: dark;
+  --bg: #101214;
+  --panel: #171a1d;
+  --panel-subtle: #202528;
+  --panel-raised: #131619;
+  --ink: #f3f5f2;
+  --ink-soft: #c2cac7;
+  --ink-faint: #8d9996;
+  --warm: #e0a15d;
+  --warm-soft: rgba(224, 161, 93, 0.18);
+  --border: #30383b;
+  --border-strong: #495458;
+  --danger: #ff8a82;
+  --success: #80d8ba;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.28);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.32);
+  --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
+  --shadow: var(--shadow-3);
+
+  /* Dark-mode accent palette — brighter strong + softer soft so accents
+   * still read against #101214. Mirrors the original dark block. */
+  --accent-teal: #73d2c3;
+  --accent-teal-strong: #96e4d8;
+  --accent-teal-soft: rgba(115, 210, 195, 0.16);
+  --accent-teal-contrast: #071513;
+
+  --accent-amber: #ff9f0a;
+  --accent-amber-strong: #ffb84d;
+  --accent-amber-soft: rgba(255, 159, 10, 0.16);
+  --accent-amber-contrast: #1f1300;
+
+  --accent-blue: #0a84ff;
+  --accent-blue-strong: #4ea6ff;
+  --accent-blue-soft: rgba(10, 132, 255, 0.18);
+  --accent-blue-contrast: #ffffff;
+
+  --accent-green: #30d158;
+  --accent-green-strong: #5ee07f;
+  --accent-green-soft: rgba(48, 209, 88, 0.16);
+  --accent-green-contrast: #052614;
+
+  --accent-violet: #bf5af2;
+  --accent-violet-strong: #d385f7;
+  --accent-violet-soft: rgba(191, 90, 242, 0.18);
+  --accent-violet-contrast: #ffffff;
+
+  --accent-rose: #ff375f;
+  --accent-rose-strong: #ff6a89;
+  --accent-rose-soft: rgba(255, 55, 95, 0.16);
+  --accent-rose-contrast: #ffffff;
+
+  --accent-graphite: #98989d;
+  --accent-graphite-strong: #b5b5ba;
+  --accent-graphite-soft: rgba(152, 152, 157, 0.20);
+  --accent-graphite-contrast: #0e0e10;
+
+  /* Re-resolve active accent against the dark palette. */
+  --accent: var(--accent-teal);
+  --accent-strong: var(--accent-teal-strong);
+  --accent-soft: var(--accent-teal-soft);
+  --accent-contrast: var(--accent-teal-contrast);
+}
+
+/* Re-apply dispatch for dark theme so a `data-accent="amber"` choice picks
+ * up the dark-palette amber values. */
+[data-theme="dark"][data-accent="teal"],
+:root.theme-dark[data-accent="teal"] {
+  --accent: var(--accent-teal);
+  --accent-strong: var(--accent-teal-strong);
+  --accent-soft: var(--accent-teal-soft);
+  --accent-contrast: var(--accent-teal-contrast);
+}
+[data-theme="dark"][data-accent="amber"],
+:root.theme-dark[data-accent="amber"] {
+  --accent: var(--accent-amber);
+  --accent-strong: var(--accent-amber-strong);
+  --accent-soft: var(--accent-amber-soft);
+  --accent-contrast: var(--accent-amber-contrast);
+}
+[data-theme="dark"][data-accent="blue"],
+:root.theme-dark[data-accent="blue"] {
+  --accent: var(--accent-blue);
+  --accent-strong: var(--accent-blue-strong);
+  --accent-soft: var(--accent-blue-soft);
+  --accent-contrast: var(--accent-blue-contrast);
+}
+[data-theme="dark"][data-accent="green"],
+:root.theme-dark[data-accent="green"] {
+  --accent: var(--accent-green);
+  --accent-strong: var(--accent-green-strong);
+  --accent-soft: var(--accent-green-soft);
+  --accent-contrast: var(--accent-green-contrast);
+}
+[data-theme="dark"][data-accent="violet"],
+:root.theme-dark[data-accent="violet"] {
+  --accent: var(--accent-violet);
+  --accent-strong: var(--accent-violet-strong);
+  --accent-soft: var(--accent-violet-soft);
+  --accent-contrast: var(--accent-violet-contrast);
+}
+[data-theme="dark"][data-accent="rose"],
+:root.theme-dark[data-accent="rose"] {
+  --accent: var(--accent-rose);
+  --accent-strong: var(--accent-rose-strong);
+  --accent-soft: var(--accent-rose-soft);
+  --accent-contrast: var(--accent-rose-contrast);
+}
+[data-theme="dark"][data-accent="graphite"],
+:root.theme-dark[data-accent="graphite"] {
+  --accent: var(--accent-graphite);
+  --accent-strong: var(--accent-graphite-strong);
+  --accent-soft: var(--accent-graphite-soft);
+  --accent-contrast: var(--accent-graphite-contrast);
+}
+
+/* -----------------------------------------------------------------------
+ * System theme — when `data-theme="system"` (the safe default), fall back
+ * to the OS-level preference. This block reapplies the dark palette when
+ * the OS asks for dark mode so users who never touched the picker still
+ * see the exact behaviour they had before tokens shipped.
+ * ----------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"],
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #101214;
+    --panel: #171a1d;
+    --panel-subtle: #202528;
+    --panel-raised: #131619;
+    --ink: #f3f5f2;
+    --ink-soft: #c2cac7;
+    --ink-faint: #8d9996;
+    --warm: #e0a15d;
+    --warm-soft: rgba(224, 161, 93, 0.18);
+    --border: #30383b;
+    --border-strong: #495458;
+    --danger: #ff8a82;
+    --success: #80d8ba;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4),
+      0 4px 12px rgba(0, 0, 0, 0.28);
+    --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.32);
+    --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
+    --shadow: var(--shadow-3);
+
+    --accent-teal: #73d2c3;
+    --accent-teal-strong: #96e4d8;
+    --accent-teal-soft: rgba(115, 210, 195, 0.16);
+    --accent-teal-contrast: #071513;
+
+    --accent-amber: #ff9f0a;
+    --accent-amber-strong: #ffb84d;
+    --accent-amber-soft: rgba(255, 159, 10, 0.16);
+    --accent-amber-contrast: #1f1300;
+
+    --accent-blue: #0a84ff;
+    --accent-blue-strong: #4ea6ff;
+    --accent-blue-soft: rgba(10, 132, 255, 0.18);
+    --accent-blue-contrast: #ffffff;
+
+    --accent-green: #30d158;
+    --accent-green-strong: #5ee07f;
+    --accent-green-soft: rgba(48, 209, 88, 0.16);
+    --accent-green-contrast: #052614;
+
+    --accent-violet: #bf5af2;
+    --accent-violet-strong: #d385f7;
+    --accent-violet-soft: rgba(191, 90, 242, 0.18);
+    --accent-violet-contrast: #ffffff;
+
+    --accent-rose: #ff375f;
+    --accent-rose-strong: #ff6a89;
+    --accent-rose-soft: rgba(255, 55, 95, 0.16);
+    --accent-rose-contrast: #ffffff;
+
+    --accent-graphite: #98989d;
+    --accent-graphite-strong: #b5b5ba;
+    --accent-graphite-soft: rgba(152, 152, 157, 0.20);
+    --accent-graphite-contrast: #0e0e10;
+
+    --accent: var(--accent-teal);
+    --accent-strong: var(--accent-teal-strong);
+    --accent-soft: var(--accent-teal-soft);
+    --accent-contrast: var(--accent-teal-contrast);
+  }
+}
+
+/* -----------------------------------------------------------------------
+ * Explicit light override — when the user picks `data-theme="light"` we
+ * must NOT let prefers-color-scheme flip them back to dark. The :root
+ * block above already defines light values; we only need to make sure
+ * `color-scheme` and accent are pinned correctly for the explicit case.
+ * ----------------------------------------------------------------------- */
+[data-theme="light"],
+:root.theme-light {
+  color-scheme: light;
+}

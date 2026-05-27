@@ -1,0 +1,83 @@
+.theme-accent-picker {
+  display: grid;
+  gap: 0.85rem;
+}
+
+/* Theme segmented control --------------------------------------------- */
+
+.theme-segmented {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--surface-soft, rgba(127, 127, 127, 0.08));
+  border-radius: 999px;
+  width: fit-content;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.18));
+}
+
+.theme-segmented__option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink, currentColor);
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.theme-segmented__option:hover {
+  background: var(--surface-strong, rgba(127, 127, 127, 0.12));
+}
+
+.theme-segmented__option:focus-visible {
+  outline: 2px solid var(--ring, var(--accent, #2f756d));
+  outline-offset: 2px;
+}
+
+.theme-segmented__option--selected {
+  background: var(--accent, #2f756d);
+  color: var(--accent-contrast, #ffffff);
+}
+
+.theme-segmented__option--selected:hover {
+  background: var(--accent-strong, var(--accent, #2f756d));
+}
+
+/* Accent swatch row --------------------------------------------------- */
+
+.accent-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.accent-swatch {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08) inset;
+  transition: transform 120ms ease, outline-color 120ms ease;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.08);
+}
+
+.accent-swatch:focus-visible {
+  outline-color: var(--ring, var(--accent, #2f756d));
+}
+
+.accent-swatch--selected {
+  outline: 2px solid var(--ring, var(--accent, #2f756d));
+}

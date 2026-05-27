@@ -6,8 +6,11 @@ import {
   cancelBillingSubscription,
   claimBillingPromoCode,
   createBillingCheckout,
+  getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  switchBillingPlan,
+  type BillingInvoice,
   type BillingSubscription,
   type BillingUsage,
 } from "@/lib/billing";
@@ -20,17 +23,40 @@ const COPY: Record<
   Locale,
   {
     heading: string;
+    backToDashboard: string;
+    nextChargeLabel: (amount: string, date: string) => string;
+    nextChargeTrial: (date: string) => string;
+    nextChargeFree: string;
+    cancelledThrough: (date: string) => string;
+    canceledHeading: string;
     planLabel: string;
     statusLabel: string;
     renewsLabel: string;
     endsLabel: string;
+    switchTo: string;
+    switchMonthly: string;
+    switchYearly: string;
+    switchApply: string;
+    switchApplying: string;
+    switchAccepted: string;
+    switchSameNotice: string;
+    paymentMethodHeading: string;
+    paymentMethodHint: string;
+    contactSupport: string;
+    invoicesHeading: string;
+    invoicesEmpty: string;
+    invoiceDate: string;
+    invoiceDescription: string;
+    invoiceAmount: string;
+    invoiceStatus: string;
+    invoiceReceipt: string;
+    invoiceDefaultDescription: string;
     wordsLabel: string;
     unlimited: string;
     resets: string;
     upgrade: string;
-    cancel: string;
+    cancelInline: string;
     cancelling: string;
-    cancelledNotice: (date: string) => string;
     confirmHeading: string;
     confirmBody: string;
     confirmYes: string;
@@ -50,25 +76,47 @@ const COPY: Record<
     promoExpired: string;
     promoExhausted: string;
     promoAlreadyRedeemed: string;
-    invoicesHeading: string;
-    invoicesEmpty: string;
-    backToDashboard: string;
     statuses: Record<string, string>;
+    invoiceStatuses: Record<string, string>;
   }
 > = {
   en: {
     heading: "Billing",
+    backToDashboard: "← Back to dashboard",
+    nextChargeLabel: (amount, date) => `Next charge ${amount} on ${date}`,
+    nextChargeTrial: (date) => `Free trial — first charge on ${date}`,
+    nextChargeFree: "You're on the Free plan — no charges scheduled.",
+    cancelledThrough: (date) => `Pro is active through ${date}, then ends.`,
+    canceledHeading: "Subscription canceled",
     planLabel: "Plan",
     statusLabel: "Status",
     renewsLabel: "Renews",
     endsLabel: "Ends",
+    switchTo: "Switch plan",
+    switchMonthly: "Monthly",
+    switchYearly: "Yearly",
+    switchApply: "Switch",
+    switchApplying: "Switching…",
+    switchAccepted:
+      "Got it. Our team will switch your plan on the next billing cycle.",
+    switchSameNotice: "You're already on this period.",
+    paymentMethodHeading: "Payment method",
+    paymentMethodHint: "To update your card or billing details, contact support.",
+    contactSupport: "Contact support",
+    invoicesHeading: "Invoices",
+    invoicesEmpty: "No invoices yet — your first charge will appear here.",
+    invoiceDate: "Date",
+    invoiceDescription: "Description",
+    invoiceAmount: "Amount",
+    invoiceStatus: "Status",
+    invoiceReceipt: "Receipt",
+    invoiceDefaultDescription: "Pro subscription",
     wordsLabel: "Words this week",
     unlimited: "No weekly word cap",
     resets: "Resets Sunday at 00:00 UTC",
     upgrade: "Upgrade to Pro",
-    cancel: "Cancel subscription",
+    cancelInline: "Cancel subscription",
     cancelling: "Cancelling…",
-    cancelledNotice: (d) => `Pro is active through ${d}.`,
     confirmHeading: "Cancel your Pro subscription?",
     confirmBody:
       "You'll keep Pro features until the end of the current billing period. You can resubscribe at any time.",
@@ -89,9 +137,6 @@ const COPY: Record<
     promoExpired: "Promo code expired.",
     promoExhausted: "Promo code has already been fully used.",
     promoAlreadyRedeemed: "You already redeemed this promo code.",
-    invoicesHeading: "Invoices",
-    invoicesEmpty: "We'll show invoices here as soon as Stripe is wired.",
-    backToDashboard: "← Back to dashboard",
     statuses: {
       active: "Active",
       trialing: "Trialing",
@@ -99,21 +144,57 @@ const COPY: Record<
       past_due: "Past due",
       incomplete: "Incomplete",
       unpaid: "Unpaid",
+      free: "Free",
+      expired: "Expired",
+    },
+    invoiceStatuses: {
+      paid: "Paid",
+      open: "Open",
+      void: "Void",
+      uncollectible: "Uncollectible",
+      draft: "Draft",
+      failed: "Failed",
     },
   },
   ru: {
     heading: "Подписка",
+    backToDashboard: "← Назад в кабинет",
+    nextChargeLabel: (amount, date) => `Следующее списание — ${amount}, ${date}`,
+    nextChargeTrial: (date) => `Пробный период — первое списание ${date}`,
+    nextChargeFree: "Сейчас активен бесплатный тариф — списаний не будет.",
+    cancelledThrough: (date) =>
+      `Pro активен до ${date}, затем подписка закончится.`,
+    canceledHeading: "Подписка отменена",
     planLabel: "Тариф",
     statusLabel: "Статус",
     renewsLabel: "Продление",
     endsLabel: "Заканчивается",
+    switchTo: "Сменить тариф",
+    switchMonthly: "Помесячно",
+    switchYearly: "На год",
+    switchApply: "Сменить",
+    switchApplying: "Меняем…",
+    switchAccepted:
+      "Принято. Мы переключим ваш тариф на следующий расчётный период.",
+    switchSameNotice: "Этот период уже активен.",
+    paymentMethodHeading: "Способ оплаты",
+    paymentMethodHint:
+      "Чтобы обновить карту или платёжные данные, напишите в поддержку.",
+    contactSupport: "Написать в поддержку",
+    invoicesHeading: "Счета",
+    invoicesEmpty: "Счетов пока нет — первое списание появится здесь.",
+    invoiceDate: "Дата",
+    invoiceDescription: "Описание",
+    invoiceAmount: "Сумма",
+    invoiceStatus: "Статус",
+    invoiceReceipt: "Чек",
+    invoiceDefaultDescription: "Подписка Pro",
     wordsLabel: "Слов на этой неделе",
     unlimited: "Без недельного лимита",
     resets: "Сбрасывается в воскресенье в 00:00 UTC",
     upgrade: "Оформить Pro",
-    cancel: "Отменить подписку",
+    cancelInline: "Отменить подписку",
     cancelling: "Отменяем…",
-    cancelledNotice: (d) => `Pro активен до ${d}.`,
     confirmHeading: "Отменить подписку Pro?",
     confirmBody:
       "Возможности Pro останутся до конца оплаченного периода. Вы сможете снова оформить подписку в любое время.",
@@ -125,18 +206,15 @@ const COPY: Record<
     providerTinkoff: "RUB через Т-Банк",
     providerStripe: "USD через Stripe",
     promoLabel: "Промокод",
-    promoPlaceholder: "Введи промокод",
+    promoPlaceholder: "Введите промокод",
     promoApply: "Применить",
     promoApplying: "Применяем...",
     promoApplied: "Промокод применён.",
     promoNotFound: "Промокод не найден.",
-    promoActiveSubscription: "У тебя уже есть активная подписка.",
+    promoActiveSubscription: "У вас уже есть активная подписка.",
     promoExpired: "Срок действия промокода истёк.",
     promoExhausted: "Промокод уже исчерпан.",
-    promoAlreadyRedeemed: "Ты уже использовал этот промокод.",
-    invoicesHeading: "Счета",
-    invoicesEmpty: "Здесь появятся счета, как только мы подключим выгрузку из Stripe.",
-    backToDashboard: "← Назад в кабинет",
+    promoAlreadyRedeemed: "Вы уже использовали этот промокод.",
     statuses: {
       active: "Активна",
       trialing: "Пробная",
@@ -144,6 +222,16 @@ const COPY: Record<
       past_due: "Просрочена",
       incomplete: "Не завершена",
       unpaid: "Не оплачена",
+      free: "Бесплатный",
+      expired: "Истекла",
+    },
+    invoiceStatuses: {
+      paid: "Оплачен",
+      open: "Открыт",
+      void: "Аннулирован",
+      uncollectible: "Не оплачен",
+      draft: "Черновик",
+      failed: "Ошибка",
     },
   },
 };
@@ -179,6 +267,172 @@ function localizeStatus(
   return copy.statuses[status] ?? status;
 }
 
+function localizeInvoiceStatus(
+  status: string,
+  copy: (typeof COPY)[Locale],
+): string {
+  return copy.invoiceStatuses[status] ?? status;
+}
+
+function formatAmount(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+  locale: Locale,
+): string {
+  if (amount == null) {
+    return "—";
+  }
+  const code = (currency ?? "USD").toUpperCase();
+  try {
+    return new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: code === "RUB" ? 0 : 2,
+    }).format(amount);
+  } catch {
+    return `${amount} ${code}`;
+  }
+}
+
+function formatDate(iso: string | null | undefined, locale: Locale): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(locale === "ru" ? "ru-RU" : "en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+// Inline-style constants kept at module scope so re-renders don't recreate them.
+const BANNER_STYLE: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.25rem",
+  padding: "1rem 1.15rem",
+  borderRadius: "12px",
+  background: "var(--accent-soft)",
+  border: "1px solid var(--border)",
+  marginBottom: "1.6rem",
+};
+
+const BANNER_TITLE_STYLE: React.CSSProperties = {
+  margin: 0,
+  fontSize: "1.05rem",
+  fontWeight: 600,
+  color: "var(--ink)",
+};
+
+const BANNER_BODY_STYLE: React.CSSProperties = {
+  margin: 0,
+  color: "var(--ink-soft)",
+  fontSize: "0.9rem",
+};
+
+const CARD_STYLE: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.85rem",
+  padding: "1.15rem 1.2rem",
+  borderRadius: "12px",
+  background: "var(--panel)",
+  border: "1px solid var(--border)",
+  marginBottom: "1.2rem",
+};
+
+const CARD_HEADER_STYLE: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  flexWrap: "wrap",
+  gap: "0.5rem",
+};
+
+const CARD_TITLE_STYLE: React.CSSProperties = {
+  margin: 0,
+  fontSize: "1rem",
+  fontWeight: 600,
+};
+
+const STATUS_PILL_STYLE: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0.18rem 0.6rem",
+  borderRadius: "999px",
+  background: "var(--panel-subtle)",
+  border: "1px solid var(--border)",
+  fontSize: "0.78rem",
+  fontWeight: 600,
+  color: "var(--ink-soft)",
+  letterSpacing: "0.02em",
+};
+
+const SWITCH_ROW_STYLE: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  gap: "0.5rem",
+};
+
+const SWITCH_SELECT_STYLE: React.CSSProperties = {
+  padding: "0.4rem 0.6rem",
+  borderRadius: "8px",
+  border: "1px solid var(--border)",
+  background: "var(--panel-subtle)",
+  color: "var(--ink)",
+  minHeight: "38px",
+};
+
+const SWITCH_BUTTON_STYLE: React.CSSProperties = {
+  padding: "0.45rem 0.95rem",
+  borderRadius: "8px",
+  border: "1px solid var(--border)",
+  background: "var(--panel-subtle)",
+  color: "var(--ink)",
+  cursor: "pointer",
+  minHeight: "38px",
+};
+
+const SUBTLE_LINK_STYLE: React.CSSProperties = {
+  background: "none",
+  border: 0,
+  padding: 0,
+  color: "var(--ink-soft)",
+  fontSize: "0.85rem",
+  cursor: "pointer",
+  textDecoration: "underline",
+};
+
+const CARD_INVOICES_HEADER_STYLE: React.CSSProperties = {
+  margin: "0 0 0.6rem",
+  fontSize: "1rem",
+  fontWeight: 600,
+};
+
+const INVOICE_TABLE_STYLE: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+};
+
+const INVOICE_TH_STYLE: React.CSSProperties = {
+  textAlign: "left",
+  fontSize: "0.78rem",
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  color: "var(--ink-soft)",
+  fontWeight: 600,
+  padding: "0.5rem 0.6rem",
+  borderBottom: "1px solid var(--border)",
+};
+
+const INVOICE_TD_STYLE: React.CSSProperties = {
+  padding: "0.55rem 0.6rem",
+  borderBottom: "1px solid var(--border)",
+  fontSize: "0.92rem",
+  verticalAlign: "top",
+};
+
 interface Props {
   locale: Locale;
   currency: "usd" | "rub";
@@ -188,6 +442,7 @@ export function BillingDashboard({ locale, currency }: Props) {
   const copy = COPY[locale];
   const [sub, setSub] = useState<BillingSubscription | null>(null);
   const [usage, setUsage] = useState<BillingUsage | null>(null);
+  const [invoices, setInvoices] = useState<BillingInvoice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
   const [promoCode, setPromoCode] = useState("");
@@ -195,34 +450,57 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [switchPeriod, setSwitchPeriod] = useState<"monthly" | "yearly">(
+    "monthly",
+  );
+  const [switchInFlight, setSwitchInFlight] = useState(false);
+  const [switchMessage, setSwitchMessage] = useState<string | null>(null);
   // RU UI users choose T-Bank or Stripe; other locales lock to Stripe.
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
   );
 
   useEffect(() => {
-    Promise.all([getBillingSubscription(), getBillingUsage()])
-      .then(([s, u]) => {
+    Promise.all([getBillingSubscription(), getBillingUsage(), getBillingInvoices()])
+      .then(([s, u, inv]) => {
         setSub(s);
         setUsage(u);
+        setInvoices(inv);
+        const initialPeriod: "monthly" | "yearly" =
+          s.billing_period === "year" ? "yearly" : "monthly";
+        setSwitchPeriod(initialPeriod);
       })
       .catch(() => setError(copy.loadError));
   }, [copy.loadError]);
 
-  if (error) return <p className="billing-error">{error}</p>;
-  if (!sub || !usage) return <p>{copy.loading}</p>;
+  if (error) {
+    return (
+      <section className="billing-dashboard">
+        <p style={{ marginBottom: "1rem" }}>
+          <Link href="/dashboard">{copy.backToDashboard}</Link>
+        </p>
+        <p className="billing-error">{error}</p>
+      </section>
+    );
+  }
+  if (!sub || !usage) {
+    return (
+      <section className="billing-dashboard">
+        <p>{copy.loading}</p>
+      </section>
+    );
+  }
 
   const isPro = sub.plan.code === "pro" && sub.status !== "canceled";
   const displayCap = isPro ? null : usage.words_cap ?? sub.plan.word_cap_per_week;
   const fraction = displayCap
     ? Math.min(1, usage.words_used / displayCap)
     : 0;
-  const periodEnd = sub.current_period_end
-    ? new Date(sub.current_period_end).toLocaleDateString(
-        locale === "ru" ? "ru-RU" : "en-US",
-        { year: "numeric", month: "long", day: "numeric" },
-      )
-    : null;
+  const periodEndLabel = formatDate(sub.current_period_end, locale);
+  const trialEndDate = formatDate(sub.trial_end, locale);
+
+  const currentPeriod: "monthly" | "yearly" =
+    sub.billing_period === "year" ? "yearly" : "monthly";
 
   async function handleUpgrade() {
     setInFlight(true);
@@ -274,27 +552,264 @@ export function BillingDashboard({ locale, currency }: Props) {
     }
   }
 
+  async function handleSwitchPlan() {
+    if (switchPeriod === currentPeriod) {
+      setSwitchMessage(copy.switchSameNotice);
+      return;
+    }
+    setSwitchInFlight(true);
+    setSwitchMessage(null);
+    try {
+      await switchBillingPlan(switchPeriod);
+      setSwitchMessage(copy.switchAccepted);
+    } catch {
+      setError(copy.loadError);
+    } finally {
+      setSwitchInFlight(false);
+    }
+  }
+
+  // ----- Next-charge banner -----
+  let bannerNode: React.ReactNode = null;
+  if (!isPro) {
+    bannerNode = (
+      <section aria-labelledby="billing-banner" style={BANNER_STYLE}>
+        <h2 id="billing-banner" style={BANNER_TITLE_STYLE}>
+          {copy.nextChargeFree}
+        </h2>
+      </section>
+    );
+  } else if (sub.cancel_at_period_end && periodEndLabel) {
+    bannerNode = (
+      <section aria-labelledby="billing-banner" style={BANNER_STYLE}>
+        <h2 id="billing-banner" style={BANNER_TITLE_STYLE}>
+          {copy.canceledHeading}
+        </h2>
+        <p style={BANNER_BODY_STYLE}>{copy.cancelledThrough(periodEndLabel)}</p>
+      </section>
+    );
+  } else if (sub.status === "trialing" && trialEndDate) {
+    bannerNode = (
+      <section aria-labelledby="billing-banner" style={BANNER_STYLE}>
+        <h2 id="billing-banner" style={BANNER_TITLE_STYLE}>
+          {copy.nextChargeTrial(trialEndDate)}
+        </h2>
+      </section>
+    );
+  } else if (sub.next_charge_at && sub.next_charge_amount != null) {
+    const amount = formatAmount(
+      sub.next_charge_amount,
+      sub.next_charge_currency,
+      locale,
+    );
+    const date = formatDate(sub.next_charge_at, locale) ?? "";
+    bannerNode = (
+      <section aria-labelledby="billing-banner" style={BANNER_STYLE}>
+        <h2 id="billing-banner" style={BANNER_TITLE_STYLE}>
+          {copy.nextChargeLabel(amount, date)}
+        </h2>
+      </section>
+    );
+  }
+
   return (
     <section className="billing-dashboard">
+      <p style={{ marginBottom: "1rem" }}>
+        <Link href="/dashboard">{copy.backToDashboard}</Link>
+      </p>
       <h1>{copy.heading}</h1>
 
-      <dl className="billing-meta">
-        <div>
-          <dt>{copy.planLabel}</dt>
-          <dd>{sub.plan.name}</dd>
-        </div>
-        <div>
-          <dt>{copy.statusLabel}</dt>
-          <dd>{localizeStatus(sub.status, copy)}</dd>
-        </div>
-        {periodEnd ? (
-          <div>
-            <dt>{sub.cancel_at_period_end ? copy.endsLabel : copy.renewsLabel}</dt>
-            <dd>{periodEnd}</dd>
-          </div>
-        ) : null}
-      </dl>
+      {bannerNode}
 
+      {/* ----- Plan card ----- */}
+      <article style={CARD_STYLE} aria-labelledby="billing-plan-card">
+        <header style={CARD_HEADER_STYLE}>
+          <div>
+            <h2 id="billing-plan-card" style={CARD_TITLE_STYLE}>
+              {sub.plan.name}
+            </h2>
+            <p style={{ margin: "0.15rem 0 0", color: "var(--ink-soft)", fontSize: "0.85rem" }}>
+              {copy.planLabel}
+            </p>
+          </div>
+          <span style={STATUS_PILL_STYLE}>{localizeStatus(sub.status, copy)}</span>
+        </header>
+
+        {periodEndLabel ? (
+          <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+            {sub.cancel_at_period_end ? copy.endsLabel : copy.renewsLabel}: {periodEndLabel}
+          </p>
+        ) : null}
+
+        {isPro && !sub.cancel_at_period_end ? (
+          <>
+            <div style={SWITCH_ROW_STYLE}>
+              <label htmlFor="billing-switch-period" style={{ color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+                {copy.switchTo}:
+              </label>
+              <select
+                id="billing-switch-period"
+                value={switchPeriod}
+                onChange={(event) =>
+                  setSwitchPeriod(event.target.value as "monthly" | "yearly")
+                }
+                style={SWITCH_SELECT_STYLE}
+                disabled={switchInFlight}
+              >
+                <option value="monthly">{copy.switchMonthly}</option>
+                <option value="yearly">{copy.switchYearly}</option>
+              </select>
+              <button
+                type="button"
+                onClick={handleSwitchPlan}
+                disabled={switchInFlight || switchPeriod === currentPeriod}
+                style={SWITCH_BUTTON_STYLE}
+              >
+                {switchInFlight ? copy.switchApplying : copy.switchApply}
+              </button>
+            </div>
+            {switchMessage ? (
+              <p className="billing-notice" style={{ marginTop: 0 }}>
+                {switchMessage}
+              </p>
+            ) : null}
+            {confirmingCancel ? (
+              <div
+                role="alertdialog"
+                aria-labelledby="billing-cancel-heading"
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  paddingTop: "0.9rem",
+                  marginTop: "0.4rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.6rem",
+                }}
+              >
+                <h3 id="billing-cancel-heading" style={{ margin: 0, fontSize: "1rem" }}>
+                  {copy.confirmHeading}
+                </h3>
+                <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+                  {copy.confirmBody}
+                </p>
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="billing-cancel"
+                    onClick={handleCancel}
+                    disabled={inFlight}
+                  >
+                    {inFlight ? copy.cancelling : copy.confirmYes}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setConfirmingCancel(false)}
+                    disabled={inFlight}
+                  >
+                    {copy.confirmNo}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingCancel(true)}
+                disabled={inFlight}
+                style={SUBTLE_LINK_STYLE}
+              >
+                {copy.cancelInline}
+              </button>
+            )}
+          </>
+        ) : null}
+
+        {!isPro ? (
+          <>
+            {locale === "ru" && currency === "rub" ? (
+              <fieldset className="billing-provider" aria-label={copy.payWith}>
+                <legend>{copy.payWith}</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="billing-provider"
+                    value="tinkoff"
+                    checked={provider === "tinkoff"}
+                    onChange={() => setProvider("tinkoff")}
+                  />
+                  <span>{copy.providerTinkoff}</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="billing-provider"
+                    value="stripe"
+                    checked={provider === "stripe"}
+                    onChange={() => setProvider("stripe")}
+                  />
+                  <span>{copy.providerStripe}</span>
+                </label>
+              </fieldset>
+            ) : null}
+            <button
+              className="billing-upgrade"
+              onClick={handleUpgrade}
+              disabled={inFlight || promoInFlight}
+            >
+              {copy.upgrade}
+            </button>
+            <form
+              className="billing-promo"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handlePromoApply();
+              }}
+            >
+              <label>
+                <span>{copy.promoLabel}</span>
+                <input
+                  value={promoCode}
+                  onChange={(event) => setPromoCode(event.target.value)}
+                  placeholder={copy.promoPlaceholder}
+                  disabled={inFlight || promoInFlight}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={inFlight || promoInFlight || promoCode.trim().length === 0}
+              >
+                {promoInFlight ? copy.promoApplying : copy.promoApply}
+              </button>
+              {promoMessage ? <p className="billing-notice">{promoMessage}</p> : null}
+              {promoError ? <p className="billing-error">{promoError}</p> : null}
+            </form>
+          </>
+        ) : null}
+      </article>
+
+      {/* ----- Payment method card ----- */}
+      {isPro ? (
+        <article style={CARD_STYLE} aria-labelledby="billing-payment-card">
+          <header style={CARD_HEADER_STYLE}>
+            <h2 id="billing-payment-card" style={CARD_TITLE_STYLE}>
+              {copy.paymentMethodHeading}
+            </h2>
+          </header>
+          <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+            {copy.paymentMethodHint}
+          </p>
+          <p style={{ margin: 0 }}>
+            <a
+              href="mailto:hi@wai.computer?subject=Billing%20update"
+              style={{ color: "var(--accent)", textDecoration: "underline" }}
+            >
+              {copy.contactSupport}
+            </a>
+          </p>
+        </article>
+      ) : null}
+
+      {/* ----- Usage block (free tier only) ----- */}
       <div className="billing-usage">
         <h2>{copy.wordsLabel}</h2>
         {displayCap === null ? (
@@ -311,137 +826,66 @@ export function BillingDashboard({ locale, currency }: Props) {
         )}
       </div>
 
-      {sub.cancel_at_period_end && periodEnd ? (
-        <p className="billing-notice">{copy.cancelledNotice(periodEnd)}</p>
-      ) : isPro ? (
-        confirmingCancel ? (
-          <div
-            role="alertdialog"
-            aria-labelledby="billing-cancel-heading"
-            style={{
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              padding: "1rem 1.1rem",
-              background: "var(--panel-subtle)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.6rem",
-            }}
-          >
-            <h3 id="billing-cancel-heading" style={{ margin: 0, fontSize: "1.05rem" }}>
-              {copy.confirmHeading}
-            </h3>
-            <p style={{ margin: 0, color: "var(--ink-soft)" }}>{copy.confirmBody}</p>
-            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="billing-cancel"
-                onClick={handleCancel}
-                disabled={inFlight}
-              >
-                {inFlight ? copy.cancelling : copy.confirmYes}
-              </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setConfirmingCancel(false)}
-                disabled={inFlight}
-              >
-                {copy.confirmNo}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="billing-cancel"
-            onClick={() => setConfirmingCancel(true)}
-            disabled={inFlight}
-          >
-            {copy.cancel}
-          </button>
-        )
-      ) : (
-        <>
-          {locale === "ru" && currency === "rub" ? (
-            <fieldset className="billing-provider" aria-label={copy.payWith}>
-              <legend>{copy.payWith}</legend>
-              <label>
-                <input
-                  type="radio"
-                  name="billing-provider"
-                  value="tinkoff"
-                  checked={provider === "tinkoff"}
-                  onChange={() => setProvider("tinkoff")}
-                />
-                <span>{copy.providerTinkoff}</span>
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="billing-provider"
-                  value="stripe"
-                  checked={provider === "stripe"}
-                  onChange={() => setProvider("stripe")}
-                />
-                <span>{copy.providerStripe}</span>
-              </label>
-            </fieldset>
-          ) : null}
-          <button
-            className="billing-upgrade"
-            onClick={handleUpgrade}
-            disabled={inFlight || promoInFlight}
-          >
-            {copy.upgrade}
-          </button>
-          <form
-            className="billing-promo"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handlePromoApply();
-            }}
-          >
-            <label>
-              <span>{copy.promoLabel}</span>
-              <input
-                value={promoCode}
-                onChange={(event) => setPromoCode(event.target.value)}
-                placeholder={copy.promoPlaceholder}
-                disabled={inFlight || promoInFlight}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={inFlight || promoInFlight || promoCode.trim().length === 0}
-            >
-              {promoInFlight ? copy.promoApplying : copy.promoApply}
-            </button>
-            {promoMessage ? <p className="billing-notice">{promoMessage}</p> : null}
-            {promoError ? <p className="billing-error">{promoError}</p> : null}
-          </form>
-        </>
-      )}
-
-      <section
-        aria-labelledby="billing-invoices-heading"
-        style={{
-          marginTop: "1.4rem",
-          paddingTop: "1.4rem",
-          borderTop: "1px solid var(--border)",
-        }}
-      >
-        <h2 id="billing-invoices-heading" style={{ margin: 0, fontSize: "1rem" }}>
+      {/* ----- Invoices ----- */}
+      <article style={CARD_STYLE} aria-labelledby="billing-invoices-heading">
+        <h2 id="billing-invoices-heading" style={CARD_INVOICES_HEADER_STYLE}>
           {copy.invoicesHeading}
         </h2>
-        <p className="billing-caption" style={{ marginTop: "0.4rem" }}>
-          {copy.invoicesEmpty}
-        </p>
-      </section>
-
-      <p style={{ marginTop: "1.4rem" }}>
-        <Link href="/dashboard">{copy.backToDashboard}</Link>
-      </p>
+        {invoices.length === 0 ? (
+          <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+            {copy.invoicesEmpty}
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={INVOICE_TABLE_STYLE}>
+              <thead>
+                <tr>
+                  <th style={INVOICE_TH_STYLE}>{copy.invoiceDate}</th>
+                  <th style={INVOICE_TH_STYLE}>{copy.invoiceDescription}</th>
+                  <th style={INVOICE_TH_STYLE}>{copy.invoiceAmount}</th>
+                  <th style={INVOICE_TH_STYLE}>{copy.invoiceStatus}</th>
+                  <th style={INVOICE_TH_STYLE}>{copy.invoiceReceipt}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => (
+                  <tr key={inv.id}>
+                    <td style={INVOICE_TD_STYLE}>
+                      {formatDate(inv.paid_at ?? inv.created_at, locale) ?? "—"}
+                    </td>
+                    <td style={INVOICE_TD_STYLE}>
+                      {inv.description ?? copy.invoiceDefaultDescription}
+                    </td>
+                    <td style={INVOICE_TD_STYLE}>
+                      {formatAmount(inv.amount, inv.currency, locale)}
+                    </td>
+                    <td style={INVOICE_TD_STYLE}>
+                      {localizeInvoiceStatus(inv.status, copy)}
+                    </td>
+                    <td style={INVOICE_TD_STYLE}>
+                      {inv.receipt_url ? (
+                        <a
+                          href={inv.receipt_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "var(--accent)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          {copy.invoiceReceipt}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
     </section>
   );
 }
