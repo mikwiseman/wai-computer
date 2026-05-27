@@ -63,6 +63,7 @@ targets:
       - path: WaiComputer/Features/Dictation/DictationCopy.swift
       - path: WaiComputer/Features/Dictation/DictationLanguageStore.swift
       - path: WaiComputer/Features/Dictation/DictationOverlayPanel.swift
+      - path: WaiComputer/Features/Dictation/DictationStartupAudioBuffer.swift
       - path: WaiComputer/Features/Dictation/GlobalHotkeyManager.swift
       - path: WaiComputer/Features/Settings/DictationSettingsCopy.swift
       - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
