@@ -887,3 +887,44 @@ Caveats:
 ## Agent R — done
 
 Mobile + accessibility audit complete at iPhone 14 viewport (390x844). 21 screens captured. See `audit/sprint4-mobile-a11y.md`. 4 P0 mobile, 5 P0 a11y, 9 P1 issues. Top three: (a) light-mode `--ink-faint #9199a2` fails WCAG AA at 2.88:1 on white, (b) `<html lang="en">` served on Russian `/ru` and Russian `/share/*` pages, (c) dashboard sidebar (577px) stacks above main content on mobile with no drawer.
+
+
+## Agent S — done
+
+Wired real Stripe into the billing console: Customer Portal, live invoice list with hosted PDFs, and verified the existing webhook keeps our DB in sync.
+
+Backend changes:
+- `backend/app/billing/router.py` — added `POST /api/billing/portal` (lazy-creates a Stripe Customer when needed, opens a Billing Portal session with `return_url=https://wai.computer/billing`). Extended `GET /api/billing/invoices` to merge Stripe's `Invoice.list` with the local mirror, preferring Stripe rows by id. New `PortalResponse` and expanded `InvoiceResponse` (`hosted_invoice_url`, `invoice_pdf`, `period_start`, `period_end`). Sentry breadcrumbs on Stripe errors; 502 on generic Stripe failure, 503 on `ProviderUnavailableError`.
+- `backend/app/billing/providers/stripe_provider.py` — added `ensure_customer()`, `create_portal_session()`, `list_customer_invoices()` on top of the existing `StripeClient` wiring.
+- `backend/app/models/user.py` + `backend/app/db/migrations/versions/20260527_150000_add_stripe_customer_id_to_users.py` — added `User.stripe_customer_id` column with a back-fill from `billing_subscriptions` so existing paying users skip the lazy-create path.
+- `backend/app/billing/service.py` — mirrors `customer` id onto `User.stripe_customer_id` inside the `checkout.session.completed` handler so the portal works the first time after upgrade.
+- `backend/app/billing/webhooks.py` — left unchanged: `/api/webhooks/stripe` already verifies the `Stripe-Signature` header (returns 400 on tamper) and routes `customer.subscription.{created,updated,deleted}`, `invoice.paid`, `invoice.payment_failed` to `apply_stripe_event`. Confirmed by new test `test_stripe_webhook_returns_400_for_invalid_signature`.
+
+Frontend changes:
+- `web/src/lib/billing.ts` — added `openBillingPortal()` and `BillingPortalSession` plus optional `hosted_invoice_url` / `invoice_pdf` / `period_start` / `period_end` fields on `BillingInvoice`.
+- `web/src/components/BillingDashboard.tsx` — replaced the email-support "Update card" link with a real "Manage subscription" button that calls `openBillingPortal()` and assigns `window.location.href`. Fallback to a "Contact support" mailto if the portal call errors. Invoice table now prefers `hosted_invoice_url` over the legacy `receipt_url` for the Receipt link. EN + RU copy updated.
+
+Tests (all green):
+- `backend/tests/test_billing_plans_api.py` — +5 tests: portal happy path with existing customer, lazy customer create + persist on User, 502 on Stripe SDK failure, 503 on `ProviderUnavailableError`, invoice merge (Stripe wins on id collision), local-mirror fallback on Stripe error, and `/api/webhooks/stripe` returns 400 on invalid signature.
+- `backend/tests/test_billing_stripe.py` — untouched; existing 23 tests still pass.
+- `web/src/components/BillingDashboard.test.tsx` — +3 tests: portal redirects via `window.location.href` proxy, fallback error message + Contact support link on portal failure, Receipt link prefers `hosted_invoice_url`.
+- `web/src/lib/billing.test.ts` — +1 test for `openBillingPortal`.
+
+Verification:
+- `cd backend && python -m ruff check .` → clean.
+- `cd backend && pytest tests/test_billing_plans_api.py tests/test_billing_stripe.py tests/test_billing_checkout_end_to_end.py --no-cov` → 61 / 61 pass in ~18s.
+- `cd web && pnpm lint` → 0 errors (only the 2 pre-existing warnings from other agents).
+- `cd web && pnpm build` → exit 0.
+- `cd web && pnpm test:unit -- --run` → 366 / 366 pass.
+
+Manual deploy steps:
+- On the prod VPS, the Alembic head was bumped — `scripts/deploy-server.sh` runs `alembic upgrade head` so the new migration `20260527_150000_add_stripe_customer_id_to_users` is applied automatically.
+- **Stripe Dashboard → Settings → Billing → Customer Portal must be activated and saved at least once** for the portal endpoint to work. The Stripe SDK call will 400 if the portal isn't configured. Set the portal logo, business info, allowed updates (cancel, switch plans, update card), and click Save. After that, `POST /api/billing/portal` returns a real `https://billing.stripe.com/p/session_…` URL.
+- The webhook handler is unchanged; the prod webhook endpoint configured in Stripe (`https://wai.computer/api/webhooks/stripe`) should already be subscribed to `customer.subscription.{created,updated,deleted}`, `invoice.paid`, `invoice.payment_failed`. If not, add them in Stripe Dashboard → Developers → Webhooks.
+- No env var changes — `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` already live on `/etc/waicomputer/backend.env`.
+
+Caveats:
+- Stripe's `list_async` for invoices is paginated; we ask for `limit=25` and don't auto-page. For users with >25 invoices the older ones drop off until they cancel/resubscribe. Good enough for v1 since Pro is monthly/yearly and 25 invoices ≈ 2+ years.
+- The merge dedupes by Stripe invoice id, so older T-Bank mirror rows (which don't have a Stripe id) coexist with Stripe rows untouched.
+- `ensure_customer` always creates — no Stripe-side lookup by email — because the spec said "auto-create". Persisting the id on `User.stripe_customer_id` is the dedupe guard. If a user races two portal clicks before the first persists, we'd create two Stripe customers; an acceptable trade-off given the volume (one click per session) and the back-fill that protects existing customers.
+- `getBillingInvoices()` falls back silently to the local mirror when Stripe is unreachable rather than failing — chosen because invoices are read-only and we'd rather show stale data than a broken page.

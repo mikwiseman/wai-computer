@@ -223,6 +223,11 @@ async def _handle_checkout_completed(db: AsyncSession, obj: dict) -> None:
     if promo_code_id is not None and sub.promo_code_id is None:
         sub.promo_code_id = promo_code_id
 
+    # Mirror the Stripe Customer id onto the User so the Customer Portal
+    # opens without a lazy `customers.create_async` round-trip next time.
+    if customer_id and user.stripe_customer_id != customer_id:
+        user.stripe_customer_id = customer_id
+
     user.current_subscription_id = sub.id
     await _record_promo_redemption(
         db,
