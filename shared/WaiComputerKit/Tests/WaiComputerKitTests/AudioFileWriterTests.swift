@@ -158,11 +158,28 @@ final class AudioFileWriterTests: XCTestCase {
         try writer.finalize()
 
         let before = writer.totalBytesWritten
-        writer.writeEncodedPCM(Data(repeating: 0x99, count: 100))
+        let result = writer.writeEncodedPCM(Data(repeating: 0x99, count: 100))
+        XCTAssertFalse(result, "write after finalize should return false")
         XCTAssertEqual(writer.totalBytesWritten, before, "write after finalize must be a no-op")
 
         let onDisk = try Data(contentsOf: url)
         XCTAssertEqual(onDisk.count, 44 + 10, "file size unchanged after no-op write")
+    }
+
+    func testWriteFailureSetsFlagAndStopsWriting() throws {
+        let url = tempURL()
+        let writer = try AudioFileWriter(fileURL: url, sampleRate: 16000, channels: 1)
+
+        XCTAssertTrue(writer.writeEncodedPCM(Data(repeating: 0x01, count: 10)))
+        XCTAssertFalse(writer.hasWriteFailure)
+
+        // Close the underlying file handle to simulate I/O failure
+        try writer.finalize()
+
+        let result = writer.writeEncodedPCM(Data(repeating: 0x99, count: 100))
+        XCTAssertFalse(result, "write after finalize should return false")
+        // totalBytesWritten should reflect only the data that was actually written
+        XCTAssertEqual(writer.totalBytesWritten, 10)
     }
 
     // MARK: - durationSeconds

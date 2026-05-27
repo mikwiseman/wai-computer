@@ -466,6 +466,9 @@ async def process_staged_recording_upload(
     try:
         await reset_recording_processing_state(recording_id, db)
 
+        # NOTE: reads the full staged file into memory for the multipart
+        # upload. Bounded by the 200 MB upload cap — safe for a single-task
+        # Celery worker with ≥1 GB RAM.
         with staged_path.open("rb") as staged_file:
             _recording_lifecycle_breadcrumb(
                 "Recording file transcription started",

@@ -10,6 +10,10 @@ public final class AudioFileWriter: @unchecked Sendable {
     public let channels: Int
     public private(set) var totalBytesWritten: Int64 = 0
 
+    /// `true` after a write failure (disk full, I/O error). Once set, all
+    /// subsequent writes are skipped — the caller should finalize and stop.
+    public private(set) var hasWriteFailure = false
+
     public var durationSeconds: Double {
         let bytesPerSample = 2 * channels
         guard bytesPerSample > 0, sampleRate > 0 else { return 0 }
@@ -33,13 +37,32 @@ public final class AudioFileWriter: @unchecked Sendable {
     }
 
     /// Appends int16 PCM data to the WAV file. Thread-safe.
-    public func writeEncodedPCM(_ data: Data) {
+    ///
+    /// Returns `false` when the write failed (disk full, I/O error) or a
+    /// previous write already failed. The caller should stop recording —
+    /// subsequent calls are no-ops and the WAV header will be patched with
+    /// whatever data made it to disk before the failure.
+    @discardableResult
+    public func writeEncodedPCM(_ data: Data) -> Bool {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
 
-        guard let handle = fileHandle else { return }
+        guard !hasWriteFailure, let handle = fileHandle else { return false }
+
+        let offsetBefore = handle.offsetInFile
         handle.write(data)
-        totalBytesWritten += Int64(data.count)
+        let offsetAfter = handle.offsetInFile
+        let bytesWritten = offsetAfter - offsetBefore
+
+        if bytesWritten == UInt64(data.count) {
+            totalBytesWritten += Int64(data.count)
+            return true
+        }
+
+        // Partial or failed write — mark as failed to prevent further writes.
+        hasWriteFailure = true
+        totalBytesWritten += Int64(bytesWritten)
+        return false
     }
 
     /// Patches the RIFF and data subchunk sizes in the WAV header, then closes the file.
@@ -70,7 +93,7 @@ public final class AudioFileWriter: @unchecked Sendable {
         SentryHelper.addBreadcrumb(
             category: "audio",
             message: "audio file finalized",
-            data: ["duration": durationSeconds, "bytes": totalBytesWritten]
+            data: ["duration": durationSeconds, "bytes": totalBytesWritten, "hadWriteFailure": hasWriteFailure]
         )
     }
 
