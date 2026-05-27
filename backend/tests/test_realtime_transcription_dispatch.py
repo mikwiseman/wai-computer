@@ -24,10 +24,10 @@ def _patch_openai_mint(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
 def _make_user(
     *,
-    dictation_provider="elevenlabs",
-    dictation_model="scribe_v2_realtime",
-    recording_provider="elevenlabs",
-    recording_model="scribe_v2_realtime",
+    dictation_provider="removed-live-provider",
+    dictation_model="removed-live-model",
+    recording_provider="removed-live-provider",
+    recording_model="removed-live-model",
 ):
     return SimpleNamespace(
         id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -42,9 +42,6 @@ def _make_user(
 @pytest.mark.parametrize(
     ("provider", "model"),
     [
-        ("elevenlabs", "scribe_v2_realtime"),
-        ("deepgram", "flux-general-multi"),
-        ("soniox", "stt-rt-v4"),
         ("legacy-live", "legacy-model"),
         ("openai", OPENAI_REALTIME_MODEL),
     ],
@@ -76,9 +73,6 @@ async def test_dispatch_dictation_ignores_saved_model_and_uses_openai(
 @pytest.mark.parametrize(
     ("provider", "model"),
     [
-        ("elevenlabs", "scribe_v2_realtime"),
-        ("deepgram", "nova-3"),
-        ("soniox", "stt-rt-v4"),
         ("legacy-live", "legacy-model"),
         ("openai", OPENAI_REALTIME_MODEL),
     ],

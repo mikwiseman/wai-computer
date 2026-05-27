@@ -61,6 +61,7 @@ targets:
       - path: WaiComputer/App/MacTestingSupport.swift
       - path: WaiComputer/App/Onboarding/OnboardingL10n.swift
       - path: WaiComputer/Features/Dictation/DictationCopy.swift
+      - path: WaiComputer/Features/Dictation/DictationLanguageStore.swift
       - path: WaiComputer/Features/Dictation/DictationOverlayPanel.swift
       - path: WaiComputer/Features/Dictation/GlobalHotkeyManager.swift
       - path: WaiComputer/Features/Settings/DictationSettingsCopy.swift

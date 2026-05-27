@@ -44,8 +44,8 @@ async def test_create_realtime_transcription_session_ignores_user_recording_choi
         "User",
         (),
         {
-            "recording_live_stt_provider": "soniox",
-            "recording_live_stt_model": "stt-rt-v4",
+            "recording_live_stt_provider": "removed-live-provider",
+            "recording_live_stt_model": "removed-live-model",
         },
     )()
 
@@ -112,13 +112,13 @@ async def test_create_dictation_session_normalizes_language_and_channels():
 
 
 @pytest.mark.asyncio
-async def test_create_recording_session_ignores_elevenlabs_user_choice():
+async def test_create_recording_session_ignores_removed_user_choice():
     user = type(
         "User",
         (),
         {
-            "recording_live_stt_provider": "elevenlabs",
-            "recording_live_stt_model": "scribe_v2_realtime",
+            "recording_live_stt_provider": "removed-live-provider",
+            "recording_live_stt_model": "removed-live-model",
         },
     )()
 
@@ -154,9 +154,12 @@ async def test_build_openai_realtime_session_requires_api_key():
 async def test_create_realtime_transcription_session_rejects_non_openai_runtime():
     with patch(
         "app.core.realtime_transcription.validate_option",
-        return_value=("soniox", "stt-rt-v4"),
+        return_value=("removed-provider", "removed-model"),
     ):
-        with pytest.raises(ValueError, match="Unsupported recording_live_stt_provider: soniox"):
+        with pytest.raises(
+            ValueError,
+            match="Unsupported recording_live_stt_provider: removed-provider",
+        ):
             await create_realtime_transcription_session(language="multi")
 
 

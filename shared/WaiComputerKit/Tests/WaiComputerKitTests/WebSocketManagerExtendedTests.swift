@@ -53,7 +53,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
 
-        for provider in ["legacy-provider", "deepgram", "soniox", "elevenlabs"] {
+        for provider in ["legacy-provider", "removed-live-provider"] {
             do {
                 _ = try await manager.testingRequestForRealtimeSession(config(
                     provider: provider,
@@ -356,7 +356,7 @@ final class WebSocketManagerExtendedTests: XCTestCase {
     }
 
     func testProviderBackedRequestRejectsLegacyLiveProviders() async throws {
-        for provider in ["legacy-provider", "deepgram", "soniox", "elevenlabs"] {
+        for provider in ["legacy-provider", "removed-live-provider"] {
             let session = ProviderBackedRealtimeSession(config: config(
                 provider: provider,
                 token: "legacy-token",

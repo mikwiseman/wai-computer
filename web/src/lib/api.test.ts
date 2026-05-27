@@ -317,10 +317,10 @@ describe("api client wrappers", () => {
     await api.submitDictationBenchmarkVote({
       battle_id: "battle-1",
       selected_candidate_id: "candidate-a",
-      selected_provider: "soniox",
-      selected_model: "stt-async-v4",
+      selected_provider: "elevenlabs",
+      selected_model: "scribe_v2",
       language: "ru",
-      candidate_count: 3,
+      candidate_count: 1,
     });
 
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/benchmarks/dictation/battle/vote", {
@@ -328,10 +328,10 @@ describe("api client wrappers", () => {
       body: JSON.stringify({
         battle_id: "battle-1",
         selected_candidate_id: "candidate-a",
-        selected_provider: "soniox",
-        selected_model: "stt-async-v4",
+        selected_provider: "elevenlabs",
+        selected_model: "scribe_v2",
         language: "ru",
-        candidate_count: 3,
+        candidate_count: 1,
       }),
     });
   });

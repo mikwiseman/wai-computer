@@ -63,8 +63,8 @@ public enum TranscriptionModelDescriptionCopy {
         CopyKey(context: .recordingLiveSTT, provider: "openai", model: "gpt-realtime-whisper"):
             "По умолчанию для живой записи. Realtime-модель OpenAI Whisper для потокового распознавания речи.",
 
-        CopyKey(context: .fileSTT, provider: "openai", model: "gpt-4o-transcribe-diarize"):
-            "По умолчанию для полной расшифровки записи. Модель OpenAI для файловой транскрибации с разделением по говорящим.",
+        CopyKey(context: .fileSTT, provider: "elevenlabs", model: "scribe_v2"):
+            "По умолчанию для полной расшифровки записи. ElevenLabs Scribe v2 с разделением по говорящим.",
 
         CopyKey(context: .dictationPostFilter, provider: "openai", model: "gpt-5.5"):
             "Модель очистки продиктованного текста по умолчанию.",

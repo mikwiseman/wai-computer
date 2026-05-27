@@ -102,6 +102,8 @@ final class DictationManager: ObservableObject {
             UserDefaults.standard.set(isFeatureEnabled, forKey: Self.enabledDefaultsKey)
             applyHotkeyAvailability()
             if !isFeatureEnabled {
+                sessionConfigPrefetchRefreshTask?.cancel()
+                sessionConfigPrefetchRefreshTask = nil
                 let vault = sessionConfigVault
                 Task { await vault?.clear() }
                 Task { await cancelDictation() }
@@ -159,6 +161,8 @@ final class DictationManager: ObservableObject {
     private var sessionEventTask: Task<Void, Never>?
 
     private var timerTask: Task<Void, Never>?
+    private var sessionConfigPrefetchRefreshTask: Task<Void, Never>?
+    private let sessionConfigPrefetchRefreshInterval: Duration = .seconds(20)
 
     // Transcript accumulation (live updates for overlay).
     private var committedTexts: [String] = []
@@ -225,6 +229,8 @@ final class DictationManager: ObservableObject {
         apiClient = nil
         let vault = sessionConfigVault
         sessionConfigVault = nil
+        sessionConfigPrefetchRefreshTask?.cancel()
+        sessionConfigPrefetchRefreshTask = nil
         Task { await vault?.clear() }
         cachedSettings = nil
         cachedSettingsLoadedAt = nil
@@ -433,6 +439,8 @@ final class DictationManager: ObservableObject {
         deferredStop = false
         audioSendCounter.reset()
         setState(.connecting)
+        sessionConfigPrefetchRefreshTask?.cancel()
+        sessionConfigPrefetchRefreshTask = nil
         session.event(.providerConnecting, data: ["isHandsFree": isHandsFree])
 
         // Show overlay
@@ -488,10 +496,11 @@ final class DictationManager: ObservableObject {
 
             let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
             providerCapture = capture
-            try await capture.startRecording()
 
             let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
-            try await provider.open()
+            async let captureStarted: Void = capture.startRecording()
+            async let providerOpened: Void = provider.open()
+            _ = try await (captureStarted, providerOpened)
             session.event(.providerOpened)
 
             let audioCounter = audioSendCounter
@@ -779,6 +788,7 @@ final class DictationManager: ObservableObject {
         guard isConfigured, isFeatureEnabled, state == .idle, let sessionConfigVault else { return }
         let key = dictationSessionConfigKey()
         Task { await sessionConfigVault.prefetch(for: key) }
+        scheduleDictationSessionConfigRefresh(for: key)
         SentryHelper.addBreadcrumb(
             category: "dictation.session",
             message: "realtime config prefetch scheduled",
@@ -787,6 +797,50 @@ final class DictationManager: ObservableObject {
                 "language": key.language,
             ]
         )
+    }
+
+    private func scheduleDictationSessionConfigRefresh(
+        for key: RealtimeTranscriptionSessionConfigVault.Key
+    ) {
+        sessionConfigPrefetchRefreshTask?.cancel()
+        let interval = sessionConfigPrefetchRefreshInterval
+        sessionConfigPrefetchRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
+
+                let shouldContinue = await MainActor.run { () -> Bool in
+                    guard let self,
+                          self.isConfigured,
+                          self.isFeatureEnabled,
+                          self.state == .idle,
+                          let sessionConfigVault = self.sessionConfigVault else {
+                        return false
+                    }
+
+                    let currentKey = self.dictationSessionConfigKey()
+                    guard currentKey == key else {
+                        self.prefetchDictationSessionConfig(reason: "language_changed")
+                        return false
+                    }
+
+                    Task { await sessionConfigVault.prefetch(for: currentKey) }
+                    SentryHelper.addBreadcrumb(
+                        category: "dictation.session",
+                        message: "realtime config prefetch refreshed",
+                        data: ["language": currentKey.language]
+                    )
+                    return true
+                }
+
+                if !shouldContinue {
+                    return
+                }
+            }
+        }
     }
 
     private func refreshSettingsAndPrefetch(apiClient: APIClient, reason: String) {
@@ -886,6 +940,8 @@ final class DictationManager: ObservableObject {
         sessionEventTask = nil
         timerTask?.cancel()
         timerTask = nil
+        sessionConfigPrefetchRefreshTask?.cancel()
+        sessionConfigPrefetchRefreshTask = nil
 
         let activeProviderSession = providerSession
         providerSession = nil

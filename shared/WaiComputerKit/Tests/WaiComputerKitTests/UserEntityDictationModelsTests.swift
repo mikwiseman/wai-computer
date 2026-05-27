@@ -149,8 +149,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "dictation_live_stt_model":"gpt-realtime-whisper",
           "recording_live_stt_provider":"openai",
           "recording_live_stt_model":"gpt-realtime-whisper",
-          "file_stt_provider":"openai",
-          "file_stt_model":"gpt-4o-transcribe-diarize",
+          "file_stt_provider":"elevenlabs",
+          "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":true,
           "dictation_post_filter_provider":"openai",
           "dictation_post_filter_model":"gpt-5.5"
@@ -173,7 +173,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "summary_instructions":null,
           "dictation_live_stt_provider":"openai", "dictation_live_stt_model":"gpt-realtime-whisper",
           "recording_live_stt_provider":"openai", "recording_live_stt_model":"gpt-realtime-whisper",
-          "file_stt_provider":"openai", "file_stt_model":"gpt-4o-transcribe-diarize",
+          "file_stt_provider":"elevenlabs", "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":false,
           "dictation_post_filter_provider":"o", "dictation_post_filter_model":"m"
         }

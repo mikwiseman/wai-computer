@@ -134,7 +134,7 @@ async def test_realtime_transcription_session_returns_503_on_missing_config(
 ):
     with patch(
         "app.api.routes.realtime_transcription.create_realtime_transcription_session",
-        new=AsyncMock(side_effect=ValueError("ELEVENLABS_API_KEY not configured")),
+        new=AsyncMock(side_effect=ValueError("OPENAI_API_KEY not configured")),
     ):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

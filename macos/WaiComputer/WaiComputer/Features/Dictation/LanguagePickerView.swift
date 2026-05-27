@@ -2,8 +2,7 @@ import SwiftUI
 import WaiComputerKit
 
 /// Reusable language picker — used in onboarding and Settings. Lets the user
-/// pick zero (auto-detect), one (single-language for lowest latency), or many
-/// (multilingual hint set) languages.
+/// pick auto-detect or one explicit language hint for lowest latency.
 struct LanguagePickerView: View {
     @EnvironmentObject private var languageManager: LanguageManager
 
@@ -80,7 +79,7 @@ struct LanguagePickerView: View {
             store.toggle(entry.code)
         } label: {
             HStack(spacing: Spacing.md) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Palette.accent : Palette.textTertiary)
                     .font(.system(size: 16))
                 VStack(alignment: .leading, spacing: 1) {
@@ -115,22 +114,16 @@ struct LanguagePickerView: View {
                     "Auto-detect mode — the model identifies the language from your audio.",
                     "Автоопределение — модель сама распознает язык по аудио."
                 ))
-            } else if count == 1, let only = store.selectedLanguages.first,
+            } else if let only = store.selectedLanguages.first,
                       let entry = DictationLanguageCatalog.entry(for: only) {
                 Text(t(
                     "\(entry.englishName) only — fastest, lowest latency.",
                     "Только \(entry.nativeName) — самый быстрый режим с минимальной задержкой."
                 ))
             } else {
-                let names = store.selectedLanguages
-                    .compactMap { code in
-                        DictationLanguageCatalog.entry(for: code).map { primaryName(for: $0) }
-                    }
-                    .sorted()
-                    .joined(separator: ", ")
                 Text(t(
-                    "\(count) languages selected (\(names)). Multilingual auto-detect is used at the model layer.",
-                    "Выбрано языков: \(count) (\(names)). Модель использует мультиязычное автоопределение."
+                    "Auto-detect mode — the model identifies the language from your audio.",
+                    "Автоопределение — модель сама распознает язык по аудио."
                 ))
             }
         }

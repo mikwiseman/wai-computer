@@ -27,8 +27,8 @@ DEFAULT_DICTATION_LIVE_STT_PROVIDER = "openai"
 DEFAULT_DICTATION_LIVE_STT_MODEL = "gpt-realtime-whisper"
 DEFAULT_RECORDING_LIVE_STT_PROVIDER = "openai"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "gpt-realtime-whisper"
-DEFAULT_FILE_STT_PROVIDER = "openai"
-DEFAULT_FILE_STT_MODEL = "gpt-4o-transcribe-diarize"
+DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
+DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
 DEFAULT_DICTATION_POST_FILTER_MODEL = "gpt-5.5"
 
@@ -73,9 +73,9 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
     "recording_live_stt": _RECORDING_REALTIME_OPTIONS,
     "file_stt": (
         ModelOption(
-            provider="openai",
-            model="gpt-4o-transcribe-diarize",
-            label="OpenAI GPT-4o Transcribe Diarize",
+            provider="elevenlabs",
+            model="scribe_v2",
+            label="ElevenLabs Scribe v2",
             description="Fixed full-session transcription model with speaker diarization.",
         ),
     ),
@@ -90,6 +90,7 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
 }
 
 _PROVIDER_KEY_BY_NAME = {
+    "elevenlabs": "elevenlabs_api_key",
     "openai": "openai_api_key",
 }
 
