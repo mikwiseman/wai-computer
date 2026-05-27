@@ -112,6 +112,7 @@ struct MacMainView: View {
     @State private var recoveryNoticeAutoDismissTask: Task<Void, Never>?
     @State private var recordingStartFolderId: String?
     @State private var lastMeasuredLayoutWidth: CGFloat = 0
+    @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
 
     enum SidebarSection: Hashable {
         case allRecordings
@@ -122,6 +123,11 @@ struct MacMainView: View {
         case dictionary
         case wai
         case settings
+    }
+
+    private struct PendingRecordingSelection: Equatable {
+        let section: SidebarSection
+        let recordingId: String
     }
 
     private var hasListColumn: Bool {
@@ -460,9 +466,14 @@ struct MacMainView: View {
             handleSelectedRecordingFromMenu(appState.selectedRecordingFromMenu)
             handlePendingMainWindowAction(appState.pendingMainWindowAction)
         }
-        .onChange(of: selectedSection) { _, _ in
+        .onChange(of: selectedSection) { _, newSection in
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil
+            if let pendingSelection = pendingRecordingSelectionAfterSectionChange,
+               pendingSelection.section == newSection {
+                selectedRecordingIds = [pendingSelection.recordingId]
+                pendingRecordingSelectionAfterSectionChange = nil
+            }
         }
         .onChange(of: hasListColumn) { _, _ in
             updateColumnVisibility(for: lastMeasuredLayoutWidth)
@@ -857,16 +868,10 @@ struct MacMainView: View {
         guard let completedContext = appState.completedRecordingContext else { return }
         let completedFolderId = recordingStartFolderId
 
-        if let completedFolderId {
-            selectedSection = .folder(completedFolderId)
-        } else {
-            selectedSection = .allRecordings
-        }
-        prefetchedRecordingDetail = nil
         // Immediate selection — the detail view shows a loading state until
         // resolveCompletedRecording returns. This avoids the "where did my
         // recording go?" moment from WW-50 #2.
-        selectedRecordingIds = [completedContext.recordingId]
+        selectRecording(completedContext.recordingId, in: completedFolderId.map(SidebarSection.folder) ?? .allRecordings)
 
         completionTask = Task {
             // Wait for the upload to finish (phase goes idle when cleanup completes)
@@ -986,16 +991,26 @@ struct MacMainView: View {
     private func handleSelectedRecordingFromMenu(_ id: String?) {
         guard let id else { return }
 
-        selectedSection = .allRecordings
-        selectedRecordingIds = [id]
-        prefetchedRecordingDetail = nil
+        selectRecording(id, in: .allRecordings)
         appState.selectedRecordingFromMenu = nil
     }
 
     private func openSearchResult(_ recordingId: String) {
-        selectedSection = .allRecordings
-        selectedRecordingIds = [recordingId]
+        selectRecording(recordingId, in: .allRecordings)
+    }
+
+    private func selectRecording(_ recordingId: String, in section: SidebarSection) {
         prefetchedRecordingDetail = nil
+        if selectedSection == section {
+            pendingRecordingSelectionAfterSectionChange = nil
+            selectedRecordingIds = [recordingId]
+        } else {
+            pendingRecordingSelectionAfterSectionChange = PendingRecordingSelection(
+                section: section,
+                recordingId: recordingId
+            )
+            selectedSection = section
+        }
     }
 
     private func handlePendingMainWindowAction(_ action: MacMainWindowAction?) {
