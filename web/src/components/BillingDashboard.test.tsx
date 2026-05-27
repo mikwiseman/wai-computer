@@ -6,8 +6,10 @@ import {
   cancelBillingSubscription,
   claimBillingPromoCode,
   createBillingCheckout,
+  getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  switchBillingPlan,
 } from "@/lib/billing";
 import { BillingDashboard } from "./BillingDashboard";
 
@@ -15,8 +17,10 @@ vi.mock("@/lib/billing", () => ({
   cancelBillingSubscription: vi.fn(),
   claimBillingPromoCode: vi.fn(),
   createBillingCheckout: vi.fn(),
+  getBillingInvoices: vi.fn(),
   getBillingSubscription: vi.fn(),
   getBillingUsage: vi.fn(),
+  switchBillingPlan: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -40,6 +44,8 @@ const mockedUsage = vi.mocked(getBillingUsage);
 const mockedCheckout = vi.mocked(createBillingCheckout);
 const mockedCancel = vi.mocked(cancelBillingSubscription);
 const mockedPromo = vi.mocked(claimBillingPromoCode);
+const mockedInvoices = vi.mocked(getBillingInvoices);
+const mockedSwitch = vi.mocked(switchBillingPlan);
 
 const freeSub = {
   plan: {
@@ -60,6 +66,9 @@ const freeSub = {
   current_period_end: null,
   cancel_at_period_end: false,
   trial_end: null,
+  next_charge_at: null,
+  next_charge_amount: null,
+  next_charge_currency: null,
   enforcement_enabled: false,
 };
 
@@ -68,7 +77,10 @@ const proSub = {
   plan: { ...freeSub.plan, code: "pro", name: "Pro", word_cap_per_week: null },
   provider: "stripe",
   billing_period: "month",
-  current_period_end: "2026-06-01T00:00:00Z",
+  current_period_end: "2026-06-25T00:00:00Z",
+  next_charge_at: "2026-06-25T00:00:00Z",
+  next_charge_amount: 12,
+  next_charge_currency: "USD",
 };
 
 const usage = {
@@ -85,8 +97,11 @@ describe("BillingDashboard", () => {
     mockedCheckout.mockReset();
     mockedCancel.mockReset();
     mockedPromo.mockReset();
+    mockedInvoices.mockReset();
+    mockedSwitch.mockReset();
     mockedSubscription.mockResolvedValue(freeSub);
     mockedUsage.mockResolvedValue(usage);
+    mockedInvoices.mockResolvedValue([]);
   });
 
   it("loads free billing state and opens checkout with selected provider", async () => {
@@ -118,6 +133,9 @@ describe("BillingDashboard", () => {
     mockedSubscription.mockResolvedValueOnce(proSub).mockResolvedValueOnce({
       ...proSub,
       cancel_at_period_end: true,
+      next_charge_at: null,
+      next_charge_amount: null,
+      next_charge_currency: null,
     });
     mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
     render(<BillingDashboard locale="en" currency="usd" />);
@@ -136,13 +154,100 @@ describe("BillingDashboard", () => {
     expect(await screen.findByText(/Pro is active through/i)).toBeInTheDocument();
   });
 
+  it("renders next-charge banner with localized amount and date for an active pro user", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    const banner = await screen.findByText(/Next charge \$12/i);
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/June 25, 2026/);
+  });
+
+  it("shows the free-plan banner for free users", async () => {
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    expect(
+      await screen.findByText("You're on the Free plan — no charges scheduled."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders invoices in a localized table when present", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedInvoices.mockResolvedValue([
+      {
+        id: "inv_1",
+        amount: 12,
+        currency: "USD",
+        status: "paid",
+        paid_at: "2026-05-25T00:00:00Z",
+        created_at: "2026-05-25T00:00:00Z",
+        receipt_url: "https://stripe.test/r/abc",
+        description: null,
+      },
+    ]);
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    await screen.findByRole("table");
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Receipt" })).toHaveAttribute(
+      "href",
+      "https://stripe.test/r/abc",
+    );
+  });
+
+  it("shows an empty state for invoices when the API returns no rows", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedInvoices.mockResolvedValue([]);
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    expect(
+      await screen.findByText(
+        "No invoices yet — your first charge will appear here.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("requests a plan switch when the user picks Yearly", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedSwitch.mockResolvedValue({ status: "accepted", requested_period: "year" });
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    await screen.findByLabelText(/Switch plan/i);
+    await userEvent.selectOptions(screen.getByLabelText(/Switch plan/i), "yearly");
+    await userEvent.click(screen.getByRole("button", { name: "Switch" }));
+
+    await waitFor(() => expect(mockedSwitch).toHaveBeenCalledWith("yearly"));
+    expect(
+      await screen.findByText(
+        /Our team will switch your plan on the next billing cycle/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the back-to-dashboard link in both locales", async () => {
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(
+      await screen.findByRole("link", { name: /Назад в кабинет/ }),
+    ).toBeInTheDocument();
+  });
+
   it("applies promo codes for free users", async () => {
     mockedPromo.mockResolvedValue({ ...proSub, provider: "promo", cancel_at_period_end: true });
     render(<BillingDashboard locale="ru" currency="rub" />);
 
     expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "WAI-TEST-30");
+    await userEvent.type(screen.getByPlaceholderText("Введите промокод"), "WAI-TEST-30");
     await userEvent.click(screen.getByRole("button", { name: "Применить" }));
 
     await waitFor(() => expect(mockedPromo).toHaveBeenCalledWith("WAI-TEST-30"));
@@ -155,7 +260,7 @@ describe("BillingDashboard", () => {
 
     expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "BAD-CODE");
+    await userEvent.type(screen.getByPlaceholderText("Введите промокод"), "BAD-CODE");
     await userEvent.click(screen.getByRole("button", { name: "Применить" }));
 
     expect(await screen.findByText("Промокод не найден.")).toBeInTheDocument();
@@ -168,7 +273,7 @@ describe("BillingDashboard", () => {
 
     expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText("Введи промокод"), "USED-CODE");
+    await userEvent.type(screen.getByPlaceholderText("Введите промокод"), "USED-CODE");
     await userEvent.click(screen.getByRole("button", { name: "Применить" }));
 
     expect(await screen.findByText("Промокод уже исчерпан.")).toBeInTheDocument();

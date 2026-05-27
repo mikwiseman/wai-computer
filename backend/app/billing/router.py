@@ -24,10 +24,12 @@ from app.billing.quota import WordQuota
 from app.billing.subscriptions import subscription_is_entitled
 from app.config import get_settings
 from app.models.billing import (
+    BillingEvent,
     BillingPeriod,
     BillingPromoCode,
     BillingPromoRedemption,
     BillingProvider,
+    Invoice,
     Plan,
     Subscription,
     SubscriptionStatus,
@@ -78,10 +80,43 @@ class SubscriptionResponse(BaseModel):
     current_period_end: datetime | None
     cancel_at_period_end: bool
     trial_end: datetime | None
+    # The dashboard's "Next charge $X on Mon DD" banner reads these.
+    # `next_charge_at` falls back to `tinkoff_next_charge_at` for T-Bank and
+    # `current_period_end` for Stripe (since `cancel_at_period_end` flips the
+    # banner copy to "Ends" rather than charging again).
+    next_charge_at: datetime | None
+    next_charge_amount: DecimalNumber
+    next_charge_currency: str | None
     # When false, clients SHOULD hide the entire billing UI: word gauges,
     # upgrade buttons, plan badges. The backend will not return 402 in this
     # mode either, so quota checks become advisory.
     enforcement_enabled: bool
+
+
+class InvoiceResponse(BaseModel):
+    """Single invoice row for the billing-page history table."""
+
+    id: str
+    amount: DecimalNumber
+    currency: str
+    status: str
+    paid_at: datetime | None
+    created_at: datetime
+    receipt_url: str | None
+    description: str | None
+
+
+class SwitchPlanRequest(BaseModel):
+    """Request body for `/api/billing/switch-plan`."""
+
+    period: str  # "monthly" | "yearly" (loose match against BillingPeriod)
+
+
+class SwitchPlanResponse(BaseModel):
+    """Stub response after recording the user's intent to switch period."""
+
+    status: str
+    requested_period: str
 
 
 class CheckoutRequest(BaseModel):
@@ -258,12 +293,47 @@ def _plan_payload(plan: Plan) -> PlanResponse:
     )
 
 
+def _next_charge_for(plan: Plan, sub: Subscription | None) -> tuple[
+    datetime | None, Decimal | None, str | None
+]:
+    """Resolve when the user is next charged, how much, and in what currency.
+
+    Returns (None, None, None) when there is no upcoming charge — either no
+    paid subscription, or `cancel_at_period_end=True` (subscription will end
+    rather than renew).
+    """
+    if sub is None or sub.cancel_at_period_end:
+        return None, None, None
+    period = sub.billing_period
+    if sub.provider == BillingProvider.TINKOFF.value:
+        amount = (
+            plan.tinkoff_amount_rub_yearly
+            if period == BillingPeriod.YEAR.value
+            else plan.tinkoff_amount_rub_monthly
+        )
+        next_at = sub.tinkoff_next_charge_at or sub.current_period_end
+        return next_at, amount, "RUB"
+    if sub.provider == BillingProvider.STRIPE.value:
+        amount = (
+            plan.usd_amount_yearly
+            if period == BillingPeriod.YEAR.value
+            else plan.usd_amount_monthly
+        )
+        return sub.current_period_end, amount, "USD"
+    if sub.provider == BillingProvider.PROMO.value:
+        # Promo grants do not renew; surface period_end so the UI can say
+        # "Pro is active through …" instead of "Next charge".
+        return None, None, None
+    return sub.current_period_end, None, None
+
+
 def _subscription_payload(
     *,
     plan: Plan,
     sub: Subscription | None,
     enforcement_enabled: bool,
 ) -> SubscriptionResponse:
+    next_at, next_amount, next_currency = _next_charge_for(plan, sub)
     return SubscriptionResponse(
         plan=_plan_payload(plan),
         status=sub.status if sub is not None else "free",
@@ -272,6 +342,9 @@ def _subscription_payload(
         current_period_end=sub.current_period_end if sub is not None else None,
         cancel_at_period_end=bool(sub and sub.cancel_at_period_end),
         trial_end=sub.trial_end if sub is not None else None,
+        next_charge_at=next_at,
+        next_charge_amount=next_amount,
+        next_charge_currency=next_currency,
         enforcement_enabled=enforcement_enabled,
     )
 
@@ -491,3 +564,84 @@ async def cancel_subscription(user: CurrentUser, db: Database) -> dict:
         return {"cancel_at_period_end": True}
 
     raise HTTPException(status_code=400, detail="Unknown provider on subscription")
+
+
+@router.get("/invoices", response_model=list[InvoiceResponse])
+async def list_invoices(user: CurrentUser, db: Database) -> list[InvoiceResponse]:
+    """Return the user's invoice history, newest first.
+
+    Joined against `billing_subscriptions` on user_id so the same user sees
+    invoices from previous (cancelled) subscriptions too — losing access to
+    a receipt because you downgraded would be hostile.
+    """
+    stmt = (
+        select(Invoice)
+        .join(Subscription, Subscription.id == Invoice.subscription_id)
+        .where(Subscription.user_id == user.id)
+        .order_by(Invoice.created_at.desc())
+        .limit(25)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        InvoiceResponse(
+            id=str(row.id),
+            amount=row.amount,
+            currency=row.currency,
+            status=row.status,
+            paid_at=row.paid_at,
+            created_at=row.created_at,
+            receipt_url=row.receipt_url,
+            description=None,
+        )
+        for row in rows
+    ]
+
+
+@router.post(
+    "/switch-plan",
+    response_model=SwitchPlanResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def switch_plan(
+    payload: SwitchPlanRequest,
+    user: CurrentUser,
+    db: Database,
+) -> SwitchPlanResponse:
+    """Record the user's intent to switch billing period.
+
+    This is a stub: Stripe / T-Bank Recurrent both need a follow-up call to
+    update the active subscription, which is out of scope for this sprint.
+    For now we log the intent in `billing_events` so support can act on it,
+    and return 202 to acknowledge the request.
+    """
+    if user.current_subscription_id is None:
+        raise HTTPException(status_code=400, detail="No active subscription")
+    sub = (
+        await db.execute(
+            select(Subscription).where(Subscription.id == user.current_subscription_id)
+        )
+    ).scalar_one_or_none()
+    if sub is None:
+        raise HTTPException(status_code=400, detail="No active subscription")
+
+    raw_period = (payload.period or "").strip().lower()
+    if raw_period in {"monthly", "month"}:
+        period = BillingPeriod.MONTH.value
+    elif raw_period in {"yearly", "annual", "year"}:
+        period = BillingPeriod.YEAR.value
+    else:
+        raise HTTPException(status_code=400, detail="Unknown period")
+
+    db.add(
+        BillingEvent(
+            subscription_id=sub.id,
+            type="switch_plan_requested",
+            payload={
+                "requested_period": period,
+                "current_period": sub.billing_period,
+                "user_id": str(user.id),
+            },
+        )
+    )
+    await db.flush()
+    return SwitchPlanResponse(status="accepted", requested_period=period)

@@ -571,3 +571,33 @@ Caveats:
 - The RU cancel copy in `BillingResultCard` retains the "4242 4242 4242 4242 — Stripe test card, а не тестовая карта Т-Банка" explainer because the existing e2e expects it; users see this only when checkout returns from Tinkoff (the live e2e at `web/tests/e2e/web-theme.spec.ts:143` already proves this).
 - `BillingDashboard` localizes `status` enums via a small per-locale map; unknown statuses (e.g. `incomplete_expired`) fall through to the raw value so the page still surfaces *something* rather than crashing.
 - Russian footer CTA on `SharedRecordingClient` points to `/ru` (RU landing) when locale is `"ru"`. The accept-language detection in `share/[token]/page.tsx` is the same one used by AuthForm — if the user clicked a share link from an EN context but their browser is RU, they get the RU view. This matches the Mac app's "follow browser locale by default" pattern; can be overridden later with a `?lang=en` query param if needed.
+
+## Agent H — done
+
+Scope: Theme + Accent picker in Dashboard Settings (Sprint 2 item #11), wired into the tokens Agent G shipped in `web/src/styles/tokens.css`.
+
+Files created:
+
+- `web/src/components/ThemeAccentPicker.tsx` — NEW client component. Theme segmented control (System / Light / Dark) with three pill buttons, and a row of 7 round accent swatches (`teal`, `amber`, `blue`, `green`, `violet`, `rose`, `graphite`). Localized EN + RU. On mount, hydrates from `localStorage["wai_theme"]` and `localStorage["wai_accent"]` and applies `document.documentElement.setAttribute("data-theme", …)` + `data-accent`. Click handlers persist to localStorage + fire a 400 ms-debounced `PATCH /api/settings/preferences` body `{ theme, accent }` — `apiFetch` errors with `status === 404` are swallowed silently so the picker works against the current backend that has no preferences endpoint. Each option is `role="radio"` inside a `role="radiogroup"`, so the picker is keyboard-navigable.
+- `web/src/components/ThemeAccentPicker.module.css` — NEW. Pill rail + swatch row styles using Agent G's tokens (`--surface-soft`, `--border`, `--accent`, `--accent-contrast`, `--accent-strong`, `--ring`) with fallbacks so the picker renders sanely if a token is ever missing. Swatches are 1.65 rem circles; selected gets `outline: 2px solid var(--ring)`; hover bumps `transform: scale(1.08)`; focus-visible keeps a visible ring.
+- `web/src/components/ThemeAccentPicker.test.tsx` — NEW. 8 specs against the project's `vi.mock("@/lib/http")` + `Object.defineProperty(window, "localStorage", …)` mock pattern (matches `OnboardingClient.test.tsx`): renders all 7 accents; theme cycles between system/light/dark with exclusive `aria-checked`; accent cycles update `data-accent` on `<html>`; localStorage writes happen; hydration on mount; Russian copy; debounced PATCH collapses two clicks into one call; 404 PATCH is swallowed.
+
+Files modified:
+
+- `web/src/components/DashboardClient.tsx` — added `import { ThemeAccentPicker } from "@/components/ThemeAccentPicker"` and inserted a new `<section className="settings-form" data-testid="appearance-settings">` at the top of `renderSettingsView()`. Heading is `"Appearance"` / `"Внешний вид"` chosen inline from `locale` (the existing `COPY` tables don't have a settings.appearanceHeading key, so I kept the addition local to avoid touching Agent F's copy file). The component receives `locale={locale}` from the existing `useState<Locale>` already at the top of `DashboardClient`.
+- `web/src/app/layout.tsx` — added an inline pre-paint `<script dangerouslySetInnerHTML>` immediately inside `<body>`, before `{children}`. The script reads `wai_theme` / `wai_accent` from localStorage synchronously and applies them to `document.documentElement`. Wrapped in `try { … } catch (e) {}` so disabled storage never bricks first paint. (Agent G later expanded the same `<html>` tag with `data-theme="system" data-accent="teal"` defaults — the bootstrap script overrides those defaults when localStorage has a value, otherwise the SSR defaults stand.)
+
+Backend (item 4 in scope, marked "optional, only if /api/settings already has a free spot"): inspected `backend/app/api/routes/settings.py`. The router exposes `/settings` and `/settings/transcription-options`, and `SettingsResponse` is tightly coupled to per-user transcription columns. There is no general-purpose `/preferences` sub-route and no `theme` / `accent` column on the `User` model. Adding columns + a new route would require an Alembic migration and Pydantic model churn, which is exactly the "DB migration drama" the task said to skip. So the backend is unchanged and the picker falls back to localStorage; the debounced `apiFetch` swallows the 404 silently. When the backend lands a `PATCH /api/settings/preferences` accepting `{ theme, accent }`, no client change is required.
+
+Verification:
+
+- `cd web && pnpm lint` → clean. Only two pre-existing warnings remain (`BillingResultCard.tsx` unused type, `DashboardClient.tsx:604` missing-dep) — neither from this agent.
+- `cd web && pnpm build` → clean, 27 routes generated, no errors.
+- `npx vitest run` → 31 files, 301 tests, all green. The new `ThemeAccentPicker.test.tsx` adds 8 specs.
+
+Caveats:
+
+- The bootstrap script is the most minimal correct version (template literal with hard-coded keys, as specified). React 19 + Next 16 will hydrate `<html data-theme="system" data-accent="teal">` after the script has already mutated those attributes; this is fine because the inline script lives in the body and runs before any hydration, and Next does not re-write SSR-rendered html attributes during hydration. If a future React version starts warning about hydration mismatch on `<html data-*>`, suppress with `<html lang={lang} suppressHydrationWarning>`.
+- I did NOT touch `web/src/styles/tokens.css` (Agent G's file) — the picker assumes it provides `--surface-soft`, `--surface-strong`, `--border`, `--accent`, `--accent-contrast`, `--accent-strong`, `--ring`, plus the `[data-accent="…"]` / `[data-theme="…"]` selectors. Inline fallbacks in `ThemeAccentPicker.module.css` keep the picker readable even if a token name shifts.
+- Settings heading copy `"Appearance" / "Внешний вид"` is inline in `DashboardClient.tsx`. If Agent F is centralising all dashboard COPY, this can be moved into `COPY[locale].settings.appearanceHeading` later; behaviour is unchanged.
+- The debounced PATCH fires only on a real user change (not on the hydration-from-storage `setState`), so first paint doesn't generate a hot 404 on every dashboard mount.

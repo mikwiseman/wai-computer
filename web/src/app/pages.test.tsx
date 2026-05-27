@@ -255,7 +255,7 @@ describe("app pages", () => {
     });
   });
 
-  it("renders landing with only Mac and iPhone download links plus sign-in", () => {
+  it("renders landing with hero, platform grid, features, screenshots, benchmark teaser, pricing teaser, and FAQ", () => {
     render(<Home />);
 
     expect(
@@ -266,7 +266,10 @@ describe("app pages", () => {
     ).toBeInTheDocument();
 
     const macLink = screen.getByTestId("download-mac");
-    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiComputer-latest.dmg");
+    expect(macLink).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiComputer-latest.dmg",
+    );
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("macOS 14+");
 
@@ -279,17 +282,51 @@ describe("app pages", () => {
     expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
+    // Coming-soon platforms are surfaced as labeled cards (not download links).
     expect(screen.queryByTestId("download-windows")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-linux")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-android")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Windows|Linux|Android|iPad/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Android")).toBeInTheDocument();
+    expect(screen.getByText("Windows")).toBeInTheDocument();
+    expect(screen.getByText("Linux")).toBeInTheDocument();
+    expect(screen.getAllByText(/Coming soon/i).length).toBeGreaterThanOrEqual(3);
+
     expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
       "href",
       "/benchmarks/dictation",
     );
+
+    // Feature trio.
+    expect(
+      screen.getByRole("heading", { level: 3, name: /Record any moment/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        level: 3,
+        name: /Search across everything/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 3, name: /Ask Wai anything/i }),
+    ).toBeInTheDocument();
+
+    // Benchmark teaser + pricing teaser links.
+    expect(screen.getByTestId("benchmark-cta")).toHaveAttribute(
+      "href",
+      "/benchmarks/dictation",
+    );
+    expect(screen.getByTestId("pricing-link")).toHaveAttribute(
+      "href",
+      "/pricing",
+    );
+
+    // FAQ — at least one well-known question.
+    expect(
+      screen.getByText(/What does WaiComputer record\?/i),
+    ).toBeInTheDocument();
   });
 
-  it("renders Russian landing with only Mac and iPhone download links", () => {
+  it("renders Russian landing with full marketing sections", () => {
     render(<RuHome />);
 
     expect(
@@ -300,7 +337,10 @@ describe("app pages", () => {
     ).toBeInTheDocument();
 
     const macLink = screen.getByTestId("download-mac-ru");
-    expect(macLink).toHaveAttribute("href", "/releases/macos/WaiComputer-ru-latest.dmg");
+    expect(macLink).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiComputer-ru-latest.dmg",
+    );
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("Скачать для Mac");
 
@@ -315,7 +355,10 @@ describe("app pages", () => {
     expect(screen.queryByTestId("download-windows-ru")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-linux-ru")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-android-ru")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Windows|Linux|Android|iPad/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Android")).toBeInTheDocument();
+    expect(screen.getByText("Windows")).toBeInTheDocument();
+    expect(screen.getByText("Linux")).toBeInTheDocument();
+    expect(screen.getAllByText(/Скоро/i).length).toBeGreaterThanOrEqual(3);
 
     expect(screen.getByRole("link", { name: /войти/i })).toHaveAttribute(
       "href",
@@ -328,6 +371,38 @@ describe("app pages", () => {
       "href",
       "/ru/benchmarks/dictation",
     );
+
+    // Feature trio (RU).
+    expect(
+      screen.getByRole("heading", { level: 3, name: /Записывайте любой момент/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        level: 3,
+        name: /Ищите по всему, что вы сказали/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        level: 3,
+        name: /Спрашивайте Wai о чём угодно/i,
+      }),
+    ).toBeInTheDocument();
+
+    // Benchmark teaser + pricing teaser links localized.
+    expect(screen.getByTestId("benchmark-cta")).toHaveAttribute(
+      "href",
+      "/ru/benchmarks/dictation",
+    );
+    expect(screen.getByTestId("pricing-link")).toHaveAttribute(
+      "href",
+      "/ru/pricing",
+    );
+
+    // FAQ — at least one well-known question.
+    expect(
+      screen.getByText(/Что WaiComputer записывает\?/i),
+    ).toBeInTheDocument();
   });
 
   it("renders dictation benchmark page", () => {

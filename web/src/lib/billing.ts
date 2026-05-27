@@ -21,7 +21,26 @@ export interface BillingSubscription {
   current_period_end: string | null;
   cancel_at_period_end: boolean;
   trial_end: string | null;
+  next_charge_at: string | null;
+  next_charge_amount: number | null;
+  next_charge_currency: string | null;
   enforcement_enabled: boolean;
+}
+
+export interface BillingInvoice {
+  id: string;
+  amount: number | null;
+  currency: string;
+  status: string;
+  paid_at: string | null;
+  created_at: string;
+  receipt_url: string | null;
+  description: string | null;
+}
+
+export interface BillingSwitchPlanResponse {
+  status: string;
+  requested_period: string;
 }
 
 export interface BillingUsage {
@@ -69,4 +88,17 @@ export async function claimBillingPromoCode(code: string): Promise<BillingSubscr
 
 export async function cancelBillingSubscription(): Promise<void> {
   await apiFetch<unknown>("/api/billing/cancel", { method: "POST" });
+}
+
+export async function getBillingInvoices(): Promise<BillingInvoice[]> {
+  return apiFetch<BillingInvoice[]>("/api/billing/invoices");
+}
+
+export async function switchBillingPlan(
+  period: "monthly" | "yearly",
+): Promise<BillingSwitchPlanResponse> {
+  return apiFetch<BillingSwitchPlanResponse>("/api/billing/switch-plan", {
+    method: "POST",
+    body: JSON.stringify({ period }),
+  });
 }

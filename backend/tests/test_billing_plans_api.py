@@ -6,6 +6,7 @@ be numbers (not strings), otherwise `Swift.Decimal` decode fails with
 """
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -14,7 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.promo_codes import hash_promo_code
 from app.billing.providers.base import CheckoutResult, ProviderUnavailableError
-from app.models.billing import BillingPromoCode, BillingPromoRedemption, Plan, Subscription
+from app.models.billing import (
+    BillingEvent,
+    BillingPromoCode,
+    BillingPromoRedemption,
+    Invoice,
+    Plan,
+    Subscription,
+)
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
@@ -830,3 +838,290 @@ async def test_cancel_subscription_rejects_unknown_provider(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unknown provider on subscription"
+
+
+@pytest.mark.asyncio
+async def test_invoices_endpoint_returns_empty_list_for_new_user(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, _ = await _register_for_billing(client, db_session, "invoices.empty@example.com")
+
+    response = await client.get(
+        "/api/billing/invoices",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_invoices_endpoint_returns_user_invoices_newest_first(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "invoices.history@example.com"
+    )
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_history",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    older = Invoice(
+        subscription_id=sub.id,
+        amount=Decimal("12.00"),
+        currency="USD",
+        status="paid",
+        provider_payment_id="in_old",
+        paid_at=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        created_at=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        receipt_url="https://stripe.test/r/old",
+    )
+    db_session.add(older)
+    await db_session.flush()
+    newer = Invoice(
+        subscription_id=sub.id,
+        amount=Decimal("12.00"),
+        currency="USD",
+        status="paid",
+        provider_payment_id="in_new",
+        paid_at=datetime(2026, 5, 25, tzinfo=timezone.utc),
+        created_at=datetime(2026, 5, 25, tzinfo=timezone.utc),
+        receipt_url="https://stripe.test/r/new",
+    )
+    db_session.add(newer)
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/billing/invoices",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    # Newest first by created_at DESC.
+    assert rows[0]["receipt_url"] == "https://stripe.test/r/new"
+    assert rows[0]["amount"] == 12.0
+    assert rows[0]["currency"] == "USD"
+    assert rows[0]["status"] == "paid"
+    assert rows[1]["receipt_url"] == "https://stripe.test/r/old"
+
+
+@pytest.mark.asyncio
+async def test_invoices_endpoint_does_not_leak_other_users_invoices(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token_a, user_a = await _register_for_billing(
+        client, db_session, "invoices.user-a@example.com"
+    )
+    _token_b, user_b = await _register_for_billing(
+        client, db_session, "invoices.user-b@example.com"
+    )
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub_b = Subscription(
+        user_id=user_b.id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_user_b",
+    )
+    db_session.add(sub_b)
+    await db_session.flush()
+    db_session.add(
+        Invoice(
+            subscription_id=sub_b.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            status="paid",
+            provider_payment_id="in_b",
+            paid_at=datetime.now(timezone.utc),
+            receipt_url="https://stripe.test/r/b",
+        )
+    )
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/billing/invoices",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert user_a.id != user_b.id
+
+
+@pytest.mark.asyncio
+async def test_subscription_endpoint_exposes_next_charge_fields(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "subscription.next-charge@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    next_at = datetime.now(timezone.utc) + timedelta(days=15)
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        current_period_start=datetime.now(timezone.utc),
+        current_period_end=next_at,
+        stripe_subscription_id="sub_next_charge",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/billing/subscription",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["next_charge_at"] is not None
+    assert payload["next_charge_amount"] == 12.0
+    assert payload["next_charge_currency"] == "USD"
+
+
+@pytest.mark.asyncio
+async def test_subscription_endpoint_hides_next_charge_when_canceled_at_period_end(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "subscription.next-charge-canceled@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=15),
+        cancel_at_period_end=True,
+        stripe_subscription_id="sub_cancel_then_no_charge",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    response = await client.get(
+        "/api/billing/subscription",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["next_charge_at"] is None
+    assert payload["next_charge_amount"] is None
+    assert payload["next_charge_currency"] is None
+    assert payload["cancel_at_period_end"] is True
+
+
+@pytest.mark.asyncio
+async def test_switch_plan_records_event_and_returns_202(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "switch.plan@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/billing/switch-plan",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"period": "yearly"},
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted", "requested_period": "year"}
+
+    events = (
+        await db_session.execute(
+            select(BillingEvent).where(BillingEvent.subscription_id == sub.id)
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].type == "switch_plan_requested"
+    assert events[0].payload["requested_period"] == "year"
+    assert events[0].payload["current_period"] == "month"
+
+
+@pytest.mark.asyncio
+async def test_switch_plan_rejects_unknown_period(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "switch.plan-bad@example.com"
+    )
+    pro = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=pro.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    user.current_subscription_id = sub.id
+    await db_session.flush()
+
+    response = await client.post(
+        "/api/billing/switch-plan",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"period": "weekly"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unknown period"
+
+
+@pytest.mark.asyncio
+async def test_switch_plan_requires_active_subscription(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    token, _ = await _register_for_billing(
+        client, db_session, "switch.plan-none@example.com"
+    )
+
+    response = await client.post(
+        "/api/billing/switch-plan",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"period": "yearly"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No active subscription"
