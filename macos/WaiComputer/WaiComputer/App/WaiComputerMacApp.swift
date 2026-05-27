@@ -572,7 +572,6 @@ class MacAppState: ObservableObject {
     @Published var hasCompletedPostAuthOnboarding: Bool = false
     @Published var hasCompletedOnboarding: Bool = false
     @Published var missingPermissions: Set<MissingPermission> = []
-    @Published private var activeSummaryGenerationRecordingIds: Set<String> = []
     /// Permission kinds the user has explicitly dismissed for this launch only.
     /// Re-armed on every `scenePhase == .active` so a real outage cannot be
     /// permanently silenced.
@@ -582,27 +581,6 @@ class MacAppState: ObservableObject {
     enum MissingPermission: Hashable {
         case microphone
         case accessibility
-    }
-
-    var isAnySummaryGenerationActive: Bool {
-        !activeSummaryGenerationRecordingIds.isEmpty
-    }
-
-    func isSummaryGenerationActive(for recordingId: String) -> Bool {
-        activeSummaryGenerationRecordingIds.contains(recordingId)
-    }
-
-    func beginSummaryGeneration(recordingId: String) -> Bool {
-        guard activeSummaryGenerationRecordingIds.isEmpty ||
-              activeSummaryGenerationRecordingIds.contains(recordingId) else {
-            return false
-        }
-        activeSummaryGenerationRecordingIds.insert(recordingId)
-        return true
-    }
-
-    func finishSummaryGeneration(recordingId: String) {
-        activeSummaryGenerationRecordingIds.remove(recordingId)
     }
 
     static let onboardingCompletedKey = "nativeOnboardingV4Completed"

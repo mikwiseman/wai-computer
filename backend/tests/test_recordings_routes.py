@@ -454,6 +454,63 @@ async def test_generate_summary_requires_segments(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
+async def test_start_summary_generation_is_idempotent_and_visible_in_detail(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Async summary generation should be durable and reusable across detail reloads."""
+    recording = await _create_recording(client, auth_headers, title="Async Summary")
+    recording_id = UUID(recording["id"])
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="We agreed to generate this summary in the background.",
+            start_ms=0,
+            end_ms=1200,
+            confidence=0.98,
+        )
+    )
+    await db_session.flush()
+
+    enqueued_job_ids: list[str] = []
+
+    def fake_enqueue(job_id: UUID) -> str:
+        enqueued_job_ids.append(str(job_id))
+        return "celery-task-1"
+
+    monkeypatch.setattr("app.api.routes.recordings.enqueue_summary_generation", fake_enqueue)
+
+    first = await client.post(
+        f"/api/recordings/{recording_id}/summary-generation",
+        headers=auth_headers,
+    )
+    assert first.status_code == 202
+    first_payload = first.json()
+    assert first_payload["status"] == "queued"
+    assert first_payload["recording_id"] == str(recording_id)
+    assert first_payload["progress_percent"] == 5
+    assert first_payload["job_id"] is not None
+    assert enqueued_job_ids == [first_payload["job_id"]]
+
+    detail_response = await client.get(f"/api/recordings/{recording_id}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["summary_generation"]["job_id"] == first_payload["job_id"]
+    assert detail["summary_generation"]["status"] == "queued"
+
+    second = await client.post(
+        f"/api/recordings/{recording_id}/summary-generation",
+        headers=auth_headers,
+    )
+    assert second.status_code == 202
+    assert second.json()["job_id"] == first_payload["job_id"]
+    assert enqueued_job_ids == [first_payload["job_id"]]
+
+
+@pytest.mark.asyncio
 async def test_generate_summary_returns_friendly_503_when_summarizer_fails(
     client: AsyncClient,
     auth_headers: dict,

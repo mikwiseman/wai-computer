@@ -1,0 +1,421 @@
+"""Durable recording summary generation helpers."""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
+from uuid import UUID
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.summarizer import SummaryResult, resolve_highlight_timestamps, summarize_transcript
+from app.models.highlight import Highlight
+from app.models.recording import (
+    ActionItem,
+    Recording,
+    Segment,
+    Summary,
+    SummaryGenerationJob,
+    SummaryGenerationStatus,
+)
+from app.models.user import User
+
+ACTIVE_SUMMARY_GENERATION_STATUSES = {
+    SummaryGenerationStatus.QUEUED.value,
+    SummaryGenerationStatus.RUNNING.value,
+}
+
+
+@dataclass(frozen=True)
+class SummaryGenerationPayload:
+    job_id: UUID
+    recording_id: UUID
+    user_id: UUID
+    transcript: str
+    transcript_hash: str
+    language: str
+    style: str
+    instructions: str | None
+
+
+def build_summary_transcript(segments: list[Segment]) -> str:
+    lines: list[str] = []
+    for segment in sorted(segments, key=lambda item: item.start_ms or 0):
+        speaker = segment.speaker or "Speaker"
+        lines.append(f"{speaker}: {segment.content}")
+    return "\n".join(lines)
+
+
+def summary_transcript_hash(transcript: str) -> str:
+    return hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+
+
+def resolve_summary_language_preference(
+    preferred_language: str | None,
+    recording_language: str | None,
+    default_language: str | None,
+) -> str:
+    """Choose the summary language, defaulting to the transcript language."""
+    normalized_preference = (preferred_language or "").strip().lower()
+    if normalized_preference and normalized_preference != "auto":
+        return normalized_preference
+
+    normalized_recording_language = (recording_language or "").strip().lower()
+    if normalized_recording_language and normalized_recording_language != "multi":
+        return normalized_recording_language
+
+    normalized_default_language = (default_language or "").strip().lower()
+    if normalized_default_language and normalized_default_language not in {"auto", "multi"}:
+        return normalized_default_language
+
+    return "auto"
+
+
+def resolve_summary_style_preference(preferred_style: str | None) -> str:
+    """Use the saved style when present; otherwise fall back to the default style."""
+    normalized_style = (preferred_style or "").strip().lower()
+    if normalized_style in {"brief", "medium", "detailed"}:
+        return normalized_style
+    return "medium"
+
+
+async def load_active_summary_generation_job(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    user_id: UUID,
+) -> SummaryGenerationJob | None:
+    result = await db.execute(
+        select(SummaryGenerationJob)
+        .where(
+            SummaryGenerationJob.recording_id == recording_id,
+            SummaryGenerationJob.user_id == user_id,
+            SummaryGenerationJob.status.in_(ACTIVE_SUMMARY_GENERATION_STATUSES),
+        )
+        .order_by(SummaryGenerationJob.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def latest_summary_generation_job(recording: Recording) -> SummaryGenerationJob | None:
+    jobs = list(getattr(recording, "summary_generation_jobs", []) or [])
+    if not jobs:
+        return None
+    return max(jobs, key=lambda job: job.created_at or job.requested_at)
+
+
+async def apply_summary_result(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    summary_result: SummaryResult,
+) -> Summary:
+    if recording.summary:
+        recording.summary.summary = summary_result.summary
+        recording.summary.key_points = summary_result.key_points
+        recording.summary.decisions = summary_result.decisions
+        recording.summary.topics = summary_result.topics
+        recording.summary.people_mentioned = summary_result.people_mentioned
+        recording.summary.sentiment = summary_result.sentiment
+        summary = recording.summary
+    else:
+        summary = Summary(
+            recording_id=recording.id,
+            summary=summary_result.summary,
+            key_points=summary_result.key_points,
+            decisions=summary_result.decisions,
+            topics=summary_result.topics,
+            people_mentioned=summary_result.people_mentioned,
+            sentiment=summary_result.sentiment,
+        )
+        db.add(summary)
+        recording.summary = summary
+
+    if not recording.title:
+        recording.title = summary_result.title
+
+    await db.execute(
+        delete(ActionItem).where(
+            ActionItem.recording_id == recording.id,
+            ActionItem.source == "generated",
+        )
+    )
+
+    for item in summary_result.action_items:
+        task = str(item.get("task", "")).strip()
+        if not task:
+            continue
+
+        due_date = _parse_due_date(item.get("due"))
+        priority = item.get("priority", "medium")
+        if priority not in {"high", "medium", "low"}:
+            priority = "medium"
+
+        db.add(
+            ActionItem(
+                recording_id=recording.id,
+                task=task,
+                owner=item.get("owner"),
+                due_date=due_date,
+                priority=priority,
+                source="generated",
+            )
+        )
+
+    await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
+    await _add_summary_highlights(db, recording=recording, summary_result=summary_result)
+    recording.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    return summary
+
+
+async def prepare_summary_generation_payload(
+    db: AsyncSession,
+    *,
+    job_id: UUID,
+    task_id: str | None = None,
+) -> SummaryGenerationPayload | None:
+    job = await _load_job_for_update(db, job_id)
+    if job is None or job.status not in ACTIVE_SUMMARY_GENERATION_STATUSES:
+        return None
+
+    job.status = SummaryGenerationStatus.RUNNING.value
+    job.stage = "preparing_transcript"
+    job.progress_percent = 10
+    job.task_id = task_id or job.task_id
+    job.started_at = job.started_at or datetime.now(timezone.utc)
+    job.attempt_count += 1
+
+    recording = await _load_recording_for_generation(
+        db,
+        recording_id=job.recording_id,
+        user_id=job.user_id,
+        include_outputs=False,
+    )
+    user = await db.get(User, job.user_id)
+    if recording is None or user is None:
+        mark_summary_generation_failed(
+            job,
+            error_code="recording_not_found",
+            error_message="Recording not found.",
+        )
+        return None
+
+    if not recording.segments:
+        mark_summary_generation_failed(
+            job,
+            error_code="no_transcript_segments",
+            error_message="No transcript segments to summarize.",
+        )
+        return None
+
+    transcript = build_summary_transcript(recording.segments)
+    transcript_hash = summary_transcript_hash(transcript)
+    if transcript_hash != job.transcript_hash:
+        mark_summary_generation_failed(
+            job,
+            error_code="stale_transcript",
+            error_message="Transcript changed before summary generation started.",
+        )
+        return None
+
+    job.stage = "generating_summary"
+    job.progress_percent = 35
+    return SummaryGenerationPayload(
+        job_id=job.id,
+        recording_id=recording.id,
+        user_id=user.id,
+        transcript=transcript,
+        transcript_hash=transcript_hash,
+        language=resolve_summary_language_preference(
+            user.summary_language,
+            recording.language,
+            user.default_language,
+        ),
+        style=resolve_summary_style_preference(user.summary_style),
+        instructions=user.summary_instructions,
+    )
+
+
+async def generate_summary_for_payload(payload: SummaryGenerationPayload) -> SummaryResult:
+    return await summarize_transcript(
+        payload.transcript,
+        language=payload.language,
+        style=payload.style,
+        instructions=payload.instructions,
+    )
+
+
+async def persist_summary_generation_result(
+    db: AsyncSession,
+    *,
+    job_id: UUID,
+    summary_result: SummaryResult,
+) -> SummaryGenerationJob | None:
+    job = await _load_job_for_update(db, job_id)
+    if job is None or job.status not in ACTIVE_SUMMARY_GENERATION_STATUSES:
+        return job
+
+    job.stage = "saving_summary"
+    job.progress_percent = 90
+
+    recording = await _load_recording_for_generation(
+        db,
+        recording_id=job.recording_id,
+        user_id=job.user_id,
+        include_outputs=True,
+        lock=True,
+    )
+    if recording is None:
+        mark_summary_generation_failed(
+            job,
+            error_code="recording_not_found",
+            error_message="Recording not found.",
+        )
+        return job
+
+    transcript = build_summary_transcript(recording.segments)
+    if summary_transcript_hash(transcript) != job.transcript_hash:
+        mark_summary_generation_failed(
+            job,
+            error_code="stale_transcript",
+            error_message="Transcript changed while summary generation was running.",
+        )
+        return job
+
+    await apply_summary_result(db, recording=recording, summary_result=summary_result)
+    job.status = SummaryGenerationStatus.SUCCEEDED.value
+    job.stage = "complete"
+    job.progress_percent = 100
+    job.error_code = None
+    job.error_message = None
+    job.completed_at = datetime.now(timezone.utc)
+    job.failed_at = None
+    await db.flush()
+    return job
+
+
+async def fail_summary_generation_job(
+    db: AsyncSession,
+    *,
+    job_id: UUID,
+    error_code: str,
+    error_message: str,
+) -> SummaryGenerationJob | None:
+    job = await _load_job_for_update(db, job_id)
+    if job is None:
+        return None
+    mark_summary_generation_failed(job, error_code=error_code, error_message=error_message)
+    await db.flush()
+    return job
+
+
+def mark_summary_generation_failed(
+    job: SummaryGenerationJob,
+    *,
+    error_code: str,
+    error_message: str,
+) -> None:
+    job.status = SummaryGenerationStatus.FAILED.value
+    job.stage = "failed"
+    job.progress_percent = 100
+    job.error_code = error_code
+    job.error_message = error_message
+    job.failed_at = datetime.now(timezone.utc)
+
+
+async def _load_job_for_update(
+    db: AsyncSession,
+    job_id: UUID,
+) -> SummaryGenerationJob | None:
+    result = await db.execute(
+        select(SummaryGenerationJob)
+        .where(SummaryGenerationJob.id == job_id)
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_recording_for_generation(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    user_id: UUID,
+    include_outputs: bool,
+    lock: bool = False,
+) -> Recording | None:
+    options = [selectinload(Recording.segments).selectinload(Segment.person)]
+    if include_outputs:
+        options.extend(
+            [
+                selectinload(Recording.summary),
+                selectinload(Recording.action_items),
+                selectinload(Recording.highlights),
+            ]
+        )
+
+    statement = (
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user_id)
+        .options(*options)
+    )
+    if lock:
+        statement = statement.with_for_update()
+    result = await db.execute(statement)
+    return result.scalar_one_or_none()
+
+
+def _parse_due_date(value: object) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+async def _add_summary_highlights(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    summary_result: SummaryResult,
+) -> None:
+    raw_highlights = summary_result.highlights or []
+    if not raw_highlights:
+        return
+
+    segment_dicts = [
+        {
+            "content": segment.content,
+            "start_ms": segment.start_ms,
+            "end_ms": segment.end_ms,
+        }
+        for segment in sorted(recording.segments, key=lambda item: item.start_ms or 0)
+    ]
+    resolved = resolve_highlight_timestamps(raw_highlights, segment_dicts)
+    for highlight in resolved:
+        category = str(highlight.get("category", "insight")).strip()[:30]
+        title = str(highlight.get("title", "")).strip()
+        if not title:
+            continue
+        importance = highlight.get("importance", "medium")
+        if importance not in {"high", "medium", "low"}:
+            importance = "medium"
+        db.add(
+            Highlight(
+                recording_id=recording.id,
+                category=category,
+                title=title[:500],
+                description=highlight.get("description"),
+                speaker=highlight.get("speaker"),
+                start_ms=highlight.get("start_ms"),
+                end_ms=highlight.get("end_ms"),
+                importance=importance,
+            )
+        )

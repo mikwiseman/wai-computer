@@ -113,6 +113,61 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isLoading)
     }
 
+    func testGenerateSummaryAppliesReturnedSummaryWhenFollowUpDetailIsStale() async {
+        let recordingId = "summary-stale-follow-up"
+        let viewModel = MacRecordingDetailViewModel(
+            initialDetail: RecordingDetail(
+                id: recordingId,
+                title: "Needs Summary",
+                type: .meeting,
+                status: .ready,
+                createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+                segments: [
+                    Segment(
+                        id: "segment-1",
+                        speaker: "Speaker 1",
+                        content: "Generate a durable summary.",
+                        startMs: 0,
+                        endMs: 1_000,
+                        confidence: 0.98
+                    )
+                ]
+            )
+        )
+
+        let staleDetailJSON = makeRecordingDetailJSON(
+            id: recordingId,
+            status: "ready",
+            segments: [
+                [
+                    "id": "segment-1",
+                    "content": "Generate a durable summary.",
+                    "start_ms": 0,
+                    "end_ms": 1_000,
+                    "confidence": 0.98
+                ]
+            ],
+            summary: nil
+        )
+
+        let apiClient = makeAPIClient { request in
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "POST", path == "/api/recordings/\(recordingId)/generate-summary" {
+                return (200, #"{"summary":"Generated summary.","key_points":["One"],"decisions":[],"topics":["summary"],"people_mentioned":[],"sentiment":"neutral"}"#)
+            }
+            if request.httpMethod == "GET", path == "/api/recordings/\(recordingId)" {
+                return (200, staleDetailJSON)
+            }
+            return (404, #"{"detail":"Unexpected request"}"#)
+        }
+
+        await viewModel.generateSummary(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertEqual(viewModel.recordingDetail?.summary?.summary, "Generated summary.")
+        XCTAssertEqual(viewModel.selectedTab, .summary)
+        XCTAssertFalse(viewModel.isGeneratingSummary(for: recordingId))
+    }
+
     private func makeDetail(id: String, title: String) -> RecordingDetail {
         RecordingDetail(
             id: id,
@@ -127,7 +182,14 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
     }
 
     private func makeAPIClient(statusCode: Int, body: String) -> APIClient {
+        makeAPIClient { _ in (statusCode, body) }
+    }
+
+    private func makeAPIClient(
+        handler: @escaping @Sendable (URLRequest) throws -> (Int, String)
+    ) -> APIClient {
         MacRecordingDetailMockURLProtocol.requestHandler = { request in
+            let (statusCode, body) = try handler(request)
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: statusCode,
@@ -146,9 +208,10 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
     private func makeRecordingDetailJSON(
         id: String,
         status: String,
-        segments: [[String: Any]]
+        segments: [[String: Any]],
+        summary: [String: Any]? = nil
     ) -> String {
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "id": id,
             "title": "Server Detail",
             "type": "meeting",
@@ -156,6 +219,7 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
             "created_at": "2026-05-26T12:00:00Z",
             "segments": segments,
         ]
+        payload["summary"] = summary ?? NSNull()
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return String(data: data, encoding: .utf8)!
     }

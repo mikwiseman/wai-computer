@@ -200,6 +200,72 @@ public struct RecordingHighlight: Codable, Identifiable, Sendable {
     }
 }
 
+public struct SummaryGenerationState: Codable, Sendable, Equatable {
+    public let jobId: String?
+    public let recordingId: String
+    public let status: String
+    public let stage: String
+    public let progressPercent: Int
+    public let message: String
+    public let requestedAt: Date?
+    public let startedAt: Date?
+    public let completedAt: Date?
+    public let failedAt: Date?
+    public let errorCode: String?
+    public let errorMessage: String?
+
+    public init(
+        jobId: String? = nil,
+        recordingId: String,
+        status: String,
+        stage: String = "idle",
+        progressPercent: Int = 0,
+        message: String = "",
+        requestedAt: Date? = nil,
+        startedAt: Date? = nil,
+        completedAt: Date? = nil,
+        failedAt: Date? = nil,
+        errorCode: String? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.jobId = jobId
+        self.recordingId = recordingId
+        self.status = status
+        self.stage = stage
+        self.progressPercent = progressPercent
+        self.message = message
+        self.requestedAt = requestedAt
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.failedAt = failedAt
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
+    }
+
+    public var isActive: Bool {
+        status == "queued" || status == "running"
+    }
+
+    public var isFailed: Bool {
+        status == "failed"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case recordingId = "recording_id"
+        case status
+        case stage
+        case progressPercent = "progress_percent"
+        case message
+        case requestedAt = "requested_at"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+        case failedAt = "failed_at"
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+    }
+}
+
 /// Recording with full details including segments and summary
 public struct RecordingDetail: Codable, Identifiable, Sendable {
     public let id: String
@@ -218,6 +284,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     public let createdAt: Date
     public let segments: [Segment]
     public let summary: Summary?
+    public let summaryGeneration: SummaryGenerationState?
     public let actionItems: [ActionItem]
     public let highlights: [RecordingHighlight]
 
@@ -238,6 +305,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         createdAt: Date = Date(),
         segments: [Segment] = [],
         summary: Summary? = nil,
+        summaryGeneration: SummaryGenerationState? = nil,
         actionItems: [ActionItem] = [],
         highlights: [RecordingHighlight] = []
     ) {
@@ -257,6 +325,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.segments = segments
         self.summary = summary
+        self.summaryGeneration = summaryGeneration
         self.actionItems = actionItems
         self.highlights = highlights
     }
@@ -278,6 +347,7 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         case createdAt = "created_at"
         case segments
         case summary
+        case summaryGeneration = "summary_generation"
         case actionItems = "action_items"
         case highlights
     }
@@ -301,8 +371,60 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         segments = try container.decodeIfPresent([Segment].self, forKey: .segments) ?? []
         summary = try container.decodeIfPresent(Summary.self, forKey: .summary)
+        summaryGeneration = try container.decodeIfPresent(
+            SummaryGenerationState.self,
+            forKey: .summaryGeneration
+        )
         actionItems = try container.decodeIfPresent([ActionItem].self, forKey: .actionItems) ?? []
         highlights = try container.decodeIfPresent([RecordingHighlight].self, forKey: .highlights) ?? []
+    }
+
+    public func withSummary(_ summary: Summary) -> RecordingDetail {
+        RecordingDetail(
+            id: id,
+            title: title,
+            type: type,
+            audioUrl: audioUrl,
+            status: status,
+            failureCode: failureCode,
+            failureMessage: failureMessage,
+            uploadedAt: uploadedAt,
+            durationSeconds: durationSeconds,
+            language: language,
+            folderId: folderId,
+            deletedAt: deletedAt,
+            starredAt: starredAt,
+            createdAt: createdAt,
+            segments: segments,
+            summary: summary,
+            summaryGeneration: summaryGeneration,
+            actionItems: actionItems,
+            highlights: highlights
+        )
+    }
+
+    public func withSummaryGeneration(_ state: SummaryGenerationState?) -> RecordingDetail {
+        RecordingDetail(
+            id: id,
+            title: title,
+            type: type,
+            audioUrl: audioUrl,
+            status: status,
+            failureCode: failureCode,
+            failureMessage: failureMessage,
+            uploadedAt: uploadedAt,
+            durationSeconds: durationSeconds,
+            language: language,
+            folderId: folderId,
+            deletedAt: deletedAt,
+            starredAt: starredAt,
+            createdAt: createdAt,
+            segments: segments,
+            summary: summary,
+            summaryGeneration: state,
+            actionItems: actionItems,
+            highlights: highlights
+        )
     }
 }
 
