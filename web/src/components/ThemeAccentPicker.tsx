@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/http";
+import { ApiError } from "@/lib/http";
+import { getPreferences, updatePreferences } from "@/lib/api";
 import styles from "./ThemeAccentPicker.module.css";
 
 export type ThemeChoice = "system" | "light" | "dark";
@@ -167,7 +168,16 @@ export function ThemeAccentPicker({
   const [theme, setTheme] = useState<ThemeChoice>(initialTheme ?? DEFAULT_THEME);
   const [accent, setAccent] = useState<AccentChoice>(initialAccent ?? DEFAULT_ACCENT);
 
-  // Hydrate from localStorage on mount and apply attributes.
+  // True until the server reply (or localStorage fallback) has been applied.
+  // While true, we skip writing to the server — those state changes are hydration,
+  // not user intent. Mirrors the pattern Mac uses: hydrate before subscribe.
+  const hydratingRef = useRef(true);
+  // If the user is unauthenticated (401) or the server has no preferences endpoint
+  // (404), this stays true and PATCHes are skipped for the rest of the lifetime.
+  const skipServerWritesRef = useRef(false);
+
+  // Hydrate from localStorage immediately, then race a server fetch.
+  // Server wins if it answers; localStorage is the fallback for anonymous users.
   useEffect(() => {
     const storedTheme = initialTheme ?? readStoredTheme();
     const storedAccent = initialAccent ?? readStoredAccent();
@@ -175,25 +185,61 @@ export function ThemeAccentPicker({
     setAccent(storedAccent);
     applyTheme(storedTheme);
     applyAccent(storedAccent);
+
+    // Test/Storybook overrides bypass the server fetch entirely.
+    if (initialTheme !== undefined || initialAccent !== undefined) {
+      hydratingRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    void getPreferences()
+      .then((prefs) => {
+        if (cancelled) return;
+        if (isThemeChoice(prefs.theme)) {
+          setTheme(prefs.theme);
+          applyTheme(prefs.theme);
+          writeStoredTheme(prefs.theme);
+        }
+        if (isAccentChoice(prefs.accent)) {
+          setAccent(prefs.accent);
+          applyAccent(prefs.accent);
+          writeStoredAccent(prefs.accent);
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
+          // Unauthenticated or older deployment — stay on localStorage forever.
+          skipServerWritesRef.current = true;
+        }
+        // Other errors are best-effort silent; localStorage remains the source of truth.
+      })
+      .finally(() => {
+        if (!cancelled) hydratingRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced PATCH — server may not support this yet; 404 swallowed.
+  // Debounced PATCH — silent on auth/404 errors; localStorage already mirrors state.
   const patchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patchPreferences = useCallback(
     (nextTheme: ThemeChoice, nextAccent: AccentChoice) => {
+      if (hydratingRef.current || skipServerWritesRef.current) return;
       if (patchTimer.current) clearTimeout(patchTimer.current);
       patchTimer.current = setTimeout(() => {
-        void apiFetch("/api/settings/preferences", {
-          method: "PATCH",
-          body: JSON.stringify({ theme: nextTheme, accent: nextAccent }),
-        }).catch((error: unknown) => {
-          if (error instanceof ApiError && error.status === 404) {
-            // Server has no preferences endpoint yet — localStorage is the source of truth.
-            return;
-          }
-          // Silent on other errors too: persistence is best-effort for v1.
-        });
+        void updatePreferences({ theme: nextTheme, accent: nextAccent }).catch(
+          (error: unknown) => {
+            if (error instanceof ApiError && (error.status === 401 || error.status === 404)) {
+              skipServerWritesRef.current = true;
+              return;
+            }
+            // Silent on other errors too: persistence is best-effort for v1.
+          },
+        );
       }, 400);
     },
     [],

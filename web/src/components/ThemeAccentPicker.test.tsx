@@ -1,23 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { ThemeAccentPicker } from "./ThemeAccentPicker";
-import { apiFetch } from "@/lib/http";
+import { ApiError } from "@/lib/http";
+import { getPreferences, updatePreferences } from "@/lib/api";
 
-vi.mock("@/lib/http", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/http")>("@/lib/http");
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
-    apiFetch: vi.fn(),
+    getPreferences: vi.fn(),
+    updatePreferences: vi.fn(),
   };
 });
 
-const mockedApiFetch = vi.mocked(apiFetch);
+const mockedGetPreferences = vi.mocked(getPreferences);
+const mockedUpdatePreferences = vi.mocked(updatePreferences);
 
 const ACCENTS = ["teal", "amber", "blue", "green", "violet", "rose", "graphite"] as const;
 
 let localStorageValues: Record<string, string>;
 let setItemSpy: ReturnType<typeof vi.fn>;
+
+async function flushHydration(): Promise<void> {
+  // Drain the microtask queue used by the server-fetch promise chain
+  // so the hydration `finally` block clears `hydratingRef`.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 describe("ThemeAccentPicker", () => {
   beforeEach(() => {
@@ -47,8 +60,11 @@ describe("ThemeAccentPicker", () => {
 
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.removeAttribute("data-accent");
-    mockedApiFetch.mockReset();
-    mockedApiFetch.mockResolvedValue(undefined as unknown as never);
+    mockedGetPreferences.mockReset();
+    mockedUpdatePreferences.mockReset();
+    // Default: unauthenticated -> 401. Component falls back to localStorage.
+    mockedGetPreferences.mockRejectedValue(new ApiError(401, "unauthenticated"));
+    mockedUpdatePreferences.mockResolvedValue({ theme: "system", accent: "teal" });
   });
 
   afterEach(() => {
@@ -66,8 +82,9 @@ describe("ThemeAccentPicker", () => {
     ).toHaveLength(ACCENTS.length);
   });
 
-  it("renders three theme options and cycles between system / light / dark", () => {
+  it("renders three theme options and cycles between system / light / dark", async () => {
     render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
 
     const systemBtn = screen.getByTestId("theme-option-system");
     const lightBtn = screen.getByTestId("theme-option-light");
@@ -93,8 +110,9 @@ describe("ThemeAccentPicker", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("system");
   });
 
-  it("clicking accent swatches cycles data-accent on the html element", () => {
+  it("clicking accent swatches cycles data-accent on the html element", async () => {
     render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
     // Default applied on mount: teal.
     expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
 
@@ -111,8 +129,9 @@ describe("ThemeAccentPicker", () => {
     expect(document.documentElement.getAttribute("data-accent")).toBe("graphite");
   });
 
-  it("writes selections to localStorage", () => {
+  it("writes selections to localStorage", async () => {
     render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
 
     fireEvent.click(screen.getByTestId("theme-option-dark"));
     fireEvent.click(screen.getByTestId("accent-option-violet"));
@@ -143,8 +162,10 @@ describe("ThemeAccentPicker", () => {
     expect(screen.getByTestId("accent-option-amber").getAttribute("aria-label")).toBe("Янтарный");
   });
 
-  it("debounces and fires a PATCH to /api/settings/preferences after changes", () => {
+  it("debounces and fires a PATCH to updatePreferences after user changes", async () => {
+    mockedGetPreferences.mockResolvedValueOnce({ theme: "system", accent: "teal" });
     render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
 
     fireEvent.click(screen.getByTestId("theme-option-light"));
     fireEvent.click(screen.getByTestId("accent-option-blue"));
@@ -152,22 +173,53 @@ describe("ThemeAccentPicker", () => {
     // Both clicks should collapse into a single trailing PATCH call.
     vi.advanceTimersByTime(500);
 
-    expect(mockedApiFetch).toHaveBeenCalledTimes(1);
-    const [path, init] = mockedApiFetch.mock.calls[0];
-    expect(path).toBe("/api/settings/preferences");
-    expect(init?.method).toBe("PATCH");
-    expect(JSON.parse(String(init?.body))).toEqual({ theme: "light", accent: "blue" });
+    expect(mockedUpdatePreferences).toHaveBeenCalledTimes(1);
+    expect(mockedUpdatePreferences).toHaveBeenCalledWith({ theme: "light", accent: "blue" });
   });
 
   it("swallows a 404 PATCH gracefully (no throw, no rejected promise leak)", async () => {
-    const ApiErrorClass = (await vi.importActual<typeof import("@/lib/http")>("@/lib/http"))
-      .ApiError;
-    mockedApiFetch.mockRejectedValue(new ApiErrorClass(404, "not found"));
+    mockedGetPreferences.mockResolvedValueOnce({ theme: "system", accent: "teal" });
+    mockedUpdatePreferences.mockRejectedValue(new ApiError(404, "not found"));
     render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
 
     fireEvent.click(screen.getByTestId("theme-option-dark"));
 
     expect(() => vi.advanceTimersByTime(500)).not.toThrow();
-    expect(mockedApiFetch).toHaveBeenCalledTimes(1);
+    expect(mockedUpdatePreferences).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT call updatePreferences when unauthenticated (401 on initial fetch)", async () => {
+    // Default beforeEach already rejects getPreferences with 401.
+    render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
+
+    fireEvent.click(screen.getByTestId("theme-option-dark"));
+    vi.advanceTimersByTime(500);
+
+    // Unauthenticated users stay localStorage-only — no PATCH calls.
+    expect(mockedUpdatePreferences).not.toHaveBeenCalled();
+    // But localStorage still records the change for next visit.
+    expect(localStorageValues.wai_theme).toBe("dark");
+  });
+
+  it("overwrites localStorage when the server returns different preferences", async () => {
+    localStorageValues.wai_theme = "system";
+    localStorageValues.wai_accent = "teal";
+    mockedGetPreferences.mockResolvedValueOnce({ theme: "dark", accent: "violet" });
+
+    render(<ThemeAccentPicker locale="en" />);
+    await flushHydration();
+
+    // After server reply, the UI reflects the server values.
+    expect(screen.getByTestId("theme-option-dark").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("accent-option-violet").getAttribute("aria-checked")).toBe("true");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.getAttribute("data-accent")).toBe("violet");
+    // localStorage was overwritten so cross-device drift is resolved.
+    expect(localStorageValues.wai_theme).toBe("dark");
+    expect(localStorageValues.wai_accent).toBe("violet");
+    // And the hydration itself must not fire a PATCH back to the server.
+    expect(mockedUpdatePreferences).not.toHaveBeenCalled();
   });
 });

@@ -43,6 +43,9 @@ class MessageResponse(BaseModel):
 
 VALID_SUMMARY_STYLES = {"brief", "medium", "detailed"}
 
+VALID_THEMES = {"system", "light", "dark"}
+VALID_ACCENTS = {"teal", "amber", "blue", "green", "violet", "rose", "graphite"}
+
 
 class SettingsResponse(BaseModel):
     """Response for user settings."""
@@ -276,6 +279,64 @@ async def update_settings(
         user.region = request.region
     await db.flush()
     return _settings_response(user)
+
+
+class PreferencesResponse(BaseModel):
+    """Response for the appearance preferences endpoint."""
+
+    theme: str
+    accent: str
+
+
+class UpdatePreferencesRequest(BaseModel):
+    """Partial update of appearance preferences."""
+
+    theme: str | None = None
+    accent: str | None = None
+
+    @field_validator("theme")
+    @classmethod
+    def validate_theme(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in VALID_THEMES:
+            raise ValueError(f"theme must be one of: {', '.join(sorted(VALID_THEMES))}")
+        return normalized
+
+    @field_validator("accent")
+    @classmethod
+    def validate_accent(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in VALID_ACCENTS:
+            raise ValueError(f"accent must be one of: {', '.join(sorted(VALID_ACCENTS))}")
+        return normalized
+
+
+@router.get("/preferences", response_model=PreferencesResponse)
+async def get_preferences(user: CurrentUser) -> PreferencesResponse:
+    """Get appearance preferences (theme + accent) for the current user."""
+    return PreferencesResponse(theme=user.theme, accent=user.accent)
+
+
+@router.patch("/preferences", response_model=PreferencesResponse)
+async def update_preferences(
+    request: UpdatePreferencesRequest,
+    user: CurrentUser,
+    db: Database,
+) -> PreferencesResponse:
+    """Update appearance preferences.
+
+    Accepts a partial body; unknown values are rejected with 422.
+    """
+    if request.theme is not None:
+        user.theme = request.theme
+    if request.accent is not None:
+        user.accent = request.accent
+    await db.flush()
+    return PreferencesResponse(theme=user.theme, accent=user.accent)
 
 
 @router.post("/change-password", response_model=MessageResponse)

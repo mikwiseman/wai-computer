@@ -6,6 +6,7 @@ providers fill them in (Phases 2 and 3 of the v1.0 sprint).
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated
@@ -23,6 +24,7 @@ from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.billing.quota import WordQuota
 from app.billing.subscriptions import subscription_is_entitled
 from app.config import get_settings
+from app.core.observability import add_sentry_breadcrumb
 from app.models.billing import (
     BillingEvent,
     BillingPeriod,
@@ -34,6 +36,8 @@ from app.models.billing import (
     Subscription,
     SubscriptionStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 # Decimal values land on the wire as JSON numbers, not strings. The Apple
 # clients decode these straight into `Decimal`/`NSDecimal`, which rejects
@@ -94,7 +98,13 @@ class SubscriptionResponse(BaseModel):
 
 
 class InvoiceResponse(BaseModel):
-    """Single invoice row for the billing-page history table."""
+    """Single invoice row for the billing-page history table.
+
+    Stripe-sourced rows fill ``hosted_invoice_url``/``invoice_pdf`` (the URLs
+    Stripe hosts itself); local-mirror-only rows can still use ``receipt_url``
+    for older T-Bank invoices. Frontend prefers ``hosted_invoice_url`` when
+    both are present.
+    """
 
     id: str
     amount: DecimalNumber
@@ -104,6 +114,20 @@ class InvoiceResponse(BaseModel):
     created_at: datetime
     receipt_url: str | None
     description: str | None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+
+
+class PortalResponse(BaseModel):
+    """Stripe Customer Portal session URL.
+
+    The frontend redirects via ``window.location.href = url`` so the user
+    lands on Stripe-hosted pages for card updates and subscription management.
+    """
+
+    url: str
 
 
 class SwitchPlanRequest(BaseModel):
@@ -566,13 +590,92 @@ async def cancel_subscription(user: CurrentUser, db: Database) -> dict:
     raise HTTPException(status_code=400, detail="Unknown provider on subscription")
 
 
+def _ts_to_datetime(value: object) -> datetime | None:
+    """Stripe returns seconds-since-epoch ints; coerce to aware UTC datetime."""
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _stripe_invoice_to_response(inv: dict) -> InvoiceResponse | None:
+    """Map a Stripe Invoice dict into our wire shape. Returns None on bad data."""
+    invoice_id = inv.get("id")
+    created = _ts_to_datetime(inv.get("created"))
+    if not invoice_id or created is None:
+        return None
+    amount_cents = inv.get("amount_paid")
+    if amount_cents in (None, 0):
+        amount_cents = inv.get("amount_due") or 0
+    amount = Decimal(int(amount_cents)) / Decimal(100)
+    paid_at_ts = inv.get("status_transitions", {}).get("paid_at") if isinstance(
+        inv.get("status_transitions"), dict
+    ) else None
+    period_start = None
+    period_end = None
+    # Stripe puts period info on each line item; fall back to the top-level
+    # period field if it's present.
+    lines = inv.get("lines", {})
+    if isinstance(lines, dict):
+        data = lines.get("data") or []
+        if isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict):
+                period = first.get("period") if isinstance(first.get("period"), dict) else None
+                if isinstance(period, dict):
+                    period_start = _ts_to_datetime(period.get("start"))
+                    period_end = _ts_to_datetime(period.get("end"))
+    if period_start is None and isinstance(inv.get("period_start"), int):
+        period_start = _ts_to_datetime(inv.get("period_start"))
+    if period_end is None and isinstance(inv.get("period_end"), int):
+        period_end = _ts_to_datetime(inv.get("period_end"))
+    hosted_url = inv.get("hosted_invoice_url")
+    return InvoiceResponse(
+        id=str(invoice_id),
+        amount=amount,
+        currency=(inv.get("currency") or "usd").upper(),
+        status=str(inv.get("status") or "open"),
+        paid_at=_ts_to_datetime(paid_at_ts),
+        created_at=created,
+        # Keep `receipt_url` populated for back-compat (older clients that
+        # only know about that field).
+        receipt_url=hosted_url,
+        description=inv.get("description"),
+        hosted_invoice_url=hosted_url,
+        invoice_pdf=inv.get("invoice_pdf"),
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
+def _local_invoice_to_response(row: Invoice) -> InvoiceResponse:
+    return InvoiceResponse(
+        id=str(row.id),
+        amount=row.amount,
+        currency=(row.currency or "USD").upper(),
+        status=row.status,
+        paid_at=row.paid_at,
+        created_at=row.created_at,
+        receipt_url=row.receipt_url,
+        description=None,
+        hosted_invoice_url=row.receipt_url,
+        invoice_pdf=None,
+        period_start=None,
+        period_end=None,
+    )
+
+
 @router.get("/invoices", response_model=list[InvoiceResponse])
 async def list_invoices(user: CurrentUser, db: Database) -> list[InvoiceResponse]:
     """Return the user's invoice history, newest first.
 
-    Joined against `billing_subscriptions` on user_id so the same user sees
-    invoices from previous (cancelled) subscriptions too — losing access to
-    a receipt because you downgraded would be hostile.
+    Stripe is the source of truth for Stripe-rail invoices (hosted PDF + URL),
+    so when a ``stripe_customer_id`` is set we fetch live from Stripe and
+    merge with our local mirror — Stripe wins on id collisions because their
+    payload also carries ``hosted_invoice_url``/``invoice_pdf`` which we
+    don't always persist locally.
     """
     stmt = (
         select(Invoice)
@@ -581,20 +684,116 @@ async def list_invoices(user: CurrentUser, db: Database) -> list[InvoiceResponse
         .order_by(Invoice.created_at.desc())
         .limit(25)
     )
-    rows = (await db.execute(stmt)).scalars().all()
-    return [
-        InvoiceResponse(
-            id=str(row.id),
-            amount=row.amount,
-            currency=row.currency,
-            status=row.status,
-            paid_at=row.paid_at,
-            created_at=row.created_at,
-            receipt_url=row.receipt_url,
-            description=None,
+    local_rows = (await db.execute(stmt)).scalars().all()
+
+    if not user.stripe_customer_id:
+        return [_local_invoice_to_response(row) for row in local_rows]
+
+    provider = StripeProvider()
+    try:
+        stripe_rows = await provider.list_customer_invoices(
+            customer_id=user.stripe_customer_id, limit=25
         )
-        for row in rows
-    ]
+    except ProviderUnavailableError:
+        # Stripe not configured in this env — fall back to local mirror.
+        return [_local_invoice_to_response(row) for row in local_rows]
+    except Exception as exc:  # noqa: BLE001 — Stripe SDK raises stripe.error.*
+        logger.warning("Stripe invoice list failed: %s", exc)
+        add_sentry_breadcrumb(
+            category="billing.stripe",
+            message="stripe.Invoice.list failed",
+            data={"reason": type(exc).__name__},
+            level="warning",
+        )
+        return [_local_invoice_to_response(row) for row in local_rows]
+
+    # Build a dict keyed by Stripe invoice id; local rows that share that id
+    # (via provider_payment_id) defer to Stripe.
+    merged: dict[str, InvoiceResponse] = {}
+    stripe_ids: set[str] = set()
+    for raw in stripe_rows:
+        item = _stripe_invoice_to_response(raw)
+        if item is None:
+            continue
+        merged[item.id] = item
+        stripe_ids.add(item.id)
+    for row in local_rows:
+        payment_id = row.provider_payment_id
+        if payment_id and payment_id in stripe_ids:
+            continue
+        merged[str(row.id)] = _local_invoice_to_response(row)
+
+    ordered = sorted(
+        merged.values(),
+        key=lambda i: i.created_at,
+        reverse=True,
+    )
+    return ordered[:25]
+
+
+@router.post("/portal", response_model=PortalResponse)
+async def open_billing_portal(user: CurrentUser, db: Database) -> PortalResponse:
+    """Create a Stripe Billing Portal session for the current user.
+
+    The portal lets the user update their card, cancel/resume the
+    subscription, and download invoices on Stripe-hosted pages — no card
+    data ever touches our backend. If the user has never been a Stripe
+    customer (e.g. they got Pro via a promo code), we lazily create the
+    customer using their email and persist the id.
+    """
+    settings = get_settings()
+    provider = StripeProvider()
+    return_url = f"{settings.frontend_url.rstrip('/')}/billing"
+
+    customer_id = user.stripe_customer_id
+    if not customer_id:
+        try:
+            customer_id = await provider.ensure_customer(
+                user_id=str(user.id), email=user.email
+            )
+        except ProviderUnavailableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Stripe portal unavailable: {exc}",
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            add_sentry_breadcrumb(
+                category="billing.stripe",
+                message="stripe.Customer.create failed",
+                data={"reason": type(exc).__name__},
+                level="error",
+            )
+            logger.warning("Stripe customer create failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Stripe portal unavailable",
+            ) from exc
+        user.stripe_customer_id = customer_id
+        await db.flush()
+
+    try:
+        url = await provider.create_portal_session(
+            customer_id=customer_id, return_url=return_url
+        )
+    except ProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Stripe portal unavailable: {exc}",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 — stripe.error.* hierarchy
+        add_sentry_breadcrumb(
+            category="billing.stripe",
+            message="stripe.billing_portal.Session.create failed",
+            data={"reason": type(exc).__name__},
+            level="error",
+        )
+        logger.warning("Stripe portal session create failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Stripe portal unavailable",
+        ) from exc
+
+    return PortalResponse(url=url)
 
 
 @router.post(

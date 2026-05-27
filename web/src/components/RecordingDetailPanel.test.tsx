@@ -308,4 +308,95 @@ describe("RecordingDetailPanel", () => {
       expect(screen.getByText("Download failed")).toBeTruthy();
     });
   });
+
+  // --- Move-to-folder control ---------------------------------------------
+
+  it("renders 'Move to folder' select when folders + onAssignFolder are provided", () => {
+    const folders = [
+      { id: "folder-a", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+      { id: "folder-b", name: "Personal", created_at: "2026-05-27T00:00:00Z" },
+    ];
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording()}
+        folders={folders}
+        onAssignFolder={() => {}}
+      />,
+    );
+
+    const select = screen.getByTestId("assign-folder-select");
+    expect(select).toBeTruthy();
+    expect(select.getAttribute("aria-label")).toBe("Move to folder");
+    expect(screen.getByText("(no folder)")).toBeTruthy();
+    expect(screen.getByText("Work")).toBeTruthy();
+    expect(screen.getByText("Personal")).toBeTruthy();
+  });
+
+  it("renders Russian label when locale='ru'", () => {
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording()}
+        folders={[]}
+        locale="ru"
+        onAssignFolder={() => {}}
+      />,
+    );
+
+    const select = screen.getByTestId("assign-folder-select");
+    expect(select.getAttribute("aria-label")).toBe("Переместить в папку");
+    expect(screen.getByText("(без папки)")).toBeTruthy();
+  });
+
+  it("calls onAssignFolder when a folder is selected from the dropdown", async () => {
+    const folders = [
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ];
+    const onAssignFolder = vi.fn();
+    const onUpdate = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording()}
+        folders={folders}
+        onAssignFolder={onAssignFolder}
+        onRecordingUpdate={onUpdate}
+      />,
+    );
+
+    await user.selectOptions(screen.getByTestId("assign-folder-select"), "folder-work");
+
+    await waitFor(() => {
+      expect(onAssignFolder).toHaveBeenCalledWith("rec-1", "folder-work");
+    });
+    // Optimistic local update fires too.
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "rec-1", folder_id: "folder-work" }),
+    );
+  });
+
+  it("calls onAssignFolder with null when the '(no folder)' option is selected", async () => {
+    const folders = [
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ];
+    const onAssignFolder = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording({ folder_id: "folder-work" })}
+        folders={folders}
+        onAssignFolder={onAssignFolder}
+      />,
+    );
+
+    await user.selectOptions(screen.getByTestId("assign-folder-select"), "");
+
+    await waitFor(() => {
+      expect(onAssignFolder).toHaveBeenCalledWith("rec-1", null);
+    });
+  });
+
+  it("hides the move-to-folder select when no folders prop is passed", () => {
+    render(<RecordingDetailPanel recording={makeRecording()} />);
+    expect(screen.queryByTestId("assign-folder-select")).toBeNull();
+  });
 });

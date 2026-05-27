@@ -529,6 +529,24 @@ export function updateSettings(settings: Partial<UserSettings>): Promise<UserSet
   });
 }
 
+export interface AppearancePreferences {
+  theme: string;
+  accent: string;
+}
+
+export function getPreferences(): Promise<AppearancePreferences> {
+  return apiFetch<AppearancePreferences>("/api/settings/preferences");
+}
+
+export function updatePreferences(
+  patch: { theme?: string; accent?: string },
+): Promise<AppearancePreferences> {
+  return apiFetch<AppearancePreferences>("/api/settings/preferences", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export function getTelegramLinkStatus(): Promise<TelegramLinkStatus> {
   return apiFetch<TelegramLinkStatus>("/api/telegram/link");
 }

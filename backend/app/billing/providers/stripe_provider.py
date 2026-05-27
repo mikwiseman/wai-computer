@@ -124,6 +124,58 @@ class StripeProvider(PaymentProvider):
             return
         await client.v1.subscriptions.cancel_async(provider_subscription_id)
 
+    async def ensure_customer(self, *, user_id: str, email: str) -> str:
+        """Return a Stripe Customer id for this user, creating one if needed.
+
+        Used by the Customer Portal flow so we can open a session for users
+        who never went through hosted checkout (e.g. promo-only Pro grants).
+        Idempotency lives on the caller — we always create when called.
+        """
+        client = self._client_or_raise()
+        customer = await client.v1.customers.create_async(
+            params={
+                "email": email,
+                "metadata": {"user_id": user_id},
+            }
+        )
+        return customer.id  # type: ignore[no-any-return]
+
+    async def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
+        """Return the hosted Customer Portal URL for ``customer_id``.
+
+        Stripe Dashboard → Settings → Billing → Customer Portal must be
+        configured before this works; otherwise Stripe returns a 400 that
+        bubbles up through ``stripe.error.InvalidRequestError``.
+        """
+        client = self._client_or_raise()
+        session = await client.v1.billing_portal.sessions.create_async(
+            params={"customer": customer_id, "return_url": return_url},
+        )
+        return session.url  # type: ignore[no-any-return]
+
+    async def list_customer_invoices(
+        self, *, customer_id: str, limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """Return the latest invoices for ``customer_id`` as plain dicts.
+
+        Caller maps these into ``InvoiceResponse`` so the wire shape stays
+        provider-agnostic and Apple decoders don't fight Stripe's snake/camel
+        mixing. Returns newest first (Stripe default).
+        """
+        client = self._client_or_raise()
+        listing = await client.v1.invoices.list_async(
+            params={"customer": customer_id, "limit": limit},
+        )
+        items = []
+        for inv in listing.data:  # type: ignore[attr-defined]
+            if hasattr(inv, "to_dict"):
+                items.append(inv.to_dict())
+            elif hasattr(inv, "to_dict_recursive"):
+                items.append(inv.to_dict_recursive())
+            else:
+                items.append(dict(inv))
+        return items
+
     async def resume_subscription(self, provider_subscription_id: str) -> None:
         client = self._client_or_raise()
         await client.v1.subscriptions.update_async(

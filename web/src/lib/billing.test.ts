@@ -8,6 +8,7 @@ import {
   getBillingSubscription,
   getBillingUsage,
   listBillingPlans,
+  openBillingPortal,
   switchBillingPlan,
 } from "./billing";
 
@@ -69,6 +70,14 @@ describe("billing api wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/billing/switch-plan", {
       method: "POST",
       body: JSON.stringify({ period: "yearly" }),
+    });
+  });
+
+  it("posts to the Stripe portal endpoint", async () => {
+    await openBillingPortal();
+
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/billing/portal", {
+      method: "POST",
     });
   });
 });

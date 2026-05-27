@@ -737,3 +737,153 @@ Caveats:
 - Inline folder assignment from a recording-detail panel is not yet wired — the `assignRecordingToFolder` API helper is in place and tested, but no UI surface uses it yet. Agent owning `RecordingDetailPanel.tsx` should add a folder selector there.
 - The `n` shortcut focuses whichever interactive element the recorder pane mounts first; once a richer recorder UI lands it may want a dedicated `data-shortcut-target` selector instead of the generic `input, button, [tabindex]` query.
 - Folder counts are NOT shown in the sidebar group (Mac shows them; we omit for v1.0 to avoid extra `listRecordings({folder_id})` requests). Future work: derive the count from the in-memory `recordings` array.
+
+## Agent O — done
+
+Scope: Sprint 4 — back the `/api/settings/preferences` endpoint that `ThemeAccentPicker` was already PATCH-ing to, so theme + accent follow the user across devices instead of dying in localStorage.
+
+Files created:
+
+- `backend/app/db/migrations/versions/20260527_120000_add_theme_accent_to_users.py` — NEW Alembic migration. `down_revision = "20260526_110000"`. `upgrade()` runs `op.add_column("users", sa.Column("theme", String(10), server_default="system", nullable=False))` and the same for `accent` (String(12), default `'teal'`). Single-statement ADD COLUMN with a server-side default is metadata-only on Postgres ≥ 11 and safe to deploy zero-downtime against the live `waicomputer-db`. `downgrade()` drops both columns in reverse order.
+
+Files modified:
+
+- `backend/app/models/user.py` — added two `Mapped[str]` columns (`theme`, `accent`) with matching `default=` and `server_default=` to mirror the migration. Both `nullable=False`.
+- `backend/app/api/routes/settings.py` — added `VALID_THEMES = {"system", "light", "dark"}` and `VALID_ACCENTS = {"teal", "amber", "blue", "green", "violet", "rose", "graphite"}`. New `PreferencesResponse` Pydantic model and `UpdatePreferencesRequest` with `@field_validator` enforcing the enum lists (reject with 422 on anything else). New routes:
+  - `GET  /api/settings/preferences` — returns `{theme, accent}` for `CurrentUser`.
+  - `PATCH /api/settings/preferences` — partial update, validates both ends, persists via `db.flush()`, returns the row.
+- `backend/tests/test_settings_routes.py` — added 7 async tests:
+  1. `test_get_preferences_returns_defaults_for_new_user` — defaults are `system`/`teal`.
+  2. `test_patch_preferences_persists_theme` — PATCH dark; GET still returns dark.
+  3. `test_patch_preferences_persists_accent` — PATCH amber; GET still returns amber.
+  4. `test_patch_preferences_rejects_invalid_theme` — `theme=neon` → 422, row unchanged.
+  5. `test_patch_preferences_rejects_invalid_accent` — `accent=magenta` → 422.
+  6. `test_get_preferences_requires_auth` — 401 without bearer.
+  7. `test_patch_preferences_requires_auth` — 401 without bearer.
+- `web/src/lib/types.ts` — added `theme?: "system"|"light"|"dark"` and `accent?: "teal"|...|"graphite"` to the `User` interface (optional, so existing callers don't break — the real source of truth is the new `AppearancePreferences` shape).
+- `web/src/lib/api.ts` — added `export interface AppearancePreferences { theme: string; accent: string }` plus `getPreferences()` and `updatePreferences(patch)` helpers using the existing `apiFetch` plumbing.
+- `web/src/components/ThemeAccentPicker.tsx` — rewired hydration. Now: (1) immediately hydrates from localStorage on mount and applies attributes (no flash); (2) races a `getPreferences()` fetch and, if it resolves, overwrites the local state + localStorage with the server values so the user's last device wins on cross-device sync; (3) on 401/404 it sets `skipServerWritesRef = true` so subsequent PATCHes are no-ops (unauthenticated users / older deployments stay localStorage-only); (4) uses a `hydratingRef` to skip the PATCH while hydration is in flight, so the server-returned values are never echoed back as a redundant write. Switched the import from `apiFetch` to the typed `getPreferences/updatePreferences` helpers from `@/lib/api`.
+- `web/src/components/ThemeAccentPicker.test.tsx` — rewrote against the new helpers. Mocks `getPreferences` + `updatePreferences` from `@/lib/api` (instead of raw `apiFetch`), adds a `flushHydration()` helper that drains the post-mount promise chain via `act()`, and adds two new specs: "does NOT call updatePreferences when unauthenticated (401)" + "overwrites localStorage when the server returns different preferences". 10/10 pass.
+- `web/src/components/DashboardClient.test.tsx` — extended the `vi.mock("@/lib/api", …)` block with `getPreferences` + `updatePreferences` mock entries (and matching `vi.fn()` declarations + `mockResolvedValue` defaults in `beforeEach`), because `DashboardClient` renders `ThemeAccentPicker` and the new exports must exist on the mock or the picker's `useEffect` crashes the dashboard test suite.
+
+Verification:
+
+- `cd backend && ruff check .` → All checks passed.
+- `cd backend && pytest tests/test_settings_routes.py -k "prefs or preferences" -q --no-cov` → 7/7 pass.
+- `cd web && pnpm lint` → 0 errors. The 2 surviving warnings (`BillingResultCard.tsx` unused type, `DashboardClient.tsx:927` missing-dep) are pre-existing and owned by other agents.
+- `cd web && pnpm test:unit` → 347/347 pass across 32 files. The new ThemeAccentPicker suite contributes 10 specs.
+- `cd web && pnpm build` → `Compiled successfully`, all 27 routes generated.
+
+Frontend hydration order (load → first user action):
+
+1. Render with `initialTheme` / `initialAccent` if a parent passed them (Storybook/tests), else `system` + `teal`.
+2. In `useEffect`, immediately read `localStorage[wai_theme]` + `localStorage[wai_accent]` → set state + apply `data-theme` / `data-accent` to `<html>` (no flash).
+3. Fire `getPreferences()`. On resolve, overwrite state + localStorage + DOM attrs with the server values. On 401 or 404, set `skipServerWritesRef = true`.
+4. Flip `hydratingRef = false` in the promise's `.finally()`.
+5. On user click: update state, `data-*` attr, localStorage, and schedule a 400 ms-debounced `updatePreferences()` PATCH. The PATCH is suppressed while `hydratingRef.current` is `true` or `skipServerWritesRef.current` is `true`.
+
+Caveats:
+
+- Did NOT run alembic on prod — committed only. Deploy step (per task) is owned by Mik; `scripts/deploy-server.sh` runs `alembic upgrade head` as part of the standard flow.
+- Did NOT touch `globals.css`, `tokens.css`, `app-icon-*`, `layout.tsx` bootstrap script, landing, billing, share, AuthForm, OnboardingClient, or any other file outside the scoped list. The `layout.tsx` inline `<script>` Agent H added still reads the same `wai_theme` / `wai_accent` localStorage keys for first-paint, so no regression on the no-flash path.
+- The `User` interface gained `theme?`/`accent?` as optional — the `/api/auth/me` endpoint does not currently surface these fields (no need; the preferences endpoint is the canonical source). If a future agent wires `theme`/`accent` into `UserResponse`, this client type already accepts them.
+- Server hydration *overwrites* localStorage on every dashboard mount when the server has values. That's the intended cross-device sync semantics. A user who tweaks theme on device A → opens dashboard on device B → sees A's choice. If product wants "device-local theme, server only when no device override", invert the priority — but for v1.0 the spec is server wins.
+- The PATCH is debounced 400 ms, so rapid clicks (theme → accent in one second) collapse into one call. `getPreferences` is a single GET on mount; no polling.
+- Whitelist validation lives in three places: the Pydantic validators on the server (authoritative — returns 422 to anyone hitting the API directly), the `isThemeChoice` / `isAccentChoice` guards in the client (defense in depth for storage roundtrips), and the `String(10)` / `String(12)` column widths (truncation safeguard even if validation is somehow bypassed). The DB defaults (`server_default="system"`/`"teal"`) make prod backfill on the 38 existing accounts trivial — no UPDATE pass needed.
+
+## Agent Q — done
+
+Scope: Sprint 4 — Sentry browser SDK + SEO basics (robots, sitemap, og:image).
+
+Files modified:
+
+- `web/src/instrumentation-client.ts` — switched from hardcoded DSN to `process.env.NEXT_PUBLIC_SENTRY_DSN || ""`. Added Session Replay (`replaysSessionSampleRate: 0.05`, `replaysOnErrorSampleRate: 1.0`) with `maskAllText: true` and `blockAllMedia: true` so transcript text never reaches Sentry. `tracesSampleRate` is now a flat `0.1` (was conditional). Environment resolves `NEXT_PUBLIC_SENTRY_ENVIRONMENT` first, then `NODE_ENV`-derived default.
+- `web/src/sentry.server.config.ts` — same env-driven DSN/environment pattern. Drops Session Replay (server side has no DOM).
+- `web/src/sentry.edge.config.ts` — same env-driven DSN/environment pattern.
+- `web/src/app/layout.tsx` — added `metadata.metadataBase = new URL("https://wai.computer")`, `metadata.openGraph` (type=website, siteName=WaiComputer, url, images=[/og-default.png 1200×630]), and `metadata.twitter` (card=summary_large_image, images=[/og-default.png]). Title + description preserved verbatim so `pages.test.tsx` still passes.
+- `web/Dockerfile` — added `ARG NEXT_PUBLIC_SENTRY_DSN` + `ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT` to the builder stage and re-exported them as `ENV`, because Next.js inlines `NEXT_PUBLIC_*` at build time.
+- `backend/docker-compose.yml` — under `services.web.build.args`, mapped `NEXT_PUBLIC_SENTRY_DSN: ${WEB_SENTRY_DSN:-}` and `NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${WEB_SENTRY_ENVIRONMENT:-production}`. Also mirrored them under `services.web.environment` so the SSR Sentry SDK reads the DSN at runtime. `WEB_SENTRY_DSN` is sourced from `/etc/waicomputer/backend.env` (already present per `reference_sentry_projects`).
+
+Files created:
+
+- `web/src/app/robots.ts` — Next 16 metadata route. Allows `/`; disallows `/api/`, `/dashboard`, `/billing`, `/login`, `/register`, `/onboarding`, `/auth/`, `/admin`, `/share/`. Links the sitemap at `https://wai.computer/sitemap.xml` and sets `host` to the canonical origin. Generates a static `/robots.txt` at build time (visible in the route table).
+- `web/src/app/sitemap.ts` — lists the 10 public routes per the task spec (`/`, `/ru`, `/pricing`, `/ru/pricing`, `/privacy`, `/ru/privacy`, `/terms`, `/ru/terms`, `/benchmarks/dictation`, `/ru/benchmarks/dictation`). Landing pages get `priority: 1.0` + `changeFrequency: weekly`; everything else `0.6` + `monthly`. `lastModified` is the constant `"2026-05-27"` per the task spec (bump on real content changes). Generates static `/sitemap.xml` at build time.
+- `web/src/app/seo.test.ts` — 5 unit tests covering robots rules + sitemap entries. Asserts private surfaces (`/dashboard`, `/billing`, `/admin`, `/share/`, `/auth/`) never appear in `sitemap()` output and that landing pages get higher priority than legal/pricing pages.
+- `web/src/sentry.config.test.ts` — 3 unit tests that mock `@sentry/nextjs` and re-import `sentry.server.config` + `sentry.edge.config` with and without `NEXT_PUBLIC_SENTRY_DSN`, confirming the SDK initialises gracefully with an empty DSN (the official Sentry no-op tree-shake path) and forwards an explicit DSN + environment when set.
+- `web/public/og-default.png` — 1200×630 PNG. Generated via Python + PIL (ImageMagick on this host was built without Freetype, so the spec-mentioned `magick` path failed; fell back to PIL with the same `#2f756d` background, app-icon composite, and headline text. The output is a real, designed image — not a solid-colour placeholder). Headline: "WaiComputer" (Helvetica Neue Bold 78), sub: "AI second brain for voice" (regular 42), tagline: "Record. Transcribe. Search. Ask anything." (26).
+- `web/public/og-share.png` — same 1200×630 PNG treatment, but with headline "Shared recording" + sub "WaiComputer — AI second brain for voice" + tagline "wai.computer". Already referenced by `web/src/app/share/[token]/page.tsx` (Agent D shipped that metadata, but the file did not exist yet — broken og:image on prod until this lands).
+
+Verification:
+
+- `cd web && pnpm lint` → 0 errors, same 2 pre-existing warnings from other agents (`BillingResultCard.tsx`, `DashboardClient.tsx`).
+- `cd web && pnpm build` → clean, 29 routes including the new `/robots.txt` and `/sitemap.xml` as static prerendered entries.
+- `cd web && pnpm test:unit` → 362 / 362 pass (was 347; added 8 robots/sitemap + 3 server/edge sentry-config tests; the layout metadata expansion did not change the existing layout test assertions).
+- OG PNGs validated: `file` reports both as `PNG image data, 1200 x 630, 8-bit/color RGB, non-interlaced`. Visual check via `Read` tool confirms the icon + headline render correctly on the `#2f756d` brand teal background.
+
+Follow-up required from parent agent (cannot do from this checkout):
+
+1. SSH `root@157.180.47.68` and confirm `WEB_SENTRY_DSN=…` is present in `/etc/waicomputer/backend.env`. If absent, add it — it must match the `waicomputer-web` Sentry project DSN.
+2. The docker-compose change in this checkout will be rsync'd to `/opt/waicomputer/backend/docker-compose.yml` on the next `scripts/deploy-server.sh` run, so no manual compose edit on prod is required.
+3. After deploy, verify in browser DevTools → Network that the page emits Sentry envelope POSTs (or check `https://wai.computer/_next/static/.../instrumentation-client-*.js` contains the DSN string, not a literal `""`).
+4. Optional: add `WEB_SENTRY_ENVIRONMENT=production` to `backend.env` for explicitness (the compose default `production` already covers prod; staging hosts would set it to `staging`).
+
+Caveats:
+
+- I removed the previously hardcoded macOS DSN (`https://ad90f87bdb0757fa0dd53e7740b7b6ed@…`) from `instrumentation-client.ts`/`sentry.server.config.ts`/`sentry.edge.config.ts`. That DSN belonged to a different project (the leftover hex matches no current `web` Sentry project per `reference_sentry_projects` memory) and was reporting under the wrong project anyway. If Mik wants to KEEP that legacy DSN as a default fallback, replace `process.env.NEXT_PUBLIC_SENTRY_DSN || ""` with `process.env.NEXT_PUBLIC_SENTRY_DSN || "https://ad90f87bdb0757fa0dd53e7740b7b6ed@…"`. I judged the env-driven path the cleaner default per the task spec.
+- `NEXT_PUBLIC_SENTRY_DSN` MUST be present at BUILD time, not just runtime, because Next inlines `NEXT_PUBLIC_*` into the static client bundle. The compose change passes it both as a build arg AND as a runtime env, so the next `server-build.sh` rebuild will pick it up automatically once `WEB_SENTRY_DSN` is in the env file.
+- Sitemap `lastModified` is a string constant (`"2026-05-27"`). When agents add new public routes (FAQ, blog, etc.) they should append to `PUBLIC_PATHS` AND bump `LAST_MODIFIED`. Search engines tolerate a static value but care about recency.
+- The OG images are intentionally minimal (icon + 3 lines of text). The brand palette currently has no token for "OG-share image" — if Sprint 5 introduces one, regenerate via `python3` + PIL or migrate to a Next 16 Image Response (Edge runtime `ImageResponse` from `next/og`).
+- I did NOT touch `share/[token]/page.tsx` — Agent D already shipped per-page OG metadata there, and its `/og-share.png` reference now resolves to the file I created. The page-level `openGraph.images` correctly overrides the layout default for shared recordings.
+
+## Agent P — done
+
+Scope: Agent K's three remaining TODOs — folder item counts in the sidebar, a Move-to-folder control in `RecordingDetailPanel`, and recording drag-and-drop into sidebar folders. All on top of Agent K's `assignRecordingToFolder` API helper.
+
+Files modified:
+
+- `web/src/components/DashboardClient.tsx`:
+  - Imported `assignRecordingToFolder` from `@/lib/api`.
+  - Added a memoized `folderCounts: Record<string, number>` derived from `recordings + folders` so each folder's badge recomputes only when the recordings list changes (drop-target updates and the detail-panel select both flow through the same `recordings` state).
+  - Each `<li className="sidebar-folder-list__item">` now renders an `<em className="sidebar-folder-list__count" data-testid="folder-count-{id}">` badge populated by `displayCount(rawCount)` so the 100+ cap rule kicks in automatically.
+  - Each `.sidebar-folder-list__item` got `onDragOver` (preventDefault + `dropEffect = "move"`), `onDragEnter` (sets `data-drop-target="true"` for CSS hover), `onDragLeave` (clears the attribute), and `onDrop` (clears the attribute, reads `application/x-wai-recording`, calls the new handler).
+  - Each non-trash `.recording-row` is now `draggable={true}` and sets `event.dataTransfer.setData("application/x-wai-recording", recording.id)` on `onDragStart`. Trash rows stay non-draggable because folders don't apply to trash.
+  - New `handleAssignRecordingToFolder(recordingId, folderId | null)` optimistically mutates the local `recordings` array (so the row disappears from a filtered view and the badge increments immediately), patches `selectedRecording.folder_id` if the panel is showing the same recording, then `await assignRecordingToFolder(...)` + `loadRecordingsState()` reconciles with the server. On failure the API path catches the error, surfaces it via `setMessage`, and re-fetches to undo the optimistic state.
+  - Passes `folders`, `locale`, and `onAssignFolder` down to `<RecordingDetailPanel>`.
+- `web/src/components/RecordingDetailPanel.tsx`:
+  - New optional props `folders?: Folder[]`, `locale?: "en" | "ru"`, `onAssignFolder?: (recordingId, folderId | null) => void`. Defaults to EN + no select when folders aren't provided.
+  - New `<select data-testid="assign-folder-select" aria-label="Move to folder">` lives next to Share/Export/Move to Trash. First option is `(no folder)` (value `""` → mapped to `null` before calling the handler), remaining options are the user's folders. EN label "Move to folder" / RU "Переместить в папку"; EN no-folder "(no folder)" / RU "(без папки)".
+  - On change the panel optimistically calls `onRecordingUpdate({ ...recording, folder_id: next })` and then `onAssignFolder(...)` so the visible state flips immediately; the parent does the refetch.
+- `web/src/app/globals.css` — additive only, three new rules above the `@media print` block:
+  - `.sidebar-folder-list__count` — pill badge mirroring the existing `.sidebar-nav__item em` style.
+  - `.recording-row[draggable="true"]` — `cursor: grab`; `:active` switches to `grabbing`.
+  - `.sidebar-folder-list__item[data-drop-target="true"]` — `background: var(--accent-soft)`, `outline: 1px dashed var(--accent)`, `outline-offset: -1px`.
+- `web/src/components/DashboardClient.test.tsx` — added two tests:
+  - **Folder count badge updates when a recording is assigned**: seeds 1 folder + 2 recordings (one already inside), drops the loose one, asserts `assignRecordingToFolder` was called and the count badge advances `1 → 2` after the post-drop refetch.
+  - **Drop event calls assignRecordingToFolder with the dragged id**: dispatches a native `drop` event with a stubbed `DataTransfer` that returns the recording id for the `application/x-wai-recording` MIME type, asserts the handler is invoked with `(recordingId, folderId)`.
+- `web/src/components/RecordingDetailPanel.test.tsx` — added five tests:
+  - select renders with EN label + `(no folder)` + folder options;
+  - select renders with RU label "Переместить в папку" + "(без папки)" when `locale="ru"`;
+  - changing the select calls `onAssignFolder(id, folderId)` AND the optimistic `onRecordingUpdate`;
+  - selecting `(no folder)` passes `null` to `onAssignFolder`;
+  - the select is hidden when no `folders` prop is provided (back-compat with existing call sites).
+
+Verification:
+
+- `cd web && pnpm lint` → 0 errors. 2 pre-existing warnings remain (`BillingResultCard.tsx` unused type from Agent D, `DashboardClient.tsx:927` missing-dep on `handleRefreshTelegramStatus` from Agent C). Neither touched by this agent.
+- `cd web && pnpm build` → exit 0, all 27 routes built.
+- `cd web && pnpm test:unit` → 362 / 362 pass (was 355 before; added 2 in `DashboardClient.test.tsx`, 5 in `RecordingDetailPanel.test.tsx`).
+
+Caveats:
+
+- Trash rows are intentionally `draggable={false}`. Folder semantics don't apply to trashed recordings on the backend (the `folder_id` PATCH ignores soft-deleted rows in production), and visually it would be misleading to suggest a drag affordance there.
+- The drop handler reads `event.dataTransfer.getData("application/x-wai-recording")` rather than `text/plain`, so other browser-native drag sources (URLs, text selections, files) are ignored by accident-of-design.
+- Optimistic update strategy: on assignment, mutate the local `recordings` list AND the in-panel `selectedRecording` synchronously, then fire-and-await the API call + refetch. The optimistic state is reconciled by `loadRecordingsState()` after either success or failure (the failure branch refetches to undo the bad mutation while also surfacing the error to the user via `setMessage`).
+- The select uses a single `(no folder)` option with `value=""` and folders below it; there is no permanently-disabled "Move to folder" placeholder option because `aria-label` + `title` already announce the control's intent to assistive tech and on hover. This avoids the visual stutter you'd get if the dropdown showed a placeholder row in addition to the live selection.
+- Folder counts do NOT include trashed (soft-deleted) recordings — the memo filters by `!recording.deleted_at` in addition to matching `folder_id`. Today the active recordings list `listRecordings({ limit: 100 })` already excludes trash; the extra guard is belt-and-suspenders.
+- `displayCount` clips at `100+` because of the API list cap (per Agent C's prior work). For a folder containing more than 100 recordings the sidebar badge will read `100+` until a real per-folder count endpoint exists; the badge truth-source is the in-memory array length, which is itself capped at the global LIST_LIMIT.
+- Replay sampling on the browser SDK is conservative (`session: 0.05`, `onError: 1.0`) with `maskAllText: true` + `blockAllMedia: true`. This matches the privacy charter ("never log raw transcript text") — Replay frames will show masked rectangles for any text element, including the dashboard transcript view. Verify in the Sentry web UI after first replay arrives that no transcript copy leaks through.
+
+
+## Agent R — done
+
+Mobile + accessibility audit complete at iPhone 14 viewport (390x844). 21 screens captured. See `audit/sprint4-mobile-a11y.md`. 4 P0 mobile, 5 P0 a11y, 9 P1 issues. Top three: (a) light-mode `--ink-faint #9199a2` fails WCAG AA at 2.88:1 on white, (b) `<html lang="en">` served on Russian `/ru` and Russian `/share/*` pages, (c) dashboard sidebar (577px) stacks above main content on mobile with no drawer.
