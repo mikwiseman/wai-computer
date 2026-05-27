@@ -9,12 +9,18 @@ from urllib.parse import parse_qs, quote, urlparse
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.mcp_oauth import override_mcp_db_context, reset_mcp_db_context
+from app.core.mcp_oauth import (
+    ACCESS_TOKEN_TYPE,
+    override_mcp_db_context,
+    reset_mcp_db_context,
+)
 from app.core.mcp_tools import fetch_recording_for_mcp, search_recordings_for_mcp
 from app.mcp_server import create_mcp_app
+from app.models.mcp_oauth import McpOAuthToken
 from tests.conftest import LEGAL_ACCEPTANCE
 
 
@@ -169,6 +175,87 @@ async def test_mcp_oauth_consent_and_token_exchange(
         "list_recordings",
         "list_action_items",
     }
+
+
+@pytest.mark.asyncio
+async def test_mcp_oauth_defaults_missing_resource_for_codex_login(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    settings = get_settings()
+    oauth_client = await _register_oauth_client(client)
+    verifier = "codex-unit-test-verifier-which-is-long-enough"
+    redirect_uri = oauth_client["redirect_uris"][0]
+
+    authorize_response = await client.get(
+        "/authorize"
+        f"?response_type=code"
+        f"&client_id={oauth_client['client_id']}"
+        f"&redirect_uri={quote(redirect_uri, safe='')}"
+        f"&scope=mcp%3Aread"
+        f"&state=codex-state"
+        f"&code_challenge={_pkce_challenge(verifier)}"
+        f"&code_challenge_method=S256",
+        follow_redirects=False,
+    )
+    assert authorize_response.status_code == 302
+    consent_location = authorize_response.headers["location"]
+    assert consent_location.startswith("/api/mcp/oauth/consent?request=")
+
+    consent_page = await client.get(consent_location, headers=auth_headers)
+    assert consent_page.status_code == 200
+    csrf_match = re.search(r'name="csrf" value="([^"]+)"', consent_page.text)
+    assert csrf_match is not None
+
+    approval_response = await client.post(
+        "/api/mcp/oauth/consent",
+        data={
+            "request": parse_qs(urlparse(consent_location).query)["request"][0],
+            "csrf": csrf_match.group(1),
+            "decision": "approve",
+        },
+        headers=auth_headers,
+        follow_redirects=False,
+    )
+    assert approval_response.status_code == 302
+    redirect = urlparse(approval_response.headers["location"])
+    code = parse_qs(redirect.query)["code"][0]
+
+    token_response = await client.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": oauth_client["client_id"],
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "code_verifier": verifier,
+        },
+    )
+    assert token_response.status_code == 200, token_response.text
+    tokens = token_response.json()
+
+    result = await db_session.execute(
+        select(McpOAuthToken.resource).where(
+            McpOAuthToken.token_type == ACCESS_TOKEN_TYPE,
+            McpOAuthToken.client_id == oauth_client["client_id"],
+        )
+    )
+    assert result.scalar_one() == settings.mcp_resource_url_resolved
+
+    fresh_mcp_app = create_mcp_app(settings)
+    async with fresh_mcp_app.router.lifespan_context(fresh_mcp_app):
+        transport = ASGITransport(app=fresh_mcp_app)
+        async with AsyncClient(transport=transport, base_url="http://localhost:3000") as mcp:
+            tools_response = await mcp.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                headers={
+                    "Authorization": f"Bearer {tokens['access_token']}",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+    assert tools_response.status_code == 200, tools_response.text
 
 
 @pytest.mark.asyncio

@@ -732,6 +732,48 @@ async def test_exchange_refresh_token_issues_new_pair_and_revokes_old(
 
 
 @pytest.mark.asyncio
+async def test_exchange_refresh_token_preserves_scopes_when_request_omits_scope(
+    provider: WaiComputerMcpOAuthProvider,
+    mcp_override_db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcp.server.auth.provider import RefreshToken
+
+    _stub_resource_url(monkeypatch, "https://x.test/mcp")
+
+    user, client = await _create_user_and_client(mcp_override_db)
+    raw = "refresh-without-scope"
+    mcp_override_db.add(
+        McpOAuthToken(
+            token_hash=token_hash(raw),
+            token_type=REFRESH_TOKEN_TYPE,
+            client_id=client.client_id,
+            user_id=user.id,
+            scopes=[MCP_READ_SCOPE],
+            resource="https://x.test/mcp",
+            expires_at=_now() + timedelta(days=30),
+        )
+    )
+    await mcp_override_db.flush()
+
+    info = _client_from_model(client)
+    refresh_token = RefreshToken(
+        token=raw,
+        client_id=client.client_id,
+        scopes=[MCP_READ_SCOPE],
+        expires_at=_as_timestamp(_now() + timedelta(days=30)),
+    )
+    out = await provider.exchange_refresh_token(info, refresh_token, [])
+
+    issued_access = (
+        await mcp_override_db.execute(
+            select(McpOAuthToken).where(McpOAuthToken.token_hash == token_hash(out.access_token))
+        )
+    ).scalar_one()
+    assert issued_access.scopes == [MCP_READ_SCOPE]
+
+
+@pytest.mark.asyncio
 async def test_verify_token_returns_none_for_unknown(
     provider: WaiComputerMcpOAuthProvider,
     mcp_override_db: AsyncSession,
