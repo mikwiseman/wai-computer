@@ -93,7 +93,7 @@ def ensure_fixture(path: Path) -> bytes:
 def wav_pcm(path: Path) -> bytes:
     with wave.open(str(path), "rb") as wav:
         if wav.getframerate() != SAMPLE_RATE or wav.getnchannels() != 1 or wav.getsampwidth() != 2:
-            raise RuntimeError(f"Fixture must be 16 kHz mono int16 WAV: {path}")
+            raise RuntimeError(f"Fixture must be 24 kHz mono int16 WAV: {path}")
         return wav.readframes(wav.getnframes())
 
 
@@ -229,7 +229,7 @@ def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
 
 
 def openai_session_update(config: dict[str, Any]) -> str:
-    transcription: dict[str, Any] = {"model": config["model"]}
+    transcription: dict[str, Any] = {"model": config["model"], "delay": "low"}
     language = str(config.get("language") or "multi").strip().lower()
     if language not in {"", "multi", "auto", "und"}:
         transcription["language"] = language.split("-", 1)[0]

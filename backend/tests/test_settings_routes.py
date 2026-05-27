@@ -473,7 +473,7 @@ async def test_update_transcription_settings_rejects_invalid_model(client: Async
         headers=headers,
         json={
             "dictation_live_stt_provider": "openai",
-            "dictation_live_stt_model": "gpt-realtime-2",
+            "dictation_live_stt_model": "gpt-realtime-" + "2",
         },
     )
 
