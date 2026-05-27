@@ -308,9 +308,9 @@ class OpenAIRealtimeWebSocketManager(
     internal fun makeOpenAISessionUpdateMessage(config: RealtimeTranscriptionSessionConfig): String {
         val language = normalizedProviderLanguage(config.language)
         val transcription = if (language != null) {
-            """"model":"${config.model}","language":"$language""""
+            """"model":"${config.model}","delay":"$OPENAI_TRANSCRIPTION_DELAY","language":"$language""""
         } else {
-            """"model":"${config.model}""""
+            """"model":"${config.model}","delay":"$OPENAI_TRANSCRIPTION_DELAY""""
         }
         return """{"type":"session.update","session":{"type":"transcription","audio":{"input":{"format":{"type":"audio/pcm","rate":${config.sampleRate}},"transcription":{$transcription},"turn_detection":null}}}}"""
     }
@@ -366,6 +366,7 @@ class OpenAIRealtimeWebSocketManager(
         private const val MINIMUM_CLOSE_WAIT_MS = 650L
         private const val NO_TRANSCRIPT_CLOSE_WAIT_MS = 2_500L
         private const val TRANSCRIPT_QUIET_WINDOW_MS = 900L
+        private const val OPENAI_TRANSCRIPTION_DELAY = "low"
 
         internal fun shouldKeepWaitingForCloseDrain(
             nowMs: Long,

@@ -215,6 +215,7 @@ final class DictationManager: ObservableObject {
         self.canStartDictationReason = canStartReason
         isConfigured = true
         applyHotkeyAvailability()
+        prefetchDictationSessionConfig(reason: "configure")
         refreshSettingsAndPrefetch(apiClient: apiClient, reason: "configure")
         log.info("Dictation manager configured")
     }
@@ -450,15 +451,7 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
-            let settings = try await currentSettings(apiClient: apiClient)
-            SentryHelper.addBreadcrumb(
-                category: "dictation.session",
-                message: "dictation provider selected",
-                data: [
-                    "provider": settings.dictationLiveSTTProvider,
-                    "model": settings.dictationLiveSTTModel,
-                ]
-            )
+            refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
 
             let language = currentDictationLanguage()
             let sessionConfig = try await takeDictationSessionConfig(
@@ -856,7 +849,7 @@ final class DictationManager: ObservableObject {
         }
     }
 
-    private func currentSettings(apiClient: APIClient) async throws -> UserSettings {
+    private func refreshSettingsAndPrefetchIfNeeded(apiClient: APIClient, reason: String) {
         if let cachedSettings,
            let cachedSettingsLoadedAt,
            Date().timeIntervalSince(cachedSettingsLoadedAt) < settingsCacheTTL {
@@ -868,12 +861,10 @@ final class DictationManager: ObservableObject {
                     "model": cachedSettings.dictationLiveSTTModel,
                 ]
             )
-            return cachedSettings
+            return
         }
 
-        let settings = try await apiClient.getSettings()
-        ingestSettings(settings)
-        return settings
+        refreshSettingsAndPrefetch(apiClient: apiClient, reason: reason)
     }
 
     private func takeDictationSessionConfig(

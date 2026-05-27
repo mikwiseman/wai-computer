@@ -100,6 +100,7 @@ class WebSocketManagerTest {
         assertEquals("session.update", payload["type"]?.jsonPrimitive?.contentOrNull)
         assertEquals("audio/pcm", input?.get("format")?.jsonObject?.get("type")?.jsonPrimitive?.contentOrNull)
         assertEquals("gpt-realtime-whisper", transcription?.get("model")?.jsonPrimitive?.contentOrNull)
+        assertEquals("low", transcription?.get("delay")?.jsonPrimitive?.contentOrNull)
         assertEquals("ru", transcription?.get("language")?.jsonPrimitive?.contentOrNull)
     }
 

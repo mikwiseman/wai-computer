@@ -71,6 +71,7 @@ public enum WebSocketEvent: Sendable {
 /// provider-configured LINEAR16 PCM audio directly to the Realtime API.
 public actor WebSocketManager {
     private let wsLog = Logger(subsystem: "is.waiwai.computer.kit", category: "websocket")
+    private let openAIRealtimeTranscriptionDelay = "low"
     private let apiClient: APIClient
     private let language: String
     private let channels: Int
@@ -392,7 +393,10 @@ public actor WebSocketManager {
     }
 
     private func makeOpenAISessionUpdateMessage(_ sessionConfig: RealtimeTranscriptionSessionConfig) -> String {
-        var transcription: [String: Any] = ["model": sessionConfig.model]
+        var transcription: [String: Any] = [
+            "model": sessionConfig.model,
+            "delay": openAIRealtimeTranscriptionDelay,
+        ]
         if let language = normalisedProviderLanguage(sessionConfig.language) {
             transcription["language"] = language
         }
