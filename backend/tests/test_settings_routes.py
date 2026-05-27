@@ -477,3 +477,100 @@ async def test_update_transcription_settings_rejects_invalid_model(client: Async
     )
 
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Appearance preferences (theme + accent) — see ThemeAccentPicker on the web.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_preferences_returns_defaults_for_new_user(client: AsyncClient):
+    """A freshly registered user returns the column defaults: system + teal."""
+    headers = await _register(client, "settings.prefs.default@example.com", "password-123")
+
+    response = await client.get("/api/settings/preferences", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"theme": "system", "accent": "teal"}
+
+
+@pytest.mark.asyncio
+async def test_patch_preferences_persists_theme(client: AsyncClient):
+    """PATCH theme=dark persists across subsequent GET calls."""
+    headers = await _register(client, "settings.prefs.theme@example.com", "password-123")
+
+    patch = await client.patch(
+        "/api/settings/preferences",
+        headers=headers,
+        json={"theme": "dark"},
+    )
+    assert patch.status_code == 200
+    assert patch.json() == {"theme": "dark", "accent": "teal"}
+
+    fetched = await client.get("/api/settings/preferences", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json() == {"theme": "dark", "accent": "teal"}
+
+
+@pytest.mark.asyncio
+async def test_patch_preferences_persists_accent(client: AsyncClient):
+    """PATCH accent=amber persists across subsequent GET calls."""
+    headers = await _register(client, "settings.prefs.accent@example.com", "password-123")
+
+    patch = await client.patch(
+        "/api/settings/preferences",
+        headers=headers,
+        json={"accent": "amber"},
+    )
+    assert patch.status_code == 200
+    assert patch.json() == {"theme": "system", "accent": "amber"}
+
+    fetched = await client.get("/api/settings/preferences", headers=headers)
+    assert fetched.json() == {"theme": "system", "accent": "amber"}
+
+
+@pytest.mark.asyncio
+async def test_patch_preferences_rejects_invalid_theme(client: AsyncClient):
+    """An unknown theme value is rejected with 422 and the row is not mutated."""
+    headers = await _register(client, "settings.prefs.badtheme@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings/preferences",
+        headers=headers,
+        json={"theme": "neon"},
+    )
+    assert response.status_code == 422
+
+    fetched = await client.get("/api/settings/preferences", headers=headers)
+    assert fetched.json() == {"theme": "system", "accent": "teal"}
+
+
+@pytest.mark.asyncio
+async def test_patch_preferences_rejects_invalid_accent(client: AsyncClient):
+    """An unknown accent value is rejected with 422."""
+    headers = await _register(client, "settings.prefs.badaccent@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings/preferences",
+        headers=headers,
+        json={"accent": "magenta"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_preferences_requires_auth(client: AsyncClient):
+    """Unauthenticated GET /api/settings/preferences returns 401."""
+    response = await client.get("/api/settings/preferences")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_patch_preferences_requires_auth(client: AsyncClient):
+    """Unauthenticated PATCH /api/settings/preferences returns 401."""
+    response = await client.patch(
+        "/api/settings/preferences",
+        json={"theme": "dark"},
+    )
+    assert response.status_code == 401

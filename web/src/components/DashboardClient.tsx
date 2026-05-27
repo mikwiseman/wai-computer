@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  assignRecordingToFolder,
   changePassword,
   claimTelegramLinkCode,
   createDictionaryWord,
@@ -1260,6 +1261,37 @@ export function DashboardClient() {
     setSelectedMode("active");
   }
 
+  // Move a recording to a folder (or out of any folder when folderId is null).
+  // Optimistically update local state so the row disappears from "All
+  // recordings" filters and the sidebar badge updates immediately, then refetch
+  // from the API so the canonical state lands.
+  async function handleAssignRecordingToFolder(
+    recordingId: string,
+    folderId: string | null,
+  ) {
+    setMessage(null);
+    // Optimistic local update so the sidebar count and folder filter respond
+    // before the network round-trip.
+    setRecordings((current) =>
+      current.map((recording) =>
+        recording.id === recordingId
+          ? { ...recording, folder_id: folderId }
+          : recording,
+      ),
+    );
+    if (selectedRecording?.id === recordingId) {
+      setSelectedRecording({ ...selectedRecording, folder_id: folderId });
+    }
+    try {
+      await assignRecordingToFolder(recordingId, folderId);
+      await loadRecordingsState();
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+      // Reload to reconcile the optimistic state with the canonical truth.
+      await loadRecordingsState();
+    }
+  }
+
   // Dictionary handlers -----------------------------------------------------
   async function handleCreateDictionaryWord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1358,6 +1390,23 @@ export function DashboardClient() {
     Escape: clearAll,
     "?": toggleCheatsheet,
   });
+
+  // Count active recordings per folder. Drag-and-drop and optimistic detail
+  // updates both flow through `recordings`, so this only depends on local state.
+  const folderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const folder of folders) counts[folder.id] = 0;
+    for (const recording of recordings) {
+      if (
+        recording.folder_id
+        && Object.prototype.hasOwnProperty.call(counts, recording.folder_id)
+        && !recording.deleted_at
+      ) {
+        counts[recording.folder_id] += 1;
+      }
+    }
+    return counts;
+  }, [recordings, folders]);
 
   if (initializing) {
     return (
@@ -1523,48 +1572,81 @@ export function DashboardClient() {
                       <small>{copy.folders.emptyHint}</small>
                     </li>
                   ) : null}
-                  {folders.map((folder) => (
-                    <li
-                      key={folder.id}
-                      className="sidebar-folder-list__item"
-                      data-testid={`sidebar-folder-${folder.id}`}
-                    >
-                      <button
-                        type="button"
-                        data-testid={`open-folder-${folder.id}`}
-                        className="sidebar-folder-list__open"
-                        aria-current={
-                          view === "folder" && activeFolderId === folder.id
-                            ? "page"
-                            : undefined
-                        }
-                        onClick={() => openFolder(folder.id)}
+                  {folders.map((folder) => {
+                    const rawCount = folderCounts[folder.id] ?? 0;
+                    const folderCountLabel = displayCount(rawCount);
+                    return (
+                      <li
+                        key={folder.id}
+                        className="sidebar-folder-list__item"
+                        data-testid={`sidebar-folder-${folder.id}`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }}
+                        onDragEnter={(event) => {
+                          event.preventDefault();
+                          event.currentTarget.setAttribute(
+                            "data-drop-target",
+                            "true",
+                          );
+                        }}
+                        onDragLeave={(event) => {
+                          event.currentTarget.removeAttribute("data-drop-target");
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          event.currentTarget.removeAttribute("data-drop-target");
+                          const id = event.dataTransfer.getData(
+                            "application/x-wai-recording",
+                          );
+                          if (!id) return;
+                          void handleAssignRecordingToFolder(id, folder.id);
+                        }}
                       >
-                        {folder.name}
-                      </button>
-                      <div className="row-actions">
                         <button
                           type="button"
-                          data-testid={`rename-folder-${folder.id}`}
-                          className="ghost-button compact-button"
-                          onClick={() => {
-                            setFolderRenameTarget(folder);
-                            setFolderRenameValue(folder.name);
-                          }}
+                          data-testid={`open-folder-${folder.id}`}
+                          className="sidebar-folder-list__open"
+                          aria-current={
+                            view === "folder" && activeFolderId === folder.id
+                              ? "page"
+                              : undefined
+                          }
+                          onClick={() => openFolder(folder.id)}
                         >
-                          {copy.folders.rename}
+                          {folder.name}
                         </button>
-                        <button
-                          type="button"
-                          data-testid={`delete-folder-${folder.id}`}
-                          className="ghost-button compact-button danger-button"
-                          onClick={() => setFolderDeleteTarget(folder)}
+                        <em
+                          className="sidebar-folder-list__count"
+                          data-testid={`folder-count-${folder.id}`}
                         >
-                          {copy.folders.delete}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                          {folderCountLabel}
+                        </em>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            data-testid={`rename-folder-${folder.id}`}
+                            className="ghost-button compact-button"
+                            onClick={() => {
+                              setFolderRenameTarget(folder);
+                              setFolderRenameValue(folder.name);
+                            }}
+                          >
+                            {copy.folders.rename}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`delete-folder-${folder.id}`}
+                            className="ghost-button compact-button danger-button"
+                            onClick={() => setFolderDeleteTarget(folder)}
+                          >
+                            {copy.folders.delete}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             );
@@ -1785,6 +1867,9 @@ export function DashboardClient() {
             <ul className="recording-list" data-testid="recording-list">
               {items.map((recording) => {
                 const status = statusText(recording, copy);
+                // Trashed recordings cannot be moved into folders, so only
+                // active rows are draggable. Folders also stay hidden in trash.
+                const draggable = !isTrash;
                 return (
                   <li key={recording.id}>
                     <button
@@ -1797,6 +1882,18 @@ export function DashboardClient() {
                       }
                       onClick={() => void handleSelectRecording(recording.id, mode)}
                       data-testid={`select-recording-${recording.id}`}
+                      draggable={draggable}
+                      onDragStart={
+                        draggable
+                          ? (event) => {
+                              event.dataTransfer.setData(
+                                "application/x-wai-recording",
+                                recording.id,
+                              );
+                              event.dataTransfer.effectAllowed = "move";
+                            }
+                          : undefined
+                      }
                     >
                       <span className="recording-row__main">
                         <strong>{recording.title ?? copy.library.untitled}</strong>
@@ -1842,6 +1939,11 @@ export function DashboardClient() {
             <RecordingDetailPanel
               recording={selectedRecording}
               mode={mode}
+              folders={folders}
+              locale={locale}
+              onAssignFolder={(recordingId, folderId) =>
+                void handleAssignRecordingToFolder(recordingId, folderId)
+              }
               onRecordingUpdate={setSelectedRecording}
               onRestore={(recordingId) => void handleRestoreRecording(recordingId)}
               onDelete={(recordingId) =>

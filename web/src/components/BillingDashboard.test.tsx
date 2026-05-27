@@ -9,6 +9,7 @@ import {
   getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  openBillingPortal,
   switchBillingPlan,
 } from "@/lib/billing";
 import { BillingDashboard } from "./BillingDashboard";
@@ -20,6 +21,7 @@ vi.mock("@/lib/billing", () => ({
   getBillingInvoices: vi.fn(),
   getBillingSubscription: vi.fn(),
   getBillingUsage: vi.fn(),
+  openBillingPortal: vi.fn(),
   switchBillingPlan: vi.fn(),
 }));
 
@@ -45,6 +47,7 @@ const mockedCheckout = vi.mocked(createBillingCheckout);
 const mockedCancel = vi.mocked(cancelBillingSubscription);
 const mockedPromo = vi.mocked(claimBillingPromoCode);
 const mockedInvoices = vi.mocked(getBillingInvoices);
+const mockedPortal = vi.mocked(openBillingPortal);
 const mockedSwitch = vi.mocked(switchBillingPlan);
 
 const freeSub = {
@@ -98,6 +101,7 @@ describe("BillingDashboard", () => {
     mockedCancel.mockReset();
     mockedPromo.mockReset();
     mockedInvoices.mockReset();
+    mockedPortal.mockReset();
     mockedSwitch.mockReset();
     mockedSubscription.mockResolvedValue(freeSub);
     mockedUsage.mockResolvedValue(usage);
@@ -291,5 +295,97 @@ describe("BillingDashboard", () => {
 
     expect(await screen.findByText("Без недельного лимита")).toBeInTheDocument();
     expect(screen.queryByText(/50[\s,]000/)).not.toBeInTheDocument();
+  });
+
+  it("opens the Stripe Customer Portal when Pro users click Manage subscription", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedPortal.mockResolvedValue({ url: "https://billing.stripe.com/p/session_x" });
+
+    // Capture window.location.href assignments without leaving jsdom.
+    const originalLocation = window.location;
+    const hrefSetter = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: new Proxy(originalLocation, {
+        set(target, property, value) {
+          if (property === "href") {
+            hrefSetter(value);
+            return true;
+          }
+          return Reflect.set(target, property, value);
+        },
+      }),
+    });
+
+    try {
+      render(<BillingDashboard locale="en" currency="usd" />);
+
+      const button = await screen.findByRole("button", {
+        name: "Manage subscription",
+      });
+      await userEvent.click(button);
+
+      await waitFor(() => expect(mockedPortal).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "https://billing.stripe.com/p/session_x",
+        ),
+      );
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("surfaces a fallback error if the Stripe portal request fails", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedPortal.mockRejectedValue(new Error("502"));
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    const button = await screen.findByRole("button", {
+      name: "Manage subscription",
+    });
+    await userEvent.click(button);
+
+    expect(
+      await screen.findByText(
+        /Couldn't reach Stripe right now — please try again, or contact support\./,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Contact support" }),
+    ).toBeInTheDocument();
+  });
+
+  it("prefers hosted_invoice_url over receipt_url for the Stripe receipt link", async () => {
+    mockedSubscription.mockResolvedValue(proSub);
+    mockedUsage.mockResolvedValue({ ...usage, words_cap: null });
+    mockedInvoices.mockResolvedValue([
+      {
+        id: "inv_2",
+        amount: 96,
+        currency: "USD",
+        status: "paid",
+        paid_at: "2026-05-01T00:00:00Z",
+        created_at: "2026-05-01T00:00:00Z",
+        receipt_url: "https://old.example/r/abc",
+        description: null,
+        hosted_invoice_url: "https://invoice.stripe.com/i/abc",
+        invoice_pdf: "https://pay.stripe.com/invoice/abc/pdf",
+      },
+    ]);
+
+    render(<BillingDashboard locale="en" currency="usd" />);
+
+    const link = await screen.findByRole("link", { name: "Receipt" });
+    expect(link).toHaveAttribute("href", "https://invoice.stripe.com/i/abc");
+    expect(link).toHaveAttribute("target", "_blank");
   });
 });

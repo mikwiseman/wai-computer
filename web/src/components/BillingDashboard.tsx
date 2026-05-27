@@ -9,6 +9,7 @@ import {
   getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  openBillingPortal,
   switchBillingPlan,
   type BillingInvoice,
   type BillingSubscription,
@@ -42,6 +43,9 @@ const COPY: Record<
     switchSameNotice: string;
     paymentMethodHeading: string;
     paymentMethodHint: string;
+    paymentMethodUpdate: string;
+    paymentMethodUpdating: string;
+    paymentMethodFallback: string;
     contactSupport: string;
     invoicesHeading: string;
     invoicesEmpty: string;
@@ -101,7 +105,12 @@ const COPY: Record<
       "Got it. Our team will switch your plan on the next billing cycle.",
     switchSameNotice: "You're already on this period.",
     paymentMethodHeading: "Payment method",
-    paymentMethodHint: "To update your card or billing details, contact support.",
+    paymentMethodHint:
+      "Update your card, manage your subscription, or download invoices on Stripe.",
+    paymentMethodUpdate: "Manage subscription",
+    paymentMethodUpdating: "Opening Stripe…",
+    paymentMethodFallback:
+      "Couldn't reach Stripe right now — please try again, or contact support.",
     contactSupport: "Contact support",
     invoicesHeading: "Invoices",
     invoicesEmpty: "No invoices yet — your first charge will appear here.",
@@ -179,7 +188,11 @@ const COPY: Record<
     switchSameNotice: "Этот период уже активен.",
     paymentMethodHeading: "Способ оплаты",
     paymentMethodHint:
-      "Чтобы обновить карту или платёжные данные, напишите в поддержку.",
+      "Обновите карту, управляйте подпиской и скачивайте счета прямо в Stripe.",
+    paymentMethodUpdate: "Управлять подпиской",
+    paymentMethodUpdating: "Открываем Stripe…",
+    paymentMethodFallback:
+      "Не удалось открыть Stripe. Попробуйте ещё раз или напишите в поддержку.",
     contactSupport: "Написать в поддержку",
     invoicesHeading: "Счета",
     invoicesEmpty: "Счетов пока нет — первое списание появится здесь.",
@@ -455,6 +468,8 @@ export function BillingDashboard({ locale, currency }: Props) {
   );
   const [switchInFlight, setSwitchInFlight] = useState(false);
   const [switchMessage, setSwitchMessage] = useState<string | null>(null);
+  const [portalInFlight, setPortalInFlight] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
   // RU UI users choose T-Bank or Stripe; other locales lock to Stripe.
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
@@ -549,6 +564,18 @@ export function BillingDashboard({ locale, currency }: Props) {
       setPromoError(localizeBillingError(error, locale));
     } finally {
       setPromoInFlight(false);
+    }
+  }
+
+  async function handleOpenPortal() {
+    setPortalInFlight(true);
+    setPortalError(null);
+    try {
+      const session = await openBillingPortal();
+      window.location.href = session.url;
+    } catch {
+      setPortalError(copy.paymentMethodFallback);
+      setPortalInFlight(false);
     }
   }
 
@@ -798,14 +825,39 @@ export function BillingDashboard({ locale, currency }: Props) {
           <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>
             {copy.paymentMethodHint}
           </p>
-          <p style={{ margin: 0 }}>
-            <a
-              href="mailto:hi@wai.computer?subject=Billing%20update"
-              style={{ color: "var(--accent)", textDecoration: "underline" }}
+          <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={handleOpenPortal}
+              disabled={portalInFlight}
+              className="billing-portal"
+              style={{
+                padding: "0.45rem 1rem",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                background: "var(--accent)",
+                color: "var(--accent-ink, #fff)",
+                cursor: portalInFlight ? "wait" : "pointer",
+                minHeight: "38px",
+                fontWeight: 600,
+              }}
             >
-              {copy.contactSupport}
-            </a>
-          </p>
+              {portalInFlight ? copy.paymentMethodUpdating : copy.paymentMethodUpdate}
+            </button>
+            {portalError ? (
+              <a
+                href="mailto:hi@wai.computer?subject=Billing%20update"
+                style={{ color: "var(--accent)", textDecoration: "underline", fontSize: "0.9rem" }}
+              >
+                {copy.contactSupport}
+              </a>
+            ) : null}
+          </div>
+          {portalError ? (
+            <p className="billing-error" style={{ margin: 0 }}>
+              {portalError}
+            </p>
+          ) : null}
         </article>
       ) : null}
 
@@ -863,9 +915,9 @@ export function BillingDashboard({ locale, currency }: Props) {
                       {localizeInvoiceStatus(inv.status, copy)}
                     </td>
                     <td style={INVOICE_TD_STYLE}>
-                      {inv.receipt_url ? (
+                      {inv.hosted_invoice_url || inv.receipt_url ? (
                         <a
-                          href={inv.receipt_url}
+                          href={inv.hosted_invoice_url ?? inv.receipt_url ?? "#"}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{

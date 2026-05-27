@@ -36,6 +36,17 @@ export interface BillingInvoice {
   created_at: string;
   receipt_url: string | null;
   description: string | null;
+  // Populated when the row comes from Stripe directly. Frontend prefers
+  // `hosted_invoice_url` for the "Receipt" link and exposes the PDF where
+  // available.
+  hosted_invoice_url?: string | null;
+  invoice_pdf?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+}
+
+export interface BillingPortalSession {
+  url: string;
 }
 
 export interface BillingSwitchPlanResponse {
@@ -100,5 +111,11 @@ export async function switchBillingPlan(
   return apiFetch<BillingSwitchPlanResponse>("/api/billing/switch-plan", {
     method: "POST",
     body: JSON.stringify({ period }),
+  });
+}
+
+export async function openBillingPortal(): Promise<BillingPortalSession> {
+  return apiFetch<BillingPortalSession>("/api/billing/portal", {
+    method: "POST",
   });
 }

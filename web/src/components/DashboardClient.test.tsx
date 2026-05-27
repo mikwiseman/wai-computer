@@ -21,6 +21,8 @@ const mockDeleteEntity = vi.fn();
 const mockChangePassword = vi.fn();
 const mockGetSettings = vi.fn();
 const mockUpdateSettings = vi.fn();
+const mockGetPreferences = vi.fn();
+const mockUpdatePreferences = vi.fn();
 const mockGetTelegramLinkStatus = vi.fn();
 const mockStartTelegramLink = vi.fn();
 const mockClaimTelegramLinkCode = vi.fn();
@@ -64,6 +66,8 @@ vi.mock("@/lib/api", () => ({
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
   getSettings: (...args: unknown[]) => mockGetSettings(...args),
   updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
+  getPreferences: (...args: unknown[]) => mockGetPreferences(...args),
+  updatePreferences: (...args: unknown[]) => mockUpdatePreferences(...args),
   getTelegramLinkStatus: (...args: unknown[]) => mockGetTelegramLinkStatus(...args),
   startTelegramLink: (...args: unknown[]) => mockStartTelegramLink(...args),
   claimTelegramLinkCode: (...args: unknown[]) => mockClaimTelegramLinkCode(...args),
@@ -192,6 +196,8 @@ function arrangeHappyPathMocks() {
   mockChangePassword.mockResolvedValue({ message: "Password changed successfully" });
   mockGetSettings.mockResolvedValue(baseSettings);
   mockUpdateSettings.mockResolvedValue(baseSettings);
+  mockGetPreferences.mockResolvedValue({ theme: "system", accent: "teal" });
+  mockUpdatePreferences.mockResolvedValue({ theme: "system", accent: "teal" });
   mockGetTelegramLinkStatus.mockResolvedValue(baseTelegramStatus);
   mockStartTelegramLink.mockResolvedValue({
     bot_username: "waicomputer_bot",
@@ -1381,6 +1387,110 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("workspace-title")).toHaveTextContent("Work");
       expect(screen.getByTestId("select-recording-r-folded")).toBeInTheDocument();
       expect(screen.queryByTestId("select-recording-r-loose")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Folder count badges in the sidebar reflect the recordings list ---
+
+  it("renders folder count badges and updates them when a recording is assigned", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListRecordings
+      .mockResolvedValueOnce([
+        { ...baseRecording, id: "r-1", title: "Loose", folder_id: null },
+        {
+          ...baseRecording,
+          id: "r-2",
+          title: "Already inside",
+          folder_id: "folder-work",
+        },
+      ])
+      // The post-assignment refetch returns the new canonical state.
+      .mockResolvedValueOnce([
+        { ...baseRecording, id: "r-1", title: "Loose", folder_id: "folder-work" },
+        {
+          ...baseRecording,
+          id: "r-2",
+          title: "Already inside",
+          folder_id: "folder-work",
+        },
+      ]);
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("folder-count-folder-work")).toHaveTextContent("1");
+    });
+
+    // Simulate a drop on the folder by dispatching a native event with a
+    // stubbed DataTransfer.
+    const dropTarget = screen.getByTestId("sidebar-folder-folder-work");
+    const dataTransfer = {
+      getData: vi.fn(() => "r-1"),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    dropTarget.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockAssignRecordingToFolder).toHaveBeenCalledWith("r-1", "folder-work");
+    });
+
+    // After the optimistic update + refetch, both recordings are inside the
+    // folder so the badge reads "2".
+    await waitFor(() => {
+      expect(screen.getByTestId("folder-count-folder-work")).toHaveTextContent("2");
+    });
+  });
+
+  // --- Drop event invokes assignRecordingToFolder with the dragged id ---
+
+  it("drop event on a folder calls assignRecordingToFolder with the dragged recording id", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-x", name: "Box", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListRecordings.mockResolvedValue([
+      { ...baseRecording, id: "rec-drag", title: "Drag me", folder_id: null },
+    ]);
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("sidebar-folder-folder-x")).toBeInTheDocument();
+    });
+
+    const target = screen.getByTestId("sidebar-folder-folder-x");
+    const dataTransfer = {
+      getData: vi.fn((type: string) =>
+        type === "application/x-wai-recording" ? "rec-drag" : "",
+      ),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    target.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockAssignRecordingToFolder).toHaveBeenCalledWith(
+        "rec-drag",
+        "folder-x",
+      );
     });
   });
 });

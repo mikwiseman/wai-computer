@@ -1125,3 +1125,354 @@ async def test_switch_plan_requires_active_subscription(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "No active subscription"
+
+
+# ---------------------------------------------------------------------------
+# Customer Portal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_portal_returns_stripe_session_url_for_existing_customer(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "portal.existing@example.com"
+    )
+    user.stripe_customer_id = "cus_existing_123"
+    await db_session.flush()
+    captured: dict[str, object] = {}
+
+    class FakeStripeProvider:
+        async def ensure_customer(self, **kwargs):
+            raise AssertionError("ensure_customer must not be called when id present")
+
+        async def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
+            captured["customer_id"] = customer_id
+            captured["return_url"] = return_url
+            return "https://billing.stripe.com/p/session_existing"
+
+    monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/portal",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"url": "https://billing.stripe.com/p/session_existing"}
+    assert captured["customer_id"] == "cus_existing_123"
+    assert captured["return_url"] == "https://wai.computer/billing"
+
+
+@pytest.mark.asyncio
+async def test_portal_auto_creates_customer_when_user_has_no_stripe_customer_id(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "portal.lazy@example.com"
+    )
+    ensured: dict[str, str] = {}
+
+    class FakeStripeProvider:
+        async def ensure_customer(self, *, user_id: str, email: str) -> str:
+            ensured["user_id"] = user_id
+            ensured["email"] = email
+            return "cus_freshly_created"
+
+        async def create_portal_session(self, *, customer_id: str, return_url: str) -> str:
+            assert customer_id == "cus_freshly_created"
+            return "https://billing.stripe.com/p/session_new"
+
+    monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/portal",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"url": "https://billing.stripe.com/p/session_new"}
+    assert ensured == {"user_id": str(user.id), "email": "portal.lazy@example.com"}
+
+    await db_session.refresh(user)
+    assert user.stripe_customer_id == "cus_freshly_created"
+
+
+@pytest.mark.asyncio
+async def test_portal_returns_502_when_stripe_session_create_fails(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "portal.fail@example.com"
+    )
+    user.stripe_customer_id = "cus_will_fail"
+    await db_session.flush()
+
+    class FakeStripeProvider:
+        async def create_portal_session(self, **kwargs):
+            raise RuntimeError("Stripe portal not configured for this account")
+
+    monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/portal",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Stripe portal unavailable"
+
+
+@pytest.mark.asyncio
+async def test_portal_returns_503_when_stripe_unconfigured(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, _ = await _register_for_billing(
+        client, db_session, "portal.unavailable@example.com"
+    )
+
+    class FakeStripeProvider:
+        async def ensure_customer(self, **kwargs):
+            raise ProviderUnavailableError("STRIPE_SECRET_KEY not configured")
+
+    monkeypatch.setattr("app.billing.router.get_settings", lambda: _BillingRouteSettings())
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/billing/portal",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 503
+    assert (
+        response.json()["detail"]
+        == "Stripe portal unavailable: STRIPE_SECRET_KEY not configured"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Invoice merge: local mirror + live Stripe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invoices_endpoint_merges_local_and_stripe_invoices(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "invoices.merge@example.com"
+    )
+    user.stripe_customer_id = "cus_merge"
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_merge",
+        stripe_customer_id="cus_merge",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+
+    # Two local rows, one of which mirrors the Stripe id we're about to return.
+    db_session.add(
+        Invoice(
+            subscription_id=sub.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            status="paid",
+            provider_payment_id="in_shared",
+            paid_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            receipt_url="https://stripe.test/r/legacy",
+        )
+    )
+    db_session.add(
+        Invoice(
+            subscription_id=sub.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            status="paid",
+            provider_payment_id="in_local_only",
+            paid_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            receipt_url="https://stripe.test/r/old",
+        )
+    )
+    await db_session.flush()
+
+    stripe_invoices = [
+        # Shared id — Stripe data must win.
+        {
+            "id": "in_shared",
+            "created": int(datetime(2026, 5, 1, tzinfo=timezone.utc).timestamp()),
+            "amount_paid": 1200,
+            "amount_due": 1200,
+            "currency": "USD",
+            "status": "paid",
+            "hosted_invoice_url": "https://invoice.stripe.com/i/in_shared",
+            "invoice_pdf": "https://pay.stripe.com/i/in_shared.pdf",
+            "status_transitions": {
+                "paid_at": int(datetime(2026, 5, 1, tzinfo=timezone.utc).timestamp())
+            },
+            "lines": {
+                "data": [
+                    {
+                        "period": {
+                            "start": int(datetime(2026, 5, 1, tzinfo=timezone.utc).timestamp()),
+                            "end": int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp()),
+                        }
+                    }
+                ]
+            },
+            "description": "Subscription update",
+        },
+        # Stripe-only row, newer than both local rows.
+        {
+            "id": "in_stripe_only",
+            "created": int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp()),
+            "amount_paid": 1200,
+            "currency": "usd",
+            "status": "paid",
+            "hosted_invoice_url": "https://invoice.stripe.com/i/in_stripe_only",
+            "invoice_pdf": "https://pay.stripe.com/i/in_stripe_only.pdf",
+            "status_transitions": {
+                "paid_at": int(datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp())
+            },
+            "lines": {"data": []},
+            "description": None,
+        },
+    ]
+
+    class FakeStripeProvider:
+        async def list_customer_invoices(self, *, customer_id: str, limit: int = 25):
+            assert customer_id == "cus_merge"
+            assert limit == 25
+            return stripe_invoices
+
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.get(
+        "/api/billing/invoices",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    # Newest first, all three rows present (Stripe-only + shared (Stripe wins) + local-only).
+    ids = [r["id"] for r in rows]
+    assert "in_stripe_only" == ids[0]
+    assert "in_shared" in ids
+    # The local "in_shared" row should be hidden — Stripe wins the merge.
+    shared = next(r for r in rows if r["id"] == "in_shared")
+    assert shared["hosted_invoice_url"] == "https://invoice.stripe.com/i/in_shared"
+    assert shared["invoice_pdf"] == "https://pay.stripe.com/i/in_shared.pdf"
+    assert shared["amount"] == 12.0
+    assert shared["currency"] == "USD"
+    assert shared["period_start"] is not None
+    assert shared["period_end"] is not None
+    # Stripe-only row exposes the PDF too.
+    stripe_only = next(r for r in rows if r["id"] == "in_stripe_only")
+    assert stripe_only["invoice_pdf"] == "https://pay.stripe.com/i/in_stripe_only.pdf"
+    # And the local-only row should still be present.
+    assert any(r.get("receipt_url") == "https://stripe.test/r/old" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_invoices_endpoint_falls_back_to_local_mirror_when_stripe_fails(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token, user = await _register_for_billing(
+        client, db_session, "invoices.fallback@example.com"
+    )
+    user.stripe_customer_id = "cus_dead"
+    plan = (await db_session.execute(select(Plan).where(Plan.code == "pro"))).scalar_one()
+    sub = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        status="active",
+        provider="stripe",
+        billing_period="month",
+        stripe_subscription_id="sub_dead",
+    )
+    db_session.add(sub)
+    await db_session.flush()
+    db_session.add(
+        Invoice(
+            subscription_id=sub.id,
+            amount=Decimal("12.00"),
+            currency="USD",
+            status="paid",
+            provider_payment_id="in_local",
+            paid_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            receipt_url="https://stripe.test/r/local",
+        )
+    )
+    await db_session.flush()
+
+    class FakeStripeProvider:
+        async def list_customer_invoices(self, **kwargs):
+            raise RuntimeError("Stripe down")
+
+    monkeypatch.setattr("app.billing.router.StripeProvider", FakeStripeProvider)
+
+    response = await client.get(
+        "/api/billing/invoices",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["receipt_url"] == "https://stripe.test/r/local"
+
+
+# ---------------------------------------------------------------------------
+# Webhook signature failure path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stripe_webhook_returns_400_for_invalid_signature(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/api/webhooks/stripe` must surface a 400 on signature mismatch.
+
+    Stripe retries on any non-2xx, so reflecting "bad signature" as 400 (not
+    500) keeps their retry queue clean while still rejecting forged events.
+    """
+
+    class FakeStripeProvider:
+        async def parse_webhook(self, *, raw_body: bytes, headers: dict[str, str]):
+            raise ValueError("Invalid Stripe webhook signature: bad sig")
+
+    monkeypatch.setattr("app.billing.webhooks.StripeProvider", FakeStripeProvider)
+
+    response = await client.post(
+        "/api/webhooks/stripe",
+        content=b'{"type":"invoice.paid"}',
+        headers={"stripe-signature": "t=1,v1=forged"},
+    )
+
+    assert response.status_code == 400
+    assert "Invalid Stripe webhook signature" in response.json()["detail"]

@@ -91,6 +91,8 @@ export interface User {
   email: string;
   created_at: string;
   has_password: boolean;
+  theme?: "system" | "light" | "dark";
+  accent?: "teal" | "amber" | "blue" | "green" | "violet" | "rose" | "graphite";
 }
 
 export interface Recording {

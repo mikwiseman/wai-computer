@@ -8,8 +8,20 @@ import {
   getRecording,
 } from "@/lib/api";
 import { formatSpeakerLabel } from "@/lib/format";
-import type { RecordingDetail, Segment, Summary } from "@/lib/types";
+import type { Folder, RecordingDetail, Segment, Summary } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
+
+type DetailLocale = "en" | "ru";
+
+interface DetailFolderCopy {
+  label: string;
+  noFolder: string;
+}
+
+const FOLDER_COPY: Record<DetailLocale, DetailFolderCopy> = {
+  en: { label: "Move to folder", noFolder: "(no folder)" },
+  ru: { label: "Переместить в папку", noFolder: "(без папки)" },
+};
 
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return "";
@@ -61,16 +73,23 @@ type DetailMode = "active" | "trash";
 export function RecordingDetailPanel({
   recording,
   mode = "active",
+  folders,
+  locale = "en",
   onRecordingUpdate,
+  onAssignFolder,
   onRestore,
   onDelete,
 }: {
   recording: RecordingDetail;
   mode?: DetailMode;
+  folders?: Folder[];
+  locale?: DetailLocale;
   onRecordingUpdate?: (r: RecordingDetail) => void;
+  onAssignFolder?: (recordingId: string, folderId: string | null) => void;
   onRestore?: (recordingId: string) => void;
   onDelete?: (recordingId: string) => void;
 }) {
+  const folderCopy = FOLDER_COPY[locale] ?? FOLDER_COPY.en;
   const [tab, setTab] = useState<Tab>("transcript");
   const [generating, setGenerating] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -175,6 +194,29 @@ export function RecordingDetailPanel({
         <div className="detail-panel__actions">
           {mode === "active" ? (
             <>
+              {folders && onAssignFolder ? (
+                <select
+                  aria-label={folderCopy.label}
+                  title={folderCopy.label}
+                  className="select-button"
+                  data-testid="assign-folder-select"
+                  value={recording.folder_id ?? ""}
+                  onChange={(event) => {
+                    const next = event.target.value || null;
+                    // Optimistic local update so the panel reflects the
+                    // assignment immediately; the parent will refetch.
+                    onRecordingUpdate?.({ ...recording, folder_id: next });
+                    onAssignFolder(recording.id, next);
+                  }}
+                >
+                  <option value="">{folderCopy.noFolder}</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <button
                 className="ghost-button"
                 data-testid="share-recording"

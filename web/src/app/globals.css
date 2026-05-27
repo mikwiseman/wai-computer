@@ -2708,6 +2708,38 @@ a.primary-button[aria-disabled="true"]:hover {
   }
 }
 
+/* === Sprint 4 — folder counts, recording drag, folder drop target ====== */
+
+/* Sidebar folder count badge — small grey pill matching the existing
+   `.sidebar-nav__item em` style. */
+.sidebar-folder-list__count {
+  min-width: 1.55rem;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  font-style: normal;
+  text-align: center;
+  padding: 0.12rem 0.35rem;
+  flex-shrink: 0;
+}
+
+/* Drag affordances on draggable recording rows. */
+.recording-row[draggable="true"] {
+  cursor: grab;
+}
+
+.recording-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Folder-list item highlights while a recording is being dragged over it. */
+.sidebar-folder-list__item[data-drop-target="true"] {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
 @media print {
   @page {
     size: A4;

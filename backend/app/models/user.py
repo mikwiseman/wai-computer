@@ -89,6 +89,15 @@ class User(Base, UUIDMixin, TimestampMixin):
     region: Mapped[str] = mapped_column(
         String(10), default="global", server_default="global", nullable=False
     )
+
+    # UI appearance preferences — synced from the web ThemeAccentPicker.
+    # theme: system | light | dark. accent: teal | amber | blue | green | violet | rose | graphite.
+    theme: Mapped[str] = mapped_column(
+        String(10), default="system", server_default="system", nullable=False
+    )
+    accent: Mapped[str] = mapped_column(
+        String(12), default="teal", server_default="teal", nullable=False
+    )
     account_status: Mapped[str] = mapped_column(
         String(20), default="active", server_default="active", nullable=False, index=True
     )
@@ -105,6 +114,11 @@ class User(Base, UUIDMixin, TimestampMixin):
         ForeignKey("billing_subscriptions.id", ondelete="SET NULL", use_alter=True),
         nullable=True,
     )
+
+    # Stripe Customer object id (`cus_...`) — set lazily the first time we open
+    # the Customer Portal or run checkout. Lets us drive the portal session and
+    # `stripe.Invoice.list(customer=…)` without depending on an active Subscription.
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     # Legal acceptance captured at account creation or password completion.
     legal_terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
