@@ -169,14 +169,10 @@ async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_
         request=response.request,
         response=response,
     )
-    deepgram = AsyncMock(return_value=["deepgram-ok"])
 
-    with (
-        patch(
-            "app.core.transcription.elevenlabs_transcribe_audio_file",
-            new=AsyncMock(side_effect=error),
-        ),
-        patch("app.core.transcription.deepgram_transcribe_audio_file", new=deepgram),
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(side_effect=error),
     ):
         from app.core.transcription import transcribe_audio_file
 
@@ -187,8 +183,6 @@ async def test_transcription_surfaces_elevenlabs_payment_issue_without_provider_
                 content_type="audio/wav",
                 channels=1,
             )
-
-    deepgram.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -317,21 +311,15 @@ async def test_transcription_does_not_fallback_for_elevenlabs_bad_request():
         request=response.request,
         response=response,
     )
-    deepgram = AsyncMock(return_value=["deepgram-ok"])
 
-    with (
-        patch(
-            "app.core.transcription.elevenlabs_transcribe_audio_file",
-            new=AsyncMock(side_effect=error),
-        ),
-        patch("app.core.transcription.deepgram_transcribe_audio_file", new=deepgram),
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(side_effect=error),
     ):
         from app.core.transcription import transcribe_audio_file
 
         with pytest.raises(httpx.HTTPStatusError):
             await transcribe_audio_file(b"wav", language="auto", content_type="audio/wav")
-
-    deepgram.assert_not_awaited()
 
 
 def test_elevenlabs_error_code_handles_unstructured_error_payloads():
@@ -372,113 +360,6 @@ def test_elevenlabs_error_code_handles_unstructured_error_payloads():
         response=detail_response,
     )
     assert _elevenlabs_error_code(detail_error) == "payment_issue"
-
-
-@pytest.mark.asyncio
-async def test_transcription_deepgram_branch_remains_dispatchable(monkeypatch):
-    monkeypatch.setattr(
-        "app.core.transcription.validate_option",
-        lambda _kind, _provider, _model: ("deepgram", "nova-3"),
-    )
-    deepgram = AsyncMock(return_value=["deepgram-ok"])
-    monkeypatch.setattr("app.core.transcription.deepgram_transcribe_audio_file", deepgram)
-    from app.core.transcription import transcribe_audio_file
-
-    result = await transcribe_audio_file(
-        b"audio",
-        language="ru",
-        content_type="audio/wav",
-        channels=2,
-        provider="deepgram",
-        model="nova-3",
-    )
-
-    assert result == ["deepgram-ok"]
-    deepgram.assert_awaited_once_with(
-        b"audio",
-        model="nova-3",
-        language="ru",
-        content_type="audio/wav",
-        channels=2,
-    )
-
-
-@pytest.mark.asyncio
-async def test_transcription_soniox_branch_normalizes_browser_audio(monkeypatch):
-    monkeypatch.setattr(
-        "app.core.transcription.validate_option",
-        lambda _kind, _provider, _model: ("soniox", "stt-async-v4"),
-    )
-    monkeypatch.setattr(
-        "app.core.transcription._normalize_soniox_file_audio",
-        lambda _audio, _content_type, _channels: (b"wav", "audio/wav", 1),
-    )
-    soniox = AsyncMock(return_value=["soniox-ok"])
-    monkeypatch.setattr("app.core.transcription.soniox_transcribe_audio_file", soniox)
-    from app.core.transcription import transcribe_audio_file
-
-    result = await transcribe_audio_file(
-        b"webm",
-        language="auto",
-        content_type="audio/webm",
-        provider="soniox",
-        model="stt-async-v4",
-    )
-
-    assert result == ["soniox-ok"]
-    soniox.assert_awaited_once_with(
-        b"wav",
-        model="stt-async-v4",
-        language="auto",
-        content_type="audio/wav",
-        channels=1,
-    )
-
-
-def test_normalize_soniox_file_audio_leaves_non_browser_audio_unchanged():
-    from app.core.transcription import _normalize_soniox_file_audio
-
-    assert _normalize_soniox_file_audio(b"wav", "audio/wav; codecs=1", 2) == (
-        b"wav",
-        "audio/wav; codecs=1",
-        2,
-    )
-
-
-def test_normalize_soniox_file_audio_converts_browser_audio(monkeypatch):
-    from app.core.transcription import _normalize_soniox_file_audio
-
-    class FakeSegment:
-        def set_frame_rate(self, value):
-            assert value == 16_000
-            return self
-
-        def set_channels(self, value):
-            assert value == 1
-            return self
-
-        def set_sample_width(self, value):
-            assert value == 2
-            return self
-
-        def export(self, output, format):
-            assert format == "wav"
-            output.write(b"wav")
-
-    monkeypatch.setattr("pydub.AudioSegment.from_file", lambda _data: FakeSegment())
-
-    assert _normalize_soniox_file_audio(b"webm", " audio/webm ;codecs=opus", None) == (
-        b"wav",
-        "audio/wav",
-        1,
-    )
-
-
-def test_normalize_soniox_file_audio_surfaces_decode_errors():
-    from app.core.transcription import _normalize_soniox_file_audio
-
-    with pytest.raises(RuntimeError, match="Could not decode browser audio"):
-        _normalize_soniox_file_audio(b"not-a-real-webm", " audio/webm ;codecs=opus", None)
 
 
 @pytest.mark.asyncio

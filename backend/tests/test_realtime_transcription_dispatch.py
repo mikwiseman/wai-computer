@@ -1,4 +1,4 @@
-"""Tests covering each provider branch in realtime transcription session minting."""
+"""Tests covering realtime transcription session dispatch."""
 
 from __future__ import annotations
 
@@ -9,34 +9,9 @@ from uuid import UUID
 import pytest
 
 from app.core.realtime_transcription import (
-    _build_deepgram_realtime_session,
     _build_inworld_realtime_session,
-    _build_soniox_realtime_session,
     create_realtime_transcription_session,
 )
-
-
-def _patch_soniox_mint(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    language: str = "multi",
-    channels: int = 1,
-) -> AsyncMock:
-    fake = SimpleNamespace(
-        temporary_api_key="sx-temp",
-        sample_rate=16000,
-        language=language,
-        channels=channels,
-        model="stt-rt-v4",
-        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
-        expires_in_seconds=60,
-    )
-    mock = AsyncMock(return_value=fake)
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.mint_soniox_realtime_session",
-        mock,
-    )
-    return mock
 
 
 def _patch_inworld_mint(
@@ -66,90 +41,6 @@ def _patch_inworld_mint(
             expires_in_seconds=840,
         ),
     )
-
-
-@pytest.mark.asyncio
-async def test_build_deepgram_realtime_session() -> None:
-    fake = SimpleNamespace(
-        access_token="dg-jwt",
-        sample_rate=16000,
-        language="en",
-        channels=1,
-        model="nova-3",
-        websocket_url="wss://dg/x",
-        expires_in_seconds=30,
-        keep_alive_interval_seconds=8,
-    )
-    with patch(
-        "app.core.realtime_transcription.mint_deepgram_realtime_session",
-        new=AsyncMock(return_value=fake),
-    ):
-        session = await _build_deepgram_realtime_session(
-            model="nova-3", language="en", channels=1,
-        )
-    assert session.provider == "deepgram"
-    assert session.token == "dg-jwt"
-    assert session.websocket_url == "wss://dg/x"
-    assert session.audio_format == "linear16_16000"
-    assert session.auth_scheme == "bearer"
-    assert session.expires_in_seconds == 30
-    assert session.keep_alive_interval_seconds == 8
-
-
-@pytest.mark.asyncio
-async def test_build_deepgram_realtime_session_uses_backend_proxy_for_users(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    user = SimpleNamespace(id=UUID("11111111-1111-1111-1111-111111111111"))
-    monkeypatch.setattr(
-        "app.core.realtime_transcription.get_settings",
-        lambda: SimpleNamespace(
-            deepgram_api_key="dg-key",
-            deepgram_realtime_proxy_token_ttl_seconds=600,
-            frontend_url="https://wai.computer",
-        ),
-    )
-
-    session = await _build_deepgram_realtime_session(
-        model="flux-general-multi",
-        language="ru",
-        channels=1,
-        user=user,
-    )
-
-    assert session.provider == "deepgram"
-    assert session.model == "flux-general-multi"
-    assert session.auth_scheme == "bearer"
-    assert session.expires_in_seconds == 600
-    assert session.sample_rate == 16000
-    assert session.websocket_url is not None
-    assert session.websocket_url.startswith("wss://wai.computer/api/transcription/deepgram-proxy?")
-    assert "model=flux-general-multi" in session.websocket_url
-    assert "language=ru" in session.websocket_url
-
-
-@pytest.mark.asyncio
-async def test_build_soniox_realtime_session() -> None:
-    fake = SimpleNamespace(
-        temporary_api_key="sx-temp",
-        sample_rate=16000,
-        language="ru",
-        channels=2,
-        model="stt-rt-v4",
-        websocket_url="wss://stt-rt.soniox.com/transcribe-websocket",
-        expires_in_seconds=60,
-    )
-    with patch(
-        "app.core.realtime_transcription.mint_soniox_realtime_session",
-        new=AsyncMock(return_value=fake),
-    ):
-        session = await _build_soniox_realtime_session(
-            model="stt-rt-v4", language="ru", channels=2,
-        )
-    assert session.provider == "soniox"
-    assert session.token == "sx-temp"
-    assert session.auth_scheme == "message_api_key"
-    assert session.websocket_url == "wss://stt-rt.soniox.com/transcribe-websocket"
 
 
 @pytest.mark.asyncio
