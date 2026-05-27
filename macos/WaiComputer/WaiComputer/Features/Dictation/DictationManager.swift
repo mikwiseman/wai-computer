@@ -72,6 +72,8 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let enabledDefaultsKey = "dictationEnabled"
+    private static let liveSTTProvider = "inworld"
+    private static let liveSTTModel = "inworld/inworld-stt-1"
 
     @Published var hotkeyChoice: String {
         didSet {
@@ -150,28 +152,11 @@ final class DictationManager: ObservableObject {
 
     // MARK: - Dictation pipeline
 
-    // Provider-backed dictation path for Soniox, Deepgram, and Inworld.
+    // Inworld-backed realtime dictation path.
     private var providerSession: (any ProviderSession)?
     private var providerCapture: MicrophoneCapture?
     private var providerAudioTask: Task<Void, Never>?
     private var sessionEventTask: Task<Void, Never>?
-
-    // OpenAI realtime STT path — account settings default to
-    // `gpt-realtime-whisper` for dictation.
-    private var openAISession: OpenAIRealtimeTranscriptionSession?
-    private var openAICapture: MicrophoneCapture?
-    private var openAIAudioTask: Task<Void, Never>?
-
-    // ElevenLabs rollback path state — owned only when useElevenLabsForDictation
-    // is true. Mirrors the pre-Phase-4 (build ≤56) working path: a fresh
-    // MicrophoneCapture per session, NOT the shared AudioEngineHost. The
-    // AudioEngineHost.lease() path was Phase 4-new and never validated against
-    // ElevenLabs in production — using MicrophoneCapture (which the working
-    // pre-Phase-4 dictation used) avoids that incompatibility.
-    private var elevenLabsWebSocket: WebSocketManager?
-    private var elevenLabsCapture: MicrophoneCapture?
-    private var elevenLabsAudioTask: Task<Void, Never>?
-    private var elevenLabsEventTask: Task<Void, Never>?
 
     private var timerTask: Task<Void, Never>?
 
@@ -469,20 +454,16 @@ final class DictationManager: ObservableObject {
 
             let language = currentDictationLanguage()
             let sessionConfig = try await takeDictationSessionConfig(
-                settings: settings,
                 language: language,
                 session: session,
                 apiClient: apiClient
             )
 
-            if sessionConfig.provider == "openai" {
-                await startOpenAIDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
-                return
+            guard sessionConfig.provider == Self.liveSTTProvider else {
+                throw ProviderError.unsupportedModel(sessionConfig.provider)
             }
-
-            if sessionConfig.provider == "elevenlabs" {
-                await startElevenLabsDictation(apiClient: apiClient, session: session, sessionConfig: sessionConfig)
-                return
+            guard sessionConfig.model == Self.liveSTTModel else {
+                throw ProviderError.unsupportedModel(sessionConfig.model)
             }
 
             let keyTerms = dictionaryStore?.vocabularyList ?? []
@@ -578,31 +559,18 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
-        // Drain the active provider: direct provider session, OpenAI, or
-        // ElevenLabs via WebSocketManager.
+        // Drain the active provider before choosing the best final transcript.
         await finishProviderAudioPumpBeforeFinalizing()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
-        await finishOpenAIAudioPumpBeforeFinalizing()
-        let openAIOutcome = try? await openAISession?.close(timeout: .seconds(4))
-        if let ws = elevenLabsWebSocket {
-            await finishElevenLabsAudioPumpBeforeFinalizing()
-            _ = try? await ws.finishStreaming(timeout: .seconds(4))
-        }
 
         // If cancelDictation ran during finalization, bail out cleanly.
         guard state == .processing else { return }
 
         sessionEventTask?.cancel()
         sessionEventTask = nil
-        elevenLabsEventTask?.cancel()
-        elevenLabsEventTask = nil
         timerTask?.cancel()
         timerTask = nil
 
-        let openAITranscript = openAIOutcome?
-            .map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         let providerTranscript = providerSegments
             .map(\.text)
             .joined(separator: " ")
@@ -610,7 +578,6 @@ final class DictationManager: ObservableObject {
         let liveTranscript = buildTranscript()
         let trimmedText = RealtimeTranscriptCandidateSelector.select([
             providerTranscript.isEmpty ? nil : providerTranscript,
-            openAITranscript,
             liveTranscript,
         ])
         let audioSnapshot = audioSendCounter.snapshot()
@@ -620,7 +587,6 @@ final class DictationManager: ObservableObject {
             "audioBytesSent": audioSnapshot.bytes,
             "providerSegmentCount": providerSegments.count,
             "providerChars": providerTranscript.count,
-            "openAIChars": openAITranscript?.count ?? 0,
             "liveChars": liveTranscript.count,
             "selectedChars": trimmedText.count,
         ])
@@ -729,15 +695,8 @@ final class DictationManager: ObservableObject {
 
         providerAudioTask?.cancel()
         await providerSession?.cancel()
-        await openAISession?.cancel()
-        if let ws = elevenLabsWebSocket {
-            elevenLabsAudioTask?.cancel()
-            await ws.disconnect()
-        }
         sessionEventTask?.cancel()
         sessionEventTask = nil
-        elevenLabsEventTask?.cancel()
-        elevenLabsEventTask = nil
         timerTask?.cancel()
         timerTask = nil
 
@@ -754,32 +713,10 @@ final class DictationManager: ObservableObject {
         providerAudioTask = nil
     }
 
-    private func finishOpenAIAudioPumpBeforeFinalizing() async {
-        if let capture = openAICapture {
-            await waitForFinalCaptureTail()
-            await capture.stopRecording()
-            openAICapture = nil
-        }
-        await openAIAudioTask?.value
-        openAIAudioTask = nil
-    }
-
-    private func finishElevenLabsAudioPumpBeforeFinalizing() async {
-        if let capture = elevenLabsCapture {
-            await waitForFinalCaptureTail()
-            await capture.stopRecording()
-            elevenLabsCapture = nil
-        }
-        await elevenLabsAudioTask?.value
-        elevenLabsAudioTask = nil
-    }
-
     private func waitForFinalCaptureTail() async {
         guard !Task.isCancelled else { return }
         try? await Task.sleep(for: DictationFinalizationPolicy.captureTailDelay)
     }
-
-    // MARK: - ElevenLabs rollback path
 
     private func currentDictationLanguage() -> String {
         if let store = languageStore {
@@ -855,7 +792,6 @@ final class DictationManager: ObservableObject {
     }
 
     private func takeDictationSessionConfig(
-        settings: UserSettings,
         language: String,
         session: DictationInstrumentation.Session,
         apiClient: APIClient
@@ -865,8 +801,8 @@ final class DictationManager: ObservableObject {
         if let sessionConfigVault {
             result = try await sessionConfigVault.take(
                 for: key,
-                expectedProvider: settings.dictationLiveSTTProvider,
-                expectedModel: settings.dictationLiveSTTModel
+                expectedProvider: Self.liveSTTProvider,
+                expectedModel: Self.liveSTTModel
             )
         } else {
             let config = try await apiClient.createRealtimeTranscriptionSession(
@@ -888,237 +824,6 @@ final class DictationManager: ObservableObject {
             "tokenAgeMs": result.tokenAgeMilliseconds,
         ])
         return result.config
-    }
-
-    private func startOpenAIDictation(
-        apiClient: APIClient,
-        session: DictationInstrumentation.Session,
-        sessionConfig: RealtimeTranscriptionSessionConfig
-    ) async {
-        do {
-            guard let urlString = sessionConfig.websocketURL,
-                  let url = URL(string: urlString) else {
-                throw DictationInstrumentationError.unknown("missing OpenAI websocket URL in session config")
-            }
-
-            let provider = OpenAIRealtimeTranscriptionSession(
-                websocketURL: url,
-                bearerToken: sessionConfig.token,
-                model: sessionConfig.model,
-                language: sessionConfig.language,
-                sampleRate: sessionConfig.sampleRate
-            )
-            openAISession = provider
-            let stream = provider.events
-            sessionEventTask = Task { [weak self] in
-                guard let self else { return }
-                for await event in stream {
-                    await self.handleProviderEvent(event)
-                }
-            }
-
-            session.event(.providerConnecting, data: [
-                "provider": "openai",
-                "model": sessionConfig.model,
-                "language": sessionConfig.language,
-            ])
-
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            openAICapture = capture
-            try await capture.startRecording()
-
-            let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
-            try await provider.open()
-
-            let audioCounter = audioSendCounter
-            openAIAudioTask = Task.detached(priority: .userInitiated) { [weak provider, weak capture, session] in
-                guard let provider, let capture else { return }
-                var liveSent = 0
-                for await buffer in capture.audioBuffers {
-                    guard !Task.isCancelled else { return }
-                    guard let data = encoder.encode(buffer) else { continue }
-                    do {
-                        try await provider.send(pcm16: data)
-                        liveSent += 1
-                        audioCounter.record(bytes: data.count)
-                        if liveSent == 1 {
-                            session.event(.audioFirstChunkSent, data: [
-                                "provider": "openai",
-                                "bytes": data.count,
-                            ])
-                        }
-                    } catch {
-                        NSLog("[Dictation/OpenAI] send #%d failed: %@", liveSent, String(describing: error))
-                        return
-                    }
-                }
-            }
-
-            startTimer()
-            setState(.listening)
-
-            if consumeDeferredStopAction() == .finishAfterReady {
-                await stopAndInsert()
-            }
-        } catch {
-            log.error("Failed to start OpenAI dictation")
-            self.error = error.userFacingMessage(context: .dictation)
-            instrumentationSession?.failure(error, extras: ["stage": "start.openai"])
-            instrumentationSession = nil
-            await resetAfterStartFailure()
-        }
-    }
-
-    private func startElevenLabsDictation(
-        apiClient: APIClient,
-        session: DictationInstrumentation.Session,
-        sessionConfig: RealtimeTranscriptionSessionConfig
-    ) async {
-        do {
-            // Read from the multi-select language store. wireLanguageTag returns
-            // "" for auto-detect (0 or 2+ selections) and the BCP-47 code for
-            // a single-language selection.
-            let language = sessionConfig.language
-
-            // 1. WebSocketManager.connect(using:) receives the already-minted
-            //    config so the hotkey path does not pay a second backend
-            //    round-trip. The config contains only a temporary credential;
-            //    no provider socket is opened until connect() below.
-            //    Per-session keyterms come from the user's dictation
-            //    dictionary — every entry biases the recognizer toward
-            //    that spelling. Cap is enforced inside WebSocketManager.
-            let keyTerms = dictionaryStore?.vocabularyList ?? []
-            let ws = WebSocketManager(
-                apiClient: apiClient,
-                language: language,
-                channels: 1,
-                purpose: .dictation,
-                keyTerms: keyTerms
-            )
-            elevenLabsWebSocket = ws
-            session.event(.providerConnecting, data: [
-                "provider": "elevenlabs",
-                "key_terms_count": keyTerms.count,
-            ])
-
-            let stream = await ws.events
-            elevenLabsEventTask = Task { [weak self] in
-                guard let self else { return }
-                for await event in stream {
-                    await self.handleElevenLabsEvent(event)
-                }
-            }
-
-            // 2. Audio pump — encode each MicrophoneCapture buffer and forward
-            //    to ws.sendAudio after the provider socket is open.
-            let capture = makeCapture(sampleRate: sessionConfig.sampleRate)
-            elevenLabsCapture = capture
-            try await capture.startRecording()
-
-            let encoder = RealtimePCMEncoder(targetSampleRate: sessionConfig.sampleRate, channels: 1)
-            try await ws.connect(using: sessionConfig)
-            session.event(.providerOpened)
-
-            NSLog("[Dictation/EL] audio task starting (MicrophoneCapture)")
-            let audioCounter = audioSendCounter
-            elevenLabsAudioTask = Task.detached(priority: .userInitiated) { [weak ws, weak capture, session] in
-                guard let ws, let capture else {
-                    NSLog("[Dictation/EL] audio task exit — ws or capture nil")
-                    return
-                }
-                var liveSent = 0
-                for await buffer in capture.audioBuffers {
-                    if Task.isCancelled {
-                        NSLog("[Dictation/EL] audio task cancelled (sent=%d)", liveSent)
-                        return
-                    }
-                    guard let data = encoder.encode(buffer) else {
-                        NSLog("[Dictation/EL] encode returned nil (frames=%d)", Int(buffer.frameLength))
-                        continue
-                    }
-                    do {
-                        try await ws.sendAudio(data: data)
-                        liveSent += 1
-                        audioCounter.record(bytes: data.count)
-                        if liveSent == 1 {
-                            session.event(.audioFirstChunkSent, data: [
-                                "provider": "elevenlabs",
-                                "bytes": data.count,
-                            ])
-                        }
-                        if liveSent <= 3 || liveSent % 20 == 0 {
-                            NSLog("[Dictation/EL] sent #%d %d bytes", liveSent, data.count)
-                        }
-                    } catch {
-                        NSLog("[Dictation/EL] send #%d failed: %@", liveSent, String(describing: error))
-                        return
-                    }
-                }
-                NSLog("[Dictation/EL] audio stream ended (sent=%d)", liveSent)
-            }
-
-            startTimer()
-            setState(.listening)
-
-            // Hotkey released during connect — apply now.
-            if consumeDeferredStopAction() == .finishAfterReady {
-                await stopAndInsert()
-            }
-        } catch {
-            log.error("Failed to start ElevenLabs dictation")
-            self.error = error.userFacingMessage(context: .dictation)
-            instrumentationSession?.failure(error, extras: ["stage": "start.elevenlabs"])
-            instrumentationSession = nil
-            await resetAfterStartFailure()
-        }
-    }
-
-    private func handleElevenLabsEvent(_ event: WebSocketEvent) async {
-        switch event {
-        case .connected:
-            NSLog("[Dictation/EL] WebSocket connected event")
-        case .reconnected:
-            NSLog("[Dictation/EL] WebSocket RECONNECTED event")
-        case .reconnecting(let attempt, let max):
-            NSLog("[Dictation/EL] WebSocket reconnecting %d/%d", attempt, max)
-        case .transcript(let segment):
-            NSLog("[Dictation/EL] transcript isFinal=%d chars=%d", segment.isFinal ? 1 : 0, segment.text.count)
-            if !firstTokenReported {
-                firstTokenReported = true
-                instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": segment.isFinal])
-            }
-            if segment.isFinal {
-                instrumentationSession?.event(.committedTranscript, data: ["chars": segment.text.count])
-                committedTexts.append(segment.text)
-                currentInterim = ""
-            } else {
-                currentInterim = segment.text
-            }
-            interimTranscript = buildTranscript()
-        case .disconnected(let err):
-            NSLog("[Dictation/EL] WebSocket DISCONNECTED err=%@", err.map { String(describing: $0) } ?? "clean")
-            instrumentationSession?.event(.providerClosed, data: [
-                "reason": err.map { String(describing: $0) } ?? "clean",
-            ])
-            if state == .listening {
-                let closeError = NSError(
-                    domain: "is.waiwai.computer.dictation",
-                    code: 1002,
-                    userInfo: [NSLocalizedDescriptionKey: "ElevenLabs WebSocket closed: \(err?.localizedDescription ?? "clean")"]
-                )
-                SentryHelper.captureError(
-                    closeError,
-                    extras: [
-                        "context": "dictation.elevenlabs.disconnected",
-                        "isHandsFree": isHandsFree,
-                    ]
-                )
-                self.error = "Connection to the transcription service was lost. Try again."
-                await cancelDictation()
-            }
-        case .reconnectionFailed(let err):
-            log.warning("ElevenLabs reconnection failed: \(err?.localizedDescription ?? "unknown", privacy: .public)")
-        }
     }
 
     // MARK: - Private
@@ -1161,29 +866,8 @@ final class DictationManager: ObservableObject {
             providerCapture = nil
         }
 
-        let activeOpenAISession = openAISession
-        openAISession = nil
-        await activeOpenAISession?.cancel()
         deferredStop = false
         firstTokenReported = false
-
-        openAIAudioTask?.cancel()
-        openAIAudioTask = nil
-        if let capture = openAICapture {
-            await capture.stopRecording()
-            openAICapture = nil
-        }
-
-        // Tear down ElevenLabs path resources (no-op if not in use).
-        elevenLabsAudioTask?.cancel()
-        elevenLabsAudioTask = nil
-        elevenLabsEventTask?.cancel()
-        elevenLabsEventTask = nil
-        if let capture = elevenLabsCapture {
-            await capture.stopRecording()
-            elevenLabsCapture = nil
-        }
-        elevenLabsWebSocket = nil
 
         targetApp = nil
         setState(.idle)

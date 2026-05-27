@@ -2,9 +2,8 @@ import Foundation
 import AVFoundation
 
 /// Thin wrapper around `AVAudioConverter` for downsampling native capture audio
-/// to provider-configured Float32 PCM. Most providers consume 16 kHz mono, while
-/// OpenAI realtime dictation uses 24 kHz mono, so the target rate is always
-/// supplied by the caller instead of being hard-coded.
+/// to provider-configured Float32 PCM. Realtime STT consumes 16 kHz mono today,
+/// but the target rate is supplied by the caller instead of being hard-coded.
 ///
 /// **Why not arithmetic decimation?** The previous implementation averaged
 /// adjacent samples (44.1/48 kHz → 16 kHz). That is a low-pass-free averaging

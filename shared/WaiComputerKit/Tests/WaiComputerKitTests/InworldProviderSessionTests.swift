@@ -4,7 +4,7 @@ import XCTest
 
 final class InworldProviderSessionTests: XCTestCase {
 
-    // MARK: - cappedKeyTerms (Soniox v4 RT context budget)
+    // MARK: - cappedKeyTerms
 
     func testCappedKeyTermsRespectsCharBudget() {
         // Build a list whose total chars (incl join separators) exceeds the budget.
@@ -12,14 +12,14 @@ final class InworldProviderSessionTests: XCTestCase {
         let many = (1...300).map { _ in longTerm }
         let output = InworldProviderSession.cappedKeyTerms(many)
         let totalChars = output.reduce(0) { $0 + $1.count + 1 }
-        XCTAssertLessThanOrEqual(totalChars, InworldProviderSession.sonioxContextCharBudget + 60)
+        XCTAssertLessThanOrEqual(totalChars, InworldProviderSession.promptContextCharBudget + 60)
         XCTAssertGreaterThan(output.count, 0)
     }
 
     func testCappedKeyTermsTruncatesEntriesPastTermLimit() {
         let huge = String(repeating: "z", count: 200)
         let output = InworldProviderSession.cappedKeyTerms([huge])
-        XCTAssertEqual(output.first?.count, InworldProviderSession.sonioxTermCharLimit)
+        XCTAssertEqual(output.first?.count, InworldProviderSession.promptTermCharLimit)
     }
 
     func testCappedKeyTermsDeDuplicatesCaseInsensitive() {

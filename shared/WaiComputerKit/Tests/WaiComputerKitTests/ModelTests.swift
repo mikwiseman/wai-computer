@@ -59,12 +59,12 @@ final class ModelTests: XCTestCase {
             "summary_language": "en",
             "summary_style": "detailed",
             "summary_instructions": "Write formally",
-            "dictation_live_stt_provider": "soniox",
-            "dictation_live_stt_model": "stt-rt-v4",
-            "recording_live_stt_provider": "soniox",
-            "recording_live_stt_model": "stt-rt-v4",
-            "file_stt_provider": "deepgram",
-            "file_stt_model": "nova-3",
+            "dictation_live_stt_provider": "inworld",
+            "dictation_live_stt_model": "inworld/inworld-stt-1",
+            "recording_live_stt_provider": "inworld",
+            "recording_live_stt_model": "inworld/inworld-stt-1",
+            "file_stt_provider": "elevenlabs",
+            "file_stt_model": "scribe_v2",
             "dictation_post_filter_enabled": false,
             "dictation_post_filter_provider": "openai",
             "dictation_post_filter_model": "gpt-5.5"
@@ -77,12 +77,12 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.summaryLanguage, "en")
         XCTAssertEqual(settings.summaryStyle, "detailed")
         XCTAssertEqual(settings.summaryInstructions, "Write formally")
-        XCTAssertEqual(settings.dictationLiveSTTProvider, "soniox")
-        XCTAssertEqual(settings.dictationLiveSTTModel, "stt-rt-v4")
-        XCTAssertEqual(settings.recordingLiveSTTProvider, "soniox")
-        XCTAssertEqual(settings.recordingLiveSTTModel, "stt-rt-v4")
-        XCTAssertEqual(settings.fileSTTProvider, "deepgram")
-        XCTAssertEqual(settings.fileSTTModel, "nova-3")
+        XCTAssertEqual(settings.dictationLiveSTTProvider, "inworld")
+        XCTAssertEqual(settings.dictationLiveSTTModel, "inworld/inworld-stt-1")
+        XCTAssertEqual(settings.recordingLiveSTTProvider, "inworld")
+        XCTAssertEqual(settings.recordingLiveSTTModel, "inworld/inworld-stt-1")
+        XCTAssertEqual(settings.fileSTTProvider, "elevenlabs")
+        XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
         XCTAssertFalse(settings.dictationPostFilterEnabled)
         XCTAssertEqual(settings.dictationPostFilterProvider, "openai")
         XCTAssertEqual(settings.dictationPostFilterModel, "gpt-5.5")

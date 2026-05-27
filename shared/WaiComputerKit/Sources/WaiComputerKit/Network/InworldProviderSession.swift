@@ -8,7 +8,7 @@ private let inworldLog = Logger(subsystem: "is.waiwai.computer.kit", category: "
 /// dictation flow. Connects to Inworld's unified bidirectional streaming
 /// endpoint.
 ///
-/// Protocol (verified against docs.inworld.ai 2026-05-06):
+/// Protocol (verified against docs.inworld.ai 2026-05-27):
 /// - URL: `wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional`
 /// - Auth: HTTP `Authorization: Bearer <jwt>` header
 /// - First message: `transcribeConfig` JSON
@@ -69,11 +69,10 @@ public actor InworldProviderSession: ProviderSession {
         self.eventContinuation = continuation
     }
 
-    /// Soniox v4 RT documents a ~10K char total context budget across all
-    /// fields. Cap and de-dupe so a runaway dictionary doesn't get the
-    /// session rejected at the wire edge.
-    static let sonioxContextCharBudget = 9_000
-    static let sonioxTermCharLimit = 60
+    /// Cap and de-dupe prompt hints so a runaway dictionary does not get the
+    /// Inworld session rejected at the wire edge.
+    static let promptContextCharBudget = 9_000
+    static let promptTermCharLimit = 60
 
     static func cappedKeyTerms(_ terms: [String]) -> [String] {
         var seen = Set<String>()
@@ -82,10 +81,10 @@ public actor InworldProviderSession: ProviderSession {
         for raw in terms {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            let term = String(trimmed.prefix(sonioxTermCharLimit))
+            let term = String(trimmed.prefix(promptTermCharLimit))
             let key = term.lowercased()
             if seen.contains(key) { continue }
-            if totalChars + term.count > sonioxContextCharBudget { break }
+            if totalChars + term.count > promptContextCharBudget { break }
             seen.insert(key)
             result.append(term)
             totalChars += term.count + 1  // +1 for join separator
@@ -97,8 +96,6 @@ public actor InworldProviderSession: ProviderSession {
         let prompts = cappedKeyTerms(keyTerms)
         guard !prompts.isEmpty else { return }
 
-        // Inworld STT reads contextual hints from top-level `prompts`.
-        // Soniox keeps using its provider-specific `context.terms` field.
         transcribeConfig["prompts"] = prompts
     }
 
@@ -190,7 +187,7 @@ public actor InworldProviderSession: ProviderSession {
         let normalisedLanguage: String
         switch language {
         case "multi", "und":
-            normalisedLanguage = ""  // Soniox auto-detect
+            normalisedLanguage = ""
         case let other where other.contains("-"):
             // "en-US" → "en" — drop the region. The ASR model is
             // multilingual already; the region was only ever a hint.
@@ -300,7 +297,7 @@ public actor InworldProviderSession: ProviderSession {
         }
 
         if isFinal {
-            // Soniox / Inworld may include word-level timing as `words`. Fold
+            // Inworld may include word-level timing as `words`. Fold
             // start/end ms when present; fall back to 0 otherwise.
             let words = (payload["words"] as? [[String: Any]])
                 ?? (payload["word_timestamps"] as? [[String: Any]])
@@ -433,16 +430,14 @@ public actor InworldProviderSession: ProviderSession {
     }
 
     private static func encodeJSON(_ payload: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
-            return "{}"
-        }
-        return String(data: data, encoding: .utf8) ?? "{}"
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [])
+        return String(data: data, encoding: .utf8)!
     }
 }
 
 /// Convert a Float32 mono PCM buffer (the format `AudioEngineHost` emits
 /// after resampling) to little-endian Int16 LINEAR16 bytes — the wire
-/// format Inworld / Soniox expect.
+/// format Inworld expects.
 public enum LINEAR16Encoder {
     public static func encode(_ buffer: AVAudioPCMBuffer) -> Data? {
         guard let floats = buffer.floatChannelData?[0] else { return nil }

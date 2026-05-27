@@ -12,10 +12,14 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
         let mintCount = SessionConfigMintCounter()
         let vault = RealtimeTranscriptionSessionConfigVault { key in
             await mintCount.increment()
-            return Self.config(token: "fresh", provider: "soniox", model: "stt-rt-v4", language: key.language)
+            return Self.config(token: "fresh", language: key.language)
         }
 
-        let result = try await vault.take(for: key, expectedProvider: "soniox", expectedModel: "stt-rt-v4")
+        let result = try await vault.take(
+            for: key,
+            expectedProvider: "inworld",
+            expectedModel: "inworld/inworld-stt-1"
+        )
 
         XCTAssertEqual(result.config.token, "fresh")
         XCTAssertFalse(result.prefetched)
@@ -28,7 +32,7 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
         let vault = RealtimeTranscriptionSessionConfigVault { _ in
             await mintCount.increment()
             let count = await mintCount.count()
-            return Self.config(token: "token-\(count)", provider: "deepgram", model: "flux-general-multi")
+            return Self.config(token: "token-\(count)")
         }
 
         await vault.prefetch(for: key)
@@ -36,13 +40,13 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let prefetched = try await vault.take(
             for: key,
-            expectedProvider: "deepgram",
-            expectedModel: "flux-general-multi"
+            expectedProvider: "inworld",
+            expectedModel: "inworld/inworld-stt-1"
         )
         let fresh = try await vault.take(
             for: key,
-            expectedProvider: "deepgram",
-            expectedModel: "flux-general-multi"
+            expectedProvider: "inworld",
+            expectedModel: "inworld/inworld-stt-1"
         )
 
         XCTAssertTrue(prefetched.prefetched)
@@ -57,9 +61,9 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             await mintCount.increment()
             let count = await mintCount.count()
             if count == 1 {
-                return Self.config(token: "stale", provider: "soniox", model: "stt-rt-v4")
+                return Self.config(token: "stale", provider: "legacy", model: "legacy-live")
             }
-            return Self.config(token: "fresh", provider: "elevenlabs", model: "scribe_v2_realtime")
+            return Self.config(token: "fresh")
         }
 
         await vault.prefetch(for: key)
@@ -67,8 +71,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
         let result = try await vault.take(
             for: key,
-            expectedProvider: "elevenlabs",
-            expectedModel: "scribe_v2_realtime"
+            expectedProvider: "inworld",
+            expectedModel: "inworld/inworld-stt-1"
         )
 
         XCTAssertEqual(result.config.token, "fresh")
@@ -101,8 +105,8 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
 
     private static func config(
         token: String,
-        provider: String = "soniox",
-        model: String = "stt-rt-v4",
+        provider: String = "inworld",
+        model: String = "inworld/inworld-stt-1",
         language: String = "multi",
         expiresInSeconds: Int = 120
     ) -> RealtimeTranscriptionSessionConfig {
@@ -111,11 +115,12 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
             token: token,
             expiresInSeconds: expiresInSeconds,
             sampleRate: 16_000,
-            audioFormat: "pcm_s16le",
+            audioFormat: "linear16_16000",
             language: language,
             channels: 1,
             model: model,
-            websocketURL: "wss://example.test"
+            websocketURL: "wss://api.inworld.ai/stt/v1/transcribe:streamBidirectional",
+            authScheme: "bearer"
         )
     }
 }

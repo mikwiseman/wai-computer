@@ -24,11 +24,11 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
     }
 
     func testEnglishDescriptionPreservesServerCopy() {
-        let serverDescription = "Best value file option. 60+ languages, strong long-form diarization, up to 5-hour files."
+        let serverDescription = "Default file transcription model with multilingual diarization."
         let option = TranscriptionModelOption(
-            provider: "soniox",
-            model: "stt-async-v4",
-            label: "Soniox v4 Async",
+            provider: "elevenlabs",
+            model: "scribe_v2",
+            label: "ElevenLabs Scribe v2",
             description: serverDescription
         )
 
