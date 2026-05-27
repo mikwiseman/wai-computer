@@ -244,12 +244,20 @@ final class DictationManager: ObservableObject {
         cachedSettings = settings
         cachedSettingsLoadedAt = Date()
         aiCleanupEnabled = settings.dictationPostFilterEnabled
-        if previousProvider != settings.dictationLiveSTTProvider
-            || previousModel != settings.dictationLiveSTTModel {
+        if DictationSessionConfigInvalidationPolicy.shouldClearVault(
+            previousProvider: previousProvider,
+            previousModel: previousModel,
+            nextProvider: settings.dictationLiveSTTProvider,
+            nextModel: settings.dictationLiveSTTModel
+        ) {
             let vault = sessionConfigVault
             Task { await vault?.clear() }
         }
         prefetchDictationSessionConfig(reason: "settings_ingested")
+    }
+
+    func prefetchSessionConfigForCurrentLanguage(reason: String) {
+        prefetchDictationSessionConfig(reason: reason)
     }
 
     func updateEnabled(_ enabled: Bool) {

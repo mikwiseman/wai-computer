@@ -139,6 +139,18 @@ enum DictationLanguageSelectionPolicy {
     }
 }
 
+enum DictationSessionConfigInvalidationPolicy {
+    static func shouldClearVault(
+        previousProvider: String?,
+        previousModel: String?,
+        nextProvider: String,
+        nextModel: String
+    ) -> Bool {
+        guard let previousProvider, let previousModel else { return false }
+        return previousProvider != nextProvider || previousModel != nextModel
+    }
+}
+
 /// Static catalogue of languages exposed in the picker UI. Order is
 /// frequency-of-use for the WaiComputer user base — English first, Russian second
 /// (a top-2 user language), then a Whispr-Flow-style sweep of common picks.
