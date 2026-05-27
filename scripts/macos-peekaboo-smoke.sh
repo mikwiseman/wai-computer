@@ -122,6 +122,11 @@ assert_peekaboo_permissions() {
   }
 }
 
+clean_peekaboo_snapshots() {
+  local name="$1"
+  peekaboo clean --all-snapshots --json > "$RUN_DIR/clean-snapshots-$name.json"
+}
+
 build_app() {
   if [[ "$BUILD_APP" != "1" ]]; then
     [[ -d "$APP_PATH" ]] || die "WAICOMPUTER_MAC_APP_PATH does not exist: $APP_PATH"
@@ -177,6 +182,7 @@ launch_fixture_app() {
   local force_onboarding="${4:-0}"
 
   quit_target_apps "$TARGET_BUNDLE_ID"
+  clean_peekaboo_snapshots "before-$scenario"
 
   set_launch_env WAI_ENABLE_UI_TEST_MODE 1
   set_launch_env UITEST_SCENARIO "$scenario"
@@ -353,10 +359,12 @@ element_center_coords() {
   local json_path="$1"
   local element_id="$2"
   jq -r --arg element_id "$element_id" '
-    first(
+    (.data.observation.target.bounds[0][0] // 0) as $originX
+    | (.data.observation.target.bounds[0][1] // 0) as $originY
+    | first(
       .data.ui_elements[]?
       | select(.id == $element_id)
-      | "\((.bounds.x + (.bounds.width / 2)) | floor),\((.bounds.y + (.bounds.height / 2)) | floor)"
+      | "\(((.bounds.x - $originX) + (.bounds.width / 2)) | floor),\(((.bounds.y - $originY) + (.bounds.height / 2)) | floor)"
     ) // ""
   ' "$json_path"
 }
@@ -391,30 +399,62 @@ click_identifier() {
   click_element "$json_path" "$element_id" "$identifier"
 }
 
+click_query() {
+  local query="$1"
+  local name="$2"
+  local json_path fresh_snapshot
+
+  peekaboo app switch --to "$TARGET_APP_REF" --json > "$RUN_DIR/switch-before-$name.json" || true
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
+  json_path="$(capture_ui "before-click-$name")"
+  fresh_snapshot="$(snapshot_id "$json_path")"
+  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id before click: $name"
+
+  if ! peekaboo click "$query" --snapshot "$fresh_snapshot" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
+    > "$RUN_DIR/click-$name.json"; then
+    cat "$RUN_DIR/click-$name.json" >&2
+    die "Click command failed: $name"
+  fi
+  jq -e '.success == true' "$RUN_DIR/click-$name.json" >/dev/null || {
+    cat "$RUN_DIR/click-$name.json" >&2
+    die "Click failed: $name"
+  }
+}
+
+press_key() {
+  local key="$1"
+  local name="$2"
+
+  if ! peekaboo press "$key" --app "$TARGET_APP_REF" --json > "$RUN_DIR/press-$name.json"; then
+    cat "$RUN_DIR/press-$name.json" >&2
+    die "Key press failed: $name"
+  fi
+}
+
 run_main_search_smoke() {
-  local json_path search_field
+  local json_path
 
   launch_fixture_app main_view en
   json_path="$(wait_for_ui_text main-ready "All Recordings")"
   ui_contains "$json_path" "sidebar-settings" || die "Settings sidebar item missing"
   ui_contains "$json_path" "import-audio-button" || die "Import button missing"
 
-  click_identifier "$json_path" sidebar-search
+  click_query "Search" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search recordings")"
-  search_field="$(element_id_by_label "$json_path" "Search recordings...")"
-  click_element "$json_path" "$search_field" search-field
-  if ! peekaboo type "search" --window-id "$TARGET_WINDOW_ID" --profile linear --delay 0 --json \
+  click_query "Search recordings..." search-field
+  if ! peekaboo type "search" --app "$TARGET_APP_REF" --profile linear --delay 0 --json \
     > "$RUN_DIR/type-search-query.json"; then
     cat "$RUN_DIR/type-search-query.json" >&2
     die "Typing search query failed"
   fi
 
   json_path="$(capture_ui search-query-entered)"
-  click_element "$json_path" "$(element_id_by_identifier_label_role "$json_path" search-bar Search button)" search-submit-button
+  ui_contains "$json_path" "Search" || die "Search submit button missing"
+  press_key return search-submit
   json_path="$(wait_for_ui_text search-results "Weekly Team Standup")"
   ui_contains "$json_path" "%" && die "Search result should not expose a percent relevance score"
 
-  click_identifier "$json_path" search-result-row-rec-1
+  click_query "Weekly Team Standup" search-result-row
   wait_for_ui_text search-result-detail "Good morning everyone"
 }
 
@@ -423,10 +463,10 @@ run_recording_flow_smoke() {
 
   launch_fixture_app recording_flow en
   json_path="$(wait_for_ui_text recording-flow-ready "Record")"
-  click_identifier "$json_path" start-recording-button
+  click_query "Record" start-recording-button
 
   json_path="$(wait_for_ui_text recording-flow-live "UI test live transcript")"
-  click_identifier "$json_path" stop-recording-button
+  click_query "Stop" stop-recording-button
   wait_for_ui_text recording-flow-detail "UI test finalized transcript."
 }
 
@@ -441,6 +481,7 @@ main() {
 
   assert_peekaboo_version
   assert_peekaboo_permissions
+  clean_peekaboo_snapshots start
   build_app
 
   TARGET_BUNDLE_ID="$(read_bundle_id)"
