@@ -2,6 +2,7 @@ import Foundation
 import os
 
 private let providerRealtimeLog = Logger(subsystem: "is.waiwai.computer.kit", category: "providerRealtime")
+private let openAIRealtimeTranscriptionDelay = "low"
 
 public actor ProviderBackedRealtimeSession: ProviderSession {
     public nonisolated let events: AsyncStream<TranscriptionEvent>
@@ -193,7 +194,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     }
 
     private func openAISessionUpdatePayload() -> [String: Any] {
-        var transcription: [String: Any] = ["model": config.model]
+        var transcription: [String: Any] = [
+            "model": config.model,
+            "delay": openAIRealtimeTranscriptionDelay,
+        ]
         if let language = normalisedProviderLanguage(config.language) {
             transcription["language"] = language
         }

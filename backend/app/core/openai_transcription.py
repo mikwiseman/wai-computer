@@ -12,6 +12,7 @@ OPENAI_API_BASE = "https://api.openai.com"
 OPENAI_REALTIME_WS_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_REALTIME_SAMPLE_RATE = 24_000
 OPENAI_REALTIME_TOKEN_TTL_SECONDS = 60
+OPENAI_REALTIME_TRANSCRIPTION_DELAY = "low"
 
 
 def _require_api_key() -> str:
@@ -28,7 +29,10 @@ def build_realtime_transcription_session_update(
     turn_detection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the OpenAI realtime transcription session update payload."""
-    transcription: dict[str, Any] = {"model": model}
+    transcription: dict[str, Any] = {
+        "model": model,
+        "delay": OPENAI_REALTIME_TRANSCRIPTION_DELAY,
+    }
     if language and language != "multi":
         transcription["language"] = language
 

@@ -25,6 +25,7 @@ def test_build_realtime_transcription_session_update_uses_24khz_pcm():
     assert audio_input["format"] == {"type": "audio/pcm", "rate": 24_000}
     assert audio_input["transcription"] == {
         "model": "gpt-realtime-whisper",
+        "delay": "low",
         "language": "en",
     }
     assert audio_input["turn_detection"] is None
@@ -38,7 +39,7 @@ def test_build_realtime_transcription_session_update_omits_multi_language_hint()
     )
 
     transcription = payload["session"]["audio"]["input"]["transcription"]
-    assert transcription == {"model": "gpt-realtime-whisper"}
+    assert transcription == {"model": "gpt-realtime-whisper", "delay": "low"}
 
 
 @pytest.mark.asyncio
@@ -64,7 +65,7 @@ async def test_create_realtime_client_secret_posts_transcription_session():
     assert kwargs["headers"] == {"Authorization": "Bearer sk-test"}
     assert kwargs["json"]["session"]["type"] == "transcription"
     transcription = kwargs["json"]["session"]["audio"]["input"]["transcription"]
-    assert transcription == {"model": "gpt-realtime-whisper"}
+    assert transcription == {"model": "gpt-realtime-whisper", "delay": "low"}
 
 
 @pytest.mark.asyncio
