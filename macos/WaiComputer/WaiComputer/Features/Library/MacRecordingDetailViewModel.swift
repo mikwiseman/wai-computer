@@ -1,6 +1,36 @@
 import Foundation
 import WaiComputerKit
 
+enum MacTranscriptAvailability: Equatable {
+    case content
+    case savedLocally
+    case processing
+    case empty
+
+    static func resolve(
+        segments: [Segment],
+        status: RecordingStatus,
+        localRecoveryManifest: RecordingBackupManifest?
+    ) -> MacTranscriptAvailability {
+        if !segments.isEmpty {
+            return .content
+        }
+
+        if let localRecoveryManifest,
+           status != .failed,
+           localRecoveryManifest.syncState != .remoteReady {
+            return .savedLocally
+        }
+
+        switch status {
+        case .pendingUpload, .uploading, .processing:
+            return .processing
+        case .ready, .failed:
+            return .empty
+        }
+    }
+}
+
 @MainActor
 class MacRecordingDetailViewModel: ObservableObject {
     enum Tab: Hashable {
@@ -18,6 +48,15 @@ class MacRecordingDetailViewModel: ObservableObject {
 
     init(initialDetail: RecordingDetail? = nil) {
         recordingDetail = initialDetail
+    }
+
+    var transcriptAvailability: MacTranscriptAvailability {
+        guard let detail = recordingDetail else { return .empty }
+        return MacTranscriptAvailability.resolve(
+            segments: detail.segments,
+            status: detail.status,
+            localRecoveryManifest: localRecoveryManifest
+        )
     }
 
     func isGeneratingSummary(for recordingId: String) -> Bool {

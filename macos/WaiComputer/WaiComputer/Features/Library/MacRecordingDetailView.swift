@@ -84,7 +84,7 @@ struct MacRecordingDetailView: View {
                     case .transcript:
                         MacTranscriptView(
                             segments: detail.segments,
-                            status: detail.status,
+                            availability: viewModel.transcriptAvailability,
                             localRecoveryManifest: viewModel.localRecoveryManifest,
                             recordingId: detail.id,
                             onAssigned: { updated in

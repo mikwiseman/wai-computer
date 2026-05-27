@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
 from billiard.exceptions import SoftTimeLimitExceeded
 
+from app.config import get_settings
 from app.core.observability import capture_sentry_anomaly, fingerprint_text
 from app.core.recording_audio_processing import (
     delete_staged_file,
@@ -17,11 +19,13 @@ from app.core.recording_audio_processing import (
 from app.core.recording_audio_processing import (
     process_staged_recording_upload as process_staged_recording_upload_core,
 )
+from app.core.recording_recovery import mark_stale_processing_recordings
 from app.core.retry_policy import is_retryable_exception
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 async def _process_staged_recording_upload(
@@ -57,6 +61,26 @@ async def _mark_processing_timeout(*, recording_id: str) -> None:
             failure_code="processing_timeout",
             failure_message="Recording processing timed out.",
         )
+
+
+async def _recover_stale_recording_processing() -> int:
+    stale_after_minutes = settings.recording_processing_stale_after_minutes
+    if stale_after_minutes <= 0:
+        return 0
+
+    async with get_db_context() as db:
+        return await mark_stale_processing_recordings(
+            db,
+            stale_after=timedelta(minutes=stale_after_minutes),
+        )
+
+
+@celery_app.task(
+    name="app.tasks.recording_audio_processing.recover_stale_recording_processing",
+    ignore_result=True,
+)
+def recover_stale_recording_processing() -> int:
+    return asyncio.run(_recover_stale_recording_processing())
 
 
 @celery_app.task(

@@ -122,7 +122,6 @@ public actor PendingRecordingSyncCoordinator {
     private func sync(backup: RecordingBackup, using apiClient: APIClient) async -> Bool {
         do {
             let manifest = try RecordingBackupStore.manifest(recordingId: backup.recordingId)
-            let segments = try segmentsForSync(recordingId: backup.recordingId, manifest: manifest)
             let hasAudioFile = FileManager.default.fileExists(atPath: backup.audioFileURL.path)
                 && (manifest?.hasAudioFile ?? true)
             try RecordingBackupStore.recordSyncAttempt(recordingId: backup.recordingId)
@@ -141,6 +140,7 @@ public actor PendingRecordingSyncCoordinator {
                 )
             } else if manifest != nil {
                 log.info("Syncing transcript for recording \(backup.recordingId)")
+                let segments = try segmentsForSync(recordingId: backup.recordingId, manifest: manifest)
                 let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())
                 detail = try await apiClient.saveLiveTranscript(
                     recordingId: backup.recordingId,
