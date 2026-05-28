@@ -30,6 +30,7 @@ class RecordingViewModel: ObservableObject {
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: RecordingPhase = .idle
+    @Published private(set) var isPaused = false
     @Published var connectionState: RecordingConnectionState = .connected
     @Published private(set) var liveTranscriptionOffline = false
 
@@ -58,6 +59,7 @@ class RecordingViewModel: ObservableObject {
         case .preparing:
             return "Preparing recording..."
         case .recording:
+            if isPaused { return "Paused" }
             return "Recording..."
         case .finalizing:
             return "Saving transcript..."
@@ -75,6 +77,7 @@ class RecordingViewModel: ObservableObject {
         case .preparing:
             return "Preparing microphone..."
         case .recording:
+            if isPaused { return "Paused." }
             return "Listening..."
         case .finalizing:
             return "Saving..."
@@ -87,6 +90,14 @@ class RecordingViewModel: ObservableObject {
 
     var canStopRecording: Bool {
         phase == .recording
+    }
+
+    var canPauseRecording: Bool {
+        phase == .recording && !isPaused
+    }
+
+    var canResumeRecording: Bool {
+        phase == .recording && isPaused
     }
 
     var isBusy: Bool {
@@ -102,6 +113,7 @@ class RecordingViewModel: ObservableObject {
         interimText = ""
         currentRecordingId = nil
         isServerComplete = false
+        isPaused = false
         liveTranscriptionOffline = false
         duration = 0
         recording = nil
@@ -240,6 +252,7 @@ class RecordingViewModel: ObservableObject {
         )
 
         setPhase(.finalizing)
+        isPaused = false
 
         // Stop timer
         timerTask?.cancel()
@@ -358,7 +371,40 @@ class RecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         audioEncoder = nil
+        isPaused = false
         setPhase(.idle)
+    }
+
+    func pauseRecording() async {
+        guard canPauseRecording else { return }
+        do {
+            try await audioCapture?.pauseRecording()
+            isPaused = true
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording paused",
+                data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+            )
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "pauseRecording", "recordingId": currentRecordingId ?? "unknown"])
+            self.error = error.userFacingMessage(context: .recording)
+        }
+    }
+
+    func resumeRecording() async {
+        guard canResumeRecording else { return }
+        do {
+            try await audioCapture?.resumeRecording()
+            isPaused = false
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording resumed",
+                data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+            )
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "resumeRecording", "recordingId": currentRecordingId ?? "unknown"])
+            self.error = error.userFacingMessage(context: .recording)
+        }
     }
 
     /// Reset transcript and recording state.
@@ -370,6 +416,7 @@ class RecordingViewModel: ObservableObject {
         isServerComplete = false
         connectionState = .connected
         duration = 0
+        isPaused = false
     }
 
     // MARK: - Private
@@ -446,7 +493,8 @@ class RecordingViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { break }
                 await MainActor.run {
-                    self?.duration += 1
+                    guard let self, !self.isPaused else { return }
+                    self.duration += 1
                 }
             }
         }
@@ -495,6 +543,7 @@ class RecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         isServerComplete = false
+        isPaused = false
         setPhase(.idle)
     }
 
@@ -587,6 +636,7 @@ class RecordingViewModel: ObservableObject {
 
         recording = nil
         currentRecordingId = nil
+        isPaused = false
         if !preserveServerCompletion {
             isServerComplete = false
         }
@@ -713,6 +763,9 @@ class RecordingViewModel: ObservableObject {
     }
 
     private func setPhase(_ newPhase: RecordingPhase) {
+        if newPhase != .recording {
+            isPaused = false
+        }
         phase = newPhase
         isRecording = newPhase == .recording
         isLoading = newPhase == .preparing

@@ -44,6 +44,8 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
 
     private var _isCapturing = false
     public var isCapturing: Bool { _isCapturing }
+    private var _isPaused = false
+    public var isPaused: Bool { _isPaused }
 
     // Core Audio resources to clean up
     private var tapID: AudioObjectID = AudioObjectID.max
@@ -104,6 +106,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
             sysLog.info("[SysAudio] startCapture called while already capturing -- stopping first")
             stopCapture()
         }
+        _isPaused = false
         OSAtomicCompareAndSwap32(1, 0, _bufferReceivedFlag)
         OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
 
@@ -481,12 +484,15 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
 
     /// Stop capturing system audio and release all Core Audio resources.
     public func stopCapture() {
-        guard _isCapturing else { return }
+        guard _isCapturing else {
+            _isPaused = false
+            return
+        }
 
         sysLog.info("[SysAudio] Stopping system audio capture...")
 
         // Stop device
-        if let procID = ioProcID {
+        if let procID = ioProcID, !_isPaused {
             AudioDeviceStop(aggregateDeviceID, procID)
         }
 
@@ -495,6 +501,7 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         destroyTap()
 
         _isCapturing = false
+        _isPaused = false
         logProcessingSummary(context: "stop")
         OSAtomicCompareAndSwap32(1, 0, _bufferReceivedFlag)
         OSAtomicCompareAndSwap32(1, 0, _audioReceivedFlag)
@@ -560,6 +567,34 @@ public final class SystemAudioCapture: AudioCaptureProtocol, @unchecked Sendable
         try startCapture()
     }
 
+    public func pauseRecording() async throws {
+        guard _isCapturing, !_isPaused else { return }
+        guard let procID = ioProcID else {
+            throw SystemAudioCaptureError.missingIOProc
+        }
+
+        let status = AudioDeviceStop(aggregateDeviceID, procID)
+        guard status == noErr else {
+            throw SystemAudioCaptureError.failedToStopDevice(status)
+        }
+        _isPaused = true
+        sysLog.info("[SysAudio] System audio capture paused")
+    }
+
+    public func resumeRecording() async throws {
+        guard _isCapturing, _isPaused else { return }
+        guard let procID = ioProcID else {
+            throw SystemAudioCaptureError.missingIOProc
+        }
+
+        let status = AudioDeviceStart(aggregateDeviceID, procID)
+        guard status == noErr else {
+            throw SystemAudioCaptureError.failedToStartDevice(status)
+        }
+        _isPaused = false
+        sysLog.info("[SysAudio] System audio capture resumed")
+    }
+
     public func stopRecording() async {
         stopCapture()
     }
@@ -573,5 +608,7 @@ public enum SystemAudioCaptureError: Error, Sendable {
     case failedToCreateAggregateDevice(OSStatus)
     case failedToCreateIOProc(OSStatus)
     case failedToStartDevice(OSStatus)
+    case failedToStopDevice(OSStatus)
+    case missingIOProc
 }
 #endif

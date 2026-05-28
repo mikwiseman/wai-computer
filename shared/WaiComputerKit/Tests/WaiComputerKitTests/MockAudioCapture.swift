@@ -19,6 +19,7 @@ final class MockAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
     private(set) var _isRecording = false
     var isRecording: Bool { _isRecording }
+    private(set) var isPaused = false
 
     private var bufferContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
     private(set) var audioBuffers: AsyncStream<AVAudioPCMBuffer>
@@ -78,20 +79,34 @@ final class MockAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         audioBuffers = stream
         bufferContinuation = continuation
         _isRecording = true
+        isPaused = false
         phase = 0.0
         producedBufferCount = 0
 
         producerTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, self._isRecording else { break }
-                self.emitNextBuffer()
+                if !self.isPaused {
+                    self.emitNextBuffer()
+                }
                 try? await Task.sleep(for: .milliseconds(Int(self.emitInterval * 1000)))
             }
         }
     }
 
+    func pauseRecording() async throws {
+        guard _isRecording else { return }
+        isPaused = true
+    }
+
+    func resumeRecording() async throws {
+        guard _isRecording else { return }
+        isPaused = false
+    }
+
     func stopRecording() async {
         _isRecording = false
+        isPaused = false
         producerTask?.cancel()
         producerTask = nil
         bufferContinuation?.finish()

@@ -10,9 +10,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import recording_audio_processing
 from app.core.recording_audio_processing import process_staged_recording_upload
 from app.core.transcript_utils import TranscriptResult
 from app.models.billing import UsageWeek
+from app.models.person import Person, RecordingSpeakerEmbedding
 from app.models.recording import Recording, RecordingStatus, Segment
 from app.models.user import User
 
@@ -98,6 +100,99 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     assert recording.billed_word_count == 4
     assert not staged_path.exists()
     transcribe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_stores_speaker_embeddings_and_assignments(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-processing-voice-id@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    person = Person(user_id=user.id, display_name="Mik")
+    db_session.add(person)
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "voice-id.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="A long enough speaker sample.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=2_000,
+            end_ms=9_500,
+            confidence=0.94,
+        )
+    ]
+    fake_embedding = [0.25] * 192
+
+    monkeypatch.setattr(recording_audio_processing.settings, "voice_identification_enabled", True)
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Voice ID Recording"),
+    )
+    monkeypatch.setattr(
+        "app.core.voice_identification.compute_voice_embedding",
+        lambda *_: fake_embedding,
+    )
+    monkeypatch.setattr(
+        "app.core.voice_identification._best_voiceprint_match",
+        AsyncMock(return_value=(person.id, 0.93)),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    segment = (
+        await db_session.execute(select(Segment).where(Segment.recording_id == recording.id))
+    ).scalar_one()
+    assert segment.person_id == person.id
+    assert segment.auto_assigned is True
+    assert segment.match_confidence == 0.93
+
+    sample = (
+        await db_session.execute(
+            select(RecordingSpeakerEmbedding).where(
+                RecordingSpeakerEmbedding.recording_id == recording.id,
+                RecordingSpeakerEmbedding.raw_label == "speaker_0",
+            )
+        )
+    ).scalar_one()
+    assert sample.user_id == user.id
+    assert sample.start_ms == 2_000
+    assert sample.end_ms == 9_500
+    assert sample.duration_s == 7.5
+    assert list(sample.embedding) == fake_embedding
 
 
 @pytest.mark.asyncio

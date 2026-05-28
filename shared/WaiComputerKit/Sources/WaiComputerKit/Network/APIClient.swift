@@ -766,8 +766,8 @@ public actor APIClient {
         )
     }
 
-    public func rematchSpeakers(recordingId: String) async throws {
-        try await requestNoContent(.POST, path: "/api/recordings/\(recordingId)/rematch")
+    public func rematchSpeakers(recordingId: String) async throws -> RematchSpeakersResponse {
+        try await request(.POST, path: "/api/recordings/\(recordingId)/rematch")
     }
 
     /// Submit an in-memory audio sample for first-time (or recurring) voice enrollment.

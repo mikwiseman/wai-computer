@@ -77,6 +77,32 @@ struct MenuBarView: View {
                 if recordingVM.shouldPresentLiveView {
                     Button {
                         Task {
+                            if recordingVM.canResumeRecording {
+                                await appState.resumeRecording()
+                            } else {
+                                await appState.pauseRecording()
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: recordingVM.canResumeRecording ? "play.circle.fill" : "pause.circle")
+                                .foregroundStyle(Palette.textSecondary)
+                            Text(recordingVM.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Пауза"))
+                                .font(Typography.body)
+                            Spacer()
+                            Text("\u{21E7}\u{2318}P")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
+
+                    Button {
+                        Task {
                             await appState.stopRecording()
                             await loadRecentRecordings()
                         }

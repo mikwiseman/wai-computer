@@ -223,8 +223,13 @@ public sealed class ApiClient : IApiClient, IDisposable
             request,
             ct: ct);
 
-    public Task RematchSpeakersAsync(string recordingId, CancellationToken ct = default)
-        => SendNoContentAsync(HttpMethod.Post, $"/api/recordings/{Uri.EscapeDataString(recordingId)}/rematch", ct);
+    public Task<RematchSpeakersResponse> RematchSpeakersAsync(
+        string recordingId,
+        CancellationToken ct = default)
+        => SendAsync<RematchSpeakersResponse>(
+            HttpMethod.Post,
+            $"/api/recordings/{Uri.EscapeDataString(recordingId)}/rematch",
+            ct: ct);
 
     // ----- people -------------------------------------------------------
 

@@ -30,6 +30,7 @@ from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
+from app.models.person import RecordingSpeakerEmbedding
 from app.models.recording import ActionItem, Recording, RecordingStatus, Segment, Summary
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,11 @@ async def reset_recording_processing_state(recording_id: UUID, db: AsyncSession)
     )
     await db.execute(delete(Highlight).where(Highlight.recording_id == recording_id))
     await db.execute(delete(Summary).where(Summary.recording_id == recording_id))
+    await db.execute(
+        delete(RecordingSpeakerEmbedding).where(
+            RecordingSpeakerEmbedding.recording_id == recording_id
+        )
+    )
     await db.execute(delete(Segment).where(Segment.recording_id == recording_id))
 
 
@@ -548,6 +554,7 @@ async def process_staged_recording_upload(
                 staged_audio_path=staged_path,
                 transcript_results=speech_transcript_results,
                 enabled=settings.voice_identification_enabled,
+                source_recording_id=recording_id,
             )
             _recording_lifecycle_breadcrumb(
                 "Recording voice identification completed",

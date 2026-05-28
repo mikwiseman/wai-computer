@@ -64,8 +64,9 @@ class Settings(BaseSettings):
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
     # Optional speaker-to-person matching is CPU/RAM heavy because it loads a
-    # SpeechBrain ECAPA model. Keep it off on the main API path until it runs
-    # in an isolated worker with enough memory.
+    # SpeechBrain ECAPA model. Keep the default off for API processes; the
+    # production Celery audio worker enables it explicitly with a single-task
+    # concurrency and a persistent model cache.
     voice_identification_enabled: bool = False
     recording_processing_stale_after_minutes: int = 15
 

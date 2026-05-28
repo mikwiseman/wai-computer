@@ -121,6 +121,21 @@ struct LiveRecordingView: View {
                 .disabled(!recordingVM.canStopRecording)
                 .accessibilityIdentifier("discard-recording-button")
 
+                Button(action: togglePause) {
+                    Label {
+                        Text(recordingVM.canResumeRecording ? t("Resume", "Продолжить") : t("Pause", "Пауза"))
+                            .lineLimit(1)
+                    } icon: {
+                        Image(systemName: recordingVM.canResumeRecording ? "play.fill" : "pause.fill")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(minWidth: 120)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
+                .accessibilityIdentifier(recordingVM.canResumeRecording ? "resume-recording-button" : "pause-recording-button")
+
                 Button(action: stopRecording) {
                     Label {
                         Text(recordingVM.canStopRecording
@@ -287,6 +302,16 @@ struct LiveRecordingView: View {
     private func stopRecording() {
         Task {
             await appState.stopRecording()
+        }
+    }
+
+    private func togglePause() {
+        Task {
+            if recordingVM.canResumeRecording {
+                await appState.resumeRecording()
+            } else {
+                await appState.pauseRecording()
+            }
         }
     }
 

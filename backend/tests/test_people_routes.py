@@ -170,6 +170,83 @@ async def test_assign_speaker_creates_person_and_remaps_segments(client, db_sess
     assert speaker_1_segs[0]["person_id"] is None
 
 
+async def test_assign_speaker_promotes_stored_speaker_embedding_to_voiceprint(
+    client, db_session
+):
+    """Manual speaker correction should teach future voice-ID matches."""
+    from sqlalchemy import select
+
+    from app.models import Recording, RecordingSpeakerEmbedding, Segment, User, Voiceprint
+
+    auth = await _register(client)
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+
+    recording = Recording(user_id=user.id, type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=recording.id,
+            speaker="Speaker 0",
+            raw_label="Speaker 0",
+            content="hello",
+            start_ms=1_000,
+            end_ms=8_000,
+        )
+    )
+    db_session.add(
+        RecordingSpeakerEmbedding(
+            user_id=user.id,
+            recording_id=recording.id,
+            raw_label="Speaker 0",
+            embedding=[0.2] * 192,
+            model="ecapa-tdnn-voxceleb-v1",
+            start_ms=1_000,
+            end_ms=8_000,
+            duration_s=7.0,
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/recordings/{recording.id}/assign-speaker",
+        json={"raw_label": "Speaker 0", "new_display_name": "Vasya"},
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    person_id = resp.json()["segments"][0]["person_id"]
+
+    voiceprint = (
+        await db_session.execute(
+            select(Voiceprint).where(
+                Voiceprint.person_id == person_id,
+                Voiceprint.source_recording_id == recording.id,
+                Voiceprint.source_raw_label == "Speaker 0",
+            )
+        )
+    ).scalar_one()
+    assert voiceprint.user_id == user.id
+    assert voiceprint.duration_s == 7.0
+    assert list(voiceprint.embedding) == [0.2] * 192
+
+    repeat = await client.post(
+        f"/api/recordings/{recording.id}/assign-speaker",
+        json={"raw_label": "Speaker 0", "person_id": person_id},
+        headers=auth,
+    )
+    assert repeat.status_code == 200
+    voiceprints = (
+        await db_session.execute(
+            select(Voiceprint).where(
+                Voiceprint.person_id == person_id,
+                Voiceprint.source_recording_id == recording.id,
+                Voiceprint.source_raw_label == "Speaker 0",
+            )
+        )
+    ).scalars().all()
+    assert len(voiceprints) == 1
+
+
 async def test_assign_speaker_rejects_both_options(client, db_session):
     from sqlalchemy import select
 
@@ -193,7 +270,104 @@ async def test_assign_speaker_rejects_both_options(client, db_session):
     assert resp.status_code == 400
 
 
-async def test_rematch_returns_422_until_audio_retention(client, db_session):
+async def test_rematch_uses_stored_speaker_embeddings_and_preserves_manual_assignments(
+    client, db_session, monkeypatch
+):
+    from sqlalchemy import select
+
+    from app.models import Person, Recording, RecordingSpeakerEmbedding, Segment, User
+
+    auth = await _register(client)
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    matched_person = Person(user_id=user.id, display_name="Matched")
+    manual_person = Person(user_id=user.id, display_name="Manual")
+    db_session.add_all([matched_person, manual_person])
+    await db_session.flush()
+    recording = Recording(user_id=user.id, type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording.id,
+                speaker="Speaker 0",
+                raw_label="Speaker 0",
+                content="auto candidate",
+                person_id=None,
+                auto_assigned=False,
+            ),
+            Segment(
+                recording_id=recording.id,
+                speaker="Speaker 1",
+                raw_label="Speaker 1",
+                content="manual should stay",
+                person_id=manual_person.id,
+                auto_assigned=False,
+            ),
+        ]
+    )
+    db_session.add_all(
+        [
+            RecordingSpeakerEmbedding(
+                user_id=user.id,
+                recording_id=recording.id,
+                raw_label="Speaker 0",
+                embedding=[0.2] * 192,
+                model="ecapa-tdnn-voxceleb-v1",
+                start_ms=0,
+                end_ms=7_000,
+                duration_s=7.0,
+            ),
+            RecordingSpeakerEmbedding(
+                user_id=user.id,
+                recording_id=recording.id,
+                raw_label="Speaker 1",
+                embedding=[0.4] * 192,
+                model="ecapa-tdnn-voxceleb-v1",
+                start_ms=8_000,
+                end_ms=15_000,
+                duration_s=7.0,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    async def fake_match(db, user_id, embedding, threshold):
+        del db, user_id, threshold
+        if list(embedding) == [0.2] * 192:
+            return matched_person.id, 0.91
+        return None
+
+    monkeypatch.setattr(
+        "app.core.voice_identification._best_voiceprint_match",
+        fake_match,
+    )
+
+    resp = await client.post(
+        f"/api/recordings/{recording.id}/rematch",
+        headers=auth,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "recording_id": str(recording.id),
+        "updated_clusters": 1,
+        "matched_clusters": 1,
+    }
+
+    refreshed = (
+        await db_session.execute(
+            select(Segment).where(Segment.recording_id == recording.id).order_by(Segment.raw_label)
+        )
+    ).scalars().all()
+    assert refreshed[0].person_id == matched_person.id
+    assert refreshed[0].auto_assigned is True
+    assert refreshed[0].match_confidence == 0.91
+    assert refreshed[1].person_id == manual_person.id
+    assert refreshed[1].auto_assigned is False
+    assert refreshed[1].match_confidence is None
+
+
+async def test_rematch_returns_422_when_no_speaker_embeddings(client, db_session):
     from sqlalchemy import select
 
     from app.models import Recording, User
@@ -209,3 +383,4 @@ async def test_rematch_returns_422_until_audio_retention(client, db_session):
         headers=auth,
     )
     assert resp.status_code == 422
+    assert "speaker voice embeddings" in resp.json()["detail"]
