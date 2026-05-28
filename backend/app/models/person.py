@@ -1,9 +1,10 @@
 """Person and Voiceprint models for editable speaker identification."""
 
 import uuid
+from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +25,15 @@ class Person(Base, UUIDMixin, TimestampMixin):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     color: Mapped[str | None] = mapped_column(String(20))
     aliases: Mapped[list | None] = mapped_column(JSONB)
+    # Set when this Person was auto-created from a WaiComputer voice-directory
+    # match. Points at the source user whose voiceprint matched. SET NULL on
+    # source-user delete so the receiver keeps the name but loses the link.
+    directory_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     user: Mapped["User"] = relationship(
         "User",
@@ -103,6 +113,50 @@ class RecordingSpeakerEmbedding(Base, UUIDMixin, TimestampMixin):
     start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_s: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class PublicVoiceprint(Base):
+    """A user's opt-in published voiceprint for the global match directory.
+
+    One row per user. Embedding + first/last name are denormalised so the
+    cross-user matcher runs a single pgvector cosine query instead of joining
+    through voiceprints/users/people. Deleted on opt-out, replaced on
+    re-enrollment.
+    """
+
+    __tablename__ = "public_voiceprints"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    voiceprint_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("voiceprints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(192), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(50), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
 
 # Import at bottom to avoid circular imports

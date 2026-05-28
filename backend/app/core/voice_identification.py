@@ -27,7 +27,7 @@ from app.core.voice_embedding import (
     compute_voice_embedding,
     pick_clean_snippet,
 )
-from app.models.person import RecordingSpeakerEmbedding, Voiceprint
+from app.models.person import Person, PublicVoiceprint, RecordingSpeakerEmbedding, Voiceprint
 from app.models.recording import Segment
 
 if TYPE_CHECKING:
@@ -36,6 +36,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_MATCH_THRESHOLD = 0.6
+# Slightly stricter for the public directory: matching a stranger's voice has
+# higher consequences than matching someone you already enrolled, so we want
+# more confidence before auto-tagging.
+DIRECTORY_MATCH_THRESHOLD = 0.65
 VOICE_EMBEDDING_TIMEOUT_SECONDS = 15.0
 
 
@@ -101,6 +105,15 @@ async def identify_speakers_for_recording(
         match = await _best_voiceprint_match(
             db, user_id, speaker_embedding.embedding, threshold
         )
+        if match is None:
+            directory_match = await _best_public_directory_match(
+                db=db,
+                receiver_user_id=user_id,
+                embedding=speaker_embedding.embedding,
+                threshold=DIRECTORY_MATCH_THRESHOLD,
+            )
+            if directory_match is not None:
+                match = directory_match
         assignments[raw_label] = match
 
     if source_recording_id is not None and speaker_embeddings:
@@ -149,6 +162,102 @@ async def _compute_speaker_voice_embedding(
         start_ms=start_ms,
         end_ms=end_ms,
     )
+
+
+async def _best_public_directory_match(
+    *,
+    db: AsyncSession,
+    receiver_user_id: uuid.UUID,
+    embedding: list[float],
+    threshold: float,
+) -> tuple[uuid.UUID, float] | None:
+    """Search the global voice directory for a match, excluding the caller.
+
+    On a hit, ensure a Person row exists in the receiver's address book whose
+    ``directory_user_id`` points at the source user, and return that Person's
+    id so the surrounding pipeline behaves identically to a regular
+    voiceprint match.
+    """
+    vector_literal = format_embedding(embedding)
+    result = await db.execute(
+        text(
+            """
+            SELECT
+                user_id AS source_user_id,
+                first_name,
+                last_name,
+                1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+            FROM public_voiceprints
+            WHERE user_id != :receiver_user_id
+              AND embedding_model = :model
+            ORDER BY embedding <=> CAST(:embedding AS vector)
+            LIMIT 1
+            """
+        ).bindparams(
+            embedding=vector_literal,
+            receiver_user_id=receiver_user_id,
+            model=MODEL_NAME,
+        )
+    )
+    row = result.first()
+    if row is None:
+        return None
+    source_user_id, first_name, last_name, similarity = row
+    if similarity is None or similarity < threshold:
+        return None
+
+    person_id = await _ensure_directory_person(
+        db=db,
+        receiver_user_id=receiver_user_id,
+        source_user_id=source_user_id,
+        first_name=first_name,
+        last_name=last_name,
+    )
+    return person_id, float(similarity)
+
+
+async def _ensure_directory_person(
+    *,
+    db: AsyncSession,
+    receiver_user_id: uuid.UUID,
+    source_user_id: uuid.UUID,
+    first_name: str,
+    last_name: str,
+) -> uuid.UUID:
+    """Return the Person id in receiver's address book linked to the source user.
+
+    Creates the Person on first encounter and rebuilds display_name on every
+    subsequent match so renames in the source user's profile propagate.
+    """
+    existing = (
+        await db.execute(
+            select(Person).where(
+                Person.user_id == receiver_user_id,
+                Person.directory_user_id == source_user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    display_name = _compose_directory_display_name(first_name, last_name)
+    if existing is not None:
+        if existing.display_name != display_name:
+            existing.display_name = display_name
+        return existing.id
+
+    person = Person(
+        user_id=receiver_user_id,
+        display_name=display_name,
+        directory_user_id=source_user_id,
+    )
+    db.add(person)
+    await db.flush()
+    return person.id
+
+
+def _compose_directory_display_name(first_name: str, last_name: str) -> str:
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    composed = " ".join(part for part in (first, last) if part)
+    return composed or "WaiComputer user"
 
 
 async def _best_voiceprint_match(
