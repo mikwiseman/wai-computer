@@ -3,6 +3,7 @@ export type ActionStatus = "pending" | "in_progress" | "completed" | "cancelled"
 export type ActionPriority = "high" | "medium" | "low";
 export type EntityType = "person" | "organization" | "project" | "topic";
 export type ExportFormat = "markdown" | "txt" | "srt";
+export type ExportLocale = "en" | "ru";
 export type RealtimeVoiceMode = "conversation" | "recording";
 
 export type SummaryStyle = "brief" | "medium" | "detailed";
@@ -164,6 +165,36 @@ export interface SummaryGeneration {
   failed_at: string | null;
   error_code: string | null;
   error_message: string | null;
+}
+
+export type PersonalizationTermStatus = "active" | "candidate" | "rejected";
+
+export interface PersonalizationTerm {
+  id: string;
+  user_id: string;
+  import_job_id: string | null;
+  term: string;
+  normalized_term: string;
+  replacement: string | null;
+  notes: string | null;
+  source: "manual" | "import";
+  status: PersonalizationTermStatus;
+  frequency: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PersonalizationImportJob {
+  id: string;
+  user_id: string;
+  source_type: string;
+  source_name: string | null;
+  status: "queued" | "running" | "succeeded" | "failed";
+  candidate_count: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ActionItem {
