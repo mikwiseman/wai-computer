@@ -174,8 +174,6 @@ interface DashboardCopy {
     selectTitle: string;
     selectTrashBody: string;
     untitled: string;
-    summarize: string;
-    trashAction: string;
     couldNotProcess: string;
     newRecordingHeading: string;
     titlePlaceholder: string;
@@ -339,8 +337,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       selectTitle: "Select a Recording",
       selectTrashBody: "Choose a trashed recording to restore or delete it permanently.",
       untitled: "(untitled)",
-      summarize: "Summarize",
-      trashAction: "Trash",
       couldNotProcess: "Could not process this recording. Please try again or contact support.",
       newRecordingHeading: "New Recording",
       titlePlaceholder: "Create an empty note...",
@@ -505,8 +501,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       selectTitle: "Выберите запись",
       selectTrashBody: "Выберите запись в корзине, чтобы восстановить или удалить навсегда.",
       untitled: "(без названия)",
-      summarize: "Суммировать",
-      trashAction: "В корзину",
       couldNotProcess:
         "Не удалось обработать эту запись. Попробуйте ещё раз или обратитесь в поддержку.",
       newRecordingHeading: "Новая запись",
@@ -1848,27 +1842,6 @@ export function DashboardClient() {
                       </span>
                       {status ? <span className="status-pill">{status}</span> : null}
                     </button>
-
-                    {!isTrash ? (
-                      <div className="row-actions">
-                        <button
-                          type="button"
-                          className="ghost-button compact-button"
-                          onClick={() => void handleGenerateSummary(recording.id)}
-                          data-testid={`generate-summary-${recording.id}`}
-                        >
-                          {copy.library.summarize}
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button compact-button danger-button"
-                          onClick={() => void handleDeleteRecording(recording.id)}
-                          data-testid={`delete-recording-${recording.id}`}
-                        >
-                          {copy.library.trashAction}
-                        </button>
-                      </div>
-                    ) : null}
                   </li>
                 );
               })}
