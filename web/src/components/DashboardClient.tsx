@@ -49,7 +49,6 @@ import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
-import { PersonalizationPanel } from "@/components/PersonalizationPanel";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { PasswordField } from "@/components/PasswordField";
@@ -2192,8 +2191,6 @@ export function DashboardClient() {
             {copy.dictionary.refresh}
           </button>
         </header>
-
-        <PersonalizationPanel locale={locale} onError={setMessage} />
 
         <form
           className="search-form"
