@@ -595,15 +595,14 @@ class MacAppState: ObservableObject {
         case accessibility
     }
 
-    static let onboardingCompletedKey = "nativeOnboardingV4Completed"
-    static let onboardingCurrentPageKey = "nativeOnboardingV4CurrentPage"
-    static let preAuthOnboardingCompletedKey = "nativeOnboardingV5PreAuthCompleted"
-    static let preAuthOnboardingCurrentPageKey = "nativeOnboardingV5PreAuthCurrentPage"
-    static let postAuthOnboardingCurrentPageKey = "nativeOnboardingV5PostAuthCurrentPage"
-    private static let postAuthOnboardingCompletedKeyPrefix = "nativeOnboardingV5PostAuthCompleted."
-    static let legacyOnboardingCompletedKeys = ["nativeOnboardingV2Completed", "nativeOnboardingV3Completed"]
-    static let onboardingMicAcknowledgedKey = "onboardingMicAcknowledged"
-    static let onboardingSystemAudioSetupKey = "onboardingSystemAudioSetupCompleted"
+    nonisolated static let onboardingCompletedKey = MacOnboardingDefaultsSnapshot.onboardingCompletedKey
+    nonisolated static let onboardingCurrentPageKey = MacOnboardingDefaultsSnapshot.onboardingCurrentPageKey
+    nonisolated static let preAuthOnboardingCompletedKey = MacOnboardingDefaultsSnapshot.preAuthOnboardingCompletedKey
+    nonisolated static let preAuthOnboardingCurrentPageKey = MacOnboardingDefaultsSnapshot.preAuthOnboardingCurrentPageKey
+    nonisolated static let postAuthOnboardingCurrentPageKey = MacOnboardingDefaultsSnapshot.postAuthOnboardingCurrentPageKey
+    nonisolated static let legacyOnboardingCompletedKeys = MacOnboardingDefaultsSnapshot.legacyOnboardingCompletedKeys
+    nonisolated static let onboardingMicAcknowledgedKey = MacOnboardingDefaultsSnapshot.onboardingMicAcknowledgedKey
+    nonisolated static let onboardingSystemAudioSetupKey = MacOnboardingDefaultsSnapshot.onboardingSystemAudioSetupKey
 
     /// Recording view model — observed directly by recording views via @EnvironmentObject,
     /// NOT forwarded through MacAppState's objectWillChange. This prevents the entire
@@ -753,7 +752,7 @@ class MacAppState: ObservableObject {
     }
 
     private static func postAuthOnboardingCompletedKey(userId: String) -> String {
-        "\(postAuthOnboardingCompletedKeyPrefix)\(userId)"
+        MacOnboardingDefaultsSnapshot.postAuthOnboardingCompletedKey(userId: userId)
     }
 
     private func refreshCombinedOnboardingState() {
@@ -991,7 +990,7 @@ class MacAppState: ObservableObject {
             }
         }
 
-        await clearLocalSession(removeUserData: true)
+        await clearLocalSession(removeUserData: true, preserveOnboardingState: true)
         relaunchIfLive()
     }
 
@@ -1017,9 +1016,9 @@ class MacAppState: ObservableObject {
     /// removeUserData=true, the persistent-domain wipe leaves stale state in
     /// any live @StateObject ViewModels (language store, hotkey choice, beta
     /// channel toggle, dictation history, etc.) until the process restarts.
-    /// Relaunching here gives users a true fresh-install state — onboarding
-    /// reappears, all preferences default. Skip in test mode so the harness
-    /// can keep running.
+    /// Relaunching here gives users a clean post-sign-out state. Normal logout
+    /// preserves onboarding completion; account deletion still resets it.
+    /// Skip in test mode so the harness can keep running.
     private func relaunchIfLive() {
         guard testingMode == .live else { return }
         MacPrivacySettings.restartForPermissionRefresh()
@@ -1033,7 +1032,15 @@ class MacAppState: ObservableObject {
         }
     }
 
-    private func clearLocalSession(removeUserData: Bool = false) async {
+    private func clearLocalSession(
+        removeUserData: Bool = false,
+        preserveOnboardingState: Bool = false
+    ) async {
+        let currentUserId = currentUser?.id
+        let onboardingSnapshot = preserveOnboardingState
+            ? MacOnboardingDefaultsSnapshot.capture(userId: currentUserId)
+            : nil
+
         dictationManager.disable()
         dictationManager.updateEnabled(false)
         await apiClient.setAccessToken(nil)
@@ -1044,6 +1051,7 @@ class MacAppState: ObservableObject {
         if removeUserData {
             do {
                 try clearLocalUserData()
+                onboardingSnapshot?.restore()
             } catch {
                 SentryHelper.captureError(error, extras: ["action": "clearLocalUserData"])
                 cleanupFailure = "Signed out, but WaiComputer could not remove all local app data. Quit WaiComputer and remove its local data manually before sharing this Mac."
@@ -1056,7 +1064,11 @@ class MacAppState: ObservableObject {
         magicLinkSent = false
         passwordResetSent = false
         hasAttemptedStoredSessionRestore = false
-        if removeUserData {
+        if removeUserData, preserveOnboardingState {
+            hasCompletedPreAuthOnboarding = Self.preAuthOnboardingCompleted()
+            hasCompletedPostAuthOnboarding = false
+            refreshCombinedOnboardingState()
+        } else if removeUserData {
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCompletedKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.onboardingCurrentPageKey)
             UserDefaults.standard.removeObject(forKey: MacAppState.preAuthOnboardingCompletedKey)

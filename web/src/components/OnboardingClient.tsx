@@ -125,6 +125,8 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
   const copy = COPY[locale];
 
   useEffect(() => {
+    markOnboardingSeen();
+
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -208,7 +210,7 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
     try {
       const { filename } = pickMimeType();
       await enrollVoice({ audio: audioBlob, filename });
-      window.localStorage.setItem(STORAGE_KEY, "true");
+      markOnboardingSeen();
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.uploadError);
@@ -217,7 +219,7 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
   }
 
   function skip() {
-    window.localStorage.setItem(STORAGE_KEY, "true");
+    markOnboardingSeen();
     router.replace("/dashboard");
   }
 
@@ -286,6 +288,10 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
       <p className="onboarding-privacy">{copy.privacy}</p>
     </div>
   );
+}
+
+function markOnboardingSeen() {
+  window.localStorage.setItem(STORAGE_KEY, "true");
 }
 
 function statusLabel(
