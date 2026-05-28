@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.core.personalization import sanitize_keyterms
 from app.core.transcript_utils import TranscriptResult, detect_wav_channels
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ STT_FILENAME_EXTENSIONS = {
     "video/quicktime": "mov",
     "video/webm": "webm",
 }
+ELEVENLABS_MAX_KEYTERMS = 1_000
+ELEVENLABS_MAX_KEYTERM_CHARS = 50
 
 
 @dataclass(frozen=True)
@@ -279,6 +282,17 @@ def _stt_language_code(language: str | None) -> str | None:
     return normalized.split("-", 1)[0]
 
 
+def sanitize_elevenlabs_keyterms(keyterms: list[str] | None) -> list[str]:
+    if not keyterms:
+        return []
+    return sanitize_keyterms(
+        keyterms,
+        max_terms=ELEVENLABS_MAX_KEYTERMS,
+        max_chars=ELEVENLABS_MAX_KEYTERM_CHARS,
+        max_words=5,
+    )
+
+
 async def transcribe_audio_file(
     audio_data: bytes,
     *,
@@ -286,6 +300,7 @@ async def transcribe_audio_file(
     content_type: str = "audio/wav",
     channels: int | None = None,
     model: str | None = None,
+    keyterms: list[str] | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an audio file with ElevenLabs Speech-to-Text."""
     settings = get_settings()
@@ -309,6 +324,9 @@ async def transcribe_audio_file(
         form_data["use_multi_channel"] = "true"
     if content_type == "audio/raw" and (resolved_channels or 1) == 1:
         form_data["file_format"] = "pcm_s16le_16"
+    sanitized_keyterms = sanitize_elevenlabs_keyterms(keyterms)
+    if sanitized_keyterms:
+        form_data["keyterms"] = sanitized_keyterms
 
     files = {
         "file": (_stt_upload_filename(content_type), audio_data, content_type),

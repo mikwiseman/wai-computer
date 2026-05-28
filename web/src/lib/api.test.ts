@@ -207,9 +207,16 @@ describe("api client wrappers", () => {
   it("calls summary endpoints", async () => {
     await api.getSummary("rec");
     await api.generateSummary("rec");
+    await api.getSummaryGeneration("rec");
+    await api.startSummaryGeneration("rec", { instructions: "Focus on decisions" });
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/recordings/rec/summary");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/recordings/rec/generate-summary", {
       method: "POST",
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/recordings/rec/summary-generation");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/recordings/rec/summary-generation", {
+      method: "POST",
+      body: JSON.stringify({ instructions: "Focus on decisions" }),
     });
   });
 

@@ -4,9 +4,12 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.highlight import Highlight
+from app.models.person import Person
 from app.models.recording import Recording, Segment, Summary
 
 
@@ -113,6 +116,96 @@ async def _create_recording_with_segments(
 
     await db_session.flush()
     return recording
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_localizes_russian_labels_and_speaker_tokens(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    recording = await _create_recording_with_segments(
+        client,
+        auth_headers,
+        db_session,
+        title="Обсуждение больничного и оплаты",
+        type_="meeting",
+        add_summary=True,
+        add_highlights=True,
+    )
+    recording_id = UUID(recording["id"])
+    result = await db_session.execute(
+        select(Recording)
+        .where(Recording.id == recording_id)
+        .options(selectinload(Recording.segments), selectinload(Recording.highlights))
+    )
+    rec = result.scalar_one()
+    rec.language = "ru"
+    for index, segment in enumerate(sorted(rec.segments, key=lambda item: item.start_ms or 0)):
+        segment.speaker = f"speaker_{index % 2}"
+        segment.raw_label = segment.speaker
+    for highlight in rec.highlights:
+        highlight.speaker = "speaker_0"
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "markdown", "locale": "ru"},
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "*Дата:" in body
+    assert "Длительность:" in body
+    assert "Тип: встреча" in body
+    assert "## Саммари" in body
+    assert "## Ключевые моменты" in body
+    assert "**[Решение]**" in body
+    assert "## Расшифровка" in body
+    assert "**Спикер 1**" in body
+    assert "**speaker_0**" not in body
+
+
+@pytest.mark.asyncio
+async def test_export_uses_assigned_person_display_name_when_present(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    recording = await _create_recording_with_segments(
+        client,
+        auth_headers,
+        db_session,
+        title="Team Call",
+        type_="meeting",
+    )
+    recording_id = UUID(recording["id"])
+    rec = (
+        await db_session.execute(
+            select(Recording)
+            .where(Recording.id == recording_id)
+            .options(selectinload(Recording.segments))
+        )
+    ).scalar_one()
+    person = Person(user_id=rec.user_id, display_name="Anna")
+    db_session.add(person)
+    await db_session.flush()
+    first_segment = sorted(rec.segments, key=lambda item: item.start_ms or 0)[0]
+    first_segment.speaker = "speaker_0"
+    first_segment.raw_label = "speaker_0"
+    first_segment.person_id = person.id
+    await db_session.flush()
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "txt"},
+    )
+
+    assert response.status_code == 200
+    assert "[Anna, 0:00]" in response.text
+    assert "[speaker_0, 0:00]" not in response.text
 
 
 # ---- Markdown export ----

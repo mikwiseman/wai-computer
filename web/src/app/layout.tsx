@@ -57,7 +57,7 @@ export default async function RootLayout({
     requestHeaders.get("accept-language"),
   );
   return (
-    <html lang={lang} data-theme="system" data-accent="teal">
+    <html lang={lang} data-theme="system" data-accent="amber">
       <body className={spaceGrotesk.variable}>
         <script
           dangerouslySetInnerHTML={{

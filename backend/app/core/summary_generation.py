@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.personalization import summary_personalization_instructions
 from app.core.summarizer import SummaryResult, resolve_highlight_timestamps, summarize_transcript
 from app.models.highlight import Highlight
 from app.models.recording import (
@@ -80,6 +81,24 @@ def resolve_summary_style_preference(preferred_style: str | None) -> str:
     if normalized_style in {"brief", "medium", "detailed"}:
         return normalized_style
     return "medium"
+
+
+def combine_summary_instructions(
+    *,
+    base_instructions: str | None,
+    personalization_instructions: str | None,
+    override_instructions: str | None = None,
+) -> str | None:
+    blocks = [
+        value.strip()
+        for value in (
+            base_instructions,
+            personalization_instructions,
+            override_instructions,
+        )
+        if value and value.strip()
+    ]
+    return "\n\n".join(blocks) or None
 
 
 async def load_active_summary_generation_job(
@@ -237,7 +256,14 @@ async def prepare_summary_generation_payload(
             user.default_language,
         ),
         style=resolve_summary_style_preference(user.summary_style),
-        instructions=user.summary_instructions,
+        instructions=combine_summary_instructions(
+            base_instructions=user.summary_instructions,
+            personalization_instructions=await summary_personalization_instructions(
+                db,
+                user_id=user.id,
+            ),
+            override_instructions=job.instructions_override,
+        ),
     )
 
 

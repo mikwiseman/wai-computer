@@ -4,12 +4,189 @@
  * is imported once in `src/app/layout.tsx` BEFORE this file. The selectors
  * below consume those custom properties; never redefine `--accent`, `--bg`,
  * etc. here — add new tokens to `tokens.css` instead.
+ *
+ * The "wai-*" utility classes below mirror the SwiftUI modifiers in
+ * `macos/WaiComputer/WaiComputer/Core/DesignSystem.swift` 1:1 so a card,
+ * tab strip, or section header rendered on the web reads as the same
+ * primitive the Mac app renders. Add new web primitives here only when the
+ * Mac app has the matching SwiftUI modifier.
  */
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* === Mac-parity primitives ============================================= */
+
+/* Serif display typography — mirror `Typography.displayLarge/Medium/Small`.
+ * Uses the same New York / Iowan Old Style stack as `--font-family-serif`. */
+.wai-display-large {
+  font: var(--font-display-large);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.wai-display-medium {
+  font: var(--font-display-medium);
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+
+.wai-display-small {
+  font: var(--font-display-small);
+  color: var(--ink);
+}
+
+/* Uppercase, tracked, tertiary section header — mirror `waiSectionHeader()`. */
+.wai-section-header {
+  font: var(--font-label-small);
+  color: var(--ink-faint);
+  letter-spacing: var(--font-label-small-tracking);
+  text-transform: uppercase;
+}
+
+/* Barely-visible grouping background — mirror `waiCard()`. */
+.wai-card {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.wai-card--lg {
+  padding: var(--space-lg);
+}
+
+/* Solid panel card — used when a card must read as a distinct surface
+ * (recording rows, marketing cards). Matches the Mac list-row aesthetic:
+ * 1px hairline border, no shadow. */
+.wai-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Floating translucent surface — mirror `.ultraThinMaterial`.
+ * Used for banners, popovers, and the landing hero halo. */
+.wai-glass {
+  background: var(--material-thin-bg);
+  border: 1px solid var(--material-thin-border);
+  -webkit-backdrop-filter: var(--material-thin-blur);
+  backdrop-filter: var(--material-thin-blur);
+  border-radius: var(--radius-md);
+}
+
+/* 1px hairline divider — mirror `WaiDivider`. */
+.wai-divider {
+  height: 1px;
+  background: var(--surface-hairline);
+  border: 0;
+}
+
+/* Accent-filled primary button — mirror `WaiPrimaryButtonStyle`.
+ * 24×12 padding, font-heading-small, 8pt radius, accent contrast on accent. */
+.wai-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 38px;
+  padding: var(--space-md) var(--space-xl);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font: var(--font-heading-small);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.16s ease, opacity 0.16s ease, transform 0.16s ease;
+}
+
+.wai-primary-button:hover {
+  background: var(--accent-strong);
+}
+
+.wai-primary-button:active {
+  transform: translateY(1px);
+}
+
+.wai-primary-button:disabled,
+.wai-primary-button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Text-only accent button — mirror `WaiGhostButtonStyle`. */
+.wai-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  background: transparent;
+  border: 0;
+  color: var(--accent-strong);
+  font: var(--font-heading-small);
+  cursor: pointer;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: opacity 0.16s ease, background 0.16s ease;
+  min-height: 38px;
+}
+
+.wai-ghost-button:hover {
+  background: var(--surface-subtle);
+  opacity: 0.85;
+}
+
+/* Tab strip with accent capsule underline — mirror `WaiTabBar`. */
+.wai-tab-strip {
+  display: inline-flex;
+  align-items: stretch;
+  gap: var(--space-xl);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--surface-hairline);
+}
+
+.wai-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink-soft);
+  font: var(--font-heading-small);
+  cursor: pointer;
+  padding: 0;
+  min-height: auto;
+  transition: color 0.16s ease;
+}
+
+.wai-tab::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  transition: background 0.18s ease;
+}
+
+.wai-tab[aria-selected="true"],
+.wai-tab[aria-current="true"] {
+  color: var(--accent);
+}
+
+.wai-tab[aria-selected="true"]::after,
+.wai-tab[aria-current="true"]::after {
+  background: var(--accent);
+}
+
+.wai-tab:hover {
+  color: var(--ink);
 }
 
 html,
@@ -756,6 +933,18 @@ a.primary-button[aria-disabled="true"]:hover {
   line-height: 1.2;
 }
 
+.inline-title-edit {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 620px;
+}
+
+.inline-title-edit input {
+  min-width: 0;
+}
+
 .detail-panel__actions {
   display: flex;
   flex-wrap: wrap;
@@ -808,6 +997,17 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1.1rem;
   max-width: 850px;
   padding: 1.55rem 2rem 2rem;
+}
+
+.summary-instructions {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 680px;
+}
+
+.summary-instructions textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .section-heading-row {
@@ -2699,8 +2899,40 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.4rem 0.55rem;
 }
 
+.personalization-panel {
+  margin-bottom: 1rem;
+}
+
+.dictionary-inline-form,
+.personalization-import {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.dictionary-inline-form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.personalization-import textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.personalization-terms {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.personalization-terms h4 {
+  color: var(--ink-faint);
+  font-size: var(--font-label-size);
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
 @media (max-width: 700px) {
-  .dictionary-list li {
+  .dictionary-list li,
+  .dictionary-inline-form {
     grid-template-columns: 1fr;
   }
   .sidebar-folder-list__item .row-actions {

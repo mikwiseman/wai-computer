@@ -9,7 +9,6 @@ the table directly; only writers go through here.
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 

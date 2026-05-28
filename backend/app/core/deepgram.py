@@ -6,6 +6,7 @@ from typing import Literal
 from urllib.parse import urlencode
 
 from app.config import get_settings
+from app.core.personalization import sanitize_keyterms
 
 DEEPGRAM_REALTIME_WS_URL = "wss://api.deepgram.com/v1/listen"
 DEEPGRAM_REALTIME_MODEL = "nova-3"
@@ -16,6 +17,9 @@ DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS = 4
 DEEPGRAM_UTTERANCE_END_MS = 1_000
 DEEPGRAM_ENDPOINTING_MS = 300
 DEEPGRAM_MULTILINGUAL_ENDPOINTING_MS = 100
+DEEPGRAM_MAX_KEYTERMS = 100
+DEEPGRAM_MAX_KEYTERM_CHARS = 100
+DEEPGRAM_KEYTERM_TOKEN_BUDGET = 500
 
 _NUMERALS_LANGUAGES = {
     "da",
@@ -161,12 +165,25 @@ def supports_dictation(language: str) -> bool:
     return language == "en" or language.startswith("en-")
 
 
+def sanitize_deepgram_keyterms(keyterms: list[str] | None) -> list[str]:
+    if not keyterms:
+        return []
+    return sanitize_keyterms(
+        keyterms,
+        max_terms=DEEPGRAM_MAX_KEYTERMS,
+        max_chars=DEEPGRAM_MAX_KEYTERM_CHARS,
+        max_words=8,
+        token_budget=DEEPGRAM_KEYTERM_TOKEN_BUDGET,
+    )
+
+
 def build_realtime_websocket_url(
     *,
     language: str,
     channels: int,
     purpose: Literal["recording", "dictation"],
     model: str = DEEPGRAM_REALTIME_MODEL,
+    keyterms: list[str] | None = None,
 ) -> str:
     resolved_language = normalize_deepgram_language(language)
     params: list[tuple[str, str | int]] = [
@@ -193,4 +210,5 @@ def build_realtime_websocket_url(
         params.extend((("dictation", "true"), ("punctuate", "true")))
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
+    params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
     return f"{DEEPGRAM_REALTIME_WS_URL}?{urlencode(params)}"

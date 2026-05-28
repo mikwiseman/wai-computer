@@ -17,18 +17,20 @@ from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
+from app.core.personalization import load_user_keyterms, summary_personalization_instructions
 from app.core.recording_audio_processing import apply_no_speech_failure
+from app.core.speaker_name_extraction import (
+    apply_extracted_names,
+    extract_speaker_names,
+)
 from app.core.summarizer import (
     SummaryResult,
     resolve_highlight_timestamps,
     summarize_transcript,
 )
+from app.core.summary_generation import combine_summary_instructions
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
-from app.core.speaker_name_extraction import (
-    apply_extracted_names,
-    extract_speaker_names,
-)
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -265,16 +267,18 @@ def _summary_style(user: User, *, source_label: str) -> str:
 
 async def _transcribe(
     *,
+    db: AsyncSession,
     data: bytes,
     content_type: str,
     language: str,
     user: User,
 ) -> list[TranscriptResult]:
-    del user
+    keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
     return await transcribe_audio_file(
         data,
         language=language,
         content_type=content_type,
+        keyterms=keyterms,
     )
 
 
@@ -507,6 +511,7 @@ async def import_media_as_recording(
         await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
 
         transcript_results = await _transcribe(
+            db=db,
             data=media_data,
             content_type=media_content_type,
             language=recording.language or "auto",
@@ -536,7 +541,13 @@ async def import_media_as_recording(
             ),
             language=_summary_language(user, recording),
             style=_summary_style(user, source_label=source_label),
-            instructions=_summary_instructions(user, source_label=source_label),
+            instructions=combine_summary_instructions(
+                base_instructions=_summary_instructions(user, source_label=source_label),
+                personalization_instructions=await summary_personalization_instructions(
+                    db,
+                    user_id=user.id,
+                ),
+            ),
         )
         if not explicit_title:
             generated_title = summary_result.title.strip()

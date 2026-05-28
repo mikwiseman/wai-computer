@@ -8,6 +8,7 @@ from app.core.deepgram import (
     build_realtime_websocket_url,
     normalize_deepgram_language,
     require_deepgram_api_key,
+    sanitize_deepgram_keyterms,
     validate_deepgram_language,
 )
 
@@ -55,6 +56,32 @@ def test_build_realtime_websocket_url_omits_diarize_for_dictation() -> None:
     )
 
     assert "diarize=true" not in url
+
+
+def test_build_realtime_websocket_url_repeats_sanitized_keyterm_params() -> None:
+    url = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="recording",
+        keyterms=[" WaiComputer ", "больничный", "WaiComputer", ""],
+    )
+
+    assert url.count("keyterm=") == 2
+    assert "keyterm=WaiComputer" in url
+    assert (
+        "keyterm=%D0%B1%D0%BE%D0%BB%D1%8C%D0%BD%D0%B8%D1%87%D0%BD%D1%8B%D0%B9"
+        in url
+    )
+
+
+def test_sanitize_deepgram_keyterms_caps_token_budget() -> None:
+    terms = [f"term{i}" for i in range(150)]
+
+    sanitized = sanitize_deepgram_keyterms(terms)
+
+    assert len(sanitized) == 100
+    assert sanitized[0] == "term0"
+    assert sanitized[-1] == "term99"
 
 
 def test_build_realtime_websocket_url_limits_dictation_to_english() -> None:

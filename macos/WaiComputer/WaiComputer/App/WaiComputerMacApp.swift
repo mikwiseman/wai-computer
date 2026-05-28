@@ -25,24 +25,12 @@ struct WaiComputerMacApp: App {
     @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     // Sparkle weakly references delegates, so keep this instance alive for the app lifetime.
     private let updaterDelegate: BetaChannelUpdaterDelegate?
+    private let updateUserDriverDelegate: RecordingAwareUpdateUserDriverDelegate?
     private let updaterController: SPUStandardUpdaterController?
 
     init() {
         #if !DEBUG
         SentryHelper.start(dsn: "https://7d4dee467b0776baf21d5833aa953caa@o4508963132145664.ingest.us.sentry.io/4511116051939328")
-        #endif
-
-        #if DEBUG
-        updaterDelegate = nil
-        updaterController = nil
-        #else
-        let updaterDelegate = BetaChannelUpdaterDelegate()
-        self.updaterDelegate = updaterDelegate
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: updaterDelegate,
-            userDriverDelegate: nil
-        )
         #endif
 
         let testingMode = MacTestingMode.current
@@ -57,19 +45,36 @@ struct WaiComputerMacApp: App {
         dictation.historyStore = history
         dictation.dictionaryStore = dictionary
         dictation.languageStore = languages
+        let appState = MacAppState(
+            recordingViewModel: recordingViewModel,
+            dictationManager: dictation,
+            testingMode: testingMode
+        )
+
+        #if DEBUG
+        updaterDelegate = nil
+        updateUserDriverDelegate = nil
+        updaterController = nil
+        #else
+        let updaterDelegate = BetaChannelUpdaterDelegate()
+        let updateUserDriverDelegate = RecordingAwareUpdateUserDriverDelegate {
+            recordingViewModel.shouldPresentLiveView || appState.completedRecordingContext != nil
+        }
+        self.updaterDelegate = updaterDelegate
+        self.updateUserDriverDelegate = updateUserDriverDelegate
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: updaterDelegate,
+            userDriverDelegate: updateUserDriverDelegate
+        )
+        #endif
 
         _recordingViewModel = StateObject(wrappedValue: recordingViewModel)
         _dictationManager = StateObject(wrappedValue: dictation)
         _historyStore = StateObject(wrappedValue: history)
         _dictionaryStore = StateObject(wrappedValue: dictionary)
         _languageStore = StateObject(wrappedValue: languages)
-        _appState = StateObject(
-            wrappedValue: MacAppState(
-                recordingViewModel: recordingViewModel,
-                dictationManager: dictation,
-                testingMode: testingMode
-            )
-        )
+        _appState = StateObject(wrappedValue: appState)
     }
 
     @StateObject private var languageManager = LanguageManager.shared
@@ -101,6 +106,10 @@ struct WaiComputerMacApp: App {
                 .onChange(of: receiveBetaUpdates) { _, _ in
                     updaterController?.updater.resetUpdateCycle()
                 }
+                .onChange(of: isRecordingActivityVisible) { _, isActive in
+                    guard !isActive else { return }
+                    updateUserDriverDelegate?.presentDeferredUpdateIfIdle(using: updaterController)
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     dictationManager.refreshPermissionState()
@@ -120,7 +129,11 @@ struct WaiComputerMacApp: App {
                 .onReceive(
                     NotificationCenter.default.publisher(for: .waicomputerCheckForUpdates)
                 ) { _ in
-                    updaterController?.checkForUpdates(nil)
+                    if isRecordingActivityVisible {
+                        updateUserDriverDelegate?.deferUpdateCheckUntilIdle()
+                    } else {
+                        updaterController?.checkForUpdates(nil)
+                    }
                 }
                 .handlesExternalEvents(preferring: Set(["main"]), allowing: Set(["main"]))
         }
@@ -184,6 +197,7 @@ struct WaiComputerMacApp: App {
                 Button(t("Check for Updates…", "Проверить обновления…")) {
                     updaterController?.checkForUpdates(nil)
                 }
+                .disabled(isRecordingActivityVisible)
                 #endif
             }
 

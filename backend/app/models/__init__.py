@@ -29,7 +29,13 @@ from app.models.mcp_oauth import (
     McpOAuthConsent,
     McpOAuthToken,
 )
-from app.models.person import Person, RecordingSpeakerEmbedding, Voiceprint
+from app.models.person import (
+    Person,
+    PublicVoiceprint,
+    RecordingSpeakerEmbedding,
+    Voiceprint,
+)
+from app.models.personalization import PersonalizationImportJob, PersonalizationTerm
 from app.models.recording import (
     ActionItem,
     Folder,
@@ -79,8 +85,11 @@ __all__ = [
     "ActionItem",
     "Highlight",
     "Person",
+    "PublicVoiceprint",
     "RecordingSpeakerEmbedding",
     "Voiceprint",
+    "PersonalizationImportJob",
+    "PersonalizationTerm",
     "Entity",
     "EntityRelation",
     "Tag",

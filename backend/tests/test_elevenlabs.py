@@ -14,6 +14,7 @@ from app.core.elevenlabs import (
     _stt_upload_filename,
     get_signed_url,
     list_agents,
+    sanitize_elevenlabs_keyterms,
     transcribe_audio_file,
 )
 from app.core.transcript_utils import TranscriptResult
@@ -75,6 +76,12 @@ def test_results_from_transcript_skips_empty_word_groups():
 def test_stt_upload_filename_rejects_unsupported_content_type():
     with pytest.raises(ValueError, match="Unsupported ElevenLabs STT content type"):
         _stt_upload_filename("application/octet-stream")
+
+
+def test_sanitize_elevenlabs_keyterms_applies_batch_limits():
+    terms = [" WaiComputer ", "too many words in this keyterm now", "x" * 80, "WaiComputer"]
+
+    assert sanitize_elevenlabs_keyterms(terms) == ["WaiComputer", "x" * 50]
 
 
 @pytest.mark.asyncio
@@ -364,6 +371,33 @@ async def test_transcribe_audio_file_omits_auto_language_code():
 
     assert results[0].text == "hello auto"
     assert "language_code" not in post.await_args.kwargs["data"]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_sends_scribe_v2_keyterms():
+    response = httpx.Response(
+        200,
+        json={"text": "hello keyterms"},
+        request=httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text"),
+    )
+    post = AsyncMock(return_value=response)
+
+    with (
+        patch("app.core.elevenlabs.get_settings") as mock_settings,
+        patch("app.core.elevenlabs.detect_wav_channels", return_value=1),
+        patch("httpx.AsyncClient.post", new=post),
+    ):
+        mock_settings.return_value.elevenlabs_api_key = "key"
+        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
+        mock_settings.return_value.elevenlabs_no_verbatim = False
+        results = await transcribe_audio_file(
+            b"wav-data",
+            content_type="audio/wav",
+            keyterms=["WaiComputer", "больничный", "WaiComputer"],
+        )
+
+    assert results[0].text == "hello keyterms"
+    assert post.await_args.kwargs["data"]["keyterms"] == ["WaiComputer", "больничный"]
 
 
 @pytest.mark.asyncio

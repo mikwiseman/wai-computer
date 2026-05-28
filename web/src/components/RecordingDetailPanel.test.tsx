@@ -7,18 +7,27 @@ import type { RecordingDetail } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
   generateSummary: vi.fn(),
+  startSummaryGeneration: vi.fn(),
   getRecording: vi.fn(),
   exportRecording: vi.fn(),
   createRecordingShareLink: vi.fn(),
+  updateRecording: vi.fn(),
 }));
 
-const { generateSummary, getRecording, exportRecording, createRecordingShareLink } = await import(
-  "@/lib/api"
-);
+const {
+  generateSummary,
+  startSummaryGeneration,
+  getRecording,
+  exportRecording,
+  createRecordingShareLink,
+  updateRecording,
+} = await import("@/lib/api");
 const mockGenerateSummary = vi.mocked(generateSummary);
+const mockStartSummaryGeneration = vi.mocked(startSummaryGeneration);
 const mockGetRecording = vi.mocked(getRecording);
 const mockExportRecording = vi.mocked(exportRecording);
 const mockCreateRecordingShareLink = vi.mocked(createRecordingShareLink);
+const mockUpdateRecording = vi.mocked(updateRecording);
 let clipboardWriteText: ReturnType<typeof vi.fn>;
 
 function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
@@ -48,9 +57,11 @@ function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
 describe("RecordingDetailPanel", () => {
   beforeEach(() => {
     mockGenerateSummary.mockReset();
+    mockStartSummaryGeneration.mockReset();
     mockGetRecording.mockReset();
     mockExportRecording.mockReset();
     mockCreateRecordingShareLink.mockReset();
+    mockUpdateRecording.mockReset();
     vi.unstubAllGlobals();
     Object.defineProperty(navigator, "share", {
       configurable: true,
@@ -149,7 +160,20 @@ describe("RecordingDetailPanel", () => {
         sentiment: "positive",
       },
     });
-    mockGenerateSummary.mockResolvedValue(undefined);
+    mockStartSummaryGeneration.mockResolvedValue({
+      job_id: "job-1",
+      recording_id: "rec-1",
+      status: "queued",
+      stage: "queued",
+      progress_percent: 5,
+      message: "Summary generation is queued.",
+      requested_at: null,
+      started_at: null,
+      completed_at: null,
+      failed_at: null,
+      error_code: null,
+      error_message: null,
+    });
     mockGetRecording.mockResolvedValue(updatedRecording);
 
     const onUpdate = vi.fn();
@@ -165,7 +189,7 @@ describe("RecordingDetailPanel", () => {
     await user.click(screen.getByText("Generate Summary"));
 
     await waitFor(() => {
-      expect(mockGenerateSummary).toHaveBeenCalledWith("rec-1");
+      expect(mockStartSummaryGeneration).toHaveBeenCalledWith("rec-1", { instructions: null });
     });
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledWith(updatedRecording);
@@ -173,7 +197,7 @@ describe("RecordingDetailPanel", () => {
   });
 
   it("shows error when summary generation fails", async () => {
-    mockGenerateSummary.mockRejectedValue(new Error("API down"));
+    mockStartSummaryGeneration.mockRejectedValue(new Error("API down"));
 
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
@@ -286,13 +310,32 @@ describe("RecordingDetailPanel", () => {
     await user.selectOptions(select, "txt");
 
     await waitFor(() => {
-      expect(mockExportRecording).toHaveBeenCalledWith("rec-1", "txt");
+      expect(mockExportRecording).toHaveBeenCalledWith("rec-1", "txt", { locale: "en" });
     });
     await waitFor(() => {
       expect(clickSpy).toHaveBeenCalled();
     });
 
     vi.restoreAllMocks();
+  });
+
+  it("renames the selected recording", async () => {
+    mockUpdateRecording.mockResolvedValue({ ...makeRecording(), title: "New title" });
+    mockGetRecording.mockResolvedValue(makeRecording({ title: "New title" }));
+
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    render(<RecordingDetailPanel recording={makeRecording()} onRecordingUpdate={onUpdate} />);
+
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.clear(screen.getByDisplayValue("Budget Meeting"));
+    await user.type(screen.getByDisplayValue(""), "New title");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateRecording).toHaveBeenCalledWith("rec-1", { title: "New title" });
+      expect(onUpdate).toHaveBeenCalledWith(makeRecording({ title: "New title" }));
+    });
   });
 
   it("shows error on export failure", async () => {

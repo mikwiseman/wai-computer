@@ -159,6 +159,12 @@ class User(Base, UUIDMixin, TimestampMixin):
     dictation_dictionary_words: Mapped[list["DictationDictionaryWord"]] = relationship(
         "DictationDictionaryWord", back_populates="user", cascade="all, delete-orphan"
     )
+    personalization_terms: Mapped[list["PersonalizationTerm"]] = relationship(
+        "PersonalizationTerm", back_populates="user", cascade="all, delete-orphan"
+    )
+    personalization_import_jobs: Mapped[list["PersonalizationImportJob"]] = relationship(
+        "PersonalizationImportJob", back_populates="user", cascade="all, delete-orphan"
+    )
     people: Mapped[list["Person"]] = relationship(
         "Person",
         back_populates="user",
@@ -171,4 +177,5 @@ class User(Base, UUIDMixin, TimestampMixin):
 from app.models.dictation import DictationDictionaryWord, DictationEntry  # noqa: E402
 from app.models.entity import Entity, Tag  # noqa: E402
 from app.models.person import Person  # noqa: E402
+from app.models.personalization import PersonalizationImportJob, PersonalizationTerm  # noqa: E402
 from app.models.recording import Folder, Recording  # noqa: E402

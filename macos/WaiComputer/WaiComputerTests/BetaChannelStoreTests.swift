@@ -5,4 +5,17 @@ final class BetaChannelStoreTests: XCTestCase {
         XCTAssertEqual(BetaChannelStore.allowedChannels(isOptedIn: false), Set<String>())
         XCTAssertEqual(BetaChannelStore.allowedChannels(isOptedIn: true), Set([BetaChannelStore.channelName]))
     }
+
+    func testScheduledUpdateWindowsAreDeferredWhileRecording() {
+        XCTAssertTrue(
+            RecordingAwareUpdatePolicy.shouldLetSparklePresentScheduledUpdate(
+                isRecordingActive: false
+            )
+        )
+        XCTAssertFalse(
+            RecordingAwareUpdatePolicy.shouldLetSparklePresentScheduledUpdate(
+                isRecordingActive: true
+            )
+        )
+    }
 }

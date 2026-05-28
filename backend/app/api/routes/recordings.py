@@ -11,7 +11,7 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -29,6 +29,7 @@ from app.core.observability import (
     safe_filename_metadata,
     safe_text_digest,
 )
+from app.core.personalization import summary_personalization_instructions
 from app.core.recording_audio_processing import (
     apply_no_speech_failure,
     delete_staged_file,
@@ -45,6 +46,7 @@ from app.core.summarizer import (
 from app.core.summary_generation import (
     apply_summary_result,
     build_summary_transcript,
+    combine_summary_instructions,
     latest_summary_generation_job,
     load_active_summary_generation_job,
     resolve_summary_language_preference,
@@ -342,6 +344,20 @@ class UpdateRecordingRequest(BaseModel):
     title: str | None = None
     type: Literal["meeting", "note", "reflection"] | None = None
     folder_id: UUID | None = None
+
+
+class StartSummaryGenerationRequest(BaseModel):
+    """Optional one-off instructions for a manual summary generation run."""
+
+    instructions: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("instructions", mode="before")
+    @classmethod
+    def normalize_instructions(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class WeekCount(BaseModel):
@@ -1393,11 +1409,12 @@ async def export_shared_recording(
     token: str,
     db: Database,
     format: Literal["markdown"] = Query("markdown"),
+    locale: Literal["en", "ru"] | None = Query(None),
 ) -> Response:
     """Export a public shared recording as Markdown without requiring auth."""
     share = await _load_active_share(token, db)
 
-    content = _export_markdown(share.recording)
+    content = _export_markdown(share.recording, locale)
     filename = f"{_sanitize_filename(share.recording.title)}.md"
     return Response(
         content=content,
@@ -1421,6 +1438,86 @@ async def get_recording(
 
 
 # ---- Export helpers ----
+
+
+ExportLocale = Literal["en", "ru"]
+
+_EXPORT_COPY: dict[ExportLocale, dict[str, str]] = {
+    "en": {
+        "untitled": "Untitled Recording",
+        "date": "Date",
+        "duration": "Duration",
+        "type": "Type",
+        "summary": "Summary",
+        "highlights": "Key Highlights",
+        "transcript": "Transcript",
+        "unknown": "Unknown",
+        "speaker": "Speaker",
+    },
+    "ru": {
+        "untitled": "Запись без названия",
+        "date": "Дата",
+        "duration": "Длительность",
+        "type": "Тип",
+        "summary": "Саммари",
+        "highlights": "Ключевые моменты",
+        "transcript": "Расшифровка",
+        "unknown": "Неизвестно",
+        "speaker": "Спикер",
+    },
+}
+
+_EXPORT_TYPE_LABELS: dict[ExportLocale, dict[str, str]] = {
+    "en": {"meeting": "meeting", "note": "note", "reflection": "reflection"},
+    "ru": {"meeting": "встреча", "note": "заметка", "reflection": "рефлексия"},
+}
+
+_EXPORT_HIGHLIGHT_LABELS: dict[ExportLocale, dict[str, str]] = {
+    "en": {
+        "decision": "Decision",
+        "action": "Action",
+        "question": "Question",
+        "insight": "Insight",
+    },
+    "ru": {
+        "decision": "Решение",
+        "action": "Действие",
+        "question": "Вопрос",
+        "insight": "Инсайт",
+    },
+}
+
+_SPEAKER_LABEL_RE = re.compile(r"^(speaker|спикер)[\s_-]*(\d+)$", re.IGNORECASE)
+
+
+def _resolve_export_locale(recording: Recording, locale: ExportLocale | None) -> ExportLocale:
+    if locale is not None:
+        return locale
+    language = (recording.language or "").strip().lower()
+    return "ru" if language.startswith("ru") else "en"
+
+
+def _humanize_speaker_label(label: str | None, locale: ExportLocale) -> str:
+    raw = (label or "").strip()
+    if not raw:
+        return _EXPORT_COPY[locale]["unknown"]
+    match = _SPEAKER_LABEL_RE.match(raw)
+    if match is None:
+        return raw
+    raw_number = int(match.group(2))
+    display_number = raw_number + 1 if raw_number == 0 or "_" in raw or "-" in raw else raw_number
+    return f"{_EXPORT_COPY[locale]['speaker']} {display_number}"
+
+
+def _segment_export_speaker(seg: Segment, locale: ExportLocale) -> str:
+    if seg.person and seg.person.display_name:
+        return seg.person.display_name
+    return _humanize_speaker_label(seg.speaker or seg.raw_label, locale)
+
+
+def _highlight_category_label(category: str, locale: ExportLocale) -> str:
+    normalized = (category or "").strip().lower()
+    return _EXPORT_HIGHLIGHT_LABELS[locale].get(normalized, normalized.capitalize() or category)
 
 
 def _format_duration_mmss(seconds: int | None) -> str:
@@ -1458,50 +1555,59 @@ def _format_timestamp_srt(ms: int | None) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def _format_recording_date(created_at: datetime) -> str:
+def _format_recording_date(created_at: datetime, locale: ExportLocale) -> str:
     """Format recording creation date for export headers."""
+    if locale == "ru":
+        return created_at.strftime("%d.%m.%Y")
     return created_at.strftime("%B %d, %Y")
 
 
-def _export_markdown(recording: Recording) -> str:
+def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -> str:
     """Export recording as Markdown."""
+    resolved_locale = _resolve_export_locale(recording, locale)
+    copy = _EXPORT_COPY[resolved_locale]
     lines: list[str] = []
 
-    title = recording.title or "Untitled Recording"
+    title = recording.title or copy["untitled"]
     lines.append(f"# {title}")
 
     # Metadata line
-    date_str = _format_recording_date(recording.created_at)
+    date_str = _format_recording_date(recording.created_at, resolved_locale)
     duration_str = _format_duration_mmss(recording.duration_seconds)
-    lines.append(f"*Date: {date_str} | Duration: {duration_str} | Type: {recording.type}*")
+    type_label = _EXPORT_TYPE_LABELS[resolved_locale].get(recording.type, recording.type)
+    lines.append(
+        f"*{copy['date']}: {date_str} | {copy['duration']}: {duration_str} | "
+        f"{copy['type']}: {type_label}*"
+    )
     lines.append("")
 
     # Summary section (only if present)
     if recording.summary and recording.summary.summary:
-        lines.append("## Summary")
+        lines.append(f"## {copy['summary']}")
         lines.append(recording.summary.summary)
         lines.append("")
 
     # Key Highlights section (only if present)
     if recording.highlights:
-        lines.append("## Key Highlights")
+        lines.append(f"## {copy['highlights']}")
         for h in sorted(recording.highlights, key=lambda x: x.start_ms or 0):
             if h.speaker:
                 ts = _format_timestamp_short(h.start_ms)
-                speaker_part = f" ({h.speaker}, {ts})"
+                speaker = _humanize_speaker_label(h.speaker, resolved_locale)
+                speaker_part = f" ({speaker}, {ts})"
             elif h.start_ms is not None:
                 speaker_part = f" ({_format_timestamp_short(h.start_ms)})"
             else:
                 speaker_part = ""
-            category = h.category.capitalize()
+            category = _highlight_category_label(h.category, resolved_locale)
             lines.append(f"- **[{category}]** {h.title}{speaker_part}")
         lines.append("")
 
     # Transcript section
-    lines.append("## Transcript")
+    lines.append(f"## {copy['transcript']}")
     segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
     for seg in segments:
-        speaker = seg.speaker or "Unknown"
+        speaker = _segment_export_speaker(seg, resolved_locale)
         ts = _format_timestamp_short(seg.start_ms)
         ts_part = f" ({ts})" if ts else ""
         lines.append(f"**{speaker}**{ts_part}: {seg.content}")
@@ -1510,21 +1616,23 @@ def _export_markdown(recording: Recording) -> str:
     return "\n".join(lines)
 
 
-def _export_txt(recording: Recording) -> str:
+def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str:
     """Export recording as plain text."""
+    resolved_locale = _resolve_export_locale(recording, locale)
+    copy = _EXPORT_COPY[resolved_locale]
     lines: list[str] = []
 
-    title = recording.title or "Untitled Recording"
+    title = recording.title or copy["untitled"]
     lines.append(title)
 
-    date_str = _format_recording_date(recording.created_at)
+    date_str = _format_recording_date(recording.created_at, resolved_locale)
     duration_str = _format_duration_mmss(recording.duration_seconds)
-    lines.append(f"Date: {date_str} | Duration: {duration_str}")
+    lines.append(f"{copy['date']}: {date_str} | {copy['duration']}: {duration_str}")
     lines.append("")
 
     segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
     for seg in segments:
-        speaker = seg.speaker or "Unknown"
+        speaker = _segment_export_speaker(seg, resolved_locale)
         ts = _format_timestamp_short(seg.start_ms)
         if ts:
             lines.append(f"[{speaker}, {ts}] {seg.content}")
@@ -1535,8 +1643,9 @@ def _export_txt(recording: Recording) -> str:
     return "\n".join(lines)
 
 
-def _export_srt(recording: Recording) -> str:
+def _export_srt(recording: Recording, locale: ExportLocale | None = None) -> str:
     """Export recording as SRT subtitle format."""
+    resolved_locale = _resolve_export_locale(recording, locale)
     segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
     if not segments:
         return ""
@@ -1545,7 +1654,7 @@ def _export_srt(recording: Recording) -> str:
     for i, seg in enumerate(segments, start=1):
         start_ts = _format_timestamp_srt(seg.start_ms)
         end_ts = _format_timestamp_srt(seg.end_ms)
-        speaker = seg.speaker or "Unknown"
+        speaker = _segment_export_speaker(seg, resolved_locale)
         entries.append(f"{i}")
         entries.append(f"{start_ts} --> {end_ts}")
         entries.append(f"[{speaker}] {seg.content}")
@@ -1601,13 +1710,14 @@ async def export_recording(
     user: CurrentUser,
     db: Database,
     format: Literal["markdown", "txt", "srt"] = Query(...),
+    locale: Literal["en", "ru"] | None = Query(None),
 ) -> Response:
     """Export a recording transcript in the requested format."""
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
         .options(
-            selectinload(Recording.segments),
+            selectinload(Recording.segments).selectinload(Segment.person),
             selectinload(Recording.summary),
             selectinload(Recording.highlights),
         )
@@ -1618,15 +1728,15 @@ async def export_recording(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     if format == "markdown":
-        content = _export_markdown(recording)
+        content = _export_markdown(recording, locale)
         media_type = "text/markdown; charset=utf-8"
         ext = "md"
     elif format == "txt":
-        content = _export_txt(recording)
+        content = _export_txt(recording, locale)
         media_type = "text/plain; charset=utf-8"
         ext = "txt"
     else:
-        content = _export_srt(recording)
+        content = _export_srt(recording, locale)
         media_type = "text/srt; charset=utf-8"
         ext = "srt"
 
@@ -2330,6 +2440,7 @@ async def start_summary_generation(
     recording_id: UUID,
     user: CurrentUser,
     db: Database,
+    request: StartSummaryGenerationRequest | None = Body(default=None),
 ) -> SummaryGenerationResponse:
     """Start or reuse durable summary generation for a recording."""
     recording_result = await db.execute(
@@ -2372,6 +2483,7 @@ async def start_summary_generation(
         stage="queued",
         progress_percent=5,
         transcript_hash=summary_transcript_hash(transcript),
+        instructions_override=request.instructions if request else None,
     )
     db.add(job)
     try:
@@ -2599,7 +2711,13 @@ async def generate_summary(
             transcript,
             language=summary_language,
             style=summary_style,
-            instructions=user.summary_instructions,
+            instructions=combine_summary_instructions(
+                base_instructions=user.summary_instructions,
+                personalization_instructions=await summary_personalization_instructions(
+                    db,
+                    user_id=user.id,
+                ),
+            ),
         )
 
         await apply_summary_result(db, recording=recording, summary_result=summary_result)

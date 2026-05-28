@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createRecordingShareLink,
   exportRecording,
-  generateSummary,
   getRecording,
+  startSummaryGeneration,
+  updateRecording,
 } from "@/lib/api";
 import { formatSpeakerLabel } from "@/lib/format";
 import type { Folder, RecordingDetail, Segment, Summary } from "@/lib/types";
@@ -92,6 +93,9 @@ export function RecordingDetailPanel({
   const folderCopy = FOLDER_COPY[locale] ?? FOLDER_COPY.en;
   const [tab, setTab] = useState<Tab>("transcript");
   const [generating, setGenerating] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(recording.title ?? "");
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -105,16 +109,21 @@ export function RecordingDetailPanel({
     [],
   );
 
-  const handleGenerateSummary = async () => {
+  useEffect(() => {
+    setDraftTitle(recording.title ?? "");
+    setRenameOpen(false);
+  }, [recording.id, recording.title]);
+
+  const handleGenerateSummary = async (instructions: string | null) => {
     setGenerating(true);
     setError(null);
     setNotice(null);
     try {
-      await generateSummary(recording.id);
+      await startSummaryGeneration(recording.id, { instructions });
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
       setTab("summary");
-      setNotice("Summary generated.");
+      setNotice("Summary generation queued.");
     } catch (e) {
       setError(formatError(e));
     } finally {
@@ -122,11 +131,29 @@ export function RecordingDetailPanel({
     }
   };
 
+  const handleRename = async () => {
+    const nextTitle = draftTitle.trim();
+    setRenaming(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await updateRecording(recording.id, { title: nextTitle.length > 0 ? nextTitle : null });
+      const updated = await getRecording(recording.id);
+      onRecordingUpdate?.(updated);
+      setRenameOpen(false);
+      setNotice("Recording renamed.");
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const handleExport = async (format: "markdown" | "txt" | "srt") => {
     setError(null);
     setNotice(null);
     try {
-      const blob = await exportRecording(recording.id, format);
+      const blob = await exportRecording(recording.id, format, { locale });
       const url = URL.createObjectURL(blob);
       const ext = format === "markdown" ? "md" : format;
       const title = recording.title ?? "recording";
@@ -182,7 +209,39 @@ export function RecordingDetailPanel({
     <section className="detail-panel" data-testid="recording-detail">
       <header className="detail-panel__header">
         <div className="detail-panel__title-block">
-          <h2>{recording.title ?? "(untitled recording)"}</h2>
+          {renameOpen ? (
+            <div className="inline-title-edit">
+              <input
+                aria-label="Recording title"
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                disabled={renaming}
+              />
+              <button className="ghost-button compact-button" type="button" onClick={handleRename} disabled={renaming}>
+                {renaming ? "Saving..." : "Save"}
+              </button>
+              <button
+                className="ghost-button compact-button"
+                type="button"
+                onClick={() => {
+                  setDraftTitle(recording.title ?? "");
+                  setRenameOpen(false);
+                }}
+                disabled={renaming}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="section-heading-row">
+              <h2>{recording.title ?? "(untitled recording)"}</h2>
+              {mode === "active" ? (
+                <button className="ghost-button compact-button" type="button" onClick={() => setRenameOpen(true)}>
+                  Rename
+                </button>
+              ) : null}
+            </div>
+          )}
           <div className="metadata-row">
             <span className="type-dot" aria-hidden="true" />
             <span>{recordingTypeLabel(recording.type)}</span>
@@ -403,17 +462,31 @@ function SummaryTab({
   generating,
 }: {
   summary: Summary | null;
-  onGenerate: () => void;
+  onGenerate: (instructions: string | null) => void;
   generating: boolean;
 }) {
+  const [instructions, setInstructions] = useState("");
+  const controls = (
+    <div className="summary-instructions">
+      <textarea
+        aria-label="Summary instructions"
+        value={instructions}
+        onChange={(event) => setInstructions(event.target.value)}
+        placeholder="Optional summary instructions"
+        rows={3}
+        disabled={generating}
+      />
+      <button type="button" onClick={() => onGenerate(instructions.trim() || null)} disabled={generating}>
+        {generating ? "Generating..." : summary ? "Regenerate Summary" : "Generate Summary"}
+      </button>
+    </div>
+  );
+
   if (!summary) {
     return (
       <div className="empty-state">
         <h3>No Summary</h3>
-        <p>Generate a summary to see key points and follow-ups.</p>
-        <button type="button" onClick={onGenerate} disabled={generating}>
-          {generating ? "Generating..." : "Generate Summary"}
-        </button>
+        {controls}
       </div>
     );
   }
@@ -431,8 +504,11 @@ function SummaryTab({
     <div className="reading-stack">
       <div className="section-heading-row">
         <h3>Summary</h3>
-        <CopyButton text={fullSummaryText} label="Copy Summary" />
+        <div className="metadata-row">
+          <CopyButton text={fullSummaryText} label="Copy Summary" />
+        </div>
       </div>
+      {controls}
 
       {summary.summary ? (
         <section className="note-section">
