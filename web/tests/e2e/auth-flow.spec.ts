@@ -378,7 +378,7 @@ test.describe("Auth flow", () => {
     await page.getByTestId("reset-password-submit").click();
 
     await expect(page.getByTestId("reset-password-message")).toContainText(
-      "Пароль успешно сброшен",
+      "Пароль обновлён. Войдите ниже.",
     );
     expect(authRequests.lastResetPasswordRequest()).toEqual({
       token: "reset-token",
@@ -390,7 +390,7 @@ test.describe("Auth flow", () => {
   test("app-open page exposes app link and browser fallback", async ({ page }) => {
     await page.goto("/auth/app?token=valid-token&client=macos&locale=ru");
 
-    await expect(page.locator("h1")).toContainText("Открыть приложение WaiComputer");
+    await expect(page.locator("h1")).toContainText("Открыть в WaiComputer");
     await expect(page.getByTestId("open-app-link")).toHaveAttribute(
       "href",
       "waicomputer://auth/verify?token=valid-token",
@@ -427,6 +427,21 @@ test.describe("Auth flow", () => {
       "href",
       "/login",
     );
+  });
+
+  test("Russian home page shows Web CTA and current RUB pricing", async ({ page }) => {
+    await page.goto("/ru");
+
+    const webLink = page.getByTestId("download-web-ru");
+    await expect(webLink).toHaveAttribute("href", "/dashboard");
+    await expect(webLink).toContainText("Открыть Web");
+
+    await expect(page.getByTestId("platform-web-ru")).toHaveAttribute(
+      "href",
+      "/dashboard",
+    );
+    await expect(page.getByText("999 ₽")).toBeVisible();
+    await expect(page.getByText("1290 ₽")).toHaveCount(0);
   });
 
   test("magic link verification with valid token redirects new users to onboarding", async ({ page }) => {
@@ -481,7 +496,7 @@ test.describe("Auth flow with Russian browser locale", () => {
     });
 
     await page.goto("/auth/app?token=valid-token&client=macos");
-    await expect(page.locator("h1")).toContainText("Открыть приложение WaiComputer");
+    await expect(page.locator("h1")).toContainText("Открыть в WaiComputer");
     await expect(page.getByTestId("browser-sign-in-link")).toHaveAttribute(
       "href",
       "/auth/verify?token=valid-token&locale=ru",

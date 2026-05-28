@@ -5,13 +5,14 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "../page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
+const WEB_APP_URL = "/dashboard";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/ru/privacy";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
 export const metadata: Metadata = {
-  title: "WaiComputer — AI-память для голоса",
+  title: "WaiComputer — ИИ-память для голоса",
   description:
     "Записывайте, расшифровывайте, ищите, спрашивайте Wai обо всём, что вы когда-либо говорили.",
   alternates: {
@@ -34,6 +35,33 @@ function MacIcon() {
       <path
         d="M16.2 4.2c.7-.85 1.2-2 1-3.2-1 .05-2.2.7-2.95 1.5-.65.7-1.25 1.85-1.05 3 1.15.1 2.3-.55 3-1.3Zm2.5 8.05c-.05-2.65 2.15-3.9 2.25-3.95-1.2-1.8-3.1-2.05-3.8-2.1-1.6-.15-3.15.95-3.95.95-.8 0-2.05-.95-3.4-.9-1.75.05-3.35 1.05-4.25 2.65-1.8 3.15-.45 7.8 1.3 10.35.85 1.25 1.85 2.65 3.15 2.6 1.25-.05 1.75-.85 3.3-.85 1.55 0 2 .85 3.35.8 1.4-.05 2.25-1.25 3.1-2.5 1-1.45 1.4-2.85 1.4-2.95-.05-.05-2.7-1.05-2.75-4.1Z"
         fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function WebIcon() {
+  return (
+    <svg
+      className={styles.platformIcon}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        fill="none"
+      />
+      <path
+        d="M3.5 12h17M12 3.5c2 2.2 3.1 5 3.1 8.5S14 18.3 12 20.5M12 3.5c-2 2.2-3.1 5-3.1 8.5S10 18.3 12 20.5"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinecap="round"
+        fill="none"
       />
     </svg>
   );
@@ -281,14 +309,15 @@ export default function RuHome() {
           </picture>
         </div>
         <h1 className={styles.headline}>
-          AI-память для всего, что вы говорите.
+          ИИ-память для всего, что вы говорите.
         </h1>
         <p className={styles.subhead}>
-          Запись на Mac или iPhone. Расшифровка в реальном времени. Поиск по
-          всему, что вы говорили. Спросите Wai о чём угодно.
+          Записывайте на Mac, iPhone или в браузере. Получайте расшифровку в
+          реальном времени, ищите по всей памяти и спрашивайте Wai о чём
+          угодно.
         </p>
 
-        <div className={styles.downloads}>
+        <div className={`${styles.downloads} ${styles.downloadsWide}`}>
           <a
             className={styles.downloadPrimary}
             href={MAC_DMG_URL}
@@ -297,6 +326,14 @@ export default function RuHome() {
           >
             <span className={styles.downloadTitle}>Скачать для Mac</span>
             <span className={styles.downloadMeta}>macOS 14+ · DMG</span>
+          </a>
+          <a
+            className={styles.downloadGhost}
+            href={WEB_APP_URL}
+            data-testid="download-web-ru"
+          >
+            <span className={styles.downloadTitle}>Открыть Web</span>
+            <span className={styles.downloadMeta}>Браузер · без установки</span>
           </a>
           <a
             className={styles.downloadGhost}
@@ -311,9 +348,9 @@ export default function RuHome() {
 
       <section className={styles.section} aria-labelledby="platforms-title">
         <header className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Везде, где вы говорите</p>
+          <p className={styles.eyebrow}>Там, где вы говорите</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
-            Пять платформ. Одна память.
+            Web и приложения. Одна память.
           </h2>
         </header>
         <ul className={styles.platformGrid} role="list">
@@ -330,6 +367,22 @@ export default function RuHome() {
               </span>
               <span className={styles.platformSubtitle}>
                 Нативное приложение, подписанный DMG, macOS 14+.
+              </span>
+            </a>
+          </li>
+          <li>
+            <a
+              className={`${styles.platformCard} ${styles.platformCardLive}`}
+              href={WEB_APP_URL}
+              data-testid="platform-web-ru"
+            >
+              <WebIcon />
+              <span className={styles.platformTitle}>Web</span>
+              <span className={`${styles.statusPill} ${styles.statusLive}`}>
+                Доступно
+              </span>
+              <span className={styles.platformSubtitle}>
+                Браузерная версия для записи, поиска, Ask Wai и настроек.
               </span>
             </a>
           </li>
@@ -401,8 +454,9 @@ export default function RuHome() {
             <MicIcon />
             <h3 className={styles.featureTitle}>Записывайте любой момент</h3>
             <p className={styles.featureBody}>
-              Mac, iPhone, голосовые заметки из вашей библиотеки. Расшифровка
-              появляется по ходу разговора.
+              Записывайте на Mac, iPhone или в браузере; импортируйте голосовые
+              заметки из своей библиотеки. Расшифровка появляется по ходу
+              разговора.
             </p>
           </li>
           <li className={styles.featureCard}>
@@ -411,15 +465,15 @@ export default function RuHome() {
               Ищите по всему, что вы сказали
             </h3>
             <p className={styles.featureBody}>
-              Гибридный полнотекстовый и смысловой поиск по каждой расшифровке,
-              которую вы когда-либо сохраняли.
+              Полнотекстовый и смысловой поиск по каждой расшифровке, которую
+              вы когда-либо сохраняли.
             </p>
           </li>
           <li className={styles.featureCard}>
             <BrainIcon />
             <h3 className={styles.featureTitle}>Спрашивайте Wai о чём угодно</h3>
             <p className={styles.featureBody}>
-              AI-память, которая помнит ваши слова и отвечает на ваши вопросы
+              ИИ-память, которая помнит ваши слова и отвечает на ваши вопросы
               вашим же голосом.
             </p>
           </li>
@@ -430,7 +484,7 @@ export default function RuHome() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Как это выглядит</p>
           <h2 id="screens-title" className={styles.sectionTitle}>
-            WaiComputer в браузере.
+            WaiComputer в браузере
           </h2>
         </header>
         <div className={styles.screensStrip}>
@@ -454,7 +508,7 @@ export default function RuHome() {
           </figure>
         </div>
         <p className={styles.screensCaption}>
-          WaiComputer в браузере — Mac, iPhone и любой современный браузер.
+          Браузерная версия синхронизируется с Mac и iPhone.
         </p>
       </section>
 
@@ -469,8 +523,8 @@ export default function RuHome() {
             использует ту, что победила.
           </h2>
           <p className={styles.benchmarkBody}>
-            Синтетические фикстуры и слепая арена в реальном времени по пяти
-            провайдерам — мы замеряем WER, задержку и скорость финализации.
+            Синтетические тесты и слепая live-арена по пяти провайдерам: мы
+            измеряем WER, задержку и скорость финализации.
             Полный отчёт открыт.
           </p>
           <Link
@@ -487,7 +541,8 @@ export default function RuHome() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Цены</p>
           <h2 id="pricing-teaser-title" className={styles.sectionTitle}>
-            Бесплатно для повседневных заметок. Pro — когда нужно везде.
+            Бесплатно для повседневных голосовых заметок. Pro — когда
+            WaiComputer нужен везде.
           </h2>
         </header>
         <div className={styles.pricingTeaserGrid}>
@@ -495,9 +550,9 @@ export default function RuHome() {
             <h3 className={styles.pricingTeaserPlan}>Бесплатный</h3>
             <p className={styles.pricingTeaserPrice}>0 ₽</p>
             <ul className={styles.pricingTeaserBullets} role="list">
-              <li>10 записей в неделю</li>
-              <li>Расшифровка в реальном времени</li>
-              <li>Поиск по библиотеке</li>
+              <li>3 000 слов в неделю</li>
+              <li>Память с поиском за 30 дней</li>
+              <li>ИИ-сводка к каждой записи</li>
             </ul>
           </article>
           <article
@@ -505,12 +560,12 @@ export default function RuHome() {
           >
             <h3 className={styles.pricingTeaserPlan}>Pro</h3>
             <p className={styles.pricingTeaserPrice}>
-              1290 ₽<span className={styles.pricingTeaserUnit}>/мес</span>
+              999 ₽<span className={styles.pricingTeaserUnit}>/мес</span>
             </p>
             <ul className={styles.pricingTeaserBullets} role="list">
-              <li>Без лимита на записи</li>
-              <li>Спрашивайте Wai по всей памяти</li>
-              <li>Приоритетные модели расшифровки</li>
+              <li>Без недельного лимита на слова</li>
+              <li>Постоянная память с поиском</li>
+              <li>Агенты + доступ к MCP</li>
             </ul>
           </article>
         </div>
@@ -529,7 +584,7 @@ export default function RuHome() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Вопросы</p>
           <h2 id="faq-title" className={styles.sectionTitle}>
-            Что чаще спрашивают.
+            Частые вопросы.
           </h2>
         </header>
         <dl className={styles.faqList}>
@@ -538,17 +593,18 @@ export default function RuHome() {
             <dd className={styles.faqAnswer}>
               Любое аудио, которое вы выбрали записать — встречи, звонки,
               голосовые заметки, мысли на прогулке. Mac пишет системный звук
-              плюс микрофон, iPhone — звук вокруг. Также можно импортировать
-              файлы из своей библиотеки.
+              плюс микрофон, iPhone — звук вокруг вас, а Web записывает через
+              микрофон браузера. Также можно импортировать файлы из своей
+              библиотеки.
             </dd>
           </div>
           <div className={styles.faqItem}>
             <dt className={styles.faqQuestion}>Записи конфиденциальны?</dt>
             <dd className={styles.faqAnswer}>
-              Да. Записи шифруются при передаче и на сервере, хранятся только
-              для вас, не используются для обучения моделей и не продаются.
-              Удалите запись — она исчезает с наших серверов. Полная политика —
-              на /ru/privacy.
+              Да. Записи шифруются при передаче и при хранении, доступны только
+              вам, не используются для обучения моделей и не продаются. Удалите
+              запись — она исчезнет с наших серверов. Полная политика — в
+              разделе <Link href={PRIVACY_URL}>«Конфиденциальность»</Link>.
             </dd>
           </div>
           <div className={styles.faqItem}>
@@ -556,25 +612,26 @@ export default function RuHome() {
               Какие модели используются для расшифровки?
             </dt>
             <dd className={styles.faqAnswer}>
-              Для realtime-диктовки и живой записи используется Deepgram
-              Nova-3. Для полной расшифровки записи используется ElevenLabs
-              Scribe v2. Текущая проверка стека — /ru/benchmarks/dictation.
+              Для живой диктовки и записи используется Deepgram Nova-3. Для
+              полной расшифровки записи используется ElevenLabs Scribe v2.
+              Текущая проверка стека —{" "}
+              <Link href="/ru/benchmarks/dictation">в бенчмарке диктовки</Link>.
             </dd>
           </div>
           <div className={styles.faqItem}>
             <dt className={styles.faqQuestion}>Можно ли экспортировать данные?</dt>
             <dd className={styles.faqAnswer}>
               Да. Каждую запись можно выгрузить в Markdown уже сейчас; PDF и
-              скачивание аудио — следующие на очереди. Поделённые заметки имеют
-              публичную ссылку, которую вы контролируете.
+              скачивание аудио — следующие на очереди. Заметки, которыми вы
+              делитесь, получают публичную ссылку, которую вы контролируете.
             </dd>
           </div>
           <div className={styles.faqItem}>
             <dt className={styles.faqQuestion}>Работает ли офлайн?</dt>
             <dd className={styles.faqAnswer}>
               Запись работает офлайн на Mac и iPhone — аудио ставится в очередь
-              локально и загружается, когда появляется сеть. Расшифровка и Ask
-              Wai требуют подключения.
+              локально и загружается, когда появляется сеть. Для расшифровки и
+              Ask Wai нужно подключение.
             </dd>
           </div>
         </dl>

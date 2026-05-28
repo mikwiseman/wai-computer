@@ -332,7 +332,7 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /AI-память для всего, что вы говорите/i,
+        name: /ИИ-память для всего, что вы говорите/i,
       }),
     ).toBeInTheDocument();
 
@@ -343,6 +343,11 @@ describe("app pages", () => {
     );
     expect(macLink).toHaveAttribute("download");
     expect(macLink).toHaveTextContent("Скачать для Mac");
+
+    const webLink = screen.getByTestId("download-web-ru");
+    expect(webLink).toHaveAttribute("href", "/dashboard");
+    expect(webLink).toHaveTextContent("Открыть Web");
+    expect(webLink).toHaveTextContent("Браузер");
 
     const iosLink = screen.getByTestId("download-ios-ru");
     expect(iosLink).toHaveAttribute(
@@ -359,13 +364,17 @@ describe("app pages", () => {
     expect(screen.getByText("Windows")).toBeInTheDocument();
     expect(screen.getByText("Linux")).toBeInTheDocument();
     expect(screen.getAllByText(/Скоро/i).length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByTestId("platform-web-ru")).toHaveAttribute(
+      "href",
+      "/dashboard",
+    );
 
     expect(screen.getByRole("link", { name: /войти/i })).toHaveAttribute(
       "href",
       "/login",
     );
     expect(
-      screen.getByRole("link", { name: /конфиденциальность/i }),
+      screen.getByRole("link", { name: "Конфиденциальность" }),
     ).toHaveAttribute("href", "/ru/privacy");
     expect(screen.getByRole("link", { name: "Бенчмарк" })).toHaveAttribute(
       "href",
@@ -398,6 +407,9 @@ describe("app pages", () => {
       "href",
       "/ru/pricing",
     );
+    expect(screen.getByText(/3 000 слов в неделю/i)).toBeInTheDocument();
+    expect(screen.getByText(/999 ₽/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1290 ₽/i)).not.toBeInTheDocument();
 
     // FAQ — at least one well-known question.
     expect(
