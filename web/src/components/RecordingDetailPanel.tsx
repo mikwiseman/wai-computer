@@ -99,6 +99,7 @@ export function RecordingDetailPanel({
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<"trash" | "permanent" | null>(null);
 
   const tabs = useMemo(
     () =>
@@ -304,7 +305,11 @@ export function RecordingDetailPanel({
                 <option value="srt">SRT</option>
               </select>
               {onDelete ? (
-                <button className="ghost-button danger-button" type="button" onClick={() => onDelete(recording.id)}>
+                <button
+                  className="ghost-button danger-button"
+                  type="button"
+                  onClick={() => setConfirmDelete("trash")}
+                >
                   Move to Trash
                 </button>
               ) : null}
@@ -314,7 +319,11 @@ export function RecordingDetailPanel({
               <button className="ghost-button" type="button" onClick={() => onRestore?.(recording.id)}>
                 Restore
               </button>
-              <button className="ghost-button danger-button" type="button" onClick={() => onDelete?.(recording.id)}>
+              <button
+                className="ghost-button danger-button"
+                type="button"
+                onClick={() => setConfirmDelete("permanent")}
+              >
                 Delete Permanently
               </button>
             </>
@@ -369,6 +378,56 @@ export function RecordingDetailPanel({
           <SummaryTab summary={recording.summary} onGenerate={handleGenerateSummary} generating={generating} />
         )}
       </div>
+
+      {confirmDelete ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="confirm-delete-recording"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setConfirmDelete(null);
+          }}
+        >
+          <div className="modal-card">
+            <h3>
+              {confirmDelete === "permanent"
+                ? "Delete recording permanently?"
+                : "Move recording to Trash?"}
+            </h3>
+            <p>
+              {confirmDelete === "permanent"
+                ? "This recording, its transcript, and summary will be permanently removed. This cannot be undone."
+                : "You can restore it from Trash later."}
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ghost-button danger-button"
+                data-testid="confirm-delete-recording-action"
+                onClick={() => {
+                  const target = confirmDelete;
+                  setConfirmDelete(null);
+                  if (target === "permanent") {
+                    onDelete?.(recording.id);
+                  } else {
+                    onDelete?.(recording.id);
+                  }
+                }}
+              >
+                {confirmDelete === "permanent" ? "Delete Permanently" : "Move to Trash"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -465,28 +524,17 @@ function SummaryTab({
   onGenerate: (instructions: string | null) => void;
   generating: boolean;
 }) {
-  const [instructions, setInstructions] = useState("");
-  const controls = (
-    <div className="summary-instructions">
-      <textarea
-        aria-label="Summary instructions"
-        value={instructions}
-        onChange={(event) => setInstructions(event.target.value)}
-        placeholder="Optional summary instructions"
-        rows={3}
-        disabled={generating}
-      />
-      <button type="button" onClick={() => onGenerate(instructions.trim() || null)} disabled={generating}>
-        {generating ? "Generating..." : summary ? "Regenerate Summary" : "Generate Summary"}
-      </button>
-    </div>
-  );
-
   if (!summary) {
     return (
       <div className="empty-state">
         <h3>No Summary</h3>
-        {controls}
+        <button
+          type="button"
+          onClick={() => onGenerate(null)}
+          disabled={generating}
+        >
+          {generating ? "Generating…" : "Generate Summary"}
+        </button>
       </div>
     );
   }
@@ -494,7 +542,7 @@ function SummaryTab({
   const fullSummaryText = [
     summary.summary,
     summary.key_points?.length ? "\nKey Points:\n" + summary.key_points.map((p) => `- ${p}`).join("\n") : null,
-    summary.topics?.length ? "\nTopics: " + summary.topics.join(", ") : null,
+    summary.topics?.length ? "\nTopics: " + summary.topics.join(" · ") : null,
     summary.people_mentioned?.length ? "\nPeople: " + summary.people_mentioned.join(", ") : null,
   ]
     .filter(Boolean)
@@ -508,7 +556,6 @@ function SummaryTab({
           <CopyButton text={fullSummaryText} label="Copy Summary" />
         </div>
       </div>
-      {controls}
 
       {summary.summary ? (
         <section className="note-section">
@@ -528,24 +575,10 @@ function SummaryTab({
         </section>
       ) : null}
 
-      {summary.decisions?.length ? (
-        <section className="note-section">
-          <h4>Decisions</h4>
-          <ul className="reading-list">
-            {summary.decisions.map((decision, index) => (
-              <li key={index}>
-                <strong>{String(decision.decision ?? "")}</strong>
-                {decision.context ? ` - ${String(decision.context)}` : ""}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
       {summary.topics?.length ? (
         <section className="note-section">
           <h4>Topics</h4>
-          <p className="muted-text">{summary.topics.join(" / ")}</p>
+          <p className="muted-text">{summary.topics.join(" · ")}</p>
         </section>
       ) : null}
 
@@ -553,13 +586,6 @@ function SummaryTab({
         <section className="note-section">
           <h4>People</h4>
           <p className="muted-text">{summary.people_mentioned.join(", ")}</p>
-        </section>
-      ) : null}
-
-      {summary.sentiment ? (
-        <section className="note-section">
-          <h4>Sentiment</h4>
-          <span className="status-pill">{summary.sentiment}</span>
         </section>
       ) : null}
     </div>

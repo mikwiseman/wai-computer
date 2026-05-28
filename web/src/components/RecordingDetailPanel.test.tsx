@@ -210,7 +210,7 @@ describe("RecordingDetailPanel", () => {
     });
   });
 
-  it("renders full summary with all sections", async () => {
+  it("renders Mac-parity summary (overview / key points / topics / people)", async () => {
     const recording = makeRecording({
       summary: {
         summary: "Discussed Q2 plans.",
@@ -230,8 +230,11 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("Discussed Q2 plans.")).toBeTruthy();
     expect(screen.getByText("Increase budget")).toBeTruthy();
     expect(screen.getByText("Hire 2 engineers")).toBeTruthy();
-    expect(screen.getByText(/Approve budget/)).toBeTruthy();
-    expect(screen.getByText("positive")).toBeTruthy();
+    // Mac source-of-truth: no Decisions section, no Sentiment chip on web.
+    expect(screen.queryByText(/Decisions/i)).toBeNull();
+    expect(screen.queryByText("Approve budget")).toBeNull();
+    expect(screen.queryByText("Sentiment")).toBeNull();
+    expect(screen.queryByText("positive")).toBeNull();
   });
 
   it("does not render the removed actions tab", () => {

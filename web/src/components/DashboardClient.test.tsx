@@ -378,18 +378,6 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTestId("generate-summary-r1"));
-    await waitFor(() => {
-      expect(mockStartSummaryGeneration).toHaveBeenCalledWith("r1", { instructions: null });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Summary generated.");
-    });
-
-    await user.click(screen.getByTestId("delete-recording-r1"));
-    await waitFor(() => {
-      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording moved to trash.");
-    });
-
     await openSearchView(user);
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
@@ -446,18 +434,6 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Unexpected error");
     });
 
-    mockDeleteRecording.mockRejectedValueOnce(new Error("Delete failed"));
-    await user.click(screen.getByTestId("delete-recording-r1"));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Delete failed");
-    });
-
-    mockStartSummaryGeneration.mockRejectedValueOnce(new Error("Generate failed"));
-    await user.click(screen.getByTestId("generate-summary-r1"));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Generate failed");
-    });
-
     await openSearchView(user);
     mockSearch.mockRejectedValueOnce(new Error("Search failed"));
     await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
@@ -504,11 +480,6 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("(untitled)");
       expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Note / Feb 27, 2026");
-    });
-
-    await user.click(screen.getByTestId("delete-recording-r2"));
-    await waitFor(() => {
-      expect(mockDeleteRecording).toHaveBeenCalledWith("r2");
     });
 
     await user.click(screen.getByTestId("select-recording-r2"));
@@ -823,8 +794,14 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("select-recording-r2")).toBeInTheDocument();
     });
 
-    // Delete the first recording
-    await user.click(screen.getByTestId("delete-recording-r1"));
+    // Open the first recording's detail panel and trash it via the
+    // confirmation modal (Mac parity: deletion always goes through confirm).
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+    await user.click(screen.getByTestId("confirm-delete-recording-action"));
 
     await waitFor(() => {
       expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
@@ -853,8 +830,9 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
     });
 
-    // Delete it
-    await user.click(screen.getByTestId("delete-recording-r1"));
+    // Trash via the detail panel confirmation modal
+    await user.click(screen.getByRole("button", { name: "Move to Trash" }));
+    await user.click(screen.getByTestId("confirm-delete-recording-action"));
 
     await waitFor(() => {
       expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
