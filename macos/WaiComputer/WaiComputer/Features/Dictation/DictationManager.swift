@@ -513,7 +513,7 @@ final class DictationManager: ObservableObject {
             providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, startupAudioBuffer, lease, session, liveProvider] in
                 var liveSent = 0
 
-                @Sendable func pump(_ buffer: AVAudioPCMBuffer) async -> Bool {
+                func pump(_ buffer: AVAudioPCMBuffer) async -> Bool {
                     guard !Task.isCancelled else { return false }
                     guard let data = encoder.encode(buffer) else { return true }
                     do {
