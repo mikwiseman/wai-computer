@@ -132,6 +132,12 @@ interface DashboardCopy {
     durationLabel: string;
     wordsLabel: (n: number) => string;
     refresh: string;
+    clearAll: string;
+    clearAllConfirm: string;
+    clearAllCancel: string;
+    clearAllPrompt: string;
+    deleted: string;
+    deleteEntry: string;
   };
   // Dictionary view
   dictionary: {
@@ -293,12 +299,19 @@ const COPY: Record<Locale, DashboardCopy> = {
       subtitle: "Every voice-to-text insert from Mac, Windows, and Linux.",
       emptyTitle: "No Dictation Yet",
       emptyBody: "Open WaiComputer on Mac or Windows to start dictating.",
-      notAvailableTitle: "Dictation History Coming Soon",
+      notAvailableTitle: "Dictation History Unavailable",
       notAvailableBody:
-        "Your dictation history isn't synced to the web dashboard yet. Use the Mac, Windows, or Linux apps.",
+        "Couldn't reach the dictation service. Try refreshing in a moment.",
       durationLabel: "duration",
       wordsLabel: (n) => `${n} ${n === 1 ? "word" : "words"}`,
       refresh: "Refresh",
+      clearAll: "Clear All",
+      clearAllConfirm: "Clear all dictation history?",
+      clearAllCancel: "Cancel",
+      clearAllPrompt:
+        "Every insert from your Mac, Windows, and Linux clients will be removed. This cannot be undone.",
+      deleted: "Entry removed.",
+      deleteEntry: "Delete entry",
     },
     dictionary: {
       title: "Dictionary",
@@ -465,13 +478,20 @@ const COPY: Record<Locale, DashboardCopy> = {
       subtitle: "Каждый текст, продиктованный голосом, из Mac, Windows и Linux.",
       emptyTitle: "Истории пока нет",
       emptyBody: "Откройте WaiComputer на Mac или Windows, чтобы начать.",
-      notAvailableTitle: "История диктовки скоро появится",
+      notAvailableTitle: "История диктовки недоступна",
       notAvailableBody:
-        "Пока история диктовки не синхронизируется с веб-дашбордом. Используйте Mac, Windows или Linux.",
+        "Не удалось загрузить историю. Попробуйте обновить через минуту.",
       durationLabel: "длительность",
       wordsLabel: (n) =>
         `${n} ${n === 1 ? "слово" : n >= 2 && n <= 4 ? "слова" : "слов"}`,
       refresh: "Обновить",
+      clearAll: "Очистить",
+      clearAllConfirm: "Очистить всю историю диктовки?",
+      clearAllCancel: "Отмена",
+      clearAllPrompt:
+        "Все записи из приложений Mac, Windows и Linux будут удалены. Это нельзя отменить.",
+      deleted: "Запись удалена.",
+      deleteEntry: "Удалить запись",
     },
     dictionary: {
       title: "Словарь",
@@ -712,6 +732,7 @@ export function DashboardClient() {
   const [dictationEntriesLoading, setDictationEntriesLoading] = useState(false);
   const [dictationEntriesLoadedOnce, setDictationEntriesLoadedOnce] = useState(false);
   const [dictationEntriesUnavailable, setDictationEntriesUnavailable] = useState(false);
+  const [historyConfirmClear, setHistoryConfirmClear] = useState(false);
 
   // Dictionary words
   const [dictionaryWords, setDictionaryWords] = useState<DictationDictionaryWord[]>([]);
@@ -1267,6 +1288,37 @@ export function DashboardClient() {
       setMessage(formatError(error));
       // Reload to reconcile the optimistic state with the canonical truth.
       await loadRecordingsState();
+    }
+  }
+
+  // Dictation history handlers ---------------------------------------------
+  async function handleDeleteDictationEntry(entryId: string) {
+    setMessage(null);
+    const previous = dictationEntries;
+    setDictationEntries((current) =>
+      current.filter((entry) => entry.client_entry_id !== entryId),
+    );
+    try {
+      await deleteDictationEntry(entryId);
+      setMessage(copy.history.deleted);
+    } catch (error: unknown) {
+      setDictationEntries(previous);
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleClearAllDictation() {
+    setMessage(null);
+    const previous = dictationEntries;
+    setDictationEntries([]);
+    try {
+      await Promise.all(
+        previous.map((entry) => deleteDictationEntry(entry.client_entry_id)),
+      );
+      setMessage(copy.history.deleted);
+    } catch (error: unknown) {
+      setDictationEntries(previous);
+      setMessage(formatError(error));
     }
   }
 
@@ -2004,15 +2056,27 @@ export function DashboardClient() {
             <h3>{copy.history.title}</h3>
             <p className="muted-text">{copy.history.subtitle}</p>
           </div>
-          <button
-            type="button"
-            className="ghost-button compact-button"
-            data-testid="history-refresh"
-            disabled={dictationEntriesLoading}
-            onClick={() => void loadDictationEntriesState()}
-          >
-            {copy.history.refresh}
-          </button>
+          <div className="row-actions">
+            {dictationEntries.length > 0 ? (
+              <button
+                type="button"
+                className="ghost-button compact-button danger-button"
+                data-testid="history-clear-all"
+                onClick={() => setHistoryConfirmClear(true)}
+              >
+                {copy.history.clearAll}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              data-testid="history-refresh"
+              disabled={dictationEntriesLoading}
+              onClick={() => void loadDictationEntriesState()}
+            >
+              {copy.history.refresh}
+            </button>
+          </div>
         </header>
         {dictationEntriesUnavailable ? (
           <div className="empty-state" data-testid="history-unavailable">
@@ -2035,22 +2099,74 @@ export function DashboardClient() {
                 key={entry.client_entry_id}
                 data-testid={`history-entry-${entry.client_entry_id}`}
               >
-                <p className="dictation-history__text">
-                  {entry.cleaned_text ?? entry.raw_text}
-                </p>
-                <p className="metadata-row">
-                  <span>{formatDate(entry.occurred_at, locale)}</span>
-                  {entry.duration_seconds > 0 ? (
-                    <span>
-                      {copy.history.durationLabel} {formatDuration(Math.round(entry.duration_seconds))}
-                    </span>
-                  ) : null}
-                  <span>{copy.history.wordsLabel(entry.word_count)}</span>
-                </p>
+                <div className="dictation-history__body">
+                  <p className="dictation-history__text">
+                    {entry.cleaned_text ?? entry.raw_text}
+                  </p>
+                  <p className="metadata-row">
+                    <span>{formatDate(entry.occurred_at, locale)}</span>
+                    {entry.duration_seconds > 0 ? (
+                      <span>
+                        {copy.history.durationLabel} {formatDuration(Math.round(entry.duration_seconds))}
+                      </span>
+                    ) : null}
+                    <span>{copy.history.wordsLabel(entry.word_count)}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  aria-label={copy.history.deleteEntry}
+                  data-testid={`delete-history-${entry.client_entry_id}`}
+                  onClick={() =>
+                    void handleDeleteDictationEntry(entry.client_entry_id)
+                  }
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>
         )}
+
+        {historyConfirmClear ? (
+          <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            data-testid="history-confirm-clear"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setHistoryConfirmClear(false);
+              }
+            }}
+          >
+            <div className="modal-card">
+              <h3>{copy.history.clearAllConfirm}</h3>
+              <p>{copy.history.clearAllPrompt}</p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setHistoryConfirmClear(false)}
+                >
+                  {copy.history.clearAllCancel}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button danger-button"
+                  data-testid="history-confirm-clear-action"
+                  onClick={() => {
+                    setHistoryConfirmClear(false);
+                    void handleClearAllDictation();
+                  }}
+                >
+                  {copy.history.clearAll}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     );
   }
