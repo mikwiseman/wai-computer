@@ -48,6 +48,7 @@ import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { PasswordField } from "@/components/PasswordField";
+import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
 import type {
   DictationDictionaryWord,
@@ -1447,7 +1448,14 @@ export function DashboardClient() {
   if (initializing) {
     return (
       <div className="loading-screen">
-        <p data-testid="dashboard-loading">{copy.loadingDashboard}</p>
+        <p data-testid="dashboard-loading" className="visually-hidden">
+          {copy.loadingDashboard}
+        </p>
+        <div className="dashboard-skeleton" aria-hidden="true">
+          <Skeleton width="60%" height="1.4rem" />
+          <Skeleton height="0.8rem" lines={3} />
+          <Skeleton height="0.8rem" lines={3} />
+        </div>
       </div>
     );
   }
@@ -1712,7 +1720,7 @@ export function DashboardClient() {
         </div>
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" id="main">
         <header className="workspace-header">
           <div>
             <h2 data-testid="workspace-title">{workspaceTitle}</h2>
@@ -2084,9 +2092,10 @@ export function DashboardClient() {
             <p>{copy.history.notAvailableBody}</p>
           </div>
         ) : dictationEntriesLoading && dictationEntries.length === 0 ? (
-          <p className="muted-text" data-testid="history-loading">
-            {copy.loadingDashboard}
-          </p>
+          <div data-testid="history-loading" className="dashboard-skeleton">
+            <Skeleton height="0.8rem" lines={3} />
+            <Skeleton height="0.8rem" lines={3} />
+          </div>
         ) : dictationEntries.length === 0 ? (
           <div className="empty-state" data-testid="history-empty">
             <h3>{copy.history.emptyTitle}</h3>
@@ -2260,9 +2269,9 @@ export function DashboardClient() {
             <p>{copy.dictionary.notAvailableBody}</p>
           </div>
         ) : dictionaryLoading && dictionaryWords.length === 0 ? (
-          <p className="muted-text" data-testid="dictionary-loading">
-            {copy.loadingDashboard}
-          </p>
+          <div data-testid="dictionary-loading" className="dashboard-skeleton">
+            <Skeleton height="0.8rem" lines={3} />
+          </div>
         ) : dictionaryWords.length === 0 ? (
           <div className="empty-state" data-testid="dictionary-empty">
             <h3>{copy.dictionary.emptyTitle}</h3>
