@@ -163,6 +163,19 @@
     var(--font-mono-large-line) var(--font-family-mono);
 
   /* ---------------------------------------------------------------------
+   * Motion — durations + easings used by skeletons, toasts, transitions,
+   * and the modal fade. Keep curves Apple-flavoured (cubic-bezier matching
+   * SwiftUI's default ease-out + a spring-ish "emphasized" curve).
+   * --------------------------------------------------------------------- */
+  --motion-duration-instant: 80ms;
+  --motion-duration-fast: 140ms;
+  --motion-duration-base: 220ms;
+  --motion-duration-slow: 380ms;
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* ---------------------------------------------------------------------
    * Radius — globals.css uses 8 px ubiquitously; keep that default.
    * --------------------------------------------------------------------- */
   --radius-sm: 6px;

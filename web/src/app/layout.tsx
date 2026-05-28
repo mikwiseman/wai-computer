@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
+import { ToastProvider } from "@/components/Toast";
 import "@/styles/tokens.css";
 import "./globals.css";
 
@@ -59,7 +60,10 @@ export default async function RootLayout({
               "(function(){try{var t=localStorage.getItem('wai_theme');if(t)document.documentElement.setAttribute('data-theme',t);var a=localStorage.getItem('wai_accent');if(a)document.documentElement.setAttribute('data-accent',a);}catch(e){}})();",
           }}
         />
-        {children}
+        <a className="skip-link" href="#main">
+          {lang === "ru" ? "Перейти к содержимому" : "Skip to content"}
+        </a>
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );
