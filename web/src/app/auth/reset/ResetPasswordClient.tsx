@@ -25,6 +25,7 @@ const COPY = {
     success: "Password updated. Sign in below.",
     generic: "Password reset failed.",
     back: "Back to login",
+    tagline: "Your second brain",
   },
   ru: {
     title: "Сброс пароля",
@@ -38,6 +39,7 @@ const COPY = {
     success: "Пароль обновлён. Войдите ниже.",
     generic: "Не удалось сбросить пароль.",
     back: "Назад ко входу",
+    tagline: "Твой второй мозг",
   },
 };
 
@@ -107,12 +109,27 @@ export function ResetPasswordClient({ token, locale }: ResetPasswordClientProps)
   }
 
   return (
-    <section className="auth-card auth-card--compact">
-      <div className="auth-card__brand">
-        <div className="brand-mark" aria-hidden="true" />
-        <span>WaiComputer</span>
-      </div>
-      <h1>{copy.title}</h1>
+    <section className="auth-card">
+      <header className="auth-card__hero" aria-label="WaiComputer">
+        <picture>
+          <source srcSet="/app-icon-dark.png" media="(prefers-color-scheme: dark)" />
+          <img
+            className="auth-card__icon"
+            src="/app-icon.png"
+            width={64}
+            height={64}
+            alt=""
+            aria-hidden="true"
+          />
+        </picture>
+        <span className="auth-card__wordmark">WaiComputer</span>
+        <span className="auth-card__tagline">{copy.tagline}</span>
+      </header>
+
+      <header className="auth-card__header">
+        <h1>{copy.title}</h1>
+      </header>
+
       {!isSuccess ? (
         <form onSubmit={onSubmit} className="auth-form">
           <PasswordField
