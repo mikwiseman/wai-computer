@@ -4,6 +4,7 @@ import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
+const WEB_APP_URL = "/dashboard";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
 
@@ -20,6 +21,33 @@ function MacIcon() {
       <path
         d="M16.2 4.2c.7-.85 1.2-2 1-3.2-1 .05-2.2.7-2.95 1.5-.65.7-1.25 1.85-1.05 3 1.15.1 2.3-.55 3-1.3Zm2.5 8.05c-.05-2.65 2.15-3.9 2.25-3.95-1.2-1.8-3.1-2.05-3.8-2.1-1.6-.15-3.15.95-3.95.95-.8 0-2.05-.95-3.4-.9-1.75.05-3.35 1.05-4.25 2.65-1.8 3.15-.45 7.8 1.3 10.35.85 1.25 1.85 2.65 3.15 2.6 1.25-.05 1.75-.85 3.3-.85 1.55 0 2 .85 3.35.8 1.4-.05 2.25-1.25 3.1-2.5 1-1.45 1.4-2.85 1.4-2.95-.05-.05-2.7-1.05-2.75-4.1Z"
         fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function WebIcon() {
+  return (
+    <svg
+      className={styles.platformIcon}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        fill="none"
+      />
+      <path
+        d="M3.5 12h17M12 3.5c2 2.2 3.1 5 3.1 8.5S14 18.3 12 20.5M12 3.5c-2 2.2-3.1 5-3.1 8.5S10 18.3 12 20.5"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinecap="round"
+        fill="none"
       />
     </svg>
   );
@@ -270,11 +298,11 @@ export default function Home() {
           An AI second brain for everything you say.
         </h1>
         <p className={styles.subhead}>
-          Record on Mac or iPhone. Transcribed in real time. Search across
-          everything. Ask Wai anything.
+          Record on Mac, iPhone, or right here in your browser. Transcribed in
+          real time. Search across everything. Ask Wai anything.
         </p>
 
-        <div className={styles.downloads}>
+        <div className={`${styles.downloads} ${styles.downloadsWide}`}>
           <a
             className={styles.downloadPrimary}
             href={MAC_DMG_URL}
@@ -283,6 +311,14 @@ export default function Home() {
           >
             <span className={styles.downloadTitle}>Download for Mac</span>
             <span className={styles.downloadMeta}>macOS 14+ · DMG</span>
+          </a>
+          <a
+            className={styles.downloadGhost}
+            href={WEB_APP_URL}
+            data-testid="download-web"
+          >
+            <span className={styles.downloadTitle}>Open in browser</span>
+            <span className={styles.downloadMeta}>Web · no install</span>
           </a>
           <a
             className={styles.downloadGhost}
@@ -299,7 +335,7 @@ export default function Home() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Available everywhere you talk</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
-            Five platforms. One memory.
+            Six platforms. One memory.
           </h2>
         </header>
         <ul className={styles.platformGrid} role="list">
@@ -316,6 +352,22 @@ export default function Home() {
               </span>
               <span className={styles.platformSubtitle}>
                 Native app, signed DMG, macOS 14+.
+              </span>
+            </a>
+          </li>
+          <li>
+            <a
+              className={`${styles.platformCard} ${styles.platformCardLive}`}
+              href={WEB_APP_URL}
+              data-testid="platform-web"
+            >
+              <WebIcon />
+              <span className={styles.platformTitle}>Web</span>
+              <span className={`${styles.statusPill} ${styles.statusLive}`}>
+                Available now
+              </span>
+              <span className={styles.platformSubtitle}>
+                Works in any modern browser — no install needed.
               </span>
             </a>
           </li>
