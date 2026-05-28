@@ -11,6 +11,7 @@ import OnboardingPage from "./onboarding/page";
 import SharedRecordingPage from "./share/[token]/page";
 import Home from "./page";
 import RuHome from "./ru/page";
+import RuPricingPage from "./ru/pricing/page";
 import DictationBenchmarkPage from "./benchmarks/dictation/page";
 import RuDictationBenchmarkPage from "./ru/benchmarks/dictation/page";
 import BillingCancelPage from "./billing/cancel/page";
@@ -410,11 +411,42 @@ describe("app pages", () => {
     expect(screen.getByText(/3 000 слов в неделю/i)).toBeInTheDocument();
     expect(screen.getByText(/999 ₽/i)).toBeInTheDocument();
     expect(screen.queryByText(/1290 ₽/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Оплата и документы" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("МИР")).toBeInTheDocument();
+    expect(screen.getByText("Visa")).toBeInTheDocument();
+    expect(screen.getByText("Mastercard")).toBeInTheDocument();
+    expect(screen.getByText("T-Pay")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Т-Банк/i })).toHaveAttribute(
+      "href",
+      "https://www.tbank.ru/",
+    );
+    expect(screen.getByText(/ООО "ВАЙВАЙ"/i)).toBeInTheDocument();
+    expect(screen.getByText(/ИНН: 9714075304/i)).toBeInTheDocument();
+    expect(screen.getByText(/ул\. Большая Садовая, 5\/1/i)).toBeInTheDocument();
 
     // FAQ — at least one well-known question.
     expect(
       screen.getByText(/Что WaiComputer записывает\?/i),
     ).toBeInTheDocument();
+  });
+
+  it("renders Russian pricing with T-Bank payment compliance details", () => {
+    render(<RuPricingPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Простые цены." })).toBeInTheDocument();
+    expect(screen.getByText("RUB через Т-Банк")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Оплата в рублях" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/цифровая услуга/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/доступ предоставляется после успешной оплаты/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/возврат/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("link", { name: /tbank\.ru/i })).toHaveAttribute(
+      "href",
+      "https://www.tbank.ru/",
+    );
   });
 
   it("renders dictation benchmark page", () => {
@@ -485,9 +517,14 @@ describe("app pages", () => {
 
     render(<RuPrivacyPage />);
     expect(screen.getByRole("heading", { level: 1, name: "Политика конфиденциальности" })).toBeInTheDocument();
+    expect(screen.getByText(/Безопасная передача платежных данных/i)).toBeInTheDocument();
+    expect(screen.getByText(/не хранит номера банковских карт/i)).toBeInTheDocument();
 
     render(<RuTermsPage />);
-    expect(screen.getByRole("heading", { level: 1, name: "Условия сервиса" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Условия сервиса и публичная оферта" })).toBeInTheDocument();
+    expect(screen.getByText(/Возврат и отмена/i)).toBeInTheDocument();
+    expect(screen.getByText(/ООО "ВАЙВАЙ"/i)).toBeInTheDocument();
+    expect(screen.getByText(/ИНН: 9714075304/i)).toBeInTheDocument();
   });
 });
 

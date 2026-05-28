@@ -76,7 +76,7 @@ export default function PrivacyPage() {
               WaiComputer offers an optional voice-sharing directory. Sharing
               is off by default. If you turn it on in Settings, your first
               name, last name, and a derived voice fingerprint are stored in
-              a global match index so other users' recordings can display
+              a global match index so other users&apos; recordings can display
               your name when your voice is detected. We do not share your
               audio, transcripts, summaries, or recording metadata through
               this directory. You can turn sharing off at any time, which

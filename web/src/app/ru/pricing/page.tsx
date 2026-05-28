@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { PricingCards } from "@/components/PricingCards";
+import { PaymentComplianceSection } from "../PaymentCompliance";
 import styles from "../../page.module.css";
 
 export const metadata: Metadata = {
@@ -33,6 +34,7 @@ export default function RuPricingPage() {
         </nav>
       </header>
       <PricingCards locale="ru" currency="rub" />
+      <PaymentComplianceSection eyebrow="Платежи" title="Оплата в рублях" />
     </main>
   );
 }

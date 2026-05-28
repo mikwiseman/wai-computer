@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { PaymentComplianceSection } from "./PaymentCompliance";
 import styles from "../page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
@@ -579,6 +580,8 @@ export default function RuHome() {
           </Link>
         </p>
       </section>
+
+      <PaymentComplianceSection eyebrow="Оплата" title="Оплата и документы" />
 
       <section className={styles.section} aria-labelledby="faq-title">
         <header className={styles.sectionHeader}>

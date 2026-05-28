@@ -574,6 +574,102 @@
   color: var(--accent);
 }
 
+/* Payment compliance ----------------------------------------------------- */
+
+.complianceSection {
+  gap: clamp(1.2rem, 2.6vw, 1.8rem);
+}
+
+.complianceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.8rem, 1.5vw, 1rem);
+}
+
+.complianceCard {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: clamp(1rem, 1.8vw, 1.25rem);
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+}
+
+.complianceCard h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 760;
+}
+
+.complianceCard p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.complianceCard a {
+  color: var(--accent-strong);
+  font-weight: 720;
+}
+
+.paymentMarks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.paymentMark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 34px;
+  padding: 0 0.7rem;
+  border-radius: 8px;
+  background: var(--panel-subtle);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 780;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+
+.paymentBankMark {
+  background: #ffe14f;
+  border-color: #efd03b;
+  color: #161616;
+}
+
+.sellerDetails {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.sellerDetails div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.sellerDetails dt {
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.sellerDetails dd {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 /* FAQ ------------------------------------------------------------------- */
 
 .faqList {
@@ -654,6 +750,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .complianceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .featureGrid {
     grid-template-columns: 1fr;
   }
@@ -673,6 +773,10 @@
   }
 
   .pricingTeaserGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .complianceGrid {
     grid-template-columns: 1fr;
   }
 
