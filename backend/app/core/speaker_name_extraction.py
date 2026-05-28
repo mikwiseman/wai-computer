@@ -47,9 +47,7 @@ _MAX_EXTRACTED_NAME_CHARS = 80
 
 
 class _NameAssignment(BaseModel):
-    speaker: str = Field(
-        description="The speaker cluster label exactly as shown, e.g. 'speaker_0'."
-    )
+    speaker: str = Field(description="Speaker cluster label exactly as shown.")
     name: str = Field(description="Real name as introduced.")
     confidence: Literal["high", "medium", "low"]
     evidence: str = Field(description="The transcript phrase that justifies this assignment.")
@@ -279,9 +277,8 @@ async def apply_extracted_names(
             aliases = list(target.aliases or [])
             target_display_name = target.display_name.strip().lower()
             extracted_name = assignment.name.strip().lower()
-            if (
-                not _alias_present(aliases, assignment.name)
-                and target_display_name != extracted_name
+            if not _alias_present(aliases, assignment.name) and (
+                target_display_name != extracted_name
             ):
                 aliases.append(assignment.name)
                 target.aliases = aliases
