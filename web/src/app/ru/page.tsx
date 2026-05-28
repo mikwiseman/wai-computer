@@ -351,7 +351,7 @@ export default function RuHome() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Там, где вы говорите</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
-            Web и приложения. Одна память.
+            Шесть платформ. Одна память.
           </h2>
         </header>
         <ul className={styles.platformGrid} role="list">
