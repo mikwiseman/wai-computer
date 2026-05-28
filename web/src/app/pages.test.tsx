@@ -414,10 +414,11 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "Оплата и документы" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("МИР")).toBeInTheDocument();
-    expect(screen.getByText("Visa")).toBeInTheDocument();
-    expect(screen.getByText("Mastercard")).toBeInTheDocument();
-    expect(screen.getByText("T-Pay")).toBeInTheDocument();
+    expect(screen.getByAltText("МИР")).toBeInTheDocument();
+    expect(screen.getByAltText("Visa")).toBeInTheDocument();
+    expect(screen.getByAltText("Mastercard")).toBeInTheDocument();
+    expect(screen.getByAltText("Т-Банк T-Pay")).toBeInTheDocument();
+    expect(screen.getByText("tbank.ru")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Т-Банк/i })).toHaveAttribute(
       "href",
       "https://www.tbank.ru/",

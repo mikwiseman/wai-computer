@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import styles from "../page.module.css";
 
 const SUPPORT_EMAIL = "hi@waiwai.is";
@@ -11,14 +12,20 @@ const SELLER_ADDRESS = "г. Москва, ул. Большая Садовая, 5
 function PaymentMarks() {
   return (
     <div className={styles.paymentMarks} aria-label="Принимаемые способы оплаты">
-      <span className={styles.paymentMark} role="img" aria-label="Платежная система МИР">
-        МИР
+      <span className={styles.paymentMark}>
+        <Image className={styles.paymentLogo} src="/payment-logos/mir.svg" alt="МИР" width={78} height={34} />
       </span>
-      <span className={styles.paymentMark} role="img" aria-label="Visa">
-        Visa
+      <span className={styles.paymentMark}>
+        <Image className={styles.paymentLogo} src="/payment-logos/visa.svg" alt="Visa" width={78} height={34} />
       </span>
-      <span className={styles.paymentMark} role="img" aria-label="Mastercard">
-        Mastercard
+      <span className={styles.paymentMark}>
+        <Image
+          className={styles.paymentLogo}
+          src="/payment-logos/mastercard.svg"
+          alt="Mastercard"
+          width={110}
+          height={34}
+        />
       </span>
       <a
         className={`${styles.paymentMark} ${styles.paymentBankMark}`}
@@ -26,9 +33,14 @@ function PaymentMarks() {
         target="_blank"
         rel="noopener noreferrer"
       >
-        <span>Т-Банк</span>
-        <span>T-Pay</span>
-        <span>tbank.ru</span>
+        <Image
+          className={styles.paymentLogo}
+          src="/payment-logos/tbank-tpay.svg"
+          alt="Т-Банк T-Pay"
+          width={150}
+          height={34}
+        />
+        <span className={styles.paymentLogoCaption}>tbank.ru</span>
       </a>
     </div>
   );
