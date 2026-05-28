@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.core.voice_embedding import MODEL_NAME
 from app.core.voice_identification import _best_public_directory_match
-from app.core.voice_sharing import unpublish_voice_sharing
+from app.core.voice_sharing import refresh_published_voiceprint_if_any, unpublish_voice_sharing
 from app.models.person import Person, PublicVoiceprint, Voiceprint
 from app.models.recording import Recording, Segment
 from app.models.user import User
@@ -188,6 +188,29 @@ async def test_voice_sharing_rejects_reserved_directory_name(
 
     assert response.status_code == 409
     assert "reserved" in response.json()["detail"]
+
+
+async def test_refresh_published_voiceprint_swallows_prerequisite_failure(db_session):
+    unit_embedding = [0.0] * 192
+    unit_embedding[9] = 1.0
+    publisher = await _seed_published_user(
+        db_session=db_session,
+        email="publisher-refresh-failure@example.com",
+        first_name="Mik",
+        last_name="Wiseman",
+        embedding=unit_embedding,
+    )
+    publisher.first_name = ""
+    await db_session.flush()
+
+    await refresh_published_voiceprint_if_any(db=db_session, user=publisher)
+
+    public = (
+        await db_session.execute(
+            select(PublicVoiceprint).where(PublicVoiceprint.user_id == publisher.id)
+        )
+    ).scalar_one()
+    assert public.first_name == "Mik"
 
 
 async def test_voice_sharing_endpoints_require_auth(client):

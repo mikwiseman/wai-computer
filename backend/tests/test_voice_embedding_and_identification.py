@@ -269,6 +269,42 @@ async def test_identify_calls_best_match_when_embedding_succeeds() -> None:
     assert out == {"Speaker 1": (person_id, 0.85)}
 
 
+@pytest.mark.asyncio
+async def test_identify_uses_public_directory_when_private_voiceprints_do_not_match() -> None:
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    db = MagicMock(spec=AsyncSession)
+    person_id = uuid.uuid4()
+    results = [_tr("Speaker 1", 0, 10_000)]
+    fake_embedding = [0.5] * EMBEDDING_DIM
+
+    with (
+        patch(
+            "app.core.voice_identification.compute_voice_embedding_spans",
+            return_value=fake_embedding,
+        ),
+        patch(
+            "app.core.voice_identification._best_voiceprint_match",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.core.voice_identification._best_public_directory_match",
+            new=AsyncMock(return_value=(person_id, 0.77)),
+        ) as directory_match,
+    ):
+        out = await identify_speakers_for_recording(
+            db=db,
+            user_id=uuid.uuid4(),
+            staged_audio_path=Path("/tmp/x.wav"),
+            transcript_results=results,
+        )
+
+    assert out == {"Speaker 1": (person_id, 0.77)}
+    directory_match.assert_awaited_once()
+
+
 # ---------------------------------------------------------------------------
 # _best_voiceprint_match
 # ---------------------------------------------------------------------------

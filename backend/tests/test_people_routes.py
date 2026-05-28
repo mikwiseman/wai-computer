@@ -384,3 +384,78 @@ async def test_rematch_returns_422_when_no_speaker_embeddings(client, db_session
     )
     assert resp.status_code == 422
     assert "speaker voice embeddings" in resp.json()["detail"]
+
+
+async def test_delete_voiceprint_removes_one_sample(client, db_session):
+    """User can drop a single voiceprint without losing the Person."""
+    from sqlalchemy import select
+
+    from app.core.voice_embedding import MODEL_NAME
+    from app.models import Person, User, Voiceprint
+
+    auth = await _register(client)
+    create = await client.post(
+        "/api/people", json={"display_name": "Mik"}, headers=auth
+    )
+    person_id = create.json()["id"]
+
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    voiceprint = Voiceprint(
+        user_id=user.id,
+        person_id=person_id,
+        embedding=[0.0] * 192,
+        model=MODEL_NAME,
+        duration_s=6.0,
+    )
+    db_session.add(voiceprint)
+    await db_session.flush()
+
+    delete = await client.delete(
+        f"/api/people/{person_id}/voiceprints/{voiceprint.id}", headers=auth
+    )
+    assert delete.status_code == 204
+
+    remaining = (
+        await db_session.execute(
+            select(Voiceprint).where(Voiceprint.person_id == person_id)
+        )
+    ).scalars().all()
+    assert remaining == []
+
+    # Person row still exists.
+    person = (
+        await db_session.execute(select(Person).where(Person.id == person_id))
+    ).scalar_one_or_none()
+    assert person is not None
+
+
+async def test_delete_voiceprint_returns_404_for_other_user(client, db_session):
+    from sqlalchemy import select
+
+    from app.core.voice_embedding import MODEL_NAME
+    from app.models import Voiceprint
+
+    auth = await _register(client)
+    create = await client.post(
+        "/api/people", json={"display_name": "Owner"}, headers=auth
+    )
+    person_id = create.json()["id"]
+
+    from app.models import User
+
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    voiceprint = Voiceprint(
+        user_id=user.id,
+        person_id=person_id,
+        embedding=[0.0] * 192,
+        model=MODEL_NAME,
+        duration_s=6.0,
+    )
+    db_session.add(voiceprint)
+    await db_session.flush()
+
+    other_auth = await _register(client)
+    delete = await client.delete(
+        f"/api/people/{person_id}/voiceprints/{voiceprint.id}", headers=other_auth
+    )
+    assert delete.status_code == 404
