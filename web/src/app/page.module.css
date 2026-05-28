@@ -321,26 +321,23 @@
   color: var(--ink-soft);
 }
 
-.platformTitle {
-  font-size: 1.02rem;
-  font-weight: 760;
-  color: var(--ink);
-}
-
 .statusPill {
   justify-self: start;
-  padding: 0.2rem 0.55rem;
+  padding: 0.18rem 0.55rem;
   border-radius: 999px;
   font-size: 0.7rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: none;
   border: 1px solid transparent;
 }
 
+/* Live status — solid accent fill, white-ish text. Reads as "this is the
+ * primary, available product" — same hierarchy as the Mac "Available now"
+ * status in onboarding. */
 .statusLive {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .statusBeta {
@@ -349,14 +346,21 @@
 }
 
 .statusSoon {
-  background: transparent;
+  background: var(--surface-subtle);
   color: var(--ink-faint);
-  border-color: var(--border);
+  border-color: var(--surface-hairline);
+}
+
+.platformTitle {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.003em;
+  color: var(--ink);
 }
 
 .platformSubtitle {
   color: var(--ink-soft);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   line-height: 1.4;
 }
 
@@ -460,30 +464,36 @@
   gap: 0;
 }
 
+/* Benchmark spotlight — the one place we use a dark contrast panel, treated
+ * like the Mac's command-palette material: deep neutral surface, amber
+ * eyebrow + white CTA. No marketing-style glow shadows. */
 .benchmarkCard {
   display: grid;
-  gap: 1rem;
+  gap: 1.1rem;
   padding: clamp(1.5rem, 4vw, 2.6rem);
-  border-radius: 18px;
+  border-radius: 12px;
   background: #111216;
   color: #f7f7fb;
-  box-shadow: 0 28px 80px rgba(17, 18, 22, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .benchmarkEyebrow {
   margin: 0;
-  color: #a99dff;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  /* Amber on dark surface — same accent token as the rest of the page. */
+  color: var(--accent-amber);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .benchmarkTitle {
   margin: 0;
-  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
-  font-weight: 800;
-  line-height: 1.1;
+  font-family: var(--font-family-serif);
+  font-size: clamp(1.7rem, 3.5vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.012em;
   max-width: 780px;
   color: inherit;
   text-wrap: balance;
@@ -492,7 +502,7 @@
 .benchmarkBody {
   margin: 0;
   max-width: 680px;
-  color: #c8ccda;
+  color: rgba(247, 247, 251, 0.72);
   font-size: 1rem;
   line-height: 1.55;
 }
@@ -501,20 +511,19 @@
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  min-height: 38px;
   padding: 0 1.1rem;
   border-radius: 8px;
   background: #fff;
   color: #111216;
-  font-weight: 780;
+  font-weight: 600;
   font-size: 0.95rem;
   text-decoration: none;
-  transition: transform 0.16s ease, background 0.16s ease;
+  transition: background 0.16s ease;
 }
 
 .benchmarkCta:hover {
-  background: #ece9ff;
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 /* Pricing teaser --------------------------------------------------------- */
@@ -528,37 +537,36 @@
 .pricingTeaserCard {
   display: grid;
   align-content: start;
-  gap: 0.85rem;
-  padding: clamp(1.2rem, 2.4vw, 1.8rem);
-  border-radius: 14px;
+  gap: 0.95rem;
+  padding: clamp(1.3rem, 2.4vw, 1.9rem);
+  border-radius: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
 }
 
 .pricingTeaserCardPro {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: linear-gradient(
-    180deg,
-    var(--panel) 0%,
-    color-mix(in srgb, var(--accent-soft) 80%, var(--panel)) 100%
-  );
-  box-shadow: 0 18px 36px rgba(47, 117, 109, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: var(--accent-soft);
 }
 
 .pricingTeaserPlan {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 760;
-  letter-spacing: 0.02em;
-  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
   text-transform: uppercase;
 }
 
 .pricingTeaserPrice {
   margin: 0;
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
-  font-weight: 800;
+  /* Serif price — mirrors Mac displayMedium. Reads as editorial typography
+   * rather than a marketing badge. */
+  font-family: var(--font-family-serif);
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  font-weight: 600;
   line-height: 1;
+  letter-spacing: -0.014em;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
@@ -732,15 +740,22 @@
 
 .faqItem {
   padding: clamp(1rem, 2vw, 1.4rem);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.faqItem:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-subtle);
 }
 
 .faqQuestion {
   margin: 0 0 0.45rem;
-  font-size: 1.02rem;
-  font-weight: 760;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.003em;
   color: var(--ink);
 }
 
