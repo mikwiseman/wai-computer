@@ -741,36 +741,6 @@ function formatMs(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const MODAL_BACKDROP_STYLE: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0, 0, 0, 0.45)",
-  display: "grid",
-  placeItems: "center",
-  padding: 16,
-  zIndex: 50,
-};
-
-const MODAL_CARD_STYLE: React.CSSProperties = {
-  background: "var(--panel)",
-  color: "var(--ink)",
-  border: "1px solid var(--border, rgba(0,0,0,0.1))",
-  borderRadius: 12,
-  padding: 20,
-  width: "100%",
-  maxWidth: 380,
-  boxShadow: "0 18px 42px rgba(0,0,0,0.18)",
-  display: "grid",
-  gap: 12,
-};
-
-const MODAL_ACTIONS_STYLE: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  justifyContent: "flex-end",
-  marginTop: 4,
-};
-
 function ConfirmModal({
   title,
   body,
@@ -794,19 +764,17 @@ function ConfirmModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="companion-confirm-title"
-      style={MODAL_BACKDROP_STYLE}
+      className="modal-backdrop"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
       onKeyDown={handleKey}
       data-testid="companion-confirm-modal"
     >
-      <div style={MODAL_CARD_STYLE}>
-        <h3 id="companion-confirm-title" style={{ margin: 0, fontSize: "1.1rem" }}>
-          {title}
-        </h3>
-        <p style={{ margin: 0, color: "var(--ink-soft)" }}>{body}</p>
-        <div style={MODAL_ACTIONS_STYLE}>
+      <div className="modal-card">
+        <h3 id="companion-confirm-title">{title}</h3>
+        <p>{body}</p>
+        <div className="modal-actions">
           <button
             type="button"
             className="ghost-button compact-button"
@@ -857,35 +825,26 @@ function RenameModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="companion-rename-title"
-      style={MODAL_BACKDROP_STYLE}
+      className="modal-backdrop"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}
       onKeyDown={handleKey}
       data-testid="companion-rename-modal"
     >
-      <form style={MODAL_CARD_STYLE} onSubmit={onSubmit}>
-        <h3 id="companion-rename-title" style={{ margin: 0, fontSize: "1.1rem" }}>
-          {title}
-        </h3>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{label}</span>
+      <form className="modal-card" onSubmit={onSubmit}>
+        <h3 id="companion-rename-title">{title}</h3>
+        <label className="modal-field">
+          <span>{label}</span>
           <input
             type="text"
             value={value}
             onChange={(event) => onChange(event.target.value)}
             autoFocus
             data-testid="companion-rename-input"
-            style={{
-              padding: "0.5rem 0.65rem",
-              border: "1px solid var(--border, rgba(0,0,0,0.15))",
-              borderRadius: 8,
-              background: "var(--panel-subtle)",
-              color: "inherit",
-            }}
           />
         </label>
-        <div style={MODAL_ACTIONS_STYLE}>
+        <div className="modal-actions">
           <button
             type="button"
             className="ghost-button compact-button"

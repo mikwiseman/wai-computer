@@ -1,14 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { Space_Grotesk } from "next/font/google";
 import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 import "@/styles/tokens.css";
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://wai.computer"),
@@ -58,7 +52,7 @@ export default async function RootLayout({
   );
   return (
     <html lang={lang} data-theme="system" data-accent="amber">
-      <body className={spaceGrotesk.variable}>
+      <body>
         <script
           dangerouslySetInnerHTML={{
             __html:

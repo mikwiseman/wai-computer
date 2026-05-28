@@ -19,7 +19,7 @@ const THEME_STORAGE_KEY = "wai_theme";
 const ACCENT_STORAGE_KEY = "wai_accent";
 
 const DEFAULT_THEME: ThemeChoice = "system";
-const DEFAULT_ACCENT: AccentChoice = "teal";
+const DEFAULT_ACCENT: AccentChoice = "amber";
 
 const ACCENT_ORDER: AccentChoice[] = [
   "teal",
