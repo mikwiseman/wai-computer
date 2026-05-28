@@ -339,6 +339,73 @@ async def update_preferences(
     return PreferencesResponse(theme=user.theme, accent=user.accent)
 
 
+class IdentityResponse(BaseModel):
+    """The user's public identity used by the voice-sharing directory."""
+
+    first_name: str | None
+    last_name: str | None
+    has_voiceprint: bool
+
+
+class UpdateIdentityRequest(BaseModel):
+    """Partial update of the user's public identity."""
+
+    first_name: str | None = None
+    last_name: str | None = None
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized) > 120:
+            raise ValueError("Name must be 120 characters or fewer")
+        return normalized
+
+
+async def _user_has_voiceprint(user, db) -> bool:
+    from sqlalchemy import select
+
+    from app.models.person import Voiceprint
+
+    result = await db.execute(
+        select(Voiceprint.id).where(Voiceprint.user_id == user.id).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+@router.get("/identity", response_model=IdentityResponse)
+async def get_identity(user: CurrentUser, db: Database) -> IdentityResponse:
+    """Read the current user's public identity (name + voiceprint status)."""
+    return IdentityResponse(
+        first_name=user.first_name,
+        last_name=user.last_name,
+        has_voiceprint=await _user_has_voiceprint(user, db),
+    )
+
+
+@router.patch("/identity", response_model=IdentityResponse)
+async def update_identity(
+    request: UpdateIdentityRequest,
+    user: CurrentUser,
+    db: Database,
+) -> IdentityResponse:
+    """Update first/last name. Pass an empty string to clear a field."""
+    if "first_name" in request.model_fields_set:
+        user.first_name = request.first_name
+    if "last_name" in request.model_fields_set:
+        user.last_name = request.last_name
+    await db.flush()
+    return IdentityResponse(
+        first_name=user.first_name,
+        last_name=user.last_name,
+        has_voiceprint=await _user_has_voiceprint(user, db),
+    )
+
+
 @router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     request: ChangePasswordRequest,

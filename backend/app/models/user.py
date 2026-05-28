@@ -27,6 +27,19 @@ class User(Base, UUIDMixin, TimestampMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Public identity. Both are user-managed in Settings and stay NULL by default;
+    # the voice-sharing directory feature surfaces them to other users only when
+    # the user explicitly opts in.
+    first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Pointer to the user's own Person row, set on first voice enrollment so
+    # downstream features (directory publish, "you" display, name parsing)
+    # always know which Person represents self without guessing by display_name.
+    self_person_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("people.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     default_language: Mapped[str] = mapped_column(
@@ -147,7 +160,10 @@ class User(Base, UUIDMixin, TimestampMixin):
         "DictationDictionaryWord", back_populates="user", cascade="all, delete-orphan"
     )
     people: Mapped[list["Person"]] = relationship(
-        "Person", back_populates="user", cascade="all, delete-orphan"
+        "Person",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="Person.user_id",
     )
 
 

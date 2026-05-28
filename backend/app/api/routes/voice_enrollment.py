@@ -103,6 +103,13 @@ async def enroll_voice(
             source_recording_id=None,
         )
 
+        # First enrollment seeds the canonical self-Person pointer. We never
+        # overwrite an existing pointer here — the user can rebind via the
+        # dedicated identity endpoint if they enrolled the wrong Person first.
+        if user.self_person_id is None:
+            user.self_person_id = person.id
+            await db.flush()
+
         counts = await _voiceprint_counts(db, user.id)
         return VoiceEnrollmentResponse(
             person=_serialize_person(person, counts.get(person.id, 0)),
