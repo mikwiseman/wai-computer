@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -19,6 +20,7 @@ from sqlalchemy import select
 from app.core import speaker_name_extraction as snx
 from app.core.speaker_name_extraction import (
     _clean_name,
+    _find_person_by_name,
     _format_transcript,
     _NameAssignment,
     _NameExtractionSchema,
@@ -221,6 +223,89 @@ async def test_apply_with_no_extractions_is_noop(client, db_session):
 
     assert applied == []
     assert speaker_assignments == {"speaker_0": None}
+
+
+@pytest.mark.asyncio
+async def test_apply_skips_alias_when_voice_match_person_is_missing(client, db_session):
+    user = await _make_user(client, db_session, email="names.missing-target@example.com")
+    missing_person_id = UUID("11111111-1111-1111-1111-111111111111")
+    speaker_assignments: dict[str, tuple[UUID, float] | None] = {
+        "speaker_0": (missing_person_id, 0.72)
+    }
+
+    applied = await apply_extracted_names(
+        db=db_session,
+        user_id=user.id,
+        speaker_assignments=speaker_assignments,
+        extracted={"speaker_0": _assignment("speaker_0", "Ghost Person")},
+    )
+
+    assert applied == []
+    assert speaker_assignments["speaker_0"] == (missing_person_id, 0.72)
+
+
+@pytest.mark.asyncio
+async def test_apply_promotes_new_person_embedding_when_recording_id_is_supplied(
+    client,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await _make_user(client, db_session, email="names.promote@example.com")
+    recording_id = UUID("22222222-2222-2222-2222-222222222222")
+    promote = AsyncMock(return_value=UUID("33333333-3333-3333-3333-333333333333"))
+    monkeypatch.setattr(
+        "app.core.voice_identification.store_voiceprint_from_recording_speaker",
+        promote,
+    )
+
+    applied = await apply_extracted_names(
+        db=db_session,
+        user_id=user.id,
+        speaker_assignments={"speaker_0": None},
+        extracted={"speaker_0": _assignment("speaker_0", "New Person")},
+        recording_id=recording_id,
+    )
+
+    assert len(applied) == 1
+    promote.assert_awaited_once_with(
+        db=db_session,
+        user_id=user.id,
+        person_id=applied[0].person_id,
+        recording_id=recording_id,
+        raw_label="speaker_0",
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_keeps_new_person_when_voiceprint_promotion_fails(
+    client,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await _make_user(client, db_session, email="names.promote-fail@example.com")
+    promote = AsyncMock(side_effect=RuntimeError("promotion failed"))
+    monkeypatch.setattr(
+        "app.core.voice_identification.store_voiceprint_from_recording_speaker",
+        promote,
+    )
+
+    applied = await apply_extracted_names(
+        db=db_session,
+        user_id=user.id,
+        speaker_assignments={"speaker_0": None},
+        extracted={"speaker_0": _assignment("speaker_0", "Still Created")},
+        recording_id=UUID("44444444-4444-4444-4444-444444444444"),
+    )
+
+    assert len(applied) == 1
+    assert applied[0].created_person is True
+
+
+@pytest.mark.asyncio
+async def test_find_person_by_name_returns_none_for_blank_name(client, db_session):
+    user = await _make_user(client, db_session, email="names.blank@example.com")
+
+    assert await _find_person_by_name(db=db_session, user_id=user.id, name="  ") is None
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from app.db import session as session_module
 from app.tasks import celery_app as celery_app_module
 
@@ -122,6 +124,46 @@ def test_celery_worker_init_resets_db_runtime(monkeypatch):
     celery_app_module.reset_async_db_runtime()
 
     assert called["value"] == 1
+
+
+def test_celery_preload_voice_embedding_skips_when_voice_id_disabled(monkeypatch):
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: SimpleNamespace(voice_identification_enabled=False),
+    )
+
+    celery_app_module.preload_voice_embedding_model()
+
+
+def test_celery_preload_voice_embedding_loads_model_when_voice_id_enabled(monkeypatch):
+    called = {"value": 0}
+
+    def fake_get_model():
+        called["value"] += 1
+        return object()
+
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: SimpleNamespace(voice_identification_enabled=True),
+    )
+    monkeypatch.setattr("app.core.voice_embedding._get_model", fake_get_model)
+
+    celery_app_module.preload_voice_embedding_model()
+
+    assert called["value"] == 1
+
+
+def test_celery_preload_voice_embedding_logs_and_continues_on_failure(monkeypatch):
+    def failing_get_model():
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: SimpleNamespace(voice_identification_enabled=True),
+    )
+    monkeypatch.setattr("app.core.voice_embedding._get_model", failing_get_model)
+
+    celery_app_module.preload_voice_embedding_model()
 
 
 def test_celery_app_has_no_stale_task_includes():
