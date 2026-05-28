@@ -38,6 +38,23 @@ public sealed record UpdateSettingsRequest(
     [property: JsonPropertyName("dictation_post_filter_provider")] string? DictationPostFilterProvider = null,
     [property: JsonPropertyName("dictation_post_filter_model")] string? DictationPostFilterModel = null);
 
+public sealed record UserIdentity(
+    [property: JsonPropertyName("first_name")] string? FirstName,
+    [property: JsonPropertyName("last_name")] string? LastName,
+    [property: JsonPropertyName("has_voiceprint")] bool HasVoiceprint);
+
+public sealed record UpdateIdentityRequest(
+    [property: JsonPropertyName("first_name")] string? FirstName = null,
+    [property: JsonPropertyName("last_name")] string? LastName = null);
+
+public sealed record VoiceSharingState(
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("can_enable")] bool CanEnable,
+    [property: JsonPropertyName("has_first_name")] bool HasFirstName,
+    [property: JsonPropertyName("has_last_name")] bool HasLastName,
+    [property: JsonPropertyName("has_voiceprint")] bool HasVoiceprint,
+    [property: JsonPropertyName("shared_name")] string? SharedName);
+
 public sealed record TranscriptionProviderOption(string Provider, string Model);
 
 public sealed record TranscriptionOptions(

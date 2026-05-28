@@ -20,6 +20,7 @@
 		6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */; };
 		75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */; };
 		7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */; };
+		868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */; };
 		920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FEDD9815CBEFD0332FE393 /* SearchView.swift */; };
 		A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */; };
 		A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804113B280E47C43FBED2F85 /* DesignSystem.swift */; };
@@ -35,6 +36,7 @@
 
 /* Begin PBXFileReference section */
 		04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityAndVoiceSettingsView.swift; sourceTree = "<group>"; };
 		1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiHomeView.swift; sourceTree = "<group>"; };
 		557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 		264DE5A927EBB291BE260D14 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */,
 				97968DE3F1803173874F4E13 /* McpConnectView.swift */,
 				1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */,
 			);
@@ -281,6 +284,7 @@
 				3D7F2033226F703D235266F6 /* AuthView.swift in Sources */,
 				C7EC953F1B7260398E446691 /* ContentView.swift in Sources */,
 				A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */,
+				868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
 				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
