@@ -28,8 +28,8 @@ builds clean; Next.js production build emits all routes.
     `price_1TYUaWENNsR4WtAWRuIYlp7t` ($96/yr).
   - Webhook endpoint: `we_1TYUaAENNsR4WtAW3Y33JQtX` →
     `https://wai.computer/api/webhooks/stripe` (6 events).
-- T-Bank sandbox terminal: `1742305333944DEMO` (shop "Wai.academy",
-  entity ИП Виземан М.). 54-ФЗ tax mode currently `usn_income` with
+- T-Bank sandbox terminal: `1779952891293DEMO` (rub billing rail).
+  54-ФЗ tax mode currently `usn_income` with
   `vat22` rate — adjust if the prod merchant entity uses a different
   taxation regime.
 - Local `backend/.env` carries all four secrets (gitignored).
