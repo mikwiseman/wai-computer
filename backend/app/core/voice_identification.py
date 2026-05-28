@@ -27,7 +27,7 @@ from app.core.voice_embedding import (
     compute_voice_embedding,
     pick_clean_snippet,
 )
-from app.models.person import Person, PublicVoiceprint, RecordingSpeakerEmbedding, Voiceprint
+from app.models.person import Person, RecordingSpeakerEmbedding, Voiceprint
 from app.models.recording import Segment
 
 if TYPE_CHECKING:
@@ -35,11 +35,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MATCH_THRESHOLD = 0.6
-# Slightly stricter for the public directory: matching a stranger's voice has
-# higher consequences than matching someone you already enrolled, so we want
-# more confidence before auto-tagging.
-DIRECTORY_MATCH_THRESHOLD = 0.65
+## ECAPA-TDNN VoxCeleb cosine thresholds.
+## SpeechBrain's published EER lives around 0.25 cosine for clean speech;
+## meeting audio drifts higher. 0.35 is the working baseline that lets a
+## genuine same-speaker match through while keeping cross-speaker false-
+## positives rare. The previous 0.6 was at the 99th percentile of same-
+## speaker similarities and was the dominant cause of the "1 match in
+## 1792 segments" production diagnostic.
+DEFAULT_MATCH_THRESHOLD = 0.35
+# Stricter for the global directory: a stranger's voice carries higher
+# consequences than your own enrolled people, and the impostor cohort is
+# many orders of magnitude larger.
+DIRECTORY_MATCH_THRESHOLD = 0.50
 VOICE_EMBEDDING_TIMEOUT_SECONDS = 15.0
 
 

@@ -264,7 +264,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         if isFinal {
             appendFinal(
                 text: transcript,
-                speaker: Self.dominantSpeakerLabel(in: alternative),
+                speaker: DeepgramSpeakerLabel.dominant(in: alternative),
                 startMs: startMs,
                 endMs: startMs + durationMs,
                 confidence: confidence
@@ -274,21 +274,11 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         }
     }
 
-    /// Pick the dominant speaker across the word array from a Deepgram diarized result.
-    /// Returns `"speaker_<n>"` (matching the backend's raw_label convention) or nil
-    /// if diarization is off or no word has a speaker tag.
+    // Legacy entry-point kept so existing tests in
+    // ProviderBackedRealtimeSessionTests still compile. Forwards to the shared
+    // DeepgramSpeakerLabel helper used by WebSocketManager as well.
     static func dominantSpeakerLabel(in alternative: [String: Any]) -> String? {
-        guard let words = alternative["words"] as? [[String: Any]] else { return nil }
-        var totals: [Int: Double] = [:]
-        for word in words {
-            guard let speaker = word["speaker"] as? Int else { continue }
-            let start = word["start"] as? Double ?? 0
-            let end = word["end"] as? Double ?? start
-            let weight = max(0.001, end - start)
-            totals[speaker, default: 0] += weight
-        }
-        guard let dominant = totals.max(by: { $0.value < $1.value })?.key else { return nil }
-        return "speaker_\(dominant)"
+        DeepgramSpeakerLabel.dominant(in: alternative)
     }
 
     private func appendFinal(

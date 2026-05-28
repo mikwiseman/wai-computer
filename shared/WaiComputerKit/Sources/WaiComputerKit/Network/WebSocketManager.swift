@@ -512,7 +512,7 @@ public actor WebSocketManager {
 
         let segment = LiveTranscriptSegment(
             text: transcript,
-            speaker: nil,
+            speaker: DeepgramSpeakerLabel.dominant(in: alternative),
             isFinal: isFinal,
             startMs: startMs,
             endMs: startMs + durationMs,
