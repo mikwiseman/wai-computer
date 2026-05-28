@@ -24,6 +24,10 @@ router = APIRouter(prefix="/voice-enrollment", tags=["voice-enrollment"])
 MIN_DURATION_S = 5.0
 MAX_DURATION_S = 60.0
 MAX_BYTES = 50 * 1024 * 1024  # 50 MB safety cap on enrollment uploads
+# Reject silent / nearly-silent enrollment uploads. -45 dBFS is a generous
+# bar — most muted-mic captures register near -inf or -60 dBFS while normal
+# speech sits between -25 and -10 dBFS.
+MIN_RMS_DBFS = -45.0
 
 
 class VoiceEnrollmentResponse(BaseModel):
@@ -150,6 +154,24 @@ def _measure_duration_seconds(path: Path) -> float:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Could not decode the audio file. Try WAV, MP3, M4A, or OGG.",
         ) from exc
+
+    # Silence guard: an enrollment of pure silence yields a garbage ECAPA
+    # embedding that then biases every future match against the user's own
+    # voice. Reject before staging.
+    rms_dbfs = segment.dBFS  # -inf for digital zeros
+    if rms_dbfs < MIN_RMS_DBFS:
+        logger.info(
+            "Voice enrollment rejected as too quiet: %.1f dBFS (file=%s)",
+            rms_dbfs,
+            path.name,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "We didn't hear anything in that recording. Check your "
+                "microphone is unmuted and try again."
+            ),
+        )
     return len(segment) / 1000.0
 
 

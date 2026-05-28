@@ -27,6 +27,12 @@ TARGET_SAMPLE_RATE = 16_000
 
 _MIN_SNIPPET_S = 5.0
 _MAX_SNIPPET_S = 15.0
+# Multi-span enrollment: ECAPA quality plateaus around 30s of speech.
+# Accumulating multiple non-contiguous snippets of the same speaker is
+# materially better than one long snippet because it spans intra-speaker
+# variation across the recording.
+_MULTI_TOTAL_TARGET_S = 30.0
+_MULTI_MIN_TOTAL_S = 6.0
 
 _model = None
 _model_lock = threading.Lock()
@@ -53,24 +59,49 @@ def _get_model():
 def compute_voice_embedding(
     audio_path: Path | str, start_ms: int, end_ms: int
 ) -> list[float]:
-    """Extract a 192-d L2-normalized ECAPA embedding from ``audio_path[start_ms:end_ms]``.
+    """Extract a 192-d L2-normalized ECAPA embedding from one slice.
 
-    The snippet is resampled to 16 kHz mono if needed. Raises if the slice is empty
-    or the audio cannot be decoded.
+    Backward-compatible single-slice helper. For multi-slice accumulation
+    (recommended) use ``compute_voice_embedding_spans``.
+    """
+    duration_ms = end_ms - start_ms
+    if duration_ms <= 0:
+        raise ValueError(f"Empty snippet range: start_ms={start_ms} end_ms={end_ms}")
+    return compute_voice_embedding_spans(audio_path, [(start_ms, end_ms)])
+
+
+def compute_voice_embedding_spans(
+    audio_path: Path | str, spans: list[tuple[int, int]]
+) -> list[float]:
+    """Decode ``audio_path`` once, concatenate the requested slices, and run
+    them through ECAPA-TDNN to produce a single 192-d L2-normalised embedding.
+
+    Multi-span input is the modern enrollment / matching default: pyannote
+    and SpeechBrain both report that 20-30s of accumulated same-speaker
+    audio (even with intervening other speakers stripped) outperforms a
+    single long snippet for impostor robustness.
     """
     import torch
     from pydub import AudioSegment
 
-    duration_ms = end_ms - start_ms
-    if duration_ms <= 0:
-        raise ValueError(f"Empty snippet range: start_ms={start_ms} end_ms={end_ms}")
+    if not spans:
+        raise ValueError("No spans provided")
 
-    segment = AudioSegment.from_file(str(audio_path))[start_ms:end_ms]
-    segment = segment.set_channels(1).set_frame_rate(TARGET_SAMPLE_RATE)
+    # Decode once. This is O(file) not O(file * n_spans) — the old
+    # per-cluster decode pattern blew memory on long meetings.
+    full = AudioSegment.from_file(str(audio_path))
+    full = full.set_channels(1).set_frame_rate(TARGET_SAMPLE_RATE)
 
-    # AudioSegment → float32 [-1, 1]
-    samples = segment.get_array_of_samples()
-    max_val = float(1 << (8 * segment.sample_width - 1))
+    accumulated = AudioSegment.empty().set_frame_rate(TARGET_SAMPLE_RATE).set_channels(1)
+    for start_ms, end_ms in spans:
+        if end_ms <= start_ms:
+            continue
+        accumulated += full[start_ms:end_ms]
+    if len(accumulated) == 0:
+        raise ValueError("All spans were empty after slicing")
+
+    samples = accumulated.get_array_of_samples()
+    max_val = float(1 << (8 * accumulated.sample_width - 1))
     waveform = torch.tensor(samples, dtype=torch.float32).unsqueeze(0) / max_val
 
     model = _get_model()
@@ -79,6 +110,62 @@ def compute_voice_embedding(
 
     normalized = torch.nn.functional.normalize(embedding, dim=0)
     return normalized.tolist()
+
+
+def pick_clean_snippets(
+    results: list["TranscriptResult"],
+    raw_label: str,
+    target_total_s: float = _MULTI_TOTAL_TARGET_S,
+    min_total_s: float = _MULTI_MIN_TOTAL_S,
+) -> list[tuple[int, int]] | None:
+    """Return up to ``target_total_s`` of contiguous single-speaker spans for
+    ``raw_label``, sorted by descending duration.
+
+    Returns ``None`` when the accumulated duration is below ``min_total_s``
+    so the caller can fall back to ``raw_label=None`` (unmatched cluster).
+    """
+    if not results:
+        return None
+
+    runs: list[list[int]] = []
+    current: list[int] = []
+    for idx, tr in enumerate(results):
+        if tr.speaker == raw_label:
+            current.append(idx)
+        else:
+            if current:
+                runs.append(current)
+                current = []
+    if current:
+        runs.append(current)
+
+    if not runs:
+        return None
+
+    spans = [(results[run[0]].start_ms, results[run[-1]].end_ms) for run in runs]
+    spans.sort(key=lambda span: span[1] - span[0], reverse=True)
+
+    target_total_ms = int(target_total_s * 1000)
+    picked: list[tuple[int, int]] = []
+    total_ms = 0
+    for start_ms, end_ms in spans:
+        if total_ms >= target_total_ms:
+            break
+        remaining = target_total_ms - total_ms
+        duration = end_ms - start_ms
+        if duration <= remaining:
+            picked.append((start_ms, end_ms))
+            total_ms += duration
+        else:
+            picked.append((start_ms, start_ms + remaining))
+            total_ms = target_total_ms
+            break
+
+    if total_ms < int(min_total_s * 1000):
+        return None
+    # Return in transcript order for deterministic concatenation.
+    picked.sort(key=lambda span: span[0])
+    return picked
 
 
 def pick_clean_snippet(

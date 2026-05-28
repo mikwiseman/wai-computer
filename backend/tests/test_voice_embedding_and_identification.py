@@ -178,7 +178,7 @@ async def test_identify_handles_embedding_failure() -> None:
     results = [_tr("Speaker 1", 0, 10_000)]  # 10s — passes pick_clean_snippet
 
     with patch(
-        "app.core.voice_identification.compute_voice_embedding",
+        "app.core.voice_identification.compute_voice_embedding_spans",
         side_effect=RuntimeError("model load failed"),
     ):
         out = await identify_speakers_for_recording(
@@ -197,7 +197,7 @@ async def test_identify_disabled_returns_unassigned_without_loading_model() -> N
     db = MagicMock(spec=AsyncSession)
     results = [_tr("Speaker 1", 0, 10_000)]
 
-    with patch("app.core.voice_identification.compute_voice_embedding") as compute:
+    with patch("app.core.voice_identification.compute_voice_embedding_spans") as compute:
         out = await identify_speakers_for_recording(
             db=db,
             user_id=uuid.uuid4(),
@@ -225,7 +225,7 @@ async def test_identify_times_out_embedding_and_continues() -> None:
         return [0.5] * EMBEDDING_DIM
 
     with patch(
-        "app.core.voice_identification.compute_voice_embedding",
+        "app.core.voice_identification.compute_voice_embedding_spans",
         side_effect=slow_embedding,
     ):
         out = await identify_speakers_for_recording(
@@ -253,7 +253,7 @@ async def test_identify_calls_best_match_when_embedding_succeeds() -> None:
     fake_embedding = [0.5] * EMBEDDING_DIM
     with (
         patch(
-            "app.core.voice_identification.compute_voice_embedding",
+            "app.core.voice_identification.compute_voice_embedding_spans",
             return_value=fake_embedding,
         ),
         patch(
@@ -302,7 +302,7 @@ async def test_best_match_returns_none_below_threshold() -> None:
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
     person_id = uuid.uuid4()
-    result_mock.first = MagicMock(return_value=(person_id, 0.4))  # < 0.6
+    result_mock.first = MagicMock(return_value=(person_id, 0.20))  # well below DEFAULT_MATCH_THRESHOLD
     db.execute = AsyncMock(return_value=result_mock)
 
     out = await _best_voiceprint_match(
@@ -387,6 +387,8 @@ async def test_store_voiceprint_inserts_and_returns_id() -> None:
     results = [_tr("Speaker 1", 0, 10_000)]
 
     fake_embedding = [0.5] * EMBEDDING_DIM
+    # store_voiceprint goes through store_voiceprint_from_path, which still
+    # uses the single-span compute_voice_embedding entry point.
     with patch(
         "app.core.voice_identification.compute_voice_embedding",
         return_value=fake_embedding,
