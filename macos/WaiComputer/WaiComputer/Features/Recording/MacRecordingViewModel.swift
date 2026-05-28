@@ -89,6 +89,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
+    @Published private(set) var isPaused = false
     @Published var systemAudioWarning: String?
     @Published var connectionState: RecordingConnectionState = .connected
     @Published private(set) var liveTranscriptionOffline = false
@@ -138,6 +139,14 @@ class MacRecordingViewModel: ObservableObject {
         phase == .recording
     }
 
+    var canPauseRecording: Bool {
+        phase == .recording && !isPaused
+    }
+
+    var canResumeRecording: Bool {
+        phase == .recording && isPaused
+    }
+
     var statusText: String {
         statusText(language: LanguageManager.shared.current)
     }
@@ -149,6 +158,9 @@ class MacRecordingViewModel: ObservableObject {
         case .preparing:
             return t("Preparing recording", "Готовим запись", language: language)
         case .recording:
+            if isPaused {
+                return t("Paused", "Пауза", language: language)
+            }
             return t("Recording", "Идет запись", language: language)
         case .finalizing:
             return t("Saving transcript...", "Сохраняем расшифровку...", language: language)
@@ -189,6 +201,9 @@ class MacRecordingViewModel: ObservableObject {
         case .preparing:
             return recordingInputSource.preparingText(language: language)
         case .recording:
+            if isPaused {
+                return t("Paused.", "Пауза.", language: language)
+            }
             return t("Listening...", "Слушаем...", language: language)
         case .finalizing:
             return t("Saving...", "Сохраняем...", language: language)
@@ -235,6 +250,7 @@ class MacRecordingViewModel: ObservableObject {
         interimText = ""
         interimSpeaker = nil
         isServerComplete = false
+        isPaused = false
         liveTranscriptionOffline = false
         currentRecordingId = nil
         recordingType = type
@@ -479,6 +495,7 @@ class MacRecordingViewModel: ObservableObject {
         )
 
         setPhase(.finalizing)
+        isPaused = false
 
         // Stop timer and system audio monitor
         timerTask?.cancel()
@@ -502,6 +519,7 @@ class MacRecordingViewModel: ObservableObject {
                     self?.audioFileWriter = nil
                     self?.endRecordingActivity(reason: "debug-stop")
                     self?.setPhase(.idle)
+                    self?.isPaused = false
                     self?.isCleaningUp = false
                     self?.cleanupTask = nil
                 }
@@ -600,6 +618,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.audioEncoder = nil
                 self.endRecordingActivity(reason: "stop")
                 self.setPhase(.idle)
+                self.isPaused = false
                 self.isCleaningUp = false
                 self.cleanupTask = nil
             }
@@ -623,6 +642,7 @@ class MacRecordingViewModel: ObservableObject {
         )
 
         setPhase(.finalizing)
+        isPaused = false
 
         timerTask?.cancel()
         timerTask = nil
@@ -685,6 +705,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.audioEncoder = nil
                 self.endRecordingActivity(reason: "discard")
                 self.setPhase(.idle)
+                self.isPaused = false
                 self.isCleaningUp = false
                 self.cleanupTask = nil
             }
@@ -706,6 +727,39 @@ class MacRecordingViewModel: ObservableObject {
         systemAudioWarning = nil
         connectionState = .connected
         duration = 0
+        isPaused = false
+    }
+
+    func pauseRecording() async {
+        guard canPauseRecording else { return }
+        do {
+            try await audioCapture?.pauseRecording()
+            isPaused = true
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording paused",
+                data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+            )
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "pauseRecording", "recordingId": currentRecordingId ?? "unknown"])
+            self.error = error.userFacingMessage(context: .recording)
+        }
+    }
+
+    func resumeRecording() async {
+        guard canResumeRecording else { return }
+        do {
+            try await audioCapture?.resumeRecording()
+            isPaused = false
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording resumed",
+                data: ["recordingId": currentRecordingId ?? "unknown", "duration": duration]
+            )
+        } catch {
+            SentryHelper.captureError(error, extras: ["action": "resumeRecording", "recordingId": currentRecordingId ?? "unknown"])
+            self.error = error.userFacingMessage(context: .recording)
+        }
     }
 
     func clearError() {
@@ -720,6 +774,7 @@ class MacRecordingViewModel: ObservableObject {
         currentRecordingId = recordingId
         self.duration = duration
         liveTranscriptionOffline = false
+        isPaused = false
         connectionState = .connected
         error = nil
         setPhase(.recording)
@@ -1157,7 +1212,8 @@ class MacRecordingViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { break }
                 await MainActor.run {
-                    self?.duration += 1
+                    guard let self, !self.isPaused else { return }
+                    self.duration += 1
                 }
             }
         }
@@ -1247,12 +1303,16 @@ class MacRecordingViewModel: ObservableObject {
         recording = nil
         currentRecordingId = nil
         isServerComplete = false
+        isPaused = false
         recordingInputSource = .dual
         endRecordingActivity(reason: "start-failure")
         setPhase(.idle)
     }
 
     private func setPhase(_ newPhase: MacRecordingPhase) {
+        if newPhase != .recording {
+            isPaused = false
+        }
         // Animate transitions to/from idle so the detail column cross-fades smoothly
         if newPhase == .idle || phase == .idle {
             withAnimation(.easeInOut(duration: 0.25)) {

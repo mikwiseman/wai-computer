@@ -30,6 +30,12 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
     private var _isRecording = false
     public var isRecording: Bool { _isRecording }
+    public var isPaused: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _isPaused
+    }
+    private var _isPaused = false
 
     /// Whether system audio is active (false = mic-only)
     public private(set) var hasSystemAudio = false
@@ -113,6 +119,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         }
 
         _isRecording = true
+        setPaused(false)
         startDualMode()
     }
 
@@ -144,6 +151,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         earlySystemAudioCheckTask = Task { [weak self] in
             guard let self else { return }
             let received = await self.system.waitForAudioBuffers(timeout: 3.0)
+            if self.isPaused { return }
             if !received {
                 dualLog.error("[Dual] System audio tap produced no buffers within 3s — marking stalled.")
                 self.markSystemAudioStalled()
@@ -156,6 +164,7 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(0.16))
                 guard !Task.isCancelled else { break }
+                guard self?.isPaused == false else { continue }
                 self?.flushDualBuffers()
                 flushCount += 1
 
@@ -179,8 +188,55 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
         }
     }
 
+    public func pauseRecording() async throws {
+        guard _isRecording, !isPaused else { return }
+
+        flushDualBuffers()
+        setPaused(true)
+        if hasSystemAudio {
+            do {
+                try await system.pauseRecording()
+            } catch {
+                setPaused(false)
+                throw error
+            }
+        }
+        do {
+            try await mic.pauseRecording()
+        } catch {
+            setPaused(false)
+            if hasSystemAudio {
+                try? await system.resumeRecording()
+            }
+            throw error
+        }
+
+        dualLog.info("[Dual] Paused recording")
+    }
+
+    public func resumeRecording() async throws {
+        guard _isRecording, isPaused else { return }
+
+        do {
+            try await mic.resumeRecording()
+            if hasSystemAudio {
+                try await system.resumeRecording()
+            }
+        } catch {
+            try? await mic.pauseRecording()
+            if hasSystemAudio {
+                try? await system.pauseRecording()
+            }
+            throw error
+        }
+
+        setPaused(false)
+        dualLog.info("[Dual] Resumed recording")
+    }
+
     public func stopRecording() async {
         _isRecording = false
+        setPaused(false)
 
         flushTask?.cancel()
         await flushTask?.value
@@ -353,12 +409,20 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
     private func appendMicrophoneSamples(_ samples: [Float]) {
         lock.lock()
+        guard !_isPaused else {
+            lock.unlock()
+            return
+        }
         micBuffer.append(contentsOf: samples)
         lock.unlock()
     }
 
     private func appendSystemSamples(_ samples: [Float], hasRealSystemAudio: Bool) {
         lock.lock()
+        guard !_isPaused else {
+            lock.unlock()
+            return
+        }
         systemBuffer.append(contentsOf: samples)
         systemAudioStreamActive = true
         lastSystemBufferAt = Date()
@@ -376,6 +440,15 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
         guard let lastBufferAt else { return false }
         return Date().timeIntervalSince(lastBufferAt) < 4.0
+    }
+
+    private func setPaused(_ paused: Bool) {
+        lock.lock()
+        _isPaused = paused
+        if !paused {
+            lastSystemBufferAt = Date()
+        }
+        lock.unlock()
     }
 
     private func markSystemAudioStalled() {

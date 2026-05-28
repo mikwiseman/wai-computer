@@ -9,8 +9,17 @@ public protocol AudioCaptureProtocol: AnyObject, Sendable {
     /// Whether currently recording
     var isRecording: Bool { get }
 
+    /// Whether the current recording session is paused.
+    var isPaused: Bool { get }
+
     /// Start recording
     func startRecording() async throws
+
+    /// Pause recording without closing the current audio stream.
+    func pauseRecording() async throws
+
+    /// Resume a paused recording.
+    func resumeRecording() async throws
 
     /// Stop recording
     func stopRecording() async
@@ -59,6 +68,8 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
 
     private var _isRecording = false
     public var isRecording: Bool { _isRecording }
+    private var _isPaused = false
+    public var isPaused: Bool { _isPaused }
 
     public init(config: AudioCaptureConfig = .default) {
         self.config = config
@@ -146,7 +157,27 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
             throw error
         }
         _isRecording = true
+        _isPaused = false
         micLog.info("[Mic] Engine started, recording = true")
+    }
+
+    public func pauseRecording() async throws {
+        guard _isRecording, !_isPaused else { return }
+        engine.pause()
+        _isPaused = true
+        micLog.info("[Mic] Engine paused")
+    }
+
+    public func resumeRecording() async throws {
+        guard _isRecording, _isPaused else { return }
+        do {
+            try engine.start()
+            _isPaused = false
+            micLog.info("[Mic] Engine resumed")
+        } catch {
+            micLog.error("[Mic] Engine resume failed")
+            throw error
+        }
     }
 
     /// Stop recording
@@ -154,6 +185,7 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         _isRecording = false
+        _isPaused = false
         logProcessingSummary(context: "stop")
         finishBufferStream()
         setAudioProcessor(nil)

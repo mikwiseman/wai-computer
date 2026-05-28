@@ -46,6 +46,40 @@ final class DualAudioCaptureTests: XCTestCase {
         XCTAssertFalse(mic.isRecording)
     }
 
+    func testPauseAndResumeKeepDualCaptureSessionOpen() async throws {
+        let mic = MockAudioCapture()
+        let system = PausableSystemAudioCapture()
+        let capture = DualAudioCapture(mic: mic, system: system)
+
+        try await capture.startRecording()
+        XCTAssertTrue(capture.isRecording)
+        XCTAssertFalse(capture.isPaused)
+        XCTAssertTrue(mic.isRecording)
+        XCTAssertTrue(system.isRecording)
+
+        try await capture.pauseRecording()
+        XCTAssertTrue(capture.isRecording, "Pause keeps the recording session open for a later stop/finalize.")
+        XCTAssertTrue(capture.isPaused)
+        XCTAssertTrue(mic.isRecording)
+        XCTAssertTrue(mic.isPaused)
+        XCTAssertTrue(system.isRecording)
+        XCTAssertTrue(system.isPaused)
+
+        try await capture.resumeRecording()
+        XCTAssertTrue(capture.isRecording)
+        XCTAssertFalse(capture.isPaused)
+        XCTAssertTrue(mic.isRecording)
+        XCTAssertFalse(mic.isPaused)
+        XCTAssertTrue(system.isRecording)
+        XCTAssertFalse(system.isPaused)
+
+        await capture.stopRecording()
+        XCTAssertFalse(capture.isRecording)
+        XCTAssertFalse(capture.isPaused)
+        XCTAssertFalse(mic.isRecording)
+        XCTAssertFalse(system.isRecording)
+    }
+
     func testSystemAudioAggregateDescriptionIsTapOnly() {
         let description = SystemAudioTapAggregateDescription.make(
             aggregateUID: "aggregate-test-uid",
@@ -488,6 +522,7 @@ final class DualAudioCaptureTests: XCTestCase {
 @available(macOS 14.2, *)
 private final class FailingSystemAudioCapture: SystemAudioCaptureProtocol, @unchecked Sendable {
     private(set) var isRecording = false
+    private(set) var isPaused = false
     let audioBuffers: AsyncStream<AVAudioPCMBuffer>
 
     init() {
@@ -503,10 +538,54 @@ private final class FailingSystemAudioCapture: SystemAudioCaptureProtocol, @unch
 
     func stopRecording() async {
         isRecording = false
+        isPaused = false
+    }
+
+    func pauseRecording() async throws {
+        isPaused = true
+    }
+
+    func resumeRecording() async throws {
+        isPaused = false
     }
 
     func waitForAudioBuffers(timeout: TimeInterval) async -> Bool {
         false
+    }
+}
+
+@available(macOS 14.2, *)
+private final class PausableSystemAudioCapture: SystemAudioCaptureProtocol, @unchecked Sendable {
+    private(set) var isRecording = false
+    private(set) var isPaused = false
+    let audioBuffers: AsyncStream<AVAudioPCMBuffer>
+
+    init() {
+        self.audioBuffers = AsyncStream { _ in }
+    }
+
+    func startRecording() async throws {
+        isRecording = true
+        isPaused = false
+    }
+
+    func stopRecording() async {
+        isRecording = false
+        isPaused = false
+    }
+
+    func pauseRecording() async throws {
+        guard isRecording else { return }
+        isPaused = true
+    }
+
+    func resumeRecording() async throws {
+        guard isRecording else { return }
+        isPaused = false
+    }
+
+    func waitForAudioBuffers(timeout: TimeInterval) async -> Bool {
+        true
     }
 }
 

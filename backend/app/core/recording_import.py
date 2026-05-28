@@ -27,6 +27,7 @@ from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
+from app.models.person import RecordingSpeakerEmbedding
 from app.models.recording import ActionItem, Recording, RecordingStatus, Segment, Summary
 from app.models.user import User
 
@@ -289,6 +290,7 @@ async def _persist_segments(
             staged_audio_path=staged_path,
             transcript_results=transcript_results,
             enabled=settings.voice_identification_enabled,
+            source_recording_id=recording.id,
         )
     except Exception:
         logger.exception("voice identification failed for imported recording")
@@ -477,6 +479,11 @@ async def import_media_as_recording(
     try:
         await db.execute(delete(Summary).where(Summary.recording_id == recording.id))
         await db.execute(delete(Segment).where(Segment.recording_id == recording.id))
+        await db.execute(
+            delete(RecordingSpeakerEmbedding).where(
+                RecordingSpeakerEmbedding.recording_id == recording.id
+            )
+        )
         await db.execute(delete(ActionItem).where(ActionItem.recording_id == recording.id))
         await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
 

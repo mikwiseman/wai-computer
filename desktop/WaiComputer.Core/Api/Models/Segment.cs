@@ -41,6 +41,11 @@ public sealed record AssignSpeakerRequest(
     [property: JsonPropertyName("person_id")] string? PersonId,
     [property: JsonPropertyName("new_display_name")] string? NewDisplayName);
 
+public sealed record RematchSpeakersResponse(
+    [property: JsonPropertyName("recording_id")] string RecordingId,
+    [property: JsonPropertyName("updated_clusters")] int UpdatedClusters,
+    [property: JsonPropertyName("matched_clusters")] int MatchedClusters);
+
 public sealed record SaveTranscriptRequest(
     IReadOnlyList<LiveTranscriptSegment> Segments,
     [property: JsonPropertyName("duration_seconds")] int DurationSeconds);

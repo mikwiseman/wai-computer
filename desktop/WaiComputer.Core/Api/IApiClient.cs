@@ -69,7 +69,7 @@ public interface IApiClient
         string recordingId,
         AssignSpeakerRequest request,
         CancellationToken ct = default);
-    Task RematchSpeakersAsync(string recordingId, CancellationToken ct = default);
+    Task<RematchSpeakersResponse> RematchSpeakersAsync(string recordingId, CancellationToken ct = default);
 
     // People
     Task<IReadOnlyList<Person>> ListPeopleAsync(CancellationToken ct = default);

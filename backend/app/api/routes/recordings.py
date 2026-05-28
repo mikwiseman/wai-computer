@@ -51,6 +51,10 @@ from app.core.summary_generation import (
     resolve_summary_style_preference,
     summary_transcript_hash,
 )
+from app.core.voice_identification import (
+    rematch_recording_speakers,
+    store_voiceprint_from_recording_speaker,
+)
 from app.models.highlight import Highlight
 from app.models.person import Person
 from app.models.recording import (
@@ -2489,6 +2493,21 @@ async def assign_speaker(
         .values(person_id=person.id, auto_assigned=False, match_confidence=None)
     )
     await db.flush()
+    voiceprint_id = await store_voiceprint_from_recording_speaker(
+        db=db,
+        user_id=user.id,
+        person_id=person.id,
+        recording_id=recording_id,
+        raw_label=request.raw_label,
+    )
+    add_sentry_breadcrumb(
+        category="recording",
+        message="Speaker assignment completed",
+        data={
+            "recording_id": str(recording_id),
+            "voiceprint_promoted": voiceprint_id is not None,
+        },
+    )
 
     detail = await _load_recording_detail(recording_id, user.id, db)
     if detail is None:
@@ -2510,15 +2529,37 @@ async def rematch_speakers(
     Touches only clusters where ``auto_assigned=True`` or ``person_id IS NULL``
     so user-confirmed assignments are preserved.
 
-    Returns 422 if the source audio is no longer on disk (we only stage uploads
-    transiently — voice ID can only run during the initial transcription).
+    Returns 422 for older or realtime-only recordings that do not have retained
+    per-speaker voice embeddings. Source audio is still deleted after processing.
     """
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail=(
-            "Source audio is not retained after transcription; rematch is not yet "
-            "supported. Reupload the recording to retrigger voice ID."
-        ),
+    recording_result = await db.execute(
+        select(Recording.id).where(
+            Recording.id == recording_id,
+            Recording.user_id == user.id,
+        )
+    )
+    if recording_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+
+    rematch = await rematch_recording_speakers(
+        db=db,
+        user_id=user.id,
+        recording_id=recording_id,
+    )
+    if rematch is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "No speaker voice embeddings are stored for this recording; "
+                "rematch is only available for audio-backed recordings processed "
+                "after voice identification was enabled."
+            ),
+        )
+    await db.commit()
+    return RematchSpeakersResponse(
+        recording_id=str(recording_id),
+        updated_clusters=rematch.updated_clusters,
+        matched_clusters=rematch.matched_clusters,
     )
 
 

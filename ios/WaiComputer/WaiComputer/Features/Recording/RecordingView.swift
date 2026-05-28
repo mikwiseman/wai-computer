@@ -21,8 +21,8 @@ struct RecordingView: View {
                         Circle()
                             .fill(innerIndicatorColor)
                             .frame(width: 150, height: 150)
-                            .scaleEffect(viewModel.canStopRecording ? 1.1 : 1.0)
-                            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: viewModel.canStopRecording)
+                            .scaleEffect(viewModel.canStopRecording && !viewModel.isPaused ? 1.1 : 1.0)
+                            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: viewModel.canStopRecording && !viewModel.isPaused)
 
                         Image(systemName: indicatorSymbolName)
                             .font(.system(size: 60))
@@ -109,40 +109,65 @@ struct RecordingView: View {
 
                 Spacer()
 
-                // Record button
-                Button(action: {
-                    Task {
-                        if viewModel.canStopRecording {
-                            await viewModel.stopRecording()
-                        } else if viewModel.canStartRecording {
-                            await viewModel.startRecording(
-                                apiClient: appState.getAPIClient()
-                            )
-                        }
-                    }
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(buttonColor)
-                            .frame(width: 80, height: 80)
+                // Record controls
+                HStack(spacing: 24) {
+                    if viewModel.phase == .recording {
+                        Button(action: {
+                            Task {
+                                if viewModel.canResumeRecording {
+                                    await viewModel.resumeRecording()
+                                } else {
+                                    await viewModel.pauseRecording()
+                                }
+                            }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.16))
+                                    .frame(width: 64, height: 64)
 
-                        if viewModel.canStopRecording {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(.white)
-                                .frame(width: 30, height: 30)
-                        } else if viewModel.isBusy {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
+                                Image(systemName: viewModel.canResumeRecording ? "play.fill" : "pause.fill")
+                                    .font(.system(size: 24, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                        }
+                        .accessibilityLabel(viewModel.canResumeRecording ? "Resume Recording" : "Pause Recording")
+                    }
+
+                    Button(action: {
+                        Task {
+                            if viewModel.canStopRecording {
+                                await viewModel.stopRecording()
+                            } else if viewModel.canStartRecording {
+                                await viewModel.startRecording(
+                                    apiClient: appState.getAPIClient()
+                                )
+                            }
+                        }
+                    }) {
+                        ZStack {
                             Circle()
-                                .fill(.white)
-                                .frame(width: 30, height: 30)
+                                .fill(buttonColor)
+                                .frame(width: 80, height: 80)
+
+                            if viewModel.canStopRecording {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(.white)
+                                    .frame(width: 30, height: 30)
+                            } else if viewModel.isBusy {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Circle()
+                                    .fill(.white)
+                                    .frame(width: 30, height: 30)
+                            }
                         }
                     }
+                    .disabled(viewModel.isBusy)
+                    .accessibilityLabel(recordButtonAccessibilityLabel)
+                    .accessibilityHint(recordButtonAccessibilityHint)
                 }
-                .disabled(viewModel.isBusy)
-                .accessibilityLabel(recordButtonAccessibilityLabel)
-                .accessibilityHint(recordButtonAccessibilityHint)
 
                 // Status text
                 Text(viewModel.statusText)
@@ -173,6 +198,7 @@ struct RecordingView: View {
     private var outerIndicatorColor: Color {
         switch viewModel.phase {
         case .recording:
+            if viewModel.isPaused { return Color.gray.opacity(0.14) }
             return isReconnecting ? Color.orange.opacity(0.2) : Color.red.opacity(0.2)
         case .preparing, .finalizing:
             return Color.orange.opacity(0.18)
@@ -184,6 +210,7 @@ struct RecordingView: View {
     private var innerIndicatorColor: Color {
         switch viewModel.phase {
         case .recording:
+            if viewModel.isPaused { return Color.gray.opacity(0.25) }
             return isReconnecting ? Color.orange.opacity(0.4) : Color.red.opacity(0.4)
         case .preparing, .finalizing:
             return Color.orange.opacity(0.28)
@@ -195,6 +222,7 @@ struct RecordingView: View {
     private var indicatorSymbolName: String {
         switch viewModel.phase {
         case .recording:
+            if viewModel.isPaused { return "pause.fill" }
             return "waveform"
         case .preparing, .finalizing:
             return "hourglass"
@@ -206,6 +234,7 @@ struct RecordingView: View {
     private var indicatorSymbolColor: Color {
         switch viewModel.phase {
         case .recording:
+            if viewModel.isPaused { return .gray }
             return .red
         case .preparing, .finalizing:
             return .orange

@@ -131,6 +131,18 @@ struct WaiComputerMacApp: App {
             // Replace default Cmd+N (new window) with recording commands
             CommandGroup(replacing: .newItem) {
                 if recordingViewModel.shouldPresentLiveView {
+                    Button(recordingViewModel.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Пауза")) {
+                        Task {
+                            if recordingViewModel.canResumeRecording {
+                                await appState.resumeRecording()
+                            } else {
+                                await appState.pauseRecording()
+                            }
+                        }
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    .disabled(!recordingViewModel.canPauseRecording && !recordingViewModel.canResumeRecording)
+
                     Button(t("Stop Recording", "Остановить запись")) {
                         Task { await appState.stopRecording() }
                     }
@@ -1350,6 +1362,14 @@ class MacAppState: ObservableObject {
         }
 
         await recordingViewModel.stopRecording()
+    }
+
+    func pauseRecording() async {
+        await recordingViewModel.pauseRecording()
+    }
+
+    func resumeRecording() async {
+        await recordingViewModel.resumeRecording()
     }
 
     func finishCompletedRecordingTransition(recordingId: String) {

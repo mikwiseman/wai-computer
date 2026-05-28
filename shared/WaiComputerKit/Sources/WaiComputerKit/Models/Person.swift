@@ -38,3 +38,21 @@ public struct Person: Codable, Identifiable, Sendable {
         case updatedAt = "updated_at"
     }
 }
+
+public struct RematchSpeakersResponse: Codable, Sendable {
+    public let recordingId: String
+    public let updatedClusters: Int
+    public let matchedClusters: Int
+
+    public init(recordingId: String, updatedClusters: Int, matchedClusters: Int) {
+        self.recordingId = recordingId
+        self.updatedClusters = updatedClusters
+        self.matchedClusters = matchedClusters
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId = "recording_id"
+        case updatedClusters = "updated_clusters"
+        case matchedClusters = "matched_clusters"
+    }
+}
