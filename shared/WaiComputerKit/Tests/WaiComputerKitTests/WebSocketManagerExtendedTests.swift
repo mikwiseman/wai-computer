@@ -450,4 +450,35 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let segments = await session.testingCollectedSegments()
         XCTAssertTrue(segments.isEmpty)
     }
+
+    func testProviderBackedConnectTimeMetadataDoesNotMarkFinalization() async {
+        // Deepgram emits a Metadata frame at connection start (model and
+        // sample_rate echo). Previously this was treated as a finalization
+        // marker, which made `RealtimeCloseDrainPolicy.shouldKeepWaiting`
+        // short-circuit on EVERY session — even though the real Results
+        // frame hadn't arrived yet. Result: final words dropped.
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+
+        await session.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","model_info":{"name":"nova-3"}}
+        """)
+
+        let finalized = await session.testingHasFinalizationMarker()
+        XCTAssertFalse(finalized)
+    }
+
+    func testProviderBackedPostEndTurnMetadataMarksFinalization() async {
+        // After we've sent {"type":"Finalize"}, a subsequent Metadata frame
+        // is Deepgram's signal that there will be no more transcripts —
+        // honour it so the close-drain loop can exit promptly.
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        await session.testingSetDidSendEndTurn(true)
+
+        await session.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","model_info":{"name":"nova-3"}}
+        """)
+
+        let finalized = await session.testingHasFinalizationMarker()
+        XCTAssertTrue(finalized)
+    }
 }
