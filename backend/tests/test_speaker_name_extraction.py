@@ -10,14 +10,20 @@ The LLM call itself is mocked everywhere. These tests pin the apply logic:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from sqlalchemy import select
 
+from app.core import speaker_name_extraction as snx
 from app.core.speaker_name_extraction import (
+    _clean_name,
+    _format_transcript,
     _NameAssignment,
+    _NameExtractionSchema,
     apply_extracted_names,
+    extract_speaker_names,
 )
 from app.models.person import Person
 from app.models.user import User
@@ -49,6 +55,34 @@ def _assignment(speaker: str, name: str) -> _NameAssignment:
     return _NameAssignment(
         speaker=speaker, name=name, confidence="high", evidence=f"... I'm {name} ..."
     )
+
+
+class _FakeResponses:
+    def __init__(self, response: object | None = None, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls: list[dict[str, object]] = []
+
+    async def parse(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+class _FakeClient:
+    def __init__(self, responses: _FakeResponses) -> None:
+        self.responses = responses
+
+
+def _patch_extract_runtime(monkeypatch: pytest.MonkeyPatch, responses: _FakeResponses) -> None:
+    monkeypatch.setattr(
+        snx,
+        "get_settings",
+        lambda: SimpleNamespace(openai_api_key="sk-test", openai_llm_model="gpt-test"),
+    )
+    monkeypatch.setattr(snx, "get_openai_client", lambda: _FakeClient(responses))
+    monkeypatch.setattr(snx, "ensure_response_completed", lambda *_args, **_kwargs: None)
 
 
 @pytest.mark.asyncio
@@ -187,6 +221,139 @@ async def test_apply_with_no_extractions_is_noop(client, db_session):
 
     assert applied == []
     assert speaker_assignments == {"speaker_0": None}
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_empty_no_key_and_empty_transcript_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    responses = _FakeResponses()
+    _patch_extract_runtime(monkeypatch, responses)
+
+    assert await extract_speaker_names(transcript_results=[], raw_labels=[]) == {}
+
+    monkeypatch.setattr(
+        snx,
+        "get_settings",
+        lambda: SimpleNamespace(openai_api_key="", openai_llm_model="gpt-test"),
+    )
+    assert (
+        await extract_speaker_names(
+            transcript_results=[
+                _FakeTranscriptResult("speaker_0", "I'm Alice."),
+                _FakeTranscriptResult("speaker_1", "I'm Bob."),
+            ],
+            raw_labels=["speaker_0", "speaker_1"],
+        )
+        == {}
+    )
+
+    _patch_extract_runtime(monkeypatch, responses)
+    assert (
+        await extract_speaker_names(
+            transcript_results=[
+                _FakeTranscriptResult("speaker_0", "  "),
+                _FakeTranscriptResult("speaker_1", ""),
+            ],
+            raw_labels=["speaker_0", "speaker_1"],
+        )
+        == {}
+    )
+    assert responses.calls == []
+
+
+@pytest.mark.asyncio
+async def test_extract_builds_guarded_prompt_and_filters_model_output(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    response = SimpleNamespace(
+        output_parsed=_NameExtractionSchema(
+            assignments=[
+                _NameAssignment(
+                    speaker="speaker_0",
+                    name="Alice",
+                    confidence="medium",
+                    evidence="I'm Alice.",
+                ),
+                _assignment("speaker_99", "Ghost"),
+                _assignment("speaker_1", "MissingName"),
+                _assignment("speaker_2", "Alex"),
+                _assignment("speaker_3", "Alex"),
+                _assignment("speaker_1", "Bob"),
+                _assignment("speaker_1", "Bob"),
+                _assignment("speaker_0", "x" * 120),
+            ]
+        )
+    )
+    responses = _FakeResponses(response=response)
+    _patch_extract_runtime(monkeypatch, responses)
+
+    extracted = await extract_speaker_names(
+        transcript_results=[
+            _FakeTranscriptResult("speaker_0", "I'm Alice."),
+            _FakeTranscriptResult("speaker_1", "Bob speaking."),
+            _FakeTranscriptResult("speaker_2", "Alex here."),
+            _FakeTranscriptResult("speaker_3", "Alex here too."),
+        ],
+        raw_labels=["speaker_0", "speaker_1", "speaker_2", "speaker_3"],
+    )
+
+    assert set(extracted) == {"speaker_1"}
+    assert extracted["speaker_1"].name == "Bob"
+    prompt = responses.calls[0]["input"]
+    assert "<transcript>" in prompt
+    assert "SECURITY:" in prompt
+    assert "Bob speaking." in prompt
+    assert responses.calls[0]["temperature"] == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_handles_provider_failure_and_empty_parsed_response(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    failing_responses = _FakeResponses(error=RuntimeError("provider down"))
+    _patch_extract_runtime(monkeypatch, failing_responses)
+
+    assert (
+        await extract_speaker_names(
+            transcript_results=[
+                _FakeTranscriptResult("speaker_0", "I'm Alice."),
+                _FakeTranscriptResult("speaker_1", "I'm Bob."),
+            ],
+            raw_labels=["speaker_0", "speaker_1"],
+        )
+        == {}
+    )
+
+    empty_responses = _FakeResponses(response=SimpleNamespace(output_parsed=None))
+    _patch_extract_runtime(monkeypatch, empty_responses)
+    assert (
+        await extract_speaker_names(
+            transcript_results=[
+                _FakeTranscriptResult("speaker_0", "I'm Alice."),
+                _FakeTranscriptResult("speaker_1", "I'm Bob."),
+            ],
+            raw_labels=["speaker_0", "speaker_1"],
+        )
+        == {}
+    )
+
+
+def test_name_extraction_helpers_clean_and_format_edge_cases():
+    assert _clean_name("  Alice, ") == "Alice"
+    assert _clean_name("  ...  ") is None
+    assert _clean_name("x" * 120) is None
+
+    formatted = _format_transcript(
+        [
+            _FakeTranscriptResult(None, "  Hello  "),
+            _FakeTranscriptResult("speaker_1", ""),
+        ]
+    )
+    assert formatted == "[speaker_unknown] Hello"
+
+    long_formatted = _format_transcript([_FakeTranscriptResult("speaker_0", "x" * 9000)])
+    assert len(long_formatted) == 8000
 
 
 # Extraction-side guards (no LLM call; we drive extract_speaker_names

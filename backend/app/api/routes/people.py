@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
-from app.models import Person, Segment, Voiceprint
+from app.models import Person, PublicVoiceprint, Segment, Voiceprint
 
 router = APIRouter(prefix="/people", tags=["people"])
 
@@ -156,8 +156,77 @@ async def delete_person(
     person = result.scalar_one_or_none()
     if person is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    # Block deleting the self-Person while the user is published to the
+    # directory — otherwise the next refresh would have no voiceprint to
+    # publish (and the SET NULL on user.self_person_id would silently
+    # leave the directory entry orphaned).
+    if user.self_person_id == person.id:
+        published = (
+            await db.execute(
+                select(PublicVoiceprint.id).where(
+                    PublicVoiceprint.user_id == user.id
+                )
+            )
+        ).scalar_one_or_none()
+        if published is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Disable voice sharing in Settings before deleting your "
+                    "own speaker profile."
+                ),
+            )
     await db.delete(person)
     await db.flush()
+
+
+@router.delete(
+    "/{person_id}/voiceprints/{voiceprint_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_voiceprint(
+    person_id: UUID,
+    voiceprint_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> None:
+    """Drop a single voiceprint sample without removing the Person.
+
+    GDPR-relevant: lets a user revoke an individual biometric sample (bad
+    enrollment, wrong-mic recording, no-longer-representative voice) while
+    keeping the Person's display_name + aliases + segment attributions.
+    """
+    result = await db.execute(
+        select(Voiceprint).where(
+            Voiceprint.id == voiceprint_id,
+            Voiceprint.person_id == person_id,
+            Voiceprint.user_id == user.id,
+        )
+    )
+    voiceprint = result.scalar_one_or_none()
+    if voiceprint is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Voiceprint not found"
+        )
+    await db.delete(voiceprint)
+    await db.flush()
+
+    # If this was the self-Person's last voiceprint AND the user is
+    # currently published, withdraw the published row so the directory
+    # doesn't keep serving a vector that the user explicitly revoked.
+    if user.self_person_id == person_id:
+        remaining = (
+            await db.execute(
+                select(func.count(Voiceprint.id)).where(
+                    Voiceprint.person_id == person_id,
+                    Voiceprint.user_id == user.id,
+                )
+            )
+        ).scalar_one()
+        if remaining == 0:
+            from app.core.voice_sharing import unpublish_voice_sharing
+
+            await unpublish_voice_sharing(db=db, user=user)
 
 
 @router.post("/{person_id}/merge", response_model=PersonResponse)

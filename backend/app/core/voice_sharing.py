@@ -12,11 +12,12 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.voice_embedding import MODEL_NAME
-from app.models.person import PublicVoiceprint, Voiceprint
+from app.models.person import Person, PublicVoiceprint, Voiceprint
+from app.models.recording import Segment
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -71,12 +72,17 @@ async def publish_voice_sharing(
     twice updates the row to the latest voiceprint and name without creating
     duplicates.
     """
-    first_name = (user.first_name or "").strip()
-    last_name = (user.last_name or "").strip()
-    if not first_name or not last_name:
-        raise VoiceSharingError(
-            "Set both first and last name in Settings before publishing."
+    from app.core.name_moderation import (
+        NameModerationError,
+        validate_combined_directory_name,
+    )
+
+    try:
+        first_name, last_name = validate_combined_directory_name(
+            user.first_name, user.last_name
         )
+    except NameModerationError as exc:
+        raise VoiceSharingError(str(exc)) from exc
 
     voiceprint = await _pick_publishable_voiceprint(db=db, user=user)
     if voiceprint is None:
@@ -117,10 +123,51 @@ async def publish_voice_sharing(
 async def unpublish_voice_sharing(
     *, db: AsyncSession, user: User
 ) -> VoiceSharingState:
-    """Remove the user's directory entry. Idempotent."""
+    """Remove the user's directory entry and propagate the withdrawal.
+
+    GDPR right-to-erasure requires we don't just delete the publish row; we
+    also stop existing receivers from displaying our name on past or future
+    matches. Concretely:
+      - Hard-delete the public_voiceprints row.
+      - For every receiver Person whose ``directory_user_id`` points at this
+        user, sever the link (set directory_user_id NULL) and rename the
+        Person to a neutral fallback so receivers see something stable but
+        not our published identity.
+      - Clear ``person_id`` on Segments that were AUTO-assigned via the
+        directory (auto_assigned=True) and whose Person was directory-linked;
+        manual assignments by the receiver are preserved.
+
+    Idempotent.
+    """
     await db.execute(
         delete(PublicVoiceprint).where(PublicVoiceprint.user_id == user.id)
     )
+
+    # Snapshot receiver Person rows we need to unlink, so we can clear the
+    # downstream Segment attributions before the FK is severed.
+    rows = await db.execute(
+        select(Person.id).where(Person.directory_user_id == user.id)
+    )
+    receiver_person_ids = [row[0] for row in rows.all()]
+
+    if receiver_person_ids:
+        await db.execute(
+            update(Segment)
+            .where(
+                Segment.person_id.in_(receiver_person_ids),
+                Segment.auto_assigned.is_(True),
+            )
+            .values(person_id=None, auto_assigned=False, match_confidence=None)
+        )
+        await db.execute(
+            update(Person)
+            .where(Person.id.in_(receiver_person_ids))
+            .values(
+                directory_user_id=None,
+                display_name="Removed from WaiComputer directory",
+            )
+        )
+
     await db.flush()
     return await get_voice_sharing_state(db=db, user=user)
 
@@ -154,30 +201,24 @@ async def refresh_published_voiceprint_if_any(
 async def _pick_publishable_voiceprint(
     *, db: AsyncSession, user: User
 ) -> Voiceprint | None:
-    """Pick the user's canonical voiceprint to publish.
+    """Pick the user's canonical self-voiceprint to publish.
 
-    Prefers the most recent voiceprint attached to the user's self_person_id.
-    Falls back to the user's most recent voiceprint of any Person so users
-    with only a single enrolled Person still get a publishable sample.
+    Only returns a Voiceprint attached to ``user.self_person_id``. We
+    deliberately do NOT fall back to "latest voiceprint of any Person" —
+    that fallback could publish a spouse / colleague / contact's voice
+    under the user's name if they ever delete their own self-Person.
+    Returning None forces the caller to surface a clear "re-enroll your
+    voice" error path.
     """
-    if user.self_person_id is not None:
-        result = await db.execute(
-            select(Voiceprint)
-            .where(
-                Voiceprint.user_id == user.id,
-                Voiceprint.person_id == user.self_person_id,
-                Voiceprint.model == MODEL_NAME,
-            )
-            .order_by(Voiceprint.created_at.desc())
-            .limit(1)
-        )
-        voiceprint = result.scalar_one_or_none()
-        if voiceprint is not None:
-            return voiceprint
-
+    if user.self_person_id is None:
+        return None
     result = await db.execute(
         select(Voiceprint)
-        .where(Voiceprint.user_id == user.id, Voiceprint.model == MODEL_NAME)
+        .where(
+            Voiceprint.user_id == user.id,
+            Voiceprint.person_id == user.self_person_id,
+            Voiceprint.model == MODEL_NAME,
+        )
         .order_by(Voiceprint.created_at.desc())
         .limit(1)
     )
