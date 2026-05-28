@@ -1366,40 +1366,46 @@ export function DashboardClient() {
     );
   }
 
-  const navigation = [
-    { key: "wai", label: copy.nav.wai.label, detail: copy.nav.wai.detail, count: null },
+  // Sidebar sections mirror MacContentView's grouped layout:
+  // Library / Recording Folders / Dictation / Wai.
+  type NavItem = {
+    key: Exclude<DashboardView, "folder">;
+    label: string;
+    count: string | null;
+  };
+  const navSections: Array<{ header: string; items: NavItem[] }> = [
     {
-      key: "library",
-      label: copy.nav.library.label,
-      detail: copy.nav.library.detail,
-      count: displayCount(recordings.length),
+      header: locale === "ru" ? "Библиотека" : "Library",
+      items: [
+        {
+          key: "library",
+          label: copy.nav.library.label,
+          count: displayCount(recordings.length),
+        },
+        {
+          key: "trash",
+          label: copy.nav.trash.label,
+          count: displayCount(trashRecordings.length),
+        },
+      ],
     },
     {
-      key: "trash",
-      label: copy.nav.trash.label,
-      detail: copy.nav.trash.detail,
-      count: displayCount(trashRecordings.length),
-    },
-    { key: "search", label: copy.nav.search.label, detail: copy.nav.search.detail, count: null },
-    {
-      key: "history",
-      label: copy.nav.history.label,
-      detail: copy.nav.history.detail,
-      count: null,
+      header: locale === "ru" ? "Диктовка" : "Dictation",
+      items: [
+        { key: "history", label: copy.nav.history.label, count: null },
+        { key: "dictionary", label: copy.nav.dictionary.label, count: null },
+      ],
     },
     {
-      key: "dictionary",
-      label: copy.nav.dictionary.label,
-      detail: copy.nav.dictionary.detail,
-      count: null,
+      header: "Wai",
+      items: [
+        { key: "wai", label: copy.nav.wai.label, count: null },
+        { key: "search", label: copy.nav.search.label, count: null },
+        { key: "settings", label: copy.nav.settings.label, count: null },
+      ],
     },
-    {
-      key: "settings",
-      label: copy.nav.settings.label,
-      detail: copy.nav.settings.detail,
-      count: null,
-    },
-  ] as const;
+  ];
+  const allNavItems: NavItem[] = navSections.flatMap((section) => section.items);
 
   const currentFolder = activeFolderId
     ? folders.find((folder) => folder.id === activeFolderId) ?? null
@@ -1410,7 +1416,7 @@ export function DashboardClient() {
   const workspaceTitle =
     view === "folder" && currentFolder
       ? currentFolder.name
-      : navigation.find((item) => item.key === view)?.label ?? copy.fallbackTitle;
+      : allNavItems.find((item) => item.key === view)?.label ?? copy.fallbackTitle;
 
   return (
     <div className="web-app-shell">
@@ -1424,36 +1430,35 @@ export function DashboardClient() {
         </div>
 
         <nav className="sidebar-nav">
-          {navigation.map((item) => {
-            const node = (
-              <button
-                key={item.key}
-                data-testid={`tab-${item.key}`}
-                type="button"
-                className="sidebar-nav__item"
-                aria-current={view === item.key ? "page" : undefined}
-                onClick={() => {
-                  setActiveFolderId(null);
-                  setView(item.key);
-                  if (item.key === "trash") {
-                    void loadTrashRecordingsState();
-                  }
-                }}
-              >
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{item.detail}</small>
-                </span>
-                {item.count !== null ? <em>{item.count}</em> : null}
-              </button>
-            );
-            if (item.key !== "library") {
-              return node;
-            }
-            return (
-              <div key={item.key} className="sidebar-folder-group">
-                {node}
-                <div className="sidebar-folder-group__header">
+          {navSections.map((section, index) => (
+            <div key={section.header} className="sidebar-section">
+              <small className="sidebar-section__header">{section.header}</small>
+              {section.items.map((item) => (
+                <button
+                  key={item.key}
+                  data-testid={`tab-${item.key}`}
+                  type="button"
+                  className="sidebar-nav__item"
+                  aria-current={view === item.key ? "page" : undefined}
+                  onClick={() => {
+                    setActiveFolderId(null);
+                    setView(item.key);
+                    if (item.key === "trash") {
+                      void loadTrashRecordingsState();
+                    }
+                  }}
+                >
+                  <span>
+                    <strong>{item.label}</strong>
+                  </span>
+                  {item.count !== null ? <em>{item.count}</em> : null}
+                </button>
+              ))}
+
+              {/* Folders block lives right after the Library section. */}
+              {index === 0 ? (
+                <div className="sidebar-folder-group">
+                  <div className="sidebar-folder-group__header">
                   <small data-testid="sidebar-folders-label">
                     {copy.nav.folders.label}
                   </small>
@@ -1586,9 +1591,10 @@ export function DashboardClient() {
                     );
                   })}
                 </ul>
-              </div>
-            );
-          })}
+                </div>
+              ) : null}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
