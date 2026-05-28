@@ -24,14 +24,15 @@ from app.core.observability import (
     capture_sentry_message,
     fingerprint_text,
 )
+from app.core.personalization import load_user_keyterms
 from app.core.retry_policy import is_retryable_exception
-from app.core.summarizer import generate_title
-from app.core.transcript_utils import TranscriptResult
-from app.core.transcription import transcribe_audio_file
 from app.core.speaker_name_extraction import (
     apply_extracted_names,
     extract_speaker_names,
 )
+from app.core.summarizer import generate_title
+from app.core.transcript_utils import TranscriptResult
+from app.core.transcription import transcribe_audio_file
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -490,6 +491,7 @@ async def process_staged_recording_upload(
                     "staged_size_bytes": staged_size_bytes,
                 },
             )
+            keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
             transcript_results = await transcribe_audio_file(
                 staged_file.read(),
                 language=recording_language,
@@ -499,6 +501,7 @@ async def process_staged_recording_upload(
                     if audio_duration_seconds is not None
                     else client_duration_seconds
                 ),
+                keyterms=keyterms,
             )
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",

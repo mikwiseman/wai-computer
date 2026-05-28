@@ -10,7 +10,7 @@ The LLM call itself is mocked everywhere. These tests pin the apply logic:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -187,3 +187,128 @@ async def test_apply_with_no_extractions_is_noop(client, db_session):
 
     assert applied == []
     assert speaker_assignments == {"speaker_0": None}
+
+
+# Extraction-side guards (no LLM call; we drive extract_speaker_names
+# behaviour through monkeypatching the OpenAI Responses parse call).
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_single_speaker_recordings(monkeypatch):
+    from app.core import speaker_name_extraction
+
+    parse_calls: list[int] = []
+
+    async def _should_not_be_called(**_kwargs):
+        parse_calls.append(1)
+        raise AssertionError("LLM must not be called for single-speaker input")
+
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.get_openai_client",
+        lambda: type("X", (), {"responses": type("Y", (), {"parse": _should_not_be_called})()})(),
+    )
+    out = await speaker_name_extraction.extract_speaker_names(
+        transcript_results=[
+            _FakeTranscriptResult(speaker="speaker_0", text="Hi I'm Mik."),
+        ],
+        raw_labels=["speaker_0"],
+    )
+    assert out == {}
+    assert parse_calls == []
+
+
+@pytest.mark.asyncio
+async def test_extract_drops_duplicate_names_across_clusters(monkeypatch):
+    """Two clusters both labelled 'Alex' must collapse to NEITHER."""
+    from app.core import speaker_name_extraction as snx
+
+    class _Parsed:
+        assignments = [
+            snx._NameAssignment(
+                speaker="speaker_0", name="Alex", confidence="high",
+                evidence="I'm Alex",
+            ),
+            snx._NameAssignment(
+                speaker="speaker_2", name="Alex", confidence="high",
+                evidence="I'm Alex too",
+            ),
+        ]
+
+    class _Response:
+        output_parsed = _Parsed()
+
+    async def _fake_parse(**_kwargs):
+        return _Response()
+
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.get_openai_client",
+        lambda: type("X", (), {"responses": type("Y", (), {"parse": _fake_parse})()})(),
+    )
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.ensure_response_completed",
+        lambda *_a, **_k: None,
+    )
+    # Need an OpenAI key to bypass the early-skip.
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.get_settings",
+        lambda: type("S", (), {
+            "openai_api_key": "sk-test",
+            "openai_llm_model": "gpt-5.5",
+        })(),
+    )
+
+    out = await snx.extract_speaker_names(
+        transcript_results=[
+            _FakeTranscriptResult(speaker="speaker_0", text="Hi I'm Alex."),
+            _FakeTranscriptResult(speaker="speaker_1", text="Cool."),
+            _FakeTranscriptResult(speaker="speaker_2", text="I'm Alex too."),
+        ],
+        raw_labels=["speaker_0", "speaker_1", "speaker_2"],
+    )
+    assert out == {}, "Duplicate name across clusters must yield no high-confidence assignments"
+
+
+@pytest.mark.asyncio
+async def test_extract_rejects_name_not_in_transcript(monkeypatch):
+    """Pure hallucination — model returns a name that never appears in the audio."""
+    from app.core import speaker_name_extraction as snx
+
+    class _Parsed:
+        assignments = [
+            snx._NameAssignment(
+                speaker="speaker_0", name="Phantom Person", confidence="high",
+                evidence="(no such phrase)",
+            ),
+        ]
+
+    class _Response:
+        output_parsed = _Parsed()
+
+    async def _fake_parse(**_kwargs):
+        return _Response()
+
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.get_openai_client",
+        lambda: type("X", (), {"responses": type("Y", (), {"parse": _fake_parse})()})(),
+    )
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.ensure_response_completed",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "app.core.speaker_name_extraction.get_settings",
+        lambda: type("S", (), {
+            "openai_api_key": "sk-test",
+            "openai_llm_model": "gpt-5.5",
+        })(),
+    )
+
+    out = await snx.extract_speaker_names(
+        transcript_results=[
+            _FakeTranscriptResult(speaker="speaker_0", text="Hello there."),
+            _FakeTranscriptResult(speaker="speaker_1", text="General Kenobi."),
+        ],
+        raw_labels=["speaker_0", "speaker_1"],
+    )
+    assert out == {}

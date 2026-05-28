@@ -267,6 +267,7 @@ class SummaryGenerationJob(Base, UUIDMixin, TimestampMixin):
         server_default="5",
     )
     transcript_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    instructions_override: Mapped[str | None] = mapped_column(Text)
     task_id: Mapped[str | None] = mapped_column(String(255))
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)

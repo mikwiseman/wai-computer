@@ -11,13 +11,14 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 from websockets.exceptions import ConnectionClosed
 
-from app.api.deps import CurrentUser
+from app.api.deps import CurrentUser, Database
 from app.core.deepgram import require_deepgram_api_key
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
     capture_sentry_exception,
 )
+from app.core.personalization import load_user_keyterms
 from app.core.realtime_transcription import (
     UnsupportedRealtimeLanguageError,
     build_deepgram_realtime_url_from_proxy_claims,
@@ -66,6 +67,7 @@ async def create_session(
     request: CreateRealtimeTranscriptionSessionRequest,
     http_request: Request,
     user: CurrentUser,
+    db: Database,
 ) -> RealtimeTranscriptionSessionResponse:
     """Create a provider-backed realtime speech-to-text session."""
     started_at = perf_counter()
@@ -92,6 +94,7 @@ async def create_session(
             purpose=request.purpose,
             user=user,
             websocket_url=_stream_websocket_url(http_request),
+            keyterms=await load_user_keyterms(db, user_id=user.id, purpose=request.purpose),
         )
     except UnsupportedRealtimeLanguageError as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)

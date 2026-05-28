@@ -19,6 +19,7 @@ from app.models.recording import (
     RecordingStatus,
     Segment,
     Summary,
+    SummaryGenerationJob,
 )
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
@@ -508,6 +509,51 @@ async def test_start_summary_generation_is_idempotent_and_visible_in_detail(
     assert second.status_code == 202
     assert second.json()["job_id"] == first_payload["job_id"]
     assert enqueued_job_ids == [first_payload["job_id"]]
+
+
+@pytest.mark.asyncio
+async def test_start_summary_generation_persists_per_recording_instruction_override(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title="Custom Summary")
+    recording_id = UUID(recording["id"])
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="speaker_0",
+            content="Make this summary focus on legal risks.",
+            start_ms=0,
+            end_ms=1200,
+            confidence=0.98,
+        )
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        lambda job_id: "celery-task-override",
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/summary-generation",
+        headers=auth_headers,
+        json={"instructions": "Focus on legal risks and deadlines."},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    job = await db_session.get(SummaryGenerationJob, UUID(payload["job_id"]))
+    assert job is not None
+    assert job.instructions_override == "Focus on legal risks and deadlines."
+
+    detail_response = await client.get(f"/api/recordings/{recording_id}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["summary_generation"]["job_id"] == payload["job_id"]
+    assert detail["summary_generation"]["status"] == "queued"
 
 
 @pytest.mark.asyncio

@@ -10,6 +10,7 @@ const mockCreateRecording = vi.fn();
 const mockDeleteRecording = vi.fn();
 const mockGetRecording = vi.fn();
 const mockGenerateSummary = vi.fn();
+const mockStartSummaryGeneration = vi.fn();
 const mockSearch = vi.fn();
 const mockSemanticSearch = vi.fn();
 const mockFulltextSearch = vi.fn();
@@ -42,6 +43,12 @@ const mockListDictationEntries = vi.fn();
 const mockListDictionaryWords = vi.fn();
 const mockCreateDictionaryWord = vi.fn();
 const mockDeleteDictionaryWord = vi.fn();
+const mockListPersonalizationTerms = vi.fn();
+const mockCreatePersonalizationTerm = vi.fn();
+const mockUpdatePersonalizationTerm = vi.fn();
+const mockDeletePersonalizationTerm = vi.fn();
+const mockImportPersonalizationText = vi.fn();
+const mockImportPersonalizationFile = vi.fn();
 const mockReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -55,6 +62,7 @@ vi.mock("@/lib/api", () => ({
   deleteRecording: (...args: unknown[]) => mockDeleteRecording(...args),
   getRecording: (...args: unknown[]) => mockGetRecording(...args),
   generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
+  startSummaryGeneration: (...args: unknown[]) => mockStartSummaryGeneration(...args),
   search: (...args: unknown[]) => mockSearch(...args),
   semanticSearch: (...args: unknown[]) => mockSemanticSearch(...args),
   fulltextSearch: (...args: unknown[]) => mockFulltextSearch(...args),
@@ -87,6 +95,12 @@ vi.mock("@/lib/api", () => ({
   listDictionaryWords: (...args: unknown[]) => mockListDictionaryWords(...args),
   createDictionaryWord: (...args: unknown[]) => mockCreateDictionaryWord(...args),
   deleteDictionaryWord: (...args: unknown[]) => mockDeleteDictionaryWord(...args),
+  listPersonalizationTerms: (...args: unknown[]) => mockListPersonalizationTerms(...args),
+  createPersonalizationTerm: (...args: unknown[]) => mockCreatePersonalizationTerm(...args),
+  updatePersonalizationTerm: (...args: unknown[]) => mockUpdatePersonalizationTerm(...args),
+  deletePersonalizationTerm: (...args: unknown[]) => mockDeletePersonalizationTerm(...args),
+  importPersonalizationText: (...args: unknown[]) => mockImportPersonalizationText(...args),
+  importPersonalizationFile: (...args: unknown[]) => mockImportPersonalizationFile(...args),
 }));
 
 const baseUser = {
@@ -185,6 +199,7 @@ function arrangeHappyPathMocks() {
   mockDeleteRecording.mockResolvedValue(undefined);
   mockGetRecording.mockResolvedValue(baseRecordingDetail);
   mockGenerateSummary.mockResolvedValue(baseRecordingDetail.summary);
+  mockStartSummaryGeneration.mockResolvedValue({ status: "queued" });
   mockSearch.mockResolvedValue({ results: [], total: 5 });
   mockSemanticSearch.mockResolvedValue({ results: [], total: 4 });
   mockFulltextSearch.mockResolvedValue({ results: [], total: 3 });
@@ -288,6 +303,7 @@ describe("DashboardClient", () => {
       mockDeleteRecording,
       mockGetRecording,
       mockGenerateSummary,
+      mockStartSummaryGeneration,
       mockSearch,
       mockSemanticSearch,
       mockFulltextSearch,
@@ -318,11 +334,18 @@ describe("DashboardClient", () => {
       mockListDictionaryWords,
       mockCreateDictionaryWord,
       mockDeleteDictionaryWord,
+      mockListPersonalizationTerms,
+      mockCreatePersonalizationTerm,
+      mockUpdatePersonalizationTerm,
+      mockDeletePersonalizationTerm,
+      mockImportPersonalizationText,
+      mockImportPersonalizationFile,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListFolders.mockResolvedValue([]);
     mockListDictationEntries.mockResolvedValue([]);
     mockListDictionaryWords.mockResolvedValue([]);
+    mockListPersonalizationTerms.mockResolvedValue([]);
   });
 
   it("redirects to login when initialize gets 401", async () => {
@@ -409,7 +432,7 @@ describe("DashboardClient", () => {
 
     await user.click(screen.getByTestId("generate-summary-r1"));
     await waitFor(() => {
-      expect(mockGenerateSummary).toHaveBeenCalledWith("r1");
+      expect(mockStartSummaryGeneration).toHaveBeenCalledWith("r1", { instructions: null });
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Summary generated.");
     });
 
@@ -511,7 +534,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Delete failed");
     });
 
-    mockGenerateSummary.mockRejectedValueOnce(new Error("Generate failed"));
+    mockStartSummaryGeneration.mockRejectedValueOnce(new Error("Generate failed"));
     await user.click(screen.getByTestId("generate-summary-r1"));
     await waitFor(() => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Generate failed");

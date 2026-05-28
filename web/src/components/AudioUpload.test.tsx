@@ -73,6 +73,43 @@ describe("AudioUpload", () => {
     });
   });
 
+  it("uploads multiple supported files sequentially", async () => {
+    mockCreateRecording
+      .mockResolvedValueOnce({ id: "rec-1" })
+      .mockResolvedValueOnce({ id: "rec-2" });
+    mockUploadAudio
+      .mockResolvedValueOnce({ id: "rec-1", title: "first" })
+      .mockResolvedValueOnce({ id: "rec-2", title: "second" });
+
+    const onUploadComplete = vi.fn();
+    const { container } = render(
+      <AudioUpload onUploadComplete={onUploadComplete} onError={vi.fn()} />,
+    );
+
+    fireEvent.change(getFileInput(container), {
+      target: {
+        files: [
+          new File(["audio"], "first.m4a", { type: "audio/m4a" }),
+          new File(["audio"], "second.wav", { type: "audio/wav" }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockUploadAudio).toHaveBeenNthCalledWith(
+        1,
+        "rec-1",
+        expect.objectContaining({ name: "first.m4a" }),
+      );
+      expect(mockUploadAudio).toHaveBeenNthCalledWith(
+        2,
+        "rec-2",
+        expect.objectContaining({ name: "second.wav" }),
+      );
+      expect(onUploadComplete).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("surfaces upload failures", async () => {
     mockCreateRecording.mockResolvedValueOnce({ id: "rec-2" });
     mockUploadAudio.mockRejectedValueOnce(new Error("Upload failed"));

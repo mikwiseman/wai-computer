@@ -23,7 +23,7 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
   const [progress, setProgress] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(async (file: File) => {
+  const validateFile = useCallback((file: File) => {
     const fileNameParts = file.name.toLowerCase().split(".");
     const fileExtension = fileNameParts.length > 1 ? fileNameParts.at(-1) : null;
     const hasAllowedExtension =
@@ -33,44 +33,51 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
       );
     const hasAllowedType = ACCEPTED_TYPES.includes(file.type);
 
-    if ((!fileExtension && !hasAllowedType) || (fileExtension !== null && !hasAllowedExtension)) {
+    return !((!fileExtension && !hasAllowedType) || (fileExtension !== null && !hasAllowedExtension));
+  }, []);
+
+  const handleFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    if (files.some((file) => !validateFile(file))) {
       onError(UNSUPPORTED_FORMAT_MESSAGE);
       return;
     }
 
     setUploading(true);
-    setProgress("Creating recording...");
 
     try {
-      // Pass an empty title so the backend auto-generates one from the
-      // transcript content instead of using the filename verbatim.
-      const recording = await createRecording({ title: "", type: "note", language: "multi" });
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const prefix = files.length > 1 ? `${index + 1}/${files.length}: ` : "";
+        setProgress(`${prefix}Creating recording...`);
+        // Pass an empty title so the backend auto-generates one from the
+        // transcript content instead of using the filename verbatim.
+        const recording = await createRecording({ title: "", type: "note", language: "multi" });
 
-      setProgress("Uploading audio...");
-      const detail = await uploadAudio(recording.id, file);
+        setProgress(`${prefix}Uploading audio...`);
+        const detail = await uploadAudio(recording.id, file);
+        onUploadComplete(detail);
+      }
 
       setProgress("");
-      onUploadComplete(detail);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       setProgress("");
     }
-  }, [onUploadComplete, onError]);
+  }, [onUploadComplete, onError, validateFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+    void handleFiles(Array.from(e.dataTransfer.files));
+  }, [handleFiles]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    void handleFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
-  }, [handleFile]);
+  }, [handleFiles]);
 
   return (
     <div
@@ -84,6 +91,7 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
         ref={fileInputRef}
         type="file"
         accept={ACCEPTED_FILE_INPUT}
+        multiple
         onChange={handleFileSelect}
         style={{ display: "none" }}
       />

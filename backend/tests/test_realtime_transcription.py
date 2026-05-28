@@ -241,6 +241,19 @@ def test_decode_realtime_proxy_token_rejects_invalid_signature():
         decode_realtime_proxy_token("not-a-jwt")
 
 
+def test_decode_realtime_proxy_token_accepts_missing_keyterms():
+    claims = decode_realtime_proxy_token(_encode_proxy_payload({}))
+
+    assert claims.keyterms == []
+
+
+def test_decode_realtime_proxy_token_rejects_invalid_keyterms():
+    token = _encode_proxy_payload({"keyterms": ["WaiComputer", 123]})
+
+    with pytest.raises(ValueError, match="keyterms"):
+        decode_realtime_proxy_token(token)
+
+
 def test_build_deepgram_realtime_url_from_proxy_claims_uses_claims():
     url = build_deepgram_realtime_url_from_proxy_claims(
         RealtimeTranscriptionProxyClaims(

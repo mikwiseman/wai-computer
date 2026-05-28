@@ -441,7 +441,7 @@ async def test_export_recording_markdown_format(
     assert "text/markdown" in response.headers["content-type"]
     body = response.text
     assert "# Export Test" in body
-    assert "Speaker 0" in body
+    assert "Speaker 1" in body
     assert "Content-Disposition" in response.headers
 
 
@@ -849,7 +849,7 @@ async def test_export_recording_txt_format(
     assert "text/plain" in response.headers["content-type"]
     body = response.text
     assert "TXT Export" in body
-    assert "Speaker 0" in body
+    assert "Speaker 1" in body
 
 
 # ---------------------------------------------------------------------------

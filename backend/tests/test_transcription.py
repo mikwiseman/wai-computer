@@ -8,6 +8,20 @@ import pytest
 ELEVENLABS_FILE_STT_MODEL = "scribe_v2"
 
 
+def test_provider_error_code_reads_openai_error_shape():
+    from app.core.transcription import _provider_error_code
+
+    request = httpx.Request("POST", "https://provider.example/transcribe")
+    response = httpx.Response(
+        400,
+        json={"error": {"code": "invalid_audio"}},
+        request=request,
+    )
+    error = httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    assert _provider_error_code(error) == "invalid_audio"
+
+
 @pytest.mark.asyncio
 async def test_transcription_dispatches_to_elevenlabs_file_stt():
     with patch(
@@ -25,6 +39,7 @@ async def test_transcription_dispatches_to_elevenlabs_file_stt():
         content_type="audio/mp3",
         channels=None,
         model=ELEVENLABS_FILE_STT_MODEL,
+        keyterms=None,
     )
 
 
@@ -56,6 +71,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
         content_type="audio/wav",
         channels=1,
         model=ELEVENLABS_FILE_STT_MODEL,
+        keyterms=None,
     )
 
 

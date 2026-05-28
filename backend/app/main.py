@@ -23,6 +23,7 @@ from app.api.routes import (
     folders,
     mcp_oauth,
     people,
+    personalization,
     realtime_transcription,
     realtime_voice,
     recordings,
@@ -185,6 +186,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
+app.include_router(personalization.router, prefix="/api")
 app.include_router(voice_enrollment.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")

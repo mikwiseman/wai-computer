@@ -76,6 +76,7 @@ async def transcribe_audio_file(
     user: User | None = None,
     provider: str | None = None,
     audio_duration_seconds: float | None = None,
+    keyterms: list[str] | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime."""
     provider = provider or DEFAULT_FILE_STT_PROVIDER
@@ -105,6 +106,7 @@ async def transcribe_audio_file(
             content_type=content_type,
             channels=channels,
             model=selected_model,
+            keyterms=keyterms,
         )
     except httpx.HTTPStatusError as exc:
         error_code = _provider_error_code(exc) or "unknown"

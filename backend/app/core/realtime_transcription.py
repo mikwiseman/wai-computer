@@ -7,7 +7,7 @@ backend opens Deepgram with the long-lived provider API key.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -68,6 +68,7 @@ class RealtimeTranscriptionProxyClaims:
     channels: int
     model: str
     purpose: Literal["recording", "dictation"]
+    keyterms: list[str] = field(default_factory=list)
 
 
 def create_realtime_proxy_token(
@@ -77,6 +78,7 @@ def create_realtime_proxy_token(
     channels: int,
     model: str,
     purpose: Literal["recording", "dictation"],
+    keyterms: list[str] | None = None,
     ttl_seconds: int = REALTIME_PROXY_TOKEN_TTL_SECONDS,
 ) -> tuple[str, int]:
     settings = get_settings()
@@ -90,6 +92,7 @@ def create_realtime_proxy_token(
         "channels": channels,
         "model": model,
         "purpose": purpose,
+        "keyterms": list(keyterms or []),
     }
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     return token, ttl_seconds
@@ -112,6 +115,7 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
     model = payload.get("model")
     purpose = payload.get("purpose")
     channels = payload.get("channels")
+    keyterms_payload = payload.get("keyterms")
 
     if not isinstance(subject, str) or not subject:
         raise ValueError("Invalid realtime transcription token subject")
@@ -123,6 +127,14 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
         raise ValueError("Invalid realtime transcription token purpose")
     if not isinstance(channels, int) or channels < 1:
         raise ValueError("Invalid realtime transcription token channels")
+    if keyterms_payload is None:
+        keyterms: list[str] = []
+    elif isinstance(keyterms_payload, list) and all(
+        isinstance(item, str) for item in keyterms_payload
+    ):
+        keyterms = keyterms_payload
+    else:
+        raise ValueError("Invalid realtime transcription token keyterms")
 
     return RealtimeTranscriptionProxyClaims(
         subject=subject,
@@ -130,6 +142,7 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
         channels=channels,
         model=model,
         purpose=purpose,
+        keyterms=keyterms,
     )
 
 
@@ -141,6 +154,7 @@ async def _build_deepgram_realtime_session(
     purpose: Literal["recording", "dictation"],
     subject: str,
     websocket_url: str,
+    keyterms: list[str] | None = None,
 ) -> RealtimeTranscriptionSession:
     try:
         resolved_language = validate_deepgram_language(language)
@@ -155,6 +169,7 @@ async def _build_deepgram_realtime_session(
         channels=resolved_channels,
         purpose=purpose,
         model=model,
+        keyterms=keyterms,
     )
     return RealtimeTranscriptionSession(
         provider="deepgram",
@@ -180,6 +195,7 @@ async def create_realtime_transcription_session(
     purpose: Literal["recording", "dictation"] = "recording",
     user: User | None = None,
     websocket_url: str = "ws://localhost:8000/api/transcription/stream",
+    keyterms: list[str] | None = None,
 ) -> RealtimeTranscriptionSession:
     """Create a realtime transcription session for the active speech runtime.
 
@@ -218,6 +234,7 @@ async def create_realtime_transcription_session(
         purpose=purpose,
         subject=str(getattr(user, "id", "system")),
         websocket_url=websocket_url,
+        keyterms=keyterms,
     )
 
 
@@ -229,4 +246,5 @@ def build_deepgram_realtime_url_from_proxy_claims(
         channels=claims.channels,
         purpose=claims.purpose,
         model=claims.model,
+        keyterms=claims.keyterms,
     )

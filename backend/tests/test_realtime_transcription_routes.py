@@ -25,9 +25,13 @@ def mock_authenticated_user():
     async def _override():
         return fake_user
 
-    app.dependency_overrides[get_current_user] = _override
-    yield fake_user
-    app.dependency_overrides.pop(get_current_user, None)
+    with patch(
+        "app.api.routes.realtime_transcription.load_user_keyterms",
+        new=AsyncMock(return_value=[]),
+    ):
+        app.dependency_overrides[get_current_user] = _override
+        yield fake_user
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio
@@ -70,6 +74,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
     assert mint.await_args.kwargs["websocket_url"] == (
         "wss://wai.computer/api/transcription/stream"
     )
+    assert mint.await_args.kwargs["keyterms"] == []
     payload = response.json()
     assert payload["provider"] == "deepgram"
     assert payload["token"] == "dg_token"
@@ -111,6 +116,7 @@ async def test_realtime_transcription_session_mints_local_proxy_token(
     claims = decode_realtime_proxy_token(payload["token"])
     assert claims.language == "ru"
     assert claims.purpose == "dictation"
+    assert claims.keyterms == []
 
 
 @pytest.mark.asyncio
@@ -356,6 +362,11 @@ class FailingProviderConnection:
         return None
 
 
+class SendJsonFailingWebSocket(FakeWebSocket):
+    async def send_json(self, payload: dict[str, object]) -> None:
+        raise RuntimeError("websocket already closed")
+
+
 def _claims() -> RealtimeTranscriptionProxyClaims:
     return RealtimeTranscriptionProxyClaims(
         subject="user-transcription",
@@ -483,6 +494,82 @@ async def test_realtime_stream_reports_provider_connect_failure():
     assert captured["extras"]["alert_code"] == "realtime.stream.failed"
     assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
     assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_ignores_error_payload_when_socket_already_closed():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = SendJsonFailingWebSocket({"authorization": "Bearer proxy-token"})
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FailingProviderConnection(),
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_reports_unexpected_bridge_task_failure():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = FakeProvider()
+    captured: dict[str, object] = {}
+
+    async def failing_client_to_provider(*args, **kwargs):
+        raise RuntimeError("upstream failed")
+
+    async def waiting_provider_to_client(*args, **kwargs):
+        await asyncio.sleep(60)
+
+    def fake_capture(error: Exception, *, extras: dict[str, object] | None = None) -> None:
+        captured["error"] = error
+        captured["extras"] = extras
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription._client_to_provider",
+        new=failing_client_to_provider,
+    ), patch(
+        "app.api.routes.realtime_transcription._provider_to_client",
+        new=waiting_provider_to_client,
+    ), patch(
+        "app.api.routes.realtime_transcription.capture_sentry_exception",
+        new=fake_capture,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert isinstance(captured["error"], RuntimeError)
+    assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
+    assert websocket.closed_codes == [1011]
+
+
+def test_websockets_header_kwarg_supports_newer_additional_headers(monkeypatch):
+    from app.api.routes import realtime_transcription as route
+
+    def fake_connect(url: str, *, additional_headers=None):
+        del url, additional_headers
+
+    monkeypatch.setattr(route.websockets, "connect", fake_connect)
+
+    assert route._websockets_header_kwarg() == "additional_headers"
 
 
 @pytest.mark.asyncio
