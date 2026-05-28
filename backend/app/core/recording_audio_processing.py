@@ -605,6 +605,7 @@ async def process_staged_recording_upload(
                     user_id=user_id,
                     speaker_assignments=speaker_assignments,
                     extracted=extracted_names,
+                    recording_id=recording_id,
                 )
                 _recording_lifecycle_breadcrumb(
                     "Recording name extraction applied",

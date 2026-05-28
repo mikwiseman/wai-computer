@@ -231,12 +231,19 @@ async def apply_extracted_names(
     user_id: uuid.UUID,
     speaker_assignments: dict[str, tuple[uuid.UUID, float] | None],
     extracted: dict[str, _NameAssignment],
+    recording_id: uuid.UUID | None = None,
 ) -> list[AppliedName]:
     """Resolve extracted names against the user's Person address book.
 
     Mutates ``speaker_assignments`` in place so the Segment-writing loop
     afterwards picks up the new person_id. Returns the list of applied
     changes for downstream telemetry.
+
+    When ``recording_id`` is supplied, any newly-created Person also gets
+    the cluster's retained embedding promoted to a permanent Voiceprint.
+    This lets voice ID auto-match that person in their NEXT recording
+    without requiring a second self-introduction — the "learns over time"
+    promise.
     """
     if not extracted:
         return []
@@ -299,6 +306,29 @@ async def apply_extracted_names(
         db.add(new_person)
         await db.flush()
         speaker_assignments[raw_label] = (new_person.id, 1.0)
+
+        # Promote the cluster's retained embedding to a permanent Voiceprint
+        # for this Person so we recognise them by voice in future recordings.
+        if recording_id is not None:
+            try:
+                from app.core.voice_identification import (
+                    store_voiceprint_from_recording_speaker,
+                )
+
+                await store_voiceprint_from_recording_speaker(
+                    db=db,
+                    user_id=user_id,
+                    person_id=new_person.id,
+                    recording_id=recording_id,
+                    raw_label=raw_label,
+                )
+            except Exception:  # noqa: BLE001 -- best-effort
+                logger.exception(
+                    "Failed to promote retained embedding to voiceprint "
+                    "for new Person from intro: raw_label=%s",
+                    raw_label,
+                )
+
         applied.append(
             AppliedName(
                 raw_label=raw_label,

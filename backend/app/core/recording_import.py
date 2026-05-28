@@ -314,6 +314,7 @@ async def _persist_segments(
                 user_id=user_id,
                 speaker_assignments=speaker_assignments,
                 extracted=extracted_names,
+                recording_id=recording.id,
             )
     except Exception:
         logger.exception("speaker name extraction failed for imported recording")
