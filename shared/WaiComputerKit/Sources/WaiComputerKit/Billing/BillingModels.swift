@@ -203,11 +203,18 @@ public struct BillingCheckoutRequest: Encodable, Sendable {
     public let plan: String
     public let period: String  // "month" | "year"
     public let provider: String?  // optional override
+    public let promoCode: String?
 
-    public init(plan: String, period: String, provider: String? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case plan, period, provider
+        case promoCode = "promo_code"
+    }
+
+    public init(plan: String, period: String, provider: String? = nil, promoCode: String? = nil) {
         self.plan = plan
         self.period = period
         self.provider = provider
+        self.promoCode = promoCode
     }
 }
 

@@ -486,7 +486,11 @@ struct BillingSection: View {
         }
     }
 
-    private func startCheckout(plan: BillingPlan, region: BillingDisplayRegion) async {
+    private func startCheckout(
+        plan: BillingPlan,
+        region: BillingDisplayRegion,
+        promoCode: String? = nil
+    ) async {
         await MainActor.run {
             checkoutInFlight = true
             actionError = nil
@@ -495,7 +499,8 @@ struct BillingSection: View {
             let resp = try await appState.getAPIClient().createBillingCheckout(
                 plan: plan.code,
                 period: period.rawValue,
-                provider: region.provider
+                provider: region.provider,
+                promoCode: promoCode
             )
             guard let url = URL(string: resp.checkoutUrl),
                   let scheme = url.scheme?.lowercased(),
@@ -542,6 +547,20 @@ struct BillingSection: View {
             }
             await loadAll()
         } catch {
+            if isCheckoutPromoCodeError(error) {
+                guard let pro = currentProPlan(), let region = billingRegion else {
+                    await MainActor.run {
+                        actionError = BillingSectionError.missingProPlan.localizedDescription
+                        promoInFlight = false
+                    }
+                    return
+                }
+                await startCheckout(plan: pro, region: region, promoCode: code)
+                await MainActor.run {
+                    promoInFlight = false
+                }
+                return
+            }
             await MainActor.run {
                 actionError = localizedBillingActionError(error)
             }
@@ -628,5 +647,12 @@ struct BillingSection: View {
         return message.isEmpty
             ? String(localized: "billing.error.loadFailed", bundle: .main)
             : message
+    }
+
+    private func isCheckoutPromoCodeError(_ error: Error) -> Bool {
+        if case APIError.httpError(_, let message) = error {
+            return message == "Promo code applies to checkout"
+        }
+        return false
     }
 }

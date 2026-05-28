@@ -258,6 +258,54 @@ describe("BillingDashboard", () => {
     expect(await screen.findByText(/Pro активен до/i)).toBeInTheDocument();
   });
 
+  it("opens checkout with the entered code when the promo is a discount", async () => {
+    mockedPromo.mockRejectedValue(new Error("Promo code applies to checkout"));
+    mockedCheckout.mockResolvedValue({
+      provider: "tinkoff",
+      checkout_url: "https://pay.tbank.test/discount",
+    });
+    const originalLocation = window.location;
+    const hrefSetter = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: new Proxy(originalLocation, {
+        set(target, property, value) {
+          if (property === "href") {
+            hrefSetter(value);
+            return true;
+          }
+          return Reflect.set(target, property, value);
+        },
+      }),
+    });
+
+    try {
+      render(<BillingDashboard locale="ru" currency="rub" />);
+
+      expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
+
+      await userEvent.type(screen.getByPlaceholderText("Введите промокод"), "TESTSALE");
+      await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+      await waitFor(() =>
+        expect(mockedCheckout).toHaveBeenCalledWith({
+          plan: "pro",
+          period: "month",
+          provider: "tinkoff",
+          promo_code: "TESTSALE",
+        }),
+      );
+      expect(hrefSetter).toHaveBeenCalledWith("https://pay.tbank.test/discount");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
   it("localizes promo code errors in Russian billing", async () => {
     mockedPromo.mockRejectedValue(new Error("Promo code not found"));
     render(<BillingDashboard locale="ru" currency="rub" />);

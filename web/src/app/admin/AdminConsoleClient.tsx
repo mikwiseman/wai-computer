@@ -682,7 +682,6 @@ function PromoTable({
             <th>Code</th>
             <th>Type</th>
             <th>Status</th>
-            <th>Plan</th>
             <th>Use</th>
             <th>Benefit</th>
             <th>Period</th>
@@ -707,7 +706,6 @@ function PromoTable({
                 <td className="admin-code-cell">{code}</td>
                 <td>{promo.promotion_type === "discount" ? "discount" : "access"}</td>
                 <td>{promo.active ? "active" : "paused"}</td>
-                <td>{promo.plan}</td>
                 <td>{promo.redeemed_count} / {promo.max_redemptions}</td>
                 <td>
                   {promo.promotion_type === "access" ? (
