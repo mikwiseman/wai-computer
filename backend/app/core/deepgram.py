@@ -188,6 +188,7 @@ def build_realtime_websocket_url(
     ]
     if purpose == "recording":
         params.append(("utterances", "true"))
+        params.append(("diarize", "true"))
     if purpose == "dictation" and supports_dictation(resolved_language):
         params.extend((("dictation", "true"), ("punctuate", "true")))
     if supports_numerals(resolved_language):

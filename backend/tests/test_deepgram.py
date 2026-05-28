@@ -44,6 +44,17 @@ def test_build_realtime_websocket_url_includes_live_best_practice_params() -> No
     assert "utterance_end_ms=1000" in url
     assert "endpointing=100" in url
     assert "utterances=true" in url
+    assert "diarize=true" in url
+
+
+def test_build_realtime_websocket_url_omits_diarize_for_dictation() -> None:
+    url = build_realtime_websocket_url(
+        language="en-US",
+        channels=1,
+        purpose="dictation",
+    )
+
+    assert "diarize=true" not in url
 
 
 def test_build_realtime_websocket_url_limits_dictation_to_english() -> None:
