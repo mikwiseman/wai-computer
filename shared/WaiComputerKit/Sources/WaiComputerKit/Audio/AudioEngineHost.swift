@@ -123,12 +123,12 @@ public actor AudioEngineHost {
         SentryHelper.addBreadcrumb(
             category: "audio.engine",
             message: "configuration change",
+            level: .info,
             data: [
                 "engineRunning": isRunning,
                 "hasActiveLease": activeLease != nil,
                 "platform": "macOS",
-            ],
-            level: .info
+            ]
         )
         // When a lease is active and the engine has stopped itself, finish
         // the live stream so the consumer's `for await` exits and the
