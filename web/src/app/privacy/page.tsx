@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
         <header className={styles.legalHeader}>
           <h1>Privacy Policy</h1>
-          <p className={styles.updated}>Last updated: May 22, 2026</p>
+          <p className={styles.updated}>Last updated: May 28, 2026</p>
         </header>
 
         <div className={styles.legalContent}>
@@ -67,6 +67,20 @@ export default function PrivacyPage() {
               and maintain security. You can delete local app data from your
               device and request account or server-side data deletion by
               contacting support.
+            </p>
+          </section>
+
+          <section>
+            <h2>Voice sharing directory</h2>
+            <p>
+              WaiComputer offers an optional voice-sharing directory. Sharing
+              is off by default. If you turn it on in Settings, your first
+              name, last name, and a derived voice fingerprint are stored in
+              a global match index so other users' recordings can display
+              your name when your voice is detected. We do not share your
+              audio, transcripts, summaries, or recording metadata through
+              this directory. You can turn sharing off at any time, which
+              immediately deletes your entry from the directory.
             </p>
           </section>
 
