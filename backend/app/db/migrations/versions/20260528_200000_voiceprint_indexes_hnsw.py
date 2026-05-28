@@ -27,25 +27,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 _INDEXES = [
-    ("voiceprints", "ix_voiceprints_embedding_ivfflat", "ix_voiceprints_embedding"),
-    (
-        "recording_speaker_embeddings",
-        "ix_recording_speaker_embeddings_embedding_ivfflat",
-        "ix_recording_speaker_embeddings_embedding",
-    ),
-    (
-        "public_voiceprints",
-        "ix_public_voiceprints_embedding",
-        "ix_public_voiceprints_embedding_hnsw",
-    ),
+    ("voiceprints", "ix_voiceprints_embedding", True),
+    ("recording_speaker_embeddings", "ix_recording_speaker_embeddings_embedding", False),
+    ("public_voiceprints", "ix_public_voiceprints_embedding", True),
 ]
 
 
 def upgrade() -> None:
-    for table, old_name, new_name in _INDEXES:
-        op.execute(f"DROP INDEX IF EXISTS {old_name}")
+    for table, index_name, _had_ivfflat in _INDEXES:
+        op.execute(f"DROP INDEX IF EXISTS {index_name}")
         op.execute(
-            f"CREATE INDEX IF NOT EXISTS {new_name} ON {table} "
+            f"CREATE INDEX {index_name} ON {table} "
             f"USING hnsw (embedding vector_cosine_ops) "
             f"WITH (m = 16, ef_construction = 64)"
         )
@@ -53,12 +45,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for table, old_name, new_name in _INDEXES:
-        op.execute(f"DROP INDEX IF EXISTS {new_name}")
-        # We can't restore the IVFFlat lists=100 baseline cleanly because
-        # the original create lived in a different migration. Recreate
-        # with the same parameter so downgrade leaves a working index.
+    for table, index_name, had_ivfflat in _INDEXES:
+        op.execute(f"DROP INDEX IF EXISTS {index_name}")
+        if not had_ivfflat:
+            continue
         op.execute(
-            f"CREATE INDEX IF NOT EXISTS {old_name} ON {table} "
+            f"CREATE INDEX {index_name} ON {table} "
             f"USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
         )
