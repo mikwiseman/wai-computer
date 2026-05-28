@@ -108,18 +108,16 @@ export function SpeakerChip({ segment, recordingId, onUpdated }: SpeakerChipProp
       ? Math.round(segment.match_confidence * 100)
       : null;
 
+  const isAssigned = Boolean(segment.display_name && segment.person_id);
+
   return (
     <span className="speaker-chip-wrapper">
       <button
         type="button"
         className="speaker-chip"
+        data-assigned={isAssigned ? "true" : "false"}
         onClick={() => setOpen((value) => !value)}
         disabled={!canAssign || pending}
-        style={
-          segment.display_name && segment.person_id
-            ? { backgroundColor: "var(--accent-50)", color: "var(--accent-700)" }
-            : undefined
-        }
         title={
           isAuto && confidencePct !== null
             ? `Auto-assigned (${confidencePct}% match) — click to override`
@@ -128,7 +126,7 @@ export function SpeakerChip({ segment, recordingId, onUpdated }: SpeakerChipProp
       >
         <strong>{label}</strong>
         {isAuto && confidencePct !== null ? (
-          <span aria-hidden="true" style={{ marginLeft: "0.25rem", fontSize: "0.7rem" }}>
+          <span className="speaker-chip__confidence" aria-hidden="true">
             ✨{confidencePct}%
           </span>
         ) : null}
