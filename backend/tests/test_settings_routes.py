@@ -576,3 +576,69 @@ async def test_patch_preferences_requires_auth(client: AsyncClient):
         json={"theme": "dark"},
     )
     assert response.status_code == 401
+
+
+# Identity (first_name, last_name) — feeds the voice-sharing directory.
+
+
+@pytest.mark.asyncio
+async def test_identity_defaults_empty_until_user_sets_it(client: AsyncClient):
+    headers = await _register(client, "identity.default@example.com", "password-123")
+    response = await client.get("/api/settings/identity", headers=headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"first_name": None, "last_name": None, "has_voiceprint": False}
+
+
+@pytest.mark.asyncio
+async def test_patch_identity_sets_names(client: AsyncClient):
+    headers = await _register(client, "identity.set@example.com", "password-123")
+    response = await client.patch(
+        "/api/settings/identity",
+        headers=headers,
+        json={"first_name": "  Mik  ", "last_name": "Wiseman"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "first_name": "Mik",
+        "last_name": "Wiseman",
+        "has_voiceprint": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_patch_identity_clears_with_empty_string(client: AsyncClient):
+    headers = await _register(client, "identity.clear@example.com", "password-123")
+    await client.patch(
+        "/api/settings/identity",
+        headers=headers,
+        json={"first_name": "Anna", "last_name": "Last"},
+    )
+    cleared = await client.patch(
+        "/api/settings/identity",
+        headers=headers,
+        json={"first_name": ""},
+    )
+    assert cleared.status_code == 200
+    body = cleared.json()
+    assert body["first_name"] is None
+    assert body["last_name"] == "Last"
+
+
+@pytest.mark.asyncio
+async def test_patch_identity_rejects_too_long(client: AsyncClient):
+    headers = await _register(client, "identity.long@example.com", "password-123")
+    response = await client.patch(
+        "/api/settings/identity",
+        headers=headers,
+        json={"first_name": "x" * 121},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_identity_requires_auth(client: AsyncClient):
+    assert (await client.get("/api/settings/identity")).status_code == 401
+    assert (
+        await client.patch("/api/settings/identity", json={"first_name": "x"})
+    ).status_code == 401

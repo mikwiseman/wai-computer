@@ -25,7 +25,11 @@ class Person(Base, UUIDMixin, TimestampMixin):
     color: Mapped[str | None] = mapped_column(String(20))
     aliases: Mapped[list | None] = mapped_column(JSONB)
 
-    user: Mapped["User"] = relationship("User", back_populates="people")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="people",
+        foreign_keys=[user_id],
+    )
     voiceprints: Mapped[list["Voiceprint"]] = relationship(
         "Voiceprint", back_populates="person", cascade="all, delete-orphan"
     )

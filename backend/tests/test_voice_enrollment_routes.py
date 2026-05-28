@@ -192,3 +192,45 @@ async def test_enroll_with_unknown_person_id_returns_404(client):
         data={"person_id": str(uuid4())},
     )
     assert resp.status_code == 404
+
+
+async def test_first_enrollment_seeds_self_person_pointer(
+    client, db_session, fake_voiceprint_store
+):
+    """First enroll sets User.self_person_id; second enroll does not overwrite it."""
+    auth = await _register(client)
+
+    first = await client.post(
+        "/api/voice-enrollment",
+        headers=auth,
+        files={"audio": ("voice.wav", _wav_bytes(duration_s=6.0), "audio/wav")},
+        data={"display_name": "Me"},
+    )
+    assert first.status_code == 200
+    first_person_id = first.json()["person"]["id"]
+
+    user = (await db_session.execute(select(User).limit(1))).scalar_one()
+    await db_session.refresh(user)
+    assert str(user.self_person_id) == first_person_id
+
+    # A second enrollment under a DIFFERENT Person must not steal the pointer.
+    create = await client.post(
+        "/api/people", headers=auth, json={"display_name": "Someone Else"}
+    )
+    other_person_id = create.json()["id"]
+    second = await client.post(
+        "/api/voice-enrollment",
+        headers=auth,
+        files={
+            "audio": (
+                "voice2.wav",
+                _wav_bytes(duration_s=6.0, freq_hz=330.0),
+                "audio/wav",
+            )
+        },
+        data={"person_id": other_person_id},
+    )
+    assert second.status_code == 200
+
+    await db_session.refresh(user)
+    assert str(user.self_person_id) == first_person_id
