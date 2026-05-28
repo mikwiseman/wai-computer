@@ -142,6 +142,58 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
+    func testTakeRejectsCachedConfigForDifferentLanguageAndMintsFresh() async throws {
+        let mintCount = SessionConfigMintCounter()
+        let russianKey = RealtimeTranscriptionSessionConfigVault.Key(
+            language: "ru",
+            channels: 1,
+            purpose: .dictation
+        )
+        let vault = RealtimeTranscriptionSessionConfigVault { _ in
+            await mintCount.increment()
+            let count = await mintCount.count()
+            if count == 1 {
+                return Self.config(token: "stale", language: "multi")
+            }
+            return Self.config(token: "fresh", language: "ru")
+        }
+
+        await vault.prefetch(for: russianKey)
+        try await Task.sleep(for: .milliseconds(100))
+
+        let result = try await vault.take(
+            for: russianKey,
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
+        )
+
+        XCTAssertEqual(result.config.token, "fresh")
+        XCTAssertEqual(result.config.language, "ru")
+        XCTAssertFalse(result.prefetched)
+        let count = await mintCount.count()
+        XCTAssertEqual(count, 2)
+    }
+
+    func testTakeAcceptsBackendBaseLanguageNormalization() async throws {
+        let regionKey = RealtimeTranscriptionSessionConfigVault.Key(
+            language: "ru-RU",
+            channels: 1,
+            purpose: .dictation
+        )
+        let vault = RealtimeTranscriptionSessionConfigVault { key in
+            Self.config(token: "normalized", language: key.language == "ru-RU" ? "ru" : key.language)
+        }
+
+        let result = try await vault.take(
+            for: regionKey,
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
+        )
+
+        XCTAssertEqual(result.config.token, "normalized")
+        XCTAssertEqual(result.config.language, "ru")
+    }
+
     func testExpiredPrefetchIsNotUsed() async throws {
         let mintCount = SessionConfigMintCounter()
         let vault = RealtimeTranscriptionSessionConfigVault { _ in
