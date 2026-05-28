@@ -38,6 +38,21 @@ PROXY_ERROR_PAYLOAD = {
     "err_code": "PROVIDER_CONNECTION_FAILED",
     "message": "Live transcription provider connection failed.",
 }
+PROXY_ERROR_MISSING_BEARER = {
+    "type": "Error",
+    "err_code": "AUTH_MISSING",
+    "message": "Realtime transcription requires a bearer token.",
+}
+PROXY_ERROR_INVALID_TOKEN = {
+    "type": "Error",
+    "err_code": "AUTH_INVALID",
+    "message": "Realtime transcription token is invalid or expired.",
+}
+PROXY_ERROR_MISSING_API_KEY = {
+    "type": "Error",
+    "err_code": "PROVIDER_UNAVAILABLE",
+    "message": "Live transcription provider is not configured.",
+}
 
 
 class CreateRealtimeTranscriptionSessionRequest(BaseModel):
@@ -213,16 +228,45 @@ async def create_session(
 
 @router.websocket("/stream")
 async def stream_realtime_transcription(websocket: WebSocket) -> None:
-    """Proxy realtime audio frames to Deepgram without exposing the API key."""
+    """Proxy realtime audio frames to Deepgram without exposing the API key.
+
+    All early-rejection paths accept the upgrade FIRST, send a structured
+    error frame, then close. Closing before accept was the previous default
+    for missing/invalid tokens — but URLSession on the client side then
+    reported the failure as a generic close with no body, which got swallowed
+    by the dictation state machine when it landed during the .connecting
+    window. The accept-frame-close pattern is also what makes these failures
+    visible in Sentry: `_close_websocket_with_telemetry` always emits a
+    breadcrumb so a flat-line dictation flow has a paper trail.
+    """
     token = _bearer_token(websocket)
     if not token:
-        await websocket.close(code=1008)
+        await websocket.accept()
+        await _send_error_payload(websocket, PROXY_ERROR_MISSING_BEARER)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1008,
+            err_code="AUTH_MISSING",
+            extras={"stage": "auth"},
+        )
         return
 
     try:
         claims = decode_realtime_proxy_token(token)
-    except ValueError:
-        await websocket.close(code=1008)
+    except ValueError as exc:
+        await websocket.accept()
+        await _send_error_payload(websocket, PROXY_ERROR_INVALID_TOKEN)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1008,
+            err_code="AUTH_INVALID",
+            extras={
+                "stage": "token_decode",
+                # str(exc) is safe — decode_realtime_proxy_token raises with
+                # bounded fixed strings (no token contents, no user data).
+                "reason": str(exc),
+            },
+        )
         return
 
     target_url = build_deepgram_realtime_url_from_proxy_claims(claims)
@@ -230,8 +274,19 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         deepgram_api_key = require_deepgram_api_key()
     except ValueError:
         await websocket.accept()
-        await websocket.send_json(PROXY_ERROR_PAYLOAD)
-        await _close_websocket(websocket, code=1011)
+        await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1011,
+            err_code="PROVIDER_UNAVAILABLE",
+            extras={
+                "stage": "api_key",
+                "provider": "deepgram",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
         return
 
     await websocket.accept()
@@ -277,9 +332,28 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                 ):
                     raise exception
     except WebSocketDisconnect:
+        add_sentry_breadcrumb(
+            category="transcription.stream",
+            message="client disconnected",
+            data={
+                "provider": "deepgram",
+                "purpose": claims.purpose,
+            },
+        )
         return
     except ConnectionClosed:
-        await _close_websocket(websocket, code=1000)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1000,
+            err_code="PROVIDER_CLOSED",
+            extras={
+                "stage": "provider_closed",
+                "provider": "deepgram",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
     except Exception as exc:
         logger.warning(
             "deepgram realtime proxy failed error_type=%s purpose=%s",
@@ -296,13 +370,33 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                 "purpose": claims.purpose,
             },
         )
-        try:
-            await websocket.send_json(PROXY_ERROR_PAYLOAD)
-        except RuntimeError:
-            pass
-        await _close_websocket(websocket, code=1011)
+        await _send_error_payload(websocket, PROXY_ERROR_PAYLOAD)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1011,
+            err_code="PROXY_FAILURE",
+            extras={
+                "stage": "proxy_exception",
+                "provider": "deepgram",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+                "error_type": type(exc).__name__,
+            },
+        )
     else:
-        await _close_websocket(websocket, code=1000)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1000,
+            err_code="NORMAL",
+            extras={
+                "stage": "normal",
+                "provider": "deepgram",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
 
 
 async def _client_to_provider(websocket: WebSocket, provider) -> None:
@@ -354,6 +448,43 @@ async def _close_websocket(websocket: WebSocket, *, code: int) -> None:
     try:
         await websocket.close(code=code)
     except RuntimeError:
+        pass
+
+
+async def _close_websocket_with_telemetry(
+    websocket: WebSocket,
+    *,
+    code: int,
+    err_code: str,
+    extras: dict[str, object] | None = None,
+) -> None:
+    """Close the WS and emit a breadcrumb so close paths are observable.
+
+    Previously, the auth-fail close-before-accept and "ConnectionClosed →
+    close 1000" paths emitted zero telemetry — the whole "dictation starts
+    then immediately stops" class of bug was invisible in Sentry. Every
+    close now leaves a breadcrumb keyed by `err_code` so a flat-line user
+    flow has a trace.
+    """
+    payload: dict[str, object] = {"close_code": code, "err_code": err_code}
+    if extras:
+        payload.update(extras)
+    add_sentry_breadcrumb(
+        category="transcription.stream",
+        message="proxy closed",
+        data=payload,
+    )
+    await _close_websocket(websocket, code=code)
+
+
+async def _send_error_payload(websocket: WebSocket, payload: dict[str, object]) -> None:
+    """Best-effort error frame send. Swallows RuntimeError raised when the
+    underlying socket is already closed — the breadcrumb in the close path
+    is the authoritative signal.
+    """
+    try:
+        await websocket.send_json(payload)
+    except (RuntimeError, WebSocketDisconnect):
         pass
 
 
