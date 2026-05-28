@@ -137,8 +137,15 @@ interface DashboardCopy {
   dictionary: {
     title: string;
     subtitle: string;
-    wordColumn: string;
-    replacementColumn: string;
+    explainer: string;
+    helper: string;
+    overuseWarning: string;
+    biasBadge: string;
+    biasLegend: string;
+    replaceBadge: string;
+    replaceLegend: string;
+    duplicate: string;
+    searchPlaceholder: string;
     addPlaceholderWord: string;
     addPlaceholderReplacement: string;
     addAction: string;
@@ -296,19 +303,29 @@ const COPY: Record<Locale, DashboardCopy> = {
     dictionary: {
       title: "Dictionary",
       subtitle: "Custom replacements applied to your dictated text.",
-      wordColumn: "Word",
-      replacementColumn: "Replacement",
+      explainer:
+        "Each entry biases the recognizer toward the word you'd usually mishear. Add an optional replacement to also auto-correct after transcription.",
+      helper:
+        "Leave the right field empty to add a vocabulary booster only.",
+      overuseWarning:
+        "Long dictionaries can confuse the recognizer — keep entries focused.",
+      biasBadge: "BIAS",
+      biasLegend: "Word boosts recognition",
+      replaceBadge: "REPLACE",
+      replaceLegend: "Auto-corrects to replacement",
+      duplicate: "Already in your dictionary.",
+      searchPlaceholder: "Search dictionary",
       addPlaceholderWord: "Word or phrase",
-      addPlaceholderReplacement: "Replacement (optional)",
+      addPlaceholderReplacement: "Replace with… (optional)",
       addAction: "Add",
       deleteAction: "Delete",
       created: "Word added.",
       deleted: "Word removed.",
       emptyTitle: "No Custom Words",
       emptyBody: "Add words you want corrected or auto-replaced when dictating.",
-      notAvailableTitle: "Dictionary Coming Soon",
+      notAvailableTitle: "Dictionary Unavailable",
       notAvailableBody:
-        "Custom dictation dictionary editing on the web is coming. Use the Mac app for now.",
+        "Couldn't reach the dictionary service. Try refreshing in a moment.",
       refresh: "Refresh",
       enterWord: "Enter a word.",
       inputWordsRow: "Add a dictionary word",
@@ -459,19 +476,29 @@ const COPY: Record<Locale, DashboardCopy> = {
     dictionary: {
       title: "Словарь",
       subtitle: "Свои замены, применяемые к продиктованному тексту.",
-      wordColumn: "Слово",
-      replacementColumn: "Замена",
+      explainer:
+        "Каждая запись подсказывает распознавателю слово, которое он часто слышит неверно. Добавьте замену, чтобы также автоматически исправлять текст.",
+      helper:
+        "Оставьте правое поле пустым, чтобы только подсказать слово распознавателю.",
+      overuseWarning:
+        "Длинный список может запутать распознаватель — оставляйте только нужное.",
+      biasBadge: "ПОДСКАЗКА",
+      biasLegend: "Слово помогает распознаванию",
+      replaceBadge: "ЗАМЕНА",
+      replaceLegend: "Автозамена на новый текст",
+      duplicate: "Это слово уже есть в словаре.",
+      searchPlaceholder: "Поиск по словарю",
       addPlaceholderWord: "Слово или фраза",
-      addPlaceholderReplacement: "Замена (необязательно)",
+      addPlaceholderReplacement: "Заменить на… (необязательно)",
       addAction: "Добавить",
       deleteAction: "Удалить",
       created: "Слово добавлено.",
       deleted: "Слово удалено.",
       emptyTitle: "Своих слов пока нет",
       emptyBody: "Добавьте слова, которые нужно исправлять или заменять при диктовке.",
-      notAvailableTitle: "Словарь скоро появится",
+      notAvailableTitle: "Словарь недоступен",
       notAvailableBody:
-        "Редактирование словаря на вебе скоро. Пока используйте приложение Mac.",
+        "Не удалось загрузить словарь. Попробуйте обновить через минуту.",
       refresh: "Обновить",
       enterWord: "Введите слово.",
       inputWordsRow: "Добавить слово в словарь",
@@ -693,6 +720,7 @@ export function DashboardClient() {
   const [dictionaryUnavailable, setDictionaryUnavailable] = useState(false);
   const [newWord, setNewWord] = useState("");
   const [newReplacement, setNewReplacement] = useState("");
+  const [dictionaryQuery, setDictionaryQuery] = useState("");
 
   // Keyboard / shortcut affordances
   const [isShortcutCheatsheetOpen, setIsShortcutCheatsheetOpen] = useState(false);
@@ -1248,6 +1276,12 @@ export function DashboardClient() {
     const trimmed = newWord.trim();
     if (!trimmed) {
       setMessage(copy.dictionary.enterWord);
+      return;
+    }
+    // Client-side dedupe (Mac parity: rejects duplicates by lowercase word).
+    const lower = trimmed.toLowerCase();
+    if (dictionaryWords.some((w) => w.word.toLowerCase() === lower)) {
+      setMessage(copy.dictionary.duplicate);
       return;
     }
     setMessage(null);
@@ -2022,6 +2056,19 @@ export function DashboardClient() {
   }
 
   function renderDictionaryView() {
+    const query = dictionaryQuery.trim().toLowerCase();
+    const sorted = [...dictionaryWords].sort((a, b) =>
+      a.word.localeCompare(b.word, undefined, { sensitivity: "base" }),
+    );
+    const filtered = query
+      ? sorted.filter(
+          (w) =>
+            w.word.toLowerCase().includes(query) ||
+            (w.replacement ?? "").toLowerCase().includes(query),
+        )
+      : sorted;
+    const overused = dictionaryWords.length >= 30;
+
     return (
       <section className="tool-panel" data-testid="dictionary-panel">
         <header className="panel-header">
@@ -2040,8 +2087,22 @@ export function DashboardClient() {
           </button>
         </header>
 
+        <p className="dictionary-explainer">{copy.dictionary.explainer}</p>
+        <p className="dictionary-legend">
+          <span className="badge badge--bias">{copy.dictionary.biasBadge}</span>
+          <span className="muted-text">{copy.dictionary.biasLegend}</span>
+          <span className="badge badge--replace">{copy.dictionary.replaceBadge}</span>
+          <span className="muted-text">{copy.dictionary.replaceLegend}</span>
+        </p>
+
+        {overused ? (
+          <p className="inline-alert" role="status" data-testid="dictionary-overuse">
+            {copy.dictionary.overuseWarning}
+          </p>
+        ) : null}
+
         <form
-          className="search-form"
+          className="search-form dictionary-add"
           onSubmit={handleCreateDictionaryWord}
           aria-label={copy.dictionary.inputWordsRow}
         >
@@ -2063,6 +2124,19 @@ export function DashboardClient() {
             {copy.dictionary.addAction}
           </button>
         </form>
+        <p className="dictionary-helper muted-text">{copy.dictionary.helper}</p>
+
+        {dictionaryWords.length > 0 ? (
+          <input
+            type="search"
+            className="dictionary-search"
+            data-testid="dictionary-search"
+            placeholder={copy.dictionary.searchPlaceholder}
+            value={dictionaryQuery}
+            onChange={(event) => setDictionaryQuery(event.target.value)}
+            aria-label={copy.dictionary.searchPlaceholder}
+          />
+        ) : null}
 
         {dictionaryUnavailable ? (
           <div className="empty-state" data-testid="dictionary-unavailable">
@@ -2080,28 +2154,43 @@ export function DashboardClient() {
           </div>
         ) : (
           <ul className="dictionary-list" data-testid="dictionary-list">
-            <li className="dictionary-list__head">
-              <strong>{copy.dictionary.wordColumn}</strong>
-              <strong>{copy.dictionary.replacementColumn}</strong>
-              <span aria-hidden="true" />
-            </li>
-            {dictionaryWords.map((word) => (
-              <li
-                key={word.client_word_id}
-                data-testid={`dictionary-word-${word.client_word_id}`}
-              >
-                <span>{word.word}</span>
-                <span>{word.replacement ?? ""}</span>
-                <button
-                  type="button"
-                  className="ghost-button compact-button danger-button"
-                  data-testid={`delete-dictionary-${word.client_word_id}`}
-                  onClick={() => void handleDeleteDictionaryWord(word.client_word_id)}
+            {filtered.map((word) => {
+              const hasReplacement =
+                !!word.replacement && word.replacement !== word.word;
+              return (
+                <li
+                  key={word.client_word_id}
+                  data-testid={`dictionary-word-${word.client_word_id}`}
+                  className="dictionary-row"
                 >
-                  {copy.dictionary.deleteAction}
-                </button>
-              </li>
-            ))}
+                  <span className="dictionary-row__word">{word.word}</span>
+                  <span className="dictionary-row__arrow" aria-hidden="true">
+                    →
+                  </span>
+                  <span className="dictionary-row__replacement">
+                    {hasReplacement ? word.replacement : ""}
+                  </span>
+                  <span
+                    className={`badge ${hasReplacement ? "badge--replace" : "badge--bias"}`}
+                  >
+                    {hasReplacement
+                      ? copy.dictionary.replaceBadge
+                      : copy.dictionary.biasBadge}
+                  </span>
+                  <button
+                    type="button"
+                    className="ghost-button compact-button danger-button"
+                    aria-label={copy.dictionary.deleteAction}
+                    data-testid={`delete-dictionary-${word.client_word_id}`}
+                    onClick={() =>
+                      void handleDeleteDictionaryWord(word.client_word_id)
+                    }
+                  >
+                    ×
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
