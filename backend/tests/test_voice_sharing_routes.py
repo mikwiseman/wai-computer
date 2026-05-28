@@ -13,7 +13,9 @@ from sqlalchemy import select
 
 from app.core.voice_embedding import MODEL_NAME
 from app.core.voice_identification import _best_public_directory_match
+from app.core.voice_sharing import unpublish_voice_sharing
 from app.models.person import Person, PublicVoiceprint, Voiceprint
+from app.models.recording import Recording, Segment
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
@@ -171,6 +173,23 @@ async def test_voice_sharing_publish_is_idempotent(
     assert len(public_rows) == 1
 
 
+async def test_voice_sharing_rejects_reserved_directory_name(
+    client, fake_voiceprint_store
+):
+    auth, _ = await _register(client)
+    await client.patch(
+        "/api/settings/identity",
+        headers=auth,
+        json={"first_name": "Wai", "last_name": "Computer"},
+    )
+    await _enroll(client, auth, display_name="Self")
+
+    response = await client.post("/api/settings/voice-sharing", headers=auth)
+
+    assert response.status_code == 409
+    assert "reserved" in response.json()["detail"]
+
+
 async def test_voice_sharing_endpoints_require_auth(client):
     assert (await client.get("/api/settings/voice-sharing")).status_code == 401
     assert (await client.post("/api/settings/voice-sharing")).status_code == 401
@@ -278,6 +297,75 @@ async def test_cross_user_match_excludes_self(client, db_session):
         threshold=0.65,
     )
     assert match is None
+
+
+async def test_unpublish_voice_sharing_unlinks_directory_people_and_auto_segments(
+    client, db_session
+):
+    unit_embedding = [0.0] * 192
+    unit_embedding[12] = 1.0
+    publisher = await _seed_published_user(
+        db_session=db_session,
+        email="publisher-unpublish@example.com",
+        first_name="Mik",
+        last_name="Wiseman",
+        embedding=unit_embedding,
+    )
+    receiver = User(email="receiver-unpublish@example.com")
+    db_session.add(receiver)
+    await db_session.flush()
+
+    directory_person = Person(
+        user_id=receiver.id,
+        directory_user_id=publisher.id,
+        display_name="Mik Wiseman",
+    )
+    db_session.add(directory_person)
+    await db_session.flush()
+    recording = Recording(user_id=receiver.id, type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    auto_segment = Segment(
+        recording_id=recording.id,
+        speaker="Speaker 0",
+        raw_label="Speaker 0",
+        person_id=directory_person.id,
+        auto_assigned=True,
+        match_confidence=0.94,
+        content="auto directory match",
+    )
+    manual_segment = Segment(
+        recording_id=recording.id,
+        speaker="Speaker 1",
+        raw_label="Speaker 1",
+        person_id=directory_person.id,
+        auto_assigned=False,
+        match_confidence=None,
+        content="manual assignment stays",
+    )
+    db_session.add_all([auto_segment, manual_segment])
+    await db_session.flush()
+
+    state = await unpublish_voice_sharing(db=db_session, user=publisher)
+
+    assert state.enabled is False
+    refreshed_person = (
+        await db_session.execute(select(Person).where(Person.id == directory_person.id))
+    ).scalar_one()
+    assert refreshed_person.directory_user_id is None
+    assert refreshed_person.display_name == "Removed from WaiComputer directory"
+    refreshed_segments = (
+        await db_session.execute(
+            select(Segment)
+            .where(Segment.recording_id == recording.id)
+            .order_by(Segment.raw_label)
+        )
+    ).scalars().all()
+    assert refreshed_segments[0].person_id is None
+    assert refreshed_segments[0].auto_assigned is False
+    assert refreshed_segments[0].match_confidence is None
+    assert refreshed_segments[1].person_id == directory_person.id
+    assert refreshed_segments[1].auto_assigned is False
 
 
 async def test_cross_user_match_reuses_existing_directory_person(client, db_session):

@@ -156,7 +156,7 @@ async def test_process_staged_recording_upload_stores_speaker_embeddings_and_ass
         AsyncMock(return_value="Voice ID Recording"),
     )
     monkeypatch.setattr(
-        "app.core.voice_identification.compute_voice_embedding",
+        "app.core.voice_identification.compute_voice_embedding_spans",
         lambda *_: fake_embedding,
     )
     monkeypatch.setattr(

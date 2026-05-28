@@ -302,7 +302,9 @@ async def test_best_match_returns_none_below_threshold() -> None:
     db = MagicMock(spec=AsyncSession)
     result_mock = MagicMock()
     person_id = uuid.uuid4()
-    result_mock.first = MagicMock(return_value=(person_id, 0.20))  # well below DEFAULT_MATCH_THRESHOLD
+    result_mock.first = MagicMock(
+        return_value=(person_id, 0.20)
+    )  # well below DEFAULT_MATCH_THRESHOLD
     db.execute = AsyncMock(return_value=result_mock)
 
     out = await _best_voiceprint_match(
