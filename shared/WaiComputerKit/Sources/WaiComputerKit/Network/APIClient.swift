@@ -617,6 +617,29 @@ public actor APIClient {
         return try await request(.PATCH, path: "/api/settings", body: settings)
     }
 
+    // MARK: - Identity & Voice Sharing
+
+    public func getIdentity() async throws -> UserIdentity {
+        return try await request(.GET, path: "/api/settings/identity")
+    }
+
+    public func updateIdentity(_ patch: UpdateIdentityRequest) async throws -> UserIdentity {
+        return try await request(.PATCH, path: "/api/settings/identity", body: patch)
+    }
+
+    public func getVoiceSharing() async throws -> VoiceSharingState {
+        return try await request(.GET, path: "/api/settings/voice-sharing")
+    }
+
+    public func enableVoiceSharing() async throws -> VoiceSharingState {
+        struct EmptyBody: Encodable {}
+        return try await request(.POST, path: "/api/settings/voice-sharing", body: EmptyBody())
+    }
+
+    public func disableVoiceSharing() async throws -> VoiceSharingState {
+        return try await request(.DELETE, path: "/api/settings/voice-sharing")
+    }
+
     // MARK: - Telegram
 
     public func getTelegramLinkStatus() async throws -> TelegramLinkStatus {
