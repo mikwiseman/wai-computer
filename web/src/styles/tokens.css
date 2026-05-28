@@ -29,10 +29,10 @@
   /* ---------------------------------------------------------------------
    * Type families
    * --------------------------------------------------------------------- */
-  /* Sans — matches body font; falls back to system stack if Space Grotesk
-   * doesn't load. Same chain as `body` in globals.css. */
-  --font-family-sans: var(--font-space-grotesk), system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Sans — Apple platforms resolve to SF Pro through `system-ui`, which keeps
+   * the web visually aligned with the Mac app (no custom font, no FOUT). */
+  --font-family-sans: system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Helvetica Neue", sans-serif;
   /* Serif — mirrors Mac `.system(design: .serif)` (New York on Apple,
    * Iowan Old Style on iOS, Georgia/Times elsewhere). Used for editorial
    * display headings (transcripts, recording detail headings, share view). */
@@ -256,13 +256,14 @@
   --accent-graphite-contrast: #ffffff;
 
   /* ---------------------------------------------------------------------
-   * Active accent — defaults to teal so visual output matches the current
-   * prod baseline. `data-accent="<name>"` selectors below override these.
+   * Active accent — defaults to amber to match the Mac app's
+   * `MacThemePreferences.defaultAccent`. `data-accent="<name>"` selectors
+   * below override these for explicit user picks.
    * --------------------------------------------------------------------- */
-  --accent: var(--accent-teal);
-  --accent-strong: var(--accent-teal-strong);
-  --accent-soft: var(--accent-teal-soft);
-  --accent-contrast: var(--accent-teal-contrast);
+  --accent: var(--accent-amber);
+  --accent-strong: var(--accent-amber-strong);
+  --accent-soft: var(--accent-amber-soft);
+  --accent-contrast: var(--accent-amber-contrast);
 
   /* ---------------------------------------------------------------------
    * Theme — light surfaces & ink, plus the legacy aliases used across
@@ -425,10 +426,10 @@
   --accent-graphite-contrast: #0e0e10;
 
   /* Re-resolve active accent against the dark palette. */
-  --accent: var(--accent-teal);
-  --accent-strong: var(--accent-teal-strong);
-  --accent-soft: var(--accent-teal-soft);
-  --accent-contrast: var(--accent-teal-contrast);
+  --accent: var(--accent-amber);
+  --accent-strong: var(--accent-amber-strong);
+  --accent-soft: var(--accent-amber-soft);
+  --accent-contrast: var(--accent-amber-contrast);
 }
 
 /* Re-apply dispatch for dark theme so a `data-accent="amber"` choice picks
@@ -556,10 +557,10 @@
     --accent-graphite-soft: rgba(152, 152, 157, 0.20);
     --accent-graphite-contrast: #0e0e10;
 
-    --accent: var(--accent-teal);
-    --accent-strong: var(--accent-teal-strong);
-    --accent-soft: var(--accent-teal-soft);
-    --accent-contrast: var(--accent-teal-contrast);
+    --accent: var(--accent-amber);
+    --accent-strong: var(--accent-amber-strong);
+    --accent-soft: var(--accent-amber-soft);
+    --accent-contrast: var(--accent-amber-contrast);
   }
 }
 
