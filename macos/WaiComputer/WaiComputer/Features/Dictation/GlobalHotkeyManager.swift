@@ -291,6 +291,93 @@ enum DeferredDictationStopPolicy {
     }
 }
 
+/// Mirror of `DictationManager.State` exposed in the test target so the
+/// push-to-talk-stop decision can be unit-tested without instantiating the
+/// MainActor manager. The mapping is:
+///   .idle      -> .idle
+///   .connecting -> .connecting
+///   .listening  -> .listening
+///   .processing / .inserting -> .finalizing
+enum PushToTalkStopState {
+    case idle
+    case connecting
+    case listening
+    case finalizing
+}
+
+enum PushToTalkStopPolicy {
+    enum Resolution: Equatable {
+        /// Hands-free is active, or a finalize is already in progress.
+        case doNothing
+        /// Provider is live; finalize now.
+        case finishNow
+        /// The start path hasn't reached `.listening` yet (either no state
+        /// change at all because `onPushToTalkStart` Task hasn't run, OR
+        /// we're mid-handshake in `.connecting`). Mark the stop deferred so
+        /// the start path picks it up the moment state reaches `.listening`.
+        case deferUntilReady
+    }
+
+    static func resolve(state: PushToTalkStopState, isHandsFree: Bool) -> Resolution {
+        if isHandsFree { return .doNothing }
+        switch state {
+        case .listening:
+            return .finishNow
+        case .idle, .connecting:
+            return .deferUntilReady
+        case .finalizing:
+            return .doNothing
+        }
+    }
+}
+
+/// Decides what `hotkeyUp` should fire. Extracted so the
+/// "timer fired but Date() reads holdDuration < holdThreshold" boundary
+/// case is unit-testable. Previously the inline implementation treated that
+/// boundary as a cancellation, which tore down a freshly-started dictation
+/// session via `onCancelled` (the user-visible "starts then immediately
+/// stops" bug).
+enum HotkeyReleaseAction: Equatable {
+    case pushToTalkStop
+    case cancelled
+    case singleTap
+    case noop
+}
+
+enum HotkeyReleasePolicy {
+    static func action(
+        isInPushToTalk: Bool,
+        otherKeyPressed: Bool,
+        holdDuration: TimeInterval,
+        holdThreshold: TimeInterval
+    ) -> HotkeyReleaseAction {
+        if isInPushToTalk {
+            // The hold timer already fired (isInPushToTalk wouldn't be true
+            // otherwise), which means onPushToTalkStart was already invoked
+            // and the dictation session is already starting. The natural
+            // completion is .pushToTalkStop. Only abort with .cancelled if
+            // the user pressed another key during the hold (real shortcut
+            // intent, not dictation).
+            //
+            // Previously, when holdDuration was measured under holdThreshold
+            // due to Date()/timer scheduling jitter, this branch fired
+            // .cancelled and registered a tap — that tore down the session
+            // that had ALREADY started ~80 ms earlier.
+            return otherKeyPressed ? .cancelled : .pushToTalkStop
+        }
+        if otherKeyPressed {
+            return .cancelled
+        }
+        if holdDuration < holdThreshold {
+            return .singleTap
+        }
+        // Held past threshold but isInPushToTalk is false — the timer body's
+        // guard refused to fire (e.g., otherKeyPressed was true at fire and
+        // then got cleared). Nothing useful to dispatch.
+        return .noop
+    }
+}
+
 enum DictationFinalizationPolicy {
     /// Keep capture alive briefly after the user releases push-to-talk.
     ///
@@ -664,24 +751,27 @@ final class GlobalHotkeyManager: ObservableObject {
         holdTimer = nil
 
         let holdDuration = hotkeyDownTime.map { Date().timeIntervalSince($0) } ?? 0
+        let wasInPushToTalk = isInPushToTalk
+        isInPushToTalk = false
 
-        if isInPushToTalk {
-            isInPushToTalk = false
-            if otherKeyPressed {
-                log.info("Push-to-talk cancelled after modifier use")
-                onCancelled?()
-            } else if holdDuration >= holdThreshold {
-                log.info("Push-to-talk stopped (held \(String(format: "%.2f", holdDuration))s)")
-                onPushToTalkStop?()
-            } else {
-                log.info("Push-to-talk cancelled before hold threshold")
-                onCancelled?()
-                registerTap()
-            }
-        } else if !otherKeyPressed && holdDuration < holdThreshold {
-            registerTap()
-        } else if otherKeyPressed {
+        let action = HotkeyReleasePolicy.action(
+            isInPushToTalk: wasInPushToTalk,
+            otherKeyPressed: otherKeyPressed,
+            holdDuration: holdDuration,
+            holdThreshold: holdThreshold
+        )
+
+        switch action {
+        case .pushToTalkStop:
+            log.info("Push-to-talk stopped (held \(String(format: "%.2f", holdDuration))s, threshold \(String(format: "%.2f", self.holdThreshold))s)")
+            onPushToTalkStop?()
+        case .cancelled:
+            log.info("Push-to-talk cancelled (wasInPTT=\(wasInPushToTalk), otherKeyPressed=\(self.otherKeyPressed))")
             onCancelled?()
+        case .singleTap:
+            registerTap()
+        case .noop:
+            break
         }
 
         hotkeyDownTime = nil

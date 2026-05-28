@@ -161,7 +161,14 @@ final class DictationManager: ObservableObject {
 
     // Provider-backed realtime dictation path.
     private var providerSession: (any ProviderSession)?
-    private var providerCapture: MicrophoneCapture?
+    /// Lease on the shared, pre-warmed `AudioEngineHost`. Replaces the
+    /// per-press `MicrophoneCapture` we used until Mac build 161, which
+    /// degraded the macOS HAL after 3-5 dictation cycles
+    /// (kAudioUnitErr_FailedInitialization or silent buffers) — the latent
+    /// "starts then immediately stops" bug. With AudioEngineHost the engine
+    /// starts ONCE for the lifetime of the dictation feature, and per-press
+    /// sessions just attach a buffer fan-out via `lease()`.
+    private var activeAudioLease: AudioEngineHost.Lease?
     private var providerAudioTask: Task<Void, Never>?
     private var sessionEventTask: Task<Void, Never>?
 
@@ -332,22 +339,40 @@ final class DictationManager: ObservableObject {
                 )
                 return
             }
+            // Clear any stale deferred-stop SYNCHRONOUSLY before we Task the
+            // start. A subsequent onPushToTalkStop (fired before startDictation
+            // executes setState(.connecting)) is then free to set the flag
+            // again and have it honoured at the .listening transition.
+            self.deferredStop = false
             self.setHandsFree(false)
             Task { await self.startDictation() }
         }
 
         hotkeyManager.onPushToTalkStop = { [weak self] in
             guard let self else { return }
-            guard !self.isHandsFree else { return } // Don't stop if in hands-free mode
-            if self.state == .connecting {
+            let policyState: PushToTalkStopState
+            switch self.state {
+            case .idle: policyState = .idle
+            case .connecting: policyState = .connecting
+            case .listening: policyState = .listening
+            case .processing, .inserting: policyState = .finalizing
+            }
+            switch PushToTalkStopPolicy.resolve(state: policyState, isHandsFree: self.isHandsFree) {
+            case .finishNow:
+                Task { await self.stopAndInsert() }
+            case .deferUntilReady:
+                // .idle: onPushToTalkStart Task hasn't yet executed
+                // setState(.connecting). .connecting: WS handshake / REST
+                // mint in flight. Either way the start path picks this up
+                // the moment state transitions to .listening.
                 self.deferredStop = true
                 SentryHelper.addBreadcrumb(
                     category: "dictation.session",
                     message: "stop deferred until provider ready",
                     data: ["state": String(describing: self.state)]
                 )
-            } else if self.state == .listening {
-                Task { await self.stopAndInsert() }
+            case .doNothing:
+                break
             }
         }
 
@@ -450,7 +475,11 @@ final class DictationManager: ObservableObject {
         currentInterim = ""
         interimTranscript = ""
         dictationDuration = 0
-        deferredStop = false
+        // NOTE: do NOT reset `deferredStop` here. The onPushToTalkStart
+        // callback already cleared it synchronously before scheduling this
+        // Task; resetting here would race against an onPushToTalkStop that
+        // fired during the .notDetermined permission grant await above.
+        // cleanup()/cancelDictation() also clear it on every exit path.
         audioSendCounter.reset()
         setState(.connecting)
         sessionConfigPrefetchRefreshTask?.cancel()
@@ -464,8 +493,14 @@ final class DictationManager: ObservableObject {
         NSSound(named: NSSound.Name("Morse"))?.play()
 
         do {
-            let capture = makeCapture(sampleRate: Self.liveSTTSampleRate)
-            providerCapture = capture
+            // Acquire an exclusive lease on the shared pre-warmed engine.
+            // `prewarm()` is idempotent and was already invoked the first
+            // time the user enabled the hotkey; the call here is the safety
+            // net for cold-launch dictation before the eager prewarm Task
+            // has run.
+            try await AudioEngineHost.shared.prewarm()
+            let lease = try await AudioEngineHost.shared.lease()
+            activeAudioLease = lease
             let startupAudioBuffer = DictationStartupAudioBuffer(
                 maxBufferedBytes: Self.startupAudioMaxBufferedBytes
             )
@@ -475,12 +510,12 @@ final class DictationManager: ObservableObject {
             )
             let audioCounter = audioSendCounter
             let liveProvider = Self.liveSTTProvider
-            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, weak capture, startupAudioBuffer, session, liveProvider] in
-                guard let capture else { return }
+            providerAudioTask = Task.detached(priority: .userInitiated) { [weak self, startupAudioBuffer, lease, session, liveProvider] in
                 var liveSent = 0
-                for await buffer in capture.audioBuffers {
-                    guard !Task.isCancelled else { return }
-                    guard let data = encoder.encode(buffer) else { continue }
+
+                @Sendable func pump(_ buffer: AVAudioPCMBuffer) async -> Bool {
+                    guard !Task.isCancelled else { return false }
+                    guard let data = encoder.encode(buffer) else { return true }
                     do {
                         let result = try await startupAudioBuffer.append(data)
                         if case .sent(let bytes) = result {
@@ -497,6 +532,7 @@ final class DictationManager: ObservableObject {
                                 NSLog("[Dictation/Provider] sent #%d %d bytes provider=%@", liveSent, bytes, liveProvider)
                             }
                         }
+                        return true
                     } catch {
                         NSLog("[Dictation/Provider] startup audio send failed provider=%@: %@", liveProvider, String(describing: error))
                         let manager = self
@@ -507,15 +543,32 @@ final class DictationManager: ObservableObject {
                             manager.instrumentationSession = nil
                             Task { await manager.cancelDictation() }
                         }
-                        return
+                        return false
                     }
                 }
-                NSLog("[Dictation/Provider] audio stream ended provider=%@ sent=%d", liveProvider, liveSent)
+
+                // Flush the 500 ms pre-roll captured BEFORE the hotkey press
+                // first. This is the marquee win of the AudioEngineHost
+                // pattern — a user who starts speaking the same instant
+                // they press the hotkey still gets a complete transcript.
+                for buffer in lease.preRoll {
+                    let ok = await pump(buffer)
+                    if !ok { return }
+                }
+                // Then drain live buffers until the lease is released by the
+                // main flow (finishProviderAudioPumpBeforeFinalizing) or
+                // cleanup() — both finish the underlying continuation.
+                for await buffer in lease.buffers {
+                    let ok = await pump(buffer)
+                    if !ok { return }
+                }
+                NSLog("[Dictation/Provider] lease stream ended provider=%@ sent=%d preRollCount=%d", liveProvider, liveSent, lease.preRoll.count)
             }
-            try await capture.startRecording()
             session.event(.audioLeaseAcquired, data: [
                 "sampleRate": Self.liveSTTSampleRate,
                 "startupBuffered": true,
+                "preRollBuffers": lease.preRoll.count,
+                "engineHost": true,
             ])
 
             refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
@@ -801,10 +854,10 @@ final class DictationManager: ObservableObject {
     }
 
     private func finishProviderAudioPumpBeforeFinalizing() async {
-        if let capture = providerCapture {
+        if let lease = activeAudioLease {
             await waitForFinalCaptureTail()
-            await capture.stopRecording()
-            providerCapture = nil
+            await AudioEngineHost.shared.release(lease)
+            activeAudioLease = nil
         }
         await providerAudioTask?.value
         providerAudioTask = nil
@@ -817,16 +870,6 @@ final class DictationManager: ObservableObject {
 
     private func currentDictationLanguage() -> String {
         DictationLanguageSelectionPolicy.providerLanguage(store: languageStore)
-    }
-
-    private func makeCapture(sampleRate: Int) -> MicrophoneCapture {
-        MicrophoneCapture(
-            config: AudioCaptureConfig(
-                sampleRate: Double(sampleRate),
-                channelCount: 1,
-                bufferSize: UInt32(max(sampleRate / 10, 1))
-            )
-        )
     }
 
     private func dictationSessionConfigKey(language: String? = nil) -> RealtimeTranscriptionSessionConfigVault.Key {
@@ -999,9 +1042,9 @@ final class DictationManager: ObservableObject {
         providerAudioTask?.cancel()
         providerAudioTask = nil
         await activeProviderSession?.cancel()
-        if let capture = providerCapture {
-            await capture.stopRecording()
-            providerCapture = nil
+        if let lease = activeAudioLease {
+            await AudioEngineHost.shared.release(lease)
+            activeAudioLease = nil
         }
 
         deferredStop = false
@@ -1130,32 +1173,38 @@ final class DictationManager: ObservableObject {
             instrumentationSession?.event(.providerClosed, data: [
                 "reason": String(describing: reason)
             ])
-            // Both serverError and networkLost mean the WebSocket is dead —
-            // no point keeping the overlay up while the audio pump fails
-            // every send. clientRequested is OUR own close call so we don't
-            // act on it (cleanup() is already running).
-            if state == .listening {
-                switch reason {
-                case .serverError, .networkLost, .serverEndOfStream, .sessionTimeLimitExceeded:
-                    self.error = "Connection to the transcription service was lost. Try again."
-                    log.info("Cancelling dictation — provider closed reason=\(String(describing: reason), privacy: .public)")
-                    let closeError = NSError(
-                        domain: "is.waiwai.computer.dictation",
-                        code: 1001,
-                        userInfo: [NSLocalizedDescriptionKey: "Provider closed unexpectedly: \(reason)"]
-                    )
-                    SentryHelper.captureError(
-                        closeError,
-                        extras: [
-                            "context": "dictation.provider.closed",
-                            "reason": String(describing: reason),
-                            "isHandsFree": isHandsFree,
-                        ]
-                    )
-                    await cancelDictation()
-                case .clientRequested:
-                    break
-                }
+            // serverError / networkLost / serverEndOfStream / sessionTimeLimitExceeded
+            // all mean the WebSocket is dead. We MUST act on these in both
+            // .listening AND .connecting: previously a close fired during the
+            // handshake window was silently swallowed (the guard required
+            // .listening), state then transitioned to .listening over a dead
+            // socket, the next audio send threw inside the detached audio
+            // pump, and the only user-visible signal was the overlay flashing
+            // and vanishing — the "dictation starts then immediately stops"
+            // bug. .clientRequested is our own close call so we still ignore
+            // it (cleanup() is already running).
+            switch reason {
+            case .serverError, .networkLost, .serverEndOfStream, .sessionTimeLimitExceeded:
+                guard state == .listening || state == .connecting else { break }
+                self.error = "Connection to the transcription service was lost. Try again."
+                log.info("Cancelling dictation — provider closed state=\(String(describing: self.state), privacy: .public) reason=\(String(describing: reason), privacy: .public)")
+                let closeError = NSError(
+                    domain: "is.waiwai.computer.dictation",
+                    code: 1001,
+                    userInfo: [NSLocalizedDescriptionKey: "Provider closed unexpectedly: \(reason)"]
+                )
+                SentryHelper.captureError(
+                    closeError,
+                    extras: [
+                        "context": "dictation.provider.closed",
+                        "state": String(describing: state),
+                        "reason": String(describing: reason),
+                        "isHandsFree": isHandsFree,
+                    ]
+                )
+                await cancelDictation()
+            case .clientRequested:
+                break
             }
         case .usage(let seconds):
             instrumentationSession?.event(.providerClosed, data: [
@@ -1218,8 +1267,31 @@ final class DictationManager: ObservableObject {
         isEnabled = shouldEnable
         if shouldEnable {
             hotkeyManager.start()
+            // Eagerly pre-warm the shared engine so the first hotkey press
+            // doesn't pay the ~300-800 ms engine.start() + Bluetooth HFP
+            // profile-switch cost mid-dictation. prewarm() is idempotent
+            // and async; the lazy fallback in startDictation handles cold
+            // launches where this hasn't completed yet. Failures are
+            // surfaced via the host's own error path and the lazy
+            // prewarm in startDictation will throw with a user-visible
+            // message.
+            Task {
+                do {
+                    try await AudioEngineHost.shared.prewarm()
+                    log.info("AudioEngineHost prewarmed for dictation")
+                } catch {
+                    log.warning("AudioEngineHost prewarm failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         } else {
             hotkeyManager.stop()
+            // Release the shared engine when dictation is disabled so we
+            // don't hold the mic indefinitely (also: gives MacRecordingViewModel
+            // exclusive access to the input device when the user only uses
+            // full recordings, not dictation).
+            Task {
+                await AudioEngineHost.shared.teardown()
+            }
         }
     }
 
