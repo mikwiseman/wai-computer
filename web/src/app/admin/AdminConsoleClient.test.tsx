@@ -277,6 +277,8 @@ describe("AdminConsoleClient", () => {
     expect(await screen.findByDisplayValue("launch")).toBeInTheDocument();
     expect(screen.getByText("WAI-LAUNCH-30")).toBeInTheDocument();
     expect(screen.getByText("2 / 10")).toBeInTheDocument();
+    const promoTable = screen.getByRole("table");
+    expect(within(promoTable).queryByRole("columnheader", { name: "Plan" })).not.toBeInTheDocument();
   });
 
   it("shows observability signals in the admin console", async () => {

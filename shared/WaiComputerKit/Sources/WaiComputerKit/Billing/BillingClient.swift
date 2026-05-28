@@ -18,9 +18,14 @@ extension APIClient {
 
     /// `POST /api/billing/checkout` — start a hosted Stripe/T-Bank session.
     public func createBillingCheckout(
-        plan: String, period: String, provider: String? = nil
+        plan: String, period: String, provider: String? = nil, promoCode: String? = nil
     ) async throws -> BillingCheckoutResponse {
-        let body = BillingCheckoutRequest(plan: plan, period: period, provider: provider)
+        let body = BillingCheckoutRequest(
+            plan: plan,
+            period: period,
+            provider: provider,
+            promoCode: promoCode
+        )
         return try await request(.POST, path: "/api/billing/checkout", body: body)
     }
 

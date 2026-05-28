@@ -212,6 +212,45 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(checkout.checkoutUrl, "https://securepay.tinkoff.ru/test-checkout")
     }
 
+    func testCreateBillingCheckoutSendsPromoCodeWhenProvided() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/billing/checkout")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["plan"] as? String, "pro")
+            XCTAssertEqual(body["period"] as? String, "year")
+            XCTAssertEqual(body["provider"] as? String, "stripe")
+            XCTAssertEqual(body["promo_code"] as? String, "TESTSALE")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "provider": "stripe",
+              "checkout_url": "https://checkout.stripe.test/session"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let checkout = try await client.createBillingCheckout(
+            plan: "pro",
+            period: "year",
+            provider: "stripe",
+            promoCode: "TESTSALE"
+        )
+
+        XCTAssertEqual(checkout.provider, "stripe")
+        XCTAssertEqual(checkout.checkoutUrl, "https://checkout.stripe.test/session")
+    }
+
     func testClaimBillingPromoCodeSendsCodeAndDecodesSubscription() async throws {
         let client = makeClient()
 

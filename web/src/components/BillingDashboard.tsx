@@ -273,6 +273,10 @@ function localizeBillingError(error: unknown, locale: Locale): string {
   return copy.loadError;
 }
 
+function isCheckoutPromoError(error: unknown): boolean {
+  return error instanceof Error && error.message.trim() === "Promo code applies to checkout";
+}
+
 function localizeStatus(
   status: string,
   copy: (typeof COPY)[Locale],
@@ -561,6 +565,21 @@ export function BillingDashboard({ locale, currency }: Props) {
       setPromoCode("");
       setPromoMessage(copy.promoApplied);
     } catch (error: unknown) {
+      if (isCheckoutPromoError(error)) {
+        try {
+          const session = await createBillingCheckout({
+            plan: "pro",
+            period: "month",
+            provider,
+            promo_code: code,
+          });
+          window.location.href = session.checkout_url;
+          return;
+        } catch (checkoutError: unknown) {
+          setPromoError(localizeBillingError(checkoutError, locale));
+          return;
+        }
+      }
       setPromoError(localizeBillingError(error, locale));
     } finally {
       setPromoInFlight(false);
