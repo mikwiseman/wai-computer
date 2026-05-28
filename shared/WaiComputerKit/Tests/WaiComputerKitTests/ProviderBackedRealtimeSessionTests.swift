@@ -57,4 +57,32 @@ final class ProviderBackedRealtimeSessionDominantSpeakerTests: XCTestCase {
             "speaker_2"
         )
     }
+
+    func testIgnoresNegativeSpeakerSentinel() {
+        // Some providers emit `-1` for "uncertain". Treat as no signal.
+        let alternative: [String: Any] = [
+            "words": [
+                ["word": "uh", "start": 0.0, "end": 0.4, "speaker": -1],
+                ["word": "ok", "start": 0.4, "end": 0.6, "speaker": 3],
+            ]
+        ]
+        XCTAssertEqual(
+            DeepgramSpeakerLabel.dominant(in: alternative),
+            "speaker_3"
+        )
+    }
+
+    func testSharedHelperMatchesLegacyShim() {
+        // ProviderBackedRealtimeSession.dominantSpeakerLabel is now a thin
+        // forward to DeepgramSpeakerLabel — pin parity so the two never drift.
+        let alternative: [String: Any] = [
+            "words": [
+                ["word": "hi", "start": 0.0, "end": 0.5, "speaker": 5],
+            ]
+        ]
+        XCTAssertEqual(
+            ProviderBackedRealtimeSession.dominantSpeakerLabel(in: alternative),
+            DeepgramSpeakerLabel.dominant(in: alternative)
+        )
+    }
 }

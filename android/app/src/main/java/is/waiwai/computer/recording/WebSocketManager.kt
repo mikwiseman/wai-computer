@@ -185,7 +185,7 @@ class DeepgramRealtimeWebSocketManager(
 
         val segment = LiveTranscriptSegment(
             text = transcript,
-            speaker = null,
+            speaker = DeepgramSpeakerLabel.dominant(alternative),
             isFinal = isFinal,
             startMs = startMs,
             endMs = startMs + durationMs,
