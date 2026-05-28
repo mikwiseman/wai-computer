@@ -239,6 +239,12 @@ fun SettingsScreen(
         }
 
         if (authState is AuthState.Authenticated) {
+            SettingsSectionCard(title = "Identity & Voice") {
+                IdentityAndVoiceCard(container = container, authState = authState)
+            }
+        }
+
+        if (authState is AuthState.Authenticated) {
             SettingsSectionCard(title = stringResource(R.string.settings_section_data)) {
                 Text(
                     text = stringResource(R.string.settings_folders_subtitle),

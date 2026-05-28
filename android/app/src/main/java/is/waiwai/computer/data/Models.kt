@@ -316,6 +316,29 @@ data class UpdateSettingsRequest(
 )
 
 @Serializable
+data class UserIdentity(
+    @SerialName("first_name") val firstName: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
+    @SerialName("has_voiceprint") val hasVoiceprint: Boolean = false,
+)
+
+@Serializable
+data class UpdateIdentityRequest(
+    @SerialName("first_name") val firstName: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
+)
+
+@Serializable
+data class VoiceSharingState(
+    val enabled: Boolean,
+    @SerialName("can_enable") val canEnable: Boolean,
+    @SerialName("has_first_name") val hasFirstName: Boolean,
+    @SerialName("has_last_name") val hasLastName: Boolean,
+    @SerialName("has_voiceprint") val hasVoiceprint: Boolean,
+    @SerialName("shared_name") val sharedName: String? = null,
+)
+
+@Serializable
 data class TranscriptionModelOption(
     val provider: String,
     val model: String,

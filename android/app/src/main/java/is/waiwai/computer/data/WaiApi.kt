@@ -124,6 +124,32 @@ class WaiApi(
         body = request,
     )
 
+    suspend fun getIdentity(): UserIdentity = authorizedRequest(
+        method = HttpMethod.Get,
+        path = "/api/settings/identity",
+    )
+
+    suspend fun updateIdentity(request: UpdateIdentityRequest): UserIdentity = authorizedRequest(
+        method = HttpMethod.Patch,
+        path = "/api/settings/identity",
+        body = request,
+    )
+
+    suspend fun getVoiceSharing(): VoiceSharingState = authorizedRequest(
+        method = HttpMethod.Get,
+        path = "/api/settings/voice-sharing",
+    )
+
+    suspend fun enableVoiceSharing(): VoiceSharingState = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/settings/voice-sharing",
+    )
+
+    suspend fun disableVoiceSharing(): VoiceSharingState = authorizedRequest(
+        method = HttpMethod.Delete,
+        path = "/api/settings/voice-sharing",
+    )
+
     suspend fun createRealtimeTranscriptionSession(
         language: String,
         channels: Int = 1,

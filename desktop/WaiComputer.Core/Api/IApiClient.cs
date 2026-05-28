@@ -41,6 +41,13 @@ public interface IApiClient
     Task<TranscriptionOptions> GetTranscriptionOptionsAsync(CancellationToken ct = default);
     Task<UserSettings> UpdateSettingsAsync(UpdateSettingsRequest request, CancellationToken ct = default);
 
+    // Identity & Voice sharing
+    Task<UserIdentity> GetIdentityAsync(CancellationToken ct = default);
+    Task<UserIdentity> UpdateIdentityAsync(UpdateIdentityRequest request, CancellationToken ct = default);
+    Task<VoiceSharingState> GetVoiceSharingAsync(CancellationToken ct = default);
+    Task<VoiceSharingState> EnableVoiceSharingAsync(CancellationToken ct = default);
+    Task<VoiceSharingState> DisableVoiceSharingAsync(CancellationToken ct = default);
+
     // Recordings
     Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null, CancellationToken ct = default);
     Task<Recording> CreateRecordingAsync(CreateRecordingRequest request, CancellationToken ct = default);

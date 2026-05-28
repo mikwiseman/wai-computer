@@ -23,11 +23,15 @@ import type {
   EntityDetail,
   EntityType,
   ExportFormat,
+  ExportLocale,
   Folder,
   KeywordsResponse,
   McpConnection,
   MessageResponse,
   Person,
+  PersonalizationImportJob,
+  PersonalizationTerm,
+  PersonalizationTermStatus,
   StarRecordingResponse,
   VoiceEnrollmentResponse,
   Recording,
@@ -39,6 +43,7 @@ import type {
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
+  SummaryGeneration,
   TelegramLinkStatus,
   TelegramPairing,
   TokenResponse,
@@ -405,6 +410,20 @@ export function generateSummary(recordingId: string): Promise<Summary> {
   });
 }
 
+export function getSummaryGeneration(recordingId: string): Promise<SummaryGeneration> {
+  return apiFetch<SummaryGeneration>(`/api/recordings/${recordingId}/summary-generation`);
+}
+
+export function startSummaryGeneration(
+  recordingId: string,
+  input: { instructions?: string | null } = {},
+): Promise<SummaryGeneration> {
+  return apiFetch<SummaryGeneration>(`/api/recordings/${recordingId}/summary-generation`, {
+    method: "POST",
+    body: JSON.stringify({ instructions: input.instructions ?? null }),
+  });
+}
+
 export function search(params: { q: string; limit?: number; offset?: number }): Promise<SearchResponse> {
   return apiFetch<SearchResponse>(`/api/search${asQuery(params)}`);
 }
@@ -547,6 +566,53 @@ export function updatePreferences(
   });
 }
 
+export interface UserIdentity {
+  first_name: string | null;
+  last_name: string | null;
+  has_voiceprint: boolean;
+}
+
+export interface UpdateIdentityRequest {
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
+export interface VoiceSharingState {
+  enabled: boolean;
+  can_enable: boolean;
+  has_first_name: boolean;
+  has_last_name: boolean;
+  has_voiceprint: boolean;
+  shared_name: string | null;
+}
+
+export function getIdentity(): Promise<UserIdentity> {
+  return apiFetch<UserIdentity>("/api/settings/identity");
+}
+
+export function updateIdentity(patch: UpdateIdentityRequest): Promise<UserIdentity> {
+  return apiFetch<UserIdentity>("/api/settings/identity", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function getVoiceSharing(): Promise<VoiceSharingState> {
+  return apiFetch<VoiceSharingState>("/api/settings/voice-sharing");
+}
+
+export function enableVoiceSharing(): Promise<VoiceSharingState> {
+  return apiFetch<VoiceSharingState>("/api/settings/voice-sharing", {
+    method: "POST",
+  });
+}
+
+export function disableVoiceSharing(): Promise<VoiceSharingState> {
+  return apiFetch<VoiceSharingState>("/api/settings/voice-sharing", {
+    method: "DELETE",
+  });
+}
+
 export function getTelegramLinkStatus(): Promise<TelegramLinkStatus> {
   return apiFetch<TelegramLinkStatus>("/api/telegram/link");
 }
@@ -574,9 +640,13 @@ export function getRecordingAnalytics(): Promise<AnalyticsResponse> {
   return apiFetch<AnalyticsResponse>("/api/recordings/analytics");
 }
 
-export async function exportRecording(recordingId: string, format: ExportFormat): Promise<Blob> {
+export async function exportRecording(
+  recordingId: string,
+  format: ExportFormat,
+  options: { locale?: ExportLocale } = {},
+): Promise<Blob> {
   const response = await apiFetchResponse(
-    `/api/recordings/${recordingId}/export?format=${format}`,
+    `/api/recordings/${recordingId}/export${asQuery({ format, locale: options.locale })}`,
   );
   return response.blob();
 }
@@ -584,11 +654,65 @@ export async function exportRecording(recordingId: string, format: ExportFormat)
 export async function exportSharedRecording(
   token: string,
   format: Extract<ExportFormat, "markdown">,
+  options: { locale?: ExportLocale } = {},
 ): Promise<Blob> {
   const response = await apiFetchResponse(
-    `/api/recordings/shared/${token}/export?format=${format}`,
+    `/api/recordings/shared/${token}/export${asQuery({ format, locale: options.locale })}`,
   );
   return response.blob();
+}
+
+export function listPersonalizationTerms(params?: {
+  status?: PersonalizationTermStatus | "all";
+}): Promise<PersonalizationTerm[]> {
+  return apiFetch<PersonalizationTerm[]>(`/api/personalization/terms${asQuery(params || {})}`);
+}
+
+export function createPersonalizationTerm(input: {
+  term: string;
+  replacement?: string | null;
+  notes?: string | null;
+}): Promise<PersonalizationTerm> {
+  return apiFetch<PersonalizationTerm>("/api/personalization/terms", {
+    method: "POST",
+    body: JSON.stringify({
+      term: input.term,
+      replacement: input.replacement ?? null,
+      notes: input.notes ?? null,
+    }),
+  });
+}
+
+export function updatePersonalizationTerm(
+  termId: string,
+  input: {
+    status?: PersonalizationTermStatus;
+    replacement?: string | null;
+    notes?: string | null;
+  },
+): Promise<PersonalizationTerm> {
+  return apiFetch<PersonalizationTerm>(`/api/personalization/terms/${termId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deletePersonalizationTerm(termId: string): Promise<void> {
+  return apiFetch<void>(`/api/personalization/terms/${termId}`, { method: "DELETE" });
+}
+
+export function importPersonalizationText(text: string): Promise<PersonalizationImportJob> {
+  const formData = new FormData();
+  formData.append("source_type", "text");
+  formData.append("text", text);
+  return apiUpload<PersonalizationImportJob>("/api/personalization/imports", formData);
+}
+
+export function importPersonalizationFile(file: File): Promise<PersonalizationImportJob> {
+  const formData = new FormData();
+  formData.append("source_type", "file");
+  formData.append("file", file);
+  return apiUpload<PersonalizationImportJob>("/api/personalization/imports", formData);
 }
 
 export function createRecordingShareLink(recordingId: string): Promise<RecordingShareLink> {

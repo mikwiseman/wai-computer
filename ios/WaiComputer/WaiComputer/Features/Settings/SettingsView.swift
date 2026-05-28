@@ -69,6 +69,10 @@ struct SettingsView: View {
                     NavigationLink(destination: SummarySettingsView()) {
                         Label("AI Summary", systemImage: "sparkles")
                     }
+
+                    NavigationLink(destination: IdentityAndVoiceSettingsView()) {
+                        Label("Identity & Voice", systemImage: "person.wave.2")
+                    }
                 }
 
                 // Data section

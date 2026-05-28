@@ -122,6 +122,21 @@ public sealed class ApiClient : IApiClient, IDisposable
     public Task<UserSettings> UpdateSettingsAsync(UpdateSettingsRequest request, CancellationToken ct = default)
         => SendJsonAsync<UpdateSettingsRequest, UserSettings>(HttpMethod.Patch, "/api/settings", request, ct: ct);
 
+    public Task<UserIdentity> GetIdentityAsync(CancellationToken ct = default)
+        => SendAsync<UserIdentity>(HttpMethod.Get, "/api/settings/identity", ct: ct);
+
+    public Task<UserIdentity> UpdateIdentityAsync(UpdateIdentityRequest request, CancellationToken ct = default)
+        => SendJsonAsync<UpdateIdentityRequest, UserIdentity>(HttpMethod.Patch, "/api/settings/identity", request, ct: ct);
+
+    public Task<VoiceSharingState> GetVoiceSharingAsync(CancellationToken ct = default)
+        => SendAsync<VoiceSharingState>(HttpMethod.Get, "/api/settings/voice-sharing", ct: ct);
+
+    public Task<VoiceSharingState> EnableVoiceSharingAsync(CancellationToken ct = default)
+        => SendAsync<VoiceSharingState>(HttpMethod.Post, "/api/settings/voice-sharing", ct: ct);
+
+    public Task<VoiceSharingState> DisableVoiceSharingAsync(CancellationToken ct = default)
+        => SendAsync<VoiceSharingState>(HttpMethod.Delete, "/api/settings/voice-sharing", ct: ct);
+
     // ----- recordings ---------------------------------------------------
 
     public Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null, CancellationToken ct = default)

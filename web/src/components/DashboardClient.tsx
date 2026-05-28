@@ -22,7 +22,6 @@ import {
   deleteFolder,
   deleteRecording,
   fulltextSearch,
-  generateSummary,
   getCurrentUser,
   getRecording,
   getSettings,
@@ -38,6 +37,7 @@ import {
   restoreRecording,
   search,
   semanticSearch,
+  startSummaryGeneration,
   startTelegramLink,
   updateActionItem,
   updateSettings,
@@ -49,6 +49,8 @@ import { AudioUpload } from "@/components/AudioUpload";
 import { RecorderPanel } from "@/components/RecorderPanel";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
+import { PersonalizationPanel } from "@/components/PersonalizationPanel";
+import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { PasswordField } from "@/components/PasswordField";
 import { ApiError } from "@/lib/http";
@@ -258,6 +260,7 @@ interface DashboardCopy {
   msg: {
     recordingCreated: string;
     summaryGenerated: string;
+    summaryQueued: string;
     recordingTrashed: string;
     recordingDeletedPermanently: string;
     recordingRestored: string;
@@ -439,6 +442,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     msg: {
       recordingCreated: "Recording created.",
       summaryGenerated: "Summary generated.",
+      summaryQueued: "Summary generation queued.",
       recordingTrashed: "Recording moved to trash.",
       recordingDeletedPermanently: "Recording permanently deleted.",
       recordingRestored: "Recording restored.",
@@ -620,6 +624,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     msg: {
       recordingCreated: "Запись создана.",
       summaryGenerated: "Саммари сгенерировано.",
+      summaryQueued: "Саммари поставлено в очередь.",
       recordingTrashed: "Запись перемещена в корзину.",
       recordingDeletedPermanently: "Запись удалена навсегда.",
       recordingRestored: "Запись восстановлена.",
@@ -700,6 +705,13 @@ function displayCount(rawArrayLength: number, displayedCount?: number): string {
   const total = displayedCount ?? rawArrayLength;
   if (rawArrayLength >= LIST_LIMIT) return `${total}+`;
   return String(total);
+}
+
+function recordingNeedsRefresh(recording: RecordingDetail | null): boolean {
+  if (!recording) return false;
+  if (["pending_upload", "uploading", "processing"].includes(recording.status)) return true;
+  const summaryStatus = recording.summary_generation?.status;
+  return summaryStatus === "queued" || summaryStatus === "running";
 }
 
 export function DashboardClient() {
@@ -936,6 +948,50 @@ export function DashboardClient() {
     void loadDictionaryState();
   }, [view, dictionaryLoadedOnce, dictionaryLoading]);
 
+  useEffect(() => {
+    if (!recordingNeedsRefresh(selectedRecording)) return;
+    let cancelled = false;
+    async function refreshSelectedRecording() {
+      if (!selectedRecording) return;
+      try {
+        const detail = await getRecording(selectedRecording.id);
+        if (cancelled) return;
+        setSelectedRecording(detail);
+        setRecordings((current) =>
+          current.map((recording) =>
+            recording.id === detail.id
+              ? {
+                  ...recording,
+                  title: detail.title,
+                  status: detail.status,
+                  duration_seconds: detail.duration_seconds,
+                  uploaded_at: detail.uploaded_at,
+                }
+              : recording,
+          ),
+        );
+        if (!recordingNeedsRefresh(detail)) {
+          await Promise.all([loadRecordingsState(), loadActionItemsState()]);
+        }
+      } catch (error: unknown) {
+        if (!cancelled) setMessage(formatError(error));
+      }
+    }
+    const interval = window.setInterval(refreshSelectedRecording, 2500);
+    window.addEventListener("focus", refreshSelectedRecording);
+    void refreshSelectedRecording();
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshSelectedRecording);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedRecording?.id,
+    selectedRecording?.status,
+    selectedRecording?.summary_generation?.status,
+  ]);
+
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
@@ -958,12 +1014,31 @@ export function DashboardClient() {
     setMessage(null);
     try {
       const detail = await getRecording(recordingId);
-      setSelectedRecording(detail);
+      handleRecordingDetailUpdate(detail);
       setSelectedMode(mode);
       setView(mode === "trash" ? "trash" : "library");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
+  }
+
+  function handleRecordingDetailUpdate(detail: RecordingDetail) {
+    setSelectedRecording(detail);
+    setRecordings((current) =>
+      current.map((recording) =>
+        recording.id === detail.id
+          ? {
+              ...recording,
+              title: detail.title,
+              type: detail.type,
+              status: detail.status,
+              duration_seconds: detail.duration_seconds,
+              folder_id: detail.folder_id,
+              uploaded_at: detail.uploaded_at,
+            }
+          : recording,
+      ),
+    );
   }
 
   async function handleDeleteRecording(recordingId: string, options?: { permanent?: boolean }) {
@@ -1009,11 +1084,10 @@ export function DashboardClient() {
   async function handleGenerateSummary(recordingId: string) {
     setMessage(null);
     try {
-      await generateSummary(recordingId);
+      await startSummaryGeneration(recordingId, { instructions: null });
       const detail = await getRecording(recordingId);
-      setSelectedRecording(detail);
+      handleRecordingDetailUpdate(detail);
       setSelectedMode("active");
-      await loadActionItemsState();
       setMessage(copy.msg.summaryGenerated);
     } catch (error: unknown) {
       setMessage(formatError(error));
@@ -1944,7 +2018,7 @@ export function DashboardClient() {
               onAssignFolder={(recordingId, folderId) =>
                 void handleAssignRecordingToFolder(recordingId, folderId)
               }
-              onRecordingUpdate={setSelectedRecording}
+              onRecordingUpdate={handleRecordingDetailUpdate}
               onRestore={(recordingId) => void handleRestoreRecording(recordingId)}
               onDelete={(recordingId) =>
                 void handleDeleteRecording(recordingId, { permanent: isTrash })
@@ -2119,6 +2193,8 @@ export function DashboardClient() {
           </button>
         </header>
 
+        <PersonalizationPanel locale={locale} onError={setMessage} />
+
         <form
           className="search-form"
           onSubmit={handleCreateDictionaryWord}
@@ -2274,6 +2350,8 @@ export function DashboardClient() {
           <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
           <ThemeAccentPicker locale={locale} />
         </section>
+
+        <IdentityAndVoicePanel locale={locale} />
 
         <div className="settings-form">
           <h3>{copy.settings.dictationHeading}</h3>
