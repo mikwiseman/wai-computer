@@ -34,6 +34,7 @@ const COPY: Record<
     terms: string;
     privacy: string;
     switchLink: Record<Mode, string>;
+    tagline: string;
   }
 > = {
   en: {
@@ -66,6 +67,7 @@ const COPY: Record<
       login: "Need an account?",
       register: "Have an account?",
     },
+    tagline: "Your second brain",
   },
   ru: {
     title: {
@@ -97,6 +99,7 @@ const COPY: Record<
       login: "Нужен аккаунт?",
       register: "Уже есть аккаунт?",
     },
+    tagline: "Твой второй мозг",
   },
 };
 
@@ -244,10 +247,21 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
 
   return (
     <section className="auth-card">
-      <div className="auth-card__brand">
-        <div className="brand-mark" aria-hidden="true" />
-        <span>WaiComputer</span>
-      </div>
+      <header className="auth-card__hero" aria-label="WaiComputer">
+        <picture>
+          <source srcSet="/app-icon-dark.png" media="(prefers-color-scheme: dark)" />
+          <img
+            className="auth-card__icon"
+            src="/app-icon.png"
+            width={64}
+            height={64}
+            alt=""
+            aria-hidden="true"
+          />
+        </picture>
+        <span className="auth-card__wordmark">WaiComputer</span>
+        <span className="auth-card__tagline">{copy.tagline}</span>
+      </header>
 
       <header className="auth-card__header">
         <h1>{copy.title[mode]}</h1>
