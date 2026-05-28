@@ -78,3 +78,32 @@ def reset_async_db_runtime(**_kwargs) -> None:
     from app.db.session import reset_db_runtime
 
     reset_db_runtime()
+
+
+@worker_process_init.connect
+def preload_voice_embedding_model(**_kwargs) -> None:
+    """Eagerly load the ECAPA-TDNN model so the first recording in this worker
+    doesn't pay the ~3-5s SpeechBrain initialisation cost mid-pipeline.
+
+    Only runs when voice identification is enabled for this process — the API
+    container has it off, so this is effectively a no-op there.
+    """
+    import logging
+
+    from app.config import get_settings
+
+    logger = logging.getLogger(__name__)
+    settings = get_settings()
+    if not settings.voice_identification_enabled:
+        logger.info("voice ID disabled in this worker; skipping ECAPA preload")
+        return
+    try:
+        from app.core.voice_embedding import _get_model
+
+        _get_model()
+        logger.info("Preloaded ECAPA-TDNN voice embedding model")
+    except Exception:
+        logger.exception(
+            "Failed to preload ECAPA voice embedding model; first inference "
+            "will pay cold-start cost"
+        )
