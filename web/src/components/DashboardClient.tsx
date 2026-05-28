@@ -14,11 +14,10 @@ import {
   changePassword,
   claimTelegramLinkCode,
   createDictionaryWord,
-  createEntity,
   createFolder,
   createRecording,
+  deleteDictationEntry,
   deleteDictionaryWord,
-  deleteEntity,
   deleteFolder,
   deleteRecording,
   fulltextSearch,
@@ -26,10 +25,8 @@ import {
   getRecording,
   getSettings,
   getTelegramLinkStatus,
-  listActionItems,
   listDictationEntries,
   listDictionaryWords,
-  listEntities,
   listFolders,
   listRecordings,
   logout,
@@ -39,7 +36,6 @@ import {
   semanticSearch,
   startSummaryGeneration,
   startTelegramLink,
-  updateActionItem,
   updateSettings,
   unlinkTelegram,
 } from "@/lib/api";
@@ -54,10 +50,8 @@ import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { PasswordField } from "@/components/PasswordField";
 import { ApiError } from "@/lib/http";
 import type {
-  ActionItem,
   DictationDictionaryWord,
   DictationEntry,
-  Entity,
   Folder,
   Recording,
   RecordingDetail,
@@ -78,8 +72,6 @@ type DashboardView =
   | "search"
   | "history"
   | "dictionary"
-  | "actions"
-  | "topics"
   | "settings";
 type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
@@ -104,8 +96,6 @@ interface DashboardCopy {
     search: { label: string; detail: string };
     history: { label: string; detail: string };
     dictionary: { label: string; detail: string };
-    actions: { label: string; detail: string };
-    topics: { label: string; detail: string };
     settings: { label: string; detail: string };
   };
   // Folder management
@@ -208,22 +198,6 @@ interface DashboardCopy {
     score: string;
     open: string;
   };
-  // Action items
-  actions: {
-    emptyTitle: string;
-    emptyBody: string;
-    complete: string;
-    pending: string;
-    updated: string;
-  };
-  // Topics
-  topics: {
-    placeholder: string;
-    create: string;
-    delete: string;
-    created: string;
-    deleted: string;
-  };
   // Settings
   settings: {
     dictationHeading: string;
@@ -284,8 +258,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Search", detail: "Find a moment across transcripts" },
       history: { label: "Dictation History", detail: "Voice to text inserts" },
       dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
-      actions: { label: "Action Items", detail: "Follow-ups pulled from your notes" },
-      topics: { label: "Topics", detail: "People, projects, and ideas you mention" },
       settings: { label: "Settings", detail: "Account, dictation, and integrations" },
     },
     folders: {
@@ -390,20 +362,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       score: "Score",
       open: "Open",
     },
-    actions: {
-      emptyTitle: "No Action Items",
-      emptyBody: "Generated follow-ups will appear here after summaries are created.",
-      complete: "Complete",
-      pending: "Pending",
-      updated: "Action item updated.",
-    },
-    topics: {
-      placeholder: "Topic name",
-      create: "Create topic",
-      delete: "Delete",
-      created: "Entity created.",
-      deleted: "Entity deleted.",
-    },
     settings: {
       dictationHeading: "Dictation",
       loadingSettings: "Loading account settings...",
@@ -464,8 +422,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
       history: { label: "История диктовки", detail: "Голос превращённый в текст" },
       dictionary: { label: "Словарь", detail: "Свои замены для диктовки" },
-      actions: { label: "Задачи", detail: "Действия, извлечённые из ваших записей" },
-      topics: { label: "Темы", detail: "Люди, проекты и идеи, о которых вы говорите" },
       settings: { label: "Настройки", detail: "Аккаунт, диктовка и интеграции" },
     },
     folders: {
@@ -572,20 +528,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       noResultsBody: "Не нашли подходящих фрагментов транскрипта.",
       score: "Релевантность",
       open: "Открыть",
-    },
-    actions: {
-      emptyTitle: "Задач пока нет",
-      emptyBody: "Действия будут появляться здесь после создания саммари.",
-      complete: "Готово",
-      pending: "В работе",
-      updated: "Задача обновлена.",
-    },
-    topics: {
-      placeholder: "Название темы",
-      create: "Создать тему",
-      delete: "Удалить",
-      created: "Тема создана.",
-      deleted: "Тема удалена.",
     },
     settings: {
       dictationHeading: "Диктовка",
@@ -735,10 +677,6 @@ export function DashboardClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
 
-  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
-  const [entityName, setEntityName] = useState("");
-
   // Folders
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
@@ -783,13 +721,6 @@ export function DashboardClient() {
     setLocale(detectLocale());
   }, []);
 
-  const pendingActionCount = useMemo(
-    () =>
-      actionItems.filter(
-        (item) => item.status !== "completed" && item.status !== "cancelled",
-      ).length,
-    [actionItems],
-  );
   const accountHasPassword = user?.has_password !== false;
 
   async function loadRecordingsState() {
@@ -800,16 +731,6 @@ export function DashboardClient() {
   async function loadTrashRecordingsState() {
     const trashed = await listRecordings({ limit: LIST_LIMIT, trashed: true });
     setTrashRecordings(trashed);
-  }
-
-  async function loadActionItemsState() {
-    const response = await listActionItems({ limit: LIST_LIMIT });
-    setActionItems(response);
-  }
-
-  async function loadEntitiesState() {
-    const response = await listEntities();
-    setEntities(response);
   }
 
   async function loadFoldersState() {
@@ -895,8 +816,6 @@ export function DashboardClient() {
       setUser(currentUser);
       await Promise.all([
         loadRecordingsState(),
-        loadActionItemsState(),
-        loadEntitiesState(),
         loadFoldersState(),
       ]);
     } catch (error: unknown) {
@@ -970,7 +889,7 @@ export function DashboardClient() {
           ),
         );
         if (!recordingNeedsRefresh(detail)) {
-          await Promise.all([loadRecordingsState(), loadActionItemsState()]);
+          await loadRecordingsState();
         }
       } catch (error: unknown) {
         if (!cancelled) setMessage(formatError(error));
@@ -1054,7 +973,6 @@ export function DashboardClient() {
       await Promise.all([
         loadRecordingsState(),
         options?.permanent ? loadTrashRecordingsState() : Promise.resolve(),
-        loadActionItemsState(),
       ]);
       setMessage(
         options?.permanent
@@ -1112,41 +1030,6 @@ export function DashboardClient() {
         return;
       }
       setSearchResponse(await fulltextSearch({ q: query, limit: 25, offset: 0 }));
-    } catch (error: unknown) {
-      setMessage(formatError(error));
-    }
-  }
-
-  async function handleUpdateAction(itemId: string, status: ActionItem["status"]) {
-    setMessage(null);
-    try {
-      await updateActionItem(itemId, { status });
-      await loadActionItemsState();
-      setMessage(copy.actions.updated);
-    } catch (error: unknown) {
-      setMessage(formatError(error));
-    }
-  }
-
-  async function handleCreateEntity(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    try {
-      await createEntity({ type: "topic", name: entityName, metadata: { source: "web" } });
-      setEntityName("");
-      await loadEntitiesState();
-      setMessage(copy.topics.created);
-    } catch (error: unknown) {
-      setMessage(formatError(error));
-    }
-  }
-
-  async function handleDeleteEntity(entityId: string) {
-    setMessage(null);
-    try {
-      await deleteEntity(entityId);
-      await loadEntitiesState();
-      setMessage(copy.topics.deleted);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -1517,18 +1400,6 @@ export function DashboardClient() {
       count: null,
     },
     {
-      key: "actions",
-      label: copy.nav.actions.label,
-      detail: copy.nav.actions.detail,
-      count: displayCount(actionItems.length, pendingActionCount),
-    },
-    {
-      key: "topics",
-      label: copy.nav.topics.label,
-      detail: copy.nav.topics.detail,
-      count: displayCount(entities.length),
-    },
-    {
       key: "settings",
       label: copy.nav.settings.label,
       detail: copy.nav.settings.detail,
@@ -1778,8 +1649,6 @@ export function DashboardClient() {
         {view === "search" ? renderSearchView() : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
-        {view === "actions" ? renderActionsView() : null}
-        {view === "topics" ? renderTopicsView() : null}
         {view === "settings" ? renderSettingsView() : null}
       </main>
 
@@ -2256,86 +2125,6 @@ export function DashboardClient() {
             ))}
           </ul>
         )}
-      </section>
-    );
-  }
-
-  function renderActionsView() {
-    return (
-      <section className="tool-panel">
-        {actionItems.length === 0 ? (
-          <div className="empty-state">
-            <h3>{copy.actions.emptyTitle}</h3>
-            <p>{copy.actions.emptyBody}</p>
-          </div>
-        ) : (
-          <ul className="action-list" data-testid="action-item-list">
-            {actionItems.map((item) => (
-              <li key={item.id} className="action-list__item">
-                <div>
-                  <strong>{item.task}</strong>
-                  <p className="metadata-row">
-                    <span>{item.status.replace("_", " ")}</span>
-                    {item.priority ? <span>{item.priority}</span> : null}
-                    {item.owner ? <span>{item.owner}</span> : null}
-                  </p>
-                </div>
-                <div className="row-actions">
-                  <button
-                    type="button"
-                    data-testid={`set-complete-${item.id}`}
-                    className="ghost-button compact-button"
-                    onClick={() => void handleUpdateAction(item.id, "completed")}
-                  >
-                    {copy.actions.complete}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid={`set-pending-${item.id}`}
-                    className="ghost-button compact-button"
-                    onClick={() => void handleUpdateAction(item.id, "pending")}
-                  >
-                    {copy.actions.pending}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    );
-  }
-
-  function renderTopicsView() {
-    return (
-      <section className="tool-panel">
-        <form className="search-form" onSubmit={handleCreateEntity}>
-          <input
-            data-testid="entity-name"
-            placeholder={copy.topics.placeholder}
-            value={entityName}
-            onChange={(event) => setEntityName(event.target.value)}
-            required
-          />
-          <button data-testid="create-entity" type="submit">
-            {copy.topics.create}
-          </button>
-        </form>
-        <ul className="topic-list" data-testid="entity-list">
-          {entities.map((entity) => (
-            <li key={entity.id}>
-              <span>{entity.name}</span>
-              <button
-                type="button"
-                className="ghost-button compact-button danger-button"
-                onClick={() => void handleDeleteEntity(entity.id)}
-                data-testid={`delete-entity-${entity.id}`}
-              >
-                {copy.topics.delete}
-              </button>
-            </li>
-          ))}
-        </ul>
       </section>
     );
   }

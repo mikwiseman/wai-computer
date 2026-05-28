@@ -7,9 +7,6 @@ import {
   syncLocalhostRefreshCookie,
 } from "./http";
 import type {
-  ActionItem,
-  ActionPriority,
-  ActionStatus,
   AnalyticsResponse,
   ApiKey,
   ApiKeyCreated,
@@ -19,9 +16,6 @@ import type {
   DictationBenchmarkVoteResponse,
   DictationDictionaryWord,
   DictationEntry,
-  Entity,
-  EntityDetail,
-  EntityType,
   ExportFormat,
   ExportLocale,
   Folder,
@@ -444,60 +438,6 @@ export function fulltextSearch(params: {
   return apiFetch<SearchResponse>(`/api/search/fts${asQuery(params)}`);
 }
 
-export function listActionItems(params?: {
-  status?: ActionStatus;
-  priority?: ActionPriority;
-  limit?: number;
-  offset?: number;
-}): Promise<ActionItem[]> {
-  return apiFetch<ActionItem[]>(`/api/action-items${asQuery(params || {})}`);
-}
-
-export function updateActionItem(
-  itemId: string,
-  payload: Partial<{
-    task: string | null;
-    owner: string | null;
-    due_date: string | null;
-    priority: ActionPriority | null;
-    status: ActionStatus | null;
-  }>,
-): Promise<ActionItem> {
-  return apiFetch<ActionItem>(`/api/action-items/${itemId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function deleteActionItem(itemId: string): Promise<void> {
-  return apiFetch<void>(`/api/action-items/${itemId}`, {
-    method: "DELETE",
-  });
-}
-
-export function listEntities(type?: EntityType): Promise<Entity[]> {
-  return apiFetch<Entity[]>(`/api/entities${asQuery({ type })}`);
-}
-
-export function getEntity(entityId: string): Promise<EntityDetail> {
-  return apiFetch<EntityDetail>(`/api/entities/${entityId}`);
-}
-
-export function createEntity(payload: {
-  type: EntityType;
-  name: string;
-  metadata?: Record<string, unknown>;
-}): Promise<Entity> {
-  return apiFetch<Entity>("/api/entities", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function deleteEntity(entityId: string): Promise<void> {
-  return apiFetch<void>(`/api/entities/${entityId}`, { method: "DELETE" });
-}
-
 export function changePassword(currentPassword: string, newPassword: string): Promise<MessageResponse> {
   return apiFetch<MessageResponse>("/api/settings/change-password", {
     method: "POST",
@@ -775,6 +715,12 @@ export function deleteFolder(id: string): Promise<void> {
 
 export function listDictationEntries(): Promise<DictationEntry[]> {
   return apiFetch<DictationEntry[]>("/api/dictation/entries");
+}
+
+export function deleteDictationEntry(clientEntryId: string): Promise<void> {
+  return apiFetch<void>(`/api/dictation/entries/${encodeURIComponent(clientEntryId)}`, {
+    method: "DELETE",
+  });
 }
 
 export function listDictionaryWords(): Promise<DictationDictionaryWord[]> {

@@ -14,11 +14,6 @@ const mockStartSummaryGeneration = vi.fn();
 const mockSearch = vi.fn();
 const mockSemanticSearch = vi.fn();
 const mockFulltextSearch = vi.fn();
-const mockListActionItems = vi.fn();
-const mockUpdateActionItem = vi.fn();
-const mockListEntities = vi.fn();
-const mockCreateEntity = vi.fn();
-const mockDeleteEntity = vi.fn();
 const mockChangePassword = vi.fn();
 const mockGetSettings = vi.fn();
 const mockUpdateSettings = vi.fn();
@@ -66,11 +61,6 @@ vi.mock("@/lib/api", () => ({
   search: (...args: unknown[]) => mockSearch(...args),
   semanticSearch: (...args: unknown[]) => mockSemanticSearch(...args),
   fulltextSearch: (...args: unknown[]) => mockFulltextSearch(...args),
-  listActionItems: (...args: unknown[]) => mockListActionItems(...args),
-  updateActionItem: (...args: unknown[]) => mockUpdateActionItem(...args),
-  listEntities: (...args: unknown[]) => mockListEntities(...args),
-  createEntity: (...args: unknown[]) => mockCreateEntity(...args),
-  deleteEntity: (...args: unknown[]) => mockDeleteEntity(...args),
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
   getSettings: (...args: unknown[]) => mockGetSettings(...args),
   updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
@@ -142,20 +132,6 @@ const baseRecordingDetail = {
   highlights: [],
 };
 
-const baseActionItems = [
-  {
-    id: "a1",
-    recording_id: "r1",
-    task: "Task",
-    owner: null,
-    due_date: null,
-    priority: "medium",
-    status: "pending",
-    source: "generated",
-    created_at: "2026-02-27T00:00:00Z",
-  },
-];
-
 const baseSettings = {
   default_language: "ru",
   summary_language: "ru",
@@ -182,16 +158,6 @@ const baseTelegramStatus = {
   linked_at: null,
 };
 
-const baseEntities = [
-  {
-    id: "e1",
-    type: "topic",
-    name: "Roadmap",
-    metadata: { source: "seed" },
-    created_at: "2026-02-27T00:00:00Z",
-  },
-];
-
 function arrangeHappyPathMocks() {
   mockGetCurrentUser.mockResolvedValue(baseUser);
   mockListRecordings.mockResolvedValue([baseRecording]);
@@ -203,11 +169,6 @@ function arrangeHappyPathMocks() {
   mockSearch.mockResolvedValue({ results: [], total: 5 });
   mockSemanticSearch.mockResolvedValue({ results: [], total: 4 });
   mockFulltextSearch.mockResolvedValue({ results: [], total: 3 });
-  mockListActionItems.mockResolvedValue(baseActionItems);
-  mockUpdateActionItem.mockResolvedValue(baseActionItems[0]);
-  mockListEntities.mockResolvedValue(baseEntities);
-  mockCreateEntity.mockResolvedValue(baseEntities[0]);
-  mockDeleteEntity.mockResolvedValue(undefined);
   mockChangePassword.mockResolvedValue({ message: "Password changed successfully" });
   mockGetSettings.mockResolvedValue(baseSettings);
   mockUpdateSettings.mockResolvedValue(baseSettings);
@@ -282,14 +243,6 @@ async function openSearchView(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId("tab-search"));
 }
 
-async function openActionsView(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByTestId("tab-actions"));
-}
-
-async function openTopicsView(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByTestId("tab-topics"));
-}
-
 async function openSettingsView(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId("tab-settings"));
 }
@@ -307,11 +260,6 @@ describe("DashboardClient", () => {
       mockSearch,
       mockSemanticSearch,
       mockFulltextSearch,
-      mockListActionItems,
-      mockUpdateActionItem,
-      mockListEntities,
-      mockCreateEntity,
-      mockDeleteEntity,
       mockChangePassword,
       mockGetSettings,
       mockUpdateSettings,
@@ -464,36 +412,6 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 3");
     });
 
-    await openActionsView(user);
-    await user.click(screen.getByTestId("set-complete-a1"));
-    await waitFor(() => {
-      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "completed" });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Action item updated.");
-    });
-
-    await user.click(screen.getByTestId("set-pending-a1"));
-    await waitFor(() => {
-      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "pending" });
-    });
-
-    await openTopicsView(user);
-    await user.type(screen.getByTestId("entity-name"), "Budget");
-    await user.click(screen.getByTestId("create-entity"));
-    await waitFor(() => {
-      expect(mockCreateEntity).toHaveBeenCalledWith({
-        type: "topic",
-        name: "Budget",
-        metadata: { source: "web" },
-      });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entity created.");
-    });
-
-    await user.click(screen.getByTestId("delete-entity-e1"));
-    await waitFor(() => {
-      expect(mockDeleteEntity).toHaveBeenCalledWith("e1");
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entity deleted.");
-    });
-
     await openSettingsView(user);
     await user.type(screen.getByTestId("current-password"), "old");
     await user.type(screen.getByTestId("new-password"), "new");
@@ -548,27 +466,6 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Search failed");
     });
 
-    await openActionsView(user);
-    mockUpdateActionItem.mockRejectedValueOnce(new Error("Action failed"));
-    await user.click(screen.getByTestId("set-complete-a1"));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Action failed");
-    });
-
-    await openTopicsView(user);
-    mockCreateEntity.mockRejectedValueOnce(new Error("Create entity failed"));
-    await user.type(screen.getByTestId("entity-name"), "Fail");
-    await user.click(screen.getByTestId("create-entity"));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Create entity failed");
-    });
-
-    mockDeleteEntity.mockRejectedValueOnce(new Error("Delete entity failed"));
-    await user.click(screen.getByTestId("delete-entity-e1"));
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Delete entity failed");
-    });
-
     await openSettingsView(user);
     mockChangePassword.mockRejectedValueOnce(new Error("Change password failed"));
     await user.type(screen.getByTestId("current-password"), "old2");
@@ -591,8 +488,6 @@ describe("DashboardClient", () => {
     mockGetCurrentUser.mockResolvedValue(baseUser);
     mockListRecordings.mockResolvedValue([{ ...baseRecording, id: "r2", title: null }]);
     mockDeleteRecording.mockResolvedValue(undefined);
-    mockListActionItems.mockResolvedValue([]);
-    mockListEntities.mockResolvedValue([]);
     mockGetRecording.mockResolvedValue({
       ...baseRecordingDetail,
       id: "r2",
@@ -903,33 +798,6 @@ describe("DashboardClient", () => {
     expect(newPwdInput).toHaveValue("newPassword123");
   });
 
-  // --- Entity creation calls API with correct params ---
-
-  it("calls createEntity with type=topic, name from input, and metadata source=web", async () => {
-    arrangeHappyPathMocks();
-    const user = userEvent.setup();
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-    await openTopicsView(user);
-
-    // Type a new entity name
-    await user.type(screen.getByTestId("entity-name"), "Machine Learning");
-    await user.click(screen.getByTestId("create-entity"));
-
-    await waitFor(() => {
-      expect(mockCreateEntity).toHaveBeenCalledWith({
-        type: "topic",
-        name: "Machine Learning",
-        metadata: { source: "web" },
-      });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entity created.");
-    });
-
-    // Entity name input should be cleared after successful creation
-    expect(screen.getByTestId("entity-name")).toHaveValue("");
-  });
-
   // --- Recording deletion refreshes the recordings list ---
 
   it("refreshes recording list after deleting a recording", async () => {
@@ -1099,52 +967,6 @@ describe("DashboardClient", () => {
     // Verify redirect to login page
     await waitFor(() => {
       expect(mockReplace).toHaveBeenCalledWith("/login");
-    });
-  });
-
-  // --- Action item update flow: toggle status and verify API + message ---
-
-  it("action item update flow: marks complete, verifies API, then marks pending", async () => {
-    arrangeHappyPathMocks();
-    const user = userEvent.setup();
-
-    const completedItem = { ...baseActionItems[0], status: "completed" };
-
-    // After first update (complete), return completed item
-    mockUpdateActionItem.mockResolvedValueOnce(completedItem);
-    mockListActionItems
-      .mockResolvedValueOnce(baseActionItems)           // initial load
-      .mockResolvedValueOnce([completedItem])            // after marking complete
-      .mockResolvedValueOnce(baseActionItems);           // after marking pending again
-
-    // After second update (pending), return pending item
-    mockUpdateActionItem.mockResolvedValueOnce(baseActionItems[0]);
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-    await openActionsView(user);
-
-    // Step 1: Mark action item as complete
-    await user.click(screen.getByTestId("set-complete-a1"));
-
-    await waitFor(() => {
-      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "completed" });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Action item updated.");
-    });
-
-    // Verify action items list was refreshed
-    expect(mockListActionItems).toHaveBeenCalledTimes(2);
-
-    // Step 2: Mark it back as pending
-    await user.click(screen.getByTestId("set-pending-a1"));
-
-    await waitFor(() => {
-      expect(mockUpdateActionItem).toHaveBeenCalledWith("a1", { status: "pending" });
-    });
-
-    // Verify action items list was refreshed again
-    await waitFor(() => {
-      expect(mockListActionItems).toHaveBeenCalledTimes(3);
     });
   });
 
