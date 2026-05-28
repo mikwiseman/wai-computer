@@ -385,7 +385,12 @@ async def test_realtime_stream_closes_without_bearer_token():
 
     await route.stream_realtime_transcription(websocket)
 
-    assert websocket.accepted is False
+    # Now ACCEPTS first, sends a structured error frame, then closes — the
+    # previous close-before-accept pattern made the client see a generic
+    # WS-upgrade failure with no diagnostic body, which DictationManager
+    # silently swallowed during its .connecting window.
+    assert websocket.accepted is True
+    assert websocket.json_payloads == [route.PROXY_ERROR_MISSING_BEARER]
     assert websocket.closed_codes == [1008]
 
 
@@ -401,7 +406,8 @@ async def test_realtime_stream_closes_on_invalid_proxy_token():
     ):
         await route.stream_realtime_transcription(websocket)
 
-    assert websocket.accepted is False
+    assert websocket.accepted is True
+    assert websocket.json_payloads == [route.PROXY_ERROR_INVALID_TOKEN]
     assert websocket.closed_codes == [1008]
 
 
@@ -421,7 +427,7 @@ async def test_realtime_stream_reports_provider_config_error_without_secret():
         await route.stream_realtime_transcription(websocket)
 
     assert websocket.accepted is True
-    assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
+    assert websocket.json_payloads == [route.PROXY_ERROR_MISSING_API_KEY]
     assert websocket.closed_codes == [1011]
 
 
