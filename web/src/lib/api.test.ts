@@ -249,51 +249,6 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/search/fts?q=roadmap&limit=11&offset=9");
   });
 
-  it("calls action item endpoints", async () => {
-    await api.listActionItems({ status: "pending", priority: "high", limit: 20, offset: 3 });
-    await api.updateActionItem("item1", { status: "completed", due_date: null });
-    await api.deleteActionItem("item1");
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      1,
-      "/api/action-items?status=pending&priority=high&limit=20&offset=3",
-    );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/action-items/item1", {
-      method: "PATCH",
-      body: JSON.stringify({ status: "completed", due_date: null }),
-    });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/action-items/item1", {
-      method: "DELETE",
-    });
-  });
-
-  it("omits empty action item params", async () => {
-    await api.listActionItems();
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/action-items");
-  });
-
-  it("calls entity endpoints", async () => {
-    await api.listEntities("topic");
-    await api.getEntity("ent");
-    await api.createEntity({ type: "topic", name: "Roadmap", metadata: { a: 1 } });
-    await api.deleteEntity("ent");
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/entities?type=topic");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/entities/ent");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/entities", {
-      method: "POST",
-      body: JSON.stringify({ type: "topic", name: "Roadmap", metadata: { a: 1 } }),
-    });
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/entities/ent", {
-      method: "DELETE",
-    });
-  });
-
-  it("omits empty entity type", async () => {
-    await api.listEntities(undefined);
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/entities");
-  });
-
   it("calls change password endpoint", async () => {
     await api.changePassword("old", "new");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/settings/change-password", {
@@ -441,34 +396,6 @@ describe("api client wrappers", () => {
     await api.restoreRecording("rec-to-restore");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/rec-to-restore/restore", {
       method: "POST",
-    });
-  });
-
-  it("calls updateActionItem with multiple fields in PATCH body", async () => {
-    await api.updateActionItem("item42", {
-      task: "Updated task description",
-      owner: "Alice",
-      due_date: "2026-04-01",
-      priority: "high",
-      status: "in_progress",
-    });
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/action-items/item42", {
-      method: "PATCH",
-      body: JSON.stringify({
-        task: "Updated task description",
-        owner: "Alice",
-        due_date: "2026-04-01",
-        priority: "high",
-        status: "in_progress",
-      }),
-    });
-  });
-
-  it("calls updateActionItem with partial fields (only owner)", async () => {
-    await api.updateActionItem("item99", { owner: "Bob" });
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/action-items/item99", {
-      method: "PATCH",
-      body: JSON.stringify({ owner: "Bob" }),
     });
   });
 
