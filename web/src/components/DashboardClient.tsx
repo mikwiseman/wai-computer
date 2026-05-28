@@ -1579,6 +1579,7 @@ export function DashboardClient() {
                       type="text"
                       data-testid="new-folder-name"
                       placeholder={copy.folders.addPlaceholder}
+                      aria-label={copy.folders.addAriaLabel}
                       value={newFolderName}
                       onChange={(event) => setNewFolderName(event.target.value)}
                     />
@@ -2001,11 +2002,13 @@ export function DashboardClient() {
             ref={searchInputRef}
             data-testid="search-query"
             placeholder={copy.search.placeholder}
+            aria-label={copy.search.placeholder}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
           />
           <select
             data-testid="search-mode"
+            aria-label={copy.search.submit}
             value={searchMode}
             onChange={(event) => {
               setSearchMode(event.target.value as SearchMode);
@@ -2509,10 +2512,12 @@ function NewRecordingPane({
         <input
           data-testid="recording-title"
           placeholder={copy.library.titlePlaceholder}
+          aria-label={copy.library.newRecordingHeading}
           value={title}
           onChange={(event) => onTitleChange(event.target.value)}
         />
         <select
+          aria-label={copy.library.newRecordingHeading}
           data-testid="recording-type"
           value={type}
           onChange={(event) => onTypeChange(event.target.value as RecordingType)}
