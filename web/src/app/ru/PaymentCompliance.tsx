@@ -23,7 +23,7 @@ function PaymentMarks() {
           className={styles.paymentLogo}
           src="/payment-logos/mastercard.svg"
           alt="Mastercard"
-          width={110}
+          width={126}
           height={34}
         />
       </span>
@@ -37,7 +37,7 @@ function PaymentMarks() {
           className={styles.paymentLogo}
           src="/payment-logos/tbank-tpay.svg"
           alt="Т-Банк T-Pay"
-          width={150}
+          width={154}
           height={34}
         />
         <span className={styles.paymentLogoCaption}>tbank.ru</span>
