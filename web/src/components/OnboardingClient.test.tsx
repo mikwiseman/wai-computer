@@ -36,11 +36,20 @@ describe("OnboardingClient", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
     expect(screen.getByText(/Read the prompt for ~20 seconds/i)).toBeInTheDocument();
+    expect(localStorageValues.voice_onboarding_complete).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
 
     expect(localStorageValues.voice_onboarding_complete).toBe("true");
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("marks onboarding seen as soon as the user sees the screen", () => {
+    render(<OnboardingClient />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
+    expect(localStorageValues.voice_onboarding_complete).toBe("true");
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("surfaces microphone startup errors", async () => {

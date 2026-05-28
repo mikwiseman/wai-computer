@@ -1182,22 +1182,22 @@
     "settings.signOutConfirm.title" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out and reset WaiComputer on this Mac?" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти и сбросить WaiComputer на этом Mac?" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out of WaiComputer on this Mac?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти из WaiComputer на этом Mac?" } }
       }
     },
     "settings.signOutConfirm.confirm" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign Out and Reset" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти и сбросить" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign Out" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выйти" } }
       }
     },
     "settings.signOutConfirm.body" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clears your session, preferences, dictation history, and onboarding state on this device. Server-side recordings and summaries stay intact. WaiComputer will restart so the next launch is a clean install." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистит сессию, настройки, историю диктовки и состояние онбординга на этом устройстве. Записи и сводки на сервере сохранятся. WaiComputer перезапустится, чтобы стартовать с чистого листа." } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Clears your session, preferences, and dictation history on this device. Onboarding stays completed. Server-side recordings and summaries stay intact. WaiComputer will restart." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очистит сессию, настройки и историю диктовки на этом устройстве. Онбординг останется пройденным. Записи и сводки на сервере сохранятся. WaiComputer перезапустится." } }
       }
     },
     "settings.cancel" : {
