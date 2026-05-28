@@ -502,9 +502,22 @@ final class GlobalHotkeyManager: ObservableObject {
 
     /// How long the key must be held before starting push-to-talk.
     ///
-    /// Keep this below the threshold where the hotkey feels laggy, but above a
-    /// quick tap so double-tap hands-free start remains reliable.
-    private let holdThreshold: TimeInterval = 0.08
+    /// Industry context (researched 2026-05-28):
+    ///   - Karabiner-Elements `to_if_alone_timeout_milliseconds` default = 1000 ms
+    ///   - obra/swift-macos-tap-detection `holdDuration` default = 800 ms
+    ///   - VoiceInk `holdDetectionDelay` = 200 ms
+    ///   - Our own Windows port (`desktop/WaiComputer.Core/Hotkey/HotkeyStateMachine.cs`) = 150 ms
+    ///     and the C# docstring claims it "mirrors the Swift GlobalHotkeyManager".
+    ///
+    /// The previous value (0.08 = 80 ms) was 2-12× tighter than every reviewed
+    /// production reference, and 2× tighter than the typical human "fast tap"
+    /// dwell time (~100-150 ms). Any vigorous double-tap of Right Command had
+    /// each press exceed 80 ms wall-clock, which promoted both presses to PTT
+    /// instead of routing them to `registerTap()` — `lastTapTime` was never
+    /// seeded, so the double-tap could NEVER fire. Raising to 0.15 s matches
+    /// our Windows code and gives users the headroom every other dictation
+    /// app already gives them.
+    private let holdThreshold: TimeInterval = 0.15
 
     // State tracking
     private var hotkeyDownTime: Date?
@@ -514,7 +527,11 @@ final class GlobalHotkeyManager: ObservableObject {
 
     // Double-tap detection
     private var lastTapTime: Date?
-    private let doubleTapInterval: TimeInterval = 0.4
+    /// Maximum gap between the FIRST tap's release and the SECOND tap's down
+    /// edge for the pair to be treated as a double-tap. 0.5 s matches
+    /// Karabiner-Elements `to_delayed_action_delay_milliseconds` default and
+    /// macOS `NSEvent.doubleClickInterval` typical value. Was 0.4 s.
+    private let doubleTapInterval: TimeInterval = 0.5
 
     // NSEvent global monitor (Accessibility-gated) — sees keystrokes in
     // OTHER apps. Read-only by Apple's design; for modifier-key push-to-talk
@@ -763,9 +780,20 @@ final class GlobalHotkeyManager: ObservableObject {
 
         switch action {
         case .pushToTalkStop:
+            // A definitive PTT hold completed — invalidate any stale
+            // `lastTapTime` so the user's NEXT tap isn't paired against a
+            // prior unrelated tap and falsely fire `onHandsFreeToggle`.
+            // (State-leak: previously `lastTapTime` survived holds and could
+            // form a fake double-tap with a fresh tap up to `doubleTapInterval`
+            // after the PTT-stop, even though the user's hand had been doing
+            // a long hold in between.)
+            lastTapTime = nil
             log.info("Push-to-talk stopped (held \(String(format: "%.2f", holdDuration))s, threshold \(String(format: "%.2f", self.holdThreshold))s)")
             onPushToTalkStop?()
         case .cancelled:
+            // Same state-hygiene reason as .pushToTalkStop: a cancel is not a
+            // tap, so it should not contribute to a future double-tap match.
+            lastTapTime = nil
             log.info("Push-to-talk cancelled (wasInPTT=\(wasInPushToTalk), otherKeyPressed=\(self.otherKeyPressed))")
             onCancelled?()
         case .singleTap:
