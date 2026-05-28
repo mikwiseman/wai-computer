@@ -13,6 +13,7 @@ from app.api.deps import CurrentUser, Database
 from app.api.routes.people import PersonResponse, _serialize_person, _voiceprint_counts
 from app.config import get_settings
 from app.core.voice_identification import store_voiceprint_from_path
+from app.core.voice_sharing import refresh_published_voiceprint_if_any
 from app.models import Person
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,11 @@ async def enroll_voice(
         if user.self_person_id is None:
             user.self_person_id = person.id
             await db.flush()
+
+        # If the user already opted into the directory, this enrollment may be
+        # a re-enrollment that should replace the published voiceprint. No-op
+        # if not currently published.
+        await refresh_published_voiceprint_if_any(db=db, user=user)
 
         counts = await _voiceprint_counts(db, user.id)
         return VoiceEnrollmentResponse(

@@ -406,6 +406,64 @@ async def update_identity(
     )
 
 
+class VoiceSharingResponse(BaseModel):
+    """Public-directory state for the current user."""
+
+    enabled: bool
+    can_enable: bool
+    has_first_name: bool
+    has_last_name: bool
+    has_voiceprint: bool
+    shared_name: str | None
+
+
+def _voice_sharing_response(state) -> VoiceSharingResponse:
+    return VoiceSharingResponse(
+        enabled=state.enabled,
+        can_enable=state.can_enable,
+        has_first_name=state.has_first_name,
+        has_last_name=state.has_last_name,
+        has_voiceprint=state.has_voiceprint,
+        shared_name=state.shared_name,
+    )
+
+
+@router.get("/voice-sharing", response_model=VoiceSharingResponse)
+async def get_voice_sharing(user: CurrentUser, db: Database) -> VoiceSharingResponse:
+    """Read whether the user is published in the directory plus prerequisites."""
+    from app.core.voice_sharing import get_voice_sharing_state
+
+    state = await get_voice_sharing_state(db=db, user=user)
+    return _voice_sharing_response(state)
+
+
+@router.post("/voice-sharing", response_model=VoiceSharingResponse)
+async def enable_voice_sharing(
+    user: CurrentUser, db: Database
+) -> VoiceSharingResponse:
+    """Publish the user's voiceprint + name to the global match directory."""
+    from app.core.voice_sharing import VoiceSharingError, publish_voice_sharing
+
+    try:
+        state = await publish_voice_sharing(db=db, user=user)
+    except VoiceSharingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    return _voice_sharing_response(state)
+
+
+@router.delete("/voice-sharing", response_model=VoiceSharingResponse)
+async def disable_voice_sharing(
+    user: CurrentUser, db: Database
+) -> VoiceSharingResponse:
+    """Remove the user's directory entry. Other users stop seeing the auto-tag."""
+    from app.core.voice_sharing import unpublish_voice_sharing
+
+    state = await unpublish_voice_sharing(db=db, user=user)
+    return _voice_sharing_response(state)
+
+
 @router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     request: ChangePasswordRequest,
