@@ -381,6 +381,79 @@ public struct TranscriptionOptions: Codable, Sendable {
     }
 }
 
+// MARK: - Identity & Voice Sharing
+
+/// Response from GET / PATCH /api/settings/identity.
+public struct UserIdentity: Codable, Sendable, Equatable {
+    public let firstName: String?
+    public let lastName: String?
+    public let hasVoiceprint: Bool
+
+    public init(firstName: String?, lastName: String?, hasVoiceprint: Bool) {
+        self.firstName = firstName
+        self.lastName = lastName
+        self.hasVoiceprint = hasVoiceprint
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case firstName = "first_name"
+        case lastName = "last_name"
+        case hasVoiceprint = "has_voiceprint"
+    }
+}
+
+/// Partial body for PATCH /api/settings/identity. Pass an empty string to
+/// clear a field; omit the field entirely to leave it unchanged.
+public struct UpdateIdentityRequest: Codable, Sendable {
+    public var firstName: String?
+    public var lastName: String?
+
+    public init(firstName: String? = nil, lastName: String? = nil) {
+        self.firstName = firstName
+        self.lastName = lastName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case firstName = "first_name"
+        case lastName = "last_name"
+    }
+}
+
+/// State of the voice-sharing directory toggle for the current user.
+public struct VoiceSharingState: Codable, Sendable, Equatable {
+    public let enabled: Bool
+    public let canEnable: Bool
+    public let hasFirstName: Bool
+    public let hasLastName: Bool
+    public let hasVoiceprint: Bool
+    public let sharedName: String?
+
+    public init(
+        enabled: Bool,
+        canEnable: Bool,
+        hasFirstName: Bool,
+        hasLastName: Bool,
+        hasVoiceprint: Bool,
+        sharedName: String?
+    ) {
+        self.enabled = enabled
+        self.canEnable = canEnable
+        self.hasFirstName = hasFirstName
+        self.hasLastName = hasLastName
+        self.hasVoiceprint = hasVoiceprint
+        self.sharedName = sharedName
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case canEnable = "can_enable"
+        case hasFirstName = "has_first_name"
+        case hasLastName = "has_last_name"
+        case hasVoiceprint = "has_voiceprint"
+        case sharedName = "shared_name"
+    }
+}
+
 // MARK: - Telegram
 
 public struct TelegramLinkStatus: Codable, Sendable {

@@ -208,6 +208,8 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-app-language-header")
             }
 
+            IdentityAndVoiceSection()
+
             appearanceSection
 
             Section {
