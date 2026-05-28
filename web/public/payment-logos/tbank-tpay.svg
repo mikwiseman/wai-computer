@@ -1,10 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="150" height="34" viewBox="0 0 150 34" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" width="154" height="34" viewBox="0 0 154 34" role="img" aria-labelledby="title">
   <title id="title">Т-Банк T-Pay</title>
-  <rect width="150" height="34" rx="8" fill="#FFE14F"/>
-  <path d="M12 10h20v4H20v10h-4V14h-4v-4Z" fill="#161616"/>
-  <path d="M33 18h12v3H33v-3Z" fill="#161616"/>
-  <path d="M49 10h8.7c4.2 0 6.7 1.8 6.7 4.9 0 1.8-.9 3.1-2.4 3.9l3.1 5.2h-4.6l-2.4-4.4h-5V24H49V10Zm4.1 3.4v2.9h4.2c1.7 0 2.6-.5 2.6-1.5s-.9-1.4-2.6-1.4h-4.2Z" fill="#161616"/>
-  <path d="M67 24V10h4.1v5.1l4.8-5.1h5l-6 6.2 6.5 7.8h-5.1l-4.3-5.2-.9.9V24H67Z" fill="#161616"/>
-  <path d="M84 10h4.1v14H84V10Zm7 0h4.2l5.2 8.1V10h4V24h-4.2L95 16v8h-4V10Zm17 0h4.1v5.1l4.8-5.1h5l-6 6.2 6.5 7.8h-5.1l-4.3-5.2-.9.9V24H108V10Z" fill="#161616"/>
-  <path d="M126 12h12v3h-4v9h-4v-9h-4v-3Z" fill="#161616"/>
+  <rect width="154" height="34" rx="8" fill="#FFE14F"/>
+  <text x="12" y="22" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" fill="#161616">Т-Банк</text>
+  <text x="72" y="22" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="800" fill="#161616">T-Pay</text>
 </svg>
