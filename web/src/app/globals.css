@@ -286,7 +286,6 @@ h4 {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: var(--shadow);
   padding: 1rem;
 }
 
@@ -303,14 +302,18 @@ h4 {
   gap: 0.65rem;
 }
 
+/* Auth card — mirror Mac `MacAuthView`: app icon centered, serif wordmark,
+ * uppercase eyebrow, hairline-bordered panel (no heavy shadow). */
 .auth-card {
   display: grid;
-  width: min(100%, 430px);
+  width: min(100%, 440px);
   gap: 1.55rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: var(--shadow);
+  /* Mac auth view sits on the desktop without ambient shadow — only the
+   * 1px border separates it from the page. */
+  box-shadow: 0 1px 2px rgba(24, 26, 31, 0.04);
   padding: 2rem;
 }
 
@@ -318,13 +321,60 @@ h4 {
   gap: 0.85rem;
 }
 
+/* Centered Mac-style hero: app icon + serif wordmark + uppercase eyebrow.
+ * Mirrors `MacAuthView` (App/MacContentView.swift line ~1494) — keeps the
+ * ecosystem signature so the web auth feels like the same app as Mac. */
+.auth-card__hero {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-md);
+  text-align: center;
+  padding-bottom: var(--space-xs);
+}
+
+.auth-card__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 4px 12px rgba(24, 26, 31, 0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  .auth-card__icon {
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 6px 18px rgba(0, 0, 0, 0.36);
+  }
+}
+
+.auth-card__wordmark {
+  font-family: var(--font-family-serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+
+.auth-card__tagline {
+  font: var(--font-label-small);
+  letter-spacing: var(--font-label-small-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* Legacy `auth-card__brand` row (inline brand-mark + wordmark) — still
+ * referenced by the magic-link sent confirmation card and other surfaces
+ * that render the compact variant. Keep the inline form for those cases. */
 .auth-card__brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.6rem;
   color: var(--ink);
-  font-size: var(--font-body-large-size);
-  font-weight: 760;
+  font-family: var(--font-family-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
 .auth-card__brand .brand-mark {
@@ -334,12 +384,18 @@ h4 {
 
 .auth-card__header {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.35rem;
+  text-align: center;
 }
 
+/* Auth heading — serif displayMedium-style, mirrors Mac MacAuthView. */
 .auth-card h1 {
-  font-size: clamp(1.6rem, 4vw, 2.1rem);
-  line-height: 1.1;
+  font-family: var(--font-family-serif);
+  font-weight: 600;
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  letter-spacing: -0.012em;
+  line-height: 1.05;
+  color: var(--ink);
 }
 
 .auth-form {
@@ -603,7 +659,10 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .brand-block h1 {
-  font-size: 1.05rem;
+  font-family: var(--font-family-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.1;
 }
 
@@ -636,9 +695,19 @@ a.primary-button[aria-disabled="true"]:hover {
   text-align: left;
 }
 
-.sidebar-nav__item:hover,
+.sidebar-nav__item:hover {
+  background: var(--surface-subtle);
+}
+
+/* Selected sidebar row — mirror Mac `listRowBackground(Palette.accent.opacity(0.15))`.
+ * Accent-tinted surface so the active section reads at a glance. */
 .sidebar-nav__item[aria-current="page"] {
-  background: var(--panel-subtle);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.sidebar-nav__item[aria-current="page"] strong {
+  color: var(--accent-strong);
 }
 
 .sidebar-nav__item strong,
@@ -660,12 +729,18 @@ a.primary-button[aria-disabled="true"]:hover {
 .sidebar-nav__item em {
   min-width: 1.55rem;
   border-radius: 999px;
-  background: var(--panel);
+  background: var(--surface-subtle);
   color: var(--ink-soft);
   font-size: var(--font-label-size);
   font-style: normal;
   text-align: center;
-  padding: 0.15rem 0.35rem;
+  padding: 0.15rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-nav__item[aria-current="page"] em {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .sidebar-footer {
@@ -691,11 +766,18 @@ a.primary-button[aria-disabled="true"]:hover {
   min-height: 54px;
 }
 
+/* Workspace page heading — mirror Mac `Typography.displaySmall`
+ * (22pt semibold serif). Replaces the bold sans heading that read as
+ * marketing-y; the serif keeps the editorial Mac feel through the app. */
 .workspace-header h2 {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: clamp(1.7rem, 3vw, 2.1rem);
-  line-height: 1.05;
+  font-family: var(--font-family-serif);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 3vw, 1.85rem);
+  letter-spacing: -0.005em;
+  line-height: 1.06;
+  color: var(--ink);
 }
 
 .library-grid {
@@ -782,10 +864,11 @@ a.primary-button[aria-disabled="true"]:hover {
   display: block;
 }
 
+/* Recording row title — mirror Mac `Typography.headingMedium` (15pt semibold). */
 .recording-row strong {
   overflow: hidden;
-  font-size: var(--font-body-size);
-  line-height: 1.3;
+  font: var(--font-heading-medium);
+  color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -927,10 +1010,16 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
 }
 
+/* Recording detail title — mirror Mac `Typography.displayMedium`
+ * (26pt semibold serif). Same editorial weight as Mac detail view. */
 .detail-panel__title-block h2 {
   overflow-wrap: anywhere;
-  font-size: 1.45rem;
-  line-height: 1.2;
+  font-family: var(--font-family-serif);
+  font-size: clamp(1.45rem, 2.4vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  line-height: 1.12;
+  color: var(--ink);
 }
 
 .inline-title-edit {
@@ -966,13 +1055,18 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0 1rem;
 }
 
+/* Detail tab — mirror Mac `WaiTabBar`: 13pt semibold, accent underline,
+ * 2pt capsule. Uses accent (not the legacy `--warm` token) so it matches
+ * the accent the user picked in Settings → Appearance. */
 .tab-button {
   min-height: 44px;
   border-radius: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--ink-soft);
+  font: var(--font-heading-small);
   padding: 0.2rem 0;
+  transition: color 0.16s ease, border-color 0.16s ease;
 }
 
 .tab-button:hover {
@@ -981,8 +1075,8 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .tab-button[aria-selected="true"] {
-  border-bottom-color: var(--warm);
-  color: var(--warm);
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 
 .detail-panel__content {
@@ -1017,11 +1111,13 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+/* Section header row — mirror Mac `waiSectionHeader()` modifier:
+ * 11pt medium, tertiary text color, uppercase, tracked. */
 .section-heading-row h3,
 .note-section h4 {
   color: var(--ink-faint);
-  font-size: var(--font-label-size);
-  font-weight: 750;
+  font: var(--font-label-small);
+  letter-spacing: var(--font-label-small-tracking);
   text-transform: uppercase;
 }
 
@@ -1045,13 +1141,15 @@ a.primary-button[aria-disabled="true"]:hover {
   list-style: disc;
 }
 
+/* Action / topic card — mirror Mac `waiCard()`: barely-visible grouping
+ * surface, 8pt radius, no shadow. */
 .action-card,
 .action-list__item {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
   border-radius: 8px;
-  background: var(--panel-raised);
+  background: var(--surface-subtle);
   padding: 0.85rem;
 }
 
@@ -1096,8 +1194,14 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 1rem 1.05rem;
 }
 
+/* "Ask Wai" panel heading — serif, mirror Mac CompanionView header
+ * which uses `.font(.system(size: 18, weight: .semibold))` for "Ask Wai". */
 .qa-panel__header h2 {
-  font-size: 1.25rem;
+  font-family: var(--font-family-serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
 }
 
 .qa-panel__header p {
@@ -1126,11 +1230,16 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.35rem;
   border-radius: 999px;
-  background: var(--panel-raised);
+  background: var(--surface-subtle);
   color: var(--ink-soft);
   cursor: pointer;
   font-size: var(--font-label-size);
-  padding: 0.3rem 0.55rem;
+  padding: 0.3rem 0.6rem;
+  transition: background 0.16s ease;
+}
+
+.scope-chip:hover {
+  background: var(--surface-hover);
 }
 
 .scope-chip input {
@@ -1152,13 +1261,15 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.75rem;
 }
 
+/* Ask Wai answer bubble — mirror Mac `CompanionView.bubble` for Wai role:
+ * `Color.primary.opacity(0.045)` background + accent border-left. */
 .qa-bubble {
   max-width: 860px;
   border-left: 3px solid var(--accent);
   border-radius: 8px;
-  background: var(--panel-raised);
-  line-height: 1.65;
-  padding: 1rem;
+  background: var(--surface-subtle);
+  font: var(--font-reading);
+  padding: 1rem 1.1rem;
   white-space: pre-wrap;
 }
 
@@ -1784,8 +1895,8 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .pricing-toggle button[aria-selected="true"] {
-  background: var(--color-text-primary);
-  color: var(--color-surface);
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .pricing-save {
@@ -1858,25 +1969,30 @@ a.primary-button[aria-disabled="true"]:hover {
 .pricing-cta {
   display: inline-block;
   width: 100%;
-  padding: 0.875rem 1.25rem;
+  padding: 0.78rem 1.1rem;
   border-radius: 8px;
   border: 0;
-  background: var(--color-text-primary);
-  color: var(--color-surface);
+  background: var(--accent);
+  color: var(--accent-contrast);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
+  transition: background 0.16s ease;
+}
+
+.pricing-cta:hover {
+  background: var(--accent-strong);
 }
 
 .pricing-cta--free {
   background: transparent;
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
+  color: var(--ink);
+  border: 1px solid var(--border);
 }
 
 .pricing-cta--free:hover {
-  background: var(--panel-subtle);
+  background: var(--surface-subtle);
   border-color: var(--border-strong);
 }
 
@@ -2012,8 +2128,13 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .billing-upgrade {
-  background: var(--color-text-primary);
-  color: var(--color-surface);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  transition: background 0.16s ease;
+}
+
+.billing-upgrade:hover {
+  background: var(--accent-strong);
 }
 
 .billing-promo {

@@ -75,15 +75,30 @@
   margin-bottom: 0.4rem;
 }
 
+/* Two-layer accent bloom: a tight inner halo for the icon edge + a wider
+ * tint that fades into the page. Looks like the soft amber glow inside the
+ * Mac onboarding window. */
 .iconHalo::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -10%;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, var(--accent-soft) 0%, transparent 70%);
+  z-index: 0;
+  filter: blur(20px);
+  opacity: 0.85;
+}
+
+.iconHalo::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
   border-radius: 50%;
   background: radial-gradient(
     closest-side,
-    var(--accent-soft) 0%,
-    transparent 72%
+    color-mix(in srgb, var(--accent) 18%, transparent) 0%,
+    transparent 75%
   );
   z-index: 0;
   filter: blur(8px);
