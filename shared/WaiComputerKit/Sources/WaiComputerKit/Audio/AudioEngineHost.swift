@@ -33,6 +33,7 @@ public actor AudioEngineHost {
     private var preWarmed = false
     private var activeLease: UUID?
     private var liveContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private var configChangeObserver: NSObjectProtocol?
     /// Frames currently in the pre-roll ring at 16 kHz mono. Caps memory.
     public static let preRollFrames: AVAudioFrameCount = 8_000  // 500 ms @ 16 kHz
 
@@ -91,13 +92,64 @@ public actor AudioEngineHost {
             throw error
         }
         preWarmed = true
+        installConfigChangeObserver()
         hostLog.info("[Host] Engine started")
+    }
+
+    /// AVAudioEngineConfigurationChange fires when the audio HAL renegotiates
+    /// — most commonly on route changes (AirPods reconnect, USB plug, system
+    /// default input switch). macOS 26 Tahoe fires this notification 2-5×
+    /// more aggressively than Sequoia. The HAL auto-stops the engine and
+    /// removes all installed taps; we surface it as a Sentry breadcrumb so
+    /// the "dictation starts then immediately stops" symptom on route flips
+    /// has a paper trail. Full hot-recovery (reinstall tap + restart) is a
+    /// follow-up.
+    private func installConfigChangeObserver() {
+        guard configChangeObserver == nil else { return }
+        let center = NotificationCenter.default
+        configChangeObserver = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { await self.handleEngineConfigurationChange() }
+        }
+    }
+
+    private func handleEngineConfigurationChange() {
+        let isRunning = engine.isRunning
+        hostLog.warning("[Host] AVAudioEngineConfigurationChange — engineRunning=\(isRunning), activeLease=\(self.activeLease != nil)")
+        SentryHelper.addBreadcrumb(
+            category: "audio.engine",
+            message: "configuration change",
+            data: [
+                "engineRunning": isRunning,
+                "hasActiveLease": activeLease != nil,
+                "platform": "macOS",
+            ],
+            level: .info
+        )
+        // When a lease is active and the engine has stopped itself, finish
+        // the live stream so the consumer's `for await` exits and the
+        // dictation flow can surface a real error to the user rather than
+        // sitting in front of a silent mic.
+        if !isRunning, let cont = liveContinuation {
+            cont.finish()
+            liveContinuation = nil
+            activeLease = nil
+            preWarmed = false
+        }
     }
 
     /// Tear down the engine and remove the tap. Only call on app quit / when
     /// dictation feature is disabled — never between sessions.
     public func teardown() {
         guard preWarmed else { return }
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         preRoll.clear()
