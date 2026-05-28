@@ -28,6 +28,10 @@ from app.core.retry_policy import is_retryable_exception
 from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
+from app.core.speaker_name_extraction import (
+    apply_extracted_names,
+    extract_speaker_names,
+)
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -581,6 +585,33 @@ async def process_staged_recording_upload(
                     "error_fingerprint": fingerprint_text(str(exc)),
                     "segment_count": len(speech_transcript_results),
                 },
+            )
+
+        # Name-introduction parsing runs after voice ID so that clusters which
+        # voice-matched against an existing Person keep that match and only
+        # gain the introduced name as an alias. Clusters with no voice match
+        # get a fresh Person created from the introduction.
+        try:
+            extracted_names = await extract_speaker_names(
+                transcript_results=speech_transcript_results,
+                raw_labels=speaker_assignments.keys(),
+            )
+            if extracted_names:
+                applied = await apply_extracted_names(
+                    db=db,
+                    user_id=user_id,
+                    speaker_assignments=speaker_assignments,
+                    extracted=extracted_names,
+                )
+                _recording_lifecycle_breadcrumb(
+                    "Recording name extraction applied",
+                    recording_id=recording_id,
+                    data={"applied_count": len(applied)},
+                )
+        except Exception as exc:
+            logger.warning(
+                "Speaker name extraction failed error_type=%s",
+                type(exc).__name__,
             )
 
         embedding_failure_count = 0

@@ -25,6 +25,10 @@ from app.core.summarizer import (
 )
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
+from app.core.speaker_name_extraction import (
+    apply_extracted_names,
+    extract_speaker_names,
+)
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -294,6 +298,21 @@ async def _persist_segments(
         )
     except Exception:
         logger.exception("voice identification failed for imported recording")
+
+    try:
+        extracted_names = await extract_speaker_names(
+            transcript_results=transcript_results,
+            raw_labels=speaker_assignments.keys(),
+        )
+        if extracted_names:
+            await apply_extracted_names(
+                db=db,
+                user_id=user_id,
+                speaker_assignments=speaker_assignments,
+                extracted=extracted_names,
+            )
+    except Exception:
+        logger.exception("speaker name extraction failed for imported recording")
 
     transcript_parts: list[str] = []
     max_end_ms = 0
