@@ -627,7 +627,7 @@
   align-items: center;
   gap: 0.35rem;
   min-height: 34px;
-  padding: 0 0.7rem;
+  padding: 0.2rem 0.3rem;
   border-radius: 8px;
   background: var(--panel-subtle);
   border: 1px solid var(--border);
@@ -638,10 +638,23 @@
   text-decoration: none;
 }
 
+.paymentLogo {
+  display: block;
+  height: 22px;
+  width: auto;
+}
+
 .paymentBankMark {
   background: #ffe14f;
   border-color: #efd03b;
   color: #161616;
+  padding-right: 0.55rem;
+}
+
+.paymentLogoCaption {
+  color: #161616;
+  font-size: 0.78rem;
+  font-weight: 820;
 }
 
 .sellerDetails {
