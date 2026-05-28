@@ -77,7 +77,7 @@ const COPY: Record<
     email: "Email",
     primarySubmit: "Отправить ссылку для входа",
     sendMagicLoading: "Отправляем...",
-    passwordMode: "Войти по паролю",
+    passwordMode: "Использовать пароль",
     password: "Пароль",
     passwordSubmit: {
       login: "Войти по паролю",
