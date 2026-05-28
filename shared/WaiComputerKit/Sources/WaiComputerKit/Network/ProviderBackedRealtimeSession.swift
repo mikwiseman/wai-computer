@@ -9,6 +9,12 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
     private let config: RealtimeTranscriptionSessionConfig
     private let urlSession: URLSession
+    /// `nil` only when the caller supplied a pre-made URLSession (legacy path
+    /// / tests). When we own the session ourselves we keep the delegate so
+    /// `open()` can `await` a real handshake-complete signal instead of
+    /// returning optimistically right after `task.resume()`.
+    private let handshakeCoordinator: WebSocketHandshakeCoordinator?
+    private let ownsURLSession: Bool
 
     private var webSocket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -20,14 +26,58 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
     private var didSendEndTurn = false
     private var lastTranscriptEventAt: ContinuousClock.Instant?
     private var finalizationMarkerReceived = false
+    /// How long `open()` will wait for the handshake before throwing.
+    /// Long enough to absorb cold proxy boot + TLS + WS upgrade, short
+    /// enough that a wedged proxy doesn't freeze the dictation overlay.
+    private static let handshakeTimeout: Duration = .seconds(10)
 
     public init(
         config: RealtimeTranscriptionSessionConfig,
-        keyTerms: [String] = [],
-        urlSession: URLSession = .shared
+        keyTerms: [String] = []
+    ) {
+        self.config = config
+        let coordinator = WebSocketHandshakeCoordinator()
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.waitsForConnectivity = false
+        sessionConfig.timeoutIntervalForRequest = 30
+        sessionConfig.timeoutIntervalForResource = 3600
+        // Dedicated session — isolates the realtime WS from Sparkle's
+        // appcast pollers, downloaders, and anything else that uses
+        // `URLSession.shared`, all of which can intermittently stall the
+        // handshake under load.
+        self.urlSession = URLSession(
+            configuration: sessionConfig,
+            delegate: coordinator,
+            delegateQueue: nil
+        )
+        self.handshakeCoordinator = coordinator
+        self.ownsURLSession = true
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: TranscriptionEvent.self,
+            bufferingPolicy: .bufferingNewest(256)
+        )
+        self.events = stream
+        self.eventContinuation = continuation
+
+        if !keyTerms.isEmpty {
+            providerRealtimeLog.info(
+                "[Deepgram] key terms require a server-minted URL; ignored count=\(keyTerms.count, privacy: .public)"
+            )
+        }
+    }
+
+    /// Legacy init kept for tests that inject a custom URLSession (e.g.
+    /// URLProtocol-mocked sessions). Skips handshake waiting because the
+    /// supplied session has no delegate hook.
+    public init(
+        config: RealtimeTranscriptionSessionConfig,
+        keyTerms: [String],
+        urlSession: URLSession
     ) {
         self.config = config
         self.urlSession = urlSession
+        self.handshakeCoordinator = nil
+        self.ownsURLSession = false
         let (stream, continuation) = AsyncStream.makeStream(
             of: TranscriptionEvent.self,
             bufferingPolicy: .bufferingNewest(256)
@@ -48,9 +98,57 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let task = urlSession.webSocketTask(with: request)
         webSocket = task
         task.resume()
+
+        // Wait for the WS upgrade to actually complete. Without this, open()
+        // returns immediately and any close that arrives during the
+        // handshake window (proxy 1008/1011 on bad token, network hiccup,
+        // upstream failure) gets dropped by call-site guards that only act
+        // when state is already .listening — that was the dominant cause
+        // of the "dictation starts then immediately stops" symptom.
+        if let coordinator = handshakeCoordinator {
+            do {
+                try await Self.awaitHandshake(
+                    coordinator: coordinator,
+                    task: task,
+                    timeout: Self.handshakeTimeout
+                )
+            } catch {
+                task.cancel(with: .goingAway, reason: nil)
+                webSocket = nil
+                throw error
+            }
+        }
+
         startReceiveLoop(for: task)
         startKeepAlive(intervalSeconds: config.keepAliveIntervalSeconds)
         eventContinuation.yield(.opened(sessionId: "deepgram"))
+    }
+
+    private static func awaitHandshake(
+        coordinator: WebSocketHandshakeCoordinator,
+        task: URLSessionWebSocketTask,
+        timeout: Duration
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await coordinator.waitForOpen(task: task)
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw WebSocketHandshakeCoordinator.HandshakeError.timedOut
+            }
+            do {
+                try await group.next()
+                group.cancelAll()
+                // Drop the second awaiter so the coordinator isn't left
+                // holding a leaked continuation reference.
+                coordinator.cancelPending(for: task)
+            } catch {
+                group.cancelAll()
+                coordinator.cancelPending(for: task)
+                throw error
+            }
+        }
     }
 
     public func send(pcm16: Data) async throws {
@@ -85,6 +183,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         isClosing = true
         guard let webSocket else {
             eventContinuation.finish()
+            invalidateOwnedURLSession()
             return collectedSegments
         }
         try? await endTurn()
@@ -108,6 +207,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         receiveTask?.cancel()
         eventContinuation.yield(.closed(reason: .clientRequested))
         eventContinuation.finish()
+        invalidateOwnedURLSession()
         return collectedSegments
     }
 
@@ -121,6 +221,15 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         receiveTask?.cancel()
         eventContinuation.yield(.closed(reason: .clientRequested))
         eventContinuation.finish()
+        invalidateOwnedURLSession()
+    }
+
+    /// Break the retain cycle that URLSession holds on its delegate. Only
+    /// invalidate sessions we own — the legacy init lets callers manage
+    /// session lifecycle themselves.
+    private func invalidateOwnedURLSession() {
+        guard ownsURLSession else { return }
+        urlSession.invalidateAndCancel()
     }
 
     private func makeRequest() throws -> URLRequest {
@@ -231,7 +340,13 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         case "UtteranceEnd":
             markTranscriptEvent()
         case "Metadata":
-            markTranscriptEvent(finalizationMarker: true)
+            // Deepgram emits a Metadata frame at connection start (model
+            // echo, sample_rate echo) and another after the finalize round
+            // trip. The connect-time Metadata is NOT a finalization marker —
+            // treating it as one short-circuits the close-drain loop and
+            // can drop the real final Results frame. Only mark as
+            // finalization after we've actually sent end-turn.
+            markTranscriptEvent(finalizationMarker: didSendEndTurn)
         case "Error", "error":
             eventContinuation.yield(.providerWarning(Self.deepgramProviderError(json)))
         default:
@@ -413,6 +528,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
 
     func testingHasFinalizationMarker() -> Bool {
         finalizationMarkerReceived
+    }
+
+    func testingSetDidSendEndTurn(_ value: Bool) {
+        didSendEndTurn = value
     }
 
     func testingDeepgramFinalizePayload() -> [String: Any] {
