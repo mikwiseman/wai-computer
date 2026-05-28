@@ -88,7 +88,12 @@ public actor RealtimeTranscriptionSessionConfigVault {
         if let cached,
            cached.key == key,
            isAlive(cached, now: now),
-           matches(cached.config, expectedProvider: expectedProvider, expectedModel: expectedModel) {
+           matches(
+               cached.config,
+               expectedLanguage: key.language,
+               expectedProvider: expectedProvider,
+               expectedModel: expectedModel
+           ) {
             self.cached = nil
             return TakeResult(
                 config: cached.config,
@@ -108,6 +113,7 @@ public actor RealtimeTranscriptionSessionConfigVault {
                 for: entry,
                 prefetched: true,
                 now: ContinuousClock().now,
+                expectedLanguage: key.language,
                 expectedProvider: expectedProvider,
                 expectedModel: expectedModel
             )
@@ -118,6 +124,7 @@ public actor RealtimeTranscriptionSessionConfigVault {
             for: entry,
             prefetched: false,
             now: ContinuousClock().now,
+            expectedLanguage: key.language,
             expectedProvider: expectedProvider,
             expectedModel: expectedModel
         )
@@ -157,10 +164,22 @@ public actor RealtimeTranscriptionSessionConfigVault {
         for entry: Entry,
         prefetched: Bool,
         now: ContinuousClock.Instant,
+        expectedLanguage: String,
         expectedProvider: String?,
         expectedModel: String?
     ) throws -> TakeResult {
-        guard matches(entry.config, expectedProvider: expectedProvider, expectedModel: expectedModel) else {
+        guard languageMatches(entry.config.language, expected: expectedLanguage) else {
+            throw RealtimeTranscriptionSessionConfigVaultError.unexpectedLanguage(
+                expectedLanguage: expectedLanguage,
+                actualLanguage: entry.config.language
+            )
+        }
+        guard matches(
+            entry.config,
+            expectedLanguage: expectedLanguage,
+            expectedProvider: expectedProvider,
+            expectedModel: expectedModel
+        ) else {
             throw RealtimeTranscriptionSessionConfigVaultError.unexpectedProvider(
                 expectedProvider: expectedProvider,
                 expectedModel: expectedModel,
@@ -185,9 +204,13 @@ public actor RealtimeTranscriptionSessionConfigVault {
 
     private func matches(
         _ config: RealtimeTranscriptionSessionConfig,
+        expectedLanguage: String,
         expectedProvider: String?,
         expectedModel: String?
     ) -> Bool {
+        guard languageMatches(config.language, expected: expectedLanguage) else {
+            return false
+        }
         if let expectedProvider, config.provider != expectedProvider {
             return false
         }
@@ -195,6 +218,20 @@ public actor RealtimeTranscriptionSessionConfigVault {
             return false
         }
         return true
+    }
+
+    private func languageMatches(_ actual: String, expected: String) -> Bool {
+        let actual = normalizedLanguage(actual)
+        let expected = normalizedLanguage(expected)
+        return actual == expected || expected.hasPrefix("\(actual)-")
+    }
+
+    private func normalizedLanguage(_ language: String) -> String {
+        let normalized = language
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+        return normalized.isEmpty || normalized == "auto" || normalized == "und" ? "multi" : normalized
     }
 
     private func milliseconds(from duration: Duration) -> Int {
@@ -206,6 +243,10 @@ public actor RealtimeTranscriptionSessionConfigVault {
 }
 
 public enum RealtimeTranscriptionSessionConfigVaultError: Error, Equatable, Sendable {
+    case unexpectedLanguage(
+        expectedLanguage: String,
+        actualLanguage: String
+    )
     case unexpectedProvider(
         expectedProvider: String?,
         expectedModel: String?,
