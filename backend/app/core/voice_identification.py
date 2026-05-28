@@ -25,7 +25,9 @@ from app.core.embeddings import format_embedding
 from app.core.voice_embedding import (
     MODEL_NAME,
     compute_voice_embedding,
+    compute_voice_embedding_spans,
     pick_clean_snippet,
+    pick_clean_snippets,
 )
 from app.models.person import Person, RecordingSpeakerEmbedding, Voiceprint
 from app.models.recording import Segment
@@ -141,14 +143,17 @@ async def _compute_speaker_voice_embedding(
     raw_label: str,
     embedding_timeout_seconds: float,
 ) -> SpeakerVoiceEmbedding | None:
-    span = pick_clean_snippet(transcript_results, raw_label)
-    if span is None:
+    spans = pick_clean_snippets(transcript_results, raw_label)
+    if not spans:
         return None
 
-    start_ms, end_ms = span
+    start_ms = spans[0][0]
+    end_ms = spans[-1][1]
     try:
         embedding = await asyncio.wait_for(
-            asyncio.to_thread(compute_voice_embedding, staged_audio_path, start_ms, end_ms),
+            asyncio.to_thread(
+                compute_voice_embedding_spans, staged_audio_path, spans
+            ),
             timeout=embedding_timeout_seconds,
         )
     except TimeoutError:

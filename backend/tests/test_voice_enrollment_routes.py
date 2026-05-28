@@ -68,6 +68,29 @@ def fake_voiceprint_store(monkeypatch):
     )
 
 
+def _silent_wav_bytes(duration_s: float, sr: int = 16_000) -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, "w") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        for _ in range(int(duration_s * sr)):
+            wf.writeframesraw(struct.pack("<h", 0))
+    return buffer.getvalue()
+
+
+async def test_enroll_rejects_silent_audio(client):
+    """Silence -> bad embedding -> bias matcher forever. Hard 422."""
+    auth = await _register(client)
+    resp = await client.post(
+        "/api/voice-enrollment",
+        headers=auth,
+        files={"audio": ("silent.wav", _silent_wav_bytes(duration_s=8.0), "audio/wav")},
+    )
+    assert resp.status_code == 422
+    assert "microphone" in resp.json()["detail"].lower()
+
+
 async def test_enroll_too_short_returns_422(client):
     auth = await _register(client)
     resp = await client.post(
