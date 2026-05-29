@@ -84,6 +84,36 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    private func requestBodyData(from request: URLRequest) -> Data {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+
+        let bufferSize = 4096
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+
+        var output = Data()
+        while stream.hasBytesAvailable {
+            let bytesRead = stream.read(buffer, maxLength: bufferSize)
+            if bytesRead <= 0 { break }
+            output.append(buffer, count: bytesRead)
+        }
+        return output
+    }
+
+    /// Writes a real, decodable WAV so the pre-upload AAC transcode succeeds.
+    /// (Silence encodes fine; content is irrelevant to these sync tests.)
+    private func writeRealWAV(to url: URL, seconds: Double = 0.3) throws {
+        let writer = try AudioFileWriter(fileURL: url, sampleRate: 16000, channels: 1)
+        let frames = Int(16000 * seconds)
+        writer.writeEncodedPCM(Data(count: frames * 2))
+        try writer.finalize()
+    }
+
     func testPendingRecordingSyncUploadsSegmentBackupAndRemovesLocalCopy() async throws {
         let recordingId = "pending-sync-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
@@ -397,7 +427,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         )
 
         let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
-        try Data("fake-wav".utf8).write(to: audioURL)
+        try writeRealWAV(to: audioURL)
 
         let client = makeClient()
         await client.setAccessToken("test-token")
@@ -434,13 +464,87 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
+    func testAudioUploadSendsCompressedM4ANotRawWAV() async throws {
+        let recordingId = "pending-sync-compressed-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL, seconds: 0.5)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Compressed upload",
+            recordingType: .meeting,
+            durationSeconds: 1,
+            transcript: nil,
+            segments: []
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "compressed audio synced")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+            XCTAssertTrue(
+                request.value(forHTTPHeaderField: "Content-Type")?.contains("multipart/form-data") == true
+            )
+
+            // The hook must have produced the compressed .m4a sibling before upload.
+            if let backup = try? RecordingBackupStore.existingBackup(recordingId: recordingId) {
+                XCTAssertTrue(
+                    FileManager.default.fileExists(atPath: backup.compressedAudioFileURL.path),
+                    "compressed .m4a must exist before upload"
+                )
+                let m4aSize = (try? backup.compressedAudioFileURL
+                    .resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                XCTAssertGreaterThan(m4aSize, 0)
+            }
+
+            let body = self.requestBodyData(from: request)
+            if !body.isEmpty {
+                let text = String(decoding: body, as: UTF8.self)
+                XCTAssertTrue(
+                    text.contains("recording.m4a") || text.contains("audio/mp4"),
+                    "upload must carry the compressed .m4a"
+                )
+                XCTAssertFalse(text.contains("recording.wav"), "must not upload the raw WAV")
+            }
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 3)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
     func testPendingRecordingSyncKeepsBackupWhenAudioUploadIsProcessing() async throws {
         let recordingId = "pending-sync-audio-processing-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
 
         try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
         let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
-        try Data("fake-wav".utf8).write(to: audioURL)
+        try writeRealWAV(to: audioURL)
         _ = try RecordingBackupStore.saveRecording(
             recordingId: recordingId,
             title: "Audio accepted",
@@ -479,7 +583,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
 
         try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
         let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
-        try Data("fake-wav".utf8).write(to: audioURL)
+        try writeRealWAV(to: audioURL)
         _ = try RecordingBackupStore.saveRecording(
             recordingId: recordingId,
             title: "Audio retry",

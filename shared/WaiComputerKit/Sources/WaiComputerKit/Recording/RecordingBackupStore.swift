@@ -8,6 +8,12 @@ public struct RecordingBackup: Sendable, Equatable {
     public let manifestURL: URL
     public let segmentsFileURL: URL
     public let audioFileURL: URL
+
+    /// Sibling path for the compressed (AAC `.m4a`) upload artifact transcoded
+    /// from `audioFileURL` before upload. Cached here so retries reuse it.
+    public var compressedAudioFileURL: URL {
+        directoryURL.appendingPathComponent("recording.m4a")
+    }
 }
 
 public enum RecordingBackupSyncState: String, Codable, Sendable, Equatable {

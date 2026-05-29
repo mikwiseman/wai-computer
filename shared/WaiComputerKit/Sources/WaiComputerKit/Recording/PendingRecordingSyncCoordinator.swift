@@ -131,11 +131,12 @@ public actor PendingRecordingSyncCoordinator {
                 log.info("Polling server processing status for recording \(backup.recordingId)")
                 detail = try await apiClient.getRecording(id: backup.recordingId)
             } else if hasAudioFile {
-                log.info("Uploading audio for recording \(backup.recordingId)")
                 let durationSeconds = Int((manifest?.durationSeconds ?? 0).rounded())
+                let uploadURL = try compressedAudioForUpload(backup: backup)
+                log.info("Uploading audio for recording \(backup.recordingId)")
                 detail = try await apiClient.uploadAudio(
                     recordingId: backup.recordingId,
-                    fileURL: backup.audioFileURL,
+                    fileURL: uploadURL,
                     clientDurationSeconds: durationSeconds > 0 ? durationSeconds : nil
                 )
             } else if manifest != nil {
@@ -232,6 +233,37 @@ public actor PendingRecordingSyncCoordinator {
             )
             return false
         }
+    }
+
+    /// Transcodes the raw PCM WAV backup to AAC `.m4a` before upload so long
+    /// recordings stay under the upload size ceiling (raw PCM is ~110 MB/hour;
+    /// AAC is ~22 MB/hour). The compressed file is cached in the backup
+    /// directory and reused across retries, then removed with the backup on
+    /// successful sync.
+    ///
+    /// Channel count is preserved. The server reads channel count only from WAV
+    /// headers, so an `.m4a` upload always takes the mono diarization path —
+    /// matching the shipping default (`mixToMono`), where every recording is
+    /// already mono.
+    private func compressedAudioForUpload(backup: RecordingBackup) throws -> URL {
+        let compressed = backup.compressedAudioFileURL
+        let existingSize = (try? compressed.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        if existingSize > 0 {
+            return compressed
+        }
+
+        try? FileManager.default.removeItem(at: compressed)
+        let result = try AudioCompressor.compressWAVToAAC(
+            source: backup.audioFileURL,
+            destination: compressed
+        )
+        log.info("Compressed audio for \(backup.recordingId): \(result.byteCount, privacy: .public) bytes")
+        SentryHelper.addBreadcrumb(
+            category: "audio",
+            message: "compressed recording for upload",
+            data: ["recordingId": backup.recordingId, "bytes": result.byteCount]
+        )
+        return compressed
     }
 
     private func segmentsForSync(
