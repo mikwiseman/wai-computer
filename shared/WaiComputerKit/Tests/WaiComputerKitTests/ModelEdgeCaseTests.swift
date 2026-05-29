@@ -379,6 +379,33 @@ final class ModelEdgeCaseTests: XCTestCase {
         )
     }
 
+    func testStatusDisplayTextPermanentLocalFailureOverridesSavedLocally() {
+        // The exact stuck-recording scenario: server row still pending_upload,
+        // a local backup exists, but the backup is a permanent failure. Must
+        // surface as "needs attention", not the reassuring "saved locally".
+        let recording = Recording(
+            id: "rec-permanent-local-failure",
+            type: .meeting,
+            status: .pendingUpload
+        )
+
+        XCTAssertEqual(
+            recording.statusDisplayText(
+                hasLocalRecoveryBackup: true,
+                hasPermanentLocalFailure: true
+            ),
+            "Needs attention"
+        )
+        XCTAssertEqual(
+            recording.statusDisplayText(
+                hasLocalRecoveryBackup: true,
+                hasPermanentLocalFailure: true,
+                languageCode: "ru"
+            ),
+            "Нужно внимание"
+        )
+    }
+
     // MARK: - Recording.failurePreviewText
 
     func testFailurePreviewTextReturnsNilWhenNoFailureMessage() {
