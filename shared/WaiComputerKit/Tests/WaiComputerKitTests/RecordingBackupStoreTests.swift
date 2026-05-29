@@ -22,6 +22,46 @@ final class RecordingBackupStoreTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testResetOversizedPermanentFailuresOnlyHealsTooLargeFailures() throws {
+        func makePermanentFailure(id: String, message: String) throws {
+            _ = try RecordingBackupStore.saveRecording(
+                recordingId: id, title: nil, recordingType: .meeting,
+                durationSeconds: 100, transcript: nil, segments: []
+            )
+            try RecordingBackupStore.markHasAudioFile(recordingId: id)
+            _ = try RecordingBackupStore.recordSaveFailure(recordingId: id, message: message)
+            try RecordingBackupStore.markPermanentFailure(recordingId: id)
+        }
+
+        let tooLarge = "too-large-\(UUID().uuidString)"
+        let deleted = "deleted-\(UUID().uuidString)"
+        let normal = "normal-\(UUID().uuidString)"
+        defer {
+            [tooLarge, deleted, normal].forEach { try? RecordingBackupStore.removeRecording(recordingId: $0) }
+        }
+
+        try makePermanentFailure(id: tooLarge, message: "This recording is too large to upload.")
+        try makePermanentFailure(id: deleted, message: "This recording was deleted from the server.")
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: normal, title: nil, recordingType: .note,
+            durationSeconds: 5, transcript: "ok", segments: []
+        )
+
+        let reset = RecordingBackupStore.resetOversizedPermanentFailures()
+
+        XCTAssertEqual(reset, [tooLarge], "only the too-large failure should heal")
+        XCTAssertEqual(try RecordingBackupStore.manifest(recordingId: tooLarge)?.syncState, .localReady)
+        XCTAssertNil(try RecordingBackupStore.manifest(recordingId: tooLarge)?.lastErrorMessage)
+        XCTAssertEqual(
+            try RecordingBackupStore.manifest(recordingId: deleted)?.syncState, .permanentFailure,
+            "deleted-from-server failures stay permanent"
+        )
+        XCTAssertEqual(try RecordingBackupStore.manifest(recordingId: normal)?.syncState, .localReady)
+
+        // Idempotent: nothing left to heal on a second pass.
+        XCTAssertTrue(RecordingBackupStore.resetOversizedPermanentFailures().isEmpty)
+    }
+
     func testSaveRecordingCreatesDurableFiles() throws {
         let recordingId = "backup-test-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
