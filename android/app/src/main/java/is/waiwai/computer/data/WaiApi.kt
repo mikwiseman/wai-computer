@@ -25,7 +25,10 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.errors.IOException
 import `is`.waiwai.computer.monitoring.SentryHelper
+import `is`.waiwai.computer.recording.AudioCompressor
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
@@ -211,12 +214,32 @@ class WaiApi(
     )
 
     suspend fun uploadAudio(recordingId: String, file: File): RecordingDetail {
-        return transport.authorizedUpload(
-            path = "/api/recordings/$recordingId/upload",
-            file = file,
-            accessTokenProvider = { authStore.currentAccessToken() },
-            refresh = { authStore.refresh() },
-        )
+        // Recorded audio is raw PCM WAV (~110 MB/hour) and trips the 200 MB
+        // upload ceiling for long recordings. Compress WAVs to AAC .m4a first;
+        // imported non-WAV files (already compressed) upload untouched.
+        var uploadFile = file
+        var clientDurationSeconds: Long? = null
+        var compressedTemp: File? = null
+        if (AudioCompressor.isWav(file)) {
+            val dest = File(file.parentFile, "${file.nameWithoutExtension}.m4a")
+            val compressed = withContext(Dispatchers.Default) {
+                AudioCompressor.compressWavToM4a(file, dest)
+            }
+            uploadFile = compressed.file
+            clientDurationSeconds = compressed.durationSeconds
+            compressedTemp = compressed.file
+        }
+        return try {
+            transport.authorizedUpload(
+                path = "/api/recordings/$recordingId/upload",
+                file = uploadFile,
+                clientDurationSeconds = clientDurationSeconds,
+                accessTokenProvider = { authStore.currentAccessToken() },
+                refresh = { authStore.refresh() },
+            )
+        } finally {
+            compressedTemp?.delete()
+        }
     }
 
     suspend fun search(
@@ -385,17 +408,18 @@ class ApiTransport(
     internal suspend inline fun <reified T> authorizedUpload(
         path: String,
         file: File,
+        clientDurationSeconds: Long? = null,
         accessTokenProvider: suspend () -> String?,
         refresh: suspend () -> Boolean,
     ): T {
-        val first = upload(path, file, accessTokenProvider())
+        val first = upload(path, file, accessTokenProvider(), clientDurationSeconds)
         if (first.status.value != 401) {
             return decode(first)
         }
         if (!refresh()) {
             throw ApiError.Unauthorized
         }
-        val second = upload(path, file, accessTokenProvider())
+        val second = upload(path, file, accessTokenProvider(), clientDurationSeconds)
         if (second.status.value == 401) {
             throw ApiError.Unauthorized
         }
@@ -445,6 +469,7 @@ class ApiTransport(
         path: String,
         file: File,
         bearerToken: String?,
+        clientDurationSeconds: Long? = null,
     ): HttpResponse {
         val boundary = "WaiComputer-${System.currentTimeMillis()}"
         val fileBytes = file.readBytes()
@@ -454,7 +479,7 @@ class ApiTransport(
             "m4a" -> "audio/mp4"
             else -> "application/octet-stream"
         }
-        val bodyBytes = buildMultipartBody(boundary, file.name, mimeType, fileBytes)
+        val bodyBytes = buildMultipartBody(boundary, file.name, mimeType, fileBytes, clientDurationSeconds)
         val url = resolveUrl(path, emptyList())
         SentryHelper.addBreadcrumb(
             category = "http.upload",
@@ -597,9 +622,16 @@ class ApiTransport(
         fileName: String,
         mimeType: String,
         content: ByteArray,
+        clientDurationSeconds: Long? = null,
     ): ByteArray {
         val lineBreak = "\r\n"
         val header = buildString {
+            if (clientDurationSeconds != null) {
+                append("--").append(boundary).append(lineBreak)
+                append("Content-Disposition: form-data; name=\"client_duration_seconds\"").append(lineBreak)
+                append(lineBreak)
+                append(clientDurationSeconds.toString()).append(lineBreak)
+            }
             append("--").append(boundary).append(lineBreak)
             append("Content-Disposition: form-data; name=\"file\"; filename=\"")
             append(fileName)
