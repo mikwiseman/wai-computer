@@ -482,9 +482,16 @@ public extension Recording {
 
     func statusDisplayText(
         hasLocalRecoveryBackup: Bool = false,
+        hasPermanentLocalFailure: Bool = false,
         languageCode: String? = nil
     ) -> String? {
         let useRussian = Self.prefersRussian(languageCode: languageCode)
+        // A permanently-failed local backup (deleted on the server, or — before
+        // pre-upload compression — too large) must read as needing attention.
+        // Never show the reassuring "saved locally", which implies it will sync.
+        if hasPermanentLocalFailure {
+            return useRussian ? "Нужно внимание" : "Needs attention"
+        }
         if hasLocalRecoveryBackup && !isFailedUpload {
             return useRussian ? "Сохранено локально" : "Saved locally"
         }

@@ -5,6 +5,7 @@ struct RecordingListView: View {
     let recordings: [Recording]
     let folders: [Folder]
     let localRecoveryRecordingIDs: Set<String>
+    let permanentLocalFailureRecordingIDs: Set<String>
     let isTrash: Bool
     let isOperationInProgress: Bool
     @Binding var selectedRecordingIds: Set<String>
@@ -19,7 +20,8 @@ struct RecordingListView: View {
         List(recordings, selection: $selectedRecordingIds) { recording in
             RecordingRowView(
                 recording: recording,
-                hasLocalRecoveryBackup: localRecoveryRecordingIDs.contains(recording.id)
+                hasLocalRecoveryBackup: localRecoveryRecordingIDs.contains(recording.id),
+                hasPermanentLocalFailure: permanentLocalFailureRecordingIDs.contains(recording.id)
             )
                 .tag(recording.id)
                 .contextMenu {
@@ -97,6 +99,7 @@ struct RecordingListView: View {
 struct RecordingRowView: View {
     let recording: Recording
     let hasLocalRecoveryBackup: Bool
+    var hasPermanentLocalFailure: Bool = false
     @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
@@ -111,6 +114,7 @@ struct RecordingRowView: View {
 
                 if let statusText = recording.statusDisplayText(
                     hasLocalRecoveryBackup: hasLocalRecoveryBackup,
+                    hasPermanentLocalFailure: hasPermanentLocalFailure,
                     languageCode: fallbackStatusLanguageCode
                 ) {
                     Text(statusText)
@@ -162,7 +166,7 @@ struct RecordingRowView: View {
     }
 
     private var statusColor: Color {
-        recording.isFailedUpload ? Palette.recording : Palette.textSecondary
+        (recording.isFailedUpload || hasPermanentLocalFailure) ? Palette.recording : Palette.textSecondary
     }
 
     private var fallbackStatusLanguageCode: String {

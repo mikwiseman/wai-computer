@@ -707,6 +707,7 @@ struct MacMainView: View {
                         recordings: displayedRecordings,
                         folders: libraryViewModel.folders,
                         localRecoveryRecordingIDs: libraryViewModel.localRecoveryRecordingIDs,
+                        permanentLocalFailureRecordingIDs: libraryViewModel.permanentLocalFailureRecordingIDs,
                         isTrash: isTrashSection,
                         isOperationInProgress: isLibraryOperationActive,
                         selectedRecordingIds: $selectedRecordingIds,
