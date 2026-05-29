@@ -17,6 +17,7 @@ public actor PendingRecordingSyncCoordinator {
     private var retryImmediatelyAfterCurrentPass = false
 
     public func scheduleSync(using apiClient: APIClient) {
+        healLegacyOversizedFailuresIfNeeded()
         guard syncTask == nil else {
             Task { [weak self] in
                 await self?.clearAuthBlockedBackupsIfNeeded(using: apiClient)
@@ -35,6 +36,24 @@ public actor PendingRecordingSyncCoordinator {
             await self?.clearAuthBlockedBackupsIfNeeded(using: apiClient)
             await self?.runSyncLoop(using: apiClient)
         }
+    }
+
+    /// One-time migration: recordings that permanently failed as "too large"
+    /// (HTTP 413) before client-side compression existed are reset so the new
+    /// compression path re-syncs them. Runs once per install.
+    private func healLegacyOversizedFailuresIfNeeded() {
+        let key = "wai.healedOversizedBackups.v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        let reset = RecordingBackupStore.resetOversizedPermanentFailures()
+        guard !reset.isEmpty else { return }
+        log.info("Healed \(reset.count, privacy: .public) oversized backup(s) for recompression")
+        SentryHelper.addBreadcrumb(
+            category: "backup",
+            message: "healed oversized backups for recompression",
+            data: ["count": reset.count]
+        )
     }
 
     private func runSyncLoop(using apiClient: APIClient) async {
