@@ -8,6 +8,12 @@ public struct RecordingBackup: Sendable, Equatable {
     public let manifestURL: URL
     public let segmentsFileURL: URL
     public let audioFileURL: URL
+
+    /// Sibling path for the compressed (AAC `.m4a`) upload artifact transcoded
+    /// from `audioFileURL` before upload. Cached here so retries reuse it.
+    public var compressedAudioFileURL: URL {
+        directoryURL.appendingPathComponent("recording.m4a")
+    }
 }
 
 public enum RecordingBackupSyncState: String, Codable, Sendable, Equatable {
@@ -348,6 +354,45 @@ public enum RecordingBackupStore {
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.info("Cleared authentication required for \(recordingId)")
+    }
+
+    /// Resets a permanently-failed backup back to `localReady` so the sync loop
+    /// retries it. Used by the one-time oversized heal once client-side
+    /// compression exists. No-op unless the backup is currently permanent-failed.
+    public static func clearPermanentFailureForRecompression(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        guard manifest.syncState == .permanentFailure else { return }
+
+        manifest.syncState = .localReady
+        manifest.lastFailureCode = nil
+        manifest.lastErrorMessage = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Reset oversized permanent failure for recompression: \(recordingId)")
+    }
+
+    /// One-time heal: finds backups that permanently failed as "too large"
+    /// (HTTP 413, before client-side compression existed) and resets them so the
+    /// compression-enabled sync retries them. Other permanent failures (e.g.
+    /// deleted-on-server 404s) are intentionally left untouched. Returns the IDs
+    /// that were reset.
+    @discardableResult
+    public static func resetOversizedPermanentFailures() -> [String] {
+        let backups = (try? listBackups()) ?? []
+        var reset: [String] = []
+        for backup in backups {
+            guard let manifest = try? readManifest(from: backup.manifestURL),
+                  manifest.syncState == .permanentFailure,
+                  manifest.hasAudioFile,
+                  manifest.lastErrorMessage?.localizedCaseInsensitiveContains("too large to upload") == true else {
+                continue
+            }
+            if (try? clearPermanentFailureForRecompression(recordingId: backup.recordingId)) != nil {
+                reset.append(backup.recordingId)
+            }
+        }
+        return reset
     }
 
     public static func removeRecording(recordingId: String) throws {

@@ -24,6 +24,9 @@ class MacLibraryViewModel: ObservableObject {
     @Published var trashedRecordings: [Recording] = []
     @Published var folders: [Folder] = []
     @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
+    /// Recordings whose local backup hit a permanent sync failure (e.g. deleted
+    /// on the server). Surfaced as "needs attention" rather than "saved locally".
+    @Published private(set) var permanentLocalFailureRecordingIDs: Set<String> = []
     @Published private(set) var bulkOperation: LibraryBulkOperation?
     @Published var isLoading = false
     @Published var isRefreshing = false
@@ -85,6 +88,11 @@ class MacLibraryViewModel: ObservableObject {
                     return shouldShowLocalRecoveryMarker(for: manifest) ? recordingId : nil
                 }
             )
+            permanentLocalFailureRecordingIDs = Set(
+                backupManifests.compactMap { element in
+                    element.value.isPermanentFailure ? element.key : nil
+                }
+            )
 
             processingRefreshTask?.cancel()
             if !backupManifests.isEmpty {
@@ -121,6 +129,7 @@ class MacLibraryViewModel: ObservableObject {
         self.recordings = recordings
         trashedRecordings = []
         localRecoveryRecordingIDs = []
+        permanentLocalFailureRecordingIDs = []
         isLoading = false
         isRefreshing = false
         error = nil
