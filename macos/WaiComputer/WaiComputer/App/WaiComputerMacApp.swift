@@ -1141,6 +1141,15 @@ class MacAppState: ObservableObject {
                     forKey: MacAppState.postAuthOnboardingCompletedKey(userId: user.id)
                 )
             }
+            // Server-side voice enrollment is the cross-device source of truth for
+            // "already onboarded": a returning, already-enrolled account must not be
+            // shown the post-auth voice onboarding again on a fresh install (102).
+            if user.hasEnrolledVoice {
+                UserDefaults.standard.set(
+                    true,
+                    forKey: MacAppState.postAuthOnboardingCompletedKey(userId: user.id)
+                )
+            }
             hasCompletedPreAuthOnboarding = Self.preAuthOnboardingCompleted()
             hasCompletedPostAuthOnboarding =
                 ProcessInfo.processInfo.environment["WAI_SKIP_ONBOARDING"] == "1"
