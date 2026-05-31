@@ -49,7 +49,7 @@
    * --------------------------------------------------------------------- */
 
   /* Display Large — 32pt bold serif. Recording title in detail. */
-  --font-display-large-size: 32px;
+  --font-display-large-size: 2rem;
   --font-display-large-line: 1.05;
   --font-display-large-weight: 700;
   --font-display-large: var(--font-display-large-weight)
@@ -57,7 +57,7 @@
     var(--font-family-serif);
 
   /* Display Medium — 26pt semibold serif. Page headings. */
-  --font-display-medium-size: 26px;
+  --font-display-medium-size: 1.625rem;
   --font-display-medium-line: 1.1;
   --font-display-medium-weight: 600;
   --font-display-medium: var(--font-display-medium-weight)
@@ -65,7 +65,7 @@
     var(--font-family-serif);
 
   /* Display Small — 22pt semibold serif. Section headings. */
-  --font-display-small-size: 22px;
+  --font-display-small-size: 1.375rem;
   --font-display-small-line: 1.15;
   --font-display-small-weight: 600;
   --font-display-small: var(--font-display-small-weight)
@@ -73,7 +73,7 @@
     var(--font-family-serif);
 
   /* Heading Large — 18pt semibold sans. Section headers. */
-  --font-heading-large-size: 18px;
+  --font-heading-large-size: 1.125rem;
   --font-heading-large-line: 1.25;
   --font-heading-large-weight: 600;
   --font-heading-large: var(--font-heading-large-weight)
@@ -81,7 +81,7 @@
     var(--font-family-sans);
 
   /* Heading Medium — 15pt semibold sans. List row titles, search input. */
-  --font-heading-medium-size: 15px;
+  --font-heading-medium-size: 0.9375rem;
   --font-heading-medium-line: 1.3;
   --font-heading-medium-weight: 600;
   --font-heading-medium: var(--font-heading-medium-weight)
@@ -89,7 +89,7 @@
     var(--font-family-sans);
 
   /* Heading Small — 13pt semibold sans. Small headers, buttons. */
-  --font-heading-small-size: 13px;
+  --font-heading-small-size: 0.8125rem;
   --font-heading-small-line: 1.35;
   --font-heading-small-weight: 600;
   --font-heading-small: var(--font-heading-small-weight)
@@ -97,21 +97,21 @@
     var(--font-family-sans);
 
   /* Body Large — 15pt regular sans. Input field text. */
-  --font-body-large-size: 15px;
+  --font-body-large-size: 0.9375rem;
   --font-body-large-line: 1.5;
   --font-body-large-weight: 400;
   --font-body-large: var(--font-body-large-weight) var(--font-body-large-size) /
     var(--font-body-large-line) var(--font-family-sans);
 
   /* Body — 14pt regular sans. Default body. */
-  --font-body-size: 14px;
+  --font-body-size: 0.875rem;
   --font-body-line: 1.5;
   --font-body-weight: 400;
   --font-body: var(--font-body-weight) var(--font-body-size) /
     var(--font-body-line) var(--font-family-sans);
 
   /* Body Small — 13pt regular sans. Secondary body. */
-  --font-body-small-size: 13px;
+  --font-body-small-size: 0.8125rem;
   --font-body-small-line: 1.5;
   --font-body-small-weight: 400;
   --font-body-small: var(--font-body-small-weight) var(--font-body-small-size) /
@@ -119,21 +119,21 @@
 
   /* Reading — 15pt regular sans, generous line-height for transcripts and
    * summaries. Mac uses `.lineSpacing(6)` which translates to ~1.7 leading. */
-  --font-reading-size: 15px;
+  --font-reading-size: 0.9375rem;
   --font-reading-line: 1.7;
   --font-reading-weight: 400;
   --font-reading: var(--font-reading-weight) var(--font-reading-size) /
     var(--font-reading-line) var(--font-family-sans);
 
   /* Label — 12pt medium sans. Metadata, dates. */
-  --font-label-size: 12px;
+  --font-label-size: 0.75rem;
   --font-label-line: 1.4;
   --font-label-weight: 500;
   --font-label: var(--font-label-weight) var(--font-label-size) /
     var(--font-label-line) var(--font-family-sans);
 
   /* Label Small — 11pt medium sans, uppercase + tracked. Section headers. */
-  --font-label-small-size: 11px;
+  --font-label-small-size: 0.6875rem;
   --font-label-small-line: 1.4;
   --font-label-small-weight: 500;
   --font-label-small-tracking: 0.08em;
@@ -142,21 +142,21 @@
     var(--font-family-sans);
 
   /* Caption — 11pt regular sans. Smallest text. */
-  --font-caption-size: 11px;
+  --font-caption-size: 0.6875rem;
   --font-caption-line: 1.4;
   --font-caption-weight: 400;
   --font-caption: var(--font-caption-weight) var(--font-caption-size) /
     var(--font-caption-line) var(--font-family-sans);
 
   /* Mono — 13pt regular mono. Durations, timestamps. */
-  --font-mono-size: 13px;
+  --font-mono-size: 0.8125rem;
   --font-mono-line: 1.5;
   --font-mono-weight: 400;
   --font-mono: var(--font-mono-weight) var(--font-mono-size) /
     var(--font-mono-line) var(--font-family-mono);
 
   /* Mono Large — 15pt medium mono. Recording timer. */
-  --font-mono-large-size: 15px;
+  --font-mono-large-size: 0.9375rem;
   --font-mono-large-line: 1.5;
   --font-mono-large-weight: 500;
   --font-mono-large: var(--font-mono-large-weight) var(--font-mono-large-size) /
