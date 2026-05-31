@@ -900,11 +900,17 @@ public actor APIClient {
     }
 
     /// Export recording transcript in the given format (markdown, txt, srt).
-    public func exportRecording(id: String, format: String) async throws -> String {
+    /// Pass `locale` ("en"/"ru") so export headers follow the app UI language
+    /// rather than the recording's detected audio language (126).
+    public func exportRecording(id: String, format: String, locale: String? = nil) async throws -> String {
         let path = "/api/recordings/\(id)/export"
         let url = baseURL.appendingPathComponent("/api/recordings/\(id)/export")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "format", value: format)]
+        var queryItems = [URLQueryItem(name: "format", value: format)]
+        if let locale {
+            queryItems.append(URLQueryItem(name: "locale", value: locale))
+        }
+        components.queryItems = queryItems
         var req = URLRequest(url: components.url!)
         req.httpMethod = "GET"
         if let token = accessToken {

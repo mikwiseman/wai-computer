@@ -110,7 +110,7 @@ struct LiveRecordingView: View {
                     showingDiscardConfirm = true
                 } label: {
                     Label {
-                        Text("recording.discard", bundle: .main)
+                        Text(t("Discard", "Не сохранять"))
                     } icon: {
                         Image(systemName: "trash")
                     }
@@ -139,7 +139,7 @@ struct LiveRecordingView: View {
                 Button(action: stopRecording) {
                     Label {
                         Text(recordingVM.canStopRecording
-                            ? String(localized: "recording.stop", bundle: .main)
+                            ? t("Stop", "Остановить")
                             : recordingVM.statusText
                         )
                         .lineLimit(1)
@@ -220,10 +220,8 @@ struct LiveRecordingView: View {
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
                 }
-
-                Text(recordingTypeLabel(recordingVM.recordingType))
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.typeColor(recordingVM.recordingType))
+                // Recording-type badge removed (119): every recording was typed
+                // "meeting", so the badge was always-on and confusing.
             }
         }
         .padding(.horizontal, Spacing.xxl)
