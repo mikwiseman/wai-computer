@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import SwiftUI
 import WaiComputerKit
 
@@ -119,6 +120,7 @@ struct MacSettingsView: View {
     @State private var telegramLoading = false
     @State private var telegramError: String?
     @State private var telegramLinkPollTask: Task<Void, Never>?
+    @State private var telegramShowCodeEntry = false
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -612,29 +614,41 @@ struct MacSettingsView: View {
                     }
                 }
 
-                if telegramPairing != nil {
-                    HStack(spacing: Spacing.xs) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(t(
-                            "Telegram opened. Press Start in the bot; WaiComputer will finish linking automatically.",
-                            "Telegram открыт. Нажми Start в боте — WaiComputer завершит привязку автоматически."
-                        ))
+                if let pairing = telegramPairing {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        if let qr = qrImage(from: pairing.webLink) {
+                            Image(nsImage: qr)
+                                .interpolation(.none)
+                                .resizable()
+                                .frame(width: 132, height: 132)
+                                .accessibilityIdentifier("settings-telegram-qr")
+                        }
+                        Button {
+                            _ = openTelegramPairing(pairing)
+                        } label: {
+                            Text(t("Open Telegram", "Открыть Telegram"))
+                        }
+                        .disabled(telegramLoading)
+                        .accessibilityIdentifier("settings-telegram-open-button")
+
+                        HStack(spacing: Spacing.xs) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(t(
+                                "Scan with your phone or press Open Telegram, then Start in the bot — WaiComputer finishes linking automatically.",
+                                "Отсканируй код телефоном или нажми «Открыть Telegram», затем Start в боте — WaiComputer завершит привязку автоматически."
+                            ))
+                        }
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(t("Code from Telegram", "Код из Telegram"))
-                        .font(Typography.caption.weight(.semibold))
-                    Text(t(
-                        "Use this only if you started linking from Telegram.",
-                        "Это нужно только если ты начал привязку из Telegram."
-                    ))
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
+                // The manual code entry is only for the reverse flow (user started
+                // in the bot). Hidden behind a disclosure so it doesn't look like a
+                // required step (138).
+                DisclosureGroup(isExpanded: $telegramShowCodeEntry) {
                     HStack {
                         TextField("", text: $telegramLinkCode)
                             .textFieldStyle(.roundedBorder)
@@ -650,7 +664,12 @@ struct MacSettingsView: View {
                         .disabled(telegramLoading || telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityIdentifier("settings-telegram-claim-code-button")
                     }
+                    .padding(.top, Spacing.xs)
+                } label: {
+                    Text(t("Started in Telegram?", "Начал в Telegram?"))
+                        .font(Typography.caption.weight(.semibold))
                 }
+                .accessibilityIdentifier("settings-telegram-code-disclosure")
             }
 
             if let telegramError {
@@ -1343,9 +1362,10 @@ struct MacSettingsView: View {
             telegramPairing = try await appState.getAPIClient().startTelegramLink()
             telegramError = nil
             if let telegramPairing {
-                if openTelegramPairing(telegramPairing) {
-                    startTelegramLinkPolling(until: telegramPairing.expiresAt)
-                }
+                // Don't auto-open the bot — that yanks the user out of the app
+                // (137). Show the QR + an explicit "Open Telegram" button and poll
+                // in the background so linking still completes automatically.
+                startTelegramLinkPolling(until: telegramPairing.expiresAt)
             }
         } catch {
             telegramError = t(
@@ -1405,6 +1425,22 @@ struct MacSettingsView: View {
             "Не удалось открыть Telegram."
         )
         return false
+    }
+
+    /// Render a QR for the pairing web link so a desktop user can scan it with
+    /// their phone to open the bot there (137). Returns nil if generation fails;
+    /// the explicit "Open Telegram" button is always available regardless.
+    private func qrImage(from string: String) -> NSImage? {
+        guard !string.isEmpty,
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(string.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
     }
 
     private func startTelegramLinkPolling(until expiresAt: Date) {
