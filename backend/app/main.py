@@ -21,6 +21,7 @@ from app.api.routes import (
     dictation,
     entities,
     folders,
+    items,
     mcp_oauth,
     people,
     personalization,
@@ -185,6 +186,7 @@ app.include_router(action_items.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
+app.include_router(items.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
 app.include_router(personalization.router, prefix="/api")
 app.include_router(voice_enrollment.router, prefix="/api")
