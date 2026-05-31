@@ -1,17 +1,21 @@
 package `is`.waiwai.computer.monitoring
 
+import android.content.Context
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
 import io.sentry.SentryLevel
+import io.sentry.android.core.SentryAndroid
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 object SentryHelper {
     private val lastBreadcrumbAt = ConcurrentHashMap<String, Long>()
 
-    fun start(dsn: String) {
+    fun start(context: Context, dsn: String) {
         if (dsn.isBlank()) return
-        Sentry.init { options ->
+        // Android MUST use SentryAndroid.init; the core Sentry.init throws
+        // "You are running Android" and crashes Application.onCreate.
+        SentryAndroid.init(context) { options ->
             options.dsn = dsn
             options.beforeBreadcrumb = io.sentry.SentryOptions.BeforeBreadcrumbCallback { breadcrumb, _ ->
                 sanitizeBreadcrumb(breadcrumb)

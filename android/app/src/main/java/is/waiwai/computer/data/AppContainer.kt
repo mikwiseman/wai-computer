@@ -19,7 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class AppContainer(
-    application: Application,
+    private val application: Application,
     settingsStoreOverride: SettingsStore? = null,
     secureTokenStoreOverride: SecureTokenStore? = null,
     transportOverride: ApiTransport? = null,
@@ -61,7 +61,7 @@ class AppContainer(
     fun bootstrap() {
         val sentryDsn = sentryDsnOverride ?: BuildConfig.SENTRY_DSN
         if (sentryDsn.isNotBlank()) {
-            SentryHelper.start(sentryDsn)
+            SentryHelper.start(application, sentryDsn)
         }
 
         scope.launch {
