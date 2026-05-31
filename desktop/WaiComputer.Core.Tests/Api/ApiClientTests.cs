@@ -179,14 +179,59 @@ public class ApiClientTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SearchEncodesQueryString()
+    public async Task SearchDecodesBackendShapeAndEncodesQuery()
     {
+        // Literal backend SearchResponse wire shape (backend/app/api/routes/search.py).
+        const string body = """
+        {
+          "results": [
+            {
+              "recording_id": "rec-1",
+              "recording_title": "Standup",
+              "recording_type": "meeting",
+              "segment_id": "seg-1",
+              "speaker": "speaker_0",
+              "content": "hello world",
+              "start_ms": 0,
+              "end_ms": 1500,
+              "score": 0.87
+            },
+            {
+              "recording_id": "rec-2",
+              "recording_title": null,
+              "recording_type": "note",
+              "segment_id": "seg-2",
+              "speaker": null,
+              "content": "second hit",
+              "start_ms": null,
+              "end_ms": null,
+              "score": 0.42
+            }
+          ],
+          "total": 2
+        }
+        """;
         _server.Given(Request.Create().UsingGet().WithPath("/api/search"))
                .RespondWith(Response.Create().WithStatusCode(200)
-                   .WithBody(Json(new SearchResponse("hello world", Array.Empty<SearchHit>()))).WithHeader("Content-Type", "application/json"));
+                   .WithBody(body).WithHeader("Content-Type", "application/json"));
 
         var r = await _client.SearchAsync("hello world");
-        r.Query.Should().Be("hello world");
+
+        r.Total.Should().Be(2);
+        r.Results.Should().HaveCount(2);
+        r.Results[0].RecordingId.Should().Be("rec-1");
+        r.Results[0].RecordingTitle.Should().Be("Standup");
+        r.Results[0].RecordingType.Should().Be(RecordingType.Meeting);
+        r.Results[0].SegmentId.Should().Be("seg-1");
+        r.Results[0].Speaker.Should().Be("speaker_0");
+        r.Results[0].Content.Should().Be("hello world");
+        r.Results[0].StartMs.Should().Be(0);
+        r.Results[0].EndMs.Should().Be(1500);
+        r.Results[0].Score.Should().Be(0.87);
+        r.Results[1].RecordingTitle.Should().BeNull();
+        r.Results[1].RecordingType.Should().Be(RecordingType.Note);
+        r.Results[1].Speaker.Should().BeNull();
+        r.Results[1].StartMs.Should().BeNull();
 
         var entry = _server.LogEntries.Single();
         entry.RequestMessage.Query!.Single(q => q.Key == "q").Value
