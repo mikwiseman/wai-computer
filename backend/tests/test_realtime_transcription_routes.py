@@ -289,8 +289,13 @@ async def test_realtime_transcription_session_rejects_unsupported_language(
 
 
 class FakeWebSocket:
-    def __init__(self, headers: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        headers: dict[str, str] | None = None,
+        query_params: dict[str, str] | None = None,
+    ) -> None:
         self.headers = headers or {}
+        self.query_params = query_params or {}
         self.accepted = False
         self.closed_codes: list[int] = []
         self.json_payloads: list[dict[str, object]] = []
@@ -467,6 +472,42 @@ async def test_realtime_stream_connects_to_deepgram_with_server_api_key():
     assert connect_calls[0]["additional_headers"] == {
         "Authorization": "Token server-provider-key"
     }
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_accepts_token_via_query_param():
+    """Browsers cannot set the Authorization header on a WS handshake, so the
+    proxy also accepts the short-lived session token via the `token` query
+    param. Native clients keep using the header."""
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket(query_params={"token": "proxy-token"})
+    provider = FakeProvider(messages=[b'{"type":"Metadata"}'])
+
+    def fake_connect(url: str, **kwargs):
+        return FakeProviderConnection(provider)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ) as decode, patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        new=fake_connect,
+    ), patch(
+        "app.api.routes.realtime_transcription._websockets_header_kwarg",
+        return_value="additional_headers",
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    # Authenticated via the query param (no missing-bearer error), decoded that
+    # token, and proxied the provider frame through.
+    decode.assert_called_once_with("proxy-token")
+    assert websocket.accepted is True
+    assert route.PROXY_ERROR_MISSING_BEARER not in websocket.json_payloads
+    assert websocket.sent_bytes == [b'{"type":"Metadata"}']
 
 
 @pytest.mark.asyncio

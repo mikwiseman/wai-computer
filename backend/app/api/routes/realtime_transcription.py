@@ -429,6 +429,13 @@ def _bearer_token(websocket: WebSocket) -> str | None:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
         return token.strip()
+    # Browsers cannot set the Authorization header on a WebSocket handshake, so
+    # also accept the short-lived session proxy token via the `token` query
+    # param (the connection is WSS-encrypted). Native clients keep using the
+    # header; this is an additive fallback for the web client.
+    query_token = websocket.query_params.get("token", "")
+    if query_token.strip():
+        return query_token.strip()
     return None
 
 
