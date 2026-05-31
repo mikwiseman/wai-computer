@@ -207,11 +207,16 @@ export function AdminConsoleClient() {
     try {
       const result = await runAdminSubscriptionRenewal(subId, { reason: billingReason || null });
       await refreshAll();
-      setMessage(
-        result.charged
-          ? "Renewal charged."
-          : `Renewal skipped: ${result.reason ?? result.result ?? "not eligible"}.`,
-      );
+      if (result.charged) {
+        setMessage("Renewal charged.");
+      } else if (result.skipped) {
+        // No charge was attempted — a gate (e.g. cancellation pending) stopped it.
+        setMessage(`Renewal skipped: ${result.reason ?? "not eligible"}.`);
+      } else {
+        // The charge was attempted and the provider rejected it (e.g. Tinkoff
+        // ErrorCode 10 on the DEMO terminal); the subscription is now past_due.
+        setError(`Renewal attempt failed at the provider (status: ${result.status ?? "unknown"}).`);
+      }
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "Renewal failed.");
     } finally {

@@ -377,8 +377,12 @@ class AdminBillingSubscriptionListItem(BaseModel):
     status: str
     provider: str
     billing_period: str
+    current_period_start: datetime | None = None
     current_period_end: datetime | None
     cancel_at_period_end: bool
+    canceled_at: datetime | None = None
+    trial_end: datetime | None = None
+    tinkoff_next_charge_at: datetime | None = None
     invoices: list[AdminBillingInvoiceResponse]
 
 
@@ -1254,8 +1258,12 @@ async def list_admin_billing(
                 status=sub.status,
                 provider=sub.provider,
                 billing_period=sub.billing_period,
+                current_period_start=sub.current_period_start,
                 current_period_end=sub.current_period_end,
                 cancel_at_period_end=sub.cancel_at_period_end,
+                canceled_at=sub.canceled_at,
+                trial_end=sub.trial_end,
+                tinkoff_next_charge_at=sub.tinkoff_next_charge_at,
                 invoices=[
                     AdminBillingInvoiceResponse(
                         id=str(invoice.id),
