@@ -192,6 +192,10 @@ export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
 }
 
+export function deleteAccount(): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>("/api/auth/me", { method: "DELETE" });
+}
+
 export function listRecordings(params?: {
   skip?: number;
   limit?: number;
