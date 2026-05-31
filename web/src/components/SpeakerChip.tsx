@@ -9,15 +9,22 @@ interface SpeakerChipProps {
   segment: Segment;
   recordingId: string;
   onUpdated: (detail: RecordingDetail) => void;
+  /** Seed the people list (dev preview + tests) to skip the listPeople fetch. */
+  initialPeople?: Person[];
 }
 
 function displayLabel(segment: Segment): string {
   return segment.display_name ?? segment.raw_label ?? segment.speaker ?? "Speaker";
 }
 
-export function SpeakerChip({ segment, recordingId, onUpdated }: SpeakerChipProps) {
+export function SpeakerChip({
+  segment,
+  recordingId,
+  onUpdated,
+  initialPeople,
+}: SpeakerChipProps) {
   const [open, setOpen] = useState(false);
-  const [people, setPeople] = useState<Person[] | null>(null);
+  const [people, setPeople] = useState<Person[] | null>(initialPeople ?? null);
   const [filter, setFilter] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

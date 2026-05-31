@@ -260,6 +260,47 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+/* Native form controls — checkboxes, radios and progress bars should read as
+ * part of the Wai system, not raw browser chrome. `accent-color` tints the
+ * native control to the active accent; the input reset undoes the panel
+ * border/background/full-width the generic `input` rule above would apply. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  accent-color: var(--accent);
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-pill);
+}
+
+progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
 ul {
   list-style: none;
 }
@@ -645,6 +686,123 @@ a.primary-button[aria-disabled="true"]:hover {
 .speaker-chip:disabled {
   cursor: default;
   opacity: 0.85;
+}
+
+/* Speaker assignment popover — Mac parity with the SwiftUI `.popover`: a
+ * floating glass menu with 32px plain rows, an accent "+ Create" row, and a
+ * red-tint error banner. Without this the referenced classes had no styling and
+ * fell back to the global amber-pill button rule. */
+.speaker-chip-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  max-width: min(280px, 80vw);
+  padding: 8px;
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-md);
+  background: var(--material-thin-bg);
+  -webkit-backdrop-filter: var(--material-thin-blur);
+  backdrop-filter: var(--material-thin-blur);
+  box-shadow: var(--shadow-2);
+  animation: speaker-chip-pop var(--motion-duration-fast) var(--motion-ease-emphasized);
+}
+
+@keyframes speaker-chip-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.speaker-chip-popover input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: var(--font-body-small);
+}
+
+.speaker-chip-error {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font: var(--font-caption);
+}
+
+.speaker-chip-loading {
+  padding: 6px 8px;
+  color: var(--ink-faint);
+  font: var(--font-body-small);
+}
+
+.speaker-chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.speaker-chip-list li {
+  margin: 0;
+}
+
+.speaker-chip-list li > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-body-small);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.speaker-chip-list li > button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.speaker-chip-list li > button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.speaker-chip-list li > button.speaker-chip-create {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.speaker-chip-list li > button.speaker-chip-create:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.speaker-chip-empty {
+  padding: 6px 8px;
+  color: var(--ink-faint);
+  font: var(--font-caption);
+  line-height: 1.4;
 }
 
 .status-pill {
