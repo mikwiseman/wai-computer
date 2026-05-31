@@ -1128,6 +1128,41 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-label-size);
 }
 
+/* Library multi-select — checkbox per row + a bulk action bar. */
+.recording-list__item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.recording-list__item > .recording-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.recording-select-checkbox {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 0.15rem;
+}
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.78rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.bulk-bar__count {
+  margin-right: auto;
+  font: var(--font-heading-small);
+  color: var(--ink);
+}
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;

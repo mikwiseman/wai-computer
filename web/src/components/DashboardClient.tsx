@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   assignRecordingToFolder,
+  bulkRecordingOperation,
   changePassword,
   claimTelegramLinkCode,
   createDictionaryWord,
@@ -55,6 +56,7 @@ import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
 import type {
+  BulkAction,
   DictationDictionaryWord,
   DictationEntry,
   Folder,
@@ -718,6 +720,8 @@ export function DashboardClient() {
   const [recordingTitle, setRecordingTitle] = useState("");
   const [recordingType, setRecordingType] = useState<RecordingType>("note");
   const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedMode, setSelectedMode] = useState<DetailMode>("active");
 
   const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
@@ -783,6 +787,36 @@ export function DashboardClient() {
   async function loadTrashRecordingsState() {
     const trashed = await listRecordings({ limit: LIST_LIMIT, trashed: true });
     setTrashRecordings(trashed);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulk(action: BulkAction, folderId?: string | null) {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    setMessage(null);
+    try {
+      await bulkRecordingOperation(ids, action, folderId);
+      await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
+      if (selectedRecording && selectedIds.has(selectedRecording.id)) {
+        setSelectedRecording(null);
+      }
+      exitSelectMode();
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
   }
 
   async function loadFoldersState() {
@@ -1892,19 +1926,89 @@ export function DashboardClient() {
               <h3>{title}</h3>
               <p>{copy.library.recordingsCount(items.length)}</p>
             </div>
-            {!isTrash ? (
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                onClick={() => {
-                  setSelectedRecording(null);
-                  setSelectedMode("active");
-                }}
-              >
-                {copy.library.newButton}
-              </button>
-            ) : null}
+            <div className="row-actions">
+              {items.length > 0 ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  data-testid="select-mode-toggle"
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                >
+                  {selectMode
+                    ? locale === "ru"
+                      ? "Готово"
+                      : "Done"
+                    : locale === "ru"
+                      ? "Выбрать"
+                      : "Select"}
+                </button>
+              ) : null}
+              {!isTrash ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  onClick={() => {
+                    setSelectedRecording(null);
+                    setSelectedMode("active");
+                  }}
+                >
+                  {copy.library.newButton}
+                </button>
+              ) : null}
+            </div>
           </header>
+
+          {selectMode && selectedIds.size > 0 ? (
+            <div className="bulk-bar" data-testid="bulk-bar">
+              <span className="bulk-bar__count">
+                {locale === "ru"
+                  ? `Выбрано: ${selectedIds.size}`
+                  : `${selectedIds.size} selected`}
+              </span>
+              {isTrash ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  data-testid="bulk-restore"
+                  onClick={() => void handleBulk("restore")}
+                >
+                  {locale === "ru" ? "Восстановить" : "Restore"}
+                </button>
+              ) : (
+                <>
+                  {folders.length > 0 ? (
+                    <select
+                      className="select-button"
+                      data-testid="bulk-move-folder"
+                      aria-label={locale === "ru" ? "Переместить в папку" : "Move to folder"}
+                      defaultValue=""
+                      onChange={(event) => {
+                        if (event.target.value) void handleBulk("move", event.target.value);
+                        event.target.value = "";
+                      }}
+                    >
+                      <option value="" disabled>
+                        {locale === "ru" ? "В папку…" : "Move to…"}
+                      </option>
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="ghost-button compact-button danger-button"
+                    data-testid="bulk-trash"
+                    onClick={() => void handleBulk("delete")}
+                  >
+                    {locale === "ru" ? "В корзину" : "Move to Trash"}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
 
           {items.length === 0 ? (
             <div className="empty-state">
@@ -1919,7 +2023,17 @@ export function DashboardClient() {
                 // active rows are draggable. Folders also stay hidden in trash.
                 const draggable = !isTrash;
                 return (
-                  <li key={recording.id}>
+                  <li key={recording.id} className="recording-list__item">
+                    {selectMode ? (
+                      <input
+                        type="checkbox"
+                        className="recording-select-checkbox"
+                        aria-label={locale === "ru" ? "Выбрать запись" : "Select recording"}
+                        checked={selectedIds.has(recording.id)}
+                        onChange={() => toggleSelected(recording.id)}
+                        data-testid={`select-checkbox-${recording.id}`}
+                      />
+                    ) : null}
                     <button
                       type="button"
                       className="recording-row"
