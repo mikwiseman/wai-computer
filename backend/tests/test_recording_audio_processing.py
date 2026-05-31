@@ -103,6 +103,62 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_skips_when_segments_already_exist(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Idempotency guard: a requeued/retried/duplicate task must NOT re-call
+    Deepgram if the recording was already transcribed (2026-05-31 cost incident)."""
+    user = User(email="idempotent@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Existing",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=recording.id,
+            speaker="speaker_0",
+            raw_label="speaker_0",
+            content="already transcribed",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.9,
+        )
+    )
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcribe = AsyncMock()
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file", transcribe
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    transcribe.assert_not_awaited()  # MUST NOT re-bill Deepgram
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_stores_speaker_embeddings_and_assignments(
     db_session: AsyncSession,
     tmp_path,

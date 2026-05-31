@@ -36,6 +36,11 @@ celery_app.conf.update(
     task_time_limit=3600,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
+    # Redis redelivers a task to another worker if it isn't acknowledged within
+    # visibility_timeout. The default (1h) is shorter than a long recording's
+    # transcription, which caused DUPLICATE concurrent transcription (double
+    # Deepgram billing, 2026-05-31). Keep ABOVE the recording task hard time_limit.
+    broker_transport_options={"visibility_timeout": 21600},
     result_expires=3600,
     worker_max_tasks_per_child=100,
     # Explicit imports: autodiscover_tasks only finds modules literally
