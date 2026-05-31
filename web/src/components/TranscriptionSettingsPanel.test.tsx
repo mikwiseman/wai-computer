@@ -117,4 +117,21 @@ describe("TranscriptionSettingsPanel", () => {
     );
     expect(screen.getAllByText("deepgram · nova-3").length).toBe(3);
   });
+
+  it("reflects the backend auto-sentinels (default 'multi' / summary 'auto')", () => {
+    render(
+      <TranscriptionSettingsPanel
+        settings={makeSettings({ default_language: "multi", summary_language: "auto" })}
+        transcriptionOptions={OPTIONS}
+        onUpdate={() => {}}
+      />,
+    );
+    const [defaultLang, summaryLang] = screen.getAllByRole(
+      "combobox",
+    ) as HTMLSelectElement[];
+    expect(defaultLang.value).toBe("multi");
+    expect(summaryLang.value).toBe("auto");
+    expect(screen.getByText("Auto-detect (multilingual)")).toBeTruthy();
+    expect(screen.getByText("Match recording")).toBeTruthy();
+  });
 });

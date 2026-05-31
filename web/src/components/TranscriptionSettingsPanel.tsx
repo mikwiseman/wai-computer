@@ -93,11 +93,13 @@ function languageLabel(code: string, locale: Locale): string {
 }
 
 // All curated language codes, plus the current value prepended if it's a
-// non-"multi" code we don't enumerate — so the select always reflects the
-// stored value rather than silently falling back to the first option.
-function languageCodes(current: string): string[] {
+// real code we don't enumerate — so the select always reflects the stored
+// value rather than silently falling back. `sentinel` is the picker's
+// auto/match option value (default_language uses "multi", summary_language
+// uses "auto" per the backend) and is excluded so it isn't double-listed.
+function languageCodes(current: string, sentinel: string): string[] {
   const codes = LANGUAGES.map((l) => l.code);
-  if (current && current !== "multi" && !codes.includes(current)) {
+  if (current && current !== sentinel && !codes.includes(current)) {
     return [current, ...codes];
   }
   return codes;
@@ -159,7 +161,7 @@ export function TranscriptionSettingsPanel({
           onChange={(event) => onUpdate({ default_language: event.target.value })}
         >
           <option value="multi">{copy.autoDetect}</option>
-          {languageCodes(settings.default_language).map((code) => (
+          {languageCodes(settings.default_language, "multi").map((code) => (
             <option key={code} value={code}>
               {languageLabel(code, locale)}
             </option>
@@ -174,8 +176,8 @@ export function TranscriptionSettingsPanel({
           disabled={busy}
           onChange={(event) => onUpdate({ summary_language: event.target.value })}
         >
-          <option value="multi">{copy.matchRecording}</option>
-          {languageCodes(settings.summary_language).map((code) => (
+          <option value="auto">{copy.matchRecording}</option>
+          {languageCodes(settings.summary_language, "auto").map((code) => (
             <option key={code} value={code}>
               {languageLabel(code, locale)}
             </option>
