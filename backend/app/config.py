@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_bot_username: str = "waicomputer_bot"
     telegram_webhook_secret_token: str = ""
+    # Chat that receives best-effort operational alerts (anomalies worth
+    # attention). 0 disables. Defaults to the operator's linked Telegram chat.
+    telegram_ops_chat_id: int = 0
     # Telegram Bot API file downloads are limited to 20 MB.
     telegram_download_max_bytes: int = 20 * 1024 * 1024
 
