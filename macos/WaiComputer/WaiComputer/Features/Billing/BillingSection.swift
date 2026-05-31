@@ -629,24 +629,42 @@ struct BillingSection: View {
 
     private func localizedBillingActionError(_ error: Error) -> String {
         let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        if message == "Promo code not found" {
-            return String(localized: "billing.promo.error.notFound", bundle: .main)
+        // Resolve against the app's selected language (LanguageManager), not the
+        // system locale that String(localized:) uses — otherwise promo errors leak
+        // English when the app UI language and the macOS system language differ
+        // (103/135/136).
+        switch message {
+        case "Promo code not found":
+            return t("Promo code not found.", "Промокод не найден.")
+        case "Active subscription already exists":
+            return t("You already have an active subscription.", "У тебя уже есть активная подписка.")
+        case "Promo code expired":
+            return t("Promo code expired.", "Срок действия промокода истёк.")
+        case "Promo code exhausted":
+            return t("Promo code has already been fully used.", "Промокод уже исчерпан.")
+        case "Promo code already redeemed":
+            return t("You already redeemed this promo code.", "Ты уже использовал этот промокод.")
+        case "Promo code does not apply to selected period":
+            return t(
+                "This promo code does not apply to the selected billing period.",
+                "Промокод не применим к выбранному периоду оплаты."
+            )
+        case "Promo code grants Pro access":
+            return t("This promo code grants full Pro access.", "Этот промокод даёт полный доступ Pro.")
+        default:
+            break
         }
-        if message == "Active subscription already exists" {
-            return String(localized: "billing.promo.error.activeSubscription", bundle: .main)
-        }
-        if message == "Promo code expired" {
-            return String(localized: "billing.promo.error.expired", bundle: .main)
-        }
-        if message == "Promo code exhausted" {
-            return String(localized: "billing.promo.error.exhausted", bundle: .main)
-        }
-        if message == "Promo code already redeemed" {
-            return String(localized: "billing.promo.error.alreadyRedeemed", bundle: .main)
+        // Any other promo-code error (incl. server-side 500s) must not leak raw English.
+        if message.hasPrefix("Promo code") {
+            return t("This promo code can't be applied.", "Этот промокод нельзя применить.")
         }
         return message.isEmpty
-            ? String(localized: "billing.error.loadFailed", bundle: .main)
+            ? t("Something went wrong. Please try again.", "Что-то пошло не так. Попробуй ещё раз.")
             : message
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 
     private func isCheckoutPromoCodeError(_ error: Error) -> Bool {
