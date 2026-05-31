@@ -330,6 +330,7 @@ async def transcribe_audio_file(
     channels: int | None = None,
     model: str | None = None,
     keyterms: list[str] | None = None,
+    max_channels: int | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
     api_key = require_deepgram_api_key()
@@ -342,8 +343,9 @@ async def transcribe_audio_file(
 
     # Deepgram bills per channel. Notes/meetings are mono; clamp a stereo or
     # crafted many-channel file so it cannot silently multiply per-minute cost.
-    max_channels = get_settings().deepgram_max_channels
-    if max_channels > 0 and channel_count > max_channels:
+    # max_channels is supplied by the dispatcher (settings.deepgram_max_channels);
+    # direct callers leave it None and get no clamp.
+    if isinstance(max_channels, int) and 0 < max_channels < channel_count:
         from app.core.observability import capture_sentry_anomaly
 
         capture_sentry_anomaly(

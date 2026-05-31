@@ -231,7 +231,7 @@ def test_recording_processing_task_alerts_on_retry_exhaustion(
             "extras": {
                 "recording_id": "00000000-0000-0000-0000-000000000007",
                 "task_id": None,
-                "retries": 3,
+                "retries": task.max_retries,
                 "error_type": "TimeoutException",
                 "error_fingerprint": recording_task_module.fingerprint_text("provider timeout"),
                 "content_type": "audio/wav",
