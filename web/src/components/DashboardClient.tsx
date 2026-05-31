@@ -49,6 +49,7 @@ import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
+import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
@@ -2098,6 +2099,7 @@ export function DashboardClient() {
             </button>
           </div>
         </header>
+        <DictationStatsHeader entries={dictationEntries} locale={locale} />
         {dictationEntriesUnavailable ? (
           <div className="empty-state" data-testid="history-unavailable">
             <h3>{copy.history.notAvailableTitle}</h3>

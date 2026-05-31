@@ -1232,6 +1232,36 @@ a.primary-button[aria-disabled="true"]:hover {
   text-align: right;
 }
 
+/* Dictation history stats header — mirrors macOS (total words / wpm / streak). */
+.dictation-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 0.4rem;
+}
+
+.dictation-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.dictation-stat strong {
+  font: var(--font-display-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.dictation-stat span {
+  font: var(--font-caption);
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .telegram-link-card {
   display: grid;
   gap: 0.6rem;
