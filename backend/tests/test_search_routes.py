@@ -261,6 +261,59 @@ async def test_hybrid_search_matches_assigned_person_display_name(
 
 
 @pytest.mark.asyncio
+async def test_hybrid_search_matches_russian_word_forms(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Issue 104: a query in one Russian form should match other inflected forms."""
+    headers = await _register(client, "search.morphology@example.com")
+    recording_id = await _create_recording(client, headers, "Морфология")
+
+    db_session.add_all(
+        [
+            Segment(
+                recording_id=recording_id,
+                speaker="Говорящий 1",
+                content="Настоящий рижский густой бальзам.",
+                start_ms=0,
+                end_ms=1000,
+                confidence=0.95,
+                embedding=_vector_list(0),
+            ),
+            Segment(
+                recording_id=recording_id,
+                speaker="Говорящий 1",
+                content="Рижская погода переменчива осенью.",
+                start_ms=1000,
+                end_ms=2000,
+                confidence=0.9,
+                embedding=_vector_list(1),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    # Push the semantic vector far away so only the lexical (stemmed) path can match.
+    async def fake_generate_embedding(_: str) -> list[float]:
+        return _vector_list(1500)
+
+    monkeypatch.setattr("app.api.routes.search.generate_embedding", fake_generate_embedding)
+
+    response = await client.get(
+        "/api/search",
+        headers=headers,
+        params={"q": "рижский", "limit": 20},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    contents = {result["content"] for result in payload["results"]}
+    # "рижский" (masculine) must also match "рижская" (feminine) via the Russian stemmer,
+    # which a plain substring/'simple' config would miss.
+    assert "Рижская погода переменчива осенью." in contents
+
+
+@pytest.mark.asyncio
 async def test_semantic_search_honors_threshold(
     client: AsyncClient,
     db_session: AsyncSession,
