@@ -48,6 +48,7 @@ export interface RealtimeUpdate {
 
 export interface RealtimeTranscriberOptions {
   language?: string;
+  purpose?: "recording" | "dictation";
   onUpdate?: (update: RealtimeUpdate) => void;
   onState?: (state: RealtimeState) => void;
   onError?: (message: string) => void;
@@ -93,7 +94,7 @@ export class RealtimeTranscriber {
     try {
       session = await createTranscriptionSession({
         language: this.opts.language,
-        purpose: "recording",
+        purpose: this.opts.purpose ?? "recording",
       });
     } catch (error) {
       this.fail(error);

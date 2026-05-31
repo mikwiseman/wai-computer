@@ -52,6 +52,7 @@ import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
+import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
@@ -78,6 +79,7 @@ type DashboardView =
   | "folder"
   | "trash"
   | "search"
+  | "dictate"
   | "history"
   | "dictionary"
   | "settings";
@@ -1531,6 +1533,7 @@ export function DashboardClient() {
     {
       header: locale === "ru" ? "Диктовка" : "Dictation",
       items: [
+        { key: "dictate", label: locale === "ru" ? "Диктовать" : "Dictate", count: null },
         { key: "history", label: copy.nav.history.label, count: null },
         { key: "dictionary", label: copy.nav.dictionary.label, count: null },
       ],
@@ -1787,6 +1790,7 @@ export function DashboardClient() {
           : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
+        {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
         {view === "settings" ? renderSettingsView() : null}

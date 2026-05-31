@@ -1226,6 +1226,38 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-faint);
 }
 
+/* In-browser dictation panel (Phase 3). */
+.dictate-panel {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.dictate-start {
+  align-self: start;
+}
+
+.dictate-result {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+}
+
+.dictate-result__text {
+  margin: 0;
+  font: var(--font-reading);
+  white-space: pre-wrap;
+}
+
+.dictate-upsell {
+  margin-top: 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--surface-hairline);
+}
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;
