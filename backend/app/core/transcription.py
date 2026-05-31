@@ -6,7 +6,7 @@ from time import perf_counter
 
 import httpx
 
-from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
+from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -82,7 +82,7 @@ async def transcribe_audio_file(
     provider = provider or DEFAULT_FILE_STT_PROVIDER
     selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
-    if provider != "elevenlabs":
+    if provider != "deepgram":
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")
     started_at = perf_counter()
     audio_bytes = len(audio_data)
@@ -100,7 +100,7 @@ async def transcribe_audio_file(
     )
 
     try:
-        results = await elevenlabs_transcribe_audio_file(
+        results = await deepgram_transcribe_audio_file(
             audio_data,
             language=language,
             content_type=content_type,

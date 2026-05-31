@@ -81,8 +81,8 @@ def test_default_stt_model_set_matches_stable_release_choice() -> None:
         "nova-3",
     )
     assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
-        "elevenlabs",
-        "scribe_v2",
+        "deepgram",
+        "nova-3",
     )
 
 
@@ -123,13 +123,13 @@ def test_normalize_model_rejects_empty() -> None:
 def test_is_valid_option_matches_registered() -> None:
     assert is_valid_option("dictation_live_stt", "deepgram", "nova-3")
     assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
-    assert is_valid_option("file_stt", "elevenlabs", "scribe_v2")
+    assert is_valid_option("file_stt", "deepgram", "nova-3")
     assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
 
 
 def test_is_valid_option_normalizes_input() -> None:
     assert is_valid_option("dictation_live_stt", "DEEPGRAM", " nova-3 ")
-    assert is_valid_option("file_stt", " ElevenLabs ", " scribe_v2 ")
+    assert is_valid_option("file_stt", " DeepGram ", " nova-3 ")
 
 
 def test_is_valid_option_rejects_unknown() -> None:
@@ -226,10 +226,10 @@ def test_options_response_file_stt_only_fixed_model() -> None:
     out = options_response()
     assert out["file_stt"] == [
         {
-            "provider": "elevenlabs",
-            "model": "scribe_v2",
-            "label": "ElevenLabs Scribe v2",
-            "description": "Fixed full-session transcription model with speaker diarization.",
+            "provider": "deepgram",
+            "model": "nova-3",
+            "label": "Deepgram Nova-3",
+            "description": "Full-session batch transcription with v2 speaker diarization.",
         }
     ]
 
@@ -267,7 +267,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
 
     assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["recording_live_stt"]} == {"deepgram"}
-    assert {entry["provider"] for entry in out["file_stt"]} == {"elevenlabs"}
+    assert {entry["provider"] for entry in out["file_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"openai"}
 
 
@@ -304,7 +304,7 @@ def test_validate_configured_option_returns_valid_configured_option() -> None:
 
     assert validate_configured_option(
         "file_stt",
-        " ElevenLabs ",
-        "scribe_v2",
+        " DeepGram ",
+        "nova-3",
         settings=settings,
-    ) == ("elevenlabs", "scribe_v2")
+    ) == ("deepgram", "nova-3")
