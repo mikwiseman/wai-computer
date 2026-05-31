@@ -865,9 +865,9 @@ a.primary-button[aria-disabled="true"]:hover {
   min-height: 100dvh;
   flex-direction: column;
   border-right: 1px solid var(--surface-hairline);
-  background: var(--material-thin-bg);
-  backdrop-filter: var(--material-thin-blur);
-  -webkit-backdrop-filter: var(--material-thin-blur);
+  background: var(--material-regular-bg);
+  backdrop-filter: var(--material-regular-blur);
+  -webkit-backdrop-filter: var(--material-regular-blur);
   padding: 1.05rem;
 }
 
