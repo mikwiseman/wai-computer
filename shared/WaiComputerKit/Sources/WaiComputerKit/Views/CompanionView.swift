@@ -72,10 +72,14 @@ public struct CompanionView: View {
     @State private var activeChatId: String?
     @State private var messages: [CompanionMessage] = []
     @State private var streamingText: String = ""
+    // Whether the chat is scrolled near the bottom. While streaming we only
+    // auto-scroll when this is true, so scrolling up mid-answer is not fought (107).
+    @State private var isNearBottom: Bool = true
     @State private var streamingCitations: [CompanionStreamCitation] = []
     @State private var streamingToolNotes: [String] = []
     @State private var stage: TurnStage = .idle
     @State private var input: String = ""
+    @FocusState private var inputFocused: Bool
     @State private var errorMessage: String?
     @State private var showChats: Bool = false
     @State private var turnTask: Task<Void, Never>?
@@ -294,40 +298,70 @@ public struct CompanionView: View {
         .accessibilityIdentifier("wai-chat-row")
     }
 
+    private struct ChatBottomOffsetKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = nextValue()
+        }
+    }
+
     private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if messages.isEmpty && streamingText.isEmpty {
-                        emptyState
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if messages.isEmpty && streamingText.isEmpty {
+                            emptyState
+                        }
+                        ForEach(messages) { message in
+                            bubble(for: message)
+                                .id(message.id)
+                        }
+                        if isStreaming {
+                            streamingBubble
+                                .id("streaming")
+                        }
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .foregroundStyle(.red)
+                                .font(.callout)
+                                .padding(.vertical, 12)
+                        }
+                        // Invisible bottom anchor: its position in the scroll
+                        // viewport tells us whether the user is at the bottom.
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottomAnchor")
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: ChatBottomOffsetKey.self,
+                                        value: geo.frame(in: .named("chatScroll")).minY
+                                    )
+                                }
+                            )
                     }
-                    ForEach(messages) { message in
-                        bubble(for: message)
-                            .id(message.id)
-                    }
-                    if isStreaming {
-                        streamingBubble
-                            .id("streaming")
-                    }
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.callout)
-                            .padding(.vertical, 12)
+                    .frame(maxWidth: contentMaxWidth, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .coordinateSpace(name: "chatScroll")
+                .onPreferenceChange(ChatBottomOffsetKey.self) { bottomMinY in
+                    // The anchor sits within the viewport (plus a small slack) only
+                    // when the latest content is visible — i.e. the user is at the
+                    // bottom and auto-scroll should follow the stream.
+                    isNearBottom = bottomMinY <= viewport.size.height + 80
+                }
+                .onChange(of: messages.count) {
+                    withAnimation {
+                        proxy.scrollTo("bottomAnchor", anchor: .bottom)
                     }
                 }
-                .frame(maxWidth: contentMaxWidth, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .onChange(of: messages.count) {
-                withAnimation {
-                    proxy.scrollTo(messages.last?.id ?? "streaming", anchor: .bottom)
+                .onChange(of: streamingText) {
+                    guard isNearBottom else { return }
+                    proxy.scrollTo("bottomAnchor", anchor: .bottom)
                 }
-            }
-            .onChange(of: streamingText) {
-                proxy.scrollTo("streaming", anchor: .bottom)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -481,6 +515,12 @@ public struct CompanionView: View {
                         .stroke(Color.primary.opacity(0.10), lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .focused($inputFocused)
+                // Make the whole styled box focus the field, not just the text
+                // line — the field is taller than one line so the area below it
+                // was a dead zone (130).
+                .contentShape(Rectangle())
+                .onTapGesture { inputFocused = true }
                 .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
                 .accessibilityIdentifier("wai-message-editor")
 
@@ -808,6 +848,12 @@ public struct CompanionView: View {
     }
 
     private func relativeDate(_ date: Date) -> String {
+        // A just-sent message has a ~0 (or marginally future, from clock skew)
+        // delta, which RelativeDateTimeFormatter renders as the awkward
+        // "через 0 сек" / "in 0 sec". Show a natural "just now" instead (106).
+        if date.timeIntervalSinceNow > -1 {
+            return t("just now", "только что")
+        }
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = locale
         formatter.unitsStyle = .short
