@@ -179,9 +179,16 @@ def test_recording_audio_processing_task_has_reliability_options():
 
     assert task.acks_late is True
     assert task.reject_on_worker_lost is True
-    assert task.soft_time_limit == 3000
-    assert task.time_limit == 3300
-    assert task.max_retries == 3
+    # Long-recording sizing from the 2026-05-31 batch cost incident: limits exceed
+    # the worst-case recording, and the hard limit stays BELOW the broker
+    # visibility_timeout (21600) so a hung task is killed before Redis redelivers.
+    assert task.soft_time_limit == 21000
+    assert task.time_limit == 21300
+    assert task.max_retries == 1
+    assert (
+        celery_app_module.celery_app.conf.broker_transport_options["visibility_timeout"]
+        > task.time_limit
+    )
 
 
 def test_embedding_backfill_task_is_registered_for_periodic_repair():
