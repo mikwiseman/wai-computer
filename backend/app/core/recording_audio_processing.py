@@ -474,6 +474,33 @@ async def process_staged_recording_upload(
         )
         return
 
+    # Idempotency: if a prior run already transcribed this recording (segments
+    # exist), a requeued / retried / duplicate-delivered task must NOT re-call
+    # Deepgram for the same audio. This is the primary guard against the
+    # 2026-05-31 batch cost incident (worker-loss requeue + visibility-timeout
+    # redelivery re-transcribing the same long recordings many times).
+    already_transcribed = await db.execute(
+        select(Segment.id).where(Segment.recording_id == recording_id).limit(1)
+    )
+    if already_transcribed.first() is not None:
+        logger.info(
+            "skipping re-transcription; recording already has segments recording_id=%s",
+            recording_id,
+        )
+        capture_sentry_anomaly(
+            "recording.transcription.duplicate_skipped",
+            "Skipped re-transcription of an already-transcribed recording",
+            category="recording",
+            extras={"recording_id": str(recording_id)},
+            level="warning",
+        )
+        recording.status = RecordingStatus.READY.value
+        recording.failure_code = None
+        recording.failure_message = None
+        await db.commit()
+        delete_staged_file(staged_path)
+        return
+
     try:
         await reset_recording_processing_state(recording_id, db)
 

@@ -88,9 +88,13 @@ def recover_stale_recording_processing() -> int:
     name="app.tasks.recording_audio_processing.process_staged_recording_upload",
     acks_late=True,
     reject_on_worker_lost=True,
-    soft_time_limit=3000,
-    time_limit=3300,
-    max_retries=3,
+    # Long recordings (90+ min) must finish well within these limits, and the
+    # hard limit must stay BELOW the broker visibility_timeout (21600s) so a hung
+    # task is killed before Redis can redeliver a duplicate. max_retries reduced
+    # to bound re-billing on transient failures. (2026-05-31 batch cost incident.)
+    soft_time_limit=21000,
+    time_limit=21300,
+    max_retries=1,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
