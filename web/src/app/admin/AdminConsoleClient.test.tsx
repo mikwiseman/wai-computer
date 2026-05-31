@@ -18,10 +18,18 @@ import {
   updateAdminPromoCode,
   updateAdminUserStatus,
 } from "@/lib/admin";
+import { logout } from "@/lib/api";
 import { AdminConsoleClient } from "./AdminConsoleClient";
+
+const mockReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("tab=overview"),
+  useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  logout: vi.fn(),
 }));
 
 vi.mock("@/lib/admin", () => ({
@@ -57,6 +65,7 @@ const mockedGrantSubscription = vi.mocked(grantAdminSubscription);
 const mockedCancelSubscription = vi.mocked(cancelAdminSubscription);
 const mockedResumeSubscription = vi.mocked(resumeAdminSubscription);
 const mockedRefundInvoice = vi.mocked(refundAdminInvoice);
+const mockedLogout = vi.mocked(logout);
 
 function setupMocks() {
   mockedStats.mockResolvedValue({
@@ -518,5 +527,16 @@ describe("AdminConsoleClient", () => {
     expect(await screen.findByText("admin.user_status.updated")).toBeInTheDocument();
     expect(screen.getByText("user:user-1")).toBeInTheDocument();
     expect(screen.getByText("support request")).toBeInTheDocument();
+  });
+
+  it("logs out and redirects to login", async () => {
+    mockedLogout.mockResolvedValue({ message: "Logged out" });
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByTestId("admin-logout-button"));
+
+    await waitFor(() => expect(mockedLogout).toHaveBeenCalledTimes(1));
+    expect(mockReplace).toHaveBeenCalledWith("/login");
   });
 });
