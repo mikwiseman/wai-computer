@@ -214,6 +214,12 @@ async def test_admin_patch_tinkoff_subscription_writes_dates_and_audits_diff(
     assert body["billing_period"] == "year"
     assert body["tinkoff_next_charge_at"].startswith(backdated.date().isoformat())
 
+    # The billing list must surface the next-charge date too (UI prefill + QA check).
+    listing = await client.get("/api/admin/billing", headers=admin_headers)
+    assert listing.status_code == 200
+    item = next(i for i in listing.json()["items"] if i["id"] == str(sub.id))
+    assert item["tinkoff_next_charge_at"].startswith(backdated.date().isoformat())
+
     audit_count = (
         await db_session.execute(
             select(func.count(AdminAuditLog.id)).where(

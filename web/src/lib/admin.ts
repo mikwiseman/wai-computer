@@ -321,7 +321,7 @@ export function updateAdminSubscription(
 export function runAdminSubscriptionRenewal(
   id: string,
   input: { reason: string | null } = { reason: null },
-): Promise<{ charged: boolean; skipped?: boolean; reason?: string; result?: string }> {
+): Promise<{ charged: boolean; skipped?: boolean; reason?: string; result?: string; status?: string }> {
   return apiFetch(`/api/admin/subscriptions/${id}/run-renewal`, {
     method: "POST",
     body: JSON.stringify(input),
