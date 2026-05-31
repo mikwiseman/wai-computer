@@ -90,6 +90,19 @@ class _EntityExtractionSchema(BaseModel):
     entities: list[_Entity] = Field(max_length=50)
 
 
+class _KeyMoment(BaseModel):
+    # "MM:SS" / "HH:MM:SS" for time-based media; null for articles/text.
+    timestamp: str | None
+    moment: str
+    why_it_matters: str
+    quote: str | None
+    importance: Literal["high", "medium", "low"]
+
+
+class _KeyMomentsSchema(BaseModel):
+    moments: list[_KeyMoment] = Field(max_length=20)
+
+
 # ---------------------------------------------------------------------------
 # Prompts. The structured-output schema is enforced by ``text_format``, so the
 # prompt itself only carries instructions (no JSON shape to repeat).
@@ -241,6 +254,233 @@ async def summarize_transcript(
         sentiment=parsed.sentiment,
         highlights=[h.model_dump() for h in parsed.highlights],
     )
+
+
+CONTENT_SUMMARY_INSTRUCTIONS = """\
+You summarize a piece of content (a web article, PDF, note, video transcript,
+email, or social post). Output one structured object that follows the provided
+schema.
+
+Rules:
+- Do not invent facts. Only include information actually present in the content.
+  Use null for unknown nullable fields and empty arrays for absent lists; never
+  pad to look complete.
+- Hard caps: key_points <= 15, decisions <= 20, action_items <= 30, topics <=
+  20, people_mentioned <= 30, follow_up_questions <= 10, highlights <= 10.
+- Keep descriptions specific: names, dates, numbers, quoted phrases.
+- The top-level title and each highlight title MUST be plain text: no markdown,
+  no surrounding quotes.
+- action_items: only extract genuine tasks/next-steps the content implies for
+  the reader; for purely informational content this may be empty.
+"""
+
+
+KEY_MOMENTS_INSTRUCTIONS = """\
+Extract the key moments / main points of this content as a scannable table.
+
+Rules:
+- Return 3-15 distinct moments, most important first. Do not pad.
+- ``moment``: a short plain-text label for what happens / the point made.
+- ``why_it_matters``: one concise sentence on the significance.
+- ``quote``: a short verbatim excerpt from the content if one captures the
+  moment well, else null. Never fabricate a quote.
+- ``timestamp``: ONLY when the content carries explicit time markers (e.g. a
+  video/audio transcript with [MM:SS] or HH:MM:SS). Copy the marker for the
+  moment. For articles, notes, or any text without timestamps, return null.
+  Never invent timestamps.
+- All text plain (no markdown, no surrounding quotes except inside ``quote``).
+"""
+
+
+def build_content_summary_prompt(
+    *,
+    content_kind: str = "content",
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+    style: str = DEFAULT_SUMMARY_STYLE,
+    instructions: str | None = None,
+) -> str:
+    """Build the universal-content summarization prompt (instructions only)."""
+    parts = [CONTENT_SUMMARY_INSTRUCTIONS]
+    if content_kind and content_kind != "content":
+        parts.append(f"\nThe content is a {content_kind}.")
+
+    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
+    parts.append(f"\nSTYLE: {style_text}")
+
+    if language and language != DEFAULT_SUMMARY_LANGUAGE:
+        parts.append(
+            f"\nOUTPUT LANGUAGE: Write ALL text fields in {language}."
+        )
+    else:
+        parts.append(
+            "\nOUTPUT LANGUAGE: Write ALL text fields in the dominant language "
+            "of the content (Russian content -> Russian; English -> English)."
+        )
+
+    if instructions and instructions.strip():
+        parts.append(f"\nADDITIONAL INSTRUCTIONS: {instructions.strip()}")
+
+    parts.append("\nContent:\n")
+    return "\n".join(parts)
+
+
+async def summarize_content(
+    text: str,
+    *,
+    content_kind: str = "content",
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+    style: str = DEFAULT_SUMMARY_STYLE,
+    instructions: str | None = None,
+) -> SummaryResult:
+    """Summarize any text content (article, note, transcript, ...).
+
+    Reuses the same structured-output contract as ``summarize_transcript`` so
+    items and recordings share one summary shape, but with general-content
+    framing instead of meeting-specific framing.
+    """
+    add_sentry_breadcrumb(
+        category="summarizer",
+        message="Summarizing content",
+        data={"content_length": len(text), "kind": content_kind, "language": language},
+    )
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
+
+    prompt = build_content_summary_prompt(
+        content_kind=content_kind, language=language, style=style, instructions=instructions
+    )
+    client = get_openai_client()
+    try:
+        response = await client.responses.parse(
+            model=settings.openai_llm_model,
+            input=prompt + text,
+            text_format=_SummarySchema,
+            reasoning={"effort": "medium"},
+            max_output_tokens=4096,
+        )
+        ensure_response_completed(response, operation="Content summarization")
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"Content summarization failed: {exc}") from exc
+
+    parsed = response.output_parsed
+    if parsed is None:
+        raise SummarizationError("OpenAI returned no parsed summary payload")
+
+    add_sentry_breadcrumb(category="summarizer", message="Content summarization completed")
+    return SummaryResult(
+        title=parsed.title,
+        summary=parsed.summary,
+        key_points=parsed.key_points,
+        decisions=[d.model_dump() for d in parsed.decisions],
+        action_items=[a.model_dump() for a in parsed.action_items],
+        topics=parsed.topics,
+        people_mentioned=parsed.people_mentioned,
+        follow_up_questions=parsed.follow_up_questions,
+        sentiment=parsed.sentiment,
+        highlights=[h.model_dump() for h in parsed.highlights],
+    )
+
+
+@dataclass
+class KeyMoment:
+    """One row of the key-moments table (the hero "forward → table" output)."""
+
+    timestamp: str | None
+    moment: str
+    why_it_matters: str
+    quote: str | None
+    importance: str
+    start_ms: int | None = None
+    end_ms: int | None = None
+
+
+async def extract_key_moments(
+    text: str,
+    *,
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+) -> list[KeyMoment]:
+    """Extract a scannable key-moments table from any content via OpenAI.
+
+    For time-based media whose transcript carries markers, ``timestamp`` is
+    populated from those markers; for plain text it is null. Word-level
+    millisecond resolution (Deepgram) is layered on by
+    ``resolve_key_moment_timestamps``.
+    """
+    add_sentry_breadcrumb(
+        category="summarizer",
+        message="Extracting key moments",
+        data={"content_length": len(text), "language": language},
+    )
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
+
+    language_instruction = (
+        f"\nWrite all text in {language}."
+        if language and language not in {DEFAULT_SUMMARY_LANGUAGE, "multi"}
+        else "\nWrite all text in the dominant language of the content."
+    )
+    client = get_openai_client()
+    try:
+        response = await client.responses.parse(
+            model=settings.openai_llm_model,
+            input=KEY_MOMENTS_INSTRUCTIONS + language_instruction + "\n\nContent:\n" + text,
+            text_format=_KeyMomentsSchema,
+            reasoning={"effort": "medium"},
+            max_output_tokens=4096,
+        )
+        ensure_response_completed(response, operation="Key moments extraction")
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
+
+    parsed = response.output_parsed
+    if parsed is None:
+        raise SummarizationError("OpenAI returned no parsed key-moments payload")
+
+    return [
+        KeyMoment(
+            timestamp=m.timestamp,
+            moment=m.moment,
+            why_it_matters=m.why_it_matters,
+            quote=m.quote,
+            importance=m.importance,
+        )
+        for m in parsed.moments
+    ]
+
+
+def resolve_key_moment_timestamps(
+    moments: list[KeyMoment],
+    segments: list[dict],
+) -> list[KeyMoment]:
+    """Attach start_ms/end_ms to moments by matching against transcript segments.
+
+    Reuses the word-overlap heuristic from ``resolve_highlight_timestamps`` so
+    a key-moments table over a recording/video jumps to the right point. Plain
+    text (no segments) is returned unchanged.
+    """
+    if not segments:
+        return moments
+
+    def _words(value: str | None) -> set[str]:
+        if not value:
+            return set()
+        return set(re.sub(r"[^\w\s]", " ", value.lower()).split())
+
+    for moment in moments:
+        target = _words(moment.moment) | _words(moment.quote)
+        best_score = 0
+        best_segment: dict | None = None
+        for seg in segments:
+            overlap = len(target & _words(seg.get("content")))
+            if overlap > best_score:
+                best_score = overlap
+                best_segment = seg
+        if best_segment is not None:
+            moment.start_ms = best_segment.get("start_ms")
+            moment.end_ms = best_segment.get("end_ms")
+    return moments
 
 
 async def generate_title(
