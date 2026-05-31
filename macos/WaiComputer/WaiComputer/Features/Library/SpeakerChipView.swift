@@ -27,8 +27,11 @@ struct SpeakerChipView: View {
                 Text(displayLabel)
                     .font(Typography.label)
                     .foregroundStyle(isAssigned ? Palette.accent : Palette.textSecondary)
-                if segment.autoAssigned, let conf = confidencePercent {
-                    Text("✨\(conf)%")
+                if segment.autoAssigned {
+                    // Sparkle marks an auto-assigned speaker; the raw match
+                    // percentage was unclear to users so it's dropped from the
+                    // chip — the .help() tooltip still explains it (128).
+                    Text("✨")
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.textTertiary)
                 }

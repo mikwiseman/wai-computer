@@ -1437,7 +1437,7 @@ class MacRecordingViewModel: ObservableObject {
                 currentText += " " + line.text
             } else {
                 if !currentText.isEmpty, let s = currentSpeaker {
-                    parts.append("\(s): \(currentText)")
+                    parts.append("\(displaySpeaker(s)): \(currentText)")
                 }
                 currentSpeaker = speaker
                 currentText = line.text
@@ -1455,14 +1455,30 @@ class MacRecordingViewModel: ObservableObject {
         if !shouldShowSpeakers {
             return interimText
         }
-        let speaker = interimSpeaker ?? "..."
         // Avoid duplicating the speaker prefix when the interim line continues
-        // the same speaker as the most recent committed line.
+        // the same (raw) speaker as the most recent committed line.
         let lastSpeaker = committedLines.last?.speaker
-        if speaker == lastSpeaker {
+        if interimSpeaker == lastSpeaker {
             return interimText
         }
+        let speaker = interimSpeaker.map(displaySpeaker) ?? "..."
         return "\(speaker): \(interimText)"
+    }
+
+    /// Localize a raw diarization label ("speaker_0") to the app-language display
+    /// label ("Говорящий 1" / "Speaker 1") for the live transcript (129).
+    private func displaySpeaker(_ rawLabel: String) -> String {
+        SpeakerLabelCopy.userFacingLabel(rawLabel, languageCode: speakerLanguageCode)
+            ?? t("Speaker", "Говорящий")
+    }
+
+    private var speakerLanguageCode: String {
+        switch LanguageManager.shared.current {
+        case .followSystem:
+            return LanguageManager.shared.preferredLocale.identifier
+        case .english, .russian:
+            return LanguageManager.shared.current.rawValue
+        }
     }
 
     private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {
