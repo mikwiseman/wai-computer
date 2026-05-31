@@ -57,10 +57,10 @@ export interface RealtimeTranscriberOptions {
 export class RealtimeTranscriber {
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
+  private sources: MediaStreamAudioSourceNode[] = [];
   private ws: WebSocket | null = null;
   private keepAlive: ReturnType<typeof setInterval> | null = null;
-  private stream: MediaStream | null = null;
+  private streams: MediaStream[] = [];
   private state: RealtimeState = "idle";
   private startedAt = 0;
   private lastFinalMs = 0;
@@ -86,9 +86,9 @@ export class RealtimeTranscriber {
     this.opts.onState?.(state);
   }
 
-  async start(stream: MediaStream): Promise<void> {
+  async start(input: MediaStream | MediaStream[]): Promise<void> {
     if (this.state !== "idle") return;
-    this.stream = stream;
+    this.streams = Array.isArray(input) ? input : [input];
     this.setState("connecting");
     let session: RealtimeSessionResponse;
     try {
@@ -102,7 +102,7 @@ export class RealtimeTranscriber {
     }
     try {
       await this.openSocket(session);
-      await this.startAudio(stream);
+      await this.startAudio();
       this.startedAt = Date.now();
       this.setState("recording");
     } catch (error) {
@@ -148,13 +148,11 @@ export class RealtimeTranscriber {
     });
   }
 
-  private async startAudio(stream: MediaStream): Promise<void> {
+  private async startAudio(): Promise<void> {
     const ctx = new AudioContext();
     this.ctx = ctx;
     await ctx.audioWorklet.addModule("/realtime-pcm-worklet.js");
-    const source = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, "realtime-pcm-recorder");
-    this.source = source;
     this.node = node;
     node.port.onmessage = (event) => {
       const float = event.data as Float32Array;
@@ -163,8 +161,14 @@ export class RealtimeTranscriber {
         this.ws.send(int16.buffer);
       }
     };
-    // Intentionally NOT connected to ctx.destination — monitoring would echo.
-    source.connect(node);
+    // Connect every input stream (mic + optional system audio) to the worklet;
+    // the Web Audio graph sums them into one combined PCM stream. NOT connected
+    // to ctx.destination — monitoring would echo.
+    for (const stream of this.streams) {
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(node);
+      this.sources.push(source);
+    }
   }
 
   private onMessage(event: MessageEvent): void {
@@ -220,15 +224,17 @@ export class RealtimeTranscriber {
     } catch {
       /* already disconnected */
     }
-    try {
-      this.source?.disconnect();
-    } catch {
-      /* already disconnected */
+    for (const source of this.sources) {
+      try {
+        source.disconnect();
+      } catch {
+        /* already disconnected */
+      }
     }
+    this.sources = [];
     if (this.ctx && this.ctx.state !== "closed") void this.ctx.close();
     this.ctx = null;
     this.node = null;
-    this.source = null;
     if (this.ws) {
       try {
         this.ws.close();
@@ -237,7 +243,9 @@ export class RealtimeTranscriber {
       }
     }
     this.ws = null;
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.stream = null;
+    for (const stream of this.streams) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    this.streams = [];
   }
 }
