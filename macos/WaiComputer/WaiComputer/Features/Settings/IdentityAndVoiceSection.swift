@@ -12,6 +12,7 @@ import WaiComputerKit
 /// - Flipping OFF is instant; the row is hard-deleted server-side.
 struct IdentityAndVoiceSection: View {
     @EnvironmentObject var appState: MacAppState
+    @EnvironmentObject var languageManager: LanguageManager
 
     @State private var firstName: String = ""
     @State private var lastName: String = ""
@@ -38,65 +39,72 @@ struct IdentityAndVoiceSection: View {
                 }
             }
         } header: {
-            Text("Identity & Voice")
+            Text(t("Identity & Voice", "Удостоверение и голос"))
                 .waiSectionHeader()
                 .accessibilityIdentifier("settings-identity-header")
         } footer: {
-            Text(
+            Text(t(
                 "Your name and voiceprint are private until you turn on sharing. "
-                + "We never share audio or transcripts."
-            )
+                + "We never share audio or transcripts.",
+                "Твоё имя и голосовой слепок остаются приватными, пока ты не включишь "
+                + "шаринг. Мы никогда не передаём аудио и расшифровки."
+            ))
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)
         }
         .task { await refresh() }
         .confirmationDialog(
-            "Share your voice in WaiComputer?",
+            t("Share your voice in WaiComputer?", "Поделиться голосом в WaiComputer?"),
             isPresented: $showShareConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Share") {
+            Button(t("Share", "Поделиться")) {
                 Task { await flipSharing(to: true) }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
         } message: {
-            Text(
-                "Other WaiComputer users will see \"\(sharedNamePreview)\" "
-                + "in their recordings when your voice is detected. "
-                + "We share your name and a voice fingerprint only — never "
-                + "your audio or transcripts. You can turn this off any time."
-            )
+            Text(String(
+                format: t(
+                    "Other WaiComputer users will see \"%@\" in their recordings when "
+                    + "your voice is detected. We share your name and a voice fingerprint "
+                    + "only — never your audio or transcripts. You can turn this off any time.",
+                    "Другие пользователи WaiComputer увидят «%@» в своих записях, когда "
+                    + "распознают твой голос. Мы передаём только имя и голосовой отпечаток — "
+                    + "никогда аудио или расшифровки. Это можно отключить в любой момент."
+                ),
+                sharedNamePreview
+            ))
         }
     }
 
     @ViewBuilder
     private var identityFields: some View {
         LabeledContent {
-            TextField("First name", text: $firstName)
+            TextField(t("First name", "Имя"), text: $firstName)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 220)
                 .onSubmit { Task { await saveNames() } }
                 .accessibilityIdentifier("settings-identity-first-name")
         } label: {
-            Text("First name")
+            Text(t("First name", "Имя"))
         }
         .font(Typography.body)
 
         LabeledContent {
-            TextField("Last name", text: $lastName)
+            TextField(t("Last name", "Фамилия"), text: $lastName)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 220)
                 .onSubmit { Task { await saveNames() } }
                 .accessibilityIdentifier("settings-identity-last-name")
         } label: {
-            Text("Last name")
+            Text(t("Last name", "Фамилия"))
         }
         .font(Typography.body)
 
         if savingNames {
             HStack(spacing: Spacing.xs) {
                 ProgressView().controlSize(.mini)
-                Text("Saving…")
+                Text(t("Saving…", "Сохранение…"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -122,7 +130,10 @@ struct IdentityAndVoiceSection: View {
             )
         ) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Share my voice in the WaiComputer directory")
+                Text(t(
+                    "Share my voice in the WaiComputer directory",
+                    "Поделиться голосом в справочнике WaiComputer"
+                ))
                     .font(Typography.body)
                 Text(toggleSubtitle(state))
                     .font(Typography.caption)
@@ -137,15 +148,27 @@ struct IdentityAndVoiceSection: View {
     private func toggleSubtitle(_ state: VoiceSharingState?) -> String {
         guard let state else { return "" }
         if state.enabled {
-            return state.sharedName.map { "Visible to others as \($0)." } ?? "On."
+            return state.sharedName.map {
+                String(format: t("Visible to others as %@.", "Видно другим как %@."), $0)
+            } ?? t("On.", "Включено.")
         }
         if state.canEnable {
-            return "Off. Other users will not see your name in their recordings."
+            return t(
+                "Off. Other users will not see your name in their recordings.",
+                "Выключено. Другие пользователи не увидят твоё имя в своих записях."
+            )
         }
         var missing: [String] = []
-        if !state.hasFirstName || !state.hasLastName { missing.append("a first and last name") }
-        if !state.hasVoiceprint { missing.append("an enrolled voice sample") }
-        return "Add \(missing.joined(separator: " and ")) to enable sharing."
+        if !state.hasFirstName || !state.hasLastName {
+            missing.append(t("a first and last name", "имя и фамилию"))
+        }
+        if !state.hasVoiceprint {
+            missing.append(t("an enrolled voice sample", "образец голоса"))
+        }
+        return String(
+            format: t("Add %@ to enable sharing.", "Добавь %@, чтобы включить шаринг."),
+            missing.joined(separator: t(" and ", " и "))
+        )
     }
 
     private var sharedNamePreview: String {
@@ -153,7 +176,7 @@ struct IdentityAndVoiceSection: View {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        return composed.isEmpty ? "your name" : composed
+        return composed.isEmpty ? t("your name", "твоё имя") : composed
     }
 
     private func refresh() async {
@@ -169,7 +192,7 @@ struct IdentityAndVoiceSection: View {
             sharing = share
             error = nil
         } catch {
-            self.error = "Could not load identity settings."
+            self.error = t("Could not load identity settings.", "Не удалось загрузить настройки профиля.")
         }
     }
 
@@ -188,7 +211,7 @@ struct IdentityAndVoiceSection: View {
             sharing = try await api.getVoiceSharing()
             error = nil
         } catch {
-            self.error = "Could not save your name."
+            self.error = t("Could not save your name.", "Не удалось сохранить имя.")
         }
     }
 
@@ -204,8 +227,12 @@ struct IdentityAndVoiceSection: View {
             error = nil
         } catch {
             self.error = enabled
-                ? "Could not turn on voice sharing."
-                : "Could not turn off voice sharing."
+                ? t("Could not turn on voice sharing.", "Не удалось включить шаринг голоса.")
+                : t("Could not turn off voice sharing.", "Не удалось выключить шаринг голоса.")
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
