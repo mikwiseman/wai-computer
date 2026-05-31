@@ -7,19 +7,24 @@ public struct User: Codable, Identifiable, Sendable {
     public let createdAt: Date
     public let hasPassword: Bool
     public let region: String
+    /// True once the account has an enrolled voiceprint — the server-side source
+    /// of truth for "already onboarded" used to gate voice onboarding (102).
+    public let hasEnrolledVoice: Bool
 
     public init(
         id: String,
         email: String,
         createdAt: Date,
         hasPassword: Bool = true,
-        region: String = "global"
+        region: String = "global",
+        hasEnrolledVoice: Bool = false
     ) {
         self.id = id
         self.email = email
         self.createdAt = createdAt
         self.hasPassword = hasPassword
         self.region = region
+        self.hasEnrolledVoice = hasEnrolledVoice
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -28,6 +33,7 @@ public struct User: Codable, Identifiable, Sendable {
         case createdAt = "created_at"
         case hasPassword = "has_password"
         case region
+        case hasEnrolledVoice = "has_enrolled_voice"
     }
 
     public init(from decoder: Decoder) throws {
@@ -37,6 +43,7 @@ public struct User: Codable, Identifiable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         hasPassword = try container.decodeIfPresent(Bool.self, forKey: .hasPassword) ?? true
         region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
+        hasEnrolledVoice = try container.decodeIfPresent(Bool.self, forKey: .hasEnrolledVoice) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -46,6 +53,7 @@ public struct User: Codable, Identifiable, Sendable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(hasPassword, forKey: .hasPassword)
         try container.encode(region, forKey: .region)
+        try container.encode(hasEnrolledVoice, forKey: .hasEnrolledVoice)
     }
 }
 
