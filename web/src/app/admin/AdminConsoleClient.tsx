@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
@@ -29,6 +29,7 @@ import {
   type AdminUserDetail,
   type AdminUserSummary,
 } from "@/lib/admin";
+import { logout } from "@/lib/api";
 
 type AdminTab = "overview" | "promos" | "users" | "billing" | "observability" | "audit";
 type PromoDraft = {
@@ -89,6 +90,7 @@ function promoMetricRows(stats: AdminStats["promo"]): Array<[string, number]> {
 
 export function AdminConsoleClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialTab = (searchParams.get("tab") || "overview") as AdminTab;
   const [tab, setTab] = useState<AdminTab>(TABS.some((item) => item.id === initialTab) ? initialTab : "overview");
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -182,6 +184,16 @@ export function AdminConsoleClient() {
     }
   }
 
+  async function handleLogout() {
+    setError(null);
+    try {
+      await logout();
+      router.replace("/login");
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "Logout failed.");
+    }
+  }
+
   async function handleCreatePromo(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await runAction(async () => {
@@ -246,6 +258,16 @@ export function AdminConsoleClient() {
             </button>
           ))}
         </nav>
+        <div className="admin-console__sidebar-footer">
+          <button
+            data-testid="admin-logout-button"
+            type="button"
+            className="ghost-button danger-button"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
       </aside>
 
       <section className="admin-console__main">

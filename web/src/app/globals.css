@@ -2513,6 +2513,14 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--panel-subtle);
 }
 
+.admin-console__sidebar-footer {
+  margin-top: auto;
+}
+
+.admin-console__sidebar-footer .ghost-button {
+  width: 100%;
+}
+
 .admin-console__main {
   display: flex;
   min-width: 0;
