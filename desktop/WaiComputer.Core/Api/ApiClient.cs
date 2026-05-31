@@ -194,7 +194,7 @@ public sealed class ApiClient : IApiClient, IDisposable
         var fileContent = new StreamContent(stream);
         fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
         fileContent.Headers.ContentLength = contentLength;
-        form.Add(fileContent, "audio", fileName);
+        form.Add(fileContent, "file", fileName); // backend route expects the part named "file"
 
         using var req = new HttpRequestMessage(HttpMethod.Post, ResolveUri($"/api/recordings/{Uri.EscapeDataString(recordingId)}/upload"))
         {
