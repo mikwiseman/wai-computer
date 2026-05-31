@@ -53,6 +53,48 @@ class Settings(BaseSettings):
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
 
+    # --- Deepgram cost + abuse guards (2026 cost-incident hardening) ---
+    # Master kill-switch for ALL Deepgram calls (batch + realtime). An operator
+    # can also engage a Redis flag at runtime (see transcription_guard) to halt
+    # spend in one reversible flip without deleting the API key or redeploying.
+    transcription_enabled: bool = True
+    # Abuse/spend caps below are INDEPENDENT of billing_enforcement_enabled — they
+    # protect spend even before paid SKUs ship. Generous so legit use never trips.
+    transcription_abuse_caps_enabled: bool = True
+    # Global rolling daily audio-minute ceiling across ALL users (defence-in-depth
+    # behind the provider Budget API). ~100h/day is far above normal use and far
+    # below a runaway. 0 disables.
+    deepgram_global_daily_minutes_cap: int = 6000
+    # Per-user rolling daily audio-minute ceiling (~20h/day/user). 0 disables.
+    deepgram_user_daily_minutes_cap: int = 1200
+    # Realtime /stream proxy hard server-side wall-clock per connection, so a
+    # stuck/abusive socket cannot bill Deepgram indefinitely. Generous: a real
+    # dictation hold or meeting never approaches these. 0 disables.
+    realtime_stream_max_seconds_dictation: int = 3600  # 1h
+    realtime_stream_max_seconds_recording: int = 21600  # 6h
+    # Max simultaneous realtime streams per user (multi-device) and globally.
+    realtime_max_concurrent_streams_per_user: int = 4
+    realtime_max_concurrent_streams_global: int = 200
+    # Realtime session-mint rate guard (Redis-backed, fleet-wide). Burst is a hard
+    # 429 (stops tight loops); daily is a HIGH hard ceiling (a backstop raised well
+    # above legitimate all-day use so it never false-positives — minting opens no
+    # stream and is itself zero-cost); sustained fires an alert only.
+    realtime_mint_burst_max: int = 20
+    realtime_mint_burst_window_seconds: int = 60
+    realtime_mint_daily_max_dictation: int = 2000
+    realtime_mint_daily_max_recording: int = 3000
+    realtime_mint_sustained_alert: int = 45
+    realtime_mint_sustained_window_seconds: int = 900
+    # Deepgram circuit breaker: open after N consecutive failures (HTTP 402 opens
+    # immediately) and fast-fail new work for a cooldown. 0 threshold disables.
+    deepgram_breaker_failure_threshold: int = 8
+    deepgram_breaker_cooldown_seconds: int = 120
+    # Reject a single upload/import whose audio exceeds this many seconds (Deepgram
+    # bills per minute; a small compressed file can be many billable hours). 0 disables.
+    recording_max_audio_seconds: int = 28800  # 8h
+    # Clamp channels sent to Deepgram (billed per channel; notes/meetings are mono).
+    deepgram_max_channels: int = 2
+
     # ElevenLabs — realtime conversational voice agents.
     elevenlabs_api_key: str = ""
     elevenlabs_conversation_agent_id: str = ""
