@@ -33,6 +33,27 @@ LEGAL_ACCEPTANCE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_transcription_guard():
+    """Back the Redis cost/abuse guard with a fresh fakeredis per test.
+
+    The guard lazily builds a real async Redis client; without this it would (a)
+    try to connect to a non-existent Redis on every guarded route (slow, flaky)
+    and (b) cache an async client bound to one test's event loop, breaking the
+    next test with 'Event loop is closed'. A fresh in-memory client per test is
+    fast, deterministic, and isolated.
+    """
+    import fakeredis.aioredis
+
+    from app.core import transcription_guard
+
+    transcription_guard.set_redis_for_tests(
+        fakeredis.aioredis.FakeRedis(decode_responses=True)
+    )
+    yield
+    transcription_guard.set_redis_for_tests(None)
+
+
 async def _seed_default_billing_plans(session: AsyncSession) -> None:
     """Mirror the billing migration seed for metadata-created test schemas."""
     session.add_all(
