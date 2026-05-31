@@ -19,6 +19,10 @@ from app.core.observability import (
     capture_sentry_exception,
 )
 from app.core.personalization import load_user_keyterms
+from app.core.rate_limit import (
+    REALTIME_MINT_SUSTAINED_ALERT,
+    check_realtime_session_mint_rate_limit,
+)
 from app.core.realtime_transcription import (
     UnsupportedRealtimeLanguageError,
     build_deepgram_realtime_url_from_proxy_claims,
@@ -102,6 +106,33 @@ async def create_session(
         request.channels,
         request.purpose,
     )
+    try:
+        recent_mints = check_realtime_session_mint_rate_limit(str(user.id), request.purpose)
+    except HTTPException as exc:
+        capture_sentry_anomaly(
+            "realtime.session_mint.rate_limited",
+            "Realtime session minting blocked (possible runaway/abusive client)",
+            category="transcription.session",
+            extras={
+                "user_id": str(user.id),
+                "purpose": request.purpose,
+                "status_code": exc.status_code,
+            },
+            level="warning",
+        )
+        raise
+    if recent_mints > REALTIME_MINT_SUSTAINED_ALERT:
+        capture_sentry_anomaly(
+            "realtime.session_mint.high_rate",
+            "User sustaining a high realtime session-mint rate (watch for runaway)",
+            category="transcription.session",
+            extras={
+                "user_id": str(user.id),
+                "purpose": request.purpose,
+                "mints_last_15min": recent_mints,
+            },
+            level="warning",
+        )
     try:
         session = await create_realtime_transcription_session(
             language=request.language,
