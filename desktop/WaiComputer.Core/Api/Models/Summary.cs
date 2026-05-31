@@ -13,8 +13,9 @@ public sealed record Summary(
 [JsonConverter(typeof(JsonStringEnumConverter<ActionItemStatus>))]
 public enum ActionItemStatus
 {
-    [JsonStringEnumMemberName("open")] Open,
-    [JsonStringEnumMemberName("done")] Done,
+    [JsonStringEnumMemberName("pending")] Pending,
+    [JsonStringEnumMemberName("in_progress")] InProgress,
+    [JsonStringEnumMemberName("completed")] Completed,
     [JsonStringEnumMemberName("cancelled")] Cancelled,
 }
 
@@ -26,16 +27,24 @@ public enum ActionItemPriority
     [JsonStringEnumMemberName("high")] High,
 }
 
+/// <summary>
+/// Mirrors the backend <c>ActionItemResponse</c>
+/// (backend/app/api/routes/action_items.py): id, recording_id, task, owner?,
+/// due_date?, priority?, status, source, created_at. <c>due_date</c> is a bare
+/// string (may be a date-only value), <c>priority</c> is nullable, and there is
+/// no <c>updated_at</c> — matching these exactly is required or list/update
+/// calls throw under the no-fallback JSON policy.
+/// </summary>
 public sealed record ActionItem(
     string Id,
     [property: JsonPropertyName("recording_id")] string RecordingId,
-    string Text,
+    string Task,
+    string? Owner,
+    [property: JsonPropertyName("due_date")] string? DueDate,
+    ActionItemPriority? Priority,
     ActionItemStatus Status,
-    ActionItemPriority Priority,
-    string? Assignee,
-    [property: JsonPropertyName("due_date")] DateTimeOffset? DueDate,
-    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
-    [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt);
+    string Source,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt);
 
 public sealed record UpdateActionItemRequest(ActionItemStatus? Status, ActionItemPriority? Priority);
 

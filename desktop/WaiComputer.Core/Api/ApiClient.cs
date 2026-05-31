@@ -304,8 +304,10 @@ public sealed class ApiClient : IApiClient, IDisposable
     public Task<IReadOnlyList<ActionItem>> ListActionItemsAsync(ActionItemStatus? status = null, ActionItemPriority? priority = null, CancellationToken ct = default)
     {
         var qs = new StringBuilder("?");
-        if (status is { } s) qs.Append("status=").Append(s.ToString().ToLowerInvariant()).Append('&');
-        if (priority is { } p) qs.Append("priority=").Append(p.ToString().ToLowerInvariant()).Append('&');
+        // Serialize via the enum's JSON mapping so InProgress -> "in_progress"
+        // (a plain ToLower() would emit "inprogress", which the backend Literal rejects with 422).
+        if (status is { } s) qs.Append("status=").Append(JsonSerializer.Serialize(s, WaiJson.Options).Trim('"')).Append('&');
+        if (priority is { } p) qs.Append("priority=").Append(JsonSerializer.Serialize(p, WaiJson.Options).Trim('"')).Append('&');
         var query = qs.Length > 1 ? qs.ToString().TrimEnd('&', '?') : string.Empty;
         return SendAsync<IReadOnlyList<ActionItem>>(HttpMethod.Get, "/api/action-items" + (string.IsNullOrEmpty(query) ? string.Empty : "?" + query), ct: ct);
     }
