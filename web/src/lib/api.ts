@@ -754,6 +754,30 @@ export function listDictationEntries(): Promise<DictationEntry[]> {
   return apiFetch<DictationEntry[]>("/api/dictation/entries");
 }
 
+export function cleanupDictation(text: string, vocabulary?: string[]): Promise<{ text: string }> {
+  return apiFetch<{ text: string }>("/api/dictation/cleanup", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      vocabulary: vocabulary && vocabulary.length > 0 ? vocabulary : null,
+    }),
+  });
+}
+
+export function createDictationEntry(input: {
+  client_entry_id: string;
+  raw_text: string;
+  cleaned_text?: string | null;
+  duration_seconds: number;
+  word_count: number;
+  occurred_at: string;
+}): Promise<DictationEntry> {
+  return apiFetch<DictationEntry>("/api/dictation/entries", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function deleteDictationEntry(clientEntryId: string): Promise<void> {
   return apiFetch<void>(`/api/dictation/entries/${encodeURIComponent(clientEntryId)}`, {
     method: "DELETE",
