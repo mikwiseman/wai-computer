@@ -81,3 +81,29 @@
 .accent-swatch--selected {
   outline: 2px solid var(--ring, var(--accent, #2f756d));
 }
+
+/* Swatch fill — driven by the REAL accent tokens (tokens.css) so each preview
+ * circle equals exactly the tint `data-accent="…"` applies to the UI, and adapts
+ * to light/dark automatically. Previously these were hard-coded Tailwind hexes
+ * that drifted from the Apple system-color tints the app actually uses. */
+.accent-swatch[data-accent-option="teal"] {
+  background-color: var(--accent-teal);
+}
+.accent-swatch[data-accent-option="amber"] {
+  background-color: var(--accent-amber);
+}
+.accent-swatch[data-accent-option="blue"] {
+  background-color: var(--accent-blue);
+}
+.accent-swatch[data-accent-option="green"] {
+  background-color: var(--accent-green);
+}
+.accent-swatch[data-accent-option="violet"] {
+  background-color: var(--accent-violet);
+}
+.accent-swatch[data-accent-option="rose"] {
+  background-color: var(--accent-rose);
+}
+.accent-swatch[data-accent-option="graphite"] {
+  background-color: var(--accent-graphite);
+}

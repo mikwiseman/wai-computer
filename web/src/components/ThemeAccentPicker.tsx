@@ -31,19 +31,6 @@ const ACCENT_ORDER: AccentChoice[] = [
   "graphite",
 ];
 
-// Inline swatch colors. The real surface tint comes from `[data-accent="…"]`
-// in `tokens.css` (Agent G); these values let the swatch itself be visible
-// before tokens land and act as a sane preview wherever the picker renders.
-const ACCENT_SWATCH: Record<AccentChoice, string> = {
-  teal: "#2f756d",
-  amber: "#f59e0b",
-  blue: "#3b82f6",
-  green: "#22c55e",
-  violet: "#8b5cf6",
-  rose: "#f43f5e",
-  graphite: "#6b7280",
-};
-
 type Locale = "en" | "ru";
 
 type Copy = {
@@ -335,7 +322,6 @@ export function ThemeAccentPicker({
               data-accent-option={option}
               data-testid={`accent-option-${option}`}
               className={classes}
-              style={{ backgroundColor: ACCENT_SWATCH[option] }}
               onClick={() => handleAccentChange(option)}
             />
           );
