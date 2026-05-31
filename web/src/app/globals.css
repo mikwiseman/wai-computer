@@ -162,17 +162,21 @@
   cursor: pointer;
   padding: 0;
   min-height: auto;
-  transition: color 0.16s ease;
+  transition: color var(--motion-duration-base) var(--motion-ease-emphasized);
 }
 
+/* Underline grows from center with the emphasized (spring-ish) curve when a
+ * tab becomes selected, mirroring the SwiftUI capsule slide instead of a hard
+ * background snap. */
 .wai-tab::after {
   content: "";
   display: block;
   width: 100%;
   height: 2px;
   border-radius: var(--radius-pill);
-  background: transparent;
-  transition: background 0.18s ease;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform var(--motion-duration-base) var(--motion-ease-emphasized);
 }
 
 .wai-tab[aria-selected="true"],
@@ -182,7 +186,7 @@
 
 .wai-tab[aria-selected="true"]::after,
 .wai-tab[aria-current="true"]::after {
-  background: var(--accent);
+  transform: scaleX(1);
 }
 
 .wai-tab:hover {
@@ -1089,6 +1093,7 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink);
   padding: 0.78rem;
   text-align: left;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .recording-row:hover {
