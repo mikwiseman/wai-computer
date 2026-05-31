@@ -32,9 +32,11 @@ import type {
   RecordingDetail,
   RecordingType,
   RelatedRecordingsResponse,
+  RealtimeSessionResponse,
   RecordingShareLink,
   RematchSpeakersResponse,
   SearchResponse,
+  TranscriptSegmentInput,
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
@@ -357,6 +359,30 @@ export function assignSpeaker(
 export function rematchSpeakers(recordingId: string): Promise<RematchSpeakersResponse> {
   return apiFetch<RematchSpeakersResponse>(`/api/recordings/${recordingId}/rematch`, {
     method: "POST",
+  });
+}
+
+export function createTranscriptionSession(input?: {
+  language?: string;
+  purpose?: "recording" | "dictation";
+}): Promise<RealtimeSessionResponse> {
+  return apiFetch<RealtimeSessionResponse>("/api/transcription/session", {
+    method: "POST",
+    body: JSON.stringify({
+      language: input?.language ?? "multi",
+      channels: 1,
+      purpose: input?.purpose ?? "recording",
+    }),
+  });
+}
+
+export function saveTranscript(
+  recordingId: string,
+  segments: TranscriptSegmentInput[],
+): Promise<RecordingDetail> {
+  return apiFetch<RecordingDetail>(`/api/recordings/${recordingId}/transcript`, {
+    method: "POST",
+    body: JSON.stringify({ segments }),
   });
 }
 
