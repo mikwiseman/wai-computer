@@ -923,7 +923,7 @@ class MacAppState: ObservableObject {
         isLoading = false
     }
 
-    func requestMagicLink(email: String) async {
+    func requestMagicLink(email: String, acceptedLegalTerms: Bool = false) async {
         isLoading = true
         error = nil
 
@@ -932,7 +932,8 @@ class MacAppState: ObservableObject {
                 email: email,
                 client: "macos",
                 region: installedBillingRegion()?.rawValue,
-                locale: authLocale
+                locale: authLocale,
+                acceptedLegalTerms: acceptedLegalTerms
             )
             magicLinkSent = true
         } catch let apiError as APIError {
