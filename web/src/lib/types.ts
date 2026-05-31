@@ -92,6 +92,9 @@ export interface User {
   email: string;
   created_at: string;
   has_password: boolean;
+  // True once the account has enrolled a voice — server-side source of truth for
+  // "already onboarded" so a returning user skips voice onboarding on any device.
+  has_enrolled_voice?: boolean;
   theme?: "system" | "light" | "dark";
   accent?: "teal" | "amber" | "blue" | "green" | "violet" | "rose" | "graphite";
 }

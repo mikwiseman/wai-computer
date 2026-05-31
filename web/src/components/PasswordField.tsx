@@ -25,7 +25,11 @@ interface StrengthCopy {
   empty: string;
   show: string;
   hide: string;
+  minLength: string;
 }
+
+// Keep in sync with the backend minimum (RegisterRequest, auth.py).
+export const MIN_PASSWORD_LENGTH = 8;
 
 const COPY: Record<Locale, StrengthCopy> = {
   en: {
@@ -36,6 +40,7 @@ const COPY: Record<Locale, StrengthCopy> = {
     empty: "Enter a password",
     show: "Show password",
     hide: "Hide password",
+    minLength: `At least ${MIN_PASSWORD_LENGTH} characters`,
   },
   ru: {
     weak: "Слабый",
@@ -45,6 +50,7 @@ const COPY: Record<Locale, StrengthCopy> = {
     empty: "Введите пароль",
     show: "Показать пароль",
     hide: "Скрыть пароль",
+    minLength: `Минимум ${MIN_PASSWORD_LENGTH} символов`,
   },
 };
 
@@ -279,6 +285,18 @@ export function PasswordField({
           </div>
           <span style={CAPTION_STYLE} aria-hidden="true">
             {captionLabel}
+          </span>
+          <span
+            style={{
+              ...CAPTION_STYLE,
+              color:
+                value.length > 0 && value.length < MIN_PASSWORD_LENGTH
+                  ? "var(--danger)"
+                  : "var(--ink-soft)",
+            }}
+            data-testid={dataTestId ? `${dataTestId}-min-hint` : undefined}
+          >
+            {copy.minLength}
           </span>
         </div>
       ) : null}
