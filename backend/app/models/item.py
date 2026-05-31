@@ -123,6 +123,47 @@ class Item(Base, UUIDMixin, TimestampMixin):
         back_populates="item",
         cascade="all, delete-orphan",
     )
+    summary: Mapped["ItemSummary | None"] = relationship(
+        "ItemSummary",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class ItemSummary(Base, UUIDMixin, TimestampMixin):
+    """The AI summary + key-moments table for one Item.
+
+    Items reuse the same structured-summary *shape* as recordings (summary,
+    key_points, decisions, action_items, topics, people_mentioned, highlights,
+    sentiment) but store it here as JSONB rather than across the
+    recordings-only ``summaries`` / ``action_items`` / ``highlights`` tables —
+    keeping those production tables untouched. ``key_moments`` is the hero
+    "forward -> table" output (one row per moment).
+    """
+
+    __tablename__ = "item_summaries"
+    __table_args__ = (
+        UniqueConstraint("item_id", name="uq_item_summaries_item"),
+    )
+
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    summary: Mapped[str | None] = mapped_column(Text)
+    key_points: Mapped[list | None] = mapped_column(JSONB)
+    decisions: Mapped[list | None] = mapped_column(JSONB)
+    action_items: Mapped[list | None] = mapped_column(JSONB)
+    topics: Mapped[list | None] = mapped_column(JSONB)
+    people_mentioned: Mapped[list | None] = mapped_column(JSONB)
+    highlights: Mapped[list | None] = mapped_column(JSONB)
+    key_moments: Mapped[list | None] = mapped_column(JSONB)
+    sentiment: Mapped[str | None] = mapped_column(String(20))
+
+    item: Mapped["Item"] = relationship("Item", back_populates="summary")
 
 
 class ItemChunk(Base, UUIDMixin):
