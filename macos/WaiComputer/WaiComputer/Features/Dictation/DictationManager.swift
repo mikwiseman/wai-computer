@@ -175,6 +175,10 @@ final class DictationManager: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private var sessionConfigPrefetchRefreshTask: Task<Void, Never>?
     private let sessionConfigPrefetchRefreshInterval: Duration = .seconds(20)
+    // Bound idle prewarming so an idle client can't mint realtime tokens forever
+    // (cost-runaway guard). 15 x 20s = ~5 min of warm-token upkeep after activity;
+    // after that we stop until the next dictation / config change re-prefetches.
+    private let sessionConfigPrefetchMaxIdleRefreshes = 15
 
     // Transcript accumulation (live updates for overlay).
     private var committedTexts: [String] = []
@@ -900,11 +904,20 @@ final class DictationManager: ObservableObject {
     ) {
         sessionConfigPrefetchRefreshTask?.cancel()
         let interval = sessionConfigPrefetchRefreshInterval
+        let maxRefreshes = sessionConfigPrefetchMaxIdleRefreshes
         sessionConfigPrefetchRefreshTask = Task { [weak self] in
+            var refreshes = 0
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(for: interval)
                 } catch {
+                    return
+                }
+
+                // Stop minting once the idle prewarm window elapses. This prevents
+                // a stuck/idle client from re-minting realtime tokens indefinitely.
+                refreshes += 1
+                if refreshes > maxRefreshes {
                     return
                 }
 
