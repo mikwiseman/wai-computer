@@ -549,7 +549,8 @@ struct OnboardingView: View {
         triggeredOpenSystemAudioSettings = true
         isRequestingSystemAudioPermission = false
         refreshPermissions()
-        MacInputPermission.revealAppInFinder()
+        // Open System Settings directly; don't also spawn a Finder window on top
+        // of the system prompt — same redirect noise the tester hit (109, cf. 108).
         MacPrivacySettings.openSystemAudio()
     }
 
