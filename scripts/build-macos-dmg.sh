@@ -421,6 +421,12 @@ APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
 UNIVERSAL_INFO=$(file "$APP_BINARY")
 echo "$UNIVERSAL_INFO"
 
+# Guard the CATap dyld launch-crash class: the shipped binary must weak-link
+# CoreAudio/AudioToolbox so the macOS 14.2+ process-tap symbols never abort launch
+# on macOS below 14.2. Aborts the release on any weak-link / min-OS regression.
+EXPECTED_MIN_OS=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_INFO")
+"$ROOT_DIR/scripts/verify-macos-min-os.sh" "$APP_PATH" "$EXPECTED_MIN_OS"
+
 resign_sparkle_for_distribution
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
@@ -628,7 +634,7 @@ cat > "$APPCAST_PATH" <<XML
       <pubDate>${PUBLISHED_AT}</pubDate>
 ${CHANNEL_XML}      <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>${RELEASE_NOTES_URL}</sparkle:releaseNotesLink>
       <enclosure url="${DOWNLOAD_URL}" type="application/x-apple-diskimage" ${SPARKLE_ENCLOSURE_ATTRS}/>
     </item>

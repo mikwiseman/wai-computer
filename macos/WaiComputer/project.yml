@@ -2,7 +2,7 @@ name: WaiComputer
 options:
   bundleIdPrefix: is.waiwai
   deploymentTarget:
-    macOS: "14.2"
+    macOS: "13.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
   fileTypes:
@@ -38,7 +38,11 @@ targets:
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_VERSION: "5.9"
-        MACOSX_DEPLOYMENT_TARGET: "14.2"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        # CATap (system-audio process taps) are macOS 14.2+. Weak-link CoreAudio &
+        # AudioToolbox so the 14.2-only symbols bind lazily and the app launches on
+        # macOS 13.0–14.1; every CATap reference is guarded by @available(macOS 14.2,*).
+        OTHER_LDFLAGS: "-weak_framework CoreAudio -weak_framework AudioToolbox"
         CODE_SIGN_STYLE: Automatic
       configs:
         Debug:

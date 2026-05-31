@@ -238,7 +238,7 @@ struct MacSettingsView: View {
                 }
                     .font(Typography.body)
                     .accessibilityIdentifier("settings-show-dock-icon-when-closed-toggle")
-                    .onChange(of: showDockIconWhenMainWindowClosed) { _, _ in
+                    .onChangeCompat(of: showDockIconWhenMainWindowClosed) { _, _ in
                         MacPresentationCoordinator.shared.updateActivationPolicyForCurrentWindowState()
                     }
 
@@ -262,7 +262,7 @@ struct MacSettingsView: View {
                     Text("settings.summary.language", bundle: .main)
                 }
                 .font(Typography.body)
-                .onChange(of: summaryLanguage) { _, newValue in
+                .onChangeCompat(of: summaryLanguage) { _, newValue in
                     Task { await saveSummarySettings(language: newValue) }
                 }
 
@@ -274,7 +274,7 @@ struct MacSettingsView: View {
                     Text("settings.summary.detailLevel", bundle: .main)
                 }
                 .font(Typography.body)
-                .onChange(of: summaryStyle) { _, newValue in
+                .onChangeCompat(of: summaryStyle) { _, newValue in
                     Task { await saveSummarySettings(style: newValue) }
                 }
 
@@ -288,7 +288,7 @@ struct MacSettingsView: View {
                         .scrollContentBackground(.hidden)
                         .background(Palette.surfaceSubtle)
                         .cornerRadius(6)
-                        .onChange(of: summaryInstructions) { _, _ in
+                        .onChangeCompat(of: summaryInstructions) { _, _ in
                             Task { await saveSummarySettings(instructions: summaryInstructions) }
                         }
                     Text("settings.summary.customExample", bundle: .main)
@@ -315,7 +315,7 @@ struct MacSettingsView: View {
                     Text("settings.dictation.enable", bundle: .main)
                 }
                     .font(Typography.body)
-                    .onChange(of: dictationManager.isFeatureEnabled) { _, enabled in
+                    .onChangeCompat(of: dictationManager.isFeatureEnabled) { _, enabled in
                         refreshPermissions()
                         if enabled, !dictationPermissionsReady {
                             startPermissionPolling()
@@ -357,7 +357,7 @@ struct MacSettingsView: View {
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
                     .accessibilityIdentifier("settings-dictation-post-filter-toggle")
-                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
+                    .onChangeCompat(of: dictationPostFilterEnabled) { _, enabled in
                         guard settingsLoaded else { return }
                         Task { await saveDictationPostFilterEnabled(enabled) }
                     }
@@ -380,17 +380,33 @@ struct MacSettingsView: View {
                     restartAction: MacPrivacySettings.restartForPermissionRefresh
                 )
 
-                permissionRow(
-                    title: t("System Audio", "Звук Mac"),
-                    status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
-                    identifierBase: "settings-permission-system-audio",
-                    grantLabel: isRequestingSystemAudioPermission
-                        ? t("Testing...", "Проверяем...")
-                        : t("Test System Audio", "Проверить звук Mac"),
-                    grantAction: requestSystemAudioPermission,
-                    settingsAction: { MacPrivacySettings.openSystemAudio() },
-                    restartAction: MacPrivacySettings.restartForPermissionRefresh
-                )
+                if SystemAudioGate.isSupported {
+                    permissionRow(
+                        title: t("System Audio", "Звук Mac"),
+                        status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
+                        identifierBase: "settings-permission-system-audio",
+                        grantLabel: isRequestingSystemAudioPermission
+                            ? t("Testing...", "Проверяем...")
+                            : t("Test System Audio", "Проверить звук Mac"),
+                        grantAction: requestSystemAudioPermission,
+                        settingsAction: { MacPrivacySettings.openSystemAudio() },
+                        restartAction: MacPrivacySettings.restartForPermissionRefresh
+                    )
+                } else {
+                    // System audio capture (Core Audio process taps) requires macOS 14.2+.
+                    // Surface the gate explicitly instead of a dead "Test System Audio"
+                    // button — no silent degradation (matches the onboarding treatment).
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(t("System Audio", "Звук Mac"))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        Text(t("Requires macOS 14.2 or later", "Требуется macOS 14.2 или новее"))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .accessibilityIdentifier("settings-permission-system-audio-unsupported")
+                }
 
                 // Usage hint
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -505,7 +521,7 @@ struct MacSettingsView: View {
             stopTelegramLinkPolling()
             stopBillingReturnRefresh()
         }
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChangeCompat(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
                 Task { await loadTelegramStatus() }
@@ -1055,10 +1071,7 @@ struct MacSettingsView: View {
     }
 
     private static var isSystemAudioCaptureSupported: Bool {
-        if #available(macOS 14.2, *) {
-            return true
-        }
-        return false
+        SystemAudioGate.isSupported
     }
 
     private static func currentSystemAudioReadiness(
