@@ -1226,6 +1226,19 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-faint);
 }
 
+.live-recorder__idle {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.live-recorder__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font: var(--font-body-small);
+}
+
 /* In-browser dictation panel (Phase 3). */
 .dictate-panel {
   display: grid;

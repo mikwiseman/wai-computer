@@ -57,6 +57,11 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
   const [seconds, setSeconds] = useState(0);
   const [committed, setCommitted] = useState("");
   const [interim, setInterim] = useState("");
+  const [includeSystem, setIncludeSystem] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const supportsSystemAudio =
+    typeof navigator !== "undefined"
+    && typeof navigator.mediaDevices?.getDisplayMedia === "function";
   const transcriberRef = useRef<RealtimeTranscriber | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -73,12 +78,40 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
     setCommitted("");
     setInterim("");
     setSeconds(0);
-    let stream: MediaStream;
+    setNote(null);
+    const streams: MediaStream[] = [];
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streams.push(await navigator.mediaDevices.getUserMedia({ audio: true }));
     } catch {
       onError(copy.micDenied);
       return;
+    }
+    if (includeSystem && supportsSystemAudio) {
+      try {
+        // getDisplayMedia needs video:true to expose the "share tab/screen
+        // audio" checkbox in Chromium; we keep only the audio track.
+        const display = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        });
+        display.getVideoTracks().forEach((track) => track.stop());
+        const audioTracks = display.getAudioTracks();
+        if (audioTracks.length > 0) {
+          streams.push(new MediaStream(audioTracks));
+        } else {
+          setNote(
+            locale === "ru"
+              ? "Системное аудио не выбрано — запись только с микрофона."
+              : "No system audio was shared — recording mic only.",
+          );
+        }
+      } catch {
+        setNote(
+          locale === "ru"
+            ? "Системное аудио недоступно — запись только с микрофона."
+            : "System audio unavailable — recording mic only.",
+        );
+      }
     }
     const transcriber = new RealtimeTranscriber({
       onState: setState,
@@ -92,11 +125,11 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
       },
     });
     transcriberRef.current = transcriber;
-    await transcriber.start(stream);
+    await transcriber.start(streams);
     if (transcriber.getState() === "recording") {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
-  }, [clearTimer, copy.micDenied, onError]);
+  }, [clearTimer, copy.micDenied, includeSystem, locale, onError, supportsSystemAudio]);
 
   const stop = useCallback(async () => {
     clearTimer();
@@ -132,9 +165,26 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
   return (
     <div className="live-recorder" data-testid="live-recorder" data-state={state}>
       {!isActive ? (
-        <button type="button" className="live-recorder__start" onClick={() => void start()}>
-          {copy.start}
-        </button>
+        <div className="live-recorder__idle">
+          <button type="button" className="live-recorder__start" onClick={() => void start()}>
+            {copy.start}
+          </button>
+          {supportsSystemAudio ? (
+            <label className="live-recorder__option">
+              <input
+                type="checkbox"
+                checked={includeSystem}
+                onChange={(event) => setIncludeSystem(event.target.checked)}
+              />
+              <span>
+                {locale === "ru"
+                  ? "Захватывать системное аудио (Chrome/Edge)"
+                  : "Capture system audio (Chrome/Edge)"}
+              </span>
+            </label>
+          ) : null}
+          {note ? <p className="settings-note">{note}</p> : null}
+        </div>
       ) : (
         <div className="live-recorder__active">
           <div className="live-recorder__status">
