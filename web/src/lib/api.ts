@@ -33,6 +33,7 @@ import type {
   RecordingType,
   RelatedRecordingsResponse,
   RecordingShareLink,
+  RematchSpeakersResponse,
   SearchResponse,
   SpeakerStatsResponse,
   SharedRecording,
@@ -346,6 +347,12 @@ export function assignSpeaker(
   return apiFetch<RecordingDetail>(`/api/recordings/${recordingId}/assign-speaker`, {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function rematchSpeakers(recordingId: string): Promise<RematchSpeakersResponse> {
+  return apiFetch<RematchSpeakersResponse>(`/api/recordings/${recordingId}/rematch`, {
+    method: "POST",
   });
 }
 

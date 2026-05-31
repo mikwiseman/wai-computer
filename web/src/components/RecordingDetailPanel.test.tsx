@@ -12,6 +12,7 @@ vi.mock("@/lib/api", () => ({
   exportRecording: vi.fn(),
   createRecordingShareLink: vi.fn(),
   updateRecording: vi.fn(),
+  rematchSpeakers: vi.fn(),
 }));
 
 const {
@@ -21,6 +22,7 @@ const {
   exportRecording,
   createRecordingShareLink,
   updateRecording,
+  rematchSpeakers,
 } = await import("@/lib/api");
 const mockGenerateSummary = vi.mocked(generateSummary);
 const mockStartSummaryGeneration = vi.mocked(startSummaryGeneration);
@@ -28,6 +30,7 @@ const mockGetRecording = vi.mocked(getRecording);
 const mockExportRecording = vi.mocked(exportRecording);
 const mockCreateRecordingShareLink = vi.mocked(createRecordingShareLink);
 const mockUpdateRecording = vi.mocked(updateRecording);
+const mockRematchSpeakers = vi.mocked(rematchSpeakers);
 let clipboardWriteText: ReturnType<typeof vi.fn>;
 
 function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
@@ -62,6 +65,7 @@ describe("RecordingDetailPanel", () => {
     mockExportRecording.mockReset();
     mockCreateRecordingShareLink.mockReset();
     mockUpdateRecording.mockReset();
+    mockRematchSpeakers.mockReset();
     vi.unstubAllGlobals();
     Object.defineProperty(navigator, "share", {
       configurable: true,
@@ -137,6 +141,47 @@ describe("RecordingDetailPanel", () => {
     expect(screen.getByText("Let's discuss the budget")).toBeTruthy();
     expect(screen.getByText("0:05")).toBeTruthy();
     expect(screen.getByText("Sounds good")).toBeTruthy();
+  });
+
+  // Re-match speakers (Mac parity)
+  it("re-matches speakers and refreshes the recording", async () => {
+    const withSegments = makeRecording({
+      segments: [
+        {
+          id: "s1",
+          speaker: "Speaker 1",
+          raw_label: "Speaker 1",
+          person_id: null,
+          display_name: null,
+          auto_assigned: true,
+          match_confidence: 0.8,
+          content: "Hello",
+          start_ms: 0,
+          end_ms: 1000,
+          confidence: 0.9,
+        },
+      ],
+    });
+    mockRematchSpeakers.mockResolvedValue({
+      recording_id: "rec-1",
+      updated_clusters: 2,
+      matched_clusters: 1,
+    });
+    mockGetRecording.mockResolvedValue(withSegments);
+    const onUpdate = vi.fn();
+    const user = userEvent.setup();
+    render(<RecordingDetailPanel recording={withSegments} onRecordingUpdate={onUpdate} />);
+
+    await user.click(screen.getByTestId("rematch-speakers"));
+
+    await waitFor(() => expect(mockRematchSpeakers).toHaveBeenCalledWith("rec-1"));
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(withSegments));
+    await waitFor(() => expect(screen.getByText(/Voice re-match complete/)).toBeTruthy());
+  });
+
+  it("hides re-match speakers when there are no segments", () => {
+    render(<RecordingDetailPanel recording={makeRecording()} />);
+    expect(screen.queryByTestId("rematch-speakers")).toBeNull();
   });
 
   // Summary tab

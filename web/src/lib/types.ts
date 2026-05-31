@@ -238,6 +238,12 @@ export interface RecordingDetail extends Recording {
   highlights: Highlight[];
 }
 
+export interface RematchSpeakersResponse {
+  recording_id: string;
+  updated_clusters: number;
+  matched_clusters: number;
+}
+
 export interface RecordingShareLink {
   recording_id: string;
   token: string;
