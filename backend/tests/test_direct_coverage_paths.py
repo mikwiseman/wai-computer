@@ -353,8 +353,9 @@ async def test_auth_route_direct_paths(
     assert logged_out.message == "Logged out"
     assert settings_obj.auth_cookie_name in logout_response.headers.get("set-cookie", "")
 
-    current_user = await auth.get_current_user_info(magic_user)
+    current_user = await auth.get_current_user_info(magic_user, db_session)
     assert current_user.email == "auth.magic@example.com"
+    assert current_user.has_enrolled_voice is False
 
 
 @pytest.mark.asyncio
