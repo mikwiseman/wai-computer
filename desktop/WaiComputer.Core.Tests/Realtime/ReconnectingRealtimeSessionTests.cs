@@ -209,10 +209,85 @@ public class ReconnectingRealtimeSessionTests
         cts.Cancel();
     }
 
+    [Fact]
+    public void RejectsInvalidReconnectOptions()
+    {
+        var act = () => new ReconnectingRealtimeSession(
+            Cfg(), Factory(new List<FakeRealtimeSession>()), _ => Task.FromResult(Cfg()),
+            new ReconnectOptions(MaxAttempts: 0));
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task DisposesInnerSessionOnClose()
+    {
+        var fakes = new List<FakeRealtimeSession>();
+        var session = new ReconnectingRealtimeSession(Cfg(), Factory(fakes), _ => Task.FromResult(Cfg()), Fast());
+
+        await session.OpenAsync(CancellationToken.None);
+        await session.CloseAsync(TimeSpan.FromSeconds(1));
+
+        fakes[0].Disposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DisposesFailedReconnectAttempts()
+    {
+        var fakes = new List<FakeRealtimeSession>();
+        await using var session = new ReconnectingRealtimeSession(
+            Cfg(), ThrowingReconnectFactory(fakes), _ => Task.FromResult(Cfg()), Fast(maxAttempts: 2));
+        using var cts = new CancellationTokenSource();
+        var collector = new EventCollector(session, cts.Token);
+
+        await session.OpenAsync(CancellationToken.None);
+        await collector.WaitFor(e => e.OfType<TranscriptionEvent.Connected>().Any());
+
+        fakes[0].Drop();
+        await collector.WaitFor(e => e.OfType<TranscriptionEvent.ReconnectionFailed>().Any());
+
+        fakes.Skip(1).Should().HaveCount(2);                      // two failed reconnect attempts
+        fakes.Skip(1).Should().OnlyContain(f => f.Disposed);      // each disposed, no leak
+        cts.Cancel();
+    }
+
+    [Fact]
+    public async Task DefersEndTurnDuringReconnectAndFinalizesNewSession()
+    {
+        var fakes = new List<FakeRealtimeSession>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var remintCalls = 0;
+        await using var session = new ReconnectingRealtimeSession(
+            Cfg(),
+            Factory(fakes),
+            async _ => { if (Interlocked.Increment(ref remintCalls) == 1) { await gate.Task; } return Cfg(); },
+            Fast());
+        using var cts = new CancellationTokenSource();
+        var collector = new EventCollector(session, cts.Token);
+
+        await session.OpenAsync(CancellationToken.None);
+        await collector.WaitFor(e => e.OfType<TranscriptionEvent.Connected>().Any());
+
+        fakes[0].Drop();
+        await collector.WaitFor(e => e.OfType<TranscriptionEvent.Reconnecting>().Any());
+        await session.EndTurnAsync(); // deferred — reconnect in flight
+
+        gate.SetResult();
+        await collector.WaitFor(e => e.OfType<TranscriptionEvent.Reconnected>().Any());
+        await Task.Delay(50);
+
+        fakes[1].EndTurned.Should().BeTrue();  // finalized the reconnected session
+        fakes[0].EndTurned.Should().BeFalse(); // never finalized the dead one
+        cts.Cancel();
+    }
+
     // ---- helpers ----------------------------------------------------------
 
     private static Func<RealtimeTranscriptionSessionConfig, IRealtimeTranscriptionSession> Factory(List<FakeRealtimeSession> sink)
         => _ => { var f = new FakeRealtimeSession(); sink.Add(f); return f; };
+
+    // First session opens cleanly (initial connect); every reconnect attempt fails to open.
+    private static Func<RealtimeTranscriptionSessionConfig, IRealtimeTranscriptionSession> ThrowingReconnectFactory(List<FakeRealtimeSession> sink)
+        => _ => { var f = new FakeRealtimeSession { ThrowOnOpen = sink.Count >= 1 }; sink.Add(f); return f; };
 
     private sealed class FakeRealtimeSession : IRealtimeTranscriptionSession
     {
@@ -222,6 +297,8 @@ public class ReconnectingRealtimeSessionTests
         public List<byte[]> Sent { get; } = new();
         public bool EndTurned { get; private set; }
         public bool Closed { get; private set; }
+        public bool Disposed { get; private set; }
+        public bool ThrowOnOpen { get; init; }
 
         public RealtimeProvider Provider => RealtimeProvider.Deepgram;
         public IAsyncEnumerable<TranscriptionEvent> Events => _events.Reader.ReadAllAsync();
@@ -229,6 +306,10 @@ public class ReconnectingRealtimeSessionTests
 
         public Task OpenAsync(CancellationToken ct)
         {
+            if (ThrowOnOpen)
+            {
+                throw new InvalidOperationException("open failed");
+            }
             _events.Writer.TryWrite(new TranscriptionEvent.Connected());
             return Task.CompletedTask;
         }
@@ -254,6 +335,7 @@ public class ReconnectingRealtimeSessionTests
 
         public ValueTask DisposeAsync()
         {
+            Disposed = true;
             _events.Writer.TryComplete();
             return ValueTask.CompletedTask;
         }
