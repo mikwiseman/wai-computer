@@ -44,7 +44,7 @@ import {
 import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AudioUpload } from "@/components/AudioUpload";
-import { RecorderPanel } from "@/components/RecorderPanel";
+import { LiveRecorder } from "@/components/LiveRecorder";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
@@ -2102,6 +2102,7 @@ export function DashboardClient() {
                 title={recordingTitle}
                 type={recordingType}
                 copy={copy}
+                locale={locale}
                 onTitleChange={setRecordingTitle}
                 onTypeChange={setRecordingType}
                 onSubmit={handleCreateRecording}
@@ -2619,6 +2620,7 @@ function NewRecordingPane({
   title,
   type,
   copy,
+  locale,
   onTitleChange,
   onTypeChange,
   onSubmit,
@@ -2628,6 +2630,7 @@ function NewRecordingPane({
   title: string;
   type: RecordingType;
   copy: DashboardCopy;
+  locale: "en" | "ru";
   onTitleChange: (value: string) => void;
   onTypeChange: (value: RecordingType) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -2642,7 +2645,7 @@ function NewRecordingPane({
       </div>
 
       <div className="recording-options">
-        <RecorderPanel onRecordingComplete={onComplete} onError={onError} />
+        <LiveRecorder onRecordingComplete={onComplete} onError={onError} locale={locale} />
         <AudioUpload onUploadComplete={onComplete} onError={onError} />
       </div>
 
