@@ -273,7 +273,10 @@ async def _checkout_discount_promo(
     promo = (
         await db.execute(
             select(BillingPromoCode)
-            .where(BillingPromoCode.code_hash == hash_promo_code(normalized))
+            .where(
+                BillingPromoCode.code_hash == hash_promo_code(normalized),
+                BillingPromoCode.archived_at.is_(None),
+            )
             .with_for_update()
         )
     ).scalar_one_or_none()
@@ -482,7 +485,10 @@ async def claim_promo_code(
     promo = (
         await db.execute(
             select(BillingPromoCode)
-            .where(BillingPromoCode.code_hash == hash_promo_code(normalized))
+            .where(
+                BillingPromoCode.code_hash == hash_promo_code(normalized),
+                BillingPromoCode.archived_at.is_(None),
+            )
             .with_for_update()
         )
     ).scalar_one_or_none()

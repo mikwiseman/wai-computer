@@ -139,7 +139,7 @@ class AdminPromoCodeCreateRequest(BaseModel):
     promotion_type: Literal["access", "discount"] = "access"
     billing_period: BillingPeriod = BillingPeriod.MONTH
     duration_days: int | None = Field(default=None, ge=1, le=3650)
-    discount_percent: int | None = Field(default=None, ge=1, le=99)
+    discount_percent: int | None = Field(default=None, ge=1, le=100)
     max_redemptions: int = Field(ge=1, le=100_000)
     expires_days: int | None = Field(default=None, ge=1, le=3650)
     expires_at: datetime | None = None
@@ -195,7 +195,7 @@ class AdminPromoCodePatchRequest(BaseModel):
     active: bool | None = None
     expires_at: datetime | None = None
     duration_days: int | None = Field(default=None, ge=1, le=3650)
-    discount_percent: int | None = Field(default=None, ge=1, le=99)
+    discount_percent: int | None = Field(default=None, ge=1, le=100)
     max_redemptions: int | None = Field(default=None, ge=1, le=100_000)
     note: str | None = Field(default=None, max_length=500)
 
@@ -282,8 +282,13 @@ class AdminSubscriptionResponse(BaseModel):
     status: str
     provider: str
     billing_period: str
+    current_period_start: datetime | None = None
     current_period_end: datetime | None
     cancel_at_period_end: bool
+    canceled_at: datetime | None = None
+    trial_end: datetime | None = None
+    tinkoff_next_charge_at: datetime | None = None
+    has_provider_subscription: bool = False
 
 
 class AdminSubscriptionActionRequest(BaseModel):
@@ -298,6 +303,30 @@ class AdminReasonRequest(BaseModel):
 class AdminRefundRequest(BaseModel):
     amount_minor: int | None = Field(default=None, ge=1)
     reason: str | None = Field(default=None, max_length=80)
+
+
+class AdminSubscriptionPatchRequest(BaseModel):
+    """Admin edits to a subscription. Only explicitly-set fields are applied.
+
+    Stripe subscriptions are driven through the Stripe API (our webhook then
+    reconciles the row); Tinkoff/Admin/Promo subscriptions are edited in our DB
+    directly. ``next_charge_at`` maps to ``tinkoff_next_charge_at`` (the lever
+    the renewal task reads) for Tinkoff, and to a Stripe ``trial_end`` push for
+    Stripe.
+    """
+
+    status: (
+        Literal["trialing", "active", "past_due", "canceled", "incomplete", "expired"] | None
+    ) = None
+    plan: str | None = Field(default=None, min_length=1, max_length=20)
+    billing_period: BillingPeriod | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
+    trial_end: datetime | None = None
+    canceled_at: datetime | None = None
+    cancel_at_period_end: bool | None = None
+    next_charge_at: datetime | None = None
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class AdminStatsResponse(BaseModel):
@@ -734,7 +763,12 @@ async def create_admin_promo_code(
     normalized = normalize_promo_code(code)
     code_hash = hash_promo_code(normalized)
     existing = (
-        await db.execute(select(BillingPromoCode).where(BillingPromoCode.code_hash == code_hash))
+        await db.execute(
+            select(BillingPromoCode).where(
+                BillingPromoCode.code_hash == code_hash,
+                BillingPromoCode.archived_at.is_(None),
+            )
+        )
     ).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=409, detail="Promo code already exists")
@@ -1076,8 +1110,15 @@ def _subscription_response(sub: Subscription, plan: Plan) -> AdminSubscriptionRe
         status=sub.status,
         provider=sub.provider,
         billing_period=sub.billing_period,
+        current_period_start=sub.current_period_start,
         current_period_end=sub.current_period_end,
         cancel_at_period_end=sub.cancel_at_period_end,
+        canceled_at=sub.canceled_at,
+        trial_end=sub.trial_end,
+        tinkoff_next_charge_at=sub.tinkoff_next_charge_at,
+        has_provider_subscription=bool(
+            sub.stripe_subscription_id or sub.tinkoff_rebill_id
+        ),
     )
 
 
@@ -1265,6 +1306,226 @@ async def resume_admin_subscription(
         subscription_id=sub.id,
     )
     return _subscription_response(sub, plan)
+
+
+def _utc_aware(value: datetime | None) -> datetime | None:
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _audit_value(value: object) -> object:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+async def _apply_stripe_subscription_patch(
+    sub: Subscription,
+    payload: AdminSubscriptionPatchRequest,
+    provided: set[str],
+) -> None:
+    """Drive an admin edit onto Stripe; never write provider-owned dates locally."""
+    if not sub.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="Stripe subscription id missing")
+    if "plan" in provided or "billing_period" in provided:
+        raise HTTPException(
+            status_code=400,
+            detail="Change a Stripe subscription's plan or billing period in Stripe, not here.",
+        )
+    provider = StripeProvider()
+    # Move the next charge date via trial_end (prefer next_charge_at, then period end/trial).
+    target: datetime | None = None
+    if "next_charge_at" in provided and payload.next_charge_at is not None:
+        target = _utc_aware(payload.next_charge_at)
+    elif "current_period_end" in provided and payload.current_period_end is not None:
+        target = _utc_aware(payload.current_period_end)
+    elif "trial_end" in provided and payload.trial_end is not None:
+        target = _utc_aware(payload.trial_end)
+    if target is not None:
+        await provider.update_subscription(
+            sub.stripe_subscription_id,
+            trial_end=int(target.timestamp()),
+            proration_behavior="none",
+        )
+    if "cancel_at_period_end" in provided and payload.cancel_at_period_end is not None:
+        if payload.cancel_at_period_end:
+            await provider.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
+            sub.cancel_at_period_end = True
+        else:
+            await provider.resume_subscription(sub.stripe_subscription_id)
+            sub.cancel_at_period_end = False
+    if "status" in provided and payload.status is not None:
+        if payload.status == SubscriptionStatus.CANCELED.value:
+            await provider.cancel_subscription(sub.stripe_subscription_id, at_period_end=False)
+            sub.status = SubscriptionStatus.CANCELED.value
+            sub.canceled_at = datetime.now(timezone.utc)
+            sub.cancel_at_period_end = False
+        elif payload.status == SubscriptionStatus.ACTIVE.value:
+            await provider.resume_subscription(sub.stripe_subscription_id)
+            sub.status = SubscriptionStatus.ACTIVE.value
+            sub.canceled_at = None
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Only active or canceled status can be forced on a Stripe subscription.",
+            )
+
+
+@router.patch("/subscriptions/{subscription_id}", response_model=AdminSubscriptionResponse)
+async def update_admin_subscription(
+    subscription_id: UUID,
+    payload: AdminSubscriptionPatchRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> AdminSubscriptionResponse:
+    """Edit any subscription parameter.
+
+    Stripe edits are pushed to Stripe (webhook reconciles our row); Tinkoff/Admin/
+    Promo edits are written to our DB, which is the source of truth for those rails.
+    Every change is audited with a before→after diff.
+    """
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    provided = payload.model_fields_set - {"reason"}
+    if not provided:
+        raise HTTPException(status_code=400, detail="No subscription fields to update")
+
+    new_plan: Plan | None = None
+    if "plan" in provided:
+        new_plan = (
+            await db.execute(select(Plan).where(Plan.code == payload.plan))
+        ).scalar_one_or_none()
+        if new_plan is None:
+            raise HTTPException(status_code=400, detail="Billing plan not found")
+
+    tracked = (
+        "status",
+        "plan_id",
+        "billing_period",
+        "current_period_start",
+        "current_period_end",
+        "trial_end",
+        "canceled_at",
+        "cancel_at_period_end",
+        "tinkoff_next_charge_at",
+    )
+    before = {field: getattr(sub, field) for field in tracked}
+
+    if sub.provider == BillingProvider.STRIPE.value:
+        await _apply_stripe_subscription_patch(sub, payload, provided)
+    else:
+        if new_plan is not None:
+            sub.plan_id = new_plan.id
+        if "billing_period" in provided and payload.billing_period is not None:
+            sub.billing_period = payload.billing_period.value
+        if "status" in provided and payload.status is not None:
+            sub.status = payload.status
+        if "current_period_start" in provided:
+            sub.current_period_start = _utc_aware(payload.current_period_start)
+        if "current_period_end" in provided:
+            sub.current_period_end = _utc_aware(payload.current_period_end)
+        if "trial_end" in provided:
+            sub.trial_end = _utc_aware(payload.trial_end)
+        if "canceled_at" in provided:
+            sub.canceled_at = _utc_aware(payload.canceled_at)
+        if "cancel_at_period_end" in provided and payload.cancel_at_period_end is not None:
+            sub.cancel_at_period_end = payload.cancel_at_period_end
+        if "next_charge_at" in provided:
+            sub.tinkoff_next_charge_at = _utc_aware(payload.next_charge_at)
+
+    await db.flush()
+    plan = new_plan or await db.get(Plan, sub.plan_id)
+    if plan is None:
+        raise HTTPException(status_code=500, detail="Subscription plan missing")
+
+    after = {field: getattr(sub, field) for field in tracked}
+    changes = {
+        field: {"from": _audit_value(before[field]), "to": _audit_value(after[field])}
+        for field in tracked
+        if before[field] != after[field]
+    }
+    await _audit(
+        db,
+        admin,
+        action="subscription_update",
+        target_type="subscription",
+        target_id=str(sub.id),
+        reason=payload.reason,
+        details={"provider": sub.provider, "changes": changes},
+        subscription_id=sub.id,
+    )
+    return _subscription_response(sub, plan)
+
+
+@router.post("/subscriptions/{subscription_id}/run-renewal")
+async def run_admin_subscription_renewal(
+    subscription_id: UUID,
+    payload: AdminReasonRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> dict:
+    """Charge a Tinkoff subscription's rebill now (QA: verify renewal / no double-charge).
+
+    Mirrors the periodic renewal task's gate: a subscription with a pending
+    cancellation, a non-active status, or no rebill id is skipped rather than
+    charged — proving the no-double-charge guarantee. Provider errors (e.g. the
+    DEMO terminal's ErrorCode 10) are surfaced, not masked.
+    """
+    from app.tasks.billing_renewals import charge_tinkoff_subscription
+
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    if sub.provider != BillingProvider.TINKOFF.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Run-renewal is only supported for Tinkoff subscriptions",
+        )
+    plan = await db.get(Plan, sub.plan_id)
+    if plan is None:
+        raise HTTPException(status_code=500, detail="Subscription plan missing")
+    user = await db.get(User, sub.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    skip_reason: str | None = None
+    if sub.cancel_at_period_end:
+        skip_reason = "cancellation pending"
+    elif sub.status != SubscriptionStatus.ACTIVE.value:
+        skip_reason = f"status is {sub.status}"
+    elif not sub.tinkoff_rebill_id:
+        skip_reason = "no rebill id"
+
+    if skip_reason is not None:
+        await _audit(
+            db,
+            admin,
+            action="subscription_run_renewal",
+            target_type="subscription",
+            target_id=str(sub.id),
+            reason=payload.reason,
+            details={"charged": False, "skipped_reason": skip_reason},
+            subscription_id=sub.id,
+        )
+        return {"charged": False, "skipped": True, "reason": skip_reason}
+
+    result = await charge_tinkoff_subscription(db, sub, plan, user, TinkoffProvider())
+    await db.flush()
+    await _audit(
+        db,
+        admin,
+        action="subscription_run_renewal",
+        target_type="subscription",
+        target_id=str(sub.id),
+        reason=payload.reason,
+        details={"charged": result == "charged", "result": result},
+        subscription_id=sub.id,
+    )
+    return {"charged": result == "charged", "result": result, "status": sub.status}
 
 
 @router.post("/invoices/{invoice_id}/refund")
