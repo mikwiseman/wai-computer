@@ -1197,6 +1197,41 @@ a.primary-button[aria-disabled="true"]:hover {
   line-height: 1.35;
 }
 
+/* Transcription settings — non-label fields (e.g. the read-only model block)
+ * mirror the `.settings-form label` grid so every row aligns. */
+.settings-field {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.settings-model-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.settings-model-list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-model-list dt {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+}
+
+.settings-model-list dd {
+  margin: 0;
+  font-size: var(--font-body-small-size);
+  font-weight: 600;
+  text-align: right;
+}
+
 .telegram-link-card {
   display: grid;
   gap: 0.6rem;

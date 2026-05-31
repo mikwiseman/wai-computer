@@ -25,6 +25,7 @@ import {
   getRecording,
   getSettings,
   getTelegramLinkStatus,
+  getTranscriptionOptions,
   listDictationEntries,
   listDictionaryWords,
   listFolders,
@@ -47,6 +48,7 @@ import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
+import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
@@ -60,6 +62,7 @@ import type {
   SearchResponse,
   TelegramLinkStatus,
   TelegramPairing,
+  TranscriptionOptions,
   User,
   UserSettings,
 } from "@/lib/types";
@@ -753,6 +756,9 @@ export function DashboardClient() {
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("wai");
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
+  const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
+    null,
+  );
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsLoadedOnce, setSettingsLoadedOnce] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -833,12 +839,15 @@ export function DashboardClient() {
   async function loadAccountSettings() {
     setSettingsLoading(true);
     try {
-      const [settingsResponse, telegramResponse] = await Promise.all([
+      const [settingsResponse, telegramResponse, optionsResponse] = await Promise.all([
         getSettings(),
         getTelegramLinkStatus(),
+        // Cosmetic model labels — degrade to "provider · model" if unavailable.
+        getTranscriptionOptions().catch(() => null),
       ]);
       setAccountSettings(settingsResponse);
       setTelegramStatus(telegramResponse);
+      setTranscriptionOptions(optionsResponse);
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     } catch (error: unknown) {
@@ -2334,6 +2343,16 @@ export function DashboardClient() {
         </section>
 
         <IdentityAndVoicePanel locale={locale} />
+
+        {accountSettings ? (
+          <TranscriptionSettingsPanel
+            settings={accountSettings}
+            transcriptionOptions={transcriptionOptions}
+            onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
+            busy={settingsSaving}
+            locale={locale}
+          />
+        ) : null}
 
         <div className="settings-form">
           <h3>{copy.settings.dictationHeading}</h3>
