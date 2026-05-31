@@ -50,6 +50,7 @@ import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
+import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
@@ -2419,6 +2420,8 @@ export function DashboardClient() {
             {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
           </button>
         </form>
+
+        <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
 
         <div className="settings-form">
           <h3>{copy.telegram.heading}</h3>
