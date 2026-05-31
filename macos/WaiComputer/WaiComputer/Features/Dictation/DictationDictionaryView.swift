@@ -59,7 +59,7 @@ struct DictationDictionaryView: View {
             // Word list
             if dictionaryStore.words.isEmpty {
                 Spacer()
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     t("No Words Yet", "Пока нет слов"),
                     systemImage: "book",
                     description: Text(t(
@@ -70,7 +70,7 @@ struct DictationDictionaryView: View {
                 Spacer()
             } else if filteredWords.isEmpty {
                 Spacer()
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     t("No Results", "Ничего не найдено"),
                     systemImage: "magnifyingglass",
                     description: Text(t("No words match your search.", "По этому запросу слов нет."))

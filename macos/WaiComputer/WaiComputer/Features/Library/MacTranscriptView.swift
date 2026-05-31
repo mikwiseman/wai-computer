@@ -45,14 +45,14 @@ struct MacTranscriptView: View {
     @ViewBuilder
     private var emptyState: some View {
         if availability == .savedLocally {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t("Saved locally", "Сохранено локально"),
                 systemImage: "externaldrive",
                 description: Text(savedLocallyDescription)
             )
             .accessibilityIdentifier("transcript-local-recovery-state")
         } else if availability == .processing {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t("Transcript is processing", "Расшифровка готовится"),
                 systemImage: "hourglass",
                 description: Text(t(
@@ -62,7 +62,7 @@ struct MacTranscriptView: View {
             )
             .accessibilityIdentifier("transcript-processing-state")
         } else {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t("No Transcript", "Нет расшифровки"),
                 systemImage: "text.alignleft",
                 description: Text(t("This recording doesn't have a transcript yet.", "У этой записи пока нет расшифровки."))

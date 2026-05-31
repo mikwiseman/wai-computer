@@ -76,7 +76,7 @@ class MacRecordingViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var recordingType: RecordingType = .note
-    @Published var recordingInputSource: MacRecordingInputSource = .dual
+    @Published var recordingInputSource: MacRecordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
     @Published var duration: TimeInterval = 0
     @Published var hasSystemAudio = false
     @Published var currentTranscript = ""
@@ -220,6 +220,11 @@ class MacRecordingViewModel: ObservableObject {
         inputSource: MacRecordingInputSource = .dual,
         folderId: String? = nil
     ) async {
+        // System audio (dual / system-only) needs macOS 14.2+ Core Audio process taps.
+        // Below that floor, record microphone only — surfaced to users in onboarding and
+        // Settings, never a silent error (the OS simply lacks the capability).
+        let inputSource = SystemAudioGate.isSupported ? inputSource : .microphone
+
         // Wait for any in-progress cleanup to finish before starting a new recording
         if isCleaningUp {
             audioLog.info("Waiting for previous recording cleanup to complete")
@@ -1304,7 +1309,7 @@ class MacRecordingViewModel: ObservableObject {
         currentRecordingId = nil
         isServerComplete = false
         isPaused = false
-        recordingInputSource = .dual
+        recordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
         endRecordingActivity(reason: "start-failure")
         setPhase(.idle)
     }
