@@ -1683,9 +1683,14 @@ def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -
 
 
 def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str:
-    """Export recording as plain text."""
+    """Export recording as plain text.
+
+    Mirrors the Markdown export's sections (summary, highlights, transcript) so the
+    three export formats are consistent (124); only the formatting differs.
+    """
     resolved_locale = _resolve_export_locale(recording, locale)
     copy = _EXPORT_COPY[resolved_locale]
+    names = _export_speaker_names(recording, resolved_locale)
     lines: list[str] = []
 
     title = recording.title or copy["untitled"]
@@ -1696,6 +1701,32 @@ def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str
     lines.append(f"{copy['date']}: {date_str} | {copy['duration']}: {duration_str}")
     lines.append("")
 
+    # Summary section (parity with the Markdown export).
+    if recording.summary and recording.summary.summary:
+        lines.append(copy["summary"])
+        lines.append(_apply_speaker_names(recording.summary.summary, names))
+        lines.append("")
+
+    # Key Highlights section.
+    if recording.highlights:
+        lines.append(copy["highlights"])
+        for h in sorted(recording.highlights, key=lambda x: x.start_ms or 0):
+            category = _highlight_category_label(h.category, resolved_locale)
+            if h.speaker:
+                ts = _format_timestamp_short(h.start_ms)
+                speaker = names.get(h.speaker) or _humanize_speaker_label(
+                    h.speaker, resolved_locale
+                )
+                suffix = f" ({speaker}, {ts})"
+            elif h.start_ms is not None:
+                suffix = f" ({_format_timestamp_short(h.start_ms)})"
+            else:
+                suffix = ""
+            lines.append(f"- [{category}] {h.title}{suffix}")
+        lines.append("")
+
+    # Transcript section.
+    lines.append(copy["transcript"])
     segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
     for seg in segments:
         speaker = _segment_export_speaker(seg, resolved_locale)

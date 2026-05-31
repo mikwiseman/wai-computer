@@ -402,6 +402,33 @@ async def test_export_txt_format(
     assert "Thanks for joining." in body
 
 
+@pytest.mark.asyncio
+async def test_export_txt_includes_summary_and_highlights(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """TXT export carries the same summary + highlights sections as Markdown (124)."""
+    recording = await _create_recording_with_segments(
+        client,
+        auth_headers,
+        db_session,
+        add_summary=True,
+        add_highlights=True,
+    )
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "txt"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "Team discussed sprint progress" in body  # summary section present
+    assert "Budget approved for Q3" in body  # highlight present
+    assert "[Speaker 1, 0:00]" in body  # transcript still present
+
+
 # ---- SRT subtitle export ----
 
 
