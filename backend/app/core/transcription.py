@@ -148,6 +148,7 @@ async def transcribe_audio_file(
             channels=channels,
             model=selected_model,
             keyterms=keyterms,
+            max_channels=settings.deepgram_max_channels,
         )
     except httpx.HTTPStatusError as exc:
         await record_provider_result(success=False, status_code=exc.response.status_code)

@@ -618,3 +618,131 @@ async def test_close_websocket_ignores_already_closed_runtime_error():
     await route._close_websocket(websocket, code=1000)
 
     websocket.close.assert_awaited_once_with(code=1000)
+
+
+# --- cost/abuse guard wiring (2026 incident hardening) -----------------------
+async def _post_session(json_body: dict | None = None):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        return await client.post(
+            "/api/transcription/session",
+            headers={"Authorization": "Bearer fake-token"},
+            json=json_body or {"language": "multi", "channels": 1, "purpose": "dictation"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_realtime_session_503_when_transcription_halted(mock_authenticated_user):
+    from app.core import transcription_guard as guard
+
+    await guard.get_redis().set("dg:killswitch", "1")
+    response = await _post_session()
+    assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_realtime_session_503_when_circuit_breaker_open(mock_authenticated_user):
+    from app.core import transcription_guard as guard
+
+    await guard.record_provider_result(success=False, status_code=402)
+    response = await _post_session()
+    assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_realtime_session_429_on_mint_burst(mock_authenticated_user, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "realtime_mint_burst_max", 0)
+    response = await _post_session()
+    assert response.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_realtime_session_503_when_daily_minutes_exhausted(mock_authenticated_user):
+    from app.core import transcription_guard as guard
+
+    # fake_user.id is "user-transcription"; record past the default per-user cap (1200)
+    await guard.record_minutes("user-transcription", 5000)
+    response = await _post_session()
+    assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_closes_when_transcription_halted():
+    from app.api.routes import realtime_transcription as route
+    from app.core import transcription_guard as guard
+
+    await guard.get_redis().set("dg:killswitch", "1")
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ):
+        await route.stream_realtime_transcription(websocket)
+    assert websocket.accepted is True
+    assert route.PROXY_ERROR_HALTED in websocket.json_payloads
+    assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_rejected_when_concurrency_full(monkeypatch):
+    from app.api.routes import realtime_transcription as route
+    from app.config import get_settings
+    from app.core import transcription_guard as guard
+
+    monkeypatch.setattr(get_settings(), "realtime_max_concurrent_streams_per_user", 1)
+    # occupy the single per-user slot
+    await guard.acquire_stream_slot("user-transcription", lease_ttl_seconds=60)
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ):
+        await route.stream_realtime_transcription(websocket)
+    assert route.PROXY_ERROR_TOO_MANY_STREAMS in websocket.json_payloads
+    assert websocket.closed_codes == [1008]
+
+
+class _HangingProvider:
+    """A provider whose pump never completes, to exercise the wall-clock cap."""
+
+    async def send(self, payload: bytes | str) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.Event().wait()  # never resolves
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_force_closes_at_max_duration(monkeypatch):
+    from app.api.routes import realtime_transcription as route
+    from app.config import get_settings
+
+    # tiny cap so asyncio.wait times out immediately with both pumps still pending
+    monkeypatch.setattr(get_settings(), "realtime_stream_max_seconds_dictation", 0.05)
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})  # empty queue -> recv hangs
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(_HangingProvider()),
+    ):
+        await route.stream_realtime_transcription(websocket)
+    assert route.PROXY_ERROR_SESSION_EXPIRED in websocket.json_payloads
+    assert websocket.closed_codes == [1000]

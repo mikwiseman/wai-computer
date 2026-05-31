@@ -175,5 +175,19 @@ async def test_all_guards_fail_open_on_redis_error(settings, monkeypatch):
         assert await guard.acquire_stream_slot("z", lease_ttl_seconds=60) is not None
         assert await guard.provider_breaker_open() is False
         await guard.record_provider_result(success=False, status_code=402)  # must not raise
+        await guard.record_provider_result(success=True)  # must not raise
+        await guard.record_provider_result(success=False, status_code=500)  # streak path
+        await guard.release_stream_slot("z", "tok")  # must not raise
+        await guard.record_minutes("z", 1.0)  # must not raise
+    finally:
+        guard.set_redis_for_tests(None)
+
+
+async def test_get_redis_lazily_builds_and_caches_a_client():
+    guard.set_redis_for_tests(None)
+    try:
+        client = guard.get_redis()  # builds from settings.redis_url (no connection yet)
+        assert client is not None
+        assert guard.get_redis() is client  # cached singleton
     finally:
         guard.set_redis_for_tests(None)
