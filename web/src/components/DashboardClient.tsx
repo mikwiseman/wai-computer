@@ -360,6 +360,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       rows: [
         { keys: "/", description: "Focus search" },
         { keys: "n", description: "New recording" },
+        { keys: "d", description: "Dictate" },
+        { keys: "l", description: "Library" },
+        { keys: "w", description: "Ask Wai" },
         { keys: "Esc", description: "Clear selection / close dialogs" },
         { keys: "?", description: "Show this cheatsheet" },
       ],
@@ -540,6 +543,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       rows: [
         { keys: "/", description: "Сфокусировать поиск" },
         { keys: "n", description: "Новая запись" },
+        { keys: "d", description: "Диктовка" },
+        { keys: "l", description: "Библиотека" },
+        { keys: "w", description: "Спросить Wai" },
         { keys: "Esc", description: "Сбросить выбор / закрыть диалоги" },
         { keys: "?", description: "Показать этот список" },
       ],
@@ -1468,9 +1474,18 @@ export function DashboardClient() {
     setIsShortcutCheatsheetOpen((current) => !current);
   }, []);
 
+  const goToView = useCallback((next: DashboardView) => {
+    setView(next);
+    setSelectedRecording(null);
+    setIsShortcutCheatsheetOpen(false);
+  }, []);
+
   useKeyboardShortcuts({
     "/": focusSearchInput,
     n: focusRecorder,
+    d: () => goToView("dictate"),
+    l: () => goToView("library"),
+    w: () => goToView("wai"),
     Escape: clearAll,
     "?": toggleCheatsheet,
   });
