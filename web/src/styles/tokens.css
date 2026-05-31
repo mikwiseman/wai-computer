@@ -214,6 +214,10 @@
   --material-thin-bg: rgba(255, 255, 255, 0.66);
   --material-thin-border: rgba(25, 26, 31, 0.08);
   --material-thin-blur: saturate(180%) blur(24px);
+  /* Regular material — a denser glass tier (for the sidebar) so it reads deeper
+   * than floating popovers/toasts: a 2-step depth hierarchy. */
+  --material-regular-bg: rgba(255, 255, 255, 0.82);
+  --material-regular-blur: saturate(180%) blur(30px);
   --material-tint-amber: rgba(255, 149, 0, 0.10);
   --material-tint-accent: var(--accent-soft);
 
@@ -397,6 +401,7 @@
   --surface-hover: rgba(243, 245, 242, 0.08);
   --surface-hairline: rgba(243, 245, 242, 0.10);
   --material-thin-bg: rgba(23, 26, 29, 0.66);
+  --material-regular-bg: rgba(23, 26, 29, 0.84);
   --material-thin-border: rgba(243, 245, 242, 0.08);
   --material-tint-amber: rgba(255, 159, 10, 0.14);
   --material-tint-accent: var(--accent-soft);
@@ -531,6 +536,7 @@
     --surface-hover: rgba(243, 245, 242, 0.08);
     --surface-hairline: rgba(243, 245, 242, 0.10);
     --material-thin-bg: rgba(23, 26, 29, 0.66);
+  --material-regular-bg: rgba(23, 26, 29, 0.84);
     --material-thin-border: rgba(243, 245, 242, 0.08);
     --material-tint-amber: rgba(255, 159, 10, 0.14);
     --material-tint-accent: var(--accent-soft);
