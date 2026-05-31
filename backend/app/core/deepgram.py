@@ -340,6 +340,21 @@ async def transcribe_audio_file(
         resolved_channels = detect_wav_channels(audio_data)
     channel_count = max(1, resolved_channels or 1)
 
+    # Deepgram bills per channel. Notes/meetings are mono; clamp a stereo or
+    # crafted many-channel file so it cannot silently multiply per-minute cost.
+    max_channels = get_settings().deepgram_max_channels
+    if max_channels > 0 and channel_count > max_channels:
+        from app.core.observability import capture_sentry_anomaly
+
+        capture_sentry_anomaly(
+            "recording.file_stt.channels_clamped",
+            "Clamped multichannel audio before Deepgram (per-channel billing guard)",
+            category="recording",
+            extras={"detected_channels": channel_count, "clamped_to": max_channels},
+            level="warning",
+        )
+        channel_count = max_channels
+
     url = build_batch_url(
         language=language,
         multichannel=channel_count > 1,
