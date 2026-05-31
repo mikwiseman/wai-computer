@@ -183,6 +183,41 @@ class StripeProvider(PaymentProvider):
             params={"cancel_at_period_end": False},
         )
 
+    async def update_subscription(
+        self,
+        provider_subscription_id: str,
+        *,
+        trial_end: int | None = None,
+        billing_cycle_anchor: str | None = None,
+        cancel_at: int | None = None,
+        proration_behavior: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply an admin-initiated change directly on Stripe.
+
+        Stripe owns the billing schedule, so we never write ``current_period_*``
+        locally — we drive Stripe (``trial_end`` to set an arbitrary next-charge
+        date, ``billing_cycle_anchor="now"`` to charge immediately) and let the
+        resulting ``customer.subscription.*`` webhook reconcile our row.
+        """
+        client = self._client_or_raise()
+        params: dict[str, Any] = {}
+        if trial_end is not None:
+            params["trial_end"] = trial_end
+        if billing_cycle_anchor is not None:
+            params["billing_cycle_anchor"] = billing_cycle_anchor
+        if cancel_at is not None:
+            params["cancel_at"] = cancel_at
+        if proration_behavior is not None:
+            params["proration_behavior"] = proration_behavior
+        if not params:
+            raise ValueError("update_subscription called with no changes")
+        sub = await client.v1.subscriptions.update_async(provider_subscription_id, params=params)
+        if hasattr(sub, "to_dict"):
+            return sub.to_dict()
+        if hasattr(sub, "to_dict_recursive"):
+            return sub.to_dict_recursive()
+        return dict(sub)
+
     async def refund_payment(
         self,
         payment_id: str,
