@@ -50,15 +50,13 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
 
-    # Deepgram — realtime dictation and live transcription.
+    # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
 
-    # ElevenLabs
+    # ElevenLabs — realtime conversational voice agents.
     elevenlabs_api_key: str = ""
     elevenlabs_conversation_agent_id: str = ""
     elevenlabs_recording_agent_id: str = ""
-    elevenlabs_speech_to_text_model: str = "scribe_v2"
-    elevenlabs_no_verbatim: bool = True
     elevenlabs_environment: str = "production"
 
     upload_max_bytes: int = 200 * 1024 * 1024

@@ -125,3 +125,29 @@ def test_elevenlabs_file_stt_default_migration_resets_file_users(monkeypatch):
     defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
     assert defaults["file_stt_provider"] == "elevenlabs"
     assert defaults["file_stt_model"] == "scribe_v2"
+
+
+def test_deepgram_file_stt_default_migration_resets_file_users(monkeypatch):
+    """May 31 file STT swap should overwrite persisted file STT users to Deepgram."""
+    migration = _load_migration("20260531_120000_deepgram_file_stt_defaults.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 1
+    statement = str(executed[0])
+    assert "file_stt_provider = :provider" in statement
+    assert "file_stt_model = :model" in statement
+    assert "WHERE" not in statement
+
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["file_stt_provider"] == "deepgram"
+    assert defaults["file_stt_model"] == "nova-3"
