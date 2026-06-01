@@ -21,10 +21,5 @@ public typealias WKRealtimeVoiceMode = RealtimeVoiceMode
 public typealias WKRealtimeTranscriptionSessionConfig = RealtimeTranscriptionSessionConfig
 public typealias WKRealtimeVoiceSession = RealtimeVoiceSession
 
-// App models
+// Shared JSON value type
 public typealias WKJSONValue = JSONValue
-public typealias WKAppStatus = AppStatus
-public typealias WKAppVisibility = AppVisibility
-public typealias WKUserApp = UserApp
-public typealias WKAppItem = AppItem
-public typealias WKAppStats = AppStats

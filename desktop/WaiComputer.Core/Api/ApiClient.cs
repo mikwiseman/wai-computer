@@ -443,20 +443,6 @@ public sealed class ApiClient : IApiClient, IDisposable
         => SendAsync<IReadOnlyList<Entity>>(HttpMethod.Get,
             "/api/entities" + (type is { } t ? $"?type={t.ToString().ToLowerInvariant()}" : string.Empty), ct: ct);
 
-    // ----- apps ---------------------------------------------------------
-
-    public Task<IReadOnlyList<App>> ListAppsAsync(CancellationToken ct = default)
-        => SendAsync<IReadOnlyList<App>>(HttpMethod.Get, "/api/apps", ct: ct);
-
-    public Task<App> GetAppAsync(string id, CancellationToken ct = default)
-        => SendAsync<App>(HttpMethod.Get, $"/api/apps/{Uri.EscapeDataString(id)}", ct: ct);
-
-    public Task<IReadOnlyList<AppItem>> ListAppItemsAsync(string id, CancellationToken ct = default)
-        => SendAsync<IReadOnlyList<AppItem>>(HttpMethod.Get, $"/api/apps/{Uri.EscapeDataString(id)}/items", ct: ct);
-
-    public Task<AppStats> GetAppStatsAsync(string id, CancellationToken ct = default)
-        => SendAsync<AppStats>(HttpMethod.Get, $"/api/apps/{Uri.EscapeDataString(id)}/stats", ct: ct);
-
     // ============== internals ==========================================
 
     private Uri ResolveUri(string path)
