@@ -1062,6 +1062,12 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/items/\(id)")
     }
 
+    // MARK: - Brain (compiled-wiki projection of canonical memory)
+
+    public func getBrain() async throws -> BrainProjection {
+        return try await request(.GET, path: "/api/brain")
+    }
+
     // MARK: - MCP Ingestion Connections (connect any MCP)
 
     public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {

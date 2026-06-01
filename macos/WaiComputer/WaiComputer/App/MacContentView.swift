@@ -119,6 +119,7 @@ struct MacMainView: View {
         case folder(String)
         case trash
         case content
+        case brain
         case search
         case history
         case dictionary
@@ -135,7 +136,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .content, .search, .history, .dictionary, .wai, .settings:
+        case .content, .brain, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -183,6 +184,8 @@ struct MacMainView: View {
             return t("Trash", "Корзина")
         case .content:
             return t("Content", "Материалы")
+        case .brain:
+            return t("Brain", "Мозг")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -501,6 +504,7 @@ struct MacMainView: View {
             switch target {
             case "allRecordings": selectedSection = .allRecordings
             case "content": selectedSection = .content
+            case "brain": selectedSection = .brain
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -584,6 +588,7 @@ struct MacMainView: View {
             Section {
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
                 sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
+                sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
                 Text(t("Library", "Библиотека"))
@@ -844,6 +849,9 @@ struct MacMainView: View {
             }
         case .content:
             MacContentFeedView(apiClient: appState.getAPIClient())
+                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+        case .brain:
+            MacBrainView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView { recordingId in
