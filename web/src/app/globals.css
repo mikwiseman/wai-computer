@@ -2293,6 +2293,67 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-label-small-size);
 }
 
+.brain-panel__tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.brain-panel__tab {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.75rem;
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.brain-panel__tab--active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.brain-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.brain-graph__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: var(--font-body-small-size);
+  color: var(--ink-soft);
+}
+
+.brain-graph__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.brain-graph__reset {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.brain-graph__canvas {
+  width: 100%;
+  height: 560px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
 .add-anything__status {
   color: var(--ink-soft);
   font-size: var(--font-body-small-size);
