@@ -7,6 +7,9 @@ struct LibraryView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = LibraryViewModel()
     @StateObject private var importViewModel = ImportViewModel()
+    @StateObject private var searchViewModel = SearchViewModel()
+    @State private var isSearchActive = false
+    @State private var searchTarget: SearchResult?
     @State private var errorAutoDismissTask: Task<Void, Never>?
     @State private var importedRecording: Recording?
     @State private var showImportedDetail = false
@@ -32,7 +35,17 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if viewModel.isLoading && viewModel.recordings.isEmpty {
+                // While the search field is active (or a query is committed),
+                // the library list is replaced by the search results surface
+                // hosted by `.searchable`. Mirrors the macOS search behaviour
+                // without adding a 5th tab.
+                if isSearchActive || !searchViewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    LibrarySearchResults(
+                        viewModel: searchViewModel,
+                        onSubmit: performSearch,
+                        onOpenRecording: { result in searchTarget = result }
+                    )
+                } else if viewModel.isLoading && viewModel.recordings.isEmpty {
                     ProgressView(t("Loading recordings...", "Загрузка записей..."))
                 } else if viewModel.recordings.isEmpty && viewModel.trashedRecordings.isEmpty && viewModel.folders.isEmpty {
                     ContentUnavailableView(
@@ -44,8 +57,39 @@ struct LibraryView: View {
                     libraryList
                 }
             }
+            .background(SearchActivityReader(isActive: $isSearchActive))
             .environment(\.editMode, $editMode)
             .navigationTitle(t("Library", "Библиотека"))
+            .searchable(
+                text: $searchViewModel.query,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: Text(t("Search recordings...", "Искать в записях..."))
+            )
+            .onSubmit(of: .search) {
+                performSearch()
+            }
+            .onChange(of: searchViewModel.searchMode) { _, _ in
+                guard searchViewModel.hasSearched else { return }
+                performSearch()
+            }
+            .onChange(of: isSearchActive) { _, active in
+                if !active {
+                    searchViewModel.reset()
+                }
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { searchTarget != nil },
+                set: { if !$0 { searchTarget = nil } }
+            )) {
+                if let result = searchTarget {
+                    RecordingDetailView(recording: Recording(
+                        id: result.recordingId,
+                        title: result.recordingTitle,
+                        type: result.recordingType,
+                        createdAt: Date()
+                    ))
+                }
+            }
             .navigationDestination(isPresented: $showImportedDetail) {
                 if let importedRecording {
                     RecordingDetailView(recording: importedRecording)
@@ -477,8 +521,40 @@ struct LibraryView: View {
         editMode = .inactive
     }
 
+    // MARK: - Search
+
+    private func performSearch() {
+        guard !searchViewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        #if DEBUG
+        if let response = appState.uiTestSearchResponse(query: searchViewModel.query) {
+            searchViewModel.applySearchResponse(response)
+            return
+        }
+        #endif
+        Task {
+            await searchViewModel.search(apiClient: appState.getAPIClient())
+        }
+    }
+
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+// MARK: - Search Activity Reader
+
+/// Bridges SwiftUI's `\.isSearching` environment value (only readable from a
+/// view inside the `.searchable` container) out to a binding the parent owns,
+/// so `LibraryView` can swap its content between the list and search results.
+private struct SearchActivityReader: View {
+    @Environment(\.isSearching) private var isSearching
+    @Binding var isActive: Bool
+
+    var body: some View {
+        Color.clear
+            .onChange(of: isSearching) { _, searching in
+                isActive = searching
+            }
     }
 }
 

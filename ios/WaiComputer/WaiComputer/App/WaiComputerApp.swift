@@ -7,6 +7,7 @@ enum IOSScreenshotScreen: String {
     case library
     case detail
     case settings
+    case search
 }
 #endif
 
@@ -193,6 +194,39 @@ enum IOSScreenshotFixtures {
             return try! JSONDecoder().decode([ActionItem].self, from: json)
         }()
     )
+
+    static let searchResponse: SearchResponse = {
+        let data = """
+        {
+            "results": [
+                {
+                    "recording_id": "rec-1",
+                    "recording_title": "Weekly Team Standup",
+                    "recording_type": "meeting",
+                    "segment_id": "search-seg-1",
+                    "speaker": "Alex",
+                    "content": "Quick update. Search is shipping this week and beta feedback is strong.",
+                    "start_ms": 0,
+                    "end_ms": 4800,
+                    "score": 0.96
+                },
+                {
+                    "recording_id": "rec-2",
+                    "recording_title": "Product Roadmap Sync",
+                    "recording_type": "meeting",
+                    "segment_id": "search-seg-2",
+                    "speaker": "Sarah",
+                    "content": "We aligned the roadmap around search, capture stability, and the library polish.",
+                    "start_ms": 12000,
+                    "end_ms": 19200,
+                    "score": 0.74
+                }
+            ],
+            "total": 2
+        }
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(SearchResponse.self, from: data)
+    }()
 
     static func recording(id: String) -> Recording {
         recordings.first(where: { $0.id == id }) ?? detailRecording
@@ -563,5 +597,19 @@ class AppState: ObservableObject {
 
     func getAPIClient() -> APIClient {
         return apiClient
+    }
+
+    /// Deterministic search results for DEBUG screenshot / UI-test runs so the
+    /// search surface can be captured without a live backend. Mirrors
+    /// `MacAppState.uiTestSearchResponse(query:)`.
+    func uiTestSearchResponse(query: String) -> SearchResponse? {
+        #if DEBUG
+        guard IOSTestingMode.current.isScreenshot,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return IOSScreenshotFixtures.searchResponse
+        #else
+        return nil
+        #endif
     }
 }
