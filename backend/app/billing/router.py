@@ -53,6 +53,12 @@ DecimalNumber = Annotated[
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
+# Version of the recurrent-payment agreement (separate from the general
+# Terms/Privacy versions in auth.py). Bumped when the auto-renewal oferta text
+# materially changes; recorded against each subscription's consent event so we
+# can prove which terms the user accepted when T-Bank reviews the mandate.
+LEGAL_SUBSCRIPTION_VERSION = "2026-06-01"
+
 
 class UsageResponse(BaseModel):
     """Free-tier weekly usage status."""
@@ -148,6 +154,10 @@ class CheckoutRequest(BaseModel):
     period: str  # "month" | "year"
     provider: str | None = None  # optional override: "stripe" | "tinkoff"
     promo_code: str | None = None
+    # T-Bank recurrent mandate: the RU checkout MUST gate the pay button on an
+    # explicit, non-pre-checked consent to auto-renewal + personal-data
+    # processing. Stripe issues its own receipts/mandate and is exempt.
+    accepted_recurring_terms: bool = False
 
 
 class PromoClaimRequest(BaseModel):
@@ -230,10 +240,16 @@ async def get_subscription(
 
 
 def _pick_provider(user_region: str, override: str | None) -> str:
-    """Resolve which payment rail to use. Override > user.region > default."""
+    """Resolve which payment rail to use. Override > user.region > default.
+
+    The ``ru`` region maps to the T-Bank rail; everything else (and a missing
+    region) falls back to ``billing_default_region`` — ``ru`` there would route
+    region-less users to T-Bank, otherwise Stripe.
+    """
     if override:
         return override
-    if user_region == "ru":
+    region = user_region or get_settings().billing_default_region
+    if region == "ru":
         return BillingProvider.TINKOFF.value
     return BillingProvider.STRIPE.value
 
@@ -393,6 +409,20 @@ async def create_checkout(
 
     settings = get_settings()
     provider_code = _pick_provider(user.region, payload.provider)
+    # The T-Bank rail is RU-only: enforce it server-side so a non-RU user can't
+    # land on the recurrent Charge mandate by overriding `provider=tinkoff`
+    # (the RU-scoped compliance UX would never have been shown to them).
+    if provider_code == BillingProvider.TINKOFF.value:
+        if user.region != "ru":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="T-Bank checkout is only available in the RU region",
+            )
+        if not payload.accepted_recurring_terms:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Recurring payment consent is required",
+            )
     success_url, cancel_url = _checkout_result_urls(settings.frontend_url, provider_code)
     promo = await _checkout_discount_promo(
         db=db,
@@ -453,16 +483,39 @@ async def create_checkout(
         ).scalar_one_or_none()
         if plan is None:
             raise HTTPException(status_code=400, detail="Unknown plan")
+        amount_rub = (
+            plan.tinkoff_amount_rub_yearly
+            if payload.period == BillingPeriod.YEAR.value
+            else plan.tinkoff_amount_rub_monthly
+        )
+        sub = Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.INCOMPLETE.value,
+            provider=BillingProvider.TINKOFF.value,
+            billing_period=payload.period,
+            promo_code_id=promo.id if promo is not None else None,
+            tinkoff_order_id=result.provider_order_id,
+            tinkoff_customer_key=str(user.id),
+        )
+        db.add(sub)
+        await db.flush()
+        # Durable proof of the recurrent-payment + personal-data consent the
+        # user gave at checkout. T-Bank's recurrent review requires the user to
+        # have actively accepted auto-renewal terms; we keep the version +
+        # amount + period so support can show exactly what was agreed.
         db.add(
-            Subscription(
-                user_id=user.id,
-                plan_id=plan.id,
-                status=SubscriptionStatus.INCOMPLETE.value,
-                provider=BillingProvider.TINKOFF.value,
-                billing_period=payload.period,
-                promo_code_id=promo.id if promo is not None else None,
-                tinkoff_order_id=result.provider_order_id,
-                tinkoff_customer_key=str(user.id),
+            BillingEvent(
+                subscription_id=sub.id,
+                type="recurrent_consent_accepted",
+                payload={
+                    "version": LEGAL_SUBSCRIPTION_VERSION,
+                    "plan": payload.plan,
+                    "period": payload.period,
+                    "amount_rub": float(amount_rub) if amount_rub is not None else None,
+                    "locale": "ru",
+                    "accepted_at": datetime.now(timezone.utc).isoformat(),
+                },
             )
         )
         return CheckoutResponse(provider=result.provider, checkout_url=result.checkout_url)

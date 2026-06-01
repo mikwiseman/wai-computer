@@ -9,6 +9,7 @@ import {
   getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  listBillingPlans,
   openBillingPortal,
   switchBillingPlan,
 } from "@/lib/billing";
@@ -21,6 +22,7 @@ vi.mock("@/lib/billing", () => ({
   getBillingInvoices: vi.fn(),
   getBillingSubscription: vi.fn(),
   getBillingUsage: vi.fn(),
+  listBillingPlans: vi.fn(),
   openBillingPortal: vi.fn(),
   switchBillingPlan: vi.fn(),
 }));
@@ -49,6 +51,7 @@ const mockedPromo = vi.mocked(claimBillingPromoCode);
 const mockedInvoices = vi.mocked(getBillingInvoices);
 const mockedPortal = vi.mocked(openBillingPortal);
 const mockedSwitch = vi.mocked(switchBillingPlan);
+const mockedPlans = vi.mocked(listBillingPlans);
 
 const freeSub = {
   plan: {
@@ -86,6 +89,20 @@ const proSub = {
   next_charge_currency: "USD",
 };
 
+const plans = [
+  freeSub.plan,
+  {
+    ...freeSub.plan,
+    code: "pro",
+    name: "Pro",
+    rub_amount_monthly: 999,
+    rub_amount_yearly: 7999,
+    usd_amount_monthly: 12,
+    usd_amount_yearly: 96,
+    word_cap_per_week: null,
+  },
+];
+
 const usage = {
   words_used: 1200,
   words_cap: 3000,
@@ -103,9 +120,11 @@ describe("BillingDashboard", () => {
     mockedInvoices.mockReset();
     mockedPortal.mockReset();
     mockedSwitch.mockReset();
+    mockedPlans.mockReset();
     mockedSubscription.mockResolvedValue(freeSub);
     mockedUsage.mockResolvedValue(usage);
     mockedInvoices.mockResolvedValue([]);
+    mockedPlans.mockResolvedValue(plans);
   });
 
   it("loads free billing state and opens checkout with selected provider", async () => {
@@ -122,6 +141,7 @@ describe("BillingDashboard", () => {
       plan: "pro",
       period: "month",
       provider: "stripe",
+      accepted_recurring_terms: false,
     });
   });
 
@@ -294,6 +314,7 @@ describe("BillingDashboard", () => {
           period: "month",
           provider: "tinkoff",
           promo_code: "TESTSALE",
+          accepted_recurring_terms: false,
         }),
       );
       expect(hrefSetter).toHaveBeenCalledWith("https://pay.tbank.test/discount");

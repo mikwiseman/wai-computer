@@ -54,6 +54,18 @@ def _isolate_transcription_guard():
     transcription_guard.set_redis_for_tests(None)
 
 
+@pytest.fixture(autouse=True)
+def _neutralize_resend(monkeypatch):
+    """Keep every email path off the network in tests.
+
+    Auth emails are usually patched at the function level, but billing flows
+    now send charge/renewal receipts from inside webhook/renewal code; this
+    stops those from hitting Resend. Tests that assert on email content patch
+    ``app.core.email.resend`` themselves, which overrides this.
+    """
+    monkeypatch.setattr("resend.Emails.send", lambda *args, **kwargs: {"id": "test-email"})
+
+
 async def _seed_default_billing_plans(session: AsyncSession) -> None:
     """Mirror the billing migration seed for metadata-created test schemas."""
     session.add_all(
