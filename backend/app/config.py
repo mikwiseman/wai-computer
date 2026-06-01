@@ -108,7 +108,12 @@ class Settings(BaseSettings):
     # production Celery audio worker enables it explicitly with a single-task
     # concurrency and a persistent model cache.
     voice_identification_enabled: bool = False
-    recording_processing_stale_after_minutes: int = 15
+    # Stale-processing reclaim cutoff. MUST stay above the recording
+    # transcription task hard time_limit (21300s = 355 min) plus queue/upload
+    # headroom — otherwise the startup + every-minute recovery sweep force-FAILS
+    # an in-flight or queued transcription (e.g. an API restart on deploy killing
+    # a live ~5.9h job, or a recording waiting behind one on the solo worker).
+    recording_processing_stale_after_minutes: int = 480
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""
