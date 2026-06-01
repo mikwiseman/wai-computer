@@ -23,6 +23,7 @@ from app.core.summary_generation import (
     resolve_summary_style_preference,
     summary_transcript_hash,
 )
+from app.models.entity import Entity, EntityMention
 from app.models.highlight import Highlight
 from app.models.recording import (
     ActionItem,
@@ -222,6 +223,22 @@ async def test_apply_and_persist_summary_result_replaces_generated_outputs(
         "Budget risk",
     }
     assert {highlight.importance for highlight in highlights} == {"high", "medium"}
+
+    # Phase 2: the recording's people + topics seeded graph entities + mentions.
+    entities = (
+        await db_session.execute(select(Entity).where(Entity.user_id == user.id))
+    ).scalars().all()
+    assert {(e.type, e.name) for e in entities} == {
+        ("person", "Mik"),
+        ("topic", "planning"),
+    }
+    mentions = (
+        await db_session.execute(
+            select(EntityMention).where(EntityMention.source_id == recording.id)
+        )
+    ).scalars().all()
+    assert len(mentions) == 2
+    assert all(m.source_kind == "recording" for m in mentions)
 
 
 @pytest.mark.asyncio
