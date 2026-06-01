@@ -91,6 +91,10 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.xl)
+        .onAppear { recorder.language = languageManager.current }
+        .onChange(of: languageManager.current) { _, newValue in
+            recorder.language = newValue
+        }
         .onChange(of: isActive) { _, active in
             if !active && recorder.state == .recording {
                 recorder.cancel()
@@ -148,7 +152,14 @@ struct OnboardingVoiceSetupSlide: View {
 
     private func submit() {
         Task {
-            guard let data = recorder.recordedData else { return }
+            guard let data = recorder.recordedData else {
+                recorder.errorMessage = t(
+                    "Recording data unavailable. Please re-record.",
+                    "Данные записи недоступны. Запишите снова."
+                )
+                recorder.state = .idle
+                return
+            }
             guard recorder.hasMinimumDuration else {
                 recorder.errorMessage = t(
                     "Record at least 5 seconds before submitting.",
@@ -225,11 +236,20 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
     @Published var errorMessage: String?
     private(set) var recordedData: Data?
 
+    /// In-app language, kept in sync by the owning view so the recorder's own
+    /// error strings follow the user's ``LanguageManager`` selection instead of
+    /// the system locale. Defaults to the system-derived language.
+    var language: LanguageManager.SupportedLanguage = .followSystem
+
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
     private var timer: Timer?
     private let maxDurationSeconds: Double = 20.0
     private let minDurationSeconds: Double = 5.0
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: language)
+    }
 
     /// A voiceprint needs a minimum amount of speech to be reliable. The
     /// submit button stays disabled until this clears. Mirrors macOS.
@@ -250,7 +270,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             try AVAudioSession.sharedInstance().setCategory(.record, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            errorMessage = "Audio session error: \(error.localizedDescription)"
+            errorMessage = t(
+                "Audio session error: \(error.localizedDescription)",
+                "Ошибка аудиосессии: \(error.localizedDescription)"
+            )
             return
         }
 
@@ -268,7 +291,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             let recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder.delegate = self
             guard recorder.record() else {
-                errorMessage = "Could not start the microphone."
+                errorMessage = t(
+                    "Could not start the microphone.",
+                    "Не удалось запустить микрофон."
+                )
                 return
             }
             self.recorder = recorder
@@ -277,7 +303,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             self.state = .recording
             startTimer()
         } catch {
-            errorMessage = "Microphone error: \(error.localizedDescription)"
+            errorMessage = t(
+                "Microphone error: \(error.localizedDescription)",
+                "Ошибка микрофона: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -285,8 +314,7 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
         guard state == .recording else { return }
         recorder?.stop()
         cancelTimers()
-        loadRecordedData()
-        state = .recorded
+        Task { await finalizeRecording() }
     }
 
     func cancel() {
@@ -322,19 +350,48 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
         timer = nil
     }
 
-    private func loadRecordedData() {
+    /// Reads the just-finished recording off the main actor and surfaces any
+    /// read failure to the user instead of silently producing `nil` data
+    /// (which would leave "Use this take" enabled but no-op forever).
+    private func finalizeRecording() async {
         guard let url = fileURL else { return }
-        recordedData = try? Data(contentsOf: url)
-        try? FileManager.default.removeItem(at: url)
         fileURL = nil
+
+        // Read + delete the temp file on a background task so the synchronous
+        // Data(contentsOf:) never blocks the main actor.
+        let result: Result<Data, Error> = await Task.detached(priority: .userInitiated) {
+            do {
+                let data = try Data(contentsOf: url)
+                try? FileManager.default.removeItem(at: url)
+                return .success(data)
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                return .failure(error)
+            }
+        }.value
+
+        switch result {
+        case .success(let data):
+            recordedData = data
+            state = .recorded
+        case .failure:
+            // No-fallbacks: surface the problem and stay out of `.recorded`
+            // so the user re-records rather than pressing a dead button.
+            recordedData = nil
+            errorMessage = t(
+                "Could not read the recording. Please record again.",
+                "Не удалось прочитать запись. Запишите снова."
+            )
+            elapsedSeconds = 0
+            state = .idle
+        }
     }
 
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor in
             if self.state == .recording {
                 self.cancelTimers()
-                self.loadRecordedData()
-                self.state = .recorded
+                await self.finalizeRecording()
             }
         }
     }
