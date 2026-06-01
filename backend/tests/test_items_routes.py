@@ -199,3 +199,134 @@ async def test_create_item_enqueue_failure_is_visible_not_swallowed(
     entry = next(e for e in listing.json()["items"] if e["id"] == data["id"])
     assert entry["status"] == "failed"
     assert entry["error"]["code"] == "enqueue_failed"
+
+
+# --- POST /items/upload (document upload) ---
+
+
+async def test_upload_markdown_creates_note_item(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("notes.md", b"# Solar\n\nCosts fell sharply.", "text/markdown")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["kind"] == "note"
+    assert data["title"] == "notes"
+    assert data["status"] == "summarizing"
+
+
+async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
+        "app.core.source_fetch._extract_pdf_text",
+        return_value="Extracted PDF body about GPUs and inference cost.",
+    ):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("GPU Paper.pdf", b"%PDF-1.4 fake bytes", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["kind"] == "pdf"
+    assert data["title"] == "GPU Paper"
+
+
+async def test_upload_scanned_pdf_without_text_is_422(client, auth_headers) -> None:
+    from app.core.source_fetch import SourceFetchError
+
+    with patch(
+        "app.core.source_fetch._extract_pdf_text",
+        side_effect=SourceFetchError("This PDF has no extractable text.", code="pdf_no_text"),
+    ):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("scan.pdf", b"%PDF-1.4 scanned", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 422
+    assert "no extractable text" in resp.json()["detail"].lower()
+
+
+async def test_upload_rejects_video(client, auth_headers) -> None:
+    resp = await client.post(
+        "/api/items/upload",
+        files={"file": ("clip.mp4", b"\x00\x00\x00\x18ftyp", "video/mp4")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 415
+
+
+async def test_upload_empty_file_is_400(client, auth_headers) -> None:
+    resp = await client.post(
+        "/api/items/upload",
+        files={"file": ("empty.txt", b"", "text/plain")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 400
+
+
+async def test_upload_non_utf8_text_is_422(client, auth_headers) -> None:
+    resp = await client.post(
+        "/api/items/upload",
+        files={"file": ("bad.txt", b"\xff\xfe\x00bad bytes", "text/plain")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_upload_too_large_is_413(client, auth_headers, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "upload_max_bytes", 8)
+    resp = await client.post(
+        "/api/items/upload",
+        files={"file": ("big.txt", b"way more than eight bytes", "text/plain")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 413
+
+
+async def test_upload_resolves_type_from_content_type_and_markdown_ext(
+    client, auth_headers
+) -> None:
+    # No filename extension -> resolved via content-type.
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
+        "app.core.source_fetch._extract_pdf_text", return_value="body from ct-detected pdf"
+    ):
+        ct_resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("document", b"%PDF-1.4 bytes", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert ct_resp.status_code == 201, ct_resp.text
+    assert ct_resp.json()["kind"] == "pdf"
+
+    # `.markdown` extension maps to md.
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        md_resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("readme.markdown", b"# Hi\n\nbody text", "text/markdown")},
+            headers=auth_headers,
+        )
+    assert md_resp.status_code == 201, md_resp.text
+    assert md_resp.json()["kind"] == "note"
+
+
+async def test_upload_same_document_is_idempotent(client, auth_headers) -> None:
+    content = b"# Dup\n\nexactly the same content here"
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        first = await client.post(
+            "/api/items/upload",
+            files={"file": ("dup.md", content, "text/markdown")},
+            headers=auth_headers,
+        )
+        second = await client.post(
+            "/api/items/upload",
+            files={"file": ("dup.md", content, "text/markdown")},
+            headers=auth_headers,
+        )
+    assert first.status_code == 201 and second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
