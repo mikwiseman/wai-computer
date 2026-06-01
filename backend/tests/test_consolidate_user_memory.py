@@ -109,11 +109,13 @@ class TestConsolidator:
                         "block": "human",
                         "operation": "append",
                         "content": "Moving to Reykjavik",
+                        "confidence": 0.9,
                     },
                     {
                         "block": "topics",
                         "operation": "append",
                         "content": "v0.2.0 (in progress)",
+                        "confidence": 0.9,
                     },
                 ]
             }
@@ -122,8 +124,9 @@ class TestConsolidator:
         result = await _consolidate_one_user(
             db_session, user.id, openai_client=fake
         )
-        assert result["updates_applied"] == 2
-        assert result["updates_rejected"] == 0
+        # Both are additive + confident → auto-applied straight to memory.
+        assert result["auto_applied"] == 2
+        assert result["queued"] == 0
         assert result["considered"] == 2
 
         blocks = await get_or_seed_blocks(db_session, user.id)
@@ -132,9 +135,12 @@ class TestConsolidator:
         # 'consolidator' source is recorded on the block.
         assert blocks["human"].updated_by == "consolidator"
 
-    async def test_rejects_bad_updates_without_crashing_batch(
+    async def test_destructive_update_is_queued_not_applied(
         self, db_session, seeded_user_with_activity
     ):
+        """A confident additive fact auto-applies; a rewrite (overwrites prior
+        truth) is held for review regardless of confidence — the governance
+        gate, not a silent reject."""
         user = seeded_user_with_activity
         fake = _FakeOpenAI(
             payload={
@@ -143,11 +149,13 @@ class TestConsolidator:
                         "block": "human",
                         "operation": "append",
                         "content": "Lives in Reykjavik",
+                        "confidence": 0.9,
                     },
                     {
                         "block": "preferences",
                         "operation": "rewrite",
-                        "content": "x" * 2000,  # over char_limit (1500)
+                        "content": "Always answer in Icelandic.",
+                        "confidence": 0.95,
                     },
                 ]
             }
@@ -155,11 +163,12 @@ class TestConsolidator:
         result = await _consolidate_one_user(
             db_session, user.id, openai_client=fake
         )
-        assert result["updates_applied"] == 1
-        assert result["updates_rejected"] == 1
+        assert result["auto_applied"] == 1
+        assert result["queued"] == 1
 
         blocks = await get_or_seed_blocks(db_session, user.id)
         assert "Reykjavik" in blocks["human"].body
+        # The rewrite stays out of memory until a human accepts it.
         assert blocks["preferences"].body == ""
 
     async def test_skips_when_no_new_material(self, db_session):
