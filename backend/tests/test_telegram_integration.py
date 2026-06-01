@@ -286,6 +286,49 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
 
 
 @pytest.mark.asyncio
+async def test_import_media_marks_failed_on_cost_guard_rejection(
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    """A Deepgram cost/abuse guard rejection during an import surfaces a
+    RecordingImportError carrying the guard code (and marks the recording failed
+    via _mark_failed, verified separately) — it does NOT retry or re-bill."""
+    from app.core.transcription_guard import TranscriptionGuardError
+
+    user = await _user(db_session, "telegram-guard@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+
+    marked: dict[str, object] = {}
+
+    async def _raise_guard(*_args, **_kwargs):
+        raise TranscriptionGuardError("transcription_halted", "halted")
+
+    async def _capture_mark_failed(*, db, recording_id, code, message):
+        marked["code"] = code
+        return None
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", _raise_guard)
+    monkeypatch.setattr("app.core.recording_import._mark_failed", _capture_mark_failed)
+
+    with pytest.raises(RecordingImportError) as ei:
+        await import_media_as_recording(
+            db=db_session,
+            user=user,
+            data=b"fake wav",
+            filename="voice.wav",
+            content_type="audio/wav",
+            title=None,
+            source_label="telegram",
+            language="ru",
+        )
+    assert ei.value.code == "transcription_halted"
+    # the handler routed the guard code into _mark_failed (recording -> failed)
+    assert marked["code"] == "transcription_halted"
+
+
+@pytest.mark.asyncio
 async def test_webhook_requires_secret(client, monkeypatch):
     monkeypatch.setattr(telegram_routes.settings, "telegram_bot_token", "test-token")
     monkeypatch.setattr(telegram_routes.settings, "telegram_webhook_secret_token", "secret")
