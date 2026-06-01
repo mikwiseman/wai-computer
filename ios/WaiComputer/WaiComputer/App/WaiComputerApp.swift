@@ -204,10 +204,13 @@ enum IOSScreenshotFixtures {
 struct WaiComputerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
+    @StateObject private var languageManager = LanguageManager.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.locale, languageManager.preferredLocale)
+                .environmentObject(languageManager)
                 .environmentObject(appState)
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
