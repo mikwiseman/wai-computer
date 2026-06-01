@@ -467,6 +467,18 @@ export interface KeyMoment {
   end_ms?: number | null;
 }
 
+export interface ItemError {
+  code: string;
+  message: string;
+}
+
+export type ItemStatus =
+  | "fetching"
+  | "summarizing"
+  | "ready"
+  | "needs_input"
+  | "failed";
+
 export interface Item {
   id: string;
   source: string;
@@ -477,6 +489,8 @@ export interface Item {
   body: string | null;
   occurred_at: string | null;
   state: string;
+  status: ItemStatus;
+  error: ItemError | null;
   folder_id: string | null;
   created_at: string;
   summary: ItemSummary | null;
@@ -489,6 +503,8 @@ export interface ItemListEntry {
   kind: string;
   title: string | null;
   state: string;
+  status: ItemStatus;
+  error: ItemError | null;
   folder_id: string | null;
   occurred_at: string | null;
   created_at: string;

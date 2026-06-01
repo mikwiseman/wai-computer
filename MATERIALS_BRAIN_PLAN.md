@@ -21,13 +21,13 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 ## Phases (ordered by leverage)
 
 ### Phase 0 — Quick wins + no-fallbacks compliance
-- [ ] Backend: expose derived `status` enum (queued|fetching|transcribing|summarizing|ready|needs_input|failed) + `fetch_error{code,message}` in `ItemResponse`/`ItemListEntry` (additive, no migration).
-- [ ] Backend: kill silent enqueue swallow in `items.py` (set state=failed + fetch_error on broker fail).
-- [ ] Backend: kill silent enqueue swallow in `comparisons.py:~105` (mark row failed / 503, never permanently "generating").
-- [ ] Backend: race-safe idempotency in `ingest_item` (catch IntegrityError → re-SELECT).
-- [ ] Backend: GIN FTS index on `item_chunks.content` matching unified_search expression (migration).
-- [ ] Web: fix `onCreated` add→feed disconnect (DashboardClient ~1825 loadRecordingsState → refresh items + toast); lift items state; poll/refresh-on-focus on ItemsFeed/ItemDetail.
-- [ ] Web+Mac: unify kind taxonomy in WaiComputerKit + add missing **`pdf` filter chip**.
+- [x] Backend: derived `status` (fetching|summarizing|ready|needs_input|failed) + `error{code,message}` in `ItemResponse`/`ItemListEntry`. (commit 01ccea77)
+- [x] Backend: kill silent enqueue swallow in `items.py` (state=failed + processing_error on broker fail). (01ccea77)
+- [x] Backend: kill silent enqueue swallow in `comparisons.py` (mark set failed, drop dead intent block). (01ccea77)
+- [x] Backend: race-safe idempotency in `ingest_item` (SAVEPOINT + IntegrityError → re-SELECT). (01ccea77)
+- [x] Backend: GIN FTS index on `item_chunks.content` (migration 20260601_140000, validated on scratch DB). (01ccea77)
+- [x] Web: onCreated add→feed fix (reloadKey signal replaces loadRecordingsState); status-driven badges + error tooltips; poll-while-pending + focus refresh; real API error in AddAnything/ItemDetail; `status`/`error` TS types.
+- [~] Web+Mac taxonomy + `pdf` chip: WEB `pdf` chip done; Mac chips + WaiComputerKit unified taxonomy still pending.
 - [ ] Mac: render `MacContentFeedViewModel.errorMessage` inline banner; fix `MacBrainView try? getBrain()` → do/catch + .error/Retry; `addDraft()` polling after create.
 
 ### Phase 1 — File ingestion: the missing entrance

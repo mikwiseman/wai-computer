@@ -725,6 +725,8 @@ export function DashboardClient() {
   const [initializing, setInitializing] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Bumped after "Add anything" creates an item, to refresh the Content feed.
+  const [itemsReloadKey, setItemsReloadKey] = useState(0);
   const [user, setUser] = useState<User | null>(null);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -1822,14 +1824,14 @@ export function DashboardClient() {
         {view === "add" ? (
           <section className="tool-panel">
             <AddAnythingPanel
-              onCreated={() => void loadRecordingsState()}
+              onCreated={() => setItemsReloadKey((k) => k + 1)}
               onError={setMessage}
             />
           </section>
         ) : null}
         {view === "content" ? (
           <section className="tool-panel">
-            <ItemsFeed onError={setMessage} />
+            <ItemsFeed onError={setMessage} reloadKey={itemsReloadKey} />
           </section>
         ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}

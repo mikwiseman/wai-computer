@@ -65,8 +65,11 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
 
   const keyMoments: KeyMoment[] = result?.summary?.key_moments ?? [];
   const fetchError =
-    result?.state === "needs_input" && !result.summary?.summary
-      ? "Couldn't read that link automatically — share the file or paste the text."
+    result &&
+    (result.state === "needs_input" || result.status === "failed") &&
+    !result.summary?.summary
+      ? result.error?.message ??
+        "Couldn't read that link automatically — share the file or paste the text."
       : null;
 
   return (
