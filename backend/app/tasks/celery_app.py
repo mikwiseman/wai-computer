@@ -55,6 +55,7 @@ celery_app.conf.update(
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
     imports=[
         "app.tasks.billing_renewals",
+        "app.tasks.comparison_generation",
         "app.tasks.consolidate_user_memory",
         "app.tasks.embedding_backfill",
         "app.tasks.item_summary_generation",

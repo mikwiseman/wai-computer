@@ -18,6 +18,7 @@ from app.api.routes import (
     auth,
     benchmarks,
     companion,
+    comparisons,
     dictation,
     entities,
     folders,
@@ -187,6 +188,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
+app.include_router(comparisons.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
 app.include_router(personalization.router, prefix="/api")
 app.include_router(voice_enrollment.router, prefix="/api")
