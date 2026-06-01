@@ -225,7 +225,10 @@ enum IOSScreenshotFixtures {
             "total": 2
         }
         """.data(using: .utf8)!
-        return try! JSONDecoder().decode(SearchResponse.self, from: data)
+        guard let response = try? JSONDecoder().decode(SearchResponse.self, from: data) else {
+            fatalError("searchResponse fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return response
     }()
 
     static func recording(id: String) -> Recording {

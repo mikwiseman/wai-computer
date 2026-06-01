@@ -124,16 +124,33 @@ enum IOSDateFormatting {
         }
     }
 
+    /// Cache of configured `DateFormatter`s keyed by (language, dateStyle,
+    /// timeStyle). `DateFormatter` creation is expensive, and `string(from:)` is
+    /// called once per row in large lists — allocating a fresh formatter each
+    /// time caused measurable scroll jank. Guarded by a lock because formatters
+    /// are not `Sendable` and callers may not all be on the main actor.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var formatterCache: [String: DateFormatter] = [:]
+
     static func string(
         from date: Date,
         dateStyle: DateFormatter.Style,
         timeStyle: DateFormatter.Style,
         language: LanguageManager.SupportedLanguage
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale(for: language)
-        formatter.dateStyle = dateStyle
-        formatter.timeStyle = timeStyle
+        let key = "\(language.rawValue)-\(dateStyle.rawValue)-\(timeStyle.rawValue)"
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        let formatter: DateFormatter
+        if let cached = formatterCache[key] {
+            formatter = cached
+        } else {
+            formatter = DateFormatter()
+            formatter.locale = locale(for: language)
+            formatter.dateStyle = dateStyle
+            formatter.timeStyle = timeStyle
+            formatterCache[key] = formatter
+        }
         return formatter.string(from: date)
     }
 }
