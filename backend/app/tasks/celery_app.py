@@ -84,6 +84,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.recording_audio_processing.recover_stale_recording_processing",
         "schedule": timedelta(minutes=1),
     },
+    "mcp-sync-dispatch-every-5-minutes": {
+        # Enqueue ingestion for any connected MCP server whose sync is due.
+        "task": "app.tasks.mcp_sync.dispatch_due_mcp_syncs",
+        "schedule": timedelta(minutes=5),
+    },
 }
 
 
