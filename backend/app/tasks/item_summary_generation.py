@@ -14,7 +14,7 @@ from uuid import UUID
 from billiard.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 
-from app.core.item_summary import generate_item_summary
+from app.core.item_processing import process_item
 from app.core.observability import (
     capture_sentry_anomaly,
     capture_sentry_exception,
@@ -36,10 +36,9 @@ async def _generate_item_summary(*, item_id: str) -> None:
         if item is None:
             logger.info("item summary skip — item not found id=%s", item_id)
             return
-        if not (item.body or "").strip():
-            logger.info("item summary skip — no body id=%s", item_id)
-            return
-        await generate_item_summary(db, item)
+        # Fetch (if URL-only) -> embed -> summarize. Fetch errors are recorded
+        # on the item (needs_input) rather than raised, so the item survives.
+        await process_item(db, item)
 
 
 @celery_app.task(

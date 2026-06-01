@@ -150,8 +150,9 @@ async def create_item(
     )
     await db.flush()
 
-    if created and has_body:
-        # Enqueue background summary + key-moments. Import lazily so the API
+    if created:
+        # Enqueue background processing: fetch the URL (if body-less), embed,
+        # and summarize + build the key-moments table. Import lazily so the API
         # process doesn't hard-depend on Celery wiring at import time.
         try:
             from app.tasks.item_summary_generation import generate_item_summary_task
