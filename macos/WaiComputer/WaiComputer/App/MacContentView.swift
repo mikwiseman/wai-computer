@@ -120,6 +120,7 @@ struct MacMainView: View {
         case trash
         case content
         case brain
+        case review
         case search
         case history
         case dictionary
@@ -136,7 +137,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .content, .brain, .search, .history, .dictionary, .wai, .settings:
+        case .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -186,6 +187,8 @@ struct MacMainView: View {
             return t("Content", "Материалы")
         case .brain:
             return t("Brain", "Мозг")
+        case .review:
+            return t("Review", "На проверку")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -505,6 +508,7 @@ struct MacMainView: View {
             case "allRecordings": selectedSection = .allRecordings
             case "content": selectedSection = .content
             case "brain": selectedSection = .brain
+            case "review": selectedSection = .review
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -589,6 +593,7 @@ struct MacMainView: View {
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
                 sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
+                sidebarRow(t("Review", "На проверку"), icon: "tray.full", section: .review, identifier: "review")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
                 Text(t("Library", "Библиотека"))
@@ -852,6 +857,9 @@ struct MacMainView: View {
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .brain:
             MacBrainView(apiClient: appState.getAPIClient())
+                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+        case .review:
+            MacReviewView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView { recordingId in
