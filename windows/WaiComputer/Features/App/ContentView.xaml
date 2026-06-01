@@ -7,8 +7,7 @@
     xmlns:set="using:WaiComputer.Features.Settings"
     xmlns:search="using:WaiComputer.Features.Search"
     xmlns:dict="using:WaiComputer.Features.Dictation"
-    xmlns:comp="using:WaiComputer.Features.Companion"
-    xmlns:apps="using:WaiComputer.Features.Apps">
+    xmlns:comp="using:WaiComputer.Features.Companion">
     <NavigationView x:Name="Nav"
                     PaneDisplayMode="Left"
                     IsBackButtonVisible="Collapsed"
@@ -21,7 +20,6 @@
             <NavigationViewItem Tag="search" Content="Search" Icon="Find" />
             <NavigationViewItem Tag="companion" Content="Companion" Icon="Comment" />
             <NavigationViewItem Tag="dictation" Content="Dictation" Icon="Keyboard" />
-            <NavigationViewItem Tag="apps" Content="Apps" Icon="AllApps" />
         </NavigationView.MenuItems>
         <Frame x:Name="ContentFrame" />
     </NavigationView>

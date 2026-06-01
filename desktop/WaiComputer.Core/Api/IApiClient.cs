@@ -130,10 +130,4 @@ public interface IApiClient
 
     // Entities
     Task<IReadOnlyList<Entity>> ListEntitiesAsync(EntityType? type = null, CancellationToken ct = default);
-
-    // Apps
-    Task<IReadOnlyList<App>> ListAppsAsync(CancellationToken ct = default);
-    Task<App> GetAppAsync(string id, CancellationToken ct = default);
-    Task<IReadOnlyList<AppItem>> ListAppItemsAsync(string id, CancellationToken ct = default);
-    Task<AppStats> GetAppStatsAsync(string id, CancellationToken ct = default);
 }
