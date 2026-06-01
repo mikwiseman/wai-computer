@@ -57,6 +57,26 @@ public class AudioMixerTests
     }
 
     [Fact]
+    public void MixToMonoAverageAveragesSamples()
+    {
+        var a = Pcm(100, 200, 300);
+        var b = Pcm(50, 60, 70);
+        var dst = new byte[a.Length];
+        AudioMixer.MixToMonoAverage(a, b, dst);
+        AsShorts(dst).Should().Equal((short)75, (short)130, (short)185);
+    }
+
+    [Fact]
+    public void MixToMonoAverageNeverClips()
+    {
+        var a = Pcm(30000, -30000);
+        var b = Pcm(20000, -20000);
+        var dst = new byte[a.Length];
+        AudioMixer.MixToMonoAverage(a, b, dst);
+        AsShorts(dst).Should().Equal((short)25000, (short)-25000); // averaged, not saturated
+    }
+
+    [Fact]
     public void InterleaveStereoPutsLeftAndRightInOrder()
     {
         var l = Pcm(100, 200);
