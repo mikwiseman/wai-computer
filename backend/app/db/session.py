@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
@@ -14,6 +15,15 @@ settings = get_settings()
 _engine = None
 _session_maker = None
 _runtime_pid: int | None = None
+# Celery workers run each task in its OWN asyncio.run() loop. A pooled asyncpg
+# connection returned after one task is later closed during the next task's
+# engine teardown — from a different, already-closed loop — raising
+# "MissingGreenlet ... Exception closing connection" (recover_stale every
+# minute was the visible spammer). NullPool opens+closes a connection per use,
+# always inside the current loop, so nothing survives the loop boundary. The API
+# keeps real pooling (it runs on one long-lived loop). Toggled per process via
+# enable_nullpool() from the Celery worker_process_init hook.
+_use_nullpool = False
 # The event LOOP OBJECT the runtime is bound to — NOT id(loop). A Celery task
 # that wraps each run in asyncio.run() gets a fresh loop that is closed and
 # GC'd afterwards; CPython then reuses that freed address, so the next loop can
@@ -26,6 +36,14 @@ _runtime_loop = None
 
 
 def _create_engine():
+    if _use_nullpool:
+        # No cross-call pooling: each connection lives and dies within one
+        # asyncio.run() loop, so it can never be closed from a dead loop.
+        return create_async_engine(
+            settings.database_url,
+            echo=settings.debug,
+            poolclass=NullPool,
+        )
     return create_async_engine(
         settings.database_url,
         echo=settings.debug,
@@ -94,6 +112,18 @@ class _EngineProxy:
 def reset_db_runtime() -> None:
     """Recreate the async engine/session factory for the current process."""
     _ensure_runtime(force=True)
+
+
+def enable_nullpool() -> None:
+    """Switch this process to NullPool and rebuild the runtime.
+
+    Called from the Celery worker_process_init hook: a worker runs each task in
+    its own ``asyncio.run()`` loop, so a pooled connection would eventually be
+    closed from a dead loop (MissingGreenlet). NullPool sidesteps that entirely.
+    """
+    global _use_nullpool
+    _use_nullpool = True
+    reset_db_runtime()
 
 
 async_session_maker = _AsyncSessionMakerProxy()
