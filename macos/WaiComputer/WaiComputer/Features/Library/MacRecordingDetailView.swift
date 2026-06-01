@@ -110,7 +110,7 @@ struct MacRecordingDetailView: View {
                     onRetry: retryLoad
                 )
             } else {
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     t("Recording Not Found", "Запись не найдена"),
                     systemImage: "doc.questionmark",
                     description: Text(t("Unable to load this recording.", "Не удалось загрузить эту запись."))
@@ -130,7 +130,7 @@ struct MacRecordingDetailView: View {
         .onDisappear {
             loadTask?.cancel()
         }
-        .onChange(of: recordingId) { _, newId in
+        .onChangeCompat(of: recordingId) { _, newId in
             loadTask?.cancel()
             loadTask = Task {
                 await loadRecordingDetail(
@@ -156,7 +156,7 @@ struct MacRecordingDetailView: View {
                 await loadRecordingDetail(recordingId: recordingId, showLoading: false)
             }
         }
-        .onChange(of: pendingTitleEditId) { _, requested in
+        .onChangeCompat(of: pendingTitleEditId) { _, requested in
             guard let requested, requested == recordingId, mode == .active else { return }
             startTitleEdit(currentTitle: viewModel.recordingDetail?.title)
             pendingTitleEditId = nil
@@ -317,11 +317,10 @@ struct MacRecordingDetailView: View {
                         alignment: .leading
                     )
                     .onSubmit { commitTitleEdit(originalTitle: detail.title) }
-                    .onKeyPress(.escape) {
+                    .onEscapeKeyCompat {
                         isEditingTitle = false
-                        return .handled
                     }
-                    .onChange(of: titleFieldFocused) { _, focused in
+                    .onChangeCompat(of: titleFieldFocused) { _, focused in
                         if !focused && isEditingTitle {
                             commitTitleEdit(originalTitle: detail.title)
                         }
@@ -614,7 +613,7 @@ struct MacRecordingDetailView: View {
         } else {
             VStack(spacing: Spacing.lg) {
                 Spacer().frame(height: Spacing.xxxl)
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     t("No Summary", "Нет сводки"),
                     systemImage: "doc.text",
                     description: Text(t("Generate a summary to see key points and insights.", "Сгенерируй сводку, чтобы увидеть ключевые пункты."))
@@ -770,7 +769,7 @@ private struct RecordingDetailLoadErrorView: View {
 
     var body: some View {
         VStack(spacing: Spacing.lg) {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 title,
                 systemImage: "wifi.exclamationmark",
                 description: Text(message)

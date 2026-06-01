@@ -53,7 +53,7 @@ struct DictationHistoryView: View {
             // Entries list
             if filteredEntries.isEmpty {
                 Spacer()
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     searchText.isEmpty ? t("No Dictations Yet", "Пока нет диктовок") : t("No Results", "Ничего не найдено"),
                     systemImage: searchText.isEmpty ? "mic.badge.plus" : "magnifyingglass",
                     description: Text(searchText.isEmpty

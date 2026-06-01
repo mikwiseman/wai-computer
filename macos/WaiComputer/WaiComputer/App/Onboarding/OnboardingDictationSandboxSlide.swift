@@ -49,7 +49,7 @@ struct OnboardingDictationSandboxSlide: View {
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
-        .onChange(of: isActive) { _, newValue in
+        .onChangeCompat(of: isActive) { _, newValue in
             if newValue {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                     fieldFocused = true
@@ -62,12 +62,12 @@ struct OnboardingDictationSandboxSlide: View {
                 textBeforeCurrentUtterance = nil
             }
         }
-        .onChange(of: text) { _, newValue in
+        .onChangeCompat(of: text) { _, newValue in
             if !hasDictatedOnce, !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 hasDictatedOnce = true
             }
         }
-        .onChange(of: dictationManager.state) { oldValue, newValue in
+        .onChangeCompat(of: dictationManager.state) { oldValue, newValue in
             if textBeforeCurrentUtterance == nil,
                (newValue == .connecting || newValue == .listening) {
                 textBeforeCurrentUtterance = text
@@ -81,7 +81,7 @@ struct OnboardingDictationSandboxSlide: View {
         // finishes pasting into the target field. Keep it pending until the
         // manager returns to idle, then append only if TextInserter did not
         // already update this sandbox field.
-        .onChange(of: dictationManager.lastFinalTranscript) { oldValue, newValue in
+        .onChangeCompat(of: dictationManager.lastFinalTranscript) { oldValue, newValue in
             guard isActive, let inserted = newValue, inserted != oldValue, !inserted.isEmpty else { return }
             pendingFinalTranscript = PendingFinalTranscript(
                 text: inserted,
@@ -156,7 +156,7 @@ struct OnboardingDictationSandboxSlide: View {
                     .foregroundStyle(Palette.textSecondary)
             case .listening:
                 Image(systemName: "waveform")
-                    .symbolEffect(.variableColor.iterative)
+                    .variableColorIterativeEffectCompat()
                     .font(.system(size: 13))
                     .foregroundStyle(Palette.accent)
                 Text(t("Listening — keep the key held.", "Слушаем — держи клавишу."))

@@ -60,11 +60,11 @@ struct OnboardingView: View {
             refreshPermissions()
             startPermissionPollingIfNeeded()
         }
-        .onChange(of: currentPage) { _, _ in
+        .onChangeCompat(of: currentPage) { _, _ in
             persistCurrentPage()
         }
         .onDisappear(perform: stopPermissionPolling)
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChangeCompat(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 refreshPermissions()
                 startPermissionPollingIfNeeded()
@@ -387,10 +387,7 @@ struct OnboardingView: View {
     }
 
     private static var isSystemAudioCaptureSupported: Bool {
-        if #available(macOS 14.2, *) {
-            return true
-        }
-        return false
+        SystemAudioGate.isSupported
     }
 
     private static func currentSystemAudioReadiness(
@@ -642,7 +639,7 @@ private struct OnboardingPermissionSlide: View {
                 }
             }
             .frame(maxWidth: 500, maxHeight: 510, alignment: .center)
-            .scrollBounceBehavior(.basedOnSize)
+            .scrollBounceBasedOnSizeCompat()
 
             permissionExplanationPanel
                 .frame(maxWidth: 360, alignment: .leading)
