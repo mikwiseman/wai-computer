@@ -139,10 +139,15 @@ public sealed class ApiClient : IApiClient, IDisposable
 
     // ----- recordings ---------------------------------------------------
 
-    public Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null,
+        RecordingType? type = null, string? folderId = null, bool trashed = false, CancellationToken ct = default)
     {
-        var qs = $"?skip={skip}&limit={limit}" + (starred is bool s ? $"&is_starred={(s ? "true" : "false")}" : string.Empty);
-        return SendAsync<IReadOnlyList<Recording>>(HttpMethod.Get, "/api/recordings" + qs, ct: ct);
+        var qs = new StringBuilder($"?skip={skip}&limit={limit}");
+        if (trashed) qs.Append("&trashed=true");
+        if (type is { } t) qs.Append("&type=").Append(JsonSerializer.Serialize(t, WaiJson.Options).Trim('"'));
+        if (!string.IsNullOrEmpty(folderId)) qs.Append("&folder_id=").Append(Uri.EscapeDataString(folderId));
+        if (starred == true) qs.Append("&starred=true");
+        return SendAsync<IReadOnlyList<Recording>>(HttpMethod.Get, "/api/recordings" + qs.ToString(), ct: ct);
     }
 
     public Task<Recording> CreateRecordingAsync(CreateRecordingRequest request, CancellationToken ct = default)
@@ -174,6 +179,9 @@ public sealed class ApiClient : IApiClient, IDisposable
 
     public Task<Recording> UnstarRecordingAsync(string id, CancellationToken ct = default)
         => SendAsync<Recording>(HttpMethod.Delete, $"/api/recordings/{Uri.EscapeDataString(id)}/star", ct: ct);
+
+    public Task<BulkRecordingOperationResponse> BulkRecordingOperationAsync(BulkRecordingOperationRequest request, CancellationToken ct = default)
+        => SendJsonAsync<BulkRecordingOperationRequest, BulkRecordingOperationResponse>(HttpMethod.Post, "/api/recordings/bulk", request, ct: ct);
 
     public async Task<RecordingDetail> UploadRecordingAudioAsync(
         string recordingId,
@@ -271,15 +279,22 @@ public sealed class ApiClient : IApiClient, IDisposable
     public Task<Summary> GenerateSummaryAsync(string recordingId, CancellationToken ct = default)
         => SendAsync<Summary>(HttpMethod.Post, $"/api/recordings/{Uri.EscapeDataString(recordingId)}/generate-summary", ct: ct);
 
-    public async Task<string> ExportRecordingAsync(string id, string format, CancellationToken ct = default)
+    public Task<SummaryGenerationState> GetSummaryGenerationAsync(string recordingId, CancellationToken ct = default)
+        => SendAsync<SummaryGenerationState>(HttpMethod.Get, $"/api/recordings/{Uri.EscapeDataString(recordingId)}/summary-generation", ct: ct);
+
+    public async Task<string> ExportRecordingAsync(string id, string format, string? locale = null, CancellationToken ct = default)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get,
-            ResolveUri($"/api/recordings/{Uri.EscapeDataString(id)}/export?format={Uri.EscapeDataString(format)}"));
+        var url = $"/api/recordings/{Uri.EscapeDataString(id)}/export?format={Uri.EscapeDataString(format)}";
+        if (!string.IsNullOrEmpty(locale))
+        {
+            url += $"&locale={Uri.EscapeDataString(locale)}";
+        }
+        using var req = new HttpRequestMessage(HttpMethod.Get, ResolveUri(url));
         AttachBearer(req);
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Unauthorized && await TryRecoverAuthAsync(ct).ConfigureAwait(false))
         {
-            return await ExportRecordingAsync(id, format, ct).ConfigureAwait(false);
+            return await ExportRecordingAsync(id, format, locale, ct).ConfigureAwait(false);
         }
         await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
         return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
