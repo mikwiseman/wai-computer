@@ -2,9 +2,8 @@ import SwiftUI
 import WaiComputerKit
 
 /// The "Brain" tab: the second-brain home. A universal feed of captured items
-/// (links, notes, files, MCP-ingested rows) with add-anything capture. Entries
-/// to the compiled-wiki Brain, the Review queue, and Comparisons are layered in
-/// alongside this feed.
+/// (links, notes, files, MCP-ingested rows) with add-anything capture, plus
+/// entries to the compiled-wiki Memory, the Review queue, and Comparisons.
 struct SecondBrainView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: ContentFeedViewModel
@@ -20,22 +19,50 @@ struct SecondBrainView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if model.entries.isEmpty && !model.isLoading {
-                    emptyState
-                } else {
-                    feedList
+            List {
+                Section {
+                    NavigationLink {
+                        MemoryView(apiClient: model.apiClient)
+                    } label: {
+                        entryRow(icon: "brain", title: t("Memory", "Память"), badge: nil)
+                    }
+                    NavigationLink {
+                        ReviewView(apiClient: model.apiClient)
+                    } label: {
+                        entryRow(icon: "tray.full", title: t("Review", "На проверку"),
+                                 badge: model.pendingReviewCount)
+                    }
+                }
+
+                Section(header: Text(t("Captured", "Сохранённое"))) {
+                    if model.entries.isEmpty {
+                        Text(t("Tap + to save a link or a note — summarized and searchable forever.",
+                               "Нажмите +, чтобы сохранить ссылку или заметку — с конспектом и навсегда в поиске."))
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(Palette.textSecondary)
+                    } else {
+                        ForEach(model.entries) { entry in
+                            NavigationLink {
+                                ItemDetailView(itemId: entry.id, apiClient: model.apiClient) {
+                                    Task { await model.load() }
+                                }
+                            } label: {
+                                row(entry)
+                            }
+                        }
+                        .onDelete { offsets in
+                            let ids = offsets.map { model.entries[$0].id }
+                            Task { for id in ids { await model.delete(id) } }
+                        }
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle(t("Brain", "Мозг"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAdd = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityIdentifier("brain-add-button")
+                    Button { showAdd = true } label: { Image(systemName: "plus") }
+                        .accessibilityIdentifier("brain-add-button")
                 }
             }
             .sheet(isPresented: $showAdd) {
@@ -60,34 +87,23 @@ struct SecondBrainView: View {
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableViewCompat(
-            t("Your brain is empty", "Ваш мозг пуст"),
-            systemImage: "brain",
-            description: Text(t(
-                "Tap + to save a link or a note. WaiComputer summarizes it and makes it searchable forever.",
-                "Нажмите +, чтобы сохранить ссылку или заметку. WaiComputer сделает конспект и навсегда добавит в поиск."
-            ))
-        )
-    }
-
-    private var feedList: some View {
-        List {
-            ForEach(model.entries) { entry in
-                NavigationLink {
-                    ItemDetailView(itemId: entry.id, apiClient: model.apiClient) {
-                        Task { await model.load() }
-                    }
-                } label: {
-                    row(entry)
-                }
-            }
-            .onDelete { offsets in
-                let ids = offsets.map { model.entries[$0].id }
-                Task { for id in ids { await model.delete(id) } }
+    private func entryRow(icon: String, title: String, badge: Int?) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 15))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 24)
+            Text(title).font(Typography.body)
+            Spacer()
+            if let badge, badge > 0 {
+                Text("\(badge)")
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Palette.accent, in: Capsule())
             }
         }
-        .listStyle(.plain)
     }
 
     private func row(_ entry: ItemListEntry) -> some View {
