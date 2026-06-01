@@ -32,6 +32,11 @@ dependencies = [
     "pydub>=0.25",
     "audioop-lts>=0.2.2; python_version >= '3.13'",
     "stripe>=15.0.0,<16.0.0",
+    # Universal second-brain source fetchers (URL -> text content).
+    "trafilatura>=2.0.0,<3.0",
+    "youtube-transcript-api>=1.2.4,<2.0",
+    "pdfplumber>=0.11.9,<1.0",
+    "feedparser>=6.0.12,<7.0",
 ]
 
 [project.optional-dependencies]
