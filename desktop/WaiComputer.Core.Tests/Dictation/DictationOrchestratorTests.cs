@@ -260,6 +260,48 @@ public class DictationOrchestratorTests : IAsyncLifetime
         _inserter.Inserted.Should().ContainSingle().Which.Should().Be("deferred hello");
     }
 
+    [Fact]
+    public async Task TrailingInterimIsFusedWithFinalsNotDropped()
+    {
+        // finals = ["hello world", "how are"] + un-finalized tail interim "you".
+        // The superset-only selector must receive ONE fused live candidate, else "you" is lost.
+        StubMint();
+        _factory.AutoFinal = null;
+
+        await _orch.StartAsync();
+        var session = _factory.Last!;
+        session.EmitFinal("hello world");
+        session.EmitFinal("how are");
+        session.EmitInterim("you"); // never finalized — only carried by _lastInterim
+
+        await _orch.StopAndInsertAsync();
+
+        _inserter.Inserted.Should().ContainSingle().Which.Should().Be("hello world how are you");
+    }
+
+    [Fact]
+    public async Task FatalProviderErrorDuringFinalizeDoesNotInsertOrComplete()
+    {
+        // A fatal warning lands in the finalize drain window (emitted on EndTurn): the turn must
+        // abort — no insertion, no Completed — even though a partial transcript exists.
+        StubMint();
+        _factory.AutoFinal = "partial speech so far";
+        _factory.WarnOnEndTurn = (TranscriptionErrorCodes.SessionTimeLimitExceeded, "session time limit exceeded");
+
+        string? failure = null;
+        DictationResult? completed = null;
+        _orch.Failed += m => failure = m;
+        _orch.Completed += r => completed = r;
+
+        await _orch.StartAsync();
+        await _orch.StopAndInsertAsync();
+
+        failure.Should().NotBeNull();
+        completed.Should().BeNull();
+        _inserter.Inserted.Should().BeEmpty();
+        await WaitFor(() => _orch.State == DictationState.Idle);
+    }
+
     // ----- fakes -----------------------------------------------------------
 
     private sealed class FakeMicPreRoll : IMicrophonePreRollCapture
@@ -278,13 +320,14 @@ public class DictationOrchestratorTests : IAsyncLifetime
     private sealed class FakeSessionFactory : IRealtimeSessionFactory
     {
         public string? AutoFinal { get; set; }
+        public (string Code, string Message)? WarnOnEndTurn { get; set; }
         public int CreatedCount { get; private set; }
         public FakeSession? Last { get; private set; }
 
         public IRealtimeTranscriptionSession Create(RealtimeTranscriptionSessionConfig config)
         {
             CreatedCount++;
-            Last = new FakeSession(AutoFinal);
+            Last = new FakeSession(AutoFinal, WarnOnEndTurn);
             return Last;
         }
     }
@@ -295,8 +338,13 @@ public class DictationOrchestratorTests : IAsyncLifetime
         private readonly List<LiveTranscriptSegment> _collected = new();
         private readonly object _lock = new();
         private readonly string? _autoFinal;
+        private readonly (string Code, string Message)? _warnOnEndTurn;
 
-        public FakeSession(string? autoFinal) => _autoFinal = autoFinal;
+        public FakeSession(string? autoFinal, (string Code, string Message)? warnOnEndTurn = null)
+        {
+            _autoFinal = autoFinal;
+            _warnOnEndTurn = warnOnEndTurn;
+        }
 
         public bool Opened { get; private set; }
         public bool Closed { get; private set; }
@@ -323,11 +371,25 @@ public class DictationOrchestratorTests : IAsyncLifetime
             _events.Writer.TryWrite(new TranscriptionEvent.Transcript(seg));
         }
 
+        public void EmitInterim(string text)
+            => _events.Writer.TryWrite(new TranscriptionEvent.Transcript(new LiveTranscriptSegment(text, null, false, 0, 0, 1)));
+
         public void EmitWarning(string code, string message)
             => _events.Writer.TryWrite(new TranscriptionEvent.ProviderWarning(code, message));
 
         public Task SendPcmAsync(ReadOnlyMemory<byte> pcm16Mono, CancellationToken ct) => Task.CompletedTask;
-        public Task EndTurnAsync() { EndTurned = true; return Task.CompletedTask; }
+
+        public Task EndTurnAsync()
+        {
+            EndTurned = true;
+            // Inject a provider warning into the finalize drain window (deterministic).
+            if (_warnOnEndTurn is { } w)
+            {
+                EmitWarning(w.Code, w.Message);
+            }
+            return Task.CompletedTask;
+        }
+
         public Task CloseAsync(TimeSpan timeout) { Closed = true; _events.Writer.TryComplete(); return Task.CompletedTask; }
         public ValueTask DisposeAsync() { _events.Writer.TryComplete(); return ValueTask.CompletedTask; }
     }
