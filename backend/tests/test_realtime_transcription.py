@@ -221,9 +221,14 @@ def _encode_proxy_payload(overrides: dict[str, object]) -> str:
     [
         ({"sub": ""}, "subject"),
         ({"language": ""}, "language"),
+        ({"language": 5}, "language"),
         ({"model": ""}, "model"),
+        ({"model": None}, "model"),
         ({"purpose": "invalid"}, "purpose"),
         ({"channels": 0}, "channels"),
+        ({"channels": "two"}, "channels"),
+        ({"keyterms": "not-a-list"}, "keyterms"),
+        ({"keyterms": [1, 2]}, "keyterms"),
     ],
 )
 def test_decode_realtime_proxy_token_rejects_invalid_claims(
