@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.providers.base import ProviderEvent
+from app.core.email import send_charge_confirmation_email
 from app.models.billing import (
     BillingEvent,
     BillingPeriod,
@@ -537,5 +538,24 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                     receipt_url=None,
                 )
             )
+            # Notify the user of every successful charge (T-Bank recurrent
+            # requirement). This is the single point both the first payment and
+            # each renewal flow through, and it runs only when a fresh invoice
+            # was created, so the user gets exactly one receipt per charge.
+            # Best-effort: a mail failure must not roll back the charge.
+            charge_user = (
+                customer_user
+                if customer_user is not None and customer_user.id == sub.user_id
+                else await db.get(User, sub.user_id)
+            )
+            if charge_user is not None:
+                await send_charge_confirmation_email(
+                    charge_user.email,
+                    amount=Decimal(int(amount)) / Decimal(100),
+                    currency="RUB",
+                    period=sub.billing_period,
+                    next_charge_at=sub.tinkoff_next_charge_at,
+                    locale=charge_user.region,
+                )
 
     await db.flush()

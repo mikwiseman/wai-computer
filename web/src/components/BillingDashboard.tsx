@@ -9,9 +9,11 @@ import {
   getBillingInvoices,
   getBillingSubscription,
   getBillingUsage,
+  listBillingPlans,
   openBillingPortal,
   switchBillingPlan,
   type BillingInvoice,
+  type BillingPlan,
   type BillingSubscription,
   type BillingUsage,
 } from "@/lib/billing";
@@ -70,6 +72,15 @@ const COPY: Record<
     payWith: string;
     providerTinkoff: string;
     providerStripe: string;
+    billingPeriodLabel: string;
+    perMonth: string;
+    perYear: string;
+    vatIncluded: string;
+    autoRenew: (amount: string, per: string) => string;
+    recurringConsent: (amount: string, per: string) => string;
+    agreementLink: string;
+    privacyLink: string;
+    conversionNotice: string;
     promoLabel: string;
     promoPlaceholder: string;
     promoApply: string;
@@ -138,6 +149,17 @@ const COPY: Record<
     payWith: "Pay with",
     providerTinkoff: "RUB via T-Bank",
     providerStripe: "USD via Stripe",
+    billingPeriodLabel: "Billing period",
+    perMonth: "/ month",
+    perYear: "/ year",
+    vatIncluded: "",
+    autoRenew: (amount, per) => `Renews automatically: ${amount} ${per} until you cancel.`,
+    recurringConsent: (amount, per) =>
+      `I agree to recurring automatic charges of ${amount} ${per} until I cancel, ` +
+      "and to the processing of my personal data:",
+    agreementLink: "Subscription agreement",
+    privacyLink: "Privacy Policy",
+    conversionNotice: "Charged in RUB; your card issuer may convert at its own rate.",
     promoLabel: "Promo code",
     promoPlaceholder: "Enter promo code",
     promoApply: "Apply",
@@ -222,6 +244,19 @@ const COPY: Record<
     payWith: "Оплата через",
     providerTinkoff: "RUB через Т-Банк",
     providerStripe: "USD через Stripe",
+    billingPeriodLabel: "Период оплаты",
+    perMonth: "в месяц",
+    perYear: "в год",
+    vatIncluded: "включая НДС",
+    autoRenew: (amount, per) =>
+      `Продлевается автоматически: ${amount} ${per}, пока вы не отмените.`,
+    recurringConsent: (amount, per) =>
+      `Я соглашаюсь на регулярное автоматическое списание ${amount} ${per} ` +
+      "до отмены подписки и на обработку персональных данных согласно:",
+    agreementLink: "Соглашение о подписке",
+    privacyLink: "Политика конфиденциальности",
+    conversionNotice:
+      "Оплата в рублях; банк-эмитент карты может конвертировать сумму по своему курсу.",
     promoLabel: "Промокод",
     promoPlaceholder: "Введите промокод",
     promoApply: "Применить",
@@ -492,13 +527,22 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
   );
+  const [proPlan, setProPlan] = useState<BillingPlan | null>(null);
+  const [upgradePeriod, setUpgradePeriod] = useState<"month" | "year">("month");
+  const [acceptedRecurring, setAcceptedRecurring] = useState(false);
 
   useEffect(() => {
-    Promise.all([getBillingSubscription(), getBillingUsage(), getBillingInvoices()])
-      .then(([s, u, inv]) => {
+    Promise.all([
+      getBillingSubscription(),
+      getBillingUsage(),
+      getBillingInvoices(),
+      listBillingPlans(),
+    ])
+      .then(([s, u, inv, plans]) => {
         setSub(s);
         setUsage(u);
         setInvoices(inv);
+        setProPlan(plans.find((p) => p.code === "pro") ?? null);
         const initialPeriod: "monthly" | "yearly" =
           s.billing_period === "year" ? "yearly" : "monthly";
         setSwitchPeriod(initialPeriod);
@@ -535,13 +579,33 @@ export function BillingDashboard({ locale, currency }: Props) {
   const currentPeriod: "monthly" | "yearly" =
     sub.billing_period === "year" ? "yearly" : "monthly";
 
+  // Upgrade pricing shown BEFORE the pay button, sourced from /billing/plans so
+  // it can never drift from the amount actually charged.
+  const useRubUpgrade = provider === "tinkoff";
+  const upgradeAmountNum = useRubUpgrade
+    ? upgradePeriod === "year"
+      ? proPlan?.rub_amount_yearly ?? 7999
+      : proPlan?.rub_amount_monthly ?? 999
+    : upgradePeriod === "year"
+      ? proPlan?.usd_amount_yearly ?? 96
+      : proPlan?.usd_amount_monthly ?? 12;
+  const upgradeAmountStr = formatAmount(
+    upgradeAmountNum,
+    useRubUpgrade ? "RUB" : "USD",
+    locale,
+  );
+  const upgradePer = upgradePeriod === "year" ? copy.perYear : copy.perMonth;
+  // The T-Bank rail requires explicit recurrent consent; Stripe is exempt.
+  const requiresRecurringConsent = provider === "tinkoff";
+
   async function handleUpgrade() {
     setInFlight(true);
     try {
       const session = await createBillingCheckout({
         plan: "pro",
-        period: "month",
+        period: upgradePeriod,
         provider,
+        accepted_recurring_terms: provider === "tinkoff" ? acceptedRecurring : false,
       });
       window.location.href = session.checkout_url;
     } catch {
@@ -583,9 +647,10 @@ export function BillingDashboard({ locale, currency }: Props) {
         try {
           const session = await createBillingCheckout({
             plan: "pro",
-            period: "month",
+            period: upgradePeriod,
             provider,
             promo_code: code,
+            accepted_recurring_terms: provider === "tinkoff" ? acceptedRecurring : false,
           });
           window.location.href = session.checkout_url;
           return;
@@ -786,6 +851,47 @@ export function BillingDashboard({ locale, currency }: Props) {
 
         {!isPro ? (
           <>
+            {/* Offer clarity: price + billing period shown before the pay button. */}
+            <p style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>
+              Pro — {upgradeAmountStr} {upgradePer}
+              {useRubUpgrade && copy.vatIncluded ? (
+                <span
+                  style={{
+                    color: "var(--ink-soft)",
+                    fontWeight: 400,
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {" "}
+                  ({copy.vatIncluded})
+                </span>
+              ) : null}
+            </p>
+            <div
+              style={SWITCH_ROW_STYLE}
+              role="group"
+              aria-label={copy.billingPeriodLabel}
+            >
+              <button
+                type="button"
+                onClick={() => setUpgradePeriod("month")}
+                aria-pressed={upgradePeriod === "month"}
+                style={SWITCH_BUTTON_STYLE}
+                disabled={inFlight}
+              >
+                {copy.switchMonthly}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUpgradePeriod("year")}
+                aria-pressed={upgradePeriod === "year"}
+                style={SWITCH_BUTTON_STYLE}
+                disabled={inFlight}
+              >
+                {copy.switchYearly}
+              </button>
+            </div>
+
             {locale === "ru" && currency === "rub" ? (
               <fieldset className="billing-provider" aria-label={copy.payWith}>
                 <legend>{copy.payWith}</legend>
@@ -811,10 +917,52 @@ export function BillingDashboard({ locale, currency }: Props) {
                 </label>
               </fieldset>
             ) : null}
+
+            {requiresRecurringConsent ? (
+              <>
+                <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.85rem" }}>
+                  {copy.autoRenew(upgradeAmountStr, upgradePer)}
+                </p>
+                <label
+                  style={{
+                    display: "flex",
+                    gap: "0.5rem",
+                    alignItems: "flex-start",
+                    fontSize: "0.85rem",
+                    color: "var(--ink-soft)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={acceptedRecurring}
+                    onChange={(event) => setAcceptedRecurring(event.target.checked)}
+                    style={{ marginTop: "0.2rem" }}
+                  />
+                  <span>
+                    {copy.recurringConsent(upgradeAmountStr, upgradePer)}{" "}
+                    <Link href="/ru/recurrent" target="_blank" rel="noopener noreferrer">
+                      {copy.agreementLink}
+                    </Link>
+                    {" · "}
+                    <Link href="/ru/privacy" target="_blank" rel="noopener noreferrer">
+                      {copy.privacyLink}
+                    </Link>
+                  </span>
+                </label>
+                <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.8rem" }}>
+                  {copy.conversionNotice}
+                </p>
+              </>
+            ) : null}
+
             <button
               className="billing-upgrade"
               onClick={handleUpgrade}
-              disabled={inFlight || promoInFlight}
+              disabled={
+                inFlight ||
+                promoInFlight ||
+                (requiresRecurringConsent && !acceptedRecurring)
+              }
             >
               {copy.upgrade}
             </button>

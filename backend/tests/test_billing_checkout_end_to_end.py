@@ -216,11 +216,21 @@ async def test_tinkoff_checkout_webhook_updates_subscription_endpoint(
     email = "tinkoff.checkout.e2e@example.com"
     _, bearer = await _register(client, email)
     user_id = await _user_id(db_session, email)
+    ru_user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    ru_user.region = "ru"
+    await db_session.flush()
 
     checkout = await client.post(
         "/api/billing/checkout",
         headers={"Authorization": bearer},
-        json={"plan": "pro", "period": "year", "provider": "tinkoff"},
+        json={
+            "plan": "pro",
+            "period": "year",
+            "provider": "tinkoff",
+            "accepted_recurring_terms": True,
+        },
     )
 
     assert checkout.status_code == 200

@@ -216,7 +216,7 @@ async def test_checkout_defaults_ru_region_to_tinkoff_provider(
     response = await client.post(
         "/api/billing/checkout",
         headers={"Authorization": f"Bearer {token}"},
-        json={"plan": "pro", "period": "year"},
+        json={"plan": "pro", "period": "year", "accepted_recurring_terms": True},
     )
 
     assert response.status_code == 200
@@ -448,9 +448,11 @@ async def test_checkout_surfaces_provider_unavailable_errors(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    token, _ = await _register_for_billing(
+    token, user = await _register_for_billing(
         client, db_session, "checkout.unavailable@example.com"
     )
+    user.region = "ru"
+    await db_session.flush()
 
     class FakeStripeProvider:
         async def create_checkout(self, **kwargs):
@@ -472,7 +474,12 @@ async def test_checkout_surfaces_provider_unavailable_errors(
     tinkoff_response = await client.post(
         "/api/billing/checkout",
         headers={"Authorization": f"Bearer {token}"},
-        json={"plan": "pro", "period": "month", "provider": "tinkoff"},
+        json={
+            "plan": "pro",
+            "period": "month",
+            "provider": "tinkoff",
+            "accepted_recurring_terms": True,
+        },
     )
 
     assert stripe_response.status_code == 503

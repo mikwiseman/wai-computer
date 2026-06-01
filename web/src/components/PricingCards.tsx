@@ -37,6 +37,13 @@ const COPY: Record<
     payWith: string;
     providerTinkoff: string;
     providerStripe: string;
+    perMonth: string;
+    perYear: string;
+    autoRenew: (amount: string, per: string) => string;
+    recurringConsent: (amount: string, per: string) => string;
+    agreementLink: string;
+    privacyLink: string;
+    conversionNotice: string;
   }
 > = {
   en: {
@@ -74,6 +81,15 @@ const COPY: Record<
     payWith: "Pay with",
     providerTinkoff: "RUB via T-Bank",
     providerStripe: "USD via Stripe",
+    perMonth: "/ month",
+    perYear: "/ year",
+    autoRenew: (amount, per) => `Renews automatically: ${amount} ${per} until you cancel.`,
+    recurringConsent: (amount, per) =>
+      `I agree to recurring automatic charges of ${amount} ${per} until I cancel, ` +
+      "and to the processing of my personal data:",
+    agreementLink: "Subscription agreement",
+    privacyLink: "Privacy Policy",
+    conversionNotice: "Charged in RUB; your card issuer may convert at its own rate.",
   },
   ru: {
     heading: "Простые цены.",
@@ -111,6 +127,17 @@ const COPY: Record<
     payWith: "Оплата через",
     providerTinkoff: "RUB через Т-Банк",
     providerStripe: "USD через Stripe",
+    perMonth: "в месяц",
+    perYear: "в год",
+    autoRenew: (amount, per) =>
+      `Продлевается автоматически: ${amount} ${per}, пока вы не отмените.`,
+    recurringConsent: (amount, per) =>
+      `Я соглашаюсь на регулярное автоматическое списание ${amount} ${per} ` +
+      "до отмены подписки и на обработку персональных данных согласно:",
+    agreementLink: "Соглашение о подписке",
+    privacyLink: "Политика конфиденциальности",
+    conversionNotice:
+      "Оплата в рублях; банк-эмитент карты может конвертировать сумму по своему курсу.",
   },
 };
 
@@ -135,6 +162,7 @@ export function PricingCards({
   );
   const [inFlight, setInFlight] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acceptedRecurring, setAcceptedRecurring] = useState(false);
 
   // The marketing site can render pricing without hitting the API — these are
   // the canonical sandbox-and-launch numbers from the v1.0 billing migration.
@@ -145,6 +173,11 @@ export function PricingCards({
   const useRub = currency === "rub" && provider === "tinkoff";
   const proMonthly = useRub ? rubMonthly : usdMonthly;
   const proYearly = useRub ? rubYearly : usdYearly;
+  // The T-Bank rail needs explicit recurrent consent before checkout; Stripe
+  // (USD) is exempt and issues its own receipts.
+  const requiresRecurringConsent = provider === "tinkoff";
+  const consentAmount = period === "year" ? proYearly : proMonthly;
+  const consentPer = period === "year" ? copy.perYear : copy.perMonth;
 
   async function handleUpgrade() {
     setError(null);
@@ -158,6 +191,7 @@ export function PricingCards({
         plan: "pro",
         period,
         provider,
+        accepted_recurring_terms: provider === "tinkoff" ? acceptedRecurring : false,
       });
       window.location.href = session.checkout_url;
     } catch (err) {
@@ -250,10 +284,60 @@ export function PricingCards({
               </label>
             </fieldset>
           ) : null}
+          {requiresRecurringConsent ? (
+            <div className="pricing-consent">
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.85rem",
+                  color: "var(--ink-soft, #666)",
+                }}
+              >
+                {copy.autoRenew(consentAmount, consentPer)}
+              </p>
+              <label
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "flex-start",
+                  fontSize: "0.85rem",
+                  textAlign: "left",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={acceptedRecurring}
+                  onChange={(event) => setAcceptedRecurring(event.target.checked)}
+                  style={{ marginTop: "0.2rem" }}
+                />
+                <span>
+                  {copy.recurringConsent(consentAmount, consentPer)}{" "}
+                  <Link href="/ru/recurrent" target="_blank" rel="noopener noreferrer">
+                    {copy.agreementLink}
+                  </Link>
+                  {" · "}
+                  <Link href="/ru/privacy" target="_blank" rel="noopener noreferrer">
+                    {copy.privacyLink}
+                  </Link>
+                </span>
+              </label>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.78rem",
+                  color: "var(--ink-soft, #666)",
+                }}
+              >
+                {copy.conversionNotice}
+              </p>
+            </div>
+          ) : null}
           <button
             className="pricing-cta"
             onClick={handleUpgrade}
-            disabled={inFlight}
+            disabled={
+              inFlight || (signedIn && requiresRecurringConsent && !acceptedRecurring)
+            }
           >
             {inFlight ? copy.pro.ctaInFlight : signedIn ? copy.pro.cta : copy.signInPrompt}
           </button>

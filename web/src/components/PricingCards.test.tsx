@@ -55,12 +55,15 @@ describe("PricingCards", () => {
     expect(screen.getByText("USD через Stripe")).toBeInTheDocument();
     expect(screen.queryByText(/World|Russia|Мир|Россия/i)).not.toBeInTheDocument();
 
+    // T-Bank requires explicit recurring consent before the pay button enables.
+    await userEvent.click(screen.getByRole("checkbox"));
     await userEvent.click(screen.getByRole("button", { name: /Оформить Pro/i }));
 
     expect(mockedCheckout).toHaveBeenCalledWith({
       plan: "pro",
       period: "month",
       provider: "tinkoff",
+      accepted_recurring_terms: true,
     });
   });
 
@@ -76,6 +79,7 @@ describe("PricingCards", () => {
       plan: "pro",
       period: "year",
       provider: "stripe",
+      accepted_recurring_terms: false,
     });
   });
 });

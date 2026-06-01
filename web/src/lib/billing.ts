@@ -83,6 +83,9 @@ export async function createBillingCheckout(input: {
   period: "month" | "year";
   provider?: "stripe" | "tinkoff";
   promo_code?: string;
+  // Required by the backend for the T-Bank (RU) rail: the user's explicit
+  // consent to recurring auto-charges + personal-data processing.
+  accepted_recurring_terms?: boolean;
 }): Promise<BillingCheckoutResponse> {
   return apiFetch<BillingCheckoutResponse>("/api/billing/checkout", {
     method: "POST",
