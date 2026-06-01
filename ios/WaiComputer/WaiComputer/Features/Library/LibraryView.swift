@@ -4,35 +4,48 @@ import WaiComputerKit
 
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = LibraryViewModel()
     @StateObject private var importViewModel = ImportViewModel()
     @State private var errorAutoDismissTask: Task<Void, Never>?
     @State private var importedRecording: Recording?
     @State private var showImportedDetail = false
-    @State private var showNewFolderAlert = false
+    @State private var showNewFolderSheet = false
     @State private var newFolderName = ""
+    @State private var newFolderMovesSelection = false
     @State private var showDeleteFolderConfirmation: Folder?
+    @State private var renameFolderTarget: Folder?
+    @State private var folderNameDraft = ""
+    @State private var renameRecordingTarget: Recording?
+    @State private var recordingTitleDraft = ""
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedRecordingIds = Set<String>()
 
     private var isScreenshotMode: Bool {
         IOSTestingMode.current.isScreenshot
+    }
+
+    private var isEditing: Bool {
+        editMode == .active
     }
 
     var body: some View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.recordings.isEmpty {
-                    ProgressView("Loading recordings...")
+                    ProgressView(t("Loading recordings...", "Загрузка записей..."))
                 } else if viewModel.recordings.isEmpty && viewModel.trashedRecordings.isEmpty && viewModel.folders.isEmpty {
                     ContentUnavailableView(
-                        "No Recordings",
+                        t("No Recordings", "Нет записей"),
                         systemImage: "waveform",
-                        description: Text("Start recording to see your notes here")
+                        description: Text(t("Start recording to see your notes here", "Начни запись, чтобы увидеть заметки здесь"))
                     )
                 } else {
                     libraryList
                 }
             }
-            .navigationTitle("Library")
+            .environment(\.editMode, $editMode)
+            .navigationTitle(t("Library", "Библиотека"))
             .navigationDestination(isPresented: $showImportedDetail) {
                 if let importedRecording {
                     RecordingDetailView(recording: importedRecording)
@@ -47,25 +60,75 @@ struct LibraryView: View {
                     .padding(.top, 8)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let operation = viewModel.bulkOperation {
+                    BulkOperationBanner(operation: operation)
+                        .padding(.bottom, 8)
+                }
+            }
             .overlay {
                 if importViewModel.isUploading {
                     ImportUploadOverlay(filename: importViewModel.uploadingFilename)
                 }
             }
             .toolbar {
+                if !viewModel.recordings.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        EditButton()
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
                             importViewModel.showFileImporter = true
                         } label: {
-                            Label("Import Audio File", systemImage: "square.and.arrow.down")
+                            Label(t("Import Audio File", "Импорт аудио"), systemImage: "square.and.arrow.down")
                         }
 
-                        Button(action: { showNewFolderAlert = true }) {
-                            Label("New Folder", systemImage: "folder.badge.plus")
+                        Button {
+                            newFolderName = ""
+                            newFolderMovesSelection = false
+                            showNewFolderSheet = true
+                        } label: {
+                            Label(t("New Folder", "Новая папка"), systemImage: "folder.badge.plus")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                    }
+                }
+                if isEditing && !selectedRecordingIds.isEmpty {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        if !viewModel.folders.isEmpty {
+                            Menu {
+                                Button(t("Unfiled", "Без папки")) {
+                                    bulkMove(to: nil)
+                                }
+                                ForEach(viewModel.folders) { folder in
+                                    Button(folder.name) { bulkMove(to: folder.id) }
+                                }
+                                Divider()
+                                Button(t("New Folder…", "Новая папка…")) {
+                                    newFolderName = ""
+                                    newFolderMovesSelection = true
+                                    showNewFolderSheet = true
+                                }
+                            } label: {
+                                Label(t("Move", "Переместить"), systemImage: "folder")
+                            }
+                            Spacer()
+                        }
+                        Text(String(
+                            format: t("%d selected", "Выбрано: %d"),
+                            selectedRecordingIds.count
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(role: .destructive) {
+                            bulkTrash()
+                        } label: {
+                            Label(t("Trash", "Корзина"), systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -98,39 +161,79 @@ struct LibraryView: View {
                 importViewModel.reset()
             }
             .alert(
-                "Import Failed",
+                t("Import Failed", "Не удалось импортировать"),
                 isPresented: Binding(
                     get: { importViewModel.errorMessage != nil },
                     set: { if !$0 { importViewModel.errorMessage = nil } }
                 )
             ) {
-                Button("OK") { importViewModel.errorMessage = nil }
+                Button(t("OK", "ОК")) { importViewModel.errorMessage = nil }
             } message: {
                 Text(importViewModel.errorMessage ?? "")
             }
-            .alert("New Folder", isPresented: $showNewFolderAlert) {
-                TextField("Folder name", text: $newFolderName)
-                Button("Create") {
-                    let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty else { return }
-                    Task {
-                        await viewModel.createFolder(name: name, apiClient: appState.getAPIClient())
+            .sheet(isPresented: $showNewFolderSheet) {
+                NewFolderSheet(
+                    name: $newFolderName,
+                    movesSelection: $newFolderMovesSelection,
+                    selectionCount: selectedRecordingIds.count,
+                    onCreate: { name, moveSelection in
+                        Task {
+                            let folder = await viewModel.createFolder(name: name, apiClient: appState.getAPIClient())
+                            if moveSelection, let folder, !selectedRecordingIds.isEmpty {
+                                await viewModel.moveRecordings(
+                                    ids: Array(selectedRecordingIds),
+                                    to: folder.id,
+                                    language: languageManager.current,
+                                    apiClient: appState.getAPIClient()
+                                )
+                                exitEditMode()
+                            }
+                        }
                     }
-                    newFolderName = ""
+                )
+                .environmentObject(languageManager)
+            }
+            .alert(t("Rename Folder", "Переименовать папку"), isPresented: Binding(
+                get: { renameFolderTarget != nil },
+                set: { if !$0 { renameFolderTarget = nil } }
+            )) {
+                TextField(t("Folder name", "Имя папки"), text: $folderNameDraft)
+                Button(t("Save", "Сохранить")) {
+                    if let folder = renameFolderTarget {
+                        let name = folderNameDraft
+                        Task {
+                            await viewModel.renameFolder(id: folder.id, name: name, apiClient: appState.getAPIClient())
+                        }
+                    }
+                    renameFolderTarget = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    newFolderName = ""
+                Button(t("Cancel", "Отмена"), role: .cancel) { renameFolderTarget = nil }
+            }
+            .alert(t("Rename Recording", "Переименовать запись"), isPresented: Binding(
+                get: { renameRecordingTarget != nil },
+                set: { if !$0 { renameRecordingTarget = nil } }
+            )) {
+                TextField(t("Title", "Название"), text: $recordingTitleDraft)
+                Button(t("Save", "Сохранить")) {
+                    if let recording = renameRecordingTarget {
+                        let title = recordingTitleDraft
+                        Task {
+                            await viewModel.renameRecording(id: recording.id, newTitle: title, apiClient: appState.getAPIClient())
+                        }
+                    }
+                    renameRecordingTarget = nil
                 }
+                Button(t("Cancel", "Отмена"), role: .cancel) { renameRecordingTarget = nil }
             }
             .confirmationDialog(
-                "Delete folder \"\(showDeleteFolderConfirmation?.name ?? "")\"?",
+                String(format: t("Delete folder \u{201C}%@\u{201D}?", "Удалить папку \u{00AB}%@\u{00BB}?"), showDeleteFolderConfirmation?.name ?? ""),
                 isPresented: Binding(
                     get: { showDeleteFolderConfirmation != nil },
                     set: { if !$0 { showDeleteFolderConfirmation = nil } }
                 ),
                 titleVisibility: .visible
             ) {
-                Button("Delete Folder", role: .destructive) {
+                Button(t("Delete Folder", "Удалить папку"), role: .destructive) {
                     if let folder = showDeleteFolderConfirmation {
                         Task {
                             await viewModel.deleteFolder(id: folder.id, apiClient: appState.getAPIClient())
@@ -138,11 +241,11 @@ struct LibraryView: View {
                     }
                     showDeleteFolderConfirmation = nil
                 }
-                Button("Cancel", role: .cancel) {
+                Button(t("Cancel", "Отмена"), role: .cancel) {
                     showDeleteFolderConfirmation = nil
                 }
             } message: {
-                Text("Recordings in this folder will be moved to Unfiled.")
+                Text(t("Recordings in this folder will be moved to Unfiled.", "Записи из этой папки будут перемещены в «Без папки»."))
             }
             .refreshable {
                 guard !isScreenshotMode else { return }
@@ -182,10 +285,10 @@ struct LibraryView: View {
     // MARK: - Library List
 
     private var libraryList: some View {
-        List {
+        List(selection: $selectedRecordingIds) {
             // Folders section
             if !viewModel.folders.isEmpty {
-                Section("Folders") {
+                Section(t("Folders", "Папки")) {
                     ForEach(viewModel.folders) { folder in
                         NavigationLink(destination: FolderRecordingsView(
                             folder: folder,
@@ -196,11 +299,25 @@ struct LibraryView: View {
                                 recordingCount: viewModel.recordingsInFolder(folder.id).count
                             )
                         }
+                        .selectionDisabled(true)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 showDeleteFolderConfirmation = folder
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(t("Delete", "Удалить"), systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            Button {
+                                folderNameDraft = folder.name
+                                renameFolderTarget = folder
+                            } label: {
+                                Label(t("Rename", "Переименовать"), systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                showDeleteFolderConfirmation = folder
+                            } label: {
+                                Label(t("Delete", "Удалить"), systemImage: "trash")
                             }
                         }
                     }
@@ -208,46 +325,10 @@ struct LibraryView: View {
             }
 
             // Recordings section (unfiled / all depending on folders)
-            Section(viewModel.folders.isEmpty ? "Recordings" : "Unfiled") {
+            Section(viewModel.folders.isEmpty ? t("Recordings", "Записи") : t("Unfiled", "Без папки")) {
                 ForEach(viewModel.filteredUnfiledRecordings) { recording in
-                    NavigationLink(destination: RecordingDetailView(
-                        recording: recording,
-                        folders: viewModel.folders,
-                        onMoveToFolder: { folderId in
-                            Task {
-                                await viewModel.moveRecording(
-                                    id: recording.id,
-                                    to: folderId,
-                                    apiClient: appState.getAPIClient()
-                                )
-                            }
-                        },
-                        onTrash: {
-                            Task {
-                                await viewModel.trashRecording(
-                                    id: recording.id,
-                                    apiClient: appState.getAPIClient()
-                                )
-                            }
-                        }
-                    )) {
-                        RecordingRow(recording: recording)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            Task {
-                                await viewModel.trashRecording(
-                                    id: recording.id,
-                                    apiClient: appState.getAPIClient()
-                                )
-                            }
-                        } label: {
-                            Label("Trash", systemImage: "trash")
-                        }
-                    }
-                    .contextMenu {
-                        recordingContextMenu(for: recording)
-                    }
+                    recordingRowLink(recording)
+                        .tag(recording.id)
                 }
             }
 
@@ -258,15 +339,65 @@ struct LibraryView: View {
                         HStack {
                             Image(systemName: "trash")
                                 .foregroundStyle(.red)
-                            Text("Trash")
+                            Text(t("Trash", "Корзина"))
                             Spacer()
                             Text("\(viewModel.trashedRecordings.count)")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
                         }
                     }
+                    .selectionDisabled(true)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func recordingRowLink(_ recording: Recording) -> some View {
+        NavigationLink(destination: RecordingDetailView(
+            recording: recording,
+            folders: viewModel.folders,
+            onMoveToFolder: { folderId in
+                Task {
+                    await viewModel.moveRecording(
+                        id: recording.id,
+                        to: folderId,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            },
+            onTrash: {
+                Task {
+                    await viewModel.trashRecording(
+                        id: recording.id,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            },
+            onDidRename: {
+                Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
+            }
+        )) {
+            RecordingRow(
+                recording: recording,
+                hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
+                hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
+            )
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Task {
+                    await viewModel.trashRecording(
+                        id: recording.id,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            } label: {
+                Label(t("Trash", "Корзина"), systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            recordingContextMenu(for: recording)
         }
     }
 
@@ -274,10 +405,17 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func recordingContextMenu(for recording: Recording) -> some View {
+        Button {
+            recordingTitleDraft = recording.title ?? ""
+            renameRecordingTarget = recording
+        } label: {
+            Label(t("Rename", "Переименовать"), systemImage: "pencil")
+        }
+
         if !viewModel.folders.isEmpty {
-            Menu("Move to Folder") {
+            Menu(t("Move to Folder", "Переместить в папку")) {
                 if recording.folderId != nil {
-                    Button("Unfiled") {
+                    Button(t("Unfiled", "Без папки")) {
                         Task {
                             await viewModel.moveRecording(
                                 id: recording.id,
@@ -312,8 +450,35 @@ struct LibraryView: View {
                 )
             }
         } label: {
-            Label("Move to Trash", systemImage: "trash")
+            Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
         }
+    }
+
+    // MARK: - Bulk Helpers
+
+    private func bulkTrash() {
+        let ids = Array(selectedRecordingIds)
+        Task {
+            await viewModel.trashRecordings(ids: ids, language: languageManager.current, apiClient: appState.getAPIClient())
+            exitEditMode()
+        }
+    }
+
+    private func bulkMove(to folderId: String?) {
+        let ids = Array(selectedRecordingIds)
+        Task {
+            await viewModel.moveRecordings(ids: ids, to: folderId, language: languageManager.current, apiClient: appState.getAPIClient())
+            exitEditMode()
+        }
+    }
+
+    private func exitEditMode() {
+        selectedRecordingIds.removeAll()
+        editMode = .inactive
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -342,8 +507,13 @@ struct FolderRow: View {
 
 struct FolderRecordingsView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var languageManager: LanguageManager
     let folder: Folder
     @ObservedObject var viewModel: LibraryViewModel
+    @State private var editMode: EditMode = .inactive
+    @State private var selection = Set<String>()
+
+    private var isEditing: Bool { editMode == .active }
 
     var body: some View {
         let folderRecordings = viewModel.filteredRecordingsInFolder(folder.id)
@@ -351,12 +521,12 @@ struct FolderRecordingsView: View {
         Group {
             if folderRecordings.isEmpty {
                 ContentUnavailableView(
-                    "No Recordings",
+                    t("No Recordings", "Нет записей"),
                     systemImage: "folder",
-                    description: Text("Move recordings here from the library")
+                    description: Text(t("Move recordings here from the library", "Перемести записи сюда из библиотеки"))
                 )
             } else {
-                List {
+                List(selection: $selection) {
                     ForEach(folderRecordings) { recording in
                         NavigationLink(destination: RecordingDetailView(
                             recording: recording,
@@ -377,10 +547,18 @@ struct FolderRecordingsView: View {
                                         apiClient: appState.getAPIClient()
                                     )
                                 }
+                            },
+                            onDidRename: {
+                                Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
                             }
                         )) {
-                            RecordingRow(recording: recording)
+                            RecordingRow(
+                                recording: recording,
+                                hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
+                                hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
+                            )
                         }
+                        .tag(recording.id)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 Task {
@@ -390,7 +568,7 @@ struct FolderRecordingsView: View {
                                     )
                                 }
                             } label: {
-                                Label("Trash", systemImage: "trash")
+                                Label(t("Trash", "Корзина"), systemImage: "trash")
                             }
                         }
                         .swipeActions(edge: .leading) {
@@ -403,13 +581,13 @@ struct FolderRecordingsView: View {
                                     )
                                 }
                             } label: {
-                                Label("Unfiled", systemImage: "tray")
+                                Label(t("Unfiled", "Без папки"), systemImage: "tray")
                             }
                             .tint(.blue)
                         }
                         .contextMenu {
-                            Menu("Move to Folder") {
-                                Button("Unfiled") {
+                            Menu(t("Move to Folder", "Переместить в папку")) {
+                                Button(t("Unfiled", "Без папки")) {
                                     Task {
                                         await viewModel.moveRecording(
                                             id: recording.id,
@@ -442,14 +620,49 @@ struct FolderRecordingsView: View {
                                     )
                                 }
                             } label: {
-                                Label("Move to Trash", systemImage: "trash")
+                                Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
                             }
                         }
                     }
                 }
             }
         }
+        .environment(\.editMode, $editMode)
         .navigationTitle(folder.name)
+        .toolbar {
+            if !folderRecordings.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    EditButton()
+                }
+            }
+            if isEditing && !selection.isEmpty {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button(t("Unfiled", "Без папки")) {
+                        let ids = Array(selection)
+                        Task {
+                            await viewModel.moveRecordings(ids: ids, to: nil, language: languageManager.current, apiClient: appState.getAPIClient())
+                            selection.removeAll()
+                            editMode = .inactive
+                        }
+                    }
+                    Spacer()
+                    Button(role: .destructive) {
+                        let ids = Array(selection)
+                        Task {
+                            await viewModel.trashRecordings(ids: ids, language: languageManager.current, apiClient: appState.getAPIClient())
+                            selection.removeAll()
+                            editMode = .inactive
+                        }
+                    } label: {
+                        Label(t("Trash", "Корзина"), systemImage: "trash")
+                    }
+                }
+            }
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -457,19 +670,25 @@ struct FolderRecordingsView: View {
 
 struct TrashView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @ObservedObject var viewModel: LibraryViewModel
     @State private var showEmptyTrashConfirmation = false
+    @State private var showBulkDeleteConfirmation = false
+    @State private var editMode: EditMode = .inactive
+    @State private var selection = Set<String>()
+
+    private var isEditing: Bool { editMode == .active }
 
     var body: some View {
         Group {
             if viewModel.trashedRecordings.isEmpty {
                 ContentUnavailableView(
-                    "Trash is Empty",
+                    t("Trash is Empty", "Корзина пуста"),
                     systemImage: "trash",
-                    description: Text("Deleted recordings will appear here")
+                    description: Text(t("Deleted recordings will appear here", "Удаленные записи появятся здесь"))
                 )
             } else {
-                List {
+                List(selection: $selection) {
                     ForEach(viewModel.trashedRecordings) { recording in
                         NavigationLink(destination: RecordingDetailView(
                             recording: recording,
@@ -491,8 +710,13 @@ struct TrashView: View {
                                 }
                             }
                         )) {
-                            RecordingRow(recording: recording)
+                            RecordingRow(
+                                recording: recording,
+                                hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
+                                hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
+                            )
                         }
+                        .tag(recording.id)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 Task {
@@ -502,7 +726,7 @@ struct TrashView: View {
                                     )
                                 }
                             } label: {
-                                Label("Delete", systemImage: "trash.slash")
+                                Label(t("Delete", "Удалить"), systemImage: "trash.slash")
                             }
                         }
                         .swipeActions(edge: .leading) {
@@ -514,7 +738,7 @@ struct TrashView: View {
                                     )
                                 }
                             } label: {
-                                Label("Restore", systemImage: "arrow.uturn.backward")
+                                Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                             }
                             .tint(.green)
                         }
@@ -522,31 +746,86 @@ struct TrashView: View {
                 }
             }
         }
-        .navigationTitle("Trash")
+        .environment(\.editMode, $editMode)
+        .overlay(alignment: .bottom) {
+            if let operation = viewModel.bulkOperation {
+                BulkOperationBanner(operation: operation)
+                    .padding(.bottom, 8)
+            }
+        }
+        .navigationTitle(t("Trash", "Корзина"))
         .toolbar {
             if !viewModel.trashedRecordings.isEmpty {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Empty Trash", role: .destructive) {
+                    Button(t("Empty Trash", "Очистить корзину"), role: .destructive) {
                         showEmptyTrashConfirmation = true
                     }
                     .foregroundStyle(.red)
                 }
             }
+            if isEditing && !selection.isEmpty {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button(t("Restore", "Восстановить")) {
+                        let ids = Array(selection)
+                        Task {
+                            await viewModel.restoreRecordings(ids: ids, language: languageManager.current, apiClient: appState.getAPIClient())
+                            selection.removeAll()
+                            editMode = .inactive
+                        }
+                    }
+                    Spacer()
+                    Button(role: .destructive) {
+                        showBulkDeleteConfirmation = true
+                    } label: {
+                        Label(t("Delete", "Удалить"), systemImage: "trash.slash")
+                    }
+                }
+            }
         }
         .confirmationDialog(
-            "Empty Trash?",
+            t("Empty Trash?", "Очистить корзину?"),
             isPresented: $showEmptyTrashConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete All Permanently", role: .destructive) {
+            Button(t("Delete All Permanently", "Удалить все навсегда"), role: .destructive) {
                 Task {
                     await viewModel.emptyTrash(apiClient: appState.getAPIClient())
                 }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
         } message: {
-            Text("This will permanently delete \(viewModel.trashedRecordings.count) recording\(viewModel.trashedRecordings.count == 1 ? "" : "s"). This cannot be undone.")
+            Text(String(
+                format: t(
+                    "This will permanently delete %d recordings. This cannot be undone.",
+                    "Это навсегда удалит записей: %d. Это действие нельзя отменить."
+                ),
+                viewModel.trashedRecordings.count
+            ))
         }
+        .confirmationDialog(
+            t("Delete selected permanently?", "Удалить выбранные навсегда?"),
+            isPresented: $showBulkDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
+                let ids = Array(selection)
+                Task {
+                    await viewModel.permanentlyDeleteRecordings(ids: ids, apiClient: appState.getAPIClient())
+                    selection.removeAll()
+                    editMode = .inactive
+                }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(t("This action cannot be undone.", "Это действие нельзя отменить."))
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -555,6 +834,7 @@ struct TrashView: View {
 private struct InlineLibraryBanner: View {
     let message: String
     let onDismiss: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(spacing: 10) {
@@ -573,6 +853,7 @@ private struct InlineLibraryBanner: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -584,17 +865,123 @@ private struct InlineLibraryBanner: View {
     }
 }
 
+// MARK: - New Folder Sheet
+
+private struct NewFolderSheet: View {
+    @Binding var name: String
+    @Binding var movesSelection: Bool
+    let selectionCount: Int
+    let onCreate: (String, Bool) -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var nameFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(t("Folder name", "Имя папки"), text: $name)
+                        .focused($nameFocused)
+                }
+                if selectionCount > 0 {
+                    Section {
+                        Toggle(
+                            String(format: t("Move %d selected here", "Переместить сюда выбранные: %d"), selectionCount),
+                            isOn: $movesSelection
+                        )
+                    }
+                }
+            }
+            .navigationTitle(t("New Folder", "Новая папка"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(t("Cancel", "Отмена")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(t("Create", "Создать")) {
+                        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        onCreate(trimmed, movesSelection)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear { nameFocused = true }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+// MARK: - Bulk Operation Banner
+
+private struct BulkOperationBanner: View {
+    let operation: LibraryBulkOperation
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .accessibilityIdentifier("library-bulk-operation-banner")
+    }
+
+    private var label: String {
+        let verb: String
+        switch operation.kind {
+        case .moving:
+            verb = t("Moving", "Перемещаем")
+        case .movingToTrash:
+            verb = t("Moving to Trash", "Перемещаем в корзину")
+        case .restoring:
+            verb = t("Restoring", "Восстанавливаем")
+        case .deletingPermanently:
+            verb = t("Deleting", "Удаляем")
+        }
+        if operation.isDeterminate {
+            return String(format: "%@ %d/%d", verb, operation.completedCount, operation.totalCount)
+        }
+        return "\(verb)…"
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
 // MARK: - Recording Row
 
 struct RecordingRow: View {
     let recording: Recording
+    var hasLocalRecoveryBackup: Bool = false
+    var hasPermanentLocalFailure: Bool = false
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(recording.title ?? "Untitled")
+            Text(recording.title ?? t("Untitled", "Без названия"))
                 .font(.headline)
 
-            if let statusText = recording.statusDisplayText {
+            if let statusText = recording.statusDisplayText(
+                hasLocalRecoveryBackup: hasLocalRecoveryBackup,
+                hasPermanentLocalFailure: hasPermanentLocalFailure,
+                languageCode: speakerLanguageCode
+            ) {
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(statusColor)
@@ -633,7 +1020,42 @@ struct RecordingRow: View {
     }
 
     private var statusColor: Color {
-        recording.isFailedUpload ? .red : .secondary
+        if recording.isFailedUpload || hasPermanentLocalFailure {
+            return .red
+        }
+        return .secondary
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+// MARK: - Bulk Operations
+
+enum LibraryBulkOperationKind: Equatable {
+    case moving
+    case movingToTrash
+    case restoring
+    case deletingPermanently
+}
+
+struct LibraryBulkOperation: Equatable {
+    let kind: LibraryBulkOperationKind
+    let totalCount: Int
+    var completedCount: Int
+
+    var isDeterminate: Bool {
+        completedCount > 0 && totalCount > 0
     }
 }
 
@@ -644,6 +1066,11 @@ class LibraryViewModel: ObservableObject {
     @Published var recordings: [Recording] = []
     @Published var trashedRecordings: [Recording] = []
     @Published var folders: [Folder] = []
+    @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
+    /// Recordings whose local backup hit a permanent sync failure (e.g. deleted
+    /// on the server). Surfaced as "needs attention" rather than "saved locally".
+    @Published private(set) var permanentLocalFailureRecordingIDs: Set<String> = []
+    @Published private(set) var bulkOperation: LibraryBulkOperation?
     @Published var isLoading = false
     @Published var error: String?
     private var loadGeneration = 0
@@ -686,11 +1113,22 @@ class LibraryViewModel: ObservableObject {
             let fetchedRecordings = try await active
             let fetchedTrashed = try await trashed
             let fetchedFolders = try await folderList
+            let backupManifests = (try? RecordingBackupStore.manifestsByRecordingId()) ?? [:]
             guard generation == loadGeneration else { return }
 
             recordings = fetchedRecordings
             trashedRecordings = fetchedTrashed
             folders = fetchedFolders
+            localRecoveryRecordingIDs = Set(
+                backupManifests.compactMap { element in
+                    element.value.syncState != .remoteReady ? element.key : nil
+                }
+            )
+            permanentLocalFailureRecordingIDs = Set(
+                backupManifests.compactMap { element in
+                    element.value.isPermanentFailure ? element.key : nil
+                }
+            )
 
             processingRefreshTask?.cancel()
 
@@ -728,6 +1166,8 @@ class LibraryViewModel: ObservableObject {
         recordings = IOSScreenshotFixtures.recordings
         trashedRecordings = []
         folders = []
+        localRecoveryRecordingIDs = []
+        permanentLocalFailureRecordingIDs = []
         isLoading = false
         error = nil
         #endif
@@ -735,11 +1175,25 @@ class LibraryViewModel: ObservableObject {
 
     // MARK: - Folder Operations
 
-    func createFolder(name: String, apiClient: APIClient) async {
+    @discardableResult
+    func createFolder(name: String, apiClient: APIClient) async -> Folder? {
         do {
             let folder = try await apiClient.createFolder(name: name)
             folders.append(folder)
             folders.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return folder
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+            return nil
+        }
+    }
+
+    func renameFolder(id: String, name: String, apiClient: APIClient) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            _ = try await apiClient.updateFolder(id: id, name: trimmed)
+            await loadLibrary(apiClient: apiClient)
         } catch {
             self.error = error.userFacingMessage(context: .library)
         }
@@ -753,6 +1207,100 @@ class LibraryViewModel: ObservableObject {
         } catch {
             self.error = error.userFacingMessage(context: .library)
         }
+    }
+
+    func renameRecording(id: String, newTitle: String, apiClient: APIClient) async {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            _ = try await apiClient.updateRecording(id: id, title: trimmed)
+            await loadLibrary(apiClient: apiClient)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    // MARK: - Bulk Operations
+
+    func trashRecordings(ids: [String], language: LanguageManager.SupportedLanguage, apiClient: APIClient) async {
+        guard !ids.isEmpty else { return }
+        await runBulkOperation(ids: ids, kind: .movingToTrash, action: .delete, folderId: nil, language: language, apiClient: apiClient)
+    }
+
+    func moveRecordings(ids: [String], to folderId: String?, language: LanguageManager.SupportedLanguage, apiClient: APIClient) async {
+        guard !ids.isEmpty else { return }
+        await runBulkOperation(ids: ids, kind: .moving, action: .move, folderId: folderId, language: language, apiClient: apiClient)
+    }
+
+    func restoreRecordings(ids: [String], language: LanguageManager.SupportedLanguage, apiClient: APIClient) async {
+        guard !ids.isEmpty else { return }
+        await runBulkOperation(ids: ids, kind: .restoring, action: .restore, folderId: nil, language: language, apiClient: apiClient)
+    }
+
+    func permanentlyDeleteRecordings(ids: [String], apiClient: APIClient) async {
+        guard !ids.isEmpty else { return }
+        error = nil
+        bulkOperation = LibraryBulkOperation(kind: .deletingPermanently, totalCount: ids.count, completedCount: 0)
+        defer { bulkOperation = nil }
+
+        var completedCount = 0
+        for id in ids {
+            do {
+                try await apiClient.deleteRecording(id: id, permanent: true)
+                trashedRecordings.removeAll { $0.id == id }
+                completedCount += 1
+                updateBulkOperationCompletedCount(completedCount)
+            } catch {
+                self.error = error.userFacingMessage(context: .library)
+                await loadLibrary(apiClient: apiClient)
+                return
+            }
+        }
+        await loadLibrary(apiClient: apiClient)
+    }
+
+    private func runBulkOperation(
+        ids: [String],
+        kind: LibraryBulkOperationKind,
+        action: BulkRecordingAction,
+        folderId: String?,
+        language: LanguageManager.SupportedLanguage,
+        apiClient: APIClient
+    ) async {
+        error = nil
+        bulkOperation = LibraryBulkOperation(kind: kind, totalCount: ids.count, completedCount: 0)
+        defer { bulkOperation = nil }
+
+        do {
+            let result = try await apiClient.bulkRecordingOperation(
+                recordingIds: ids,
+                action: action,
+                folderId: folderId
+            )
+            updateBulkOperationCompletedCount(result.processed)
+            let partialFailureMessage: String? = result.failed > 0
+                ? String(
+                    format: OnboardingL10n.text(
+                        "Processed %d of %d. Failed: %d.",
+                        "Обработано %d из %d. Не удалось: %d.",
+                        language: language
+                    ),
+                    result.processed, ids.count, result.failed
+                )
+                : nil
+            await loadLibrary(apiClient: apiClient)
+            if let partialFailureMessage {
+                error = partialFailureMessage
+            }
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    private func updateBulkOperationCompletedCount(_ completedCount: Int) {
+        guard var operation = bulkOperation else { return }
+        operation.completedCount = completedCount
+        bulkOperation = operation
     }
 
     // MARK: - Recording Operations
@@ -822,6 +1370,7 @@ class LibraryViewModel: ObservableObject {
 
 private struct ImportUploadOverlay: View {
     let filename: String?
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         ZStack {
@@ -833,12 +1382,12 @@ private struct ImportUploadOverlay: View {
                     .controlSize(.large)
 
                 if let filename {
-                    Text("Uploading \(filename)...")
+                    Text(String(format: t("Uploading %@...", "Загрузка %@..."), filename))
                         .font(.headline)
                         .foregroundStyle(.primary)
                 }
 
-                Text("The server will transcribe automatically")
+                Text(t("The server will transcribe automatically", "Сервер расшифрует автоматически"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -848,9 +1397,14 @@ private struct ImportUploadOverlay: View {
             .shadow(color: .black.opacity(0.15), radius: 20, y: 8)
         }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 #Preview {
     LibraryView()
         .environmentObject(AppState())
+        .environmentObject(LanguageManager.shared)
 }
