@@ -62,6 +62,20 @@ async def test_create_comparison_enqueues_and_lists(client, auth_headers) -> Non
     assert listing.json()[0]["item_count"] == 3
 
 
+async def test_create_comparison_enqueue_failure_marks_failed(client, auth_headers) -> None:
+    ids = await _two_items(client, auth_headers)
+    with patch(
+        "app.tasks.comparison_generation.generate_comparison_task.delay",
+        side_effect=RuntimeError("broker down"),
+    ):
+        resp = await client.post(
+            "/api/comparisons", json={"item_ids": ids[:2]}, headers=auth_headers
+        )
+    # No-fallback: a broker outage must not leave a permanently "generating" row.
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["status"] == "failed"
+
+
 async def test_create_comparison_rejects_unowned_item(client, auth_headers) -> None:
     ids = await _two_items(client, auth_headers)
     resp = await client.post(
