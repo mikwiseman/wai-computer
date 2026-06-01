@@ -52,6 +52,8 @@ import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
+import { AddAnythingPanel } from "@/components/AddAnythingPanel";
+import { ItemsFeed } from "@/components/ItemsFeed";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
@@ -75,6 +77,8 @@ import type {
 type SearchMode = "hybrid" | "semantic" | "fts";
 type DashboardView =
   | "wai"
+  | "add"
+  | "content"
   | "library"
   | "folder"
   | "trash"
@@ -1534,6 +1538,16 @@ export function DashboardClient() {
       header: locale === "ru" ? "Библиотека" : "Library",
       items: [
         {
+          key: "add",
+          label: locale === "ru" ? "Добавить" : "Add anything",
+          count: null,
+        },
+        {
+          key: "content",
+          label: locale === "ru" ? "Материалы" : "Content",
+          count: null,
+        },
+        {
           key: "library",
           label: copy.nav.library.label,
           count: displayCount(recordings.length),
@@ -1805,6 +1819,19 @@ export function DashboardClient() {
           : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
+        {view === "add" ? (
+          <section className="tool-panel">
+            <AddAnythingPanel
+              onCreated={() => void loadRecordingsState()}
+              onError={setMessage}
+            />
+          </section>
+        ) : null}
+        {view === "content" ? (
+          <section className="tool-panel">
+            <ItemsFeed onError={setMessage} />
+          </section>
+        ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}

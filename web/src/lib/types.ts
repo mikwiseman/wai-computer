@@ -428,6 +428,127 @@ export interface SearchResponse {
   total: number;
 }
 
+// --- Second brain: universal items, comparisons, unified search, ingestion ---
+
+export interface UnifiedHit {
+  source_kind: "recording" | "item";
+  parent_id: string;
+  chunk_id: string;
+  title: string | null;
+  kind: string;
+  snippet: string;
+  score: number;
+  created_at: string | null;
+}
+
+export interface UnifiedSearchResponse {
+  results: UnifiedHit[];
+  total: number;
+}
+
+export interface ItemSummary {
+  summary: string | null;
+  key_points: unknown[] | null;
+  action_items: unknown[] | null;
+  topics: unknown[] | null;
+  people_mentioned: unknown[] | null;
+  highlights: unknown[] | null;
+  key_moments: KeyMoment[] | null;
+  sentiment: string | null;
+}
+
+export interface KeyMoment {
+  timestamp: string | null;
+  moment: string;
+  why_it_matters: string;
+  quote: string | null;
+  importance: string;
+  start_ms?: number | null;
+  end_ms?: number | null;
+}
+
+export interface Item {
+  id: string;
+  source: string;
+  source_ref: string | null;
+  url: string | null;
+  kind: string;
+  title: string | null;
+  body: string | null;
+  occurred_at: string | null;
+  state: string;
+  folder_id: string | null;
+  created_at: string;
+  summary: ItemSummary | null;
+}
+
+export interface ItemListEntry {
+  id: string;
+  source: string;
+  url: string | null;
+  kind: string;
+  title: string | null;
+  state: string;
+  folder_id: string | null;
+  occurred_at: string | null;
+  created_at: string;
+  has_summary: boolean;
+}
+
+export interface ItemListResponse {
+  items: ItemListEntry[];
+  total: number;
+}
+
+export interface ComparisonColumn {
+  name: string;
+  type: string;
+}
+
+export interface ComparisonRow {
+  item_id: string;
+  title: string;
+  values: Record<string, string | number | boolean | null>;
+  edited?: boolean;
+}
+
+export interface ComparisonSet {
+  id: string;
+  title: string | null;
+  item_ids: string[];
+  columns: ComparisonColumn[] | null;
+  rows: ComparisonRow[] | null;
+  schema_rationale: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface ComparisonListEntry {
+  id: string;
+  title: string | null;
+  item_count: number;
+  status: string;
+  created_at: string;
+}
+
+export interface McpIngestionConnection {
+  id: string;
+  server_label: string;
+  server_url: string;
+  transport: string;
+  auth_type: string;
+  has_token: boolean;
+  allowed_tools: string[] | null;
+  capabilities: Record<string, unknown> | null;
+  privacy_level: string;
+  sync_interval_minutes: number;
+  status: string;
+  enabled: boolean;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
 export interface Entity {
   id: string;
   type: EntityType;

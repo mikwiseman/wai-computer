@@ -145,7 +145,115 @@ public class ApiClientTests : IAsyncLifetime
         var entry = _server.LogEntries.Single();
         entry.RequestMessage.Query.Should().Contain(q => q.Key == "skip" && q.Value.Contains("25"));
         entry.RequestMessage.Query.Should().Contain(q => q.Key == "limit" && q.Value.Contains("75"));
-        entry.RequestMessage.Query.Should().Contain(q => q.Key == "is_starred" && q.Value.Contains("true"));
+        entry.RequestMessage.Query.Should().Contain(q => q.Key == "starred" && q.Value.Contains("true"));
+    }
+
+    [Fact]
+    public async Task ListRecordingsEncodesAllFilters()
+    {
+        _server.Given(Request.Create().UsingGet().WithPath("/api/recordings"))
+               .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]").WithHeader("Content-Type", "application/json"));
+
+        await _client.ListRecordingsAsync(skip: 0, limit: 50, starred: true,
+            type: RecordingType.Meeting, folderId: "f-1", trashed: true);
+
+        var q = _server.LogEntries.Single().RequestMessage.Query!;
+        q.Should().Contain(x => x.Key == "trashed" && x.Value.Contains("true"));
+        q.Should().Contain(x => x.Key == "type" && x.Value.Contains("meeting"));
+        q.Should().Contain(x => x.Key == "folder_id" && x.Value.Contains("f-1"));
+        q.Should().Contain(x => x.Key == "starred" && x.Value.Contains("true"));
+    }
+
+    [Fact]
+    public async Task ListRecordingsOmitsStarredAndTrashedWhenFalse()
+    {
+        _server.Given(Request.Create().UsingGet().WithPath("/api/recordings"))
+               .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]").WithHeader("Content-Type", "application/json"));
+
+        await _client.ListRecordingsAsync(starred: false);
+
+        var q = _server.LogEntries.Single().RequestMessage.Query!;
+        q.Should().NotContain(x => x.Key == "starred");
+        q.Should().NotContain(x => x.Key == "trashed");
+    }
+
+    [Fact]
+    public async Task BulkRecordingOperationSendsActionAndDecodesCounts()
+    {
+        _server.Given(Request.Create().UsingPost().WithPath("/api/recordings/bulk"))
+               .RespondWith(Response.Create().WithStatusCode(200)
+                   .WithBody("{\"processed\":2,\"failed\":1}").WithHeader("Content-Type", "application/json"));
+
+        var res = await _client.BulkRecordingOperationAsync(new BulkRecordingOperationRequest(
+            new[] { "g1", "g2", "g3" }, BulkRecordingAction.Move, "f1"));
+
+        res.Processed.Should().Be(2);
+        res.Failed.Should().Be(1);
+        var body = _server.LogEntries.Single().RequestMessage.Body!;
+        body.Should().Contain("\"recording_ids\"");
+        body.Should().Contain("\"action\":\"move\"");
+        body.Should().Contain("\"folder_id\":\"f1\"");
+    }
+
+    [Fact]
+    public async Task BulkRecordingDeleteOmitsFolderId()
+    {
+        _server.Given(Request.Create().UsingPost().WithPath("/api/recordings/bulk"))
+               .RespondWith(Response.Create().WithStatusCode(200)
+                   .WithBody("{\"processed\":1,\"failed\":0}").WithHeader("Content-Type", "application/json"));
+
+        await _client.BulkRecordingOperationAsync(new BulkRecordingOperationRequest(
+            new[] { "g1" }, BulkRecordingAction.Delete));
+
+        var body = _server.LogEntries.Single().RequestMessage.Body!;
+        body.Should().Contain("\"action\":\"delete\"");
+        body.Should().NotContain("folder_id");
+    }
+
+    [Fact]
+    public async Task GetSummaryGenerationDecodesBackendShape()
+    {
+        const string body = """
+        {
+          "job_id": "job-1",
+          "recording_id": "rec-1",
+          "status": "running",
+          "stage": "summarizing",
+          "progress_percent": 40,
+          "message": "Working",
+          "requested_at": "2026-05-18T14:30:00Z",
+          "started_at": "2026-05-18T14:30:05Z",
+          "completed_at": null,
+          "failed_at": null,
+          "error_code": null,
+          "error_message": null
+        }
+        """;
+        _server.Given(Request.Create().UsingGet().WithPath("/api/recordings/rec-1/summary-generation"))
+               .RespondWith(Response.Create().WithStatusCode(200).WithBody(body).WithHeader("Content-Type", "application/json"));
+
+        var state = await _client.GetSummaryGenerationAsync("rec-1");
+
+        state.JobId.Should().Be("job-1");
+        state.Status.Should().Be("running");
+        state.ProgressPercent.Should().Be(40);
+        state.IsActive.Should().BeTrue();
+        state.IsFailed.Should().BeFalse();
+        state.CompletedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExportRecordingPassesLocale()
+    {
+        _server.Given(Request.Create().UsingGet().WithPath("/api/recordings/rec-1/export"))
+               .RespondWith(Response.Create().WithStatusCode(200).WithBody("# Notes").WithHeader("Content-Type", "text/markdown"));
+
+        var content = await _client.ExportRecordingAsync("rec-1", "markdown", "ru");
+
+        content.Should().Be("# Notes");
+        var q = _server.LogEntries.Single().RequestMessage.Query!;
+        q.Should().Contain(x => x.Key == "format" && x.Value.Contains("markdown"));
+        q.Should().Contain(x => x.Key == "locale" && x.Value.Contains("ru"));
     }
 
     [Fact]
@@ -179,14 +287,59 @@ public class ApiClientTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SearchEncodesQueryString()
+    public async Task SearchDecodesBackendShapeAndEncodesQuery()
     {
+        // Literal backend SearchResponse wire shape (backend/app/api/routes/search.py).
+        const string body = """
+        {
+          "results": [
+            {
+              "recording_id": "rec-1",
+              "recording_title": "Standup",
+              "recording_type": "meeting",
+              "segment_id": "seg-1",
+              "speaker": "speaker_0",
+              "content": "hello world",
+              "start_ms": 0,
+              "end_ms": 1500,
+              "score": 0.87
+            },
+            {
+              "recording_id": "rec-2",
+              "recording_title": null,
+              "recording_type": "note",
+              "segment_id": "seg-2",
+              "speaker": null,
+              "content": "second hit",
+              "start_ms": null,
+              "end_ms": null,
+              "score": 0.42
+            }
+          ],
+          "total": 2
+        }
+        """;
         _server.Given(Request.Create().UsingGet().WithPath("/api/search"))
                .RespondWith(Response.Create().WithStatusCode(200)
-                   .WithBody(Json(new SearchResponse("hello world", Array.Empty<SearchHit>()))).WithHeader("Content-Type", "application/json"));
+                   .WithBody(body).WithHeader("Content-Type", "application/json"));
 
         var r = await _client.SearchAsync("hello world");
-        r.Query.Should().Be("hello world");
+
+        r.Total.Should().Be(2);
+        r.Results.Should().HaveCount(2);
+        r.Results[0].RecordingId.Should().Be("rec-1");
+        r.Results[0].RecordingTitle.Should().Be("Standup");
+        r.Results[0].RecordingType.Should().Be(RecordingType.Meeting);
+        r.Results[0].SegmentId.Should().Be("seg-1");
+        r.Results[0].Speaker.Should().Be("speaker_0");
+        r.Results[0].Content.Should().Be("hello world");
+        r.Results[0].StartMs.Should().Be(0);
+        r.Results[0].EndMs.Should().Be(1500);
+        r.Results[0].Score.Should().Be(0.87);
+        r.Results[1].RecordingTitle.Should().BeNull();
+        r.Results[1].RecordingType.Should().Be(RecordingType.Note);
+        r.Results[1].Speaker.Should().BeNull();
+        r.Results[1].StartMs.Should().BeNull();
 
         var entry = _server.LogEntries.Single();
         entry.RequestMessage.Query!.Single(q => q.Key == "q").Value

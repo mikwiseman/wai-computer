@@ -1010,6 +1010,133 @@ public actor APIClient {
         return try await request(.GET, path: "/api/search/fts", queryItems: queryItems)
     }
 
+    /// Unified RRF search across recordings AND items (the "search everything" box).
+    public func unifiedSearch(query: String, limit: Int = 20) async throws -> UnifiedSearchResponse {
+        let queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        return try await request(.GET, path: "/api/search/all", queryItems: queryItems)
+    }
+
+    // MARK: - Items (universal "add anything") Endpoints
+
+    public func createItem(
+        source: String = "paste",
+        kind: String = "note",
+        title: String? = nil,
+        body: String? = nil,
+        url: String? = nil,
+        folderId: String? = nil
+    ) async throws -> Item {
+        let payload = CreateItemRequest(
+            source: source, kind: kind, title: title, body: body, url: url, folderId: folderId
+        )
+        return try await request(.POST, path: "/api/items", body: payload)
+    }
+
+    public func listItems(
+        source: String? = nil,
+        kind: String? = nil,
+        folderId: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> ItemListResponse {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        if let source = source { queryItems.append(URLQueryItem(name: "source", value: source)) }
+        if let kind = kind { queryItems.append(URLQueryItem(name: "kind", value: kind)) }
+        if let folderId = folderId {
+            queryItems.append(URLQueryItem(name: "folder_id", value: folderId))
+        }
+        return try await request(.GET, path: "/api/items", queryItems: queryItems)
+    }
+
+    public func getItem(id: String) async throws -> Item {
+        return try await request(.GET, path: "/api/items/\(id)")
+    }
+
+    public func deleteItem(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/items/\(id)")
+    }
+
+    // MARK: - Brain (compiled-wiki projection of canonical memory)
+
+    public func getBrain() async throws -> BrainProjection {
+        return try await request(.GET, path: "/api/brain")
+    }
+
+    // MARK: - MCP Ingestion Connections (connect any MCP)
+
+    public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {
+        return try await request(.GET, path: "/api/mcp-connections")
+    }
+
+    public func createMcpIngestionConnection(
+        serverLabel: String,
+        serverUrl: String,
+        authType: String = "none",
+        authToken: String? = nil,
+        syncIntervalMinutes: Int = 60
+    ) async throws -> McpIngestionConnection {
+        let payload = CreateMcpConnectionRequest(
+            serverLabel: serverLabel,
+            serverUrl: serverUrl,
+            authType: authType,
+            authToken: authToken,
+            syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.POST, path: "/api/mcp-connections", body: payload)
+    }
+
+    public func updateMcpIngestionConnection(
+        id: String,
+        enabled: Bool? = nil,
+        syncIntervalMinutes: Int? = nil
+    ) async throws -> McpIngestionConnection {
+        let payload = UpdateMcpConnectionRequest(
+            enabled: enabled, syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.PATCH, path: "/api/mcp-connections/\(id)", body: payload)
+    }
+
+    public func syncMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.POST, path: "/api/mcp-connections/\(id)/sync")
+    }
+
+    public func deleteMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/mcp-connections/\(id)")
+    }
+
+    // MARK: - Comparison Sets (forward several -> compare)
+
+    public func createComparison(
+        itemIds: [String],
+        title: String? = nil,
+        intent: String? = nil
+    ) async throws -> ComparisonSet {
+        let payload = CreateComparisonRequest(itemIds: itemIds, title: title, intent: intent)
+        return try await request(.POST, path: "/api/comparisons", body: payload)
+    }
+
+    public func listComparisons(limit: Int = 50, offset: Int = 0) async throws -> [ComparisonListEntry] {
+        let queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        return try await request(.GET, path: "/api/comparisons", queryItems: queryItems)
+    }
+
+    public func getComparison(id: String) async throws -> ComparisonSet {
+        return try await request(.GET, path: "/api/comparisons/\(id)")
+    }
+
+    public func deleteComparison(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/comparisons/\(id)")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -1505,6 +1632,62 @@ public actor APIClient {
 
         try writeString("--\(boundary)--\r\n")
         return uploadURL
+    }
+}
+
+private struct CreateItemRequest: Encodable {
+    var source: String
+    var kind: String
+    var title: String?
+    var body: String?
+    var url: String?
+    var folderId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case kind
+        case title
+        case body
+        case url
+        case folderId = "folder_id"
+    }
+}
+
+private struct CreateMcpConnectionRequest: Encodable {
+    var serverLabel: String
+    var serverUrl: String
+    var authType: String
+    var authToken: String?
+    var syncIntervalMinutes: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case serverLabel = "server_label"
+        case serverUrl = "server_url"
+        case authType = "auth_type"
+        case authToken = "auth_token"
+        case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct UpdateMcpConnectionRequest: Encodable {
+    var enabled: Bool?
+    var syncIntervalMinutes: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct CreateComparisonRequest: Encodable {
+    var itemIds: [String]
+    var title: String?
+    var intent: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case itemIds = "item_ids"
+        case title
+        case intent
     }
 }
 
