@@ -1010,6 +1010,58 @@ public actor APIClient {
         return try await request(.GET, path: "/api/search/fts", queryItems: queryItems)
     }
 
+    /// Unified RRF search across recordings AND items (the "search everything" box).
+    public func unifiedSearch(query: String, limit: Int = 20) async throws -> UnifiedSearchResponse {
+        let queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        return try await request(.GET, path: "/api/search/all", queryItems: queryItems)
+    }
+
+    // MARK: - Items (universal "add anything") Endpoints
+
+    public func createItem(
+        source: String = "paste",
+        kind: String = "note",
+        title: String? = nil,
+        body: String? = nil,
+        url: String? = nil,
+        folderId: String? = nil
+    ) async throws -> Item {
+        let payload = CreateItemRequest(
+            source: source, kind: kind, title: title, body: body, url: url, folderId: folderId
+        )
+        return try await request(.POST, path: "/api/items", body: payload)
+    }
+
+    public func listItems(
+        source: String? = nil,
+        kind: String? = nil,
+        folderId: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> ItemListResponse {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        if let source = source { queryItems.append(URLQueryItem(name: "source", value: source)) }
+        if let kind = kind { queryItems.append(URLQueryItem(name: "kind", value: kind)) }
+        if let folderId = folderId {
+            queryItems.append(URLQueryItem(name: "folder_id", value: folderId))
+        }
+        return try await request(.GET, path: "/api/items", queryItems: queryItems)
+    }
+
+    public func getItem(id: String) async throws -> Item {
+        return try await request(.GET, path: "/api/items/\(id)")
+    }
+
+    public func deleteItem(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/items/\(id)")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -1619,6 +1671,24 @@ public actor APIClient {
 
         try writeString("--\(boundary)--\r\n")
         return uploadURL
+    }
+}
+
+private struct CreateItemRequest: Encodable {
+    var source: String
+    var kind: String
+    var title: String?
+    var body: String?
+    var url: String?
+    var folderId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case kind
+        case title
+        case body
+        case url
+        case folderId = "folder_id"
     }
 }
 
