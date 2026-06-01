@@ -124,6 +124,26 @@ final class MacContentFeedViewModel: ObservableObject {
         await load()
     }
 
+    func uploadFile(_ url: URL) async {
+        guard !isAdding else { return }
+        isAdding = true
+        defer { isAdding = false }
+        // App Sandbox is off on macOS, but honor the security scope if present
+        // (e.g. a file dropped/imported with a scoped URL).
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let created = try await apiClient.uploadItem(fileURL: url)
+            await load()
+            selectedId = created.id
+            await selectItem(created.id)
+            let createdId = created.id
+            Task { [weak self] in await self?.pollUntilProcessed(createdId) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func selectItem(_ id: String) async {
         do {
             selectedItem = try await apiClient.getItem(id: id)

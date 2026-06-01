@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WaiComputerKit
 
 /// The unified "Content" surface on macOS: add anything (link/text) + a
@@ -9,6 +10,7 @@ struct MacContentFeedView: View {
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacContentFeedViewModel
+    @State private var showingImporter = false
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -23,6 +25,12 @@ struct MacContentFeedView: View {
         ("note", "Notes"),
         ("mcp_resource", "Connected"),
     ]
+
+    private var importTypes: [UTType] {
+        var types: [UTType] = [.pdf, .plainText]
+        if let md = UTType(filenameExtension: "md") { types.append(md) }
+        return types
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +50,20 @@ struct MacContentFeedView: View {
             }
         }
         .task { await model.load() }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            Task { await model.uploadFile(url) }
+            return true
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: importTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            if case let .success(urls) = result, let url = urls.first {
+                Task { await model.uploadFile(url) }
+            }
+        }
         .sheet(isPresented: Binding(
             get: { model.activeComparisonId != nil },
             set: { if !$0 { model.clearComparison() } }
@@ -83,6 +105,15 @@ struct MacContentFeedView: View {
             .font(Typography.body)
             .lineLimit(1...4)
             .onSubmit { Task { await model.addDraft() } }
+
+            Button {
+                showingImporter = true
+            } label: {
+                Image(systemName: "paperclip")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isAdding)
+            .help(t("Attach a PDF or text file", "Прикрепить PDF или текстовый файл"))
 
             Button {
                 Task { await model.addDraft() }
