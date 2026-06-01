@@ -750,6 +750,46 @@ async def test_realtime_stream_rejected_when_concurrency_full(monkeypatch):
     assert websocket.closed_codes == [1008]
 
 
+@pytest.mark.asyncio
+async def test_realtime_stream_releases_slot_when_breadcrumb_raises(monkeypatch):
+    """A failure in the post-acquire 'proxy opened' breadcrumb must not leak the
+    stream slot. The slot is acquired before the relay; anything between acquire
+    and the finally that raises unguarded leaks the slot for the full lease TTL
+    (up to ~65 min for dictation), locking the user out behind TOO_MANY_STREAMS.
+    """
+    from app.api.routes import realtime_transcription as route
+    from app.config import get_settings
+    from app.core import transcription_guard as guard
+
+    monkeypatch.setattr(get_settings(), "realtime_max_concurrent_streams_per_user", 1)
+
+    real_breadcrumb = route.add_sentry_breadcrumb
+
+    def _boom(*args, **kwargs):
+        if kwargs.get("message") == "proxy opened":
+            raise RuntimeError("sentry breadcrumb backend unavailable")
+        return real_breadcrumb(*args, **kwargs)
+
+    monkeypatch.setattr(route, "add_sentry_breadcrumb", _boom)
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ):
+        # The breadcrumb raise must be caught (not propagated) by the route...
+        await route.stream_realtime_transcription(websocket)
+
+    assert route.PROXY_ERROR_PAYLOAD in websocket.json_payloads
+    assert websocket.closed_codes == [1011]
+    # ...and the single per-user slot must be free again — the finally ran.
+    token = await guard.acquire_stream_slot("user-transcription", lease_ttl_seconds=60)
+    assert token is not None, "stream slot leaked after a post-acquire failure"
+
+
 class _HangingProvider:
     """A provider whose pump never completes, to exercise the wall-clock cap."""
 
