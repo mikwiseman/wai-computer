@@ -157,6 +157,33 @@ public class PendingRecordingSyncCoordinatorTests : IAsyncLifetime
         m.SyncAttemptCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task SkipsInProgressLocalRecording()
+    {
+        var id = Guid.NewGuid();
+        _store.Save(Manifest(id) with { SyncState = RecordingBackupSyncState.LocalRecording }, Segments());
+
+        var remaining = await _coord.SyncPassAsync(CancellationToken.None);
+
+        remaining.Should().Be(0);              // in-progress recordings are not synced
+        _server.LogEntries.Should().BeEmpty();  // no upload attempt
+        _store.GetManifest(id).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RecordsConcreteFailureMessageOn404()
+    {
+        var id = Guid.NewGuid();
+        _store.Save(Manifest(id), Segments());
+        StubTranscript(id, 404);
+
+        await _coord.SyncPassAsync(CancellationToken.None);
+
+        var m = _store.GetManifest(id)!;
+        m.SyncState.Should().Be(RecordingBackupSyncState.PermanentFailure);
+        m.LastErrorMessage.Should().Contain("deleted"); // concrete user-facing message, not silent
+    }
+
     private sealed class FakeClock : ISystemClock
     {
         public DateTimeOffset UtcNow { get; set; } = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
