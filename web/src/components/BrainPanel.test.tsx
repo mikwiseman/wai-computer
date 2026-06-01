@@ -8,6 +8,12 @@ vi.mock("@/lib/api", () => ({
   getBrainGraph: (...a: unknown[]) => mockGetBrainGraph(...a),
 }));
 
+// The force graph is canvas/WebGL — stub it; its mapping logic is tested in
+// BrainGraphView.test.tsx.
+vi.mock("@/components/BrainGraphView", () => ({
+  BrainGraphView: () => <div data-testid="brain-graph-stub">graph</div>,
+}));
+
 function graph(overrides = {}) {
   return {
     nodes: [
@@ -36,10 +42,9 @@ describe("BrainPanel", () => {
 
     const topics = screen.getByText("Topics").closest("section") as HTMLElement;
     const chips = topics.querySelectorAll(".brain-panel__chip span");
-    expect(chips[0].textContent).toBe("GPU"); // degree 5 before
+    expect(chips[0].textContent).toBe("GPU"); // degree 5 first
     expect(chips[1].textContent).toBe("Pricing"); // degree 1
 
-    // Item/recording nodes are not listed in the entity index.
     expect(screen.queryByText("Solar Note")).not.toBeInTheDocument();
   });
 
@@ -58,5 +63,12 @@ describe("BrainPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
+  });
+
+  it("switches to the Graph tab", async () => {
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
+    expect(screen.getByTestId("brain-graph-stub")).toBeInTheDocument();
   });
 });
