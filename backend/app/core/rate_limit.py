@@ -86,20 +86,6 @@ class RateLimiter:
             pruned.append(now)
             self._requests[key] = pruned
 
-    def count(self, key: str, window_seconds: int) -> int:
-        """Return how many events for ``key`` fall within the trailing window.
-
-        Read-only: does not record a new event and never raises. Used for
-        early-warning signals (e.g. anomaly alerting) without affecting limits.
-        """
-        now = time.monotonic()
-        cutoff = now - window_seconds
-        with self._lock:
-            timestamps = self._requests.get(key)
-            if not timestamps:
-                return 0
-            return sum(1 for t in timestamps if t > cutoff)
-
     def reset(self) -> None:
         """Clear all tracked state. Primarily for testing."""
         with self._lock:

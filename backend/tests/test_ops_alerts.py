@@ -52,3 +52,82 @@ def test_notify_ops_noop_without_chat(monkeypatch):
 
     monkeypatch.setattr(ops, "_allow", boom)
     ops.notify_ops(alert_code="x", message="y")  # must be a silent no-op
+
+
+def test_send_posts_to_telegram_and_swallows_errors(monkeypatch):
+    posted = {}
+
+    def fake_post(url, json, timeout):
+        posted["url"] = url
+        posted["json"] = json
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(ops.httpx, "post", fake_post)
+    ops._send("tok123", 42, "hello", "alert.code")
+    assert "bottok123/sendMessage" in posted["url"]
+    assert posted["json"]["chat_id"] == 42
+    assert posted["json"]["text"] == "hello"
+    assert posted["json"]["parse_mode"] == "HTML"
+
+    # a transport error is swallowed (best-effort; never raises into the caller)
+    def boom_post(*_a, **_k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(ops.httpx, "post", boom_post)
+    ops._send("tok", 1, "x", "code")  # must not raise
+
+
+def test_notify_ops_dispatches_send_when_configured(monkeypatch):
+    ops._last_sent.clear()
+    monkeypatch.setattr(
+        ops,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_ops_chat_id=99, telegram_bot_token="tok"),
+    )
+    captured = {}
+
+    class _ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self._target = target
+            self._args = args
+
+        def start(self):
+            captured["args"] = self._args
+            self._target(*self._args)  # run inline so we can assert
+
+    sent = {}
+    monkeypatch.setattr(ops.threading, "Thread", _ImmediateThread)
+    monkeypatch.setattr(ops, "_send", lambda *a: sent.setdefault("called", a))
+
+    ops.notify_ops(
+        alert_code="recording.processing.failed",
+        message="boom",
+        extras={"recording_id": "r1"},
+        level="error",
+    )
+    # token + chat_id threaded through to _send
+    assert sent["called"][0] == "tok"
+    assert sent["called"][1] == 99
+    assert "boom" in sent["called"][2]
+
+
+def test_notify_ops_throttles_repeat_codes(monkeypatch):
+    ops._last_sent.clear()
+    monkeypatch.setattr(
+        ops,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_ops_chat_id=99, telegram_bot_token="tok"),
+    )
+    calls = []
+
+    class _NoopThread:
+        def __init__(self, target, args, daemon):
+            pass
+
+        def start(self):
+            calls.append(1)
+
+    monkeypatch.setattr(ops.threading, "Thread", _NoopThread)
+    ops.notify_ops(alert_code="dup.code", message="m")
+    ops.notify_ops(alert_code="dup.code", message="m")  # throttled -> no 2nd dispatch
+    assert len(calls) == 1

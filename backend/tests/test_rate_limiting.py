@@ -430,3 +430,19 @@ async def test_rate_limit_response_format(client: AsyncClient):
     body = response.json()
     assert "detail" in body
     assert body["detail"] == "Too many requests. Please try again later."
+
+
+def test_cleanup_stale_keys_noop_before_any_window_observed():
+    """_cleanup_stale_keys returns early when no window has been observed yet
+    (max_window == 0); purges stale keys once a window is known."""
+    limiter = RateLimiter(cleanup_interval=0)  # force cleanup to run each check
+    # No check yet -> _max_window is 0; invoking cleanup is a safe no-op.
+    limiter._cleanup_stale_keys(now=1000.0)
+    assert limiter.key_count == 0
+
+    limiter.check("k", max_requests=5, window_seconds=10)
+    assert limiter.key_count == 1
+    # Far in the future, the stale "k" entry is purged by cleanup.
+    limiter._requests["k"] = [0.0]
+    limiter._cleanup_stale_keys(now=10_000.0)
+    assert limiter.key_count == 0
