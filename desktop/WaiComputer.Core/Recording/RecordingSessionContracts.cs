@@ -1,3 +1,4 @@
+using WaiComputer.Core.Api.Models;
 using WaiComputer.Core.Audio;
 
 namespace WaiComputer.Core.Recordings;
@@ -58,4 +59,22 @@ public sealed record RecordingSessionState(
     /// <summary>Header indicator derived from the requested/actual system-audio state + warning.</summary>
     public SystemAudioHeaderIndicator HeaderIndicator
         => SystemAudioWarningPolicy.HeaderIndicator(RequestedSystemAudio, HasSystemAudio, SystemAudioWarning is not null);
+}
+
+/// <summary>
+/// Public surface of the recording orchestrator. Lets the shared
+/// <c>RecordingViewModel</c> (and platform shells) bind a fake in tests instead of
+/// the concrete <see cref="RecordingSession"/> + its full capture/upload graph.
+/// </summary>
+public interface IRecordingSession : IAsyncDisposable
+{
+    RecordingSessionState State { get; }
+    event Action<RecordingSessionState>? StateChanged;
+
+    Task StartAsync(RecordingType type, RecordingInputSource source, string language, string? folderId, CancellationToken ct = default);
+    Task StopAsync();
+    Task DiscardAsync();
+    Task PauseAsync();
+    Task ResumeAsync();
+    void ClearError();
 }
