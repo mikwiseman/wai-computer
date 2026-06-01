@@ -37,6 +37,29 @@ public sealed record DictationResult(
     bool InsertedViaClipboard);
 
 /// <summary>
+/// Public surface of the dictation state machine. Lets the shared
+/// <c>DictationViewModel</c> (and platform shells) bind a fake in tests instead of
+/// the concrete orchestrator + its full dependency graph.
+/// </summary>
+public interface IDictationOrchestrator : IAsyncDisposable
+{
+    DictationState State { get; }
+    event Action<DictationState>? StateChanged;
+    event Action<string>? InterimTranscriptUpdated;
+    event Action<DictationResult>? Completed;
+    event Action<string>? ClipboardRecoveryRequired;
+    event Action<string>? Failed;
+
+    void Attach(HotkeyStateMachine hotkey);
+    Task PrewarmAsync(CancellationToken ct);
+    Task StartAsync(bool handsFree, CancellationToken ct = default);
+    Task StartAsync(CancellationToken ct = default);
+    Task StopAndInsertAsync(CancellationToken ct = default);
+    Task CancelAsync(CancellationToken ct = default);
+    void ClearConfigCache();
+}
+
+/// <summary>
 /// The dictation keystone: a state machine (idle → connecting → listening →
 /// processing → inserting) that drives a realtime transcription turn and inserts
 /// the result into the focused app. Ports the macOS <c>DictationManager</c>.
@@ -50,7 +73,7 @@ public sealed record DictationResult(
 /// <c>_collectLock</c> guards the transcript collections the event pump writes and
 /// the stop path reads.
 /// </summary>
-public sealed class DictationOrchestrator : IAsyncDisposable
+public sealed class DictationOrchestrator : IDictationOrchestrator
 {
     private const int StartupBufferMaxBytes = 2 * 16000 * 4; // ~4 s of 16 kHz mono int16 pre-roll headroom
     private static readonly TimeSpan FinalEventDrainWindow = TimeSpan.FromMilliseconds(400);
