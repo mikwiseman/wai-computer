@@ -104,36 +104,36 @@ def test_build_realtime_websocket_url_limits_dictation_to_english() -> None:
     assert "dictation=true" in english
     assert "punctuate=true" in english
     assert "numerals=true" in english
-    assert "dictation=true" not in russian
-    assert "punctuate=true" not in russian
+    assert "dictation=true" not in russian  # spoken-punctuation cmds: English only
+    assert "punctuate=true" in russian  # punctuation: all dictation languages
     assert "numerals=true" in russian
 
 
-def test_build_realtime_websocket_url_keeps_numeric_entities_whole() -> None:
-    """Multilingual dictation must not use aggressive endpointing.
+def test_build_realtime_websocket_url_dictation_uses_numerals_without_smart_format() -> None:
+    """Dictation must render every spoken number as a digit (десять -> 10).
 
-    Deepgram's streaming smart_format/numerals only convert a number once the
-    whole numeric phrase finalizes together. A 100ms endpointing used to split
-    multilingual phrases across finals so only part converted. The multilingual
-    path must share the same non-aggressive 300ms as single-language so numerals
-    stay whole.
+    Deepgram's numerals feature only converts small numbers when smart_format is
+    OFF; smart_format's readability layer overrides it and leaves them as words
+    ("десять"). Dictation therefore drops smart_format (numerals + punctuate),
+    while recording keeps smart_format for readable meeting transcripts.
     """
-    multi = build_realtime_websocket_url(
+    dictation = build_realtime_websocket_url(
         language="multi",
         channels=1,
         purpose="dictation",
     )
-    russian = build_realtime_websocket_url(
-        language="ru",
+    recording = build_realtime_websocket_url(
+        language="multi",
         channels=1,
-        purpose="dictation",
+        purpose="recording",
     )
 
-    assert "endpointing=300" in multi
-    assert "endpointing=100" not in multi
-    assert "numerals=true" in multi
-    # Multilingual and single-language finalize at the same cadence.
-    assert "endpointing=300" in russian
+    assert "numerals=true" in dictation
+    assert "punctuate=true" in dictation
+    assert "smart_format=true" not in dictation
+    # Recording keeps smart_format (readability) and still gets numerals.
+    assert "smart_format=true" in recording
+    assert "numerals=true" in recording
 
 
 def test_require_deepgram_api_key_returns_configured_key() -> None:
