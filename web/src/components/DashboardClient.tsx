@@ -53,6 +53,7 @@ import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPa
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
+import { ItemsFeed } from "@/components/ItemsFeed";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
@@ -77,6 +78,7 @@ type SearchMode = "hybrid" | "semantic" | "fts";
 type DashboardView =
   | "wai"
   | "add"
+  | "content"
   | "library"
   | "folder"
   | "trash"
@@ -1541,6 +1543,11 @@ export function DashboardClient() {
           count: null,
         },
         {
+          key: "content",
+          label: locale === "ru" ? "Материалы" : "Content",
+          count: null,
+        },
+        {
           key: "library",
           label: copy.nav.library.label,
           count: displayCount(recordings.length),
@@ -1818,6 +1825,11 @@ export function DashboardClient() {
               onCreated={() => void loadRecordingsState()}
               onError={setMessage}
             />
+          </section>
+        ) : null}
+        {view === "content" ? (
+          <section className="tool-panel">
+            <ItemsFeed onError={setMessage} />
           </section>
         ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
