@@ -7,8 +7,10 @@ namespace WaiComputer.Core.Audio;
 /// <summary>
 /// Combines a microphone and an optional system-audio source into a single
 /// stream consumed by the realtime WS + local WAV writer. Direct port of the
-/// Swift <c>DualAudioCapture</c> behavioural contract: stall detection,
-/// graceful degradation to mic-only, mono/stereo configuration.
+/// Swift <c>DualAudioCapture</c> behavioural contract: each source feeds a
+/// <see cref="BufferedDualMixer"/> that aligns the two on a fixed flush cadence,
+/// so the mic is never blocked by missing / jittery system audio, output stays
+/// sample-accurate, and a stalled system source degrades to mic-only.
 /// </summary>
 public sealed class DualAudioCapture : IAsyncDisposable
 {
@@ -16,7 +18,11 @@ public sealed class DualAudioCapture : IAsyncDisposable
     private readonly ISystemAudioCapture? _system;
     private readonly AudioCaptureConfig _config;
     private readonly ILogger<DualAudioCapture> _logger;
+    private readonly IFlushClock _flushClock;
     private readonly TimeSpan _stallTimeout = TimeSpan.FromSeconds(3);
+
+    private readonly BufferedDualMixer _mixer;
+    private readonly object _mixerGate = new();
 
     private readonly Channel<AudioFrame> _output = Channel.CreateBounded<AudioFrame>(
         new BoundedChannelOptions(64)
@@ -28,6 +34,8 @@ public sealed class DualAudioCapture : IAsyncDisposable
 
     private Task? _micPump;
     private Task? _systemPump;
+    private Task? _stallPump;
+    private Task? _flushPump;
     private CancellationTokenSource? _cts;
 
     public ChannelReader<AudioFrame> Frames => _output.Reader;
@@ -38,12 +46,19 @@ public sealed class DualAudioCapture : IAsyncDisposable
 
     public event Action? SystemAudioStallDetected;
 
-    public DualAudioCapture(IMicrophoneCapture mic, ISystemAudioCapture? system, AudioCaptureConfig config, ILogger<DualAudioCapture>? logger = null)
+    public DualAudioCapture(
+        IMicrophoneCapture mic,
+        ISystemAudioCapture? system,
+        AudioCaptureConfig config,
+        ILogger<DualAudioCapture>? logger = null,
+        IFlushClock? flushClock = null)
     {
         _mic = mic;
         _system = system;
         _config = config;
         _logger = logger ?? NullLogger<DualAudioCapture>.Instance;
+        _flushClock = flushClock ?? new PeriodicFlushClock(TimeSpan.FromMilliseconds(160));
+        _mixer = new BufferedDualMixer(config);
     }
 
     public async Task StartAsync(CancellationToken ct)
@@ -63,8 +78,10 @@ public sealed class DualAudioCapture : IAsyncDisposable
         _micPump = Task.Run(() => MicPump(_cts.Token), _cts.Token);
         if (_system is not null)
         {
-            _systemPump = Task.Run(() => SystemPump(_cts.Token), _cts.Token);
+            _systemPump = Task.Run(() => SystemReadPump(_cts.Token), _cts.Token);
+            _stallPump = Task.Run(() => StallPump(_cts.Token), _cts.Token);
         }
+        _flushPump = Task.Run(() => FlushPump(_cts.Token), _cts.Token);
     }
 
     public async Task StopAsync()
@@ -75,6 +92,16 @@ public sealed class DualAudioCapture : IAsyncDisposable
         {
             try { await _system.StopAsync().ConfigureAwait(false); } catch { /* ignore */ }
         }
+
+        foreach (var pump in new[] { _micPump, _systemPump, _stallPump, _flushPump })
+        {
+            if (pump is not null)
+            {
+                try { await pump.ConfigureAwait(false); } catch { /* cancelled */ }
+            }
+        }
+
+        DrainFlush(); // emit any remaining aligned audio
         _output.Writer.TryComplete();
     }
 
@@ -88,38 +115,35 @@ public sealed class DualAudioCapture : IAsyncDisposable
 
     private async Task MicPump(CancellationToken ct)
     {
-        await foreach (var micFrame in _mic.Frames.ReadAllAsync(ct).ConfigureAwait(false))
+        try
         {
-            if (_system is null)
+            await foreach (var frame in _mic.Frames.ReadAllAsync(ct).ConfigureAwait(false))
             {
-                await _output.Writer.WriteAsync(micFrame, ct).ConfigureAwait(false);
-                continue;
-            }
-
-            // We mix synchronously per-mic-frame: read the most recent system
-            // frame if available, otherwise emit silence-padded mic only. This
-            // matches the Swift implementation's "stall detection" path —
-            // missing system audio doesn't block recording.
-            if (_system.Frames.TryRead(out var sysFrame) && sysFrame.SampleCount == micFrame.SampleCount)
-            {
-                EmitMixed(micFrame, sysFrame, ct);
-            }
-            else
-            {
-                EmitMixed(micFrame, new AudioFrame(new byte[micFrame.SizeBytes], micFrame.Timestamp, micFrame.SampleCount), ct);
+                lock (_mixerGate) { _mixer.AppendMic(frame.Pcm16); }
             }
         }
+        catch (OperationCanceledException) { /* stopping */ }
     }
 
-    private async Task SystemPump(CancellationToken ct)
+    private async Task SystemReadPump(CancellationToken ct)
+    {
+        if (_system is null) return;
+        try
+        {
+            await foreach (var frame in _system.Frames.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                lock (_mixerGate) { _mixer.AppendSystem(frame.Pcm16); }
+            }
+        }
+        catch (OperationCanceledException) { /* stopping */ }
+    }
+
+    private async Task StallPump(CancellationToken ct)
     {
         if (_system is null) return;
         while (!ct.IsCancellationRequested)
         {
-            try
-            {
-                await Task.Delay(_stallTimeout, ct).ConfigureAwait(false);
-            }
+            try { await Task.Delay(_stallTimeout, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
 
             var lastAt = _system.LastAudibleAt;
@@ -137,19 +161,30 @@ public sealed class DualAudioCapture : IAsyncDisposable
         }
     }
 
-    private void EmitMixed(AudioFrame mic, AudioFrame system, CancellationToken ct)
+    private async Task FlushPump(CancellationToken ct)
     {
-        if (_config.SeparateChannels)
+        try
         {
-            var dst = new byte[mic.SizeBytes * 2];
-            AudioMixer.InterleaveStereo(mic.Pcm16, system.Pcm16, dst);
-            _ = _output.Writer.TryWrite(new AudioFrame(dst, mic.Timestamp, mic.SampleCount));
+            await foreach (var _ in _flushClock.Ticks(ct).ConfigureAwait(false))
+            {
+                DrainFlush();
+            }
         }
-        else
+        catch (OperationCanceledException) { /* stopping */ }
+    }
+
+    private void DrainFlush()
+    {
+        var systemUsable = SystemAudioReceivedAny && !SystemAudioStalled;
+        while (true)
         {
-            var dst = new byte[mic.SizeBytes];
-            AudioMixer.MixToMono(mic.Pcm16, system.Pcm16, dst);
-            _ = _output.Writer.TryWrite(new AudioFrame(dst, mic.Timestamp, mic.SampleCount));
+            AudioFrame? frame;
+            lock (_mixerGate) { frame = _mixer.TryFlush(HasSystemAudio, systemUsable); }
+            if (frame is null)
+            {
+                break;
+            }
+            _output.Writer.TryWrite(frame.Value);
         }
     }
 }
