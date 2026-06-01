@@ -8,6 +8,7 @@ one with its columns + rows.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,8 @@ from app.models.comparison import ComparisonSet
 from app.models.item import Item
 
 router = APIRouter(prefix="/comparisons", tags=["comparisons"])
+
+logger = logging.getLogger(__name__)
 
 
 class CreateComparisonRequest(BaseModel):
@@ -92,9 +95,6 @@ async def create_comparison(
         item_ids=ids,
         status="generating",
     )
-    if request.intent:
-        # Stash intent for the worker without a dedicated column.
-        cs.schema_rationale = None
     db.add(cs)
     await db.flush()
 
@@ -102,8 +102,10 @@ async def create_comparison(
         from app.tasks.comparison_generation import generate_comparison_task
 
         generate_comparison_task.delay(comparison_id=str(cs.id), intent=request.intent)
-    except Exception:  # noqa: BLE001 — broker optional; set is still saved
-        pass
+    except Exception as exc:  # noqa: BLE001 — broker down: mark failed, never a stuck "generating" row
+        logger.warning("comparison enqueue failed id=%s: %s", cs.id, exc)
+        cs.status = "failed"
+        await db.flush()
 
     return _response(cs)
 

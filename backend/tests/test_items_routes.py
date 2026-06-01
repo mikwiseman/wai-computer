@@ -9,6 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
+from app.api.routes.items import _derive_status, _item_error
+from app.models.item import Item
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -121,3 +124,78 @@ async def test_delete_item_soft_deletes(client, auth_headers) -> None:
     assert gone.status_code == 404
     listing = await client.get("/api/items", headers=auth_headers)
     assert listing.json()["total"] == 0
+
+
+async def test_derive_status_covers_every_state() -> None:
+    assert _derive_status(Item(state="needs_input"), False) == "needs_input"
+    assert _derive_status(Item(state="failed"), False) == "failed"
+    assert (
+        _derive_status(
+            Item(state="raw", metadata_={"processing_error": {"code": "x", "message": "y"}}),
+            False,
+        )
+        == "failed"
+    )
+    assert _derive_status(Item(state="raw", body="hello"), True) == "ready"
+    assert _derive_status(Item(state="promoted", body="x"), True) == "ready"
+    assert (
+        _derive_status(Item(state="raw", url="https://e.com", body=None), False) == "fetching"
+    )
+    assert (
+        _derive_status(Item(state="raw", body="has body", url=None), False) == "summarizing"
+    )
+
+
+async def test_item_error_surfaces_fetch_and_processing_errors() -> None:
+    assert _item_error(Item(metadata_=None)) is None
+    assert _item_error(Item(metadata_={})) is None
+    fe = _item_error(
+        Item(
+            metadata_={
+                "fetch_error": {"code": "youtube_no_transcript", "message": "Share the file"}
+            }
+        )
+    )
+    assert fe is not None and fe.code == "youtube_no_transcript"
+    pe = _item_error(
+        Item(metadata_={"processing_error": {"code": "enqueue_failed", "message": "Retry"}})
+    )
+    assert pe is not None and pe.code == "enqueue_failed"
+
+
+async def test_create_item_exposes_summarizing_status(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        resp = await client.post(
+            "/api/items",
+            json={"source": "paste", "body": "notes on solar storage economics"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "summarizing"
+    assert data["error"] is None
+
+
+async def test_create_item_enqueue_failure_is_visible_not_swallowed(
+    client, auth_headers
+) -> None:
+    with patch(
+        "app.tasks.item_summary_generation.generate_item_summary_task.delay",
+        side_effect=RuntimeError("broker down"),
+    ):
+        resp = await client.post(
+            "/api/items",
+            json={"source": "paste", "body": "this item cannot be enqueued"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["state"] == "failed"
+    assert data["status"] == "failed"
+    assert data["error"]["code"] == "enqueue_failed"
+
+    # The failure is also visible in the unified feed (not silently dropped).
+    listing = await client.get("/api/items", headers=auth_headers)
+    entry = next(e for e in listing.json()["items"] if e["id"] == data["id"])
+    assert entry["status"] == "failed"
+    assert entry["error"]["code"] == "enqueue_failed"

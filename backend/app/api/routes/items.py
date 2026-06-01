@@ -17,6 +17,7 @@ paste is rejected.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,8 @@ from app.core.item_ingest import ingest_item
 from app.models.item import Item, ItemSummary
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+logger = logging.getLogger(__name__)
 
 
 class CreateItemRequest(BaseModel):
@@ -53,6 +56,13 @@ class ItemSummaryResponse(BaseModel):
     sentiment: str | None
 
 
+class ItemError(BaseModel):
+    """A user-facing reason an item could not be fetched or processed."""
+
+    code: str
+    message: str
+
+
 class ItemResponse(BaseModel):
     id: str
     source: str
@@ -63,6 +73,10 @@ class ItemResponse(BaseModel):
     body: str | None
     occurred_at: str | None
     state: str
+    # Derived processing status the client can render directly:
+    # fetching | summarizing | ready | needs_input | failed.
+    status: str
+    error: ItemError | None = None
     folder_id: str | None
     created_at: str
     summary: ItemSummaryResponse | None = None
@@ -75,6 +89,8 @@ class ItemListEntry(BaseModel):
     kind: str
     title: str | None
     state: str
+    status: str
+    error: ItemError | None = None
     folder_id: str | None
     occurred_at: str | None
     created_at: str
@@ -101,6 +117,38 @@ def _summary_response(summary: ItemSummary | None) -> ItemSummaryResponse | None
     )
 
 
+def _item_error(item: Item) -> ItemError | None:
+    """Surface the stored fetch/processing error (no-fallback: visible to clients)."""
+    meta = item.metadata_ or {}
+    err = meta.get("fetch_error") or meta.get("processing_error")
+    if not isinstance(err, dict):
+        return None
+    return ItemError(
+        code=str(err.get("code") or "error"),
+        message=str(err.get("message") or ""),
+    )
+
+
+def _derive_status(item: Item, has_summary: bool) -> str:
+    """Derive a client-facing processing status from the item's state + data.
+
+    Honest statuses only: ``needs_input`` (a recoverable fetch error the user
+    can resolve), ``failed`` (processing could not start), ``ready`` (summary
+    present), ``fetching`` (URL awaiting its background fetch), ``summarizing``
+    (body present, summary pending).
+    """
+    if item.state == "needs_input":
+        return "needs_input"
+    meta = item.metadata_ or {}
+    if item.state == "failed" or meta.get("processing_error"):
+        return "failed"
+    if has_summary:
+        return "ready"
+    if not (item.body or "").strip() and (item.url or "").strip():
+        return "fetching"
+    return "summarizing"
+
+
 def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
     return ItemResponse(
         id=str(item.id),
@@ -112,6 +160,8 @@ def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
         body=item.body,
         occurred_at=item.occurred_at.isoformat() if item.occurred_at else None,
         state=item.state,
+        status=_derive_status(item, summary is not None),
+        error=_item_error(item),
         folder_id=str(item.folder_id) if item.folder_id else None,
         created_at=item.created_at.isoformat(),
         summary=_summary_response(summary),
@@ -158,8 +208,16 @@ async def create_item(
             from app.tasks.item_summary_generation import generate_item_summary_task
 
             generate_item_summary_task.delay(item_id=str(item.id))
-        except Exception:  # noqa: BLE001 — broker optional in some envs; item is still saved
-            pass
+        except Exception as exc:  # noqa: BLE001 — broker down: fail loudly, never pretend success
+            logger.warning("item enqueue failed item=%s: %s", item.id, exc)
+            meta = dict(item.metadata_ or {})
+            meta["processing_error"] = {
+                "code": "enqueue_failed",
+                "message": "Couldn't start processing. Retry shortly.",
+            }
+            item.metadata_ = meta
+            item.state = "failed"
+            await db.flush()
 
     summary = (
         await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
@@ -218,6 +276,8 @@ async def list_items(
                 kind=r.kind,
                 title=r.title,
                 state=r.state,
+                status=_derive_status(r, r.id in summarized_ids),
+                error=_item_error(r),
                 folder_id=str(r.folder_id) if r.folder_id else None,
                 occurred_at=r.occurred_at.isoformat() if r.occurred_at else None,
                 created_at=r.created_at.isoformat(),
