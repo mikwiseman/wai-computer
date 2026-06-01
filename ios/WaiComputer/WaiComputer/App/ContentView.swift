@@ -38,6 +38,7 @@ struct ContentView: View {
 
 struct MainTabView: View {
     @EnvironmentObject var languageManager: LanguageManager
+    @EnvironmentObject var appState: AppState
     @AppStorage("selectedTab") private var selectedTab = 0
     @StateObject private var recordingViewModel = RecordingViewModel()
     @State private var recoveryNotice: String?
@@ -61,17 +62,23 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
+            SecondBrainView(apiClient: appState.getAPIClient())
+                .tabItem {
+                    Label(t("Brain", "Мозг"), systemImage: "brain")
+                }
+                .tag(2)
+
             WaiHomeView()
                 .tabItem {
                     Label("Wai", systemImage: "sparkles")
                 }
-                .tag(2)
+                .tag(3)
 
             SettingsView()
                 .tabItem {
                     Label(t("Settings", "Настройки"), systemImage: "gear")
                 }
-                .tag(3)
+                .tag(4)
         }
         .environmentObject(recordingViewModel)
         .overlay(alignment: .top) {
@@ -84,8 +91,8 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // Clamp into valid range (0 Record / 1 Library / 2 Wai / 3 Settings)
-            if !(0...3).contains(selectedTab) { selectedTab = 0 }
+            // Clamp into valid range (0 Record / 1 Library / 2 Brain / 3 Wai / 4 Settings)
+            if !(0...4).contains(selectedTab) { selectedTab = 0 }
             // Allow env override for screenshots
             if let tab = ProcessInfo.processInfo.environment["WAICOMPUTER_TAB"],
                let n = Int(tab) { selectedTab = n }

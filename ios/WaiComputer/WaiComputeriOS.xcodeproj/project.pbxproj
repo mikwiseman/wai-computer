@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0F69BE6D4AEEA064C026CE9E /* AddAnythingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */; };
+		10D8C9DDE9D457C35CF9AA64 /* ContentFeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */; };
 		13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */; };
 		2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */; };
 		2CC3409C8A45B8D56F34330D /* TelegramSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */; };
@@ -36,27 +38,32 @@
 		C7EC953F1B7260398E446691 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B055BB2A3A8819F870F4A3 /* ContentView.swift */; };
 		CA5632BCA73643F75B20D81B /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A3AFAEAAB050CDE2ED194992 /* WaiComputerKit */; };
 		CC4E23482FD719666989EEBF /* LanguagePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121A5759092B96CD66C56311 /* LanguagePickerView.swift */; };
+		D2CE866B719126096CE058F8 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D70385DAB2C71AA828D303B /* ItemDetailView.swift */; };
 		DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2CE7B7688E7FF5BFAB1E8A4 /* LibraryView.swift */; };
 		DD79FB01333C1466646D544E /* DictationDictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49D3185F51AF817EAB6246A /* DictationDictionaryView.swift */; };
 		E0DA3FD33295D787056B84B1 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F512F3E4DABAE0A57EAB068 /* AppearanceSettingsView.swift */; };
 		E31F1A407611387C583951C4 /* WaiComputerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */; };
 		E352768522304B30567C3B72 /* RecordingDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A771DCE464D8D7EE680CF3B3 /* RecordingDetailViewModel.swift */; };
+		E42ED41209D9D6AAD7AFE57A /* SecondBrainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0125DD2333BE829BFD004DBE /* SecondBrainView.swift */; };
 		E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AD9426E8AD31AD09735D0 /* OnboardingSlide.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0125DD2333BE829BFD004DBE /* SecondBrainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondBrainView.swift; sourceTree = "<group>"; };
 		04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLanguageStore.swift; sourceTree = "<group>"; };
 		0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityAndVoiceSettingsView.swift; sourceTree = "<group>"; };
 		121A5759092B96CD66C56311 /* LanguagePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePickerView.swift; sourceTree = "<group>"; };
 		1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiHomeView.swift; sourceTree = "<group>"; };
+		26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAnythingSheet.swift; sourceTree = "<group>"; };
 		33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguagePicker.swift; sourceTree = "<group>"; };
 		557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		5D1C7BE633E65D2EB872797E /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerApp.swift; sourceTree = "<group>"; };
 		6C9E3265171CC15BA875FA7A /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
+		6D70385DAB2C71AA828D303B /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
 		6DA5B50328D0A9CA110FA5D5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		6E5463A0F89C2F77AC9ED432 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
 		6E6940BF1D0BDFB73952CDCD /* BillingStatusSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingStatusSection.swift; sourceTree = "<group>"; };
@@ -74,6 +81,7 @@
 		C2CE7B7688E7FF5BFAB1E8A4 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportViewModel.swift; sourceTree = "<group>"; };
+		C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFeedViewModel.swift; sourceTree = "<group>"; };
 		CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSettingsView.swift; sourceTree = "<group>"; };
 		D49D3185F51AF817EAB6246A /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryStore.swift; sourceTree = "<group>"; };
@@ -106,6 +114,17 @@
 				121A5759092B96CD66C56311 /* LanguagePickerView.swift */,
 			);
 			path = Dictation;
+			sourceTree = "<group>";
+		};
+		02A3BCC994A8AD16E2B2D053 /* Brain */ = {
+			isa = PBXGroup;
+			children = (
+				26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */,
+				C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */,
+				6D70385DAB2C71AA828D303B /* ItemDetailView.swift */,
+				0125DD2333BE829BFD004DBE /* SecondBrainView.swift */,
+			);
+			path = Brain;
 			sourceTree = "<group>";
 		};
 		264DE5A927EBB291BE260D14 /* Settings */ = {
@@ -172,6 +191,7 @@
 			isa = PBXGroup;
 			children = (
 				4462E9DFD8F9D4ABE46D08FA /* Billing */,
+				02A3BCC994A8AD16E2B2D053 /* Brain */,
 				00015821371FF4055780C1BB /* Dictation */,
 				C49AB20F9C75D86A5BC0BA1F /* Library */,
 				7328B9E3D959C3F01D6670B0 /* Recording */,
@@ -326,11 +346,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0F69BE6D4AEEA064C026CE9E /* AddAnythingSheet.swift in Sources */,
 				9640CDAD6341750038EACFCE /* AppLanguagePicker.swift in Sources */,
 				E0DA3FD33295D787056B84B1 /* AppearanceSettingsView.swift in Sources */,
 				678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */,
 				3D7F2033226F703D235266F6 /* AuthView.swift in Sources */,
 				8E224459E08141B4403149E2 /* BillingStatusSection.swift in Sources */,
+				10D8C9DDE9D457C35CF9AA64 /* ContentFeedViewModel.swift in Sources */,
 				C7EC953F1B7260398E446691 /* ContentView.swift in Sources */,
 				A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */,
 				9FA96E914A0393CB63E62547 /* DictationDictionaryStore.swift in Sources */,
@@ -340,6 +362,7 @@
 				13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */,
 				868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,
+				D2CE866B719126096CE058F8 /* ItemDetailView.swift in Sources */,
 				CC4E23482FD719666989EEBF /* LanguagePickerView.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
 				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
@@ -352,6 +375,7 @@
 				6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */,
 				2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */,
 				920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */,
+				E42ED41209D9D6AAD7AFE57A /* SecondBrainView.swift in Sources */,
 				75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */,
 				A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */,
 				2CC3409C8A45B8D56F34330D /* TelegramSettingsView.swift in Sources */,
