@@ -15,10 +15,42 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published var isAdding = false
     @Published var errorMessage: String?
 
-    private let apiClient: APIClient
+    // Multi-select -> compare
+    @Published var compareSelection: Set<String> = []
+    @Published var activeComparisonId: String?
+    @Published var isComparing = false
+
+    let apiClient: APIClient
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
+    }
+
+    func toggleCompare(_ id: String) {
+        if compareSelection.contains(id) {
+            compareSelection.remove(id)
+        } else {
+            compareSelection.insert(id)
+        }
+    }
+
+    var canCompare: Bool { compareSelection.count >= 2 }
+
+    func compareSelected() async {
+        guard canCompare, !isComparing else { return }
+        isComparing = true
+        defer { isComparing = false }
+        do {
+            let set = try await apiClient.createComparison(itemIds: Array(compareSelection))
+            activeComparisonId = set.id
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearComparison() {
+        activeComparisonId = nil
+        compareSelection.removeAll()
     }
 
     func load() async {

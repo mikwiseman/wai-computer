@@ -40,6 +40,19 @@ struct MacContentFeedView: View {
             }
         }
         .task { await model.load() }
+        .sheet(isPresented: Binding(
+            get: { model.activeComparisonId != nil },
+            set: { if !$0 { model.clearComparison() } }
+        )) {
+            if let comparisonId = model.activeComparisonId {
+                MacComparisonView(
+                    apiClient: model.apiClient,
+                    comparisonId: comparisonId,
+                    onClose: { model.clearComparison() }
+                )
+                .frame(minWidth: 640, minHeight: 480)
+            }
+        }
     }
 
     private var header: some View {
@@ -105,6 +118,23 @@ struct MacContentFeedView: View {
                 )
             }
             Spacer()
+            if model.canCompare {
+                Button {
+                    Task { await model.compareSelected() }
+                } label: {
+                    if model.isComparing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(
+                            t("Compare (\(model.compareSelection.count))",
+                              "Сравнить (\(model.compareSelection.count))"),
+                            systemImage: "tablecells"
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
@@ -143,18 +173,31 @@ struct MacContentFeedView: View {
     }
 
     private func contentRow(_ entry: ItemListEntry) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
-            Text(entry.title ?? entry.url ?? t("Untitled", "Без названия"))
-                .font(Typography.bodySmall.weight(.medium))
-                .lineLimit(2)
-            HStack(spacing: Spacing.xs) {
-                Text(entry.kind.uppercased())
-                    .font(Typography.labelSmall)
-                    .foregroundStyle(Palette.textTertiary)
-                if !entry.hasSummary {
-                    Text(t("summarizing…", "обработка…"))
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Button {
+                model.toggleCompare(entry.id)
+            } label: {
+                Image(systemName: model.compareSelection.contains(entry.id)
+                      ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(model.compareSelection.contains(entry.id)
+                                     ? Palette.accent : Palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help(t("Select to compare", "Выбрать для сравнения"))
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(entry.title ?? entry.url ?? t("Untitled", "Без названия"))
+                    .font(Typography.bodySmall.weight(.medium))
+                    .lineLimit(2)
+                HStack(spacing: Spacing.xs) {
+                    Text(entry.kind.uppercased())
                         .font(Typography.labelSmall)
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(Palette.textTertiary)
+                    if !entry.hasSummary {
+                        Text(t("summarizing…", "обработка…"))
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.accent)
+                    }
                 }
             }
         }
