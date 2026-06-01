@@ -212,6 +212,9 @@ struct WaiComputerApp: App {
                 .environment(\.locale, languageManager.preferredLocale)
                 .environmentObject(languageManager)
                 .environmentObject(appState)
+                .onOpenURL { url in
+                    Task { await appState.handleIncomingURL(url) }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     Task {
@@ -231,6 +234,8 @@ class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var hasCompletedOnboarding: Bool = false
+    @Published var magicLinkSent = false
+    @Published var passwordResetSent = false
 
     static let onboardingCompletedKey = "nativeOnboardingV2Completed"
 
@@ -392,6 +397,80 @@ class AppState: ObservableObject {
             self.error = error.userFacingMessage(context: .authentication)
         }
 
+        isLoading = false
+    }
+
+    /// In-app language → backend locale tag ("ru" or "en"). Mirrors macOS.
+    private var authLocale: String {
+        LanguageManager.shared.preferredLocale.language.languageCode?.identifier == "ru" ? "ru" : "en"
+    }
+
+    /// Request a passwordless sign-in link. Mirrors macOS `requestMagicLink`.
+    func requestMagicLink(email: String, acceptedLegalTerms: Bool = false) async {
+        isLoading = true
+        error = nil
+        do {
+            _ = try await apiClient.requestMagicLink(
+                email: email,
+                client: "ios",
+                locale: authLocale,
+                acceptedLegalTerms: acceptedLegalTerms
+            )
+            magicLinkSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+        isLoading = false
+    }
+
+    /// Request a password-reset email. Mirrors macOS `requestPasswordReset`.
+    func requestPasswordReset(email: String, locale: String?) async {
+        isLoading = true
+        error = nil
+        do {
+            _ = try await apiClient.requestPasswordReset(email: email, locale: locale)
+            passwordResetSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+        isLoading = false
+    }
+
+    /// Handle the magic-link deep link `waicomputer://auth/verify?token=…`.
+    func handleIncomingURL(_ url: URL) async {
+        guard url.scheme == "waicomputer",
+              url.host == "auth",
+              url.path == "/verify" || url.path == "verify",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let token = components.queryItems?.first(where: { $0.name == "token" })?.value
+        else { return }
+
+        isLoading = true
+        error = nil
+        do {
+            let response = try await apiClient.verifyMagicLink(token: token)
+            await apiClient.setAccessToken(response.accessToken)
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
+            magicLinkSent = false
+            // A user arriving via magic link has effectively finished onboarding.
+            if !hasCompletedOnboarding {
+                UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
+                hasCompletedOnboarding = true
+            }
+            await loadCurrentUser()
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
         isLoading = false
     }
 
