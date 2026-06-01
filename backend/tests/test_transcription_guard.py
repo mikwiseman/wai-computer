@@ -191,3 +191,33 @@ async def test_get_redis_lazily_builds_and_caches_a_client():
         assert guard.get_redis() is client  # cached singleton
     finally:
         guard.set_redis_for_tests(None)
+
+
+# --- disabled / zero-cap early returns (coverage of the no-op branches) -------
+async def test_minutes_budget_noop_when_both_caps_zero(settings, monkeypatch, fake_redis):
+    monkeypatch.setattr(settings, "transcription_abuse_caps_enabled", True)
+    monkeypatch.setattr(settings, "deepgram_global_daily_minutes_cap", 0)
+    monkeypatch.setattr(settings, "deepgram_user_daily_minutes_cap", 0)
+    await guard.check_minutes_budget("u", 10_000)  # both caps 0 -> early return, no raise
+
+
+async def test_record_minutes_noop_for_nonpositive(fake_redis):
+    await guard.record_minutes("u", 0)  # <= 0 -> early return
+    await guard.record_minutes("u", -5)
+
+
+async def test_stream_slot_unlimited_when_caps_zero(settings, monkeypatch, fake_redis):
+    monkeypatch.setattr(settings, "realtime_max_concurrent_streams_per_user", 0)
+    monkeypatch.setattr(settings, "realtime_max_concurrent_streams_global", 0)
+    token = await guard.acquire_stream_slot("u", lease_ttl_seconds=60)
+    assert token is not None  # both caps 0 -> always grant a token
+
+
+async def test_release_stream_slot_noop_without_token(fake_redis):
+    await guard.release_stream_slot("u", None)  # None -> early return
+
+
+async def test_breaker_disabled_when_threshold_zero(settings, monkeypatch, fake_redis):
+    monkeypatch.setattr(settings, "deepgram_breaker_failure_threshold", 0)
+    await guard.record_provider_result(success=False, status_code=402)
+    assert await guard.provider_breaker_open() is False  # disabled -> never opens
