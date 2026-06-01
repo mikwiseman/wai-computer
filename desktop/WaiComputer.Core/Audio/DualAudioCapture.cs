@@ -40,6 +40,9 @@ public sealed class DualAudioCapture : IAsyncDisposable
 
     public ChannelReader<AudioFrame> Frames => _output.Reader;
     public bool HasSystemAudio => _system is not null;
+
+    /// <summary>Channel count of emitted frames: 2 only for separate-channel + a system source, else 1 (mono mix or mic-only).</summary>
+    public ushort EffectiveChannelCount => (_config.SeparateChannels && HasSystemAudio) ? (ushort)2 : (ushort)1;
     public bool SystemAudioStalled { get; private set; }
     public bool SystemAudioReceivedAny => _system?.HasReceivedAudio == true;
     public DateTimeOffset? LastAudibleSystemAudioAt => _system?.LastAudibleAt;
