@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.entity_graph import seed_entities_from_summary
 from app.core.summarizer import (
     KeyMoment,
     SummaryResult,
@@ -97,11 +98,24 @@ async def generate_item_summary(
         item.title = summary_result.title[:500]
 
     await db.flush()
+
+    # Seed the knowledge graph from the cheap, already-extracted people + topics
+    # (zero extra LLM cost) so the item becomes a first-class graph citizen.
+    mentions = await seed_entities_from_summary(
+        db,
+        item.user_id,
+        source_kind="item",
+        source_id=item.id,
+        people=summary.people_mentioned,
+        topics=summary.topics,
+    )
+
     logger.info(
-        "item_summary generated item=%s key_points=%s moments=%s",
+        "item_summary generated item=%s key_points=%s moments=%s mentions=%s",
         item.id,
         len(summary_result.key_points),
         len(moments),
+        mentions,
     )
     return summary
 
