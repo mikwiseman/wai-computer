@@ -50,6 +50,73 @@ class SearchResponse(BaseModel):
     total: int
 
 
+class UnifiedHitResponse(BaseModel):
+    """One hit in the unified (recordings + items) search."""
+
+    source_kind: str  # "recording" | "item"
+    parent_id: str
+    chunk_id: str
+    title: str | None
+    kind: str
+    snippet: str
+    score: float
+    created_at: str | None
+
+
+class UnifiedSearchResponse(BaseModel):
+    results: list[UnifiedHitResponse]
+    total: int
+
+
+@router.get("/all", response_model=UnifiedSearchResponse)
+async def unified_search_route(
+    user: CurrentUser,
+    db: Database,
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(20, ge=1, le=100),
+) -> UnifiedSearchResponse:
+    """Search everything — recordings AND items — fused with RRF + recency.
+
+    This powers the unified feed's "search everything" box. Results carry a
+    ``source_kind`` ("recording" | "item") so the client can route a click to
+    the right detail view.
+    """
+    from app.core.unified_search import unified_search
+
+    started_at = perf_counter()
+    logger.info("unified_search query=%s limit=%s", safe_text_digest(q, label="query"), limit)
+    add_sentry_breadcrumb(
+        category="search",
+        message="Unified search",
+        data={**safe_query_metadata(q), "limit": limit},
+    )
+    hits = await unified_search(db, user.id, q, limit=limit)
+    latency_ms = round((perf_counter() - started_at) * 1000)
+    if latency_ms >= SEARCH_SLOW_THRESHOLD_MS:
+        capture_sentry_anomaly(
+            "search.unified.slow",
+            "Unified search latency exceeded threshold",
+            category="search",
+            extras={**safe_query_metadata(q), "latency_ms": latency_ms},
+        )
+    return UnifiedSearchResponse(
+        results=[
+            UnifiedHitResponse(
+                source_kind=h.source_kind,
+                parent_id=h.parent_id,
+                chunk_id=h.chunk_id,
+                title=h.title,
+                kind=h.kind,
+                snippet=h.snippet,
+                score=h.score,
+                created_at=h.created_at,
+            )
+            for h in hits
+        ],
+        total=len(hits),
+    )
+
+
 @router.get("", response_model=SearchResponse)
 async def hybrid_search(
     user: CurrentUser,
