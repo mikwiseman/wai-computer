@@ -18,6 +18,12 @@ struct SpeakerChipView: View {
     @State private var filter: String = ""
     @State private var loadError: String?
     @State private var isWorking = false
+    // Manage the global speaker directory from the picker (127).
+    @State private var renameTarget: Person?
+    @State private var renameDraft: String = ""
+    @State private var deleteTarget: Person?
+    @State private var mergeSource: Person?
+    @State private var mergeInto: Person?
 
     var body: some View {
         Button {
@@ -27,8 +33,11 @@ struct SpeakerChipView: View {
                 Text(displayLabel)
                     .font(Typography.label)
                     .foregroundStyle(isAssigned ? Palette.accent : Palette.textSecondary)
-                if segment.autoAssigned, let conf = confidencePercent {
-                    Text("✨\(conf)%")
+                if segment.autoAssigned {
+                    // Sparkle marks an auto-assigned speaker; the raw match
+                    // percentage was unclear to users so it's dropped from the
+                    // chip — the .help() tooltip still explains it (128).
+                    Text("✨")
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -88,6 +97,15 @@ struct SpeakerChipView: View {
                         .buttonStyle(.plain)
                         .contentShape(Rectangle())
                         .disabled(isWorking)
+                        .contextMenu {
+                            Button(t("Rename…", "Переименовать…")) {
+                                renameDraft = person.displayName
+                                renameTarget = person
+                            }
+                            Button(t("Delete", "Удалить"), role: .destructive) {
+                                deleteTarget = person
+                            }
+                        }
                     }
                     if shouldShowCreateRow {
                         Button {
@@ -117,6 +135,55 @@ struct SpeakerChipView: View {
                 }
             }
             .frame(maxHeight: SpeakerAssignmentPopoverLayout.listMaxHeight)
+        }
+        .alert(
+            t("Rename speaker", "Переименовать говорящего"),
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField(t("Name", "Имя"), text: $renameDraft)
+            Button(t("Save", "Сохранить")) { Task { await performRename() } }
+            Button(t("Cancel", "Отмена"), role: .cancel) { renameTarget = nil }
+        }
+        .confirmationDialog(
+            deleteTarget.map {
+                String(format: t("Delete “%@”?", "Удалить «%@»?"), $0.displayName)
+            } ?? "",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(t("Delete", "Удалить"), role: .destructive) {
+                Task { await performDelete() }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) { deleteTarget = nil }
+        }
+        .alert(
+            t("Merge speakers?", "Объединить говорящих?"),
+            isPresented: Binding(
+                get: { mergeSource != nil && mergeInto != nil },
+                set: { if !$0 { mergeSource = nil; mergeInto = nil } }
+            )
+        ) {
+            Button(t("Merge", "Объединить")) { Task { await performMerge() } }
+            Button(t("Cancel", "Отмена"), role: .cancel) {
+                mergeSource = nil
+                mergeInto = nil
+            }
+        } message: {
+            if let into = mergeInto {
+                Text(String(
+                    format: t(
+                        "A speaker named “%@” already exists. Merge into it? All recordings using the renamed speaker move to it.",
+                        "Говорящий «%@» уже существует. Объединить с ним? Все записи с переименованным говорящим перейдут к нему."
+                    ),
+                    into.displayName
+                ))
+            }
         }
     }
 
@@ -241,6 +308,58 @@ struct SpeakerChipView: View {
                 loadError = error.userFacingMessage(context: .library)
             }
         }
+    }
+
+    private func performRename() async {
+        guard let target = renameTarget else { return }
+        renameTarget = nil
+        let newName = renameDraft.trimmingCharacters(in: .whitespaces)
+        guard !newName.isEmpty,
+              newName.caseInsensitiveCompare(target.displayName) != .orderedSame else { return }
+        // Renaming onto an existing name is a merge, not a duplicate (127): offer to
+        // consolidate so recordings already using that name aren't split.
+        if let existing = people.first(where: {
+            $0.id != target.id && $0.displayName.caseInsensitiveCompare(newName) == .orderedSame
+        }) {
+            mergeSource = target
+            mergeInto = existing
+            return
+        }
+        await MainActor.run { isWorking = true }
+        do {
+            _ = try await appState.getAPIClient().updatePerson(id: target.id, displayName: newName)
+            await loadPeople()
+        } catch {
+            await MainActor.run { loadError = error.userFacingMessage(context: .library) }
+        }
+        await MainActor.run { isWorking = false }
+    }
+
+    private func performDelete() async {
+        guard let target = deleteTarget else { return }
+        deleteTarget = nil
+        await MainActor.run { isWorking = true }
+        do {
+            try await appState.getAPIClient().deletePerson(id: target.id)
+            await loadPeople()
+        } catch {
+            await MainActor.run { loadError = error.userFacingMessage(context: .library) }
+        }
+        await MainActor.run { isWorking = false }
+    }
+
+    private func performMerge() async {
+        guard let source = mergeSource, let into = mergeInto else { return }
+        mergeSource = nil
+        mergeInto = nil
+        await MainActor.run { isWorking = true }
+        do {
+            _ = try await appState.getAPIClient().mergePeople(sourceId: source.id, intoPersonId: into.id)
+            await loadPeople()
+        } catch {
+            await MainActor.run { loadError = error.userFacingMessage(context: .library) }
+        }
+        await MainActor.run { isWorking = false }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

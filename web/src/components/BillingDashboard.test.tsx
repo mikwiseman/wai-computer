@@ -332,6 +332,25 @@ describe("BillingDashboard", () => {
     expect(screen.queryByText("Promo code exhausted")).not.toBeInTheDocument();
   });
 
+  it("localizes 'does not apply to selected period' promo errors in Russian (136)", async () => {
+    mockedPromo.mockRejectedValue(
+      new Error("Promo code does not apply to selected period"),
+    );
+    render(<BillingDashboard locale="ru" currency="rub" />);
+
+    expect(await screen.findByRole("heading", { name: "Подписка" })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Введите промокод"), "YEAR-ONLY");
+    await userEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+    expect(
+      await screen.findByText("Промокод не применим к выбранному периоду оплаты."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Promo code does not apply to selected period"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows Pro usage as unlimited even if a stale plan payload still includes the old cap", async () => {
     mockedSubscription.mockResolvedValue({
       ...proSub,

@@ -65,7 +65,7 @@ class Scenario:
 
 
 DEFAULT_CANDIDATES = (
-    ModelCandidate("elevenlabs", "scribe_v2", "ElevenLabs Scribe v2"),
+    ModelCandidate("deepgram", "nova-3", "Deepgram Nova-3"),
 )
 
 

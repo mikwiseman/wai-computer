@@ -30,6 +30,7 @@ from app.core.security import (
     hash_refresh_token,
     verify_password,
 )
+from app.models.person import Voiceprint
 from app.models.refresh_token import RefreshToken as RefreshTokenModel
 from app.models.user import User
 
@@ -252,6 +253,10 @@ class UserResponse(BaseModel):
     created_at: datetime
     has_password: bool
     region: str
+    # True once the account has at least one enrolled voiceprint. Clients use
+    # this as the cross-device source of truth for "already onboarded" so a
+    # returning user is not shown voice onboarding again on a fresh device.
+    has_enrolled_voice: bool
 
 
 class MessageResponse(BaseModel):
@@ -746,14 +751,18 @@ async def logout(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(user: CurrentUser) -> UserResponse:
+async def get_current_user_info(user: CurrentUser, db: Database) -> UserResponse:
     """Get current user info."""
+    enrolled = await db.execute(
+        select(Voiceprint.id).where(Voiceprint.user_id == user.id).limit(1)
+    )
     return UserResponse(
         id=str(user.id),
         email=user.email,
         created_at=user.created_at,
         has_password=user.password_hash is not None,
         region=user.region,
+        has_enrolled_voice=enrolled.first() is not None,
     )
 
 

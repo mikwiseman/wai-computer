@@ -80,6 +80,8 @@ const COPY: Record<
     promoExpired: string;
     promoExhausted: string;
     promoAlreadyRedeemed: string;
+    promoNotApplicablePeriod: string;
+    promoGenericError: string;
     statuses: Record<string, string>;
     invoiceStatuses: Record<string, string>;
   }
@@ -146,6 +148,8 @@ const COPY: Record<
     promoExpired: "Promo code expired.",
     promoExhausted: "Promo code has already been fully used.",
     promoAlreadyRedeemed: "You already redeemed this promo code.",
+    promoNotApplicablePeriod: "This promo code does not apply to the selected billing period.",
+    promoGenericError: "This promo code can't be applied.",
     statuses: {
       active: "Active",
       trialing: "Trialing",
@@ -228,6 +232,8 @@ const COPY: Record<
     promoExpired: "Срок действия промокода истёк.",
     promoExhausted: "Промокод уже исчерпан.",
     promoAlreadyRedeemed: "Вы уже использовали этот промокод.",
+    promoNotApplicablePeriod: "Промокод не применим к выбранному периоду оплаты.",
+    promoGenericError: "Этот промокод нельзя применить.",
     statuses: {
       active: "Активна",
       trialing: "Пробная",
@@ -266,6 +272,14 @@ function localizeBillingError(error: unknown, locale: Locale): string {
   }
   if (message === "Promo code already redeemed") {
     return copy.promoAlreadyRedeemed;
+  }
+  if (message === "Promo code does not apply to selected period") {
+    return copy.promoNotApplicablePeriod;
+  }
+  // Any other promo-code error (incl. server-side 500s) must not leak raw English
+  // into the localized UI — surface a generic localized message instead.
+  if (message.startsWith("Promo code")) {
+    return copy.promoGenericError;
   }
   if (message.length > 0) {
     return message;

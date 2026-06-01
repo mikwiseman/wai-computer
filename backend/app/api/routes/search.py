@@ -131,8 +131,8 @@ async def hybrid_search(
                 *,
                 (
                     ts_rank(
-                        to_tsvector('simple', search_document),
-                        plainto_tsquery('simple', :query)
+                        to_tsvector('russian', lower(search_document COLLATE "und-x-icu")),
+                        plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
                     )
                     + CASE WHEN lower(speaker) = lower(:query) THEN 10 ELSE 0 END
                     + CASE WHEN speaker ILIKE :like_query ESCAPE '!' THEN 5 ELSE 0 END
@@ -141,7 +141,8 @@ async def hybrid_search(
                     + CASE WHEN content ILIKE :like_query ESCAPE '!' THEN 1 ELSE 0 END
                 ) as lexical_score
             FROM search_scope
-            WHERE to_tsvector('simple', search_document) @@ plainto_tsquery('simple', :query)
+            WHERE to_tsvector('russian', lower(search_document COLLATE "und-x-icu"))
+                @@ plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
                OR content ILIKE :like_query ESCAPE '!'
                OR recording_title ILIKE :like_query ESCAPE '!'
                OR speaker ILIKE :like_query ESCAPE '!'
@@ -267,7 +268,8 @@ async def hybrid_search(
         lexical_results AS (
             SELECT id
             FROM search_scope
-            WHERE to_tsvector('simple', search_document) @@ plainto_tsquery('simple', :query)
+            WHERE to_tsvector('russian', lower(search_document COLLATE "und-x-icu"))
+                @@ plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
                OR content ILIKE :like_query ESCAPE '!'
                OR recording_title ILIKE :like_query ESCAPE '!'
                OR speaker ILIKE :like_query ESCAPE '!'
@@ -467,14 +469,18 @@ async def fulltext_search(
             s.content,
             s.start_ms,
             s.end_ms,
-            ts_rank(to_tsvector('english', s.content), plainto_tsquery('english', :query)) as rank,
+            ts_rank(
+                to_tsvector('russian', lower(s.content COLLATE "und-x-icu")),
+                plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
+            ) as rank,
             r.title as recording_title,
             r.type as recording_type
         FROM segments s
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
           AND r.deleted_at IS NULL
-          AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
+          AND to_tsvector('russian', lower(s.content COLLATE "und-x-icu"))
+              @@ plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
         ORDER BY rank DESC
         LIMIT :limit OFFSET :offset
     """)
@@ -492,7 +498,8 @@ async def fulltext_search(
         JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :user_id
           AND r.deleted_at IS NULL
-          AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
+          AND to_tsvector('russian', lower(s.content COLLATE "und-x-icu"))
+              @@ plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
     """)
     count_result = await db.execute(count_query, {"query": q, "user_id": str(user.id)})
     total = count_result.scalar() or 0

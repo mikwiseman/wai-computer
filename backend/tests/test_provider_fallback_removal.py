@@ -1,8 +1,8 @@
 """Regression tests for the no-silent-fallback rule (AGENTS.md lines 5-25).
 
-These tests pin the contract that provider clients RAISE on
-malformed upstream payloads rather than returning an empty list. Previously
-each client silently returned ``[]``, hiding the failure from callers.
+These tests pin the contract that the file STT client RAISES on malformed
+upstream payloads rather than returning an empty list. Previously providers
+silently returned ``[]``, hiding the failure from callers.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.core.elevenlabs import transcribe_audio_file as elevenlabs_transcribe_audio_file
+from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 
 
 def _mock_response(status_code: int, body: Any) -> MagicMock:
@@ -26,9 +26,7 @@ def _mock_response(status_code: int, body: Any) -> MagicMock:
     return response
 
 
-def _patch_client_post(
-    response: MagicMock, module_path: str
-):
+def _patch_client_post(response: MagicMock, module_path: str):
     client_mock = MagicMock()
     client_mock.post = AsyncMock(return_value=response)
     async_ctx = MagicMock()
@@ -38,55 +36,47 @@ def _patch_client_post(
 
 
 @pytest.mark.asyncio
-async def test_elevenlabs_transcribe_raises_on_unexpected_payload_type():
+async def test_deepgram_transcribe_raises_on_unexpected_payload_type():
     """A non-dict response payload must raise rather than silently return []."""
-    # Provider returns a JSON array at the top level (neither dict nor list of transcripts).
     response = _mock_response(200, "raw string response")
     response.json = MagicMock(return_value="raw string response")
 
     with (
-        patch("app.core.elevenlabs.get_settings") as mock_settings,
-        _patch_client_post(response, "app.core.elevenlabs"),
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response, "app.core.deepgram"),
     ):
-        mock_settings.return_value.elevenlabs_api_key = "test-key"
-        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
-        mock_settings.return_value.elevenlabs_no_verbatim = True
+        mock_settings.return_value.deepgram_api_key = "dg-key"
         with pytest.raises(RuntimeError, match="unexpected payload type"):
-            await elevenlabs_transcribe_audio_file(
+            await deepgram_transcribe_audio_file(
                 b"audio",
-                model="scribe_v2",
                 language="en",
                 content_type="audio/raw",
             )
 
 
 @pytest.mark.asyncio
-async def test_elevenlabs_transcribe_raises_on_malformed_multichannel_entry():
-    """Malformed transcript entries must not collapse into a no-speech result."""
+async def test_deepgram_transcribe_raises_on_invalid_utterance_entry():
+    """Malformed utterance entries must not collapse into a no-speech result."""
     response = _mock_response(
         200,
         {
-            "transcripts": [
-                {
-                    "text": "valid",
-                    "words": [{"text": "valid", "start": 0.0, "end": 0.5}],
-                },
-                "bad-entry",
-            ]
+            "results": {
+                "utterances": [
+                    {"transcript": "valid", "start": 0.0, "end": 0.5, "speaker": 0},
+                    "bad-entry",
+                ]
+            }
         },
     )
 
     with (
-        patch("app.core.elevenlabs.get_settings") as mock_settings,
-        _patch_client_post(response, "app.core.elevenlabs"),
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        _patch_client_post(response, "app.core.deepgram"),
     ):
-        mock_settings.return_value.elevenlabs_api_key = "test-key"
-        mock_settings.return_value.elevenlabs_speech_to_text_model = "scribe_v2"
-        mock_settings.return_value.elevenlabs_no_verbatim = True
-        with pytest.raises(RuntimeError, match="invalid transcript entry"):
-            await elevenlabs_transcribe_audio_file(
+        mock_settings.return_value.deepgram_api_key = "dg-key"
+        with pytest.raises(RuntimeError, match="invalid utterance entry"):
+            await deepgram_transcribe_audio_file(
                 b"audio",
-                model="scribe_v2",
                 language="en",
                 content_type="audio/raw",
             )

@@ -471,13 +471,20 @@ class SaveTranscriptRequest(BaseModel):
     duration_seconds: int | None = None
 
 
-def _serialize_summary(summary: Summary | None) -> SummaryResponse | None:
+def _serialize_summary(
+    summary: Summary | None, names: dict[str, str] | None = None
+) -> SummaryResponse | None:
     if summary is None:
         return None
 
+    names = names or {}
     return SummaryResponse(
-        summary=summary.summary,
-        key_points=summary.key_points,
+        summary=_apply_speaker_names(summary.summary, names),
+        key_points=(
+            [_apply_speaker_names(point, names) for point in summary.key_points]
+            if summary.key_points
+            else summary.key_points
+        ),
         decisions=summary.decisions,
         topics=summary.topics,
         people_mentioned=summary.people_mentioned,
@@ -558,14 +565,19 @@ def _serialize_action_item(action_item: ActionItem) -> ActionItemResponse:
     )
 
 
-def _serialize_highlight(highlight: Highlight) -> HighlightResponse:
+def _serialize_highlight(
+    highlight: Highlight, names: dict[str, str] | None = None
+) -> HighlightResponse:
+    speaker = highlight.speaker
+    if speaker and names and speaker in names:
+        speaker = names[speaker]
     return HighlightResponse(
         id=str(highlight.id),
         recording_id=str(highlight.recording_id),
         category=highlight.category,
-        title=highlight.title,
-        description=highlight.description,
-        speaker=highlight.speaker,
+        title=_apply_speaker_names(highlight.title, names or {}),
+        description=_apply_speaker_names(highlight.description, names or {}),
+        speaker=speaker,
         start_ms=highlight.start_ms,
         end_ms=highlight.end_ms,
         importance=highlight.importance,
@@ -610,20 +622,21 @@ def _serialize_segment(segment: Segment) -> SegmentResponse:
 
 
 def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse:
+    names = _assigned_speaker_names(recording)
     return RecordingDetailResponse(
         **_serialize_recording(recording).model_dump(),
         segments=[
             _serialize_segment(s)
             for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
-        summary=_serialize_summary(recording.summary),
+        summary=_serialize_summary(recording.summary, names),
         summary_generation=_serialize_summary_generation(
             recording_id=recording.id,
             summary=recording.summary,
             job=latest_summary_generation_job(recording),
         ),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
-        highlights=[_serialize_highlight(h) for h in recording.highlights],
+        highlights=[_serialize_highlight(h, names) for h in recording.highlights],
     )
 
 
@@ -678,9 +691,12 @@ def _serialize_shared_recording(
             _serialize_segment(s)
             for s in sorted(recording.segments, key=lambda x: x.start_ms or 0)
         ],
-        summary=_serialize_summary(recording.summary),
+        summary=_serialize_summary(recording.summary, _assigned_speaker_names(recording)),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
-        highlights=[_serialize_highlight(h) for h in recording.highlights],
+        highlights=[
+            _serialize_highlight(h, _assigned_speaker_names(recording))
+            for h in recording.highlights
+        ],
     )
 
 
@@ -1515,6 +1531,52 @@ def _segment_export_speaker(seg: Segment, locale: ExportLocale) -> str:
     return _humanize_speaker_label(seg.speaker or seg.raw_label, locale)
 
 
+def _assigned_speaker_names(recording: Recording) -> dict[str, str]:
+    """Map raw diarization labels (``speaker_0``) to their assigned Person name.
+
+    Built from the recording's segments. Only labels that have been assigned to a
+    Person are included, so renaming a speaker propagates into the stored summary
+    and highlight text (which embed the raw ``speaker_N`` tokens from generation
+    time) without regenerating them. Locale-independent.
+    """
+    mapping: dict[str, str] = {}
+    for seg in recording.segments:
+        raw = (seg.speaker or seg.raw_label or "").strip()
+        if raw and raw not in mapping and seg.person and seg.person.display_name:
+            mapping[raw] = seg.person.display_name
+    return mapping
+
+
+def _export_speaker_names(recording: Recording, locale: ExportLocale) -> dict[str, str]:
+    """Map every raw diarization label to its best display name for export.
+
+    Assigned labels resolve to the Person display name; unassigned labels resolve
+    to the localized generic ("Говорящий 1" / "Speaker 1").
+    """
+    mapping: dict[str, str] = {}
+    for seg in recording.segments:
+        raw = (seg.speaker or seg.raw_label or "").strip()
+        if not raw or raw in mapping:
+            continue
+        if seg.person and seg.person.display_name:
+            mapping[raw] = seg.person.display_name
+        else:
+            mapping[raw] = _humanize_speaker_label(raw, locale)
+    return mapping
+
+
+def _apply_speaker_names(text: str | None, names: dict[str, str]) -> str | None:
+    """Substitute raw speaker labels embedded in free text with display names.
+
+    Longest labels first so ``speaker_1`` never rewrites inside ``speaker_10``.
+    """
+    if not text or not names:
+        return text
+    for raw in sorted(names, key=len, reverse=True):
+        text = re.sub(rf"\b{re.escape(raw)}\b", names[raw], text)
+    return text
+
+
 def _highlight_category_label(category: str, locale: ExportLocale) -> str:
     normalized = (category or "").strip().lower()
     return _EXPORT_HIGHLIGHT_LABELS[locale].get(normalized, normalized.capitalize() or category)
@@ -1581,10 +1643,12 @@ def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -
     )
     lines.append("")
 
+    names = _export_speaker_names(recording, resolved_locale)
+
     # Summary section (only if present)
     if recording.summary and recording.summary.summary:
         lines.append(f"## {copy['summary']}")
-        lines.append(recording.summary.summary)
+        lines.append(_apply_speaker_names(recording.summary.summary, names))
         lines.append("")
 
     # Key Highlights section (only if present)
@@ -1593,7 +1657,9 @@ def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -
         for h in sorted(recording.highlights, key=lambda x: x.start_ms or 0):
             if h.speaker:
                 ts = _format_timestamp_short(h.start_ms)
-                speaker = _humanize_speaker_label(h.speaker, resolved_locale)
+                speaker = names.get(h.speaker) or _humanize_speaker_label(
+                    h.speaker, resolved_locale
+                )
                 speaker_part = f" ({speaker}, {ts})"
             elif h.start_ms is not None:
                 speaker_part = f" ({_format_timestamp_short(h.start_ms)})"
@@ -1617,9 +1683,14 @@ def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -
 
 
 def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str:
-    """Export recording as plain text."""
+    """Export recording as plain text.
+
+    Mirrors the Markdown export's sections (summary, highlights, transcript) so the
+    three export formats are consistent (124); only the formatting differs.
+    """
     resolved_locale = _resolve_export_locale(recording, locale)
     copy = _EXPORT_COPY[resolved_locale]
+    names = _export_speaker_names(recording, resolved_locale)
     lines: list[str] = []
 
     title = recording.title or copy["untitled"]
@@ -1630,6 +1701,32 @@ def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str
     lines.append(f"{copy['date']}: {date_str} | {copy['duration']}: {duration_str}")
     lines.append("")
 
+    # Summary section (parity with the Markdown export).
+    if recording.summary and recording.summary.summary:
+        lines.append(copy["summary"])
+        lines.append(_apply_speaker_names(recording.summary.summary, names))
+        lines.append("")
+
+    # Key Highlights section.
+    if recording.highlights:
+        lines.append(copy["highlights"])
+        for h in sorted(recording.highlights, key=lambda x: x.start_ms or 0):
+            category = _highlight_category_label(h.category, resolved_locale)
+            if h.speaker:
+                ts = _format_timestamp_short(h.start_ms)
+                speaker = names.get(h.speaker) or _humanize_speaker_label(
+                    h.speaker, resolved_locale
+                )
+                suffix = f" ({speaker}, {ts})"
+            elif h.start_ms is not None:
+                suffix = f" ({_format_timestamp_short(h.start_ms)})"
+            else:
+                suffix = ""
+            lines.append(f"- [{category}] {h.title}{suffix}")
+        lines.append("")
+
+    # Transcript section.
+    lines.append(copy["transcript"])
     segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
     for seg in segments:
         speaker = _segment_export_speaker(seg, resolved_locale)

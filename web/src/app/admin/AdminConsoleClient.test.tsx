@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -15,7 +15,9 @@ import {
   listAdminUsers,
   refundAdminInvoice,
   resumeAdminSubscription,
+  runAdminSubscriptionRenewal,
   updateAdminPromoCode,
+  updateAdminSubscription,
   updateAdminUserStatus,
 } from "@/lib/admin";
 import { logout } from "@/lib/api";
@@ -46,7 +48,9 @@ vi.mock("@/lib/admin", () => ({
   listAdminUsers: vi.fn(),
   refundAdminInvoice: vi.fn(),
   resumeAdminSubscription: vi.fn(),
+  runAdminSubscriptionRenewal: vi.fn(),
   updateAdminPromoCode: vi.fn(),
+  updateAdminSubscription: vi.fn(),
   updateAdminUserStatus: vi.fn(),
 }));
 
@@ -65,6 +69,8 @@ const mockedGrantSubscription = vi.mocked(grantAdminSubscription);
 const mockedCancelSubscription = vi.mocked(cancelAdminSubscription);
 const mockedResumeSubscription = vi.mocked(resumeAdminSubscription);
 const mockedRefundInvoice = vi.mocked(refundAdminInvoice);
+const mockedUpdateSubscription = vi.mocked(updateAdminSubscription);
+const mockedRunRenewal = vi.mocked(runAdminSubscriptionRenewal);
 const mockedLogout = vi.mocked(logout);
 
 function setupMocks() {
@@ -219,8 +225,12 @@ function setupMocks() {
       status: "active",
       provider: "stripe",
       billing_period: "month",
+      current_period_start: "2026-05-25T00:00:00Z",
       current_period_end: "2026-06-25T00:00:00Z",
       cancel_at_period_end: false,
+      canceled_at: null,
+      trial_end: null,
+      tinkoff_next_charge_at: null,
       invoices: [
         {
           id: "invoice-1",
@@ -232,6 +242,22 @@ function setupMocks() {
           created_at: "2026-05-25T00:00:00Z",
         },
       ],
+    },
+    {
+      id: "sub-tinkoff",
+      user_id: "user-2",
+      user_email: "ru-user@example.com",
+      plan: "pro",
+      status: "active",
+      provider: "tinkoff",
+      billing_period: "month",
+      current_period_start: "2026-05-25T00:00:00Z",
+      current_period_end: "2026-06-25T00:00:00Z",
+      cancel_at_period_end: false,
+      canceled_at: null,
+      trial_end: null,
+      tinkoff_next_charge_at: "2026-06-25T00:00:00Z",
+      invoices: [],
     },
   ]);
   mockedAudit.mockResolvedValue([
@@ -431,6 +457,7 @@ describe("AdminConsoleClient", () => {
         note: "updated",
         duration_days: 30,
         max_redemptions: 10,
+        expires_at: "2026-06-25T23:59:59.000Z",
       }),
     );
   });
@@ -483,9 +510,11 @@ describe("AdminConsoleClient", () => {
 
     await screen.findByText("Total users");
     await userEvent.click(screen.getByRole("button", { name: "Billing" }));
-    await screen.findByText("stripe · pro · active · renewing");
+    const stripeItem = (await screen.findByText("stripe · pro · active · renewing")).closest(
+      "section",
+    ) as HTMLElement;
     await userEvent.type(screen.getByPlaceholderText("billing reason"), "billing issue");
-    await userEvent.click(screen.getByRole("button", { name: "Cancel later" }));
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Cancel later" }));
 
     await waitFor(() =>
       expect(mockedCancelSubscription).toHaveBeenCalledWith("sub-1", {
@@ -494,7 +523,7 @@ describe("AdminConsoleClient", () => {
       }),
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Cancel now" }));
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Cancel now" }));
     await waitFor(() =>
       expect(mockedCancelSubscription).toHaveBeenCalledWith("sub-1", {
         mode: "immediate",
@@ -502,14 +531,14 @@ describe("AdminConsoleClient", () => {
       }),
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Resume" }));
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Resume" }));
     await waitFor(() =>
       expect(mockedResumeSubscription).toHaveBeenCalledWith("sub-1", {
         reason: "billing issue",
       }),
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Refund" }));
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Refund" }));
     await waitFor(() =>
       expect(mockedRefundInvoice).toHaveBeenCalledWith("invoice-1", {
         amount_minor: null,
@@ -527,6 +556,60 @@ describe("AdminConsoleClient", () => {
     expect(await screen.findByText("admin.user_status.updated")).toBeInTheDocument();
     expect(screen.getByText("user:user-1")).toBeInTheDocument();
     expect(screen.getByText("support request")).toBeInTheDocument();
+  });
+
+  it("splits the promo benefit into Pro days and Discount % columns", async () => {
+    render(<AdminConsoleClient />);
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Promo codes" }));
+    const promoTable = await screen.findByRole("table");
+    expect(
+      within(promoTable).getByRole("columnheader", { name: "Pro days" }),
+    ).toBeInTheDocument();
+    expect(
+      within(promoTable).getByRole("columnheader", { name: "Discount %" }),
+    ).toBeInTheDocument();
+    // The access promo shows a Pro-days input and a "—" in the discount column.
+    const row = within(promoTable).getByDisplayValue("launch").closest("tr") as HTMLElement;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+  });
+
+  it("edits a Tinkoff subscription's next charge date", async () => {
+    mockedUpdateSubscription.mockResolvedValue({} as never);
+    render(<AdminConsoleClient />);
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Billing" }));
+    const tinkoffItem = (await screen.findByText("tinkoff · pro · active · renewing")).closest(
+      "section",
+    ) as HTMLElement;
+    await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Edit" }));
+    fireEvent.change(within(tinkoffItem).getByLabelText("Next charge"), {
+      target: { value: "2026-05-30" },
+    });
+    await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Save subscription" }));
+
+    await waitFor(() =>
+      expect(mockedUpdateSubscription).toHaveBeenCalledWith("sub-tinkoff", {
+        next_charge_at: "2026-05-30T12:00:00.000Z",
+        reason: null,
+      }),
+    );
+  });
+
+  it("runs a Tinkoff renewal on demand and reports the result", async () => {
+    mockedRunRenewal.mockResolvedValue({ charged: true });
+    render(<AdminConsoleClient />);
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Billing" }));
+    const tinkoffItem = (await screen.findByText("tinkoff · pro · active · renewing")).closest(
+      "section",
+    ) as HTMLElement;
+    await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+
+    await waitFor(() =>
+      expect(mockedRunRenewal).toHaveBeenCalledWith("sub-tinkoff", { reason: null }),
+    );
+    expect(await screen.findByText("Renewal charged.")).toBeInTheDocument();
   });
 
   it("logs out and redirects to login", async () => {

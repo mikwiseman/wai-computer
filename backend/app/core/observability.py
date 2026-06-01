@@ -533,3 +533,9 @@ def capture_sentry_anomaly(
         data=payload,
     )
     capture_sentry_message(message, level=level, extras=payload)
+    try:
+        from app.core.ops_alerts import notify_ops
+
+        notify_ops(alert_code=alert_code, message=message, extras=payload, level=level)
+    except Exception:  # noqa: BLE001 - ops alerting is strictly best-effort
+        pass

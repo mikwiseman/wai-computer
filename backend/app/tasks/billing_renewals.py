@@ -75,59 +75,80 @@ async def _charge_due_tinkoff_renewals_in_session(
     ).all()
 
     for sub, plan, user in rows:
-        amount_rub = (
-            plan.tinkoff_amount_rub_yearly
-            if sub.billing_period == "year"
-            else plan.tinkoff_amount_rub_monthly
-        )
-        if amount_rub is None:
-            skipped += 1
-            logger.error(
-                "billing renewal skipped subscription_id=%s reason=missing_tinkoff_amount",
-                sub.id,
-            )
-            continue
-
-        amount_kopecks = int(Decimal(amount_rub) * Decimal(100))
-        description = f"WaiComputer {plan.code.upper()} {sub.billing_period}"
-        try:
-            response = await provider.charge_rebill(
-                rebill_id=sub.tinkoff_rebill_id or "",
-                amount_kopecks=amount_kopecks,
-                description=description,
-                customer_email=user.email,
-                user_id=str(user.id),
-            )
-            raw_status = response.get("Status")
-            if not raw_status:
-                raise RuntimeError("Tinkoff Charge returned no Status")
-            status = str(raw_status)
-            event = ProviderEvent(
-                type=f"tinkoff.{status.lower()}",
-                subscription_id_provider=str(response.get("OrderId") or ""),
-                customer_id_provider=str(user.id),
-                status=_normalize_status(status),
-                raw={
-                    "order_id": str(response.get("OrderId") or ""),
-                    "status": status,
-                    "rebill_id": sub.tinkoff_rebill_id,
-                    "payment_id": str(response.get("PaymentId") or ""),
-                    "amount": response.get("Amount") or amount_kopecks,
-                    "plan_code": plan.code,
-                    "period": sub.billing_period,
-                    "promo_code_id": str(sub.promo_code_id) if sub.promo_code_id else None,
-                    "payload": response,
-                },
-            )
-            await apply_tinkoff_event(db, event)
+        result = await charge_tinkoff_subscription(db, sub, plan, user, provider)
+        if result == "charged":
             charged += 1
-        except Exception:
+        elif result == "skipped":
+            skipped += 1
+        else:
             failed += 1
-            sub.status = SubscriptionStatus.PAST_DUE.value
-            sub.tinkoff_next_charge_at = None
-            logger.exception("billing renewal failed subscription_id=%s", sub.id)
 
     return {"charged": charged, "skipped": skipped, "failed": failed}
+
+
+async def charge_tinkoff_subscription(
+    db: AsyncSession,
+    sub: Subscription,
+    plan: Plan,
+    user: User,
+    provider: TinkoffProvider,
+) -> str:
+    """Charge one Tinkoff subscription's rebill.
+
+    Shared by the periodic renewal task and the admin "run renewal now" action.
+    Returns ``"charged"`` | ``"skipped"`` (no Tinkoff amount on the plan) |
+    ``"failed"`` (marks the subscription PAST_DUE, matching the batch task).
+    """
+    amount_rub = (
+        plan.tinkoff_amount_rub_yearly
+        if sub.billing_period == "year"
+        else plan.tinkoff_amount_rub_monthly
+    )
+    if amount_rub is None:
+        logger.error(
+            "billing renewal skipped subscription_id=%s reason=missing_tinkoff_amount",
+            sub.id,
+        )
+        return "skipped"
+
+    amount_kopecks = int(Decimal(amount_rub) * Decimal(100))
+    description = f"WaiComputer {plan.code.upper()} {sub.billing_period}"
+    try:
+        response = await provider.charge_rebill(
+            rebill_id=sub.tinkoff_rebill_id or "",
+            amount_kopecks=amount_kopecks,
+            description=description,
+            customer_email=user.email,
+            user_id=str(user.id),
+        )
+        raw_status = response.get("Status")
+        if not raw_status:
+            raise RuntimeError("Tinkoff Charge returned no Status")
+        status = str(raw_status)
+        event = ProviderEvent(
+            type=f"tinkoff.{status.lower()}",
+            subscription_id_provider=str(response.get("OrderId") or ""),
+            customer_id_provider=str(user.id),
+            status=_normalize_status(status),
+            raw={
+                "order_id": str(response.get("OrderId") or ""),
+                "status": status,
+                "rebill_id": sub.tinkoff_rebill_id,
+                "payment_id": str(response.get("PaymentId") or ""),
+                "amount": response.get("Amount") or amount_kopecks,
+                "plan_code": plan.code,
+                "period": sub.billing_period,
+                "promo_code_id": str(sub.promo_code_id) if sub.promo_code_id else None,
+                "payload": response,
+            },
+        )
+        await apply_tinkoff_event(db, event)
+        return "charged"
+    except Exception:
+        sub.status = SubscriptionStatus.PAST_DUE.value
+        sub.tinkoff_next_charge_at = None
+        logger.exception("billing renewal failed subscription_id=%s", sub.id)
+        return "failed"
 
 
 @celery_app.task(

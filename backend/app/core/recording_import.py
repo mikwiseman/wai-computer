@@ -31,6 +31,7 @@ from app.core.summarizer import (
 from app.core.summary_generation import combine_summary_instructions
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
+from app.core.transcription_guard import TranscriptionGuardError
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -279,6 +280,7 @@ async def _transcribe(
         language=language,
         content_type=content_type,
         keyterms=keyterms,
+        user_id=str(user.id),
     )
 
 
@@ -593,6 +595,20 @@ async def import_media_as_recording(
         if failed is not None:
             recording = failed
         raise
+    except TranscriptionGuardError as exc:
+        logger.warning("external recording import refused by cost/abuse guard code=%s", exc.code)
+        await db.rollback()
+        failed = await _mark_failed(
+            db=db,
+            recording_id=recording_id,
+            code=exc.code,
+            message="Транскрипция временно недоступна. Попробуй позже.",
+        )
+        if failed is not None:
+            recording = failed
+        raise RecordingImportError(
+            exc.code, "Транскрипция временно недоступна. Попробуй позже."
+        ) from exc
     except Exception as exc:
         logger.exception("external recording import failed")
         await db.rollback()
