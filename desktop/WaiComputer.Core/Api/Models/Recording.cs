@@ -93,3 +93,20 @@ public sealed record Folder(
 
 public sealed record CreateFolderRequest(string Name, string? Color);
 public sealed record UpdateFolderRequest(string? Name, string? Color);
+
+[JsonConverter(typeof(JsonStringEnumConverter<BulkRecordingAction>))]
+public enum BulkRecordingAction
+{
+    [JsonStringEnumMemberName("delete")] Delete,
+    [JsonStringEnumMemberName("restore")] Restore,
+    [JsonStringEnumMemberName("move")] Move,
+}
+
+/// <summary>Backend <c>BulkOperationRequest</c> (POST /api/recordings/bulk).</summary>
+public sealed record BulkRecordingOperationRequest(
+    [property: JsonPropertyName("recording_ids")] IReadOnlyList<string> RecordingIds,
+    BulkRecordingAction Action,
+    [property: JsonPropertyName("folder_id")] string? FolderId = null);
+
+/// <summary>Backend <c>BulkOperationResponse</c>: counts of processed / failed items.</summary>
+public sealed record BulkRecordingOperationResponse(int Processed, int Failed);

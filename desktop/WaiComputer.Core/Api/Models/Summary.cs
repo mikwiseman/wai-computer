@@ -61,3 +61,27 @@ public sealed record SpeakerStat(
     [property: JsonPropertyName("display_name")] string DisplayName,
     [property: JsonPropertyName("total_ms")] long TotalMs,
     [property: JsonPropertyName("segment_count")] int SegmentCount);
+
+/// <summary>
+/// Durable state of a manual summary-generation job (backend
+/// <c>SummaryGenerationResponse</c>). Backend <c>SummaryGenerationStatus</c> is
+/// queued | running | succeeded | failed.
+/// </summary>
+public sealed record SummaryGenerationState(
+    [property: JsonPropertyName("job_id")] string? JobId,
+    [property: JsonPropertyName("recording_id")] string RecordingId,
+    string Status,
+    string Stage,
+    [property: JsonPropertyName("progress_percent")] int ProgressPercent,
+    string Message,
+    [property: JsonPropertyName("requested_at")] DateTimeOffset? RequestedAt,
+    [property: JsonPropertyName("started_at")] DateTimeOffset? StartedAt,
+    [property: JsonPropertyName("completed_at")] DateTimeOffset? CompletedAt,
+    [property: JsonPropertyName("failed_at")] DateTimeOffset? FailedAt,
+    [property: JsonPropertyName("error_code")] string? ErrorCode,
+    [property: JsonPropertyName("error_message")] string? ErrorMessage)
+{
+    public bool IsActive => Status is "queued" or "running";
+    public bool IsFailed => Status == "failed";
+    public bool IsSucceeded => Status == "succeeded";
+}
