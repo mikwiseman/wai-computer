@@ -5,6 +5,7 @@ import {
   createRecordingShareLink,
   exportRecording,
   getRecording,
+  rematchSpeakers,
   startSummaryGeneration,
   updateRecording,
 } from "@/lib/api";
@@ -97,6 +98,7 @@ export function RecordingDetailPanel({
   const [renameOpen, setRenameOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(recording.title ?? "");
   const [sharing, setSharing] = useState(false);
+  const [rematching, setRematching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<"trash" | "permanent" | null>(null);
@@ -206,6 +208,25 @@ export function RecordingDetailPanel({
     }
   };
 
+  const handleRematch = async () => {
+    setRematching(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await rematchSpeakers(recording.id);
+      const updated = await getRecording(recording.id);
+      onRecordingUpdate?.(updated);
+      setNotice(
+        `Voice re-match complete — ${result.matched_clusters} of ${result.updated_clusters} ` +
+          `speaker${result.updated_clusters === 1 ? "" : "s"} matched.`,
+      );
+    } catch (e) {
+      setError(formatError(e));
+    } finally {
+      setRematching(false);
+    }
+  };
+
   return (
     <section className="detail-panel" data-testid="recording-detail">
       <header className="detail-panel__header">
@@ -286,6 +307,17 @@ export function RecordingDetailPanel({
               >
                 {sharing ? "Sharing..." : "Share"}
               </button>
+              {recording.segments.length > 0 ? (
+                <button
+                  className="ghost-button"
+                  data-testid="rematch-speakers"
+                  type="button"
+                  onClick={handleRematch}
+                  disabled={rematching}
+                >
+                  {rematching ? "Re-matching…" : "Re-match speakers"}
+                </button>
+              ) : null}
               <select
                 className="select-button"
                 aria-label="Export recording"

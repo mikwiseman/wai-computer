@@ -38,10 +38,10 @@ struct MacAppsView: View {
         .task {
             await loadApps()
         }
-        .onChange(of: statusFilter) { _, _ in
+        .onChangeCompat(of: statusFilter) { _, _ in
             Task { await loadApps() }
         }
-        .onChange(of: visibilityFilter) { _, _ in
+        .onChangeCompat(of: visibilityFilter) { _, _ in
             Task { await loadApps() }
         }
         .alert("Apps Error", isPresented: Binding(
@@ -360,7 +360,7 @@ private struct AppDetailView: View {
                 VStack(spacing: Spacing.md) {
                     Spacer()
 
-                    ContentUnavailableView(
+                    ContentUnavailableViewCompat(
                         "No Items",
                         systemImage: "tray",
                         description: Text("This app has no items yet.")

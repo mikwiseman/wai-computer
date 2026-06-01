@@ -32,8 +32,11 @@ import type {
   RecordingDetail,
   RecordingType,
   RelatedRecordingsResponse,
+  RealtimeSessionResponse,
   RecordingShareLink,
+  RematchSpeakersResponse,
   SearchResponse,
+  TranscriptSegmentInput,
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
@@ -191,6 +194,10 @@ export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
 }
 
+export function deleteAccount(): Promise<MessageResponse> {
+  return apiFetch<MessageResponse>("/api/auth/me", { method: "DELETE" });
+}
+
 export function listRecordings(params?: {
   skip?: number;
   limit?: number;
@@ -346,6 +353,36 @@ export function assignSpeaker(
   return apiFetch<RecordingDetail>(`/api/recordings/${recordingId}/assign-speaker`, {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function rematchSpeakers(recordingId: string): Promise<RematchSpeakersResponse> {
+  return apiFetch<RematchSpeakersResponse>(`/api/recordings/${recordingId}/rematch`, {
+    method: "POST",
+  });
+}
+
+export function createTranscriptionSession(input?: {
+  language?: string;
+  purpose?: "recording" | "dictation";
+}): Promise<RealtimeSessionResponse> {
+  return apiFetch<RealtimeSessionResponse>("/api/transcription/session", {
+    method: "POST",
+    body: JSON.stringify({
+      language: input?.language ?? "multi",
+      channels: 1,
+      purpose: input?.purpose ?? "recording",
+    }),
+  });
+}
+
+export function saveTranscript(
+  recordingId: string,
+  segments: TranscriptSegmentInput[],
+): Promise<RecordingDetail> {
+  return apiFetch<RecordingDetail>(`/api/recordings/${recordingId}/transcript`, {
+    method: "POST",
+    body: JSON.stringify({ segments }),
   });
 }
 
@@ -715,6 +752,30 @@ export function deleteFolder(id: string): Promise<void> {
 
 export function listDictationEntries(): Promise<DictationEntry[]> {
   return apiFetch<DictationEntry[]>("/api/dictation/entries");
+}
+
+export function cleanupDictation(text: string, vocabulary?: string[]): Promise<{ text: string }> {
+  return apiFetch<{ text: string }>("/api/dictation/cleanup", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      vocabulary: vocabulary && vocabulary.length > 0 ? vocabulary : null,
+    }),
+  });
+}
+
+export function createDictationEntry(input: {
+  client_entry_id: string;
+  raw_text: string;
+  cleaned_text?: string | null;
+  duration_seconds: number;
+  word_count: number;
+  occurred_at: string;
+}): Promise<DictationEntry> {
+  return apiFetch<DictationEntry>("/api/dictation/entries", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function deleteDictationEntry(clientEntryId: string): Promise<void> {

@@ -118,7 +118,7 @@ struct BillingSection: View {
                 .accessibilityIdentifier("settings-billing-header")
         }
         .task { await loadAll() }
-        .onChange(of: languageManager.current) { _, _ in
+        .onChangeCompat(of: languageManager.current) { _, _ in
             Task { await applyRegionForCurrentLanguage() }
         }
         .onDisappear {

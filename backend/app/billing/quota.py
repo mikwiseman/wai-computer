@@ -3,6 +3,13 @@
 Week boundary: Sunday 00:00 UTC (matches Whispr Flow's reset cadence).
 Quota record + check are atomic via PostgreSQL UPSERT on
 ``(user_id, week_start_utc)``.
+
+NOTE — this is MONETIZATION accounting (a free-tier word cap gated by
+``billing_enforcement_enabled``), NOT the Deepgram spend/abuse guard. Deepgram
+COST control lives in ``app.core.transcription_guard`` (kill-switch, per-user +
+global daily audio-minute ceilings, stream concurrency, circuit breaker), which
+is enforced pre-flight on every billing path independently of this module and of
+``billing_enforcement_enabled``. Do not mistake this word quota for a spend cap.
 """
 
 from __future__ import annotations

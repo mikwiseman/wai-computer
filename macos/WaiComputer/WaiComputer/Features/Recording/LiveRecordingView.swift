@@ -93,7 +93,7 @@ struct LiveRecordingView: View {
                         }
                     }
                 }
-                .onChange(of: recordingVM.currentTranscript) { _, _ in
+                .onChangeCompat(of: recordingVM.currentTranscript) { _, _ in
                     withAnimation {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }

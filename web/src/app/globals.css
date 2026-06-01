@@ -162,17 +162,21 @@
   cursor: pointer;
   padding: 0;
   min-height: auto;
-  transition: color 0.16s ease;
+  transition: color var(--motion-duration-base) var(--motion-ease-emphasized);
 }
 
+/* Underline grows from center with the emphasized (spring-ish) curve when a
+ * tab becomes selected, mirroring the SwiftUI capsule slide instead of a hard
+ * background snap. */
 .wai-tab::after {
   content: "";
   display: block;
   width: 100%;
   height: 2px;
   border-radius: var(--radius-pill);
-  background: transparent;
-  transition: background 0.18s ease;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform var(--motion-duration-base) var(--motion-ease-emphasized);
 }
 
 .wai-tab[aria-selected="true"],
@@ -182,7 +186,7 @@
 
 .wai-tab[aria-selected="true"]::after,
 .wai-tab[aria-current="true"]::after {
-  background: var(--accent);
+  transform: scaleX(1);
 }
 
 .wai-tab:hover {
@@ -258,6 +262,47 @@ textarea:focus,
 button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Native form controls — checkboxes, radios and progress bars should read as
+ * part of the Wai system, not raw browser chrome. `accent-color` tints the
+ * native control to the active accent; the input reset undoes the panel
+ * border/background/full-width the generic `input` rule above would apply. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  accent-color: var(--accent);
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-pill);
+}
+
+progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
 }
 
 ul {
@@ -647,6 +692,123 @@ a.primary-button[aria-disabled="true"]:hover {
   opacity: 0.85;
 }
 
+/* Speaker assignment popover — Mac parity with the SwiftUI `.popover`: a
+ * floating glass menu with 32px plain rows, an accent "+ Create" row, and a
+ * red-tint error banner. Without this the referenced classes had no styling and
+ * fell back to the global amber-pill button rule. */
+.speaker-chip-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  max-width: min(280px, 80vw);
+  padding: 8px;
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-md);
+  background: var(--material-thin-bg);
+  -webkit-backdrop-filter: var(--material-thin-blur);
+  backdrop-filter: var(--material-thin-blur);
+  box-shadow: var(--shadow-2);
+  animation: speaker-chip-pop var(--motion-duration-fast) var(--motion-ease-emphasized);
+}
+
+@keyframes speaker-chip-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.speaker-chip-popover input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: var(--font-body-small);
+}
+
+.speaker-chip-error {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font: var(--font-caption);
+}
+
+.speaker-chip-loading {
+  padding: 6px 8px;
+  color: var(--ink-faint);
+  font: var(--font-body-small);
+}
+
+.speaker-chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.speaker-chip-list li {
+  margin: 0;
+}
+
+.speaker-chip-list li > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: var(--font-body-small);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.speaker-chip-list li > button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.speaker-chip-list li > button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.speaker-chip-list li > button.speaker-chip-create {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.speaker-chip-list li > button.speaker-chip-create:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.speaker-chip-empty {
+  padding: 6px 8px;
+  color: var(--ink-faint);
+  font: var(--font-caption);
+  line-height: 1.4;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -703,9 +865,9 @@ a.primary-button[aria-disabled="true"]:hover {
   min-height: 100dvh;
   flex-direction: column;
   border-right: 1px solid var(--surface-hairline);
-  background: var(--material-thin-bg);
-  backdrop-filter: var(--material-thin-blur);
-  -webkit-backdrop-filter: var(--material-thin-blur);
+  background: var(--material-regular-bg);
+  backdrop-filter: var(--material-regular-blur);
+  -webkit-backdrop-filter: var(--material-regular-blur);
   padding: 1.05rem;
 }
 
@@ -931,6 +1093,7 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink);
   padding: 0.78rem;
   text-align: left;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .recording-row:hover {
@@ -963,6 +1126,149 @@ a.primary-button[aria-disabled="true"]:hover {
   margin-top: 0.25rem;
   color: var(--ink-soft);
   font-size: var(--font-label-size);
+}
+
+/* Library multi-select — checkbox per row + a bulk action bar. */
+.recording-list__item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.recording-list__item > .recording-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.recording-select-checkbox {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 0.15rem;
+}
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.78rem;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.bulk-bar__count {
+  margin-right: auto;
+  font: var(--font-heading-small);
+  color: var(--ink);
+}
+
+/* Live (realtime) recorder — mirrors the Mac live-recording feel: pulsing red
+ * dot, mono timer, and a live transcript with faded interim text. */
+.live-recorder {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.live-recorder__active {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.live-recorder__status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.live-recorder__dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  animation: live-rec-pulse 1.4s var(--motion-ease-standard) infinite;
+}
+
+@keyframes live-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+.live-recorder__timer {
+  font: var(--font-mono-large);
+}
+
+.live-recorder__label {
+  margin-right: auto;
+  color: var(--ink-soft);
+  font: var(--font-label);
+}
+
+.live-recorder__transcript {
+  max-height: 220px;
+  margin: 0;
+  overflow-y: auto;
+  font: var(--font-reading);
+}
+
+.live-recorder__interim {
+  color: var(--ink-faint);
+}
+
+.live-recorder__idle {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.live-recorder__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font: var(--font-body-small);
+}
+
+/* In-browser dictation panel (Phase 3). */
+.dictate-panel {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.dictate-start {
+  align-self: start;
+}
+
+.dictate-result {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid var(--material-thin-border);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+}
+
+.dictate-result__text {
+  margin: 0;
+  font: var(--font-reading);
+  white-space: pre-wrap;
+}
+
+.dictate-upsell {
+  margin-top: 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--surface-hairline);
 }
 
 .row-actions {
@@ -1032,6 +1338,71 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-soft);
   font-size: var(--font-label-size);
   line-height: 1.35;
+}
+
+/* Transcription settings — non-label fields (e.g. the read-only model block)
+ * mirror the `.settings-form label` grid so every row aligns. */
+.settings-field {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.settings-model-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.settings-model-list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-model-list dt {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+}
+
+.settings-model-list dd {
+  margin: 0;
+  font-size: var(--font-body-small-size);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Dictation history stats header — mirrors macOS (total words / wpm / streak). */
+.dictation-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 0.4rem;
+}
+
+.dictation-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 5rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+}
+
+.dictation-stat strong {
+  font: var(--font-display-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.dictation-stat span {
+  font: var(--font-caption);
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .telegram-link-card {

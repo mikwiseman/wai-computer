@@ -159,6 +159,57 @@ async def test_process_staged_recording_upload_skips_when_segments_already_exist
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_failed_on_guard_rejection(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cost/abuse guard rejection (kill-switch / breaker / budget / max-duration)
+    must mark the recording FAILED with the guard code and NOT retry or re-bill."""
+    from app.core.transcription_guard import TranscriptionGuardError
+
+    user = User(email="guard-reject@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Guarded",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+
+    async def _raise_guard(*_args, **_kwargs):
+        raise TranscriptionGuardError(
+            "transcription_halted", "Transcription is temporarily disabled."
+        )
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file", _raise_guard
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "transcription_halted"
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_stores_speaker_embeddings_and_assignments(
     db_session: AsyncSession,
     tmp_path,

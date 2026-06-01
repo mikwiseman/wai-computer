@@ -6,6 +6,7 @@ from time import perf_counter
 
 import httpx
 
+from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -13,6 +14,14 @@ from app.core.observability import (
     fingerprint_text,
 )
 from app.core.transcript_utils import TranscriptResult
+from app.core.transcription_guard import (
+    TranscriptionGuardError,
+    check_minutes_budget,
+    provider_breaker_open,
+    record_minutes,
+    record_provider_result,
+    transcription_halted,
+)
 from app.core.transcription_options import (
     DEFAULT_FILE_STT_MODEL,
     DEFAULT_FILE_STT_PROVIDER,
@@ -77,13 +86,45 @@ async def transcribe_audio_file(
     provider: str | None = None,
     audio_duration_seconds: float | None = None,
     keyterms: list[str] | None = None,
+    user_id: str | None = None,
 ) -> list[TranscriptResult]:
-    """Transcribe audio using the active speech-to-text runtime."""
+    """Transcribe audio using the active speech-to-text runtime.
+
+    Single batch choke point: every file-STT entrypoint (native uploads, Telegram
+    voice notes, imports) flows through here, so the Deepgram cost/abuse guards
+    (kill-switch, circuit breaker, max-duration, daily minute budget, breaker-feed
+    and minute-metering) live here once instead of per-entrypoint.
+    """
     provider = provider or DEFAULT_FILE_STT_PROVIDER
     selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
     if provider != "deepgram":
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")
+
+    settings = get_settings()
+    guard_user_id = user_id or (str(getattr(user, "id", "")) if user is not None else "")
+    guard_user_id = guard_user_id or "anonymous"
+    estimated_minutes = (audio_duration_seconds or 0.0) / 60.0
+    if await transcription_halted():
+        raise TranscriptionGuardError(
+            "transcription_halted", "Transcription is temporarily disabled."
+        )
+    if await provider_breaker_open():
+        raise TranscriptionGuardError(
+            "provider_unavailable", "Transcription provider is temporarily unavailable."
+        )
+    max_seconds = settings.recording_max_audio_seconds
+    if (
+        max_seconds > 0
+        and audio_duration_seconds is not None
+        and audio_duration_seconds > max_seconds
+    ):
+        raise TranscriptionGuardError(
+            "recording_too_long",
+            "Recording exceeds the maximum supported length for transcription.",
+        )
+    await check_minutes_budget(guard_user_id, estimated_minutes)
+
     started_at = perf_counter()
     audio_bytes = len(audio_data)
     add_sentry_breadcrumb(
@@ -107,8 +148,10 @@ async def transcribe_audio_file(
             channels=channels,
             model=selected_model,
             keyterms=keyterms,
+            max_channels=settings.deepgram_max_channels,
         )
     except httpx.HTTPStatusError as exc:
+        await record_provider_result(success=False, status_code=exc.response.status_code)
         error_code = _provider_error_code(exc) or "unknown"
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.warning(
@@ -126,6 +169,7 @@ async def transcribe_audio_file(
         )
         raise
     except Exception as exc:
+        await record_provider_result(success=False)
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.exception(
             "file STT failed provider=%s model=%s latency_ms=%s error_type=%s "
@@ -140,6 +184,8 @@ async def transcribe_audio_file(
         )
         raise
 
+    await record_provider_result(success=True)
+    await record_minutes(guard_user_id, estimated_minutes)
     latency_ms = round((perf_counter() - started_at) * 1000)
     threshold_ms = file_stt_slow_threshold_ms(audio_duration_seconds)
     completion_data = {

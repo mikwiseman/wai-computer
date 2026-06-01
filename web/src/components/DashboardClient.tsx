@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   assignRecordingToFolder,
+  bulkRecordingOperation,
   changePassword,
   claimTelegramLinkCode,
   createDictionaryWord,
@@ -25,6 +26,7 @@ import {
   getRecording,
   getSettings,
   getTelegramLinkStatus,
+  getTranscriptionOptions,
   listDictationEntries,
   listDictionaryWords,
   listFolders,
@@ -42,15 +44,20 @@ import {
 import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AudioUpload } from "@/components/AudioUpload";
-import { RecorderPanel } from "@/components/RecorderPanel";
+import { LiveRecorder } from "@/components/LiveRecorder";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
+import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
+import { DictationStatsHeader } from "@/components/DictationStatsHeader";
+import { DeleteAccountSection } from "@/components/DeleteAccountSection";
+import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
 import type {
+  BulkAction,
   DictationDictionaryWord,
   DictationEntry,
   Folder,
@@ -60,6 +67,7 @@ import type {
   SearchResponse,
   TelegramLinkStatus,
   TelegramPairing,
+  TranscriptionOptions,
   User,
   UserSettings,
 } from "@/lib/types";
@@ -71,6 +79,7 @@ type DashboardView =
   | "folder"
   | "trash"
   | "search"
+  | "dictate"
   | "history"
   | "dictionary"
   | "settings";
@@ -351,6 +360,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       rows: [
         { keys: "/", description: "Focus search" },
         { keys: "n", description: "New recording" },
+        { keys: "d", description: "Dictate" },
+        { keys: "l", description: "Library" },
+        { keys: "w", description: "Ask Wai" },
         { keys: "Esc", description: "Clear selection / close dialogs" },
         { keys: "?", description: "Show this cheatsheet" },
       ],
@@ -531,6 +543,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       rows: [
         { keys: "/", description: "Сфокусировать поиск" },
         { keys: "n", description: "Новая запись" },
+        { keys: "d", description: "Диктовка" },
+        { keys: "l", description: "Библиотека" },
+        { keys: "w", description: "Спросить Wai" },
         { keys: "Esc", description: "Сбросить выбор / закрыть диалоги" },
         { keys: "?", description: "Показать этот список" },
       ],
@@ -713,6 +728,8 @@ export function DashboardClient() {
   const [recordingTitle, setRecordingTitle] = useState("");
   const [recordingType, setRecordingType] = useState<RecordingType>("note");
   const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedMode, setSelectedMode] = useState<DetailMode>("active");
 
   const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
@@ -753,6 +770,9 @@ export function DashboardClient() {
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("wai");
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
+  const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
+    null,
+  );
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsLoadedOnce, setSettingsLoadedOnce] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -775,6 +795,36 @@ export function DashboardClient() {
   async function loadTrashRecordingsState() {
     const trashed = await listRecordings({ limit: LIST_LIMIT, trashed: true });
     setTrashRecordings(trashed);
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulk(action: BulkAction, folderId?: string | null) {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    setMessage(null);
+    try {
+      await bulkRecordingOperation(ids, action, folderId);
+      await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
+      if (selectedRecording && selectedIds.has(selectedRecording.id)) {
+        setSelectedRecording(null);
+      }
+      exitSelectMode();
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
   }
 
   async function loadFoldersState() {
@@ -833,12 +883,15 @@ export function DashboardClient() {
   async function loadAccountSettings() {
     setSettingsLoading(true);
     try {
-      const [settingsResponse, telegramResponse] = await Promise.all([
+      const [settingsResponse, telegramResponse, optionsResponse] = await Promise.all([
         getSettings(),
         getTelegramLinkStatus(),
+        // Cosmetic model labels — degrade to "provider · model" if unavailable.
+        getTranscriptionOptions().catch(() => null),
       ]);
       setAccountSettings(settingsResponse);
       setTelegramStatus(telegramResponse);
+      setTranscriptionOptions(optionsResponse);
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     } catch (error: unknown) {
@@ -1421,9 +1474,18 @@ export function DashboardClient() {
     setIsShortcutCheatsheetOpen((current) => !current);
   }, []);
 
+  const goToView = useCallback((next: DashboardView) => {
+    setView(next);
+    setSelectedRecording(null);
+    setIsShortcutCheatsheetOpen(false);
+  }, []);
+
   useKeyboardShortcuts({
     "/": focusSearchInput,
     n: focusRecorder,
+    d: () => goToView("dictate"),
+    l: () => goToView("library"),
+    w: () => goToView("wai"),
     Escape: clearAll,
     "?": toggleCheatsheet,
   });
@@ -1486,6 +1548,7 @@ export function DashboardClient() {
     {
       header: locale === "ru" ? "Диктовка" : "Dictation",
       items: [
+        { key: "dictate", label: locale === "ru" ? "Диктовать" : "Dictate", count: null },
         { key: "history", label: copy.nav.history.label, count: null },
         { key: "dictionary", label: copy.nav.dictionary.label, count: null },
       ],
@@ -1742,6 +1805,7 @@ export function DashboardClient() {
           : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
+        {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
         {view === "settings" ? renderSettingsView() : null}
@@ -1881,19 +1945,89 @@ export function DashboardClient() {
               <h3>{title}</h3>
               <p>{copy.library.recordingsCount(items.length)}</p>
             </div>
-            {!isTrash ? (
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                onClick={() => {
-                  setSelectedRecording(null);
-                  setSelectedMode("active");
-                }}
-              >
-                {copy.library.newButton}
-              </button>
-            ) : null}
+            <div className="row-actions">
+              {items.length > 0 ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  data-testid="select-mode-toggle"
+                  onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                >
+                  {selectMode
+                    ? locale === "ru"
+                      ? "Готово"
+                      : "Done"
+                    : locale === "ru"
+                      ? "Выбрать"
+                      : "Select"}
+                </button>
+              ) : null}
+              {!isTrash ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  onClick={() => {
+                    setSelectedRecording(null);
+                    setSelectedMode("active");
+                  }}
+                >
+                  {copy.library.newButton}
+                </button>
+              ) : null}
+            </div>
           </header>
+
+          {selectMode && selectedIds.size > 0 ? (
+            <div className="bulk-bar" data-testid="bulk-bar">
+              <span className="bulk-bar__count">
+                {locale === "ru"
+                  ? `Выбрано: ${selectedIds.size}`
+                  : `${selectedIds.size} selected`}
+              </span>
+              {isTrash ? (
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  data-testid="bulk-restore"
+                  onClick={() => void handleBulk("restore")}
+                >
+                  {locale === "ru" ? "Восстановить" : "Restore"}
+                </button>
+              ) : (
+                <>
+                  {folders.length > 0 ? (
+                    <select
+                      className="select-button"
+                      data-testid="bulk-move-folder"
+                      aria-label={locale === "ru" ? "Переместить в папку" : "Move to folder"}
+                      defaultValue=""
+                      onChange={(event) => {
+                        if (event.target.value) void handleBulk("move", event.target.value);
+                        event.target.value = "";
+                      }}
+                    >
+                      <option value="" disabled>
+                        {locale === "ru" ? "В папку…" : "Move to…"}
+                      </option>
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="ghost-button compact-button danger-button"
+                    data-testid="bulk-trash"
+                    onClick={() => void handleBulk("delete")}
+                  >
+                    {locale === "ru" ? "В корзину" : "Move to Trash"}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
 
           {items.length === 0 ? (
             <div className="empty-state">
@@ -1908,7 +2042,17 @@ export function DashboardClient() {
                 // active rows are draggable. Folders also stay hidden in trash.
                 const draggable = !isTrash;
                 return (
-                  <li key={recording.id}>
+                  <li key={recording.id} className="recording-list__item">
+                    {selectMode ? (
+                      <input
+                        type="checkbox"
+                        className="recording-select-checkbox"
+                        aria-label={locale === "ru" ? "Выбрать запись" : "Select recording"}
+                        checked={selectedIds.has(recording.id)}
+                        onChange={() => toggleSelected(recording.id)}
+                        data-testid={`select-checkbox-${recording.id}`}
+                      />
+                    ) : null}
                     <button
                       type="button"
                       className="recording-row"
@@ -1977,6 +2121,7 @@ export function DashboardClient() {
                 title={recordingTitle}
                 type={recordingType}
                 copy={copy}
+                locale={locale}
                 onTitleChange={setRecordingTitle}
                 onTypeChange={setRecordingType}
                 onSubmit={handleCreateRecording}
@@ -2089,6 +2234,7 @@ export function DashboardClient() {
             </button>
           </div>
         </header>
+        <DictationStatsHeader entries={dictationEntries} locale={locale} />
         {dictationEntriesUnavailable ? (
           <div className="empty-state" data-testid="history-unavailable">
             <h3>{copy.history.notAvailableTitle}</h3>
@@ -2335,6 +2481,16 @@ export function DashboardClient() {
 
         <IdentityAndVoicePanel locale={locale} />
 
+        {accountSettings ? (
+          <TranscriptionSettingsPanel
+            settings={accountSettings}
+            transcriptionOptions={transcriptionOptions}
+            onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
+            busy={settingsSaving}
+            locale={locale}
+          />
+        ) : null}
+
         <div className="settings-form">
           <h3>{copy.settings.dictationHeading}</h3>
           {settingsLoading ? (
@@ -2398,6 +2554,8 @@ export function DashboardClient() {
             {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
           </button>
         </form>
+
+        <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
 
         <div className="settings-form">
           <h3>{copy.telegram.heading}</h3>
@@ -2481,6 +2639,7 @@ function NewRecordingPane({
   title,
   type,
   copy,
+  locale,
   onTitleChange,
   onTypeChange,
   onSubmit,
@@ -2490,6 +2649,7 @@ function NewRecordingPane({
   title: string;
   type: RecordingType;
   copy: DashboardCopy;
+  locale: "en" | "ru";
   onTitleChange: (value: string) => void;
   onTypeChange: (value: RecordingType) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -2504,7 +2664,7 @@ function NewRecordingPane({
       </div>
 
       <div className="recording-options">
-        <RecorderPanel onRecordingComplete={onComplete} onError={onError} />
+        <LiveRecorder onRecordingComplete={onComplete} onError={onError} locale={locale} />
         <AudioUpload onUploadComplete={onComplete} onError={onError} />
       </div>
 

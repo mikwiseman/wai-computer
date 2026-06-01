@@ -103,14 +103,14 @@ struct WaiComputerMacApp: App {
                 .onAppear {
                     MacPresentationCoordinator.shared.mainWindowDidAppear()
                 }
-                .onChange(of: receiveBetaUpdates) { _, _ in
+                .onChangeCompat(of: receiveBetaUpdates) { _, _ in
                     updaterController?.updater.resetUpdateCycle()
                 }
-                .onChange(of: isRecordingActivityVisible) { _, isActive in
+                .onChangeCompat(of: isRecordingActivityVisible) { _, isActive in
                     guard !isActive else { return }
                     updateUserDriverDelegate?.presentDeferredUpdateIfIdle(using: updaterController)
                 }
-                .onChange(of: scenePhase) { _, newPhase in
+                .onChangeCompat(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     dictationManager.refreshPermissionState()
                     Task {

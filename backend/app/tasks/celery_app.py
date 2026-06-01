@@ -41,6 +41,14 @@ celery_app.conf.update(
     # transcription, which caused DUPLICATE concurrent transcription (double
     # Deepgram billing, 2026-05-31). Keep ABOVE the recording task hard time_limit.
     broker_transport_options={"visibility_timeout": 21600},
+    # Mirror visibility_timeout onto the result backend transport: if this Redis
+    # is ever shared with another app, the SHORTEST visibility_timeout wins (a
+    # documented footgun), so keep them consistent. worker_deduplicate_successful_tasks
+    # is belt-and-suspenders (drops an already-succeeded redelivered task) — the
+    # robust protection is the app-level segment-existence idempotency guard;
+    # result_expires=3600 bounds how long this dedupe can help.
+    result_backend_transport_options={"visibility_timeout": 21600},
+    worker_deduplicate_successful_tasks=True,
     result_expires=3600,
     worker_max_tasks_per_child=100,
     # Explicit imports: autodiscover_tasks only finds modules literally
