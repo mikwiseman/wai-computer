@@ -11,6 +11,7 @@ final class ContentFeedViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAdding = false
     @Published var errorMessage: String?
+    @Published var pendingReviewCount = 0
 
     // Multi-select → compare
     @Published var isSelecting = false
@@ -32,6 +33,10 @@ final class ContentFeedViewModel: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+        // Best-effort review badge; never blocks the feed.
+        if let count = try? await apiClient.listMemoryProposals(status: "pending").pendingCount {
+            pendingReviewCount = count
         }
     }
 

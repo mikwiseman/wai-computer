@@ -23,6 +23,7 @@
 		63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A85E11C35CBE283D2101267D /* Assets.xcassets */; };
 		678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C7BE633E65D2EB872797E /* AudioManager.swift */; };
 		6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */; };
+		74CE1DBA1C1046B692CAE1ED /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */; };
 		75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */; };
 		7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */; };
 		868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */; };
@@ -30,6 +31,7 @@
 		920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FEDD9815CBEFD0332FE393 /* SearchView.swift */; };
 		9640CDAD6341750038EACFCE /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */; };
 		967A5E368C485EF073E65B6F /* DictationHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */; };
+		9C82AB94CF92C1EA9E411EBE /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */; };
 		9FA96E914A0393CB63E62547 /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */; };
 		A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */; };
 		A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804113B280E47C43FBED2F85 /* DesignSystem.swift */; };
@@ -60,6 +62,7 @@
 		33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguagePicker.swift; sourceTree = "<group>"; };
 		557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		5D1C7BE633E65D2EB872797E /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerApp.swift; sourceTree = "<group>"; };
 		6C9E3265171CC15BA875FA7A /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
@@ -74,6 +77,7 @@
 		958F2DC590527AAC94036EFC /* AppIcon.icon */ = {isa = PBXFileReference; path = AppIcon.icon; sourceTree = "<group>"; };
 		97968DE3F1803173874F4E13 /* McpConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpConnectView.swift; sourceTree = "<group>"; };
 		9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingVoiceSetupSlide.swift; sourceTree = "<group>"; };
+		9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
 		A530B1CC229C71FC31649323 /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		A771DCE464D8D7EE680CF3B3 /* RecordingDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailViewModel.swift; sourceTree = "<group>"; };
 		A85E11C35CBE283D2101267D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -122,6 +126,8 @@
 				26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */,
 				C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */,
 				6D70385DAB2C71AA828D303B /* ItemDetailView.swift */,
+				9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */,
+				58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */,
 				0125DD2333BE829BFD004DBE /* SecondBrainView.swift */,
 			);
 			path = Brain;
@@ -366,6 +372,7 @@
 				CC4E23482FD719666989EEBF /* LanguagePickerView.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
 				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
+				74CE1DBA1C1046B692CAE1ED /* MemoryView.swift in Sources */,
 				38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */,
 				E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */,
 				B2D9ABA7135D805FC44861CB /* OnboardingView.swift in Sources */,
@@ -374,6 +381,7 @@
 				E352768522304B30567C3B72 /* RecordingDetailViewModel.swift in Sources */,
 				6F6D664F2AC0414EE477A1CA /* RecordingView.swift in Sources */,
 				2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */,
+				9C82AB94CF92C1EA9E411EBE /* ReviewView.swift in Sources */,
 				920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */,
 				E42ED41209D9D6AAD7AFE57A /* SecondBrainView.swift in Sources */,
 				75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */,
