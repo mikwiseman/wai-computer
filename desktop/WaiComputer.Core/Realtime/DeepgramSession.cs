@@ -138,11 +138,8 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
                 break;
             case "error":
             case "Error":
-                var msg = root.TryGetProperty("description", out var d) ? d.GetString() :
-                    root.TryGetProperty("message", out var m) ? m.GetString() :
-                    root.TryGetProperty("error", out var e) ? e.GetString() :
-                    "Deepgram realtime error";
-                _ = _events.Writer.TryWrite(new TranscriptionEvent.ProviderWarning(TranscriptionErrorCodes.GenericError, msg ?? "Deepgram realtime error"));
+                var (code, message) = DeepgramErrorClassifier.Classify(root);
+                _ = _events.Writer.TryWrite(new TranscriptionEvent.ProviderWarning(code, message));
                 break;
         }
     }
