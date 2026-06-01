@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		038F4B2BD28BA9DA229D948F /* MacBrainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA81D61D799AAA444B4B8BF2 /* MacBrainView.swift */; };
 		063CEA1A90D4FC6E524DE28C /* OnboardingWelcomeSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1ECB5B3DBC8E7FE4CB148C /* OnboardingWelcomeSlide.swift */; };
 		08033280F054668F12DCA45E /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20042A89F03C6CC80491D13F /* DictationDictionaryStore.swift */; };
 		0AF57CF86C3DB79055210578 /* DictationSettingsCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4138C52CEA5CA91C25C9E0C9 /* DictationSettingsCopy.swift */; };
@@ -189,6 +190,7 @@
 		C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingL10n.swift; sourceTree = "<group>"; };
 		C8CF28431931F926527ADB97 /* DictationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationCopy.swift; sourceTree = "<group>"; };
 		CA297F1CAC3937B4C29F28FE /* OnboardingVoiceSetupSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingVoiceSetupSlide.swift; sourceTree = "<group>"; };
+		CA81D61D799AAA444B4B8BF2 /* MacBrainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBrainView.swift; sourceTree = "<group>"; };
 		CBF4008D0F99ABDDF4CFE682 /* MacRecordingDetailViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailViewModelTests.swift; sourceTree = "<group>"; };
 		CC1C150E9F7C11FFA2226963 /* MacThemePreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacThemePreferencesTests.swift; sourceTree = "<group>"; };
 		D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
@@ -329,6 +331,7 @@
 			children = (
 				9E25017EE35BCC40BAAFBF47 /* Apps */,
 				59B2AD84382DEB3E12F19C35 /* Billing */,
+				E6B047E70F441C8BBC87FBBB /* Brain */,
 				6602274E3261548AC14C77A9 /* Content */,
 				1581C507CA5BB575E295AC72 /* Dictation */,
 				A45B2EFE55B5BF47533D4858 /* Library */,
@@ -455,6 +458,14 @@
 				5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		E6B047E70F441C8BBC87FBBB /* Brain */ = {
+			isa = PBXGroup;
+			children = (
+				CA81D61D799AAA444B4B8BF2 /* MacBrainView.swift */,
+			);
+			path = Brain;
 			sourceTree = "<group>";
 		};
 		FBAD2F2F9B09CC3E5E829C1F /* WaiComputerTests */ = {
@@ -627,6 +638,7 @@
 				BC6AA2538B96B8493E9BF247 /* LanguagePickerView.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
 				2CF2E6BA3A89B60B4483DA82 /* MacAppsView.swift in Sources */,
+				038F4B2BD28BA9DA229D948F /* MacBrainView.swift in Sources */,
 				26BDBABE9A6514DA8BE4720D /* MacComparisonView.swift in Sources */,
 				8BD591B241EDBD3580AA29DB /* MacContentFeedView.swift in Sources */,
 				AD61BAEC3E9083C7864C1295 /* MacContentFeedViewModel.swift in Sources */,

@@ -182,3 +182,30 @@ extension ItemModelTests {
         XCTAssertEqual(entry.status, "generating")
     }
 }
+
+extension ItemModelTests {
+    func testBrainProjectionDecodes() throws {
+        let json = """
+        {
+          "memory_sections": [
+            {"label": "human", "body": "Lives in Lisbon.", "updated_at": "2026-06-01T00:00:00Z"},
+            {"label": "topics", "body": "", "updated_at": null}
+          ],
+          "entity_pages": [
+            {"id": "e1", "name": "Alice", "type": "person", "relations": [
+              {"relation_type": "works_on", "target_name": "Apollo", "target_type": "project", "context": "leads it"}
+            ]}
+          ],
+          "entity_count": 1
+        }
+        """.data(using: .utf8)!
+        let brain = try decoder().decode(BrainProjection.self, from: json)
+        XCTAssertEqual(brain.entityCount, 1)
+        XCTAssertEqual(brain.memorySections.first?.label, "human")
+        XCTAssertEqual(brain.memorySections.first?.body, "Lives in Lisbon.")
+        let page = try XCTUnwrap(brain.entityPages.first)
+        XCTAssertEqual(page.name, "Alice")
+        XCTAssertEqual(page.relations.first?.targetName, "Apollo")
+        XCTAssertEqual(page.relations.first?.relationType, "works_on")
+    }
+}
