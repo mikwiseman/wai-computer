@@ -48,3 +48,61 @@ public static class PushToTalkStopPolicy
         };
     }
 }
+
+/// <summary>What a deferred stop should do once the session reaches listening.</summary>
+public enum DeferredStopAction
+{
+    ContinueListening,
+    FinishAfterReady,
+}
+
+/// <summary>
+/// When a push-to-talk release arrived before the session was ready, this
+/// decides what happens the moment it becomes ready: finish (unless hands-free,
+/// where the release is ignored) or keep listening.
+/// </summary>
+public static class DeferredDictationStopPolicy
+{
+    public static DeferredStopAction Action(bool deferredStop, bool isHandsFree)
+        => deferredStop && !isHandsFree ? DeferredStopAction.FinishAfterReady : DeferredStopAction.ContinueListening;
+}
+
+/// <summary>Timing for finalizing a dictation turn (porting the macOS DictationFinalizationPolicy).</summary>
+public static class DictationFinalizationPolicy
+{
+    /// <summary>How long to keep capturing after the user stops, so the tail of the last word lands.</summary>
+    public static readonly TimeSpan CaptureTailDelay = TimeSpan.FromMilliseconds(450);
+}
+
+/// <summary>Thrown when AI cleanup is enabled but fails or returns nothing (no silent fallback to raw).</summary>
+public sealed class DictationCleanupException : Exception
+{
+    public DictationCleanupException(string message) : base(message) { }
+}
+
+/// <summary>
+/// Decides the text to actually insert. With the post-filter off, the raw
+/// transcript is used verbatim. With it on, the cleaned result is required — a
+/// cleanup error or an empty result throws rather than silently inserting raw
+/// (no-fallback: the user opted into cleanup, so a failure must surface).
+/// </summary>
+public static class DictationCleanupPolicy
+{
+    public static string TextToInsert(bool postFilterEnabled, string raw, string? cleanupResult, bool cleanupFailed)
+    {
+        if (!postFilterEnabled)
+        {
+            return raw;
+        }
+        if (cleanupFailed)
+        {
+            throw new DictationCleanupException("Dictation cleanup failed.");
+        }
+        var trimmed = cleanupResult?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            throw new DictationCleanupException("Dictation cleanup returned no text.");
+        }
+        return trimmed;
+    }
+}
