@@ -50,6 +50,7 @@ _SAFE_EXTRA_KEYS = frozenset(
         "provider",
         "error_type",
         "recording_id",
+        "transaction",
     }
 )
 

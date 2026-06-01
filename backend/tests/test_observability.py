@@ -773,3 +773,77 @@ async def test_upload_logs_do_not_expose_filename(
     assert response.status_code == 415
     assert private_filename not in caplog.text
     assert "filename(len=" in caplog.text
+
+
+# --- generic Sentry event -> Telegram ops relay (task #18) -------------------
+def _capture_forwarded(monkeypatch):
+    """Patch notify_ops in the observability module and capture its calls."""
+    calls: list[dict] = []
+
+    def _fake_notify_ops(**kwargs):
+        calls.append(kwargs)
+
+    # _forward_generic_event_to_ops imports notify_ops lazily from ops_alerts.
+    from app.core import ops_alerts
+
+    monkeypatch.setattr(ops_alerts, "notify_ops", _fake_notify_ops)
+    return calls
+
+
+def test_generic_error_event_forwarded_to_ops(monkeypatch):
+    calls = _capture_forwarded(monkeypatch)
+    event = {
+        "level": "error",
+        "transaction": "POST /api/recordings",
+        "exception": {"values": [{"type": "ValueError", "value": "boom happened"}]},
+    }
+    out = observability._before_send(event, {})
+    assert out is not None  # event is still delivered to Sentry
+    assert len(calls) == 1
+    assert calls[0]["alert_code"] == "sentry.ValueError"
+    assert "ValueError" in calls[0]["message"]
+    assert calls[0]["extras"]["transaction"] == "POST /api/recordings"
+    assert calls[0]["level"] == "error"
+
+
+def test_anomaly_event_with_alert_code_not_double_forwarded(monkeypatch):
+    """Events from capture_sentry_anomaly carry an alert_code in extra and already
+    notify ops directly — the relay must SKIP them to avoid double-alerting."""
+    calls = _capture_forwarded(monkeypatch)
+    event = {
+        "level": "warning",
+        "extra": {"alert_code": "recording.transcription.guard_refused"},
+        "exception": {"values": [{"type": "ValueError", "value": "x"}]},
+    }
+    observability._before_send(event, {})
+    assert calls == []
+
+
+def test_non_error_level_event_not_forwarded(monkeypatch):
+    calls = _capture_forwarded(monkeypatch)
+    observability._before_send({"level": "info", "logentry": {"message": "hi"}}, {})
+    assert calls == []
+
+
+def test_generic_forward_uses_logentry_when_no_exception(monkeypatch):
+    calls = _capture_forwarded(monkeypatch)
+    event = {"level": "fatal", "logentry": {"formatted": "worker died"}}
+    observability._before_send(event, {})
+    assert len(calls) == 1
+    assert calls[0]["alert_code"] == "sentry.Error"
+    assert "worker died" in calls[0]["message"]
+    assert calls[0]["level"] == "fatal"
+
+
+def test_generic_forward_never_raises_on_bad_notify(monkeypatch):
+    from app.core import ops_alerts
+
+    def _boom(**_kwargs):
+        raise RuntimeError("telegram down")
+
+    monkeypatch.setattr(ops_alerts, "notify_ops", _boom)
+    # must return the event regardless (Sentry delivery must not break)
+    out = observability._before_send(
+        {"level": "error", "exception": {"values": [{"type": "E", "value": "v"}]}}, {}
+    )
+    assert out is not None
