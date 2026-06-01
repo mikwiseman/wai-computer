@@ -81,7 +81,7 @@ struct MacSearchView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.results.isEmpty && !viewModel.query.isEmpty && viewModel.hasSearched {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t("No Results", "Ничего не найдено"),
                 systemImage: "magnifyingglass",
                 description: Text(t(
@@ -90,7 +90,7 @@ struct MacSearchView: View {
                 ))
             )
         } else if viewModel.results.isEmpty {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t("Search Your Recordings", "Поиск по записям"),
                 systemImage: "magnifyingglass",
                 description: Text(t(

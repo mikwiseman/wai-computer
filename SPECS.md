@@ -436,7 +436,7 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 ### 4.3 macOS App
 
 **Stack:** SwiftUI, WaiComputerKit (shared SPM package), ElevenLabs Swift SDK
-**Min OS:** macOS 14.2+
+**Min OS:** macOS 13.0+ (system audio capture requires macOS 14.2+)
 **Bundle ID:** is.waiwai.computer
 **Signing:** Developer ID Application: WaiWai, LLC
 

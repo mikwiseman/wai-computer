@@ -27,7 +27,7 @@ struct MacContentView: View {
             }
         }
         .onAppear { appState.refreshPermissionStatus(rearmDismissed: true) }
-        .onChange(of: scenePhase) { _, newPhase in
+        .onChangeCompat(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 appState.refreshPermissionStatus(rearmDismissed: true)
             }
@@ -342,7 +342,7 @@ struct MacMainView: View {
                     .onAppear {
                         updateColumnVisibility(for: proxy.size.width)
                     }
-                    .onChange(of: proxy.size.width) { _, width in
+                    .onChangeCompat(of: proxy.size.width) { _, width in
                         updateColumnVisibility(for: width)
                     }
             }
@@ -466,7 +466,7 @@ struct MacMainView: View {
             handleSelectedRecordingFromMenu(appState.selectedRecordingFromMenu)
             handlePendingMainWindowAction(appState.pendingMainWindowAction)
         }
-        .onChange(of: selectedSection) { _, newSection in
+        .onChangeCompat(of: selectedSection) { _, newSection in
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil
             if let pendingSelection = pendingRecordingSelectionAfterSectionChange,
@@ -475,16 +475,16 @@ struct MacMainView: View {
                 pendingRecordingSelectionAfterSectionChange = nil
             }
         }
-        .onChange(of: hasListColumn) { _, _ in
+        .onChangeCompat(of: hasListColumn) { _, _ in
             updateColumnVisibility(for: lastMeasuredLayoutWidth)
         }
-        .onChange(of: appState.completedRecordingContext?.recordingId) { _, _ in
+        .onChangeCompat(of: appState.completedRecordingContext?.recordingId) { _, _ in
             handleCompletedRecordingChange()
         }
-        .onChange(of: appState.selectedRecordingFromMenu) { _, newId in
+        .onChangeCompat(of: appState.selectedRecordingFromMenu) { _, newId in
             handleSelectedRecordingFromMenu(newId)
         }
-        .onChange(of: appState.pendingMainWindowAction) { _, action in
+        .onChangeCompat(of: appState.pendingMainWindowAction) { _, action in
             handlePendingMainWindowAction(action)
         }
         .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
@@ -524,7 +524,7 @@ struct MacMainView: View {
             recoveryNotice = message
             scheduleRecoveryNoticeDismiss()
         }
-        .onChange(of: libraryViewModel.error) { _, newValue in
+        .onChangeCompat(of: libraryViewModel.error) { _, newValue in
             libraryErrorAutoDismissTask?.cancel()
             guard newValue != nil else { return }
 
@@ -696,7 +696,7 @@ struct MacMainView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if displayedRecordings.isEmpty {
-                    ContentUnavailableView(
+                    ContentUnavailableViewCompat(
                         isTrashSection ? t("Trash is Empty", "Корзина пуста") : t("No Recordings", "Нет записей"),
                         systemImage: isTrashSection ? "trash" : "waveform",
                         description: Text(emptyStateDescription)
@@ -825,7 +825,7 @@ struct MacMainView: View {
                 )
                 .id("\(detailMode)-\(recordingId)")
             } else if isTrashSection {
-                ContentUnavailableView(
+                ContentUnavailableViewCompat(
                     t("Select a Recording", "Выбери запись"),
                     systemImage: "trash",
                     description: Text(t("Choose a recording to view its details.", "Выбери запись, чтобы открыть детали."))
@@ -1320,7 +1320,7 @@ private struct BulkSelectionDetailView: View {
 
     var body: some View {
         VStack(spacing: Spacing.lg) {
-            ContentUnavailableView(
+            ContentUnavailableViewCompat(
                 t(
                     "\(selectionCount) Recordings Selected",
                     "Выбрано записей: \(selectionCount)"
@@ -1569,13 +1569,13 @@ struct MacAuthView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(Spacing.huge)
-        .onChange(of: authMode) {
+        .onChangeCompat(of: authMode) {
             appState.magicLinkSent = false
             appState.passwordResetSent = false
             appState.error = nil
             acceptedLegalTerms = false
         }
-        .onChange(of: email) {
+        .onChangeCompat(of: email) {
             appState.passwordResetSent = false
         }
     }
