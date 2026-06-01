@@ -32,6 +32,11 @@ struct SecondBrainView: View {
                         entryRow(icon: "tray.full", title: t("Review", "На проверку"),
                                  badge: model.pendingReviewCount)
                     }
+                    NavigationLink {
+                        ComparisonListView(apiClient: model.apiClient)
+                    } label: {
+                        entryRow(icon: "tablecells", title: t("Compare", "Сравнить"), badge: nil)
+                    }
                 }
 
                 Section(header: Text(t("Captured", "Сохранённое"))) {

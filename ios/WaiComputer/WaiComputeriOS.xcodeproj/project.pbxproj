@@ -19,6 +19,7 @@
 		3D7F2033226F703D235266F6 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B263A0D64683E2F9852B6 /* AuthView.swift */; };
 		3DA78C2D779EB4FA151ECFAA /* WaiHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */; };
 		4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */; };
+		62213ADBC65D730FC044CD81 /* McpIngestionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */; };
 		62241C028CE52A11AABA64DD /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73122302C84DBD8D22C976C /* RecordingDetailView.swift */; };
 		63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A85E11C35CBE283D2101267D /* Assets.xcassets */; };
 		678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C7BE633E65D2EB872797E /* AudioManager.swift */; };
@@ -27,6 +28,7 @@
 		75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */; };
 		7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */; };
 		868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */; };
+		8736AF12790E4BDB2978D0A0 /* ComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76146A88299F9DC07D2FE431 /* ComparisonView.swift */; };
 		8E224459E08141B4403149E2 /* BillingStatusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6940BF1D0BDFB73952CDCD /* BillingStatusSection.swift */; };
 		920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FEDD9815CBEFD0332FE393 /* SearchView.swift */; };
 		9640CDAD6341750038EACFCE /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */; };
@@ -64,12 +66,14 @@
 		557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		5D1C7BE633E65D2EB872797E /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
+		5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpIngestionView.swift; sourceTree = "<group>"; };
 		6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerApp.swift; sourceTree = "<group>"; };
 		6C9E3265171CC15BA875FA7A /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
 		6D70385DAB2C71AA828D303B /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
 		6DA5B50328D0A9CA110FA5D5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		6E5463A0F89C2F77AC9ED432 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
 		6E6940BF1D0BDFB73952CDCD /* BillingStatusSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingStatusSection.swift; sourceTree = "<group>"; };
+		76146A88299F9DC07D2FE431 /* ComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonView.swift; sourceTree = "<group>"; };
 		7F512F3E4DABAE0A57EAB068 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		7F6B263A0D64683E2F9852B6 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		804113B280E47C43FBED2F85 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 			isa = PBXGroup;
 			children = (
 				26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */,
+				76146A88299F9DC07D2FE431 /* ComparisonView.swift */,
 				C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */,
 				6D70385DAB2C71AA828D303B /* ItemDetailView.swift */,
 				9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */,
@@ -140,6 +145,7 @@
 				47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */,
 				0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */,
 				97968DE3F1803173874F4E13 /* McpConnectView.swift */,
+				5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */,
 				1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */,
 				CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */,
 			);
@@ -358,6 +364,7 @@
 				678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */,
 				3D7F2033226F703D235266F6 /* AuthView.swift in Sources */,
 				8E224459E08141B4403149E2 /* BillingStatusSection.swift in Sources */,
+				8736AF12790E4BDB2978D0A0 /* ComparisonView.swift in Sources */,
 				10D8C9DDE9D457C35CF9AA64 /* ContentFeedViewModel.swift in Sources */,
 				C7EC953F1B7260398E446691 /* ContentView.swift in Sources */,
 				A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */,
@@ -372,6 +379,7 @@
 				CC4E23482FD719666989EEBF /* LanguagePickerView.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
 				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
+				62213ADBC65D730FC044CD81 /* McpIngestionView.swift in Sources */,
 				74CE1DBA1C1046B692CAE1ED /* MemoryView.swift in Sources */,
 				38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */,
 				E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */,
