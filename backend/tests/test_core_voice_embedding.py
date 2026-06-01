@@ -111,3 +111,50 @@ def test_compute_voice_embedding_differs_across_distinct_signals():
 
     cosine = sum(x * y for x, y in zip(emb_a, emb_b))
     assert cosine < 0.999
+
+
+def test_compute_voice_embedding_rejects_empty_range():
+    from app.core.voice_embedding import compute_voice_embedding
+
+    with pytest.raises(ValueError, match="Empty snippet range"):
+        compute_voice_embedding("ignored.wav", 1000, 1000)
+
+
+def test_compute_voice_embedding_spans_rejects_no_spans():
+    from app.core.voice_embedding import compute_voice_embedding_spans
+
+    with pytest.raises(ValueError, match="No spans provided"):
+        compute_voice_embedding_spans("ignored.wav", [])
+
+
+def test_pick_clean_snippets_returns_none_without_results():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    assert pick_clean_snippets([], "Speaker 0") is None
+
+
+def test_pick_clean_snippets_returns_none_when_label_absent():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    results = [_tr("Speaker 1", 0, 8000)]
+    assert pick_clean_snippets(results, "Speaker 0") is None
+
+
+def test_pick_clean_snippets_returns_none_below_min_total():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    # only 2s for Speaker 0, below the 6s default minimum -> None
+    results = [_tr("Speaker 0", 0, 2000)]
+    assert pick_clean_snippets(results, "Speaker 0") is None
+
+
+def test_pick_clean_snippets_accumulates_runs_sorted_in_order():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    results = [
+        _tr("Speaker 0", 0, 8000),  # 8s run
+        _tr("Speaker 1", 8000, 9000),
+        _tr("Speaker 0", 9000, 12000),  # 3s run
+    ]
+    spans = pick_clean_snippets(results, "Speaker 0", target_total_s=30.0, min_total_s=6.0)
+    assert spans == [(0, 8000), (9000, 12000)]  # transcript order, both runs picked
