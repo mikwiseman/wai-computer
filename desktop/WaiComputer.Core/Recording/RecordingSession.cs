@@ -22,7 +22,7 @@ namespace WaiComputer.Core.Recordings;
 /// and queued for background upload. No fallbacks — failures surface as concrete
 /// state.
 /// </summary>
-public sealed class RecordingSession : IAsyncDisposable
+public sealed class RecordingSession : IRecordingSession
 {
     private readonly IApiClient _api;
     private readonly IAudioCaptureFactory _captureFactory;
