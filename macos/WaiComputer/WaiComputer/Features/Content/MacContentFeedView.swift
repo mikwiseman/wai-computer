@@ -19,6 +19,7 @@ struct MacContentFeedView: View {
         (nil, "All"),
         ("article", "Articles"),
         ("video", "Videos"),
+        ("pdf", "PDFs"),
         ("note", "Notes"),
         ("mcp_resource", "Connected"),
     ]
@@ -28,6 +29,7 @@ struct MacContentFeedView: View {
             header
             Divider()
             addAnythingBar
+            errorBanner
             Divider()
             filterChips
             Divider()
@@ -96,6 +98,31 @@ struct MacContentFeedView: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.md)
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let message = model.errorMessage {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                Spacer()
+                Button {
+                    model.errorMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help(t("Dismiss", "Закрыть"))
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.sm)
+            .background(Palette.surfaceSubtle)
+        }
     }
 
     private var filterChips: some View {

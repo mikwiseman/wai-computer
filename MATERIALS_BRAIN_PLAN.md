@@ -27,8 +27,8 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - [x] Backend: race-safe idempotency in `ingest_item` (SAVEPOINT + IntegrityError → re-SELECT). (01ccea77)
 - [x] Backend: GIN FTS index on `item_chunks.content` (migration 20260601_140000, validated on scratch DB). (01ccea77)
 - [x] Web: onCreated add→feed fix (reloadKey signal replaces loadRecordingsState); status-driven badges + error tooltips; poll-while-pending + focus refresh; real API error in AddAnything/ItemDetail; `status`/`error` TS types.
-- [~] Web+Mac taxonomy + `pdf` chip: WEB `pdf` chip done; Mac chips + WaiComputerKit unified taxonomy still pending.
-- [ ] Mac: render `MacContentFeedViewModel.errorMessage` inline banner; fix `MacBrainView try? getBrain()` → do/catch + .error/Retry; `addDraft()` polling after create.
+- [~] Web+Mac taxonomy + `pdf` chip: WEB + Mac `pdf` chips done; WaiComputerKit single-source taxonomy (labels+icons) still pending (Phase 1).
+- [x] Mac: errorMessage inline banner in Content feed; `MacBrainView try? getBrain()` → do/catch + error/Retry (distinct from empty); `addDraft()` background poll; pdf chip. (xcodebuild ✓)
 
 ### Phase 1 — File ingestion: the missing entrance
 - [ ] Backend: `POST /items/upload` (multipart, kind-aware: PDF/doc→text→ingest_item; audio/video→import_media_as_recording). Reuse staging + 200MB cap; safe storage key (no filename trust). SSRF guard on fetch.
@@ -60,3 +60,4 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 
 ## Progress log
 - 2026-06-01: worktree + analysis workflow (21 agents) done; decisions locked; starting Phase 0 backend.
+- 2026-06-01: Phase 0 COMPLETE across surfaces — backend (01ccea77), web (fa061364), Mac (this commit, xcodebuild ✓). Next: Phase 1 file upload (`POST /items/upload` + video allow-list + classify_url media + web drag-drop + Mac .fileImporter).
