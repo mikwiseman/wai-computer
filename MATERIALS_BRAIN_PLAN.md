@@ -37,7 +37,7 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - [ ] Backend: `classify_url` for direct media (.mp4/Vimeo/Loom) + reroute audio/* video/* content-type to transcription.
 - [ ] Backend: `needs_input` reprocess endpoint (append body / attach file + re-enqueue).
 - [~] Web: AddAnythingPanel drag-drop + Attach-file → `uploadItem` (native HTML5, no new dep) — DONE. PENDING: paste-detect type chip before submit, multi-file queue, per-file progress bar.
-- [ ] Mac: `.dropDestination` + `.fileImporter`; `APIClient.uploadItem(fileURL:kind:)` streaming.
+- [x] Mac: `.dropDestination` + `.fileImporter` (PDF/text/markdown) in Content feed; `APIClient.uploadItem(fileURL:folderId:title:)` streaming multipart-from-temp-file; VM `uploadFile` + background poll. (swift test 473 ✓, xcodebuild ✓)
 - [ ] Web+Mac: render `needs_input` recovery (why + Paste/Attach/Retry).
 
 ### Phase 2 — Populate the knowledge graph (keystone)
@@ -64,3 +64,4 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - 2026-06-01: Phase 0 COMPLETE across surfaces — backend (01ccea77), web (fa061364), Mac (58bda2f7, xcodebuild ✓).
 - 2026-06-01: Phase 1a — `POST /items/upload` for documents (PDF/txt/md → Item). 19 items-route tests green; full backend suite 95.11% (gate ✓). Heads-up: main is red on 2 `test_observability.py` tests (`OPS_FORWARD_GENERIC_ERRORS` default-off, commit c0661d4b — owned by the sentry-telegram-bridge loop, NOT this work). Next: media upload (audio/video→Recording, async), `classify_url` media + SSRF guard, then web drag-drop + Mac .fileImporter.
 - 2026-06-01: Phase 1b — web AddAnythingPanel drag-drop + Attach-file → `uploadItem` (native HTML5, no dep). 8 AddAnything tests green; eslint + tsc clean. Next: Mac `.fileImporter` + `APIClient.uploadItem`, then media-upload async routing.
+- 2026-06-01: Phase 1c — Mac upload (kit `APIClient.uploadItem` + `.fileImporter`/drop in Content feed + VM `uploadFile`). swift test 473 ✓; xcodebuild ✓. **Document upload (PDF/txt/md) now works web AND Mac, end-to-end.** MEDIA-UPLOAD design recon: reuse `import_media_as_recording` (creates the Recording, normalizes video, transcribes) from a NEW Celery task that reads staged bytes — recordings' own `process_staged_recording_upload` is audio-only (no video normalize). Next: media-upload async OR pivot to Phase 2 (populate the knowledge graph — the keystone for Brain viz).

@@ -1405,4 +1405,34 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(user.id, "u1")
         XCTAssertFalse(user.hasPassword)
     }
+
+    func testUploadItemPostsMultipartAndDecodesItem() async throws {
+        let client = makeClient()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-test-\(UUID().uuidString).txt")
+        try "hello upload body".data(using: .utf8)!.write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/items/upload")
+            XCTAssertTrue(
+                request.value(forHTTPHeaderField: "Content-Type")?
+                    .contains("multipart/form-data") ?? false
+            )
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"id":"itm-1","source":"upload","source_ref":null,"url":null,"kind":"note",\
+            "title":"wai-test","body":"hello upload body","occurred_at":null,"state":"raw",\
+            "folder_id":null,"created_at":"2026-06-01T00:00:00Z","summary":null}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let item = try await client.uploadItem(fileURL: tmp)
+        XCTAssertEqual(item.id, "itm-1")
+        XCTAssertEqual(item.kind, "note")
+    }
 }
