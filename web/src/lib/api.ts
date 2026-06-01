@@ -506,6 +506,17 @@ export function createItem(input: {
   });
 }
 
+export function uploadItem(
+  file: File,
+  opts?: { folderId?: string; title?: string },
+): Promise<Item> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (opts?.folderId) formData.append("folder_id", opts.folderId);
+  if (opts?.title) formData.append("title", opts.title);
+  return apiUpload<Item>("/api/items/upload", formData);
+}
+
 export function listItems(params?: {
   source?: string;
   kind?: string;

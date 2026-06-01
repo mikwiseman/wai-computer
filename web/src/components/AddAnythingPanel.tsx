@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { createItem, getItem } from "@/lib/api";
+import { useCallback, useRef, useState } from "react";
+import { createItem, getItem, uploadItem } from "@/lib/api";
 import type { Item, KeyMoment } from "@/lib/types";
 
 interface AddAnythingPanelProps {
@@ -23,6 +23,8 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [result, setResult] = useState<Item | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pollForSummary = useCallback(async (itemId: string) => {
     for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt += 1) {
@@ -63,6 +65,29 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
     }
   }, [value, onCreated, onError, pollForSummary]);
 
+  const handleFile = useCallback(
+    async (file: File) => {
+      if (busy) return;
+      setBusy(true);
+      setResult(null);
+      setStatus(`Uploading ${file.name}…`);
+      try {
+        const created = await uploadItem(file);
+        onCreated?.(created);
+        setStatus("Summarizing…");
+        const finished = await pollForSummary(created.id);
+        setResult(finished);
+        setStatus("");
+      } catch (err) {
+        setStatus("");
+        onError?.(err instanceof Error ? err.message : "Couldn't upload that file.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, onCreated, onError, pollForSummary],
+  );
+
   const keyMoments: KeyMoment[] = result?.summary?.key_moments ?? [];
   const fetchError =
     result &&
@@ -73,7 +98,35 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
       : null;
 
   return (
-    <div className="add-anything">
+    <div
+      className={`add-anything${dragOver ? " add-anything--dragover" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (!dragOver) setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) void handleFile(file);
+      }}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+        style={{ display: "none" }}
+        data-testid="add-anything-file"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFile(file);
+          e.target.value = "";
+        }}
+      />
       <div className="add-anything__input-row">
         <textarea
           className="add-anything__input"
@@ -89,15 +142,28 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
             }
           }}
         />
-        <button
-          type="button"
-          className="wai-primary-button add-anything__submit"
-          disabled={busy || !value.trim()}
-          onClick={() => void handleSubmit()}
-        >
-          {busy ? "Adding…" : "Add to brain"}
-        </button>
+        <div className="add-anything__actions">
+          <button
+            type="button"
+            className="wai-primary-button add-anything__submit"
+            disabled={busy || !value.trim()}
+            onClick={() => void handleSubmit()}
+          >
+            {busy ? "Adding…" : "Add to brain"}
+          </button>
+          <button
+            type="button"
+            className="add-anything__attach"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Attach file
+          </button>
+        </div>
       </div>
+      <p className="add-anything__hint">
+        Drop a PDF or text file here, or paste a link above.
+      </p>
 
       {status ? <p className="add-anything__status">{status}</p> : null}
       {fetchError ? <p className="add-anything__error">{fetchError}</p> : null}
