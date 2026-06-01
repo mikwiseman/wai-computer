@@ -371,6 +371,12 @@ class PostMessageRequest(BaseModel):
     client_timezone: str | None = Field(default=None, max_length=64)
     viewing_recording_id: uuid.UUID | None = None
     viewing_folder_id: uuid.UUID | None = None
+    # Client-advertised capabilities so the server can withhold SSE event types
+    # an older client cannot parse (the Swift CompanionStream parser THROWS on
+    # unknown event types). New action/desktop/narration events are gated behind
+    # "actions_v1"; clients that omit it fail closed — a withheld approval simply
+    # never arrives and times out == deny.
+    client_capabilities: list[str] = Field(default_factory=list)
 
 
 def _sse_format(event_obj: Any) -> bytes:
@@ -378,6 +384,22 @@ def _sse_format(event_obj: Any) -> bytes:
     data = asdict(event_obj)
     event_type = data.pop("type")
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
+
+
+# Event types added after the v1 clients shipped. Emitted ONLY to clients that
+# advertise the matching capability; older clients never receive an event they
+# cannot decode (fail closed).
+_GATED_SSE_EVENTS: frozenset[str] = frozenset(
+    {"action_proposed", "action_result", "narration", "desktop_action"}
+)
+_CLIENT_CAP_ACTIONS = "actions_v1"
+
+
+def _client_can_receive(event_obj: Any, capabilities: list[str]) -> bool:
+    event_type = getattr(event_obj, "type", "")
+    if event_type in _GATED_SSE_EVENTS:
+        return _CLIENT_CAP_ACTIONS in capabilities
+    return True
 
 
 _SSE_HEARTBEAT = b": keep-alive\n\n"
@@ -465,7 +487,8 @@ async def post_message(
                     turn_context=turn_context,
                 ):
                     event_count += 1
-                    await queue.put(_sse_format(evt))
+                    if _client_can_receive(evt, request.client_capabilities):
+                        await queue.put(_sse_format(evt))
             except CompanionError as exc:
                 failed = True
                 latency_ms = round((perf_counter() - started_at) * 1000)
