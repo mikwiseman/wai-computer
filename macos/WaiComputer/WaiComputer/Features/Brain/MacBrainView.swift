@@ -18,6 +18,19 @@ struct MacBrainView: View {
         Group {
             if model.loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let message = model.errorMessage {
+                VStack(spacing: Spacing.md) {
+                    ContentUnavailableViewCompat(
+                        t("Couldn't load your brain", "Не удалось загрузить мозг"),
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(message)
+                    )
+                    Button(t("Retry", "Повторить")) {
+                        Task { await model.load() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let brain = model.brain {
                 content(brain)
             } else {
@@ -128,6 +141,7 @@ struct MacBrainView: View {
 final class MacBrainViewModel: ObservableObject {
     @Published var brain: BrainProjection?
     @Published var loading = true
+    @Published var errorMessage: String?
 
     private let apiClient: APIClient
 
@@ -137,7 +151,14 @@ final class MacBrainViewModel: ObservableObject {
 
     func load() async {
         loading = true
+        errorMessage = nil
         defer { loading = false }
-        brain = try? await apiClient.getBrain()
+        do {
+            // No-fallback: a transient backend failure must NOT masquerade as
+            // "your brain is empty" — surface it with a Retry.
+            brain = try await apiClient.getBrain()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

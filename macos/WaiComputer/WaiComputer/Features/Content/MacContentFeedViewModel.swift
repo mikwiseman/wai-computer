@@ -96,9 +96,32 @@ final class MacContentFeedViewModel: ObservableObject {
             await load()
             selectedId = created.id
             await selectItem(created.id)
+            // Poll in the background so the Add button frees up immediately
+            // while the summary + key-moments land (honors the doc comment).
+            let createdId = created.id
+            Task { [weak self] in await self?.pollUntilProcessed(createdId) }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// After a create, poll the new item until its summary lands (or it needs
+    /// input / failed) so the "add → instant summary" payoff surfaces without a
+    /// manual refresh. Capped at ~60s; bails if the user selects another item.
+    private func pollUntilProcessed(_ id: String) async {
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard selectedId == id else { return }
+            guard let item = try? await apiClient.getItem(id: id) else { continue }
+            selectedItem = item
+            if item.summary?.summary != nil
+                || item.state == "needs_input"
+                || item.state == "failed" {
+                await load()
+                return
+            }
+        }
+        await load()
     }
 
     func selectItem(_ id: String) async {
