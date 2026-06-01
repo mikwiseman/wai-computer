@@ -111,3 +111,33 @@ final class ItemModelTests: XCTestCase {
         XCTAssertNil(response.results[1].createdAt)
     }
 }
+
+extension ItemModelTests {
+    func testMcpIngestionConnectionDecodes() throws {
+        let json = """
+        {
+          "id": "c1",
+          "server_label": "My Notes",
+          "server_url": "https://mcp.example.com/notes",
+          "transport": "streamable_http",
+          "auth_type": "pat",
+          "has_token": true,
+          "allowed_tools": [],
+          "privacy_level": "internal",
+          "sync_interval_minutes": 60,
+          "status": "active",
+          "enabled": true,
+          "last_sync_at": null,
+          "last_error": null,
+          "created_at": "2026-06-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let conn = try decoder().decode(McpIngestionConnection.self, from: json)
+        XCTAssertEqual(conn.id, "c1")
+        XCTAssertEqual(conn.serverLabel, "My Notes")
+        XCTAssertEqual(conn.authType, "pat")
+        XCTAssertTrue(conn.hasToken)
+        XCTAssertEqual(conn.syncIntervalMinutes, 60)
+        XCTAssertTrue(conn.enabled)
+    }
+}

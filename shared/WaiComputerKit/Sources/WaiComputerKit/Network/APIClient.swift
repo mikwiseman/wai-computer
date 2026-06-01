@@ -1062,6 +1062,48 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/items/\(id)")
     }
 
+    // MARK: - MCP Ingestion Connections (connect any MCP)
+
+    public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {
+        return try await request(.GET, path: "/api/mcp-connections")
+    }
+
+    public func createMcpIngestionConnection(
+        serverLabel: String,
+        serverUrl: String,
+        authType: String = "none",
+        authToken: String? = nil,
+        syncIntervalMinutes: Int = 60
+    ) async throws -> McpIngestionConnection {
+        let payload = CreateMcpConnectionRequest(
+            serverLabel: serverLabel,
+            serverUrl: serverUrl,
+            authType: authType,
+            authToken: authToken,
+            syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.POST, path: "/api/mcp-connections", body: payload)
+    }
+
+    public func updateMcpIngestionConnection(
+        id: String,
+        enabled: Bool? = nil,
+        syncIntervalMinutes: Int? = nil
+    ) async throws -> McpIngestionConnection {
+        let payload = UpdateMcpConnectionRequest(
+            enabled: enabled, syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.PATCH, path: "/api/mcp-connections/\(id)", body: payload)
+    }
+
+    public func syncMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.POST, path: "/api/mcp-connections/\(id)/sync")
+    }
+
+    public func deleteMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/mcp-connections/\(id)")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -1689,6 +1731,32 @@ private struct CreateItemRequest: Encodable {
         case body
         case url
         case folderId = "folder_id"
+    }
+}
+
+private struct CreateMcpConnectionRequest: Encodable {
+    var serverLabel: String
+    var serverUrl: String
+    var authType: String
+    var authToken: String?
+    var syncIntervalMinutes: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case serverLabel = "server_label"
+        case serverUrl = "server_url"
+        case authType = "auth_type"
+        case authToken = "auth_token"
+        case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct UpdateMcpConnectionRequest: Encodable {
+    var enabled: Bool?
+    var syncIntervalMinutes: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case syncIntervalMinutes = "sync_interval_minutes"
     }
 }
 
