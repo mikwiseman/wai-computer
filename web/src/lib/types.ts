@@ -241,6 +241,36 @@ export interface RecordingDetail extends Recording {
   highlights: Highlight[];
 }
 
+export interface RematchSpeakersResponse {
+  recording_id: string;
+  updated_clusters: number;
+  matched_clusters: number;
+}
+
+export interface RealtimeSessionResponse {
+  provider: string;
+  token: string;
+  expires_in_seconds: number;
+  sample_rate: number;
+  audio_format: string;
+  language: string;
+  channels: number;
+  model: string;
+  keep_alive_interval_seconds: number | null;
+  commit_strategy: string | null;
+  no_verbatim: boolean;
+  websocket_url: string | null;
+  auth_scheme: string;
+}
+
+export interface TranscriptSegmentInput {
+  text: string;
+  speaker?: string | null;
+  start_ms: number;
+  end_ms: number;
+  confidence?: number | null;
+}
+
 export interface RecordingShareLink {
   recording_id: string;
   token: string;

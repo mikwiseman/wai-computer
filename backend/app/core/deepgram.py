@@ -330,6 +330,7 @@ async def transcribe_audio_file(
     channels: int | None = None,
     model: str | None = None,
     keyterms: list[str] | None = None,
+    max_channels: int | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
     api_key = require_deepgram_api_key()
@@ -339,6 +340,22 @@ async def transcribe_audio_file(
     if resolved_channels is None and resolved_content_type == "audio/wav":
         resolved_channels = detect_wav_channels(audio_data)
     channel_count = max(1, resolved_channels or 1)
+
+    # Deepgram bills per channel. Notes/meetings are mono; clamp a stereo or
+    # crafted many-channel file so it cannot silently multiply per-minute cost.
+    # max_channels is supplied by the dispatcher (settings.deepgram_max_channels);
+    # direct callers leave it None and get no clamp.
+    if isinstance(max_channels, int) and 0 < max_channels < channel_count:
+        from app.core.observability import capture_sentry_anomaly
+
+        capture_sentry_anomaly(
+            "recording.file_stt.channels_clamped",
+            "Clamped multichannel audio before Deepgram (per-channel billing guard)",
+            category="recording",
+            extras={"detected_channels": channel_count, "clamped_to": max_channels},
+            level="warning",
+        )
+        channel_count = max_channels
 
     url = build_batch_url(
         language=language,

@@ -43,7 +43,7 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .padding(.horizontal, Spacing.xxl)
         .padding(.vertical, Spacing.xl)
-        .onChange(of: isActive) { _, active in
+        .onChangeCompat(of: isActive) { _, active in
             if !active && recorder.state == .recording {
                 recorder.cancel()
             }

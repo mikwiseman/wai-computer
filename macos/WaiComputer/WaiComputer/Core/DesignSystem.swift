@@ -327,6 +327,30 @@ struct WaiSectionHeaderModifier: ViewModifier {
 // MARK: - View Extensions
 
 extension View {
+    /// Runs `action` when the Escape key is pressed. Uses `onKeyPress(.escape)` on
+    /// macOS 14+, falling back to `onExitCommand` (macOS 12+) below that floor.
+    @ViewBuilder
+    func onEscapeKeyCompat(_ action: @escaping () -> Void) -> some View {
+        if #available(macOS 14.0, *) {
+            self.onKeyPress(.escape) {
+                action()
+                return .handled
+            }
+        } else {
+            self.onExitCommand(perform: action)
+        }
+    }
+
+    /// `.scrollBounceBehavior(.basedOnSize)` on macOS 13.3+; no-op below (cosmetic).
+    @ViewBuilder
+    func scrollBounceBasedOnSizeCompat() -> some View {
+        if #available(macOS 13.3, *) {
+            self.scrollBounceBehavior(.basedOnSize)
+        } else {
+            self
+        }
+    }
+
     func waiTextField(isActive: Bool = false) -> some View {
         modifier(WaiTextFieldModifier(isActive: isActive))
     }

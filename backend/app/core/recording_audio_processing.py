@@ -33,6 +33,7 @@ from app.core.speaker_name_extraction import (
 from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
+from app.core.transcription_guard import TranscriptionGuardError
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -529,6 +530,7 @@ async def process_staged_recording_upload(
                     else client_duration_seconds
                 ),
                 keyterms=keyterms,
+                user_id=str(user_id),
             )
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",
@@ -764,6 +766,28 @@ async def process_staged_recording_upload(
         )
         delete_staged_file(staged_path)
         logger.info("audio processing completed latency_ms=%s", processing_latency_ms)
+    except TranscriptionGuardError as exc:
+        await db.rollback()
+        logger.warning(
+            "recording transcription refused by cost/abuse guard recording_id=%s code=%s",
+            recording_id,
+            exc.code,
+        )
+        capture_sentry_anomaly(
+            "recording.transcription.guard_refused",
+            "Batch transcription refused by a Deepgram cost/abuse guard",
+            category="recording",
+            extras={"recording_id": str(recording_id), "guard_code": exc.code},
+            level="warning",
+        )
+        await mark_recording_processing_failed(
+            db,
+            recording_id=recording_id,
+            failure_code=exc.code,
+            failure_message=exc.message,
+        )
+        delete_staged_file(staged_path)
+        return
     except Exception as exc:
         await db.rollback()
         if _provider_reported_audio_too_short(exc):

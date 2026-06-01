@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from websockets.exceptions import ConnectionClosed
 
 from app.api.deps import CurrentUser, Database
+from app.config import get_settings
 from app.core.deepgram import require_deepgram_api_key
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -19,15 +20,21 @@ from app.core.observability import (
     capture_sentry_exception,
 )
 from app.core.personalization import load_user_keyterms
-from app.core.rate_limit import (
-    REALTIME_MINT_SUSTAINED_ALERT,
-    check_realtime_session_mint_rate_limit,
-)
 from app.core.realtime_transcription import (
     UnsupportedRealtimeLanguageError,
     build_deepgram_realtime_url_from_proxy_claims,
     create_realtime_transcription_session,
     decode_realtime_proxy_token,
+)
+from app.core.transcription_guard import (
+    TranscriptionGuardError,
+    acquire_stream_slot,
+    check_minutes_budget,
+    provider_breaker_open,
+    record_minutes,
+    register_mint,
+    release_stream_slot,
+    transcription_halted,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +63,21 @@ PROXY_ERROR_MISSING_API_KEY = {
     "type": "Error",
     "err_code": "PROVIDER_UNAVAILABLE",
     "message": "Live transcription provider is not configured.",
+}
+PROXY_ERROR_HALTED = {
+    "type": "Error",
+    "err_code": "TRANSCRIPTION_HALTED",
+    "message": "Live transcription is temporarily disabled.",
+}
+PROXY_ERROR_TOO_MANY_STREAMS = {
+    "type": "Error",
+    "err_code": "TOO_MANY_STREAMS",
+    "message": "Too many simultaneous live transcription streams.",
+}
+PROXY_ERROR_SESSION_EXPIRED = {
+    "type": "Error",
+    "err_code": "SESSION_EXPIRED",
+    "message": "Live transcription session reached its maximum duration.",
 }
 
 
@@ -106,9 +128,33 @@ async def create_session(
         request.channels,
         request.purpose,
     )
+    if await transcription_halted():
+        capture_sentry_anomaly(
+            "realtime.session_mint.halted",
+            "Realtime session mint refused: transcription kill-switch engaged",
+            category="transcription.session",
+            extras={"user_id": str(user.id), "purpose": request.purpose},
+            level="warning",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=UNAVAILABLE_DETAIL,
+        )
+    if await provider_breaker_open():
+        capture_sentry_anomaly(
+            "realtime.session_mint.breaker_open",
+            "Realtime session mint refused: Deepgram circuit breaker is open",
+            category="transcription.session",
+            extras={"user_id": str(user.id), "purpose": request.purpose},
+            level="warning",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=UNAVAILABLE_DETAIL,
+        )
     try:
-        recent_mints = check_realtime_session_mint_rate_limit(str(user.id), request.purpose)
-    except HTTPException as exc:
+        recent_mints = await register_mint(str(user.id), request.purpose)
+    except TranscriptionGuardError as exc:
         capture_sentry_anomaly(
             "realtime.session_mint.rate_limited",
             "Realtime session minting blocked (possible runaway/abusive client)",
@@ -116,12 +162,34 @@ async def create_session(
             extras={
                 "user_id": str(user.id),
                 "purpose": request.purpose,
-                "status_code": exc.status_code,
+                "guard_code": exc.code,
             },
             level="warning",
         )
-        raise
-    if recent_mints > REALTIME_MINT_SUSTAINED_ALERT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.message,
+            headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None,
+        ) from exc
+    try:
+        await check_minutes_budget(str(user.id))
+    except TranscriptionGuardError as exc:
+        capture_sentry_anomaly(
+            "realtime.session_mint.minutes_capped",
+            "Realtime session mint refused: daily transcription-minute ceiling reached",
+            category="transcription.session",
+            extras={
+                "user_id": str(user.id),
+                "purpose": request.purpose,
+                "guard_code": exc.code,
+            },
+            level="warning",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Daily transcription capacity reached. Please try again later.",
+        ) from exc
+    if recent_mints > get_settings().realtime_mint_sustained_alert:
         capture_sentry_anomaly(
             "realtime.session_mint.high_rate",
             "User sustaining a high realtime session-mint rate (watch for runaway)",
@@ -321,6 +389,44 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+
+    if await transcription_halted():
+        await _send_error_payload(websocket, PROXY_ERROR_HALTED)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1011,
+            err_code="TRANSCRIPTION_HALTED",
+            extras={"stage": "killswitch", "provider": "deepgram", "purpose": claims.purpose},
+        )
+        return
+
+    settings = get_settings()
+    max_stream_seconds = (
+        settings.realtime_stream_max_seconds_recording
+        if claims.purpose == "recording"
+        else settings.realtime_stream_max_seconds_dictation
+    )
+    # Lease lives a little past the wall-clock cap so a crashed socket (no clean
+    # release) is reclaimed by stale-eviction rather than leaking a slot forever.
+    lease_ttl_seconds = (max_stream_seconds if max_stream_seconds > 0 else 21600) + 300
+    stream_token = await acquire_stream_slot(claims.subject, lease_ttl_seconds=lease_ttl_seconds)
+    if stream_token is None:
+        capture_sentry_anomaly(
+            "realtime.stream.too_many_concurrent",
+            "Realtime stream refused: per-user/global concurrent-stream cap reached",
+            category="transcription.stream",
+            extras={"user_id": claims.subject, "purpose": claims.purpose},
+            level="warning",
+        )
+        await _send_error_payload(websocket, PROXY_ERROR_TOO_MANY_STREAMS)
+        await _close_websocket_with_telemetry(
+            websocket,
+            code=1008,
+            err_code="TOO_MANY_STREAMS",
+            extras={"stage": "concurrency", "provider": "deepgram", "purpose": claims.purpose},
+        )
+        return
+
     add_sentry_breadcrumb(
         category="transcription.stream",
         message="proxy opened",
@@ -332,6 +438,7 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         },
     )
 
+    stream_started = perf_counter()
     try:
         async with websockets.connect(
             target_url,
@@ -349,11 +456,39 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             downstream = asyncio.create_task(_provider_to_client(websocket, provider))
             done, pending = await asyncio.wait(
                 {upstream, downstream},
+                timeout=max_stream_seconds if max_stream_seconds > 0 else None,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
+            if not done:
+                # Wall-clock cap reached: bound a stuck/over-long paid stream so a
+                # single minted token cannot bill Deepgram indefinitely.
+                capture_sentry_anomaly(
+                    "realtime.stream.duration_capped",
+                    "Realtime stream force-closed at maximum duration",
+                    category="transcription.stream",
+                    extras={
+                        "user_id": claims.subject,
+                        "purpose": claims.purpose,
+                        "max_seconds": max_stream_seconds,
+                    },
+                    level="warning",
+                )
+                await _send_error_payload(websocket, PROXY_ERROR_SESSION_EXPIRED)
+                await _close_websocket_with_telemetry(
+                    websocket,
+                    code=1000,
+                    err_code="SESSION_EXPIRED",
+                    extras={
+                        "stage": "duration_cap",
+                        "provider": "deepgram",
+                        "purpose": claims.purpose,
+                        "max_seconds": max_stream_seconds,
+                    },
+                )
+                return
             for task in done:
                 if task.cancelled():
                     continue
@@ -428,6 +563,12 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                 "purpose": claims.purpose,
             },
         )
+    finally:
+        # Always release the concurrency slot and meter the streamed minutes
+        # toward the daily ceilings, on every exit path (normal, disconnect,
+        # error, or duration cap).
+        await release_stream_slot(claims.subject, stream_token)
+        await record_minutes(claims.subject, (perf_counter() - stream_started) / 60.0)
 
 
 async def _client_to_provider(websocket: WebSocket, provider) -> None:
@@ -460,6 +601,13 @@ def _bearer_token(websocket: WebSocket) -> str | None:
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
         return token.strip()
+    # Browsers cannot set the Authorization header on a WebSocket handshake, so
+    # also accept the short-lived session proxy token via the `token` query
+    # param (the connection is WSS-encrypted). Native clients keep using the
+    # header; this is an additive fallback for the web client.
+    query_token = websocket.query_params.get("token", "")
+    if query_token.strip():
+        return query_token.strip()
     return None
 
 

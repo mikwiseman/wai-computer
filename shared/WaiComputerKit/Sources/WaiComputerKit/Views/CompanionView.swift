@@ -353,12 +353,12 @@ public struct CompanionView: View {
                     // bottom and auto-scroll should follow the stream.
                     isNearBottom = bottomMinY <= viewport.size.height + 80
                 }
-                .onChange(of: messages.count) {
+                .onChangeCompat(of: messages.count) {
                     withAnimation {
                         proxy.scrollTo("bottomAnchor", anchor: .bottom)
                     }
                 }
-                .onChange(of: streamingText) {
+                .onChangeCompat(of: streamingText) {
                     guard isNearBottom else { return }
                     proxy.scrollTo("bottomAnchor", anchor: .bottom)
                 }

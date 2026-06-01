@@ -113,13 +113,13 @@ describe("ThemeAccentPicker", () => {
   it("clicking accent swatches cycles data-accent on the html element", async () => {
     render(<ThemeAccentPicker locale="en" />);
     await flushHydration();
-    // Default applied on mount: teal.
-    expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
-
-    fireEvent.click(screen.getByTestId("accent-option-amber"));
+    // Default applied on mount: amber (matches the Mac app's default accent).
     expect(document.documentElement.getAttribute("data-accent")).toBe("amber");
-    expect(screen.getByTestId("accent-option-amber").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByTestId("accent-option-teal").getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(screen.getByTestId("accent-option-teal"));
+    expect(document.documentElement.getAttribute("data-accent")).toBe("teal");
+    expect(screen.getByTestId("accent-option-teal").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("accent-option-amber").getAttribute("aria-checked")).toBe("false");
 
     fireEvent.click(screen.getByTestId("accent-option-violet"));
     expect(document.documentElement.getAttribute("data-accent")).toBe("violet");

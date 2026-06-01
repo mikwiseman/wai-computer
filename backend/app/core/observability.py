@@ -299,7 +299,71 @@ def _before_send(event: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any]
             for item in breadcrumbs["values"]
         ]
 
+    _forward_generic_event_to_ops(sanitized)
     return sanitized
+
+
+def _forward_generic_event_to_ops(sanitized: dict[str, Any]) -> None:
+    """Relay GENERIC error/fatal Sentry events to the Telegram ops chat.
+
+    The anomaly path (``capture_sentry_anomaly`` -> ``notify_ops``) already
+    forwards deliberately-flagged signals; those events carry an ``alert_code``
+    in ``extra``, so we SKIP them here to avoid double-alerting. Everything else
+    that reaches Sentry at error/fatal level — uncaught exceptions, framework
+    errors, anything not routed through an anomaly — is what this catches, so a
+    new failure surfaces in Telegram within seconds instead of only in Sentry.
+
+    Reads ONLY the already-sanitized event (this runs at the tail of
+    ``_before_send``), and ``notify_ops`` is itself throttled (one per key /
+    10 min), PII-safe, off-thread, and never raises.
+    """
+    try:
+        level = str(sanitized.get("level") or "error").lower()
+        if level not in ("error", "fatal"):
+            return
+        extra = sanitized.get("extra")
+        if isinstance(extra, dict) and extra.get("alert_code"):
+            return  # already alerted via the anomaly path
+
+        exc_type = "Error"
+        exc_value = ""
+        exception = sanitized.get("exception")
+        if isinstance(exception, dict) and isinstance(exception.get("values"), list):
+            values = [v for v in exception["values"] if isinstance(v, dict)]
+            if values:
+                exc_type = str(values[-1].get("type") or "Error")
+                exc_value = str(values[-1].get("value") or "")
+        message = exc_value or _event_message_text(sanitized) or exc_type
+        transaction = sanitized.get("transaction")
+
+        from app.core.ops_alerts import notify_ops
+
+        notify_ops(
+            alert_code=f"sentry.{exc_type}",
+            message=f"Unhandled {exc_type}: {message}"[:300],
+            extras={
+                "error_type": exc_type,
+                "transaction": str(transaction) if transaction else None,
+            },
+            level="error" if level == "error" else "fatal",
+        )
+    except Exception:  # noqa: BLE001 - alerting must never break event delivery
+        logging.getLogger(__name__).debug(
+            "generic Sentry->ops forward skipped", exc_info=True
+        )
+
+
+def _event_message_text(sanitized: dict[str, Any]) -> str | None:
+    logentry = sanitized.get("logentry")
+    if isinstance(logentry, dict):
+        for key in ("formatted", "message"):
+            value = logentry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+    message = sanitized.get("message")
+    if isinstance(message, str) and message.strip():
+        return message
+    return None
 
 
 def _before_breadcrumb(
