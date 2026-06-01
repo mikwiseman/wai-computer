@@ -210,6 +210,207 @@ async def test_process_staged_recording_upload_marks_failed_on_guard_rejection(
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_survives_title_and_embedding_failures(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A recording still completes READY when the (best-effort) title generation
+    and per-segment embedding steps fail — these are degraded-path branches, not
+    hard failures. Exercises the title-gen + embedding degraded handlers."""
+    user = User(email="degraded@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,  # force title generation to run (and fail)
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Degraded path still completes.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.9,
+        )
+    ]
+
+    async def _fail_title(*_args, **_kwargs):
+        raise RuntimeError("title model offline")
+
+    async def _fail_embedding(*_args, **_kwargs):
+        raise RuntimeError("embedding model offline")
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding", _fail_embedding
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title", _fail_title
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    # Completes READY despite both degraded paths; title left None on failure.
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.title is None
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    assert [s.content for s in segments] == ["Degraded path still completes."]
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_failed_on_non_retryable_error(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-retryable transcription error marks the recording FAILED with
+    processing_failed, deletes the staged file, and re-raises (final handler)."""
+    user = User(email="hardfail@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="X",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+
+    async def _hard_fail(*_args, **_kwargs):
+        raise ValueError("unrecoverable provider response")  # non-retryable
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file", _hard_fail
+    )
+
+    with pytest.raises(ValueError):
+        await process_staged_recording_upload(
+            db_session,
+            recording_id=recording.id,
+            user_id=user.id,
+            staged_path=staged_path,
+            content_type="audio/wav",
+            user_default_language="en",
+        )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "processing_failed"
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_applies_extracted_speaker_names(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When name-introduction parsing yields names, they are applied to the
+    speaker clusters (covers the apply_extracted_names branch)."""
+    user = User(email="names@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="X",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Hi, I'm Mik.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.95,
+        )
+    ]
+
+    apply_mock = AsyncMock(return_value={"speaker_0": "Mik"})
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Intro"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={"speaker_0": "Mik"}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.apply_extracted_names", apply_mock
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    apply_mock.assert_awaited_once()
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_stores_speaker_embeddings_and_assignments(
     db_session: AsyncSession,
     tmp_path,
