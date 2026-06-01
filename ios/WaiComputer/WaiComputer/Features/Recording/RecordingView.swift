@@ -6,6 +6,22 @@ struct RecordingView: View {
     @EnvironmentObject var viewModel: RecordingViewModel
     @EnvironmentObject var languageManager: LanguageManager
     @State private var showingDiscardConfirm = false
+    /// Folders the new recording can be filed into. `nil` selection = All Recordings.
+    @State private var folders: [Folder] = []
+    @State private var selectedFolderId: String?
+    @State private var foldersError: String?
+
+    private var isScreenshotMode: Bool {
+        IOSTestingMode.current.isScreenshot
+    }
+
+    private var selectedFolderName: String {
+        guard let selectedFolderId,
+              let folder = folders.first(where: { $0.id == selectedFolderId }) else {
+            return t("All Recordings", "Все записи")
+        }
+        return folder.name
+    }
 
     var body: some View {
         NavigationStack {
@@ -146,6 +162,12 @@ struct RecordingView: View {
 
                 Spacer()
 
+                // Target folder selector — only while idle, so the choice can't
+                // change mid-recording. Defaults to All Recordings (nil folderId).
+                if viewModel.phase == .idle {
+                    folderSelector
+                }
+
                 // Record controls
                 HStack(spacing: 24) {
                     if viewModel.phase == .recording {
@@ -180,7 +202,8 @@ struct RecordingView: View {
                                 await viewModel.stopRecording()
                             } else if viewModel.canStartRecording {
                                 await viewModel.startRecording(
-                                    apiClient: appState.getAPIClient()
+                                    apiClient: appState.getAPIClient(),
+                                    folderId: selectedFolderId
                                 )
                             }
                         }
@@ -263,6 +286,65 @@ struct RecordingView: View {
                     viewModel.resetState()
                 }
             }
+            .alert(t("Couldn't load folders", "Не удалось загрузить папки"), isPresented: Binding(
+                get: { foldersError != nil },
+                set: { if !$0 { foldersError = nil } }
+            )) {
+                Button(t("Retry", "Повторить")) {
+                    Task { await loadFolders() }
+                }
+                Button(t("OK", "ОК"), role: .cancel) { foldersError = nil }
+            } message: {
+                Text(foldersError ?? "")
+            }
+            .task {
+                await loadFolders()
+            }
+        }
+    }
+
+    // MARK: - Folder Selector
+
+    private var folderSelector: some View {
+        Menu {
+            Picker(selection: $selectedFolderId) {
+                Text(t("All Recordings", "Все записи")).tag(String?.none)
+                ForEach(folders) { folder in
+                    Text(folder.name).tag(String?.some(folder.id))
+                }
+            } label: {
+                EmptyView()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                Text(selectedFolderName)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
+        }
+        .accessibilityLabel(t("Save to folder", "Сохранить в папку") + ": " + selectedFolderName)
+        .accessibilityIdentifier("recording-folder-picker")
+    }
+
+    private func loadFolders() async {
+        guard !isScreenshotMode else { return }
+        do {
+            let fetched = try await appState.getAPIClient().listFolders()
+            folders = fetched
+            // Drop a stale selection if the chosen folder no longer exists.
+            if let selectedFolderId, !fetched.contains(where: { $0.id == selectedFolderId }) {
+                self.selectedFolderId = nil
+            }
+        } catch {
+            foldersError = error.userFacingMessage(context: .library)
         }
     }
 
