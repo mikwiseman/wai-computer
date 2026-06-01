@@ -10,6 +10,12 @@ import type {
   AnalyticsResponse,
   ApiKey,
   ApiKeyCreated,
+  ComparisonListEntry,
+  ComparisonSet,
+  Item,
+  ItemListResponse,
+  McpIngestionConnection,
+  UnifiedSearchResponse,
   BulkAction,
   BulkOperationResponse,
   DictationBenchmarkBattleResponse,
@@ -473,6 +479,118 @@ export function fulltextSearch(params: {
   offset?: number;
 }): Promise<SearchResponse> {
   return apiFetch<SearchResponse>(`/api/search/fts${asQuery(params)}`);
+}
+
+// --- Second brain: universal search over recordings + items ---
+
+export function unifiedSearch(params: {
+  q: string;
+  limit?: number;
+}): Promise<UnifiedSearchResponse> {
+  return apiFetch<UnifiedSearchResponse>(`/api/search/all${asQuery(params)}`);
+}
+
+// --- Second brain: items (add anything) ---
+
+export function createItem(input: {
+  source?: string;
+  kind?: string;
+  title?: string | null;
+  body?: string | null;
+  url?: string | null;
+  folder_id?: string | null;
+}): Promise<Item> {
+  return apiFetch<Item>("/api/items", {
+    method: "POST",
+    body: JSON.stringify({ source: "paste", kind: "note", ...input }),
+  });
+}
+
+export function listItems(params?: {
+  source?: string;
+  kind?: string;
+  folder_id?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ItemListResponse> {
+  return apiFetch<ItemListResponse>(`/api/items${asQuery(params ?? {})}`);
+}
+
+export function getItem(itemId: string): Promise<Item> {
+  return apiFetch<Item>(`/api/items/${itemId}`);
+}
+
+export function deleteItem(itemId: string): Promise<void> {
+  return apiFetch<void>(`/api/items/${itemId}`, { method: "DELETE" });
+}
+
+// --- Second brain: comparison sets ---
+
+export function createComparison(input: {
+  item_ids: string[];
+  title?: string | null;
+  intent?: string | null;
+}): Promise<ComparisonSet> {
+  return apiFetch<ComparisonSet>("/api/comparisons", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listComparisons(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<ComparisonListEntry[]> {
+  return apiFetch<ComparisonListEntry[]>(`/api/comparisons${asQuery(params ?? {})}`);
+}
+
+export function getComparison(comparisonId: string): Promise<ComparisonSet> {
+  return apiFetch<ComparisonSet>(`/api/comparisons/${comparisonId}`);
+}
+
+export function deleteComparison(comparisonId: string): Promise<void> {
+  return apiFetch<void>(`/api/comparisons/${comparisonId}`, { method: "DELETE" });
+}
+
+// --- Second brain: connect any MCP (ingestion sources) ---
+
+export function listMcpIngestionConnections(): Promise<McpIngestionConnection[]> {
+  return apiFetch<McpIngestionConnection[]>("/api/mcp-connections");
+}
+
+export function createMcpIngestionConnection(input: {
+  server_label: string;
+  server_url: string;
+  transport?: string;
+  auth_type?: string;
+  auth_token?: string | null;
+  sync_interval_minutes?: number;
+  privacy_level?: string;
+}): Promise<McpIngestionConnection> {
+  return apiFetch<McpIngestionConnection>("/api/mcp-connections", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateMcpIngestionConnection(
+  connectionId: string,
+  input: { enabled?: boolean; sync_interval_minutes?: number; server_label?: string },
+): Promise<McpIngestionConnection> {
+  return apiFetch<McpIngestionConnection>(`/api/mcp-connections/${connectionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function syncMcpIngestionConnection(connectionId: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/api/mcp-connections/${connectionId}/sync`, {
+    method: "POST",
+  });
+}
+
+export function deleteMcpIngestionConnection(connectionId: string): Promise<void> {
+  return apiFetch<void>(`/api/mcp-connections/${connectionId}`, { method: "DELETE" });
 }
 
 export function changePassword(currentPassword: string, newPassword: string): Promise<MessageResponse> {
