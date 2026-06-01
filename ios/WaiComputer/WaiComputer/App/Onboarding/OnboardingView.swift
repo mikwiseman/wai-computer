@@ -1,19 +1,37 @@
 import SwiftUI
+import AVFoundation
 import UIKit
+import WaiComputerKit
 
 struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
-    @State private var currentPage: Int = 0
+    @EnvironmentObject private var languageManager: LanguageManager
+    @Environment(\.scenePhase) private var scenePhase
+
+    @State private var currentPage: Int
     @State private var permissionRequested = false
     @State private var isRequestingPermission = false
+    @State private var microphoneStatus: AVAudioApplication.recordPermission =
+        AVAudioApplication.shared.recordPermission
+    @State private var permissionPollTimer: Timer?
+
+    /// Persists which page the user reached, so relaunching mid-onboarding
+    /// resumes where they left off. Cleared when onboarding completes. Mirrors
+    /// macOS `OnboardingView` page-progress resume.
+    static let currentPageKey = "iosOnboardingCurrentPage"
 
     private let pages = OnboardingPage.allCases
     private let haptic = UIImpactFeedbackGenerator(style: .light)
+
+    init() {
+        _currentPage = State(initialValue: Self.initialCurrentPage())
+    }
 
     private var currentPageEnum: OnboardingPage { pages[currentPage] }
     private var isLastPage: Bool { currentPage == pages.count - 1 }
     private var isPermissionPage: Bool { currentPageEnum == .permission }
     private var isVoiceSetupPage: Bool { currentPageEnum == .voiceSetup }
+    private var hasMicrophonePermission: Bool { microphoneStatus == .granted }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +39,9 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(spacing: Spacing.lg) {
+                if isPermissionPage {
+                    permissionStatusView
+                }
                 pageIndicator
                 footerControls
             }
@@ -30,7 +51,35 @@ struct OnboardingView: View {
         }
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .accessibilityIdentifier("onboarding-view")
-        .onAppear { haptic.prepare() }
+        .onAppear {
+            haptic.prepare()
+            currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
+            persistCurrentPage()
+            refreshMicrophoneStatus()
+            startPermissionPollingIfNeeded()
+        }
+        .onDisappear(perform: stopPermissionPolling)
+        .onChange(of: currentPage) { _, _ in
+            haptic.impactOccurred()
+            persistCurrentPage()
+            // Reset permission state when leaving the permission page so the
+            // user can revisit it cleanly via swipe back.
+            if !isPermissionPage {
+                permissionRequested = false
+                stopPermissionPolling()
+            } else {
+                refreshMicrophoneStatus()
+                startPermissionPollingIfNeeded()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Returning from Settings (where the user may have flipped the
+            // mic switch) must re-read the live status and resume the poll.
+            if newPhase == .active {
+                refreshMicrophoneStatus()
+                startPermissionPollingIfNeeded()
+            }
+        }
     }
 
     // MARK: - Slide area
@@ -42,6 +91,7 @@ struct OnboardingView: View {
                     if pages[index] == .voiceSetup {
                         OnboardingVoiceSetupSlide(
                             isActive: index == currentPage,
+                            hasMicrophonePermission: hasMicrophonePermission,
                             onAdvance: advanceToNextPage
                         )
                     } else {
@@ -52,12 +102,6 @@ struct OnboardingView: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .onChange(of: currentPage) { _, _ in
-            haptic.impactOccurred()
-            // Reset permission state when leaving the permission page so the
-            // user can revisit it cleanly via swipe back.
-            if !isPermissionPage { permissionRequested = false }
-        }
     }
 
     private func advanceToNextPage() {
@@ -68,16 +112,63 @@ struct OnboardingView: View {
 
     // MARK: - Page indicator
 
+    /// Breadcrumb label + chevron indicator (mirrors macOS), localized to the
+    /// in-app language. Replaces the capsule-dot indicator.
     private var pageIndicator: some View {
-        HStack(spacing: Spacing.sm) {
+        HStack(spacing: Spacing.xs) {
             ForEach(pages.indices, id: \.self) { index in
-                Capsule()
-                    .fill(index == currentPage ? Palette.accent : Palette.border)
-                    .frame(width: index == currentPage ? 22 : 6, height: 6)
-                    .animation(.easeInOut(duration: 0.25), value: currentPage)
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Palette.textTertiary.opacity(0.5))
+                }
+                VStack(spacing: 5) {
+                    Text(pages[index].breadcrumbLabel(language: languageManager.current).uppercased())
+                        .font(.system(size: 10, weight: .medium))
+                        .tracking(1.1)
+                        .foregroundStyle(index == currentPage ? Palette.textPrimary : Palette.textTertiary)
+                    Rectangle()
+                        .fill(index == currentPage ? Palette.accent : Color.clear)
+                        .frame(height: 1.5)
+                }
+                .padding(.horizontal, Spacing.sm)
+                .animation(.easeInOut(duration: 0.25), value: currentPage)
             }
         }
         .accessibilityIdentifier("onboarding-page-indicator")
+    }
+
+    // MARK: - Permission status feedback
+
+    @ViewBuilder
+    private var permissionStatusView: some View {
+        if permissionRequested || hasMicrophonePermission {
+            switch microphoneStatus {
+            case .granted:
+                Label(
+                    t("Microphone enabled", "Микрофон включен"),
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(Typography.label)
+                .foregroundStyle(.green)
+                .accessibilityIdentifier("onboarding-mic-status-granted")
+            case .denied:
+                VStack(spacing: Spacing.sm) {
+                    Label(
+                        t("Microphone access denied", "Доступ к микрофону запрещен"),
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.recording)
+                    Button(t("Open Settings", "Открыть настройки"), action: openSystemSettings)
+                        .buttonStyle(WaiGhostButtonStyle())
+                        .accessibilityIdentifier("onboarding-mic-open-settings")
+                }
+                .accessibilityIdentifier("onboarding-mic-status-denied")
+            default:
+                EmptyView()
+            }
+        }
     }
 
     // MARK: - Footer
@@ -91,7 +182,7 @@ struct OnboardingView: View {
         } else {
             HStack {
                 if !isLastPage {
-                    Button("Skip") {
+                    Button(t("Skip", "Пропустить")) {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             currentPage = pages.count - 1
                         }
@@ -127,27 +218,29 @@ struct OnboardingView: View {
     }
 
     private var primaryButtonTitle: String {
-        if isPermissionPage && !permissionRequested {
-            return "Allow microphone"
+        if isPermissionPage && !hasMicrophonePermission && microphoneStatus == .undetermined {
+            return t("Allow microphone", "Разрешить микрофон")
         }
-        return isLastPage ? "Get Started" : "Continue"
+        return isLastPage
+            ? t("Get Started", "Начать")
+            : t("Continue", "Продолжить")
     }
 
     private var primaryButtonAccessibilityId: String {
-        if isPermissionPage && !permissionRequested {
+        if isPermissionPage && !hasMicrophonePermission && microphoneStatus == .undetermined {
             return "onboarding-allow-mic-button"
         }
         return isLastPage ? "onboarding-get-started-button" : "onboarding-continue-button"
     }
 
     private func handlePrimaryTap() {
-        if isPermissionPage && !permissionRequested {
+        if isPermissionPage && !hasMicrophonePermission && microphoneStatus == .undetermined {
             requestMicrophonePermission()
             return
         }
 
         if isLastPage {
-            appState.completeOnboarding()
+            completeOnboarding()
         } else {
             withAnimation(.easeInOut(duration: 0.3)) {
                 currentPage += 1
@@ -155,19 +248,105 @@ struct OnboardingView: View {
         }
     }
 
+    private func completeOnboarding() {
+        // Record whether the mic was acknowledged at completion so the rest of
+        // the app can skip a redundant permission nudge. Mirrors macOS.
+        UserDefaults.standard.set(hasMicrophonePermission, forKey: IOSOnboardingKeys.micAcknowledged)
+        UserDefaults.standard.removeObject(forKey: Self.currentPageKey)
+        appState.completeOnboarding()
+    }
+
     private func requestMicrophonePermission() {
         isRequestingPermission = true
+        startPermissionPolling()
         Task {
-            _ = await AudioManager.shared.requestPermission()
+            let granted = await AudioManager.shared.requestPermission()
             await MainActor.run {
                 permissionRequested = true
                 isRequestingPermission = false
+                refreshMicrophoneStatus()
+                if granted {
+                    // Permission acquired — move straight to the next step.
+                    advanceToNextPage()
+                }
+                // On denial we keep the user on the page; permissionStatusView
+                // surfaces the denied state + an Open Settings affordance.
             }
         }
     }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    // MARK: - Permission status + polling
+
+    private func refreshMicrophoneStatus() {
+        let status = AVAudioApplication.shared.recordPermission
+        microphoneStatus = status
+        if status == .granted {
+            stopPermissionPolling()
+        }
+    }
+
+    /// Poll the live mic authorization once per second while the user is on the
+    /// permission page and has not yet granted. Catches the case where the user
+    /// flips the switch in Settings and returns, and auto-advances on grant.
+    private func startPermissionPollingIfNeeded() {
+        guard isPermissionPage, !hasMicrophonePermission else { return }
+        startPermissionPolling()
+    }
+
+    private func startPermissionPolling() {
+        stopPermissionPolling()
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor in
+                let wasGranted = hasMicrophonePermission
+                refreshMicrophoneStatus()
+                if !wasGranted, hasMicrophonePermission, isPermissionPage {
+                    advanceToNextPage()
+                }
+            }
+        }
+    }
+
+    private func stopPermissionPolling() {
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
+    }
+
+    // MARK: - Page-progress resume
+
+    private static func initialCurrentPage() -> Int {
+        let stored = UserDefaults.standard.integer(forKey: currentPageKey)
+        return clampedPageIndex(stored, pageCount: OnboardingPage.allCases.count)
+    }
+
+    private static func clampedPageIndex(_ value: Int, pageCount: Int) -> Int {
+        min(max(value, 0), max(pageCount - 1, 0))
+    }
+
+    private func persistCurrentPage() {
+        UserDefaults.standard.set(
+            Self.clampedPageIndex(currentPage, pageCount: pages.count),
+            forKey: Self.currentPageKey
+        )
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// UserDefaults keys shared with the rest of the iOS app. The mic-acknowledged
+/// key matches the macOS key string so behavior is consistent cross-platform.
+enum IOSOnboardingKeys {
+    static let micAcknowledged = "onboardingMicAcknowledged"
 }
 
 #Preview {
     OnboardingView()
         .environmentObject(AppState())
+        .environmentObject(LanguageManager.shared)
 }
