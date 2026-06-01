@@ -17,9 +17,10 @@ namespace WaiComputer.Core.Recordings;
 /// WAV write, then realtime send), transcript, a 1 Hz duration timer, and a 1 Hz
 /// system-audio stall monitor. A realtime drop degrades to local-only without
 /// interrupting capture; a disk-write failure halts consumption and surfaces an
-/// error. On stop the audio pump drains, the recording is finalized, backed up
-/// locally, and queued for background upload. No fallbacks — failures surface as
-/// concrete state.
+/// error that a later realtime degrade must not erase. On stop the audio pump
+/// drains, the trailing turn is finalized, the recording is backed up locally,
+/// and queued for background upload. No fallbacks — failures surface as concrete
+/// state.
 /// </summary>
 public sealed class RecordingSession : IAsyncDisposable
 {
@@ -35,6 +36,7 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _stateLock = new();
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private RecordingSessionState _state = RecordingSessionState.Idle;
     private readonly List<LiveTranscriptSegment> _committed = new();
 
@@ -52,6 +54,8 @@ public sealed class RecordingSession : IAsyncDisposable
     private string _interim = string.Empty;
     private int _durationSeconds;
     private volatile bool _liveOffline;
+    private volatile bool _diskFatal;
+    private bool _disposed;
 
     public event Action<RecordingSessionState>? StateChanged;
 
@@ -101,41 +105,51 @@ public sealed class RecordingSession : IAsyncDisposable
                 return;
             }
 
-            var recording = await _api.CreateRecordingAsync(new CreateRecordingRequest(null, type, language, folderId), ct).ConfigureAwait(false);
-            _recordingId = Guid.TryParse(recording.Id, out var parsed) ? parsed : Guid.NewGuid();
-
-            _capture = _captureFactory.Create(source, out var requestedSystemAudio);
-            await _capture.StartAsync(ct).ConfigureAwait(false);
-            var channels = _capture.EffectiveChannelCount;
-
-            _backups.EnsureDirectoryForRecording(_recordingId);
-            _writer = new AudioFileWriter(_backups.AudioPath(_recordingId), 16000, channels);
-            // Persist an early manifest so a crash mid-recording leaves a recoverable backup.
-            _backups.Save(NewManifest(durationSeconds: 0, transcript: string.Empty, segmentCount: 0, hasAudioFile: true), Array.Empty<LiveTranscriptSegment>());
-
-            await OpenRealtimeAsync(channels, ct).ConfigureAwait(false);
-
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var token = _cts.Token;
-            _audioPump = Task.Run(() => AudioPumpAsync(token), token);
-            _transcriptPump = Task.Run(() => TranscriptPumpAsync(token), token);
-            _durationTimer = Task.Run(() => DurationTimerAsync(token), token);
-            if (_capture.HasSystemAudio)
+            try
             {
-                _systemMonitor = Task.Run(() => SystemMonitorAsync(token), token);
+                var recording = await _api.CreateRecordingAsync(new CreateRecordingRequest(null, type, language, folderId), ct).ConfigureAwait(false);
+                _recordingId = Guid.TryParse(recording.Id, out var parsed) ? parsed : Guid.NewGuid();
+
+                _capture = _captureFactory.Create(source, out var requestedSystemAudio);
+                await _capture.StartAsync(ct).ConfigureAwait(false);
+                var channels = _capture.EffectiveChannelCount;
+
+                _backups.EnsureDirectoryForRecording(_recordingId);
+                _writer = new AudioFileWriter(_backups.AudioPath(_recordingId), 16000, channels);
+                // Early manifest in the in-progress state so a crash mid-recording leaves a
+                // recoverable backup the coordinator will SKIP until it is finalized.
+                _backups.Save(NewManifest(0, string.Empty, 0, hasAudioFile: true, RecordingBackupSyncState.LocalRecording), Array.Empty<LiveTranscriptSegment>());
+
+                await OpenRealtimeAsync(channels, ct).ConfigureAwait(false);
+
+                _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var token = _cts.Token;
+                _audioPump = Task.Run(() => AudioPumpAsync(token));
+                _transcriptPump = Task.Run(() => TranscriptPumpAsync(token), token);
+                _durationTimer = Task.Run(() => DurationTimerAsync(token), token);
+                if (_capture.HasSystemAudio)
+                {
+                    _systemMonitor = Task.Run(() => SystemMonitorAsync(token), token);
+                }
+
+                var hasSystem = _capture.HasSystemAudio;
+                var offline = _liveOffline;
+                var id = _recordingId.ToString();
+                UpdateState(s => s with
+                {
+                    Phase = RecordingPhase.Recording,
+                    RequestedSystemAudio = requestedSystemAudio,
+                    HasSystemAudio = hasSystem,
+                    CurrentRecordingId = id,
+                    LiveTranscriptionOffline = offline,
+                });
             }
-
-            var hasSystem = _capture.HasSystemAudio;
-            var offline = _liveOffline;
-            var id = _recordingId.ToString();
-            UpdateState(s => s with
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Phase = RecordingPhase.Recording,
-                RequestedSystemAudio = requestedSystemAudio,
-                HasSystemAudio = hasSystem,
-                CurrentRecordingId = id,
-                LiveTranscriptionOffline = offline,
-            });
+                _logger.LogError(ex, "Recording start failed; rolling back");
+                await TeardownStartFailureAsync().ConfigureAwait(false);
+                UpdateState(_ => RecordingSessionState.Idle with { Error = "Couldn't start the recording. Please try again." });
+            }
         }
         finally
         {
@@ -153,51 +167,52 @@ public sealed class RecordingSession : IAsyncDisposable
                 return;
             }
             UpdateState(s => s with { Phase = RecordingPhase.Finalizing });
+            await DrainCaptureAsync().ConfigureAwait(false);
 
-            // Stop capture first so its Frames channel completes, THEN drain the
-            // audio pump so trailing aligned frames reach the WAV + provider.
-            if (_capture is not null)
+            try
             {
-                try { await _capture.StopAsync().ConfigureAwait(false); } catch { /* stopping */ }
+                double audioDuration = 0;
+                long bytes = 0;
+
+                if (_session is not null && !_diskFatal)
+                {
+                    try { await _session.EndTurnAsync().ConfigureAwait(false); } catch { /* finalize best-effort */ }
+                    // Give the provider a brief window to emit trailing finals before close
+                    // (approximates RealtimeCloseDrainPolicy; precise drain wiring is in DeepgramSession TODO).
+                    try { await _clock.Delay(TimeSpan.FromMilliseconds(650), CancellationToken.None).ConfigureAwait(false); } catch { }
+                }
+
+                if (_writer is not null)
+                {
+                    _writer.Complete();
+                    audioDuration = _writer.DurationSeconds;
+                    bytes = _writer.BytesWritten;
+                    await _writer.DisposeAsync().ConfigureAwait(false);
+                }
+
+                if (_session is not null)
+                {
+                    try { await _session.CloseAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { /* closing */ }
+                    MergeSessionSegments(_session);
+                }
+
+                var persistedDuration = PersistedDuration(audioDuration, _durationSeconds);
+                var uploadable = RecordingAudioUploadPolicy.CanUploadFinalizedAudio(audioDuration, bytes);
+                if (!uploadable)
+                {
+                    _backups.DiscardAudioFile(_recordingId);
+                }
+
+                var segments = FinalizedSegments();
+                _backups.Save(NewManifest(persistedDuration, JoinTranscript(segments), segments.Count, hasAudioFile: uploadable, RecordingBackupSyncState.LocalReady), segments);
+
+                StartBackgroundSync();
             }
-            await AwaitPump(_audioPump).ConfigureAwait(false);
-
-            _cts?.Cancel();
-            await AwaitPump(_transcriptPump).ConfigureAwait(false);
-            await AwaitPump(_durationTimer).ConfigureAwait(false);
-            await AwaitPump(_systemMonitor).ConfigureAwait(false);
-
-            double audioDuration = 0;
-            long bytes = 0;
-            if (_writer is not null)
+            finally
             {
-                _writer.Complete();
-                audioDuration = _writer.DurationSeconds;
-                bytes = _writer.BytesWritten;
-                await _writer.DisposeAsync().ConfigureAwait(false);
+                TeardownContext();
+                UpdateState(s => s with { Phase = RecordingPhase.Idle, IsPaused = false });
             }
-
-            if (_session is not null)
-            {
-                try { await _session.CloseAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { /* closing */ }
-                MergeSessionSegments(_session);
-            }
-
-            var persistedDuration = PersistedDuration(audioDuration, _durationSeconds);
-            var uploadable = RecordingAudioUploadPolicy.CanUploadFinalizedAudio(audioDuration, bytes);
-            if (!uploadable)
-            {
-                _backups.DiscardAudioFile(_recordingId);
-            }
-
-            var segments = FinalizedSegments();
-            _backups.Save(NewManifest(persistedDuration, JoinTranscript(segments), segments.Count, hasAudioFile: uploadable), segments);
-
-            // Background upload/retry — fire-and-forget; the coordinator loops with backoff.
-            _ = Task.Run(() => _sync.RunAsync(CancellationToken.None));
-
-            TeardownContext();
-            UpdateState(s => s with { Phase = RecordingPhase.Idle, IsPaused = false });
         }
         finally
         {
@@ -210,39 +225,35 @@ public sealed class RecordingSession : IAsyncDisposable
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (State.Phase == RecordingPhase.Idle)
+            if (State.Phase != RecordingPhase.Recording)
             {
                 return;
             }
             UpdateState(s => s with { Phase = RecordingPhase.Finalizing });
+            await DrainCaptureAsync().ConfigureAwait(false);
 
-            _cts?.Cancel();
-            if (_capture is not null)
+            try
             {
-                try { await _capture.StopAsync().ConfigureAwait(false); } catch { /* stopping */ }
-            }
-            await AwaitPump(_audioPump).ConfigureAwait(false);
-            await AwaitPump(_transcriptPump).ConfigureAwait(false);
-            await AwaitPump(_durationTimer).ConfigureAwait(false);
-            await AwaitPump(_systemMonitor).ConfigureAwait(false);
+                if (_writer is not null)
+                {
+                    try { _writer.Complete(); } catch { /* discarding */ }
+                    await _writer.DisposeAsync().ConfigureAwait(false);
+                }
+                if (_session is not null)
+                {
+                    try { await _session.CloseAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); } catch { /* discarding */ }
+                }
 
-            if (_writer is not null)
+                var id = _recordingId;
+                try { await _api.DeleteRecordingAsync(id.ToString(), permanent: true).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Discard: server delete failed for {Id}", id); }
+                _backups.Remove(id);
+            }
+            finally
             {
-                try { _writer.Complete(); } catch { /* discarding */ }
-                await _writer.DisposeAsync().ConfigureAwait(false);
+                TeardownContext();
+                UpdateState(_ => RecordingSessionState.Idle);
             }
-            if (_session is not null)
-            {
-                try { await _session.CloseAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); } catch { /* discarding */ }
-            }
-
-            var id = _recordingId;
-            try { await _api.DeleteRecordingAsync(id.ToString(), permanent: true).ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Discard: server delete failed for {Id}", id); }
-            _backups.Remove(id);
-
-            TeardownContext();
-            UpdateState(_ => RecordingSessionState.Idle);
         }
         finally
         {
@@ -259,8 +270,8 @@ public sealed class RecordingSession : IAsyncDisposable
             {
                 return;
             }
-            // NOTE: pauses the duration clock; suspending the capture engine
-            // arrives with the IAudioCapture Pause/Resume ripple.
+            // NOTE: pauses the duration clock; suspending the capture engine + realtime
+            // send arrives with the IAudioCapture Pause/Resume ripple (deferred, VM-gated).
             UpdateState(s => s with { IsPaused = true });
         }
         finally
@@ -290,15 +301,60 @@ public sealed class RecordingSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        lock (_stateLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
+        _lifetimeCts.Cancel();
         try
         {
             if (State.Phase is not RecordingPhase.Idle)
             {
-                await StopAsync().ConfigureAwait(false);
+                await StopAsync().WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
             }
         }
         catch { /* disposing */ }
+        _lifetimeCts.Dispose();
         _gate.Dispose();
+    }
+
+    // ----- teardown helpers -----------------------------------------------
+
+    /// <summary>Stop capture (completing its Frames channel), cancel sends so a parked
+    /// SendPcmAsync unwinds, then drain the pumps with a bounded timeout.</summary>
+    private async Task DrainCaptureAsync()
+    {
+        if (_capture is not null)
+        {
+            try { await _capture.StopAsync().ConfigureAwait(false); } catch { /* stopping */ }
+        }
+        _cts?.Cancel();
+        await AwaitPump(_audioPump, TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+        await AwaitPump(_transcriptPump, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        await AwaitPump(_durationTimer, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        await AwaitPump(_systemMonitor, TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+    }
+
+    private async Task TeardownStartFailureAsync()
+    {
+        _cts?.Cancel();
+        if (_capture is not null) { try { await _capture.StopAsync().ConfigureAwait(false); } catch { } try { await _capture.DisposeAsync().ConfigureAwait(false); } catch { } }
+        if (_writer is not null) { try { await _writer.DisposeAsync().ConfigureAwait(false); } catch { } }
+        if (_session is not null) { try { await _session.CloseAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); } catch { } }
+        if (_recordingId != Guid.Empty)
+        {
+            try { await _api.DeleteRecordingAsync(_recordingId.ToString(), permanent: true).ConfigureAwait(false); } catch { }
+            _backups.Remove(_recordingId);
+        }
+        TeardownContext();
+    }
+
+    private void StartBackgroundSync()
+    {
+        _ = Task.Run(() => _sync.RunAsync(_lifetimeCts.Token))
+            .ContinueWith(t => _logger.LogError(t.Exception, "Background recording sync faulted"),
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
     }
 
     // ----- realtime open (no-throw degrade) --------------------------------
@@ -328,41 +384,44 @@ public sealed class RecordingSession : IAsyncDisposable
 
     // ----- pumps -----------------------------------------------------------
 
-    private async Task AudioPumpAsync(CancellationToken ct)
+    private async Task AudioPumpAsync(CancellationToken sendToken)
     {
-        if (_capture is null || _writer is null)
+        var capture = _capture;
+        var writer = _writer;
+        if (capture is null || writer is null)
         {
             return;
         }
-        try
+        // Read until the capture channel completes (on StopAsync) — NOT gated on the
+        // send token — so trailing buffered frames are always written to disk. Sends
+        // use the cancellable token so a parked send unwinds promptly on stop.
+        await foreach (var frame in capture.Frames.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
         {
-            await foreach (var frame in _capture.Frames.ReadAllAsync(ct).ConfigureAwait(false))
+            try
+            {
+                writer.WriteEncodedPcm(frame.Pcm16); // local-first
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _diskFatal = true;
+                _logger.LogError(ex, "Audio write failed — halting consumption");
+                UpdateState(s => s with { Error = "Couldn't write the recording to disk — recording stopped." });
+                return;
+            }
+
+            if (!_liveOffline && !sendToken.IsCancellationRequested && _session is { } session)
             {
                 try
                 {
-                    _writer.WriteEncodedPcm(frame.Pcm16); // local-first
+                    await session.SendPcmAsync(frame.Pcm16, sendToken).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (OperationCanceledException) { /* stopping — keep draining to disk */ }
+                catch (Exception)
                 {
-                    _logger.LogError(ex, "Audio write failed — halting consumption");
-                    UpdateState(s => s with { Error = "Couldn't write the recording to disk — recording stopped." });
-                    return; // stop consuming (capture keeps running, nothing read)
-                }
-
-                if (!_liveOffline && _session is { } session)
-                {
-                    try
-                    {
-                        await session.SendPcmAsync(frame.Pcm16, ct).ConfigureAwait(false);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        ContinueLocalOnly("realtime send failed");
-                    }
+                    ContinueLocalOnly("realtime send failed");
                 }
             }
         }
-        catch (OperationCanceledException) { /* stopping */ }
     }
 
     private async Task TranscriptPumpAsync(CancellationToken ct)
@@ -436,7 +495,8 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private async Task SystemMonitorAsync(CancellationToken ct)
     {
-        if (_capture is null)
+        var capture = _capture;
+        if (capture is null)
         {
             return;
         }
@@ -446,8 +506,8 @@ public sealed class RecordingSession : IAsyncDisposable
             while (!ct.IsCancellationRequested)
             {
                 await _clock.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
-                var warn = SystemAudioWarningPolicy.ShouldShowCaptureWarning(_capture.SystemAudioStalled, _capture.SystemAudioReceivedAny);
-                var hasSystem = _capture.HasSystemAudio;
+                var warn = SystemAudioWarningPolicy.ShouldShowCaptureWarning(capture.SystemAudioStalled, capture.SystemAudioReceivedAny);
+                var hasSystem = capture.HasSystemAudio;
                 UpdateState(s => s with { SystemAudioWarning = warn ? "system_audio_stalled" : null, HasSystemAudio = hasSystem });
                 if (warn && !warnedOnce)
                 {
@@ -465,13 +525,13 @@ public sealed class RecordingSession : IAsyncDisposable
 
     private void ContinueLocalOnly(string reason)
     {
-        if (State.Phase != RecordingPhase.Recording)
+        if (State.Phase != RecordingPhase.Recording || _diskFatal)
         {
-            return;
+            return; // never overwrite a disk-fatal state with a benign degrade
         }
         _liveOffline = true;
         _logger.LogInformation("Degrading to local-only transcription: {Reason}", reason);
-        UpdateState(s => s with { LiveTranscriptionOffline = true, ConnectionState = RealtimeConnectionState.Offline, Error = null });
+        UpdateState(s => s with { LiveTranscriptionOffline = true, ConnectionState = RealtimeConnectionState.Offline });
     }
 
     // ----- helpers ---------------------------------------------------------
@@ -482,7 +542,9 @@ public sealed class RecordingSession : IAsyncDisposable
         _language = string.IsNullOrWhiteSpace(language) ? "en" : language;
         _durationSeconds = 0;
         _liveOffline = false;
+        _diskFatal = false;
         _interim = string.Empty;
+        _recordingId = Guid.Empty;
         lock (_stateLock) { _committed.Clear(); }
     }
 
@@ -496,13 +558,18 @@ public sealed class RecordingSession : IAsyncDisposable
         _audioPump = _transcriptPump = _durationTimer = _systemMonitor = null;
     }
 
-    private static async Task AwaitPump(Task? pump)
+    private static async Task AwaitPump(Task? pump, TimeSpan? timeout = null)
     {
         if (pump is null)
         {
             return;
         }
-        try { await pump.ConfigureAwait(false); } catch { /* cancelled / already faulted */ }
+        try
+        {
+            if (timeout is { } t) { await pump.WaitAsync(t).ConfigureAwait(false); }
+            else { await pump.ConfigureAwait(false); }
+        }
+        catch { /* cancelled / timed out / faulted — best-effort drain */ }
     }
 
     private void MergeSessionSegments(IRealtimeTranscriptionSession session)
@@ -551,10 +618,20 @@ public sealed class RecordingSession : IAsyncDisposable
     private static string JoinTranscript(IReadOnlyList<LiveTranscriptSegment> segments)
         => string.Join(" ", segments.Select(s => s.Text.Trim()).Where(t => t.Length > 0));
 
-    private static int PersistedDuration(double audioDuration, int timerSeconds)
-        => audioDuration > 0 ? (int)Math.Round(audioDuration) : timerSeconds;
+    private int PersistedDuration(double audioDuration, int timerSeconds)
+    {
+        if (audioDuration > 0)
+        {
+            if (timerSeconds - audioDuration > 5)
+            {
+                _logger.LogWarning("Recording duration mismatch: timer {Timer}s vs audio {Audio}s", timerSeconds, audioDuration);
+            }
+            return (int)Math.Round(audioDuration);
+        }
+        return timerSeconds;
+    }
 
-    private RecordingBackupManifest NewManifest(int durationSeconds, string transcript, int segmentCount, bool hasAudioFile)
+    private RecordingBackupManifest NewManifest(int durationSeconds, string transcript, int segmentCount, bool hasAudioFile, RecordingBackupSyncState syncState)
         => new(
             _recordingId,
             "Recording",
@@ -568,7 +645,7 @@ public sealed class RecordingSession : IAsyncDisposable
             HasAudioFile: hasAudioFile,
             IsPermanentFailure: false,
             RequiresAuthentication: false,
-            SyncState: RecordingBackupSyncState.LocalReady);
+            SyncState: syncState);
 
     private void UpdateState(Func<RecordingSessionState, RecordingSessionState> mutate)
     {

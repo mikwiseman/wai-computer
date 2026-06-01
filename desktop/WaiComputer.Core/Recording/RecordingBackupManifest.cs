@@ -7,6 +7,7 @@ namespace WaiComputer.Core.Recordings;
 [JsonConverter(typeof(JsonStringEnumConverter<RecordingBackupSyncState>))]
 public enum RecordingBackupSyncState
 {
+    [JsonStringEnumMemberName("local_recording")] LocalRecording,
     [JsonStringEnumMemberName("local_ready")] LocalReady,
     [JsonStringEnumMemberName("uploading")] Uploading,
     [JsonStringEnumMemberName("server_processing")] ServerProcessing,

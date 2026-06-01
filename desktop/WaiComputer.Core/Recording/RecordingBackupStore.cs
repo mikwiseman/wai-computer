@@ -17,11 +17,17 @@ namespace WaiComputer.Core.Recordings;
 /// </code>
 /// On Windows <c>{root}</c> defaults to
 /// <c>%APPDATA%\WaiComputer\PendingTranscripts</c>.
+///
+/// Thread-safe: every read/mutate path holds a store-wide lock, so manifest
+/// read-modify-write can't lose updates and a Remove can't race a concurrent
+/// mutation (the recording session and the background sync coordinator both
+/// touch this store).
 /// </summary>
 public sealed class RecordingBackupStore
 {
     private readonly string _root;
     private readonly ILogger<RecordingBackupStore> _logger;
+    private readonly object _lock = new();
 
     public RecordingBackupStore(string root, ILogger<RecordingBackupStore>? logger = null)
     {
@@ -37,49 +43,66 @@ public sealed class RecordingBackupStore
 
     public void Save(RecordingBackupManifest manifest, IReadOnlyList<LiveTranscriptSegment> segments, ReadOnlySpan<byte> audio = default)
     {
-        var dir = DirFor(manifest.RecordingId);
-        Directory.CreateDirectory(dir);
-
         var manifestJson = JsonSerializer.SerializeToUtf8Bytes(manifest, WaiJson.Options);
         var segmentsJson = JsonSerializer.SerializeToUtf8Bytes(segments, WaiJson.Options);
+        var audioBytes = audio.IsEmpty ? null : audio.ToArray();
 
-        AtomicWrite(ManifestPath(manifest.RecordingId), manifestJson);
-        AtomicWrite(SegmentsPath(manifest.RecordingId), segmentsJson);
-
-        if (!audio.IsEmpty)
+        lock (_lock)
         {
-            AtomicWrite(AudioPath(manifest.RecordingId), audio.ToArray());
+            Directory.CreateDirectory(DirFor(manifest.RecordingId));
+            AtomicWrite(ManifestPath(manifest.RecordingId), manifestJson);
+            AtomicWrite(SegmentsPath(manifest.RecordingId), segmentsJson);
+            if (audioBytes is not null)
+            {
+                AtomicWrite(AudioPath(manifest.RecordingId), audioBytes);
+            }
         }
     }
 
-    public IEnumerable<RecordingBackupManifest> ListBackups()
+    public IReadOnlyList<RecordingBackupManifest> ListBackups()
     {
-        if (!Directory.Exists(_root)) yield break;
-        foreach (var dir in Directory.EnumerateDirectories(_root))
+        lock (_lock)
         {
-            var manifest = Path.Combine(dir, "manifest.json");
-            if (!File.Exists(manifest)) continue;
-            RecordingBackupManifest? parsed = null;
-            try { parsed = JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(manifest), WaiJson.Options); }
-            catch (JsonException ex) { _logger.LogWarning(ex, "Malformed backup manifest at {Path}", manifest); }
-            if (parsed is not null) yield return parsed;
+            var result = new List<RecordingBackupManifest>();
+            if (!Directory.Exists(_root)) return result;
+            foreach (var dir in Directory.EnumerateDirectories(_root))
+            {
+                var manifest = Path.Combine(dir, "manifest.json");
+                if (!File.Exists(manifest)) continue;
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(manifest), WaiJson.Options);
+                    if (parsed is not null) result.Add(parsed);
+                }
+                catch (JsonException ex) { _logger.LogWarning(ex, "Malformed backup manifest at {Path}", manifest); }
+                catch (IOException ex) { _logger.LogWarning(ex, "Unreadable backup manifest at {Path}", manifest); }
+            }
+            return result;
         }
     }
 
     public RecordingBackupManifest? GetManifest(Guid id)
     {
-        var path = ManifestPath(id);
-        if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(path), WaiJson.Options); }
-        catch (JsonException) { return null; }
+        lock (_lock)
+        {
+            var path = ManifestPath(id);
+            if (!File.Exists(path)) return null;
+            try { return JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(path), WaiJson.Options); }
+            catch (JsonException) { return null; }
+            catch (IOException) { return null; }
+        }
     }
 
     public IReadOnlyList<LiveTranscriptSegment>? GetSegments(Guid id)
     {
-        var path = SegmentsPath(id);
-        if (!File.Exists(path)) return null;
-        try { return JsonSerializer.Deserialize<List<LiveTranscriptSegment>>(File.ReadAllBytes(path), WaiJson.Options); }
-        catch (JsonException) { return null; }
+        lock (_lock)
+        {
+            var path = SegmentsPath(id);
+            if (!File.Exists(path)) return null;
+            try { return JsonSerializer.Deserialize<List<LiveTranscriptSegment>>(File.ReadAllBytes(path), WaiJson.Options); }
+            catch (JsonException) { return null; }
+            catch (IOException) { return null; }
+        }
     }
 
     public void RecordSaveFailure(Guid id, string errorMessage)
@@ -94,9 +117,9 @@ public sealed class RecordingBackupStore
     public void MarkHasAudioFile(Guid id, bool hasAudio)
         => UpdateManifest(id, m => m with { HasAudioFile = hasAudio, UpdatedAt = DateTimeOffset.UtcNow });
 
-    /// <summary>Server accepted the upload and is transcribing; remember the job id for polling.</summary>
-    public void MarkServerProcessing(Guid id, string serverJobId)
-        => UpdateManifest(id, m => m with { SyncState = RecordingBackupSyncState.ServerProcessing, ServerJobId = serverJobId, UpdatedAt = DateTimeOffset.UtcNow });
+    /// <summary>Server accepted the upload and is transcribing.</summary>
+    public void MarkServerProcessing(Guid id, string? serverJobId = null)
+        => UpdateManifest(id, m => m with { SyncState = RecordingBackupSyncState.ServerProcessing, ServerJobId = serverJobId ?? m.ServerJobId, UpdatedAt = DateTimeOffset.UtcNow });
 
     /// <summary>Server processing resolved; return to a clean local-ready baseline.</summary>
     public void ClearServerProcessing(Guid id)
@@ -128,51 +151,70 @@ public sealed class RecordingBackupStore
     /// <summary>Drop the local WAV (e.g. after a successful upload) while keeping the manifest.</summary>
     public void DiscardAudioFile(Guid id)
     {
-        var path = AudioPath(id);
-        if (File.Exists(path))
+        lock (_lock)
         {
-            try { File.Delete(path); }
-            catch (IOException ex) { _logger.LogWarning(ex, "Failed to discard audio for {Id}", id); }
+            var path = AudioPath(id);
+            if (File.Exists(path))
+            {
+                try { File.Delete(path); }
+                catch (IOException ex) { _logger.LogWarning(ex, "Failed to discard audio for {Id}", id); }
+            }
+            UpdateManifest(id, m => m with { HasAudioFile = false, UpdatedAt = DateTimeOffset.UtcNow });
         }
-        UpdateManifest(id, m => m with { HasAudioFile = false, UpdatedAt = DateTimeOffset.UtcNow });
     }
 
     /// <summary>Ensure the per-recording directory exists and return its path (for the WAV writer).</summary>
     public string EnsureDirectoryForRecording(Guid id)
     {
-        var dir = DirFor(id);
-        Directory.CreateDirectory(dir);
-        return dir;
+        lock (_lock)
+        {
+            var dir = DirFor(id);
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
     }
 
     public void Remove(Guid id)
     {
-        var dir = DirFor(id);
-        if (Directory.Exists(dir))
+        lock (_lock)
         {
-            try { Directory.Delete(dir, recursive: true); }
-            catch (IOException ex) { _logger.LogWarning(ex, "Failed to remove backup {Id}", id); }
+            var dir = DirFor(id);
+            if (Directory.Exists(dir))
+            {
+                try { Directory.Delete(dir, recursive: true); }
+                catch (IOException ex) { _logger.LogWarning(ex, "Failed to remove backup {Id}", id); }
+            }
         }
     }
 
     public void RemoveAll()
     {
-        if (!Directory.Exists(_root)) return;
-        foreach (var dir in Directory.EnumerateDirectories(_root))
+        lock (_lock)
         {
-            try { Directory.Delete(dir, recursive: true); }
-            catch (IOException) { /* swallow per-dir */ }
+            if (!Directory.Exists(_root)) return;
+            foreach (var dir in Directory.EnumerateDirectories(_root))
+            {
+                try { Directory.Delete(dir, recursive: true); }
+                catch (IOException) { /* swallow per-dir */ }
+            }
         }
     }
 
     private void UpdateManifest(Guid id, Func<RecordingBackupManifest, RecordingBackupManifest> mutate)
     {
-        var path = ManifestPath(id);
-        if (!File.Exists(path)) return;
-        var current = JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(path), WaiJson.Options);
-        if (current is null) return;
-        var next = mutate(current);
-        AtomicWrite(path, JsonSerializer.SerializeToUtf8Bytes(next, WaiJson.Options));
+        lock (_lock)
+        {
+            var path = ManifestPath(id);
+            if (!File.Exists(path)) return;
+            try
+            {
+                var current = JsonSerializer.Deserialize<RecordingBackupManifest>(File.ReadAllBytes(path), WaiJson.Options);
+                if (current is null) return;
+                AtomicWrite(path, JsonSerializer.SerializeToUtf8Bytes(mutate(current), WaiJson.Options));
+            }
+            catch (JsonException ex) { _logger.LogWarning(ex, "Skipping manifest mutation — malformed at {Path}", path); }
+            catch (IOException ex) { _logger.LogWarning(ex, "Failed to persist manifest mutation at {Path}", path); }
+        }
     }
 
     private static void AtomicWrite(string path, byte[] content)
