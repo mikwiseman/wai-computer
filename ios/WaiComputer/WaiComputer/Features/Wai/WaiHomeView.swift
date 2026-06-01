@@ -61,6 +61,13 @@ struct WaiHomeView: View {
         do {
             recordings = try await appState.getAPIClient().listRecordings(limit: 100)
             loadError = nil
+        } catch is CancellationError {
+            // The `.task` was torn down (tab switch / view re-arm); this is not a
+            // failure the user needs to see, so leave any existing banner state
+            // untouched rather than flashing a misleading error.
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            return
         } catch {
             loadError = t(
                 "Couldn't load recording titles for citations.",

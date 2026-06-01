@@ -37,22 +37,27 @@ struct ContentView: View {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject var languageManager: LanguageManager
     @AppStorage("selectedTab") private var selectedTab = 0
     @StateObject private var recordingViewModel = RecordingViewModel()
     @State private var recoveryNotice: String?
     @State private var recoveryNoticeDismissTask: Task<Void, Never>?
 
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             RecordingView()
                 .tabItem {
-                    Label("Record", systemImage: "mic.circle.fill")
+                    Label(t("Record", "Запись"), systemImage: "mic.circle.fill")
                 }
                 .tag(0)
 
             LibraryView()
                 .tabItem {
-                    Label("Library", systemImage: "folder.fill")
+                    Label(t("Library", "Библиотека"), systemImage: "folder.fill")
                 }
                 .tag(1)
 
@@ -64,7 +69,7 @@ struct MainTabView: View {
 
             SettingsView()
                 .tabItem {
-                    Label("Settings", systemImage: "gear")
+                    Label(t("Settings", "Настройки"), systemImage: "gear")
                 }
                 .tag(3)
         }
