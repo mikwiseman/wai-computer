@@ -516,6 +516,26 @@ export interface ItemListResponse {
   total: number;
 }
 
+export interface BrainGraphNode {
+  id: string;
+  label: string;
+  kind: string; // person | topic | project | item | recording
+  degree: number;
+}
+
+export interface BrainGraphEdge {
+  source: string;
+  target: string;
+  type: string; // cooccurrence | mention
+  weight: number;
+}
+
+export interface BrainGraph {
+  nodes: BrainGraphNode[];
+  edges: BrainGraphEdge[];
+  stats: Record<string, number>;
+}
+
 export interface ComparisonColumn {
   name: string;
   type: string;
