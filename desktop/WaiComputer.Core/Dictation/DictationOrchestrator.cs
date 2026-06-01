@@ -65,6 +65,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
     private readonly DictationHistoryStore _history;
     private readonly DictationDictionaryStore _dictionary;
     private readonly DictationLanguageStore _languageStore;
+    private readonly DictationSessionConfigVault _configVault;
     private readonly IDictationSettings _settings;
     private readonly ISystemClock _clock;
     private readonly ILogger<DictationOrchestrator> _logger;
@@ -101,6 +102,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
         DictationHistoryStore history,
         DictationDictionaryStore dictionary,
         DictationLanguageStore languageStore,
+        DictationSessionConfigVault configVault,
         IDictationSettings settings,
         ISystemClock clock,
         ILogger<DictationOrchestrator>? logger = null)
@@ -112,6 +114,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
         _history = history;
         _dictionary = dictionary;
         _languageStore = languageStore;
+        _configVault = configVault;
         _settings = settings;
         _clock = clock;
         _logger = logger ?? NullLogger<DictationOrchestrator>.Instance;
@@ -139,6 +142,9 @@ public sealed class DictationOrchestrator : IAsyncDisposable
     /// <summary>Warm the microphone + pre-roll ahead of a turn (e.g. on hotkey key-down) so the first words aren't clipped. Idempotent.</summary>
     public async Task PrewarmAsync(CancellationToken ct)
     {
+        // Mint the realtime config in the background (idempotent for the current key) so the
+        // turn connects instantly when the user actually starts speaking.
+        _configVault.Prefetch(BuildVaultKey());
         if (_prewarmed)
         {
             return;
@@ -146,6 +152,9 @@ public sealed class DictationOrchestrator : IAsyncDisposable
         await _mic.PrewarmAsync(ct).ConfigureAwait(false);
         _prewarmed = true;
     }
+
+    /// <summary>Drop the cached realtime config (call when the provider/model preference changes).</summary>
+    public void ClearConfigCache() => _configVault.Clear();
 
     public Task StartAsync(CancellationToken ct = default) => StartAsync(handsFree: false, ct);
 
@@ -179,9 +188,9 @@ public sealed class DictationOrchestrator : IAsyncDisposable
                 await startupBuffer.AppendAsync(frame.Pcm16, ct).ConfigureAwait(false);
             }
 
-            var language = DictationLanguageSelectionPolicy.ProviderLanguage(_languageStore.WireLanguageTag);
-            var config = await _api.CreateRealtimeTranscriptionSessionAsync(
-                new CreateRealtimeTranscriptionSessionRequest(language, 1, "dictation"), ct).ConfigureAwait(false);
+            // Take the prefetched config if it is still warm, otherwise mint fresh (the vault wraps
+            // IApiClient.CreateRealtimeTranscriptionSessionAsync). A language/provider mismatch throws.
+            var config = (await _configVault.TakeAsync(BuildVaultKey(), ct: ct).ConfigureAwait(false)).Config;
 
             var session = _sessionFactory.Create(config);
             var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
@@ -577,6 +586,9 @@ public sealed class DictationOrchestrator : IAsyncDisposable
             Failed?.Invoke(ex.Message);
         }
     });
+
+    private VaultKey BuildVaultKey()
+        => new(DictationLanguageSelectionPolicy.ProviderLanguage(_languageStore.WireLanguageTag), 1, "dictation");
 
     private static PushToTalkStopState MapStopState(DictationState state) => state switch
     {
