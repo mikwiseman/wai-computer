@@ -1,17 +1,6 @@
 import SwiftUI
 import WaiComputerKit
 
-private enum BillingSectionError: LocalizedError {
-    case unsupportedRegion(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .unsupportedRegion(let region):
-            return "Unsupported billing region: \(region)"
-        }
-    }
-}
-
 /// Read-only subscription + word-usage section embedded in `SettingsView`.
 ///
 /// PRODUCT DECISION: iOS billing is read-only. The macOS web-checkout path
@@ -35,6 +24,7 @@ struct BillingStatusSection: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var cancelInFlight = false
+    @State private var showingCancelConfirmation = false
 
     private var isRussianUI: Bool {
         languageManager.preferredLocale.language.languageCode?.identifier == "ru"
@@ -71,6 +61,21 @@ struct BillingStatusSection: View {
                 .accessibilityIdentifier("settings-billing-header")
         }
         .task { await loadAll() }
+        .confirmationDialog(
+            t("Cancel subscription?", "Отменить подписку?"),
+            isPresented: $showingCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Cancel subscription", "Отменить подписку"), role: .destructive) {
+                Task { await cancelSubscription() }
+            }
+            Button(t("Keep subscription", "Оставить подписку"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "You'll keep Pro access until the end of the current billing period, then revert to the free plan.",
+                "Доступ Pro сохранится до конца текущего периода оплаты, затем аккаунт вернётся на бесплатный план."
+            ))
+        }
     }
 
     // MARK: - Plan + Usage
@@ -116,6 +121,7 @@ struct BillingStatusSection: View {
             case "active": return t("Active", "Активна")
             case "past_due": return t("Past due", "Просрочена")
             case "canceled": return t("Canceled", "Отменена")
+            case "expired": return t("Expired", "Истекла")
             default: return sub.status.capitalized
             }
         }()
@@ -137,29 +143,28 @@ struct BillingStatusSection: View {
 
     @ViewBuilder
     private func usageGauge(usage: BillingUsage, isPro: Bool) -> some View {
-        let displayCap = displayWordsCap(usage: usage)
-        if displayCap == nil {
-            LabeledContent {
-                Text(t("Unlimited", "Без ограничений"))
-                    .foregroundStyle(.secondary)
-            } label: {
-                Text(t("Words this week", "Слов за неделю"))
-            }
-        } else {
+        if let displayCap = displayWordsCap(usage: usage) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(t("Words this week", "Слов за неделю"))
                     Spacer()
-                    Text("\(usage.wordsUsed.formatted()) / \(displayCap!.formatted())")
+                    Text("\(usage.wordsUsed.formatted()) / \(displayCap.formatted())")
                         .foregroundStyle(usage.capExceeded ? .red : .primary)
                         .monospacedDigit()
                 }
-                let fraction = min(1.0, max(0.0, Double(usage.wordsUsed) / Double(displayCap!)))
+                let fraction = min(1.0, max(0.0, Double(usage.wordsUsed) / Double(displayCap)))
                 ProgressView(value: fraction)
                     .tint(usage.capExceeded ? .red : fraction > 0.8 ? .orange : Palette.accent)
                 Text(t("Resets every Sunday", "Сбрасывается каждое воскресенье"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
+            }
+        } else {
+            LabeledContent {
+                Text(t("Unlimited", "Без ограничений"))
+                    .foregroundStyle(.secondary)
+            } label: {
+                Text(t("Words this week", "Слов за неделю"))
             }
         }
     }
@@ -185,7 +190,7 @@ struct BillingStatusSection: View {
                 .foregroundStyle(.secondary)
             }
             Button(role: .destructive) {
-                Task { await cancelSubscription() }
+                showingCancelConfirmation = true
             } label: {
                 HStack {
                     Text(t("Cancel subscription", "Отменить подписку"))
@@ -223,9 +228,10 @@ struct BillingStatusSection: View {
             async let planRows = client.listBillingPlans()
             async let userSettings = client.getSettings()
             let (s, u, p, settings) = try await (sub, use, planRows, userSettings)
-            guard let region = BillingDisplayRegion(rawValue: settings.region) else {
-                throw BillingSectionError.unsupportedRegion(settings.region)
-            }
+            // Region is informational only (RU currency hint). An unrecognised
+            // value must NOT discard the successfully-fetched plan/usage data —
+            // leave billingRegion nil so the row is simply hidden.
+            let region = BillingDisplayRegion(rawValue: settings.region)
             await MainActor.run {
                 self.subscription = s
                 self.usage = u

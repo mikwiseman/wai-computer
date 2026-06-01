@@ -81,7 +81,7 @@ final class DictationLanguageStore: ObservableObject {
         }
         // Mirror to legacy single-string key so older code paths reading
         // `transcriptionLanguage` (incl. iOS RecordingViewModel) keep working.
-        let legacyValue = languages.count == 1 ? languages.first! : "multi"
+        let legacyValue = languages.count == 1 ? (languages.first ?? "multi") : "multi"
         defaults.set(legacyValue, forKey: Self.legacyKey)
     }
 

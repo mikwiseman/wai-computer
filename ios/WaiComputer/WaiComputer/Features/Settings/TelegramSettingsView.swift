@@ -255,20 +255,29 @@ struct TelegramSettingsView: View {
     }
 
     private func openTelegramPairing(_ pairing: TelegramPairing) {
-        if let deepURL = URL(string: pairing.deepLink) {
-            UIApplication.shared.open(deepURL, options: [:]) { opened in
-                if !opened {
-                    telegramError = t("Couldn't open Telegram.", "Не удалось открыть Telegram.")
-                }
-            }
+        guard let deepURL = URL(string: pairing.deepLink) else {
+            telegramError = t("Couldn't open Telegram.", "Не удалось открыть Telegram.")
             return
         }
-        telegramError = t("Couldn't open Telegram.", "Не удалось открыть Telegram.")
+        // Use the async open API and hop back to the main actor for the @State
+        // write so the mutation is provably main-actor-isolated (future-proof
+        // for Swift 6 strict concurrency), not relying on UIKit's completion
+        // thread guarantees inside an escaping closure.
+        Task { @MainActor in
+            let opened = await UIApplication.shared.open(deepURL)
+            if !opened {
+                telegramError = t("Couldn't open Telegram.", "Не удалось открыть Telegram.")
+            }
+        }
     }
 
     /// Render a QR for the pairing web link so the user can scan it with another
     /// device. Returns nil if generation fails; the explicit "Open Telegram"
     /// button is always available regardless.
+    /// Shared `CIContext` for QR rasterization. Creating one is expensive
+    /// (allocates a render pipeline), so reuse a single instance across renders.
+    private static let qrContext = CIContext()
+
     private func qrImage(from string: String) -> UIImage? {
         guard !string.isEmpty else { return nil }
         let filter = CIFilter.qrCodeGenerator()
@@ -276,8 +285,7 @@ struct TelegramSettingsView: View {
         filter.correctionLevel = "M"
         guard let output = filter.outputImage else { return nil }
         let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        guard let cgImage = Self.qrContext.createCGImage(scaled, from: scaled.extent) else { return nil }
         return UIImage(cgImage: cgImage)
     }
 
