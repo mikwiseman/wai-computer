@@ -19,6 +19,7 @@ from app.models.billing import (
 )
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.comparison import ComparisonSet
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
@@ -88,6 +89,7 @@ __all__ = [
     "Item",
     "ItemChunk",
     "ItemSummary",
+    "ComparisonSet",
     "Person",
     "PublicVoiceprint",
     "RecordingSpeakerEmbedding",
