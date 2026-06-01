@@ -26,6 +26,7 @@ from app.api.routes import (
     items,
     mcp_connections,
     mcp_oauth,
+    memory_proposals,
     people,
     personalization,
     realtime_transcription,
@@ -194,6 +195,7 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
 app.include_router(mcp_connections.router, prefix="/api")
+app.include_router(memory_proposals.router, prefix="/api")
 app.include_router(brain.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
 app.include_router(personalization.router, prefix="/api")
