@@ -20,6 +20,9 @@ struct SecondBrainView: View {
     var body: some View {
         NavigationStack {
             List {
+                if model.isSearchActive {
+                    searchSection
+                } else {
                 Section {
                     NavigationLink {
                         MemoryView(apiClient: model.apiClient)
@@ -61,8 +64,14 @@ struct SecondBrainView: View {
                         }
                     }
                 }
+                }
             }
             .listStyle(.insetGrouped)
+            .searchable(text: $model.query, prompt: t("Search everything", "Искать везде"))
+            .task(id: model.query) {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                if !Task.isCancelled { await model.search() }
+            }
             .navigationTitle(t("Brain", "Мозг"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -90,6 +99,56 @@ struct SecondBrainView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var searchSection: some View {
+        if model.isSearching && model.searchResults.isEmpty {
+            Section { ProgressView() }
+        } else if model.searchResults.isEmpty {
+            Section {
+                Text(t("No results", "Ничего не найдено"))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+        } else {
+            Section(header: Text(t("Results", "Результаты"))) {
+                ForEach(model.searchResults, id: \.chunkId) { hit in
+                    NavigationLink {
+                        destination(for: hit)
+                    } label: {
+                        hitRow(hit)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for hit: UnifiedHit) -> some View {
+        if hit.sourceKind == "item" {
+            ItemDetailView(itemId: hit.parentId, apiClient: model.apiClient) {
+                Task { await model.load() }
+            }
+        } else {
+            RecordingDetailView(recording: Recording(id: hit.parentId, type: .meeting, createdAt: Date()))
+        }
+    }
+
+    private func hitRow(_ hit: UnifiedHit) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(hit.title ?? t("Untitled", "Без названия"))
+                .font(Typography.body.weight(.medium))
+                .lineLimit(1)
+            Text(hit.snippet)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
+            Text(hit.sourceKind == "item" ? hit.kind.uppercased() : t("RECORDING", "ЗАПИСЬ"))
+                .font(Typography.labelSmall)
+                .foregroundStyle(Palette.textTertiary)
+        }
+        .padding(.vertical, Spacing.xxs)
     }
 
     private func entryRow(icon: String, title: String, badge: Int?) -> some View {

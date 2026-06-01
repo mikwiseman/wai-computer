@@ -13,6 +13,11 @@ final class ContentFeedViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var pendingReviewCount = 0
 
+    // Unified "search everything" (recordings + items)
+    @Published var query = ""
+    @Published var searchResults: [UnifiedHit] = []
+    @Published var isSearching = false
+
     // Multi-select → compare
     @Published var isSelecting = false
     @Published var compareSelection: Set<String> = []
@@ -70,6 +75,19 @@ final class ContentFeedViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             return nil
         }
+    }
+
+    var isSearchActive: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Unified search across recordings + items (RRF). Empty query clears results.
+    func search() async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { searchResults = []; return }
+        isSearching = true
+        defer { isSearching = false }
+        searchResults = (try? await apiClient.unifiedSearch(query: q).results) ?? []
     }
 
     func delete(_ id: String) async {
