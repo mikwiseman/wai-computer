@@ -41,7 +41,7 @@ cd backend && docker compose up --build
 ## Tests
 
 ```bash
-cd backend && pytest -x -q           # unit (80% coverage gate)
+cd backend && pytest -x -q           # unit (95% coverage gate; see pyproject cov-fail-under)
 cd backend && pytest -m integration --no-cov
 cd backend && ruff check .
 cd web && pnpm lint && pnpm test:unit && pnpm test:e2e
