@@ -67,6 +67,44 @@ public class PreRollMicrophoneCaptureTests
         await cap.TeardownAsync();
     }
 
+    [Fact]
+    public async Task PrewarmIsIdempotent()
+    {
+        var mic = new FakeMic();
+        await using var cap = new PreRollMicrophoneCapture(mic, new AudioCaptureConfig(SampleRate: 1000));
+
+        await cap.PrewarmAsync(CancellationToken.None);
+        await cap.PrewarmAsync(CancellationToken.None); // second prewarm before teardown must be a no-op
+
+        mic.StartCount.Should().Be(1); // mic started once, not twice (no orphaned pump/cts)
+        await cap.TeardownAsync();
+    }
+
+    [Fact]
+    public async Task IsReusableAcrossTurnsWithFreshPreRoll()
+    {
+        var mic = new FakeMic();
+        await using var cap = new PreRollMicrophoneCapture(mic, new AudioCaptureConfig(SampleRate: 1000));
+
+        // Turn 1.
+        await cap.PrewarmAsync(CancellationToken.None);
+        mic.Push(Samples(100, 1));
+        await WaitConsumed(mic);
+        cap.Lease().PreRoll[0].SampleCount.Should().Be(100);
+        await cap.TeardownAsync();
+
+        // Turn 2: re-lease must NOT throw, and the pre-roll must be fresh (turn-1 audio cleared).
+        await cap.PrewarmAsync(CancellationToken.None);
+        mic.Push(Samples(40, 2));
+        await WaitConsumed(mic);
+
+        var lease2 = cap.Lease();
+        lease2.PreRoll.Should().ContainSingle();
+        lease2.PreRoll[0].SampleCount.Should().Be(40); // only turn-2 audio, not 100 + 40
+        mic.StartCount.Should().Be(2);
+        await cap.TeardownAsync();
+    }
+
     private static async Task WaitConsumed(FakeMic mic, int timeoutMs = 2000)
     {
         var sw = Stopwatch.StartNew();
@@ -90,14 +128,26 @@ public class PreRollMicrophoneCaptureTests
 
     private sealed class FakeMic : IMicrophoneCapture
     {
-        private readonly Channel<AudioFrame> _frames = Channel.CreateUnbounded<AudioFrame>();
+        private Channel<AudioFrame> _frames = Channel.CreateUnbounded<AudioFrame>();
         public AudioSource Source => AudioSource.Microphone;
         public bool IsCapturing { get; private set; }
         public bool HasReceivedAudio => false;
         public DateTimeOffset? LastAudibleAt => null;
+        public int StartCount { get; private set; }
         public ChannelReader<AudioFrame> Frames => _frames.Reader;
         public int Queued => _frames.Reader.Count;
-        public Task StartAsync(CancellationToken ct) { IsCapturing = true; return Task.CompletedTask; }
+        public Task StartAsync(CancellationToken ct)
+        {
+            StartCount++;
+            // Support stop -> start cycles (multi-turn dictation): re-open a fresh channel
+            // once the previous one was completed by StopAsync.
+            if (_frames.Reader.Completion.IsCompleted)
+            {
+                _frames = Channel.CreateUnbounded<AudioFrame>();
+            }
+            IsCapturing = true;
+            return Task.CompletedTask;
+        }
         public Task StopAsync() { IsCapturing = false; _frames.Writer.TryComplete(); return Task.CompletedTask; }
         public ValueTask DisposeAsync() { _frames.Writer.TryComplete(); return ValueTask.CompletedTask; }
         public void Push(byte[] pcm16) => _frames.Writer.TryWrite(new AudioFrame(pcm16, TimeSpan.Zero, pcm16.Length / 2));

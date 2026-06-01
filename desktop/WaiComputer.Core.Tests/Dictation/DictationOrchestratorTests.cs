@@ -47,7 +47,11 @@ public class DictationOrchestratorTests : IAsyncLifetime
         _history = new DictationHistoryStore(_local, _client, clock);
         _dictionary = new DictationDictionaryStore(_local, _client, clock);
         _language = new DictationLanguageStore(new FakePrefs());
-        _orch = new DictationOrchestrator(_client, _factory, _mic, _inserter, _history, _dictionary, _language, _settings, clock);
+        var vault = new DictationSessionConfigVault(
+            (key, ct) => _client.CreateRealtimeTranscriptionSessionAsync(
+                new CreateRealtimeTranscriptionSessionRequest(key.Language, key.Channels, key.Purpose), ct),
+            clock);
+        _orch = new DictationOrchestrator(_client, _factory, _mic, _inserter, _history, _dictionary, _language, vault, _settings, clock);
         return Task.CompletedTask;
     }
 
@@ -258,6 +262,20 @@ public class DictationOrchestratorTests : IAsyncLifetime
 
         await WaitFor(() => _orch.State == DictationState.Idle);
         _inserter.Inserted.Should().ContainSingle().Which.Should().Be("deferred hello");
+    }
+
+    [Fact]
+    public async Task PrewarmPrefetchesConfigSoStartMintsOnce()
+    {
+        StubMint();
+        _factory.AutoFinal = "hi";
+
+        await _orch.PrewarmAsync(CancellationToken.None); // prefetch the realtime config
+        await _orch.StartAsync();                          // take the prefetched config
+        await _orch.StopAndInsertAsync();
+
+        _orch.State.Should().Be(DictationState.Idle);
+        _server.LogEntries.Count(e => e.RequestMessage.Path == "/api/transcription/session").Should().Be(1);
     }
 
     [Fact]

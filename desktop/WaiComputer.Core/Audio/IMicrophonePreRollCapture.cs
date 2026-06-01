@@ -45,6 +45,7 @@ public sealed class PreRollMicrophoneCapture : IMicrophonePreRollCapture
     private Channel<AudioFrame>? _live;
     private Task? _pump;
     private CancellationTokenSource? _cts;
+    private bool _started;
 
     public PreRollMicrophoneCapture(IMicrophoneCapture inner, AudioCaptureConfig config)
     {
@@ -54,9 +55,20 @@ public sealed class PreRollMicrophoneCapture : IMicrophonePreRollCapture
 
     public async Task PrewarmAsync(CancellationToken ct)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        await _inner.StartAsync(_cts.Token).ConfigureAwait(false);
-        _pump = Task.Run(() => PumpAsync(_cts.Token));
+        // Idempotent: a second prewarm before teardown must not orphan the cts/pump
+        // or double-start the mic (the macOS AudioEngineHost guards prewarm the same way).
+        lock (_gate) { if (_started) return; _started = true; }
+        try
+        {
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            await _inner.StartAsync(_cts.Token).ConfigureAwait(false);
+            _pump = Task.Run(() => PumpAsync(_cts.Token));
+        }
+        catch
+        {
+            lock (_gate) { _started = false; }
+            throw;
+        }
     }
 
     private async Task PumpAsync(CancellationToken ct)
@@ -105,13 +117,24 @@ public sealed class PreRollMicrophoneCapture : IMicrophonePreRollCapture
         {
             try { await pump.ConfigureAwait(false); } catch { /* cancelled */ }
         }
-        lock (_gate) { _live?.Writer.TryComplete(); }
+        // Reset to a fresh state so the capture is reusable for the next dictation turn:
+        // complete + drop the live channel (else a re-Lease throws "already leased"), clear the
+        // ring (else stale pre-roll from the prior turn leaks in), and re-arm prewarm.
+        lock (_gate)
+        {
+            _live?.Writer.TryComplete();
+            _live = null;
+            _ring.Clear();
+            _cts?.Dispose();
+            _cts = null;
+            _pump = null;
+            _started = false;
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         await TeardownAsync().ConfigureAwait(false);
-        _cts?.Dispose();
         await _inner.DisposeAsync().ConfigureAwait(false);
     }
 }
