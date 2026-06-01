@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using Microsoft.Extensions.Caching.Memory;
@@ -33,11 +34,7 @@ public sealed class SentryHelper : IDisposable
             o.AutoSessionTracking = true;
             o.SendDefaultPii = false;
             o.Environment = debug ? "development" : "production";
-            o.SetBeforeSend((evt, _) =>
-            {
-                evt.SetExtra("sanitized", "true");
-                return evt;
-            });
+            o.SetBeforeSend((evt, _) => SanitizeEvent(evt));
             o.SetBeforeBreadcrumb((b, _) =>
             {
                 // All WaiComputer breadcrumbs are funneled through
@@ -49,6 +46,52 @@ public sealed class SentryHelper : IDisposable
                 return b;
             });
         });
+    }
+
+    /// <summary>
+    /// beforeSend safety net. Mirrors the macOS reference (SentryHelper.swift):
+    /// free-form message / exception text keeps its content but has embedded
+    /// emails stripped, while keyed Extra/Tags are redacted by key
+    /// (transcript / query / email / token / filename / ...). Call sites already
+    /// pass sanitised data; this guards anything that reaches Sentry directly.
+    /// </summary>
+    internal static SentryEvent SanitizeEvent(SentryEvent evt)
+    {
+        if (evt.Message is { } message)
+        {
+            if (message.Message is { } raw)
+            {
+                message.Message = Sanitizer.RedactInlineEmails(raw);
+            }
+            if (message.Formatted is { } formatted)
+            {
+                message.Formatted = Sanitizer.RedactInlineEmails(formatted);
+            }
+        }
+
+        foreach (var key in evt.Extra.Keys.ToList())
+        {
+            evt.SetExtra(key, Sanitizer.Sanitize(key, evt.Extra[key]));
+        }
+
+        foreach (var key in evt.Tags.Keys.ToList())
+        {
+            evt.SetTag(key, Sanitizer.Sanitize(key, evt.Tags[key]) as string ?? evt.Tags[key]);
+        }
+
+        if (evt.SentryExceptions is { } exceptions)
+        {
+            foreach (var ex in exceptions)
+            {
+                if (ex.Value is { } value)
+                {
+                    ex.Value = Sanitizer.RedactInlineEmails(value);
+                }
+            }
+        }
+
+        evt.SetExtra("sanitized", "true");
+        return evt;
     }
 
     public void SetUser(string id) => SentrySdk.ConfigureScope(s => s.User = new SentryUser { Id = id });

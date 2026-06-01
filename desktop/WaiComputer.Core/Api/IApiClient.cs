@@ -49,7 +49,8 @@ public interface IApiClient
     Task<VoiceSharingState> DisableVoiceSharingAsync(CancellationToken ct = default);
 
     // Recordings
-    Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null, CancellationToken ct = default);
+    Task<IReadOnlyList<Recording>> ListRecordingsAsync(int skip = 0, int limit = 50, bool? starred = null, RecordingType? type = null, string? folderId = null, bool trashed = false, CancellationToken ct = default);
+    Task<BulkRecordingOperationResponse> BulkRecordingOperationAsync(BulkRecordingOperationRequest request, CancellationToken ct = default);
     Task<Recording> CreateRecordingAsync(CreateRecordingRequest request, CancellationToken ct = default);
     Task<RecordingDetail> GetRecordingAsync(string id, CancellationToken ct = default);
     Task<Recording> UpdateRecordingAsync(string id, UpdateRecordingRequest request, CancellationToken ct = default);
@@ -88,7 +89,8 @@ public interface IApiClient
     // Summary / export
     Task<Summary> GetSummaryAsync(string recordingId, CancellationToken ct = default);
     Task<Summary> GenerateSummaryAsync(string recordingId, CancellationToken ct = default);
-    Task<string> ExportRecordingAsync(string id, string format, CancellationToken ct = default);
+    Task<string> ExportRecordingAsync(string id, string format, string? locale = null, CancellationToken ct = default);
+    Task<SummaryGenerationState> GetSummaryGenerationAsync(string recordingId, CancellationToken ct = default);
 
     // Search
     Task<SearchResponse> SearchAsync(string query, int limit = 20, int offset = 0, CancellationToken ct = default);

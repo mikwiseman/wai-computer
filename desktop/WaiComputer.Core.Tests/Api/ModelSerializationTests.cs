@@ -96,12 +96,58 @@ public class ModelSerializationTests
     }
 
     [Fact]
-    public void ActionItemSerializesEnumLowercase()
+    public void ActionItemStatusUsesBackendWireValues()
     {
-        var item = new ActionItem("i", "r", "do thing", ActionItemStatus.Open, ActionItemPriority.High, null, null,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        JsonSerializer.Serialize(ActionItemStatus.Pending, WaiJson.Options).Should().Be("\"pending\"");
+        JsonSerializer.Serialize(ActionItemStatus.InProgress, WaiJson.Options).Should().Be("\"in_progress\"");
+        JsonSerializer.Serialize(ActionItemStatus.Completed, WaiJson.Options).Should().Be("\"completed\"");
+        JsonSerializer.Serialize(ActionItemStatus.Cancelled, WaiJson.Options).Should().Be("\"cancelled\"");
+
+        JsonSerializer.Deserialize<ActionItemStatus>("\"pending\"", WaiJson.Options).Should().Be(ActionItemStatus.Pending);
+        JsonSerializer.Deserialize<ActionItemStatus>("\"in_progress\"", WaiJson.Options).Should().Be(ActionItemStatus.InProgress);
+        JsonSerializer.Deserialize<ActionItemStatus>("\"completed\"", WaiJson.Options).Should().Be(ActionItemStatus.Completed);
+        JsonSerializer.Deserialize<ActionItemStatus>("\"cancelled\"", WaiJson.Options).Should().Be(ActionItemStatus.Cancelled);
+    }
+
+    [Fact]
+    public void ActionItemDeserializesBackendShape()
+    {
+        // Backend ActionItemResponse with null owner + null priority — the case
+        // that crashed the old DTO (non-nullable Priority enum, "task"/"owner" mismatch).
+        const string body = """
+        {
+          "id": "ai-1",
+          "recording_id": "rec-1",
+          "task": "Send the report",
+          "owner": null,
+          "due_date": "2026-06-01",
+          "priority": null,
+          "status": "pending",
+          "source": "ai",
+          "created_at": "2026-05-18T14:30:45Z"
+        }
+        """;
+        var item = JsonSerializer.Deserialize<ActionItem>(body, WaiJson.Options)!;
+        item.Id.Should().Be("ai-1");
+        item.RecordingId.Should().Be("rec-1");
+        item.Task.Should().Be("Send the report");
+        item.Owner.Should().BeNull();
+        item.DueDate.Should().Be("2026-06-01");
+        item.Priority.Should().BeNull();
+        item.Status.Should().Be(ActionItemStatus.Pending);
+        item.Source.Should().Be("ai");
+        item.CreatedAt.Should().Be(new DateTimeOffset(2026, 5, 18, 14, 30, 45, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void ActionItemSerializesPopulatedShape()
+    {
+        var item = new ActionItem("i", "r", "do thing", "Mik", "2026-06-01",
+            ActionItemPriority.High, ActionItemStatus.InProgress, "manual", DateTimeOffset.UtcNow);
         var json = JsonSerializer.Serialize(item, WaiJson.Options);
-        json.Should().Contain("\"status\":\"open\"");
+        json.Should().Contain("\"status\":\"in_progress\"");
         json.Should().Contain("\"priority\":\"high\"");
+        json.Should().Contain("\"task\":\"do thing\"");
+        json.Should().Contain("\"owner\":\"Mik\"");
     }
 }
