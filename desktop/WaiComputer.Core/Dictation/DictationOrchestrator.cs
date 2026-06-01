@@ -83,6 +83,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
     // Guarded by _collectLock.
     private readonly List<string> _finals = new();
     private string _lastInterim = string.Empty;
+    private bool _fatalAbort;
 
     // Mutated only under _gate (the Start/Stop/Cancel critical section).
     private IRealtimeTranscriptionSession? _session;
@@ -166,7 +167,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
             }
 
             SetState(DictationState.Connecting);
-            lock (_collectLock) { _finals.Clear(); _lastInterim = string.Empty; }
+            lock (_collectLock) { _finals.Clear(); _lastInterim = string.Empty; _fatalAbort = false; }
 
             await PrewarmAsync(ct).ConfigureAwait(false);
             var lease = _mic.Lease();
@@ -264,6 +265,18 @@ public sealed class DictationOrchestrator : IAsyncDisposable
             await _clock.Delay(FinalEventDrainWindow, ct).ConfigureAwait(false);
             await session.CloseAsync(CloseTimeout).ConfigureAwait(false);
             await JoinPumpAsync(_eventPumpTask).ConfigureAwait(false);
+
+            bool aborted;
+            lock (_collectLock) { aborted = _fatalAbort; }
+            if (aborted)
+            {
+                // A fatal provider error fired during the finalize drain window (Failed already
+                // raised). Bail without inserting or firing Completed — mirrors the macOS
+                // `guard state == .processing` re-check. The queued CancelAsync then no-ops on Idle.
+                await CleanupSessionAsync().ConfigureAwait(false);
+                SetState(DictationState.Idle);
+                return;
+            }
 
             var raw = SelectTranscript(session);
             if (raw.Length == 0)
@@ -453,6 +466,7 @@ public sealed class DictationOrchestrator : IAsyncDisposable
 
                     case TranscriptionEvent.ProviderWarning w when TranscriptionErrorCodes.Fatal.Contains(w.Code):
                         _logger.LogError("Fatal realtime provider error during dictation: {Code}", w.Code);
+                        lock (_collectLock) { _fatalAbort = true; }
                         Failed?.Invoke(w.Message);
                         FireAndForget(() => CancelAsync(_lifetimeCts.Token));
                         return;
@@ -473,7 +487,22 @@ public sealed class DictationOrchestrator : IAsyncDisposable
 
         var collected = string.Join(" ", session.CollectedSegments.Where(s => s.IsFinal).Select(s => s.Text));
         var pumped = string.Join(" ", finals);
-        return RealtimeTranscriptCandidateSelector.Select(new[] { collected, pumped, lastInterim });
+
+        // Mirror macOS buildTranscript(): fuse the finals with the un-finalized trailing
+        // interim into ONE live candidate. The selector only promotes a candidate that is a
+        // superset substring of the current best, so passing the interim as a separate sibling
+        // makes it un-selectable once finals exist — silently dropping the last spoken word
+        // when the finalize round-trip doesn't re-emit it. _lastInterim is cleared on every
+        // final, so it only ever holds a genuine tail interim (no duplication on fuse).
+        var liveCombined = lastInterim.Length == 0
+            ? pumped
+            : pumped.Length == 0 ? lastInterim : $"{pumped} {lastInterim}";
+
+        return RealtimeTranscriptCandidateSelector.Select(new[]
+        {
+            collected.Length == 0 ? null : collected,
+            liveCombined.Length == 0 ? null : liveCombined,
+        });
     }
 
     private void SetState(DictationState next)
