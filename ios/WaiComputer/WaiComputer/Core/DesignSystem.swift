@@ -39,6 +39,105 @@ enum Typography {
     static let monoLarge: Font = .system(size: 15, weight: .medium, design: .monospaced)
 }
 
+// MARK: - Theme
+
+/// Light/Dark/System preference. Mirrors `MacAppearanceMode` (the
+/// `preferredColorScheme` logic is pure SwiftUI and identical cross-platform).
+enum IOSAppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+/// Accent color preference. Mirrors `MacAccentChoice` but builds colors from
+/// `Color(uiColor:)` system colors (the AppKit `NSColor` constructors have no
+/// iOS counterpart). `.system` keeps the brand amber so the default app tint is
+/// unchanged from before the picker existed.
+enum IOSAccentChoice: String, CaseIterable, Identifiable {
+    case system
+    case amber
+    case blue
+    case green
+    case violet
+    case rose
+    case graphite
+
+    var id: String { rawValue }
+
+    /// The tint applied to the scene. `.system` resolves to the brand amber so
+    /// the default tint matches the pre-picker behavior (iOS has no per-app
+    /// "system accent" the way macOS exposes `controlAccentColor`).
+    var tintColor: Color { color }
+
+    var previewColor: Color { color }
+
+    var color: Color {
+        switch self {
+        case .system, .amber:
+            // Brand warm amber (matches Palette.accent default).
+            return Color(red: 0.82, green: 0.49, blue: 0.18)
+        case .blue:
+            return Color(uiColor: .systemBlue)
+        case .green:
+            return Color(uiColor: .systemGreen)
+        case .violet:
+            return Color(uiColor: .systemPurple)
+        case .rose:
+            return Color(uiColor: .systemPink)
+        case .graphite:
+            return Color(uiColor: .systemGray)
+        }
+    }
+}
+
+/// AppStorage keys + defaults for the appearance preferences. Mirrors
+/// `MacThemePreferences` (same UserDefaults keys so a future shared sync stays
+/// consistent, though the values are read independently per platform).
+enum IOSThemePreferences {
+    static let appearanceKey = "waiAppearanceMode"
+    static let accentKey = "waiAccentChoice"
+    static let defaultAppearance: IOSAppearanceMode = .system
+    static let defaultAccent: IOSAccentChoice = .amber
+}
+
+/// Locale-aware date formatting keyed to the in-app language. Mirrors
+/// `MacDateFormatting`.
+enum IOSDateFormatting {
+    static func locale(for language: LanguageManager.SupportedLanguage) -> Locale {
+        switch language {
+        case .followSystem:
+            return .current
+        case .english:
+            return Locale(identifier: "en")
+        case .russian:
+            return Locale(identifier: "ru")
+        }
+    }
+
+    static func string(
+        from date: Date,
+        dateStyle: DateFormatter.Style,
+        timeStyle: DateFormatter.Style,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale(for: language)
+        formatter.dateStyle = dateStyle
+        formatter.timeStyle = timeStyle
+        return formatter.string(from: date)
+    }
+}
+
 // MARK: - Palette
 
 enum Palette {
