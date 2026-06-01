@@ -455,6 +455,8 @@ struct MacSettingsView: View {
 
             mcpConnectSection
 
+            McpIngestionSection()
+
             Section {
                 LabeledContent {
                     let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
