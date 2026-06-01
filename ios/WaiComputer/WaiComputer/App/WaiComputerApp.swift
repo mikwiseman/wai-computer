@@ -239,6 +239,16 @@ struct WaiComputerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
     @StateObject private var languageManager = LanguageManager.shared
+    @AppStorage(IOSThemePreferences.appearanceKey) private var appearanceModeRawValue = IOSThemePreferences.defaultAppearance.rawValue
+    @AppStorage(IOSThemePreferences.accentKey) private var accentChoiceRawValue = IOSThemePreferences.defaultAccent.rawValue
+
+    private var appearanceMode: IOSAppearanceMode {
+        IOSAppearanceMode(rawValue: appearanceModeRawValue) ?? IOSThemePreferences.defaultAppearance
+    }
+
+    private var accentChoice: IOSAccentChoice {
+        IOSAccentChoice(rawValue: accentChoiceRawValue) ?? IOSThemePreferences.defaultAccent
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -246,6 +256,8 @@ struct WaiComputerApp: App {
                 .environment(\.locale, languageManager.preferredLocale)
                 .environmentObject(languageManager)
                 .environmentObject(appState)
+                .preferredColorScheme(appearanceMode.preferredColorScheme)
+                .tint(accentChoice.tintColor)
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
                 }
