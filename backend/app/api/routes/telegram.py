@@ -22,11 +22,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
+from app.core.item_ingest import ingest_item
+from app.core.item_processing import process_item
+from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
     search_recordings_for_mcp,
 )
 from app.core.recording_import import RecordingImportError, import_media_as_recording
+from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
@@ -34,6 +38,7 @@ from app.core.telegram_client import (
 )
 from app.db.session import get_db_context
 from app.models.companion import Conversation
+from app.models.item import ItemSummary
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -963,6 +968,77 @@ async def _ensure_telegram_conversation(
     return conversation
 
 
+async def _handle_url_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    url: str,
+) -> None:
+    """Forward a link to the bot -> ingest it + reply with summary + key moments.
+
+    The item is captured idempotently (re-forwarding the same link returns the
+    existing item, no re-fetch). Fetch is run inline so the user gets the
+    summary in the same reply; a clean fetch error (e.g. Instagram) is shown as
+    a "share the file" message.
+    """
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+
+    item, created = await ingest_item(
+        db,
+        account.user_id,
+        source="telegram",
+        kind=classify_url(url),
+        url=url,
+        dedup_key=url,
+        body=None,
+        embed=False,
+    )
+    await db.flush()
+
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        if created or item.state != "promoted":
+            await process_item(db, item)
+            await db.flush()
+    except Exception:  # noqa: BLE001 — surface a friendly message, keep the saved item
+        logger.exception("telegram url processing failed url_host=%s", classify_url(url))
+        await _stop_chat_action_task(action_task)
+        await client.send_message(
+            chat_id,
+            "Сохранил ссылку, но не смог её обработать. Попробуй позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    finally:
+        await _stop_chat_action_task(action_task)
+
+    fetch_error = (item.metadata_ or {}).get("fetch_error")
+    if fetch_error:
+        await client.send_message(
+            chat_id,
+            format_fetch_error_reply(fetch_error.get("message", "Couldn't fetch that link.")),
+            reply_to_message_id=message.get("message_id"),
+            parse_mode="HTML",
+        )
+        return
+
+    summary = await db.execute(
+        select(ItemSummary).where(ItemSummary.item_id == item.id)
+    )
+    reply = format_item_reply(item, summary.scalar_one_or_none())
+    await _send_chunks(
+        client,
+        chat_id,
+        reply,
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
+
+
 async def _handle_text_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1217,6 +1293,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     )
                 else:
                     text_intent = _text_intent(text)
+                    forwarded_url = find_first_url(text)
                     if text_intent is not None:
                         intent, arg = text_intent
                         await _handle_account_command(
@@ -1226,6 +1303,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
                             account=account,
                             intent=intent,
                             arg=arg,
+                        )
+                    elif forwarded_url is not None:
+                        await _handle_url_message(
+                            db,
+                            client,
+                            message=message,
+                            account=account,
+                            url=forwarded_url,
                         )
                     else:
                         await _handle_text_message(
