@@ -62,23 +62,25 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
+            // Brain shows 3rd but keeps tag(4) so existing persisted selections
+            // (Wai=2, Settings=3) are NOT disrupted for users updating from build 42.
             SecondBrainView(apiClient: appState.getAPIClient())
                 .tabItem {
                     Label(t("Brain", "Мозг"), systemImage: "brain")
                 }
-                .tag(2)
+                .tag(4)
 
             WaiHomeView()
                 .tabItem {
                     Label("Wai", systemImage: "sparkles")
                 }
-                .tag(3)
+                .tag(2)
 
             SettingsView()
                 .tabItem {
                     Label(t("Settings", "Настройки"), systemImage: "gear")
                 }
-                .tag(4)
+                .tag(3)
         }
         .environmentObject(recordingViewModel)
         .overlay(alignment: .top) {
@@ -91,7 +93,8 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // Clamp into valid range (0 Record / 1 Library / 2 Brain / 3 Wai / 4 Settings)
+            // Clamp into valid range. Tags: 0 Record / 1 Library / 2 Wai / 3 Settings / 4 Brain
+            // (Brain shows 3rd but tags last to preserve existing persisted selections).
             if !(0...4).contains(selectedTab) { selectedTab = 0 }
             // Allow env override for screenshots
             if let tab = ProcessInfo.processInfo.environment["WAICOMPUTER_TAB"],
