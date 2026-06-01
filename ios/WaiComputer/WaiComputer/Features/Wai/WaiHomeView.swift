@@ -1,12 +1,71 @@
 import SwiftUI
 import WaiComputerKit
 
+/// The "Wai" companion tab. Hosts the shared `CompanionView` and supplies the
+/// three host-app inputs macOS provides at `MacContentView.swift:849-854`:
+/// a populated `[Recording]` (so citation chips resolve to real titles), the
+/// in-app accent colour, and the in-app language locale (so dates/labels in the
+/// shared view follow the language picker rather than the system locale).
 struct WaiHomeView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var languageManager: LanguageManager
+
+    /// Recordings used purely to resolve citation chip titles inside the shared
+    /// `CompanionView`. We fetch our own copy here rather than hoisting the
+    /// Library view model into `AppState`; a fresh `.task` load keeps the tab
+    /// self-contained at the cost of one extra list request.
+    @State private var recordings: [Recording] = []
+    @State private var loadError: String?
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 
     var body: some View {
-        // Citation chips fall back to "Recording" until we wire in a shared
-        // recordings list — passing [] here is intentional, not a fallback.
-        CompanionView(apiClient: appState.getAPIClient(), recordings: [])
+        CompanionView(apiClient: appState.getAPIClient(), recordings: recordings)
+            .environment(\.locale, languageManager.preferredLocale)
+            .companionAccentColor(Palette.accent)
+            .overlay(alignment: .top) {
+                if let loadError {
+                    citationLoadBanner(loadError)
+                }
+            }
+            .task {
+                await loadRecordings()
+            }
+    }
+
+    private func citationLoadBanner(_ message: String) -> some View {
+        Text(message)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial)
+            .accessibilityIdentifier("wai-citation-load-error")
+    }
+
+    private func loadRecordings() async {
+        #if DEBUG
+        if IOSTestingMode.current.isScreenshot {
+            recordings = IOSScreenshotFixtures.recordings
+            return
+        }
+        #endif
+
+        // Citation chips are an enrichment, not the primary content of this
+        // tab, so a failed lookup is surfaced as a quiet banner rather than
+        // blocking the chat — but we never silently swallow it.
+        do {
+            recordings = try await appState.getAPIClient().listRecordings(limit: 100)
+            loadError = nil
+        } catch {
+            loadError = t(
+                "Couldn't load recording titles for citations.",
+                "Не удалось загрузить названия записей для ссылок."
+            )
+        }
     }
 }
