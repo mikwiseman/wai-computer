@@ -1068,6 +1068,35 @@ public actor APIClient {
         return try await request(.GET, path: "/api/brain")
     }
 
+    // MARK: - Memory Proposals (raw→valuable governance review)
+
+    /// The review queue. `status` defaults to "pending"; pass "all" / "accepted"
+    /// / "rejected" to widen it. `pendingCount` is always the live pending total.
+    public func listMemoryProposals(
+        status: String? = "pending",
+        limit: Int = 50
+    ) async throws -> MemoryProposalList {
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: String(limit))]
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        return try await request(.GET, path: "/api/memory/proposals", queryItems: queryItems)
+    }
+
+    /// Promote a pending proposal into canonical memory (one-tap accept).
+    public func acceptMemoryProposal(id: String) async throws -> MemoryProposal {
+        return try await request(.POST, path: "/api/memory/proposals/\(id)/accept")
+    }
+
+    /// Reject a pending proposal — durable, so it is never re-proposed.
+    public func rejectMemoryProposal(id: String, reason: String? = nil) async throws -> MemoryProposal {
+        return try await request(
+            .POST,
+            path: "/api/memory/proposals/\(id)/reject",
+            body: RejectProposalRequest(reason: reason)
+        )
+    }
+
     // MARK: - MCP Ingestion Connections (connect any MCP)
 
     public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {
