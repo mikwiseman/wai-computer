@@ -3,6 +3,18 @@ using WaiComputer.Core.Api.Models;
 
 namespace WaiComputer.Core.Recordings;
 
+/// <summary>Sync lifecycle of a locally-backed recording (drives the upload coordinator's retry decisions).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<RecordingBackupSyncState>))]
+public enum RecordingBackupSyncState
+{
+    [JsonStringEnumMemberName("local_ready")] LocalReady,
+    [JsonStringEnumMemberName("uploading")] Uploading,
+    [JsonStringEnumMemberName("server_processing")] ServerProcessing,
+    [JsonStringEnumMemberName("retryable_failure")] RetryableFailure,
+    [JsonStringEnumMemberName("permanent_failure")] PermanentFailure,
+    [JsonStringEnumMemberName("auth_required")] AuthRequired,
+}
+
 /// <summary>
 /// On-disk metadata for a pending/failed recording awaiting upload. Mirrors
 /// the Swift <c>RecordingBackupManifest</c> field-for-field so the macOS
@@ -20,4 +32,9 @@ public sealed record RecordingBackupManifest(
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
     [property: JsonPropertyName("has_audio_file")] bool HasAudioFile,
     [property: JsonPropertyName("is_permanent_failure")] bool IsPermanentFailure,
-    [property: JsonPropertyName("requires_authentication")] bool RequiresAuthentication);
+    [property: JsonPropertyName("requires_authentication")] bool RequiresAuthentication,
+    [property: JsonPropertyName("sync_state")] RecordingBackupSyncState SyncState = RecordingBackupSyncState.LocalReady,
+    [property: JsonPropertyName("server_job_id")] string? ServerJobId = null,
+    [property: JsonPropertyName("last_sync_attempt_at")] DateTimeOffset? LastSyncAttemptAt = null,
+    [property: JsonPropertyName("sync_attempt_count")] int SyncAttemptCount = 0,
+    [property: JsonPropertyName("last_failure_code")] string? LastFailureCode = null);
