@@ -141,3 +141,44 @@ extension ItemModelTests {
         XCTAssertTrue(conn.enabled)
     }
 }
+
+extension ItemModelTests {
+    func testComparisonSetDecodes() throws {
+        let json = """
+        {
+          "id": "cmp1",
+          "title": "Three videos",
+          "item_ids": ["a", "b"],
+          "columns": [
+            {"name": "Thesis", "type": "text"},
+            {"name": "Length", "type": "number"}
+          ],
+          "rows": [
+            {"item_id": "a", "title": "Vid A", "values": {"Thesis": "solar", "Length": "10"}},
+            {"item_id": "b", "title": "Vid B", "values": {"Thesis": "wind", "Length": null}}
+          ],
+          "schema_rationale": "differentiates the videos",
+          "status": "ready",
+          "created_at": "2026-06-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let set = try decoder().decode(ComparisonSet.self, from: json)
+        XCTAssertEqual(set.id, "cmp1")
+        XCTAssertEqual(set.columns?.count, 2)
+        XCTAssertEqual(set.rows?.count, 2)
+        XCTAssertEqual(set.rows?[0].values["Thesis"], "solar")
+        // null value present-but-nil
+        let rowB = try XCTUnwrap(set.rows?[1])
+        XCTAssertEqual(rowB.values["Length"], String?.none)
+        XCTAssertEqual(set.status, "ready")
+    }
+
+    func testComparisonListEntryDecodes() throws {
+        let json = """
+        {"id": "cmp1", "title": "T", "item_count": 3, "status": "generating", "created_at": "2026-06-01T00:00:00Z"}
+        """.data(using: .utf8)!
+        let entry = try decoder().decode(ComparisonListEntry.self, from: json)
+        XCTAssertEqual(entry.itemCount, 3)
+        XCTAssertEqual(entry.status, "generating")
+    }
+}
