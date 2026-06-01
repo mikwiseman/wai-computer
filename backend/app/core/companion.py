@@ -216,6 +216,55 @@ class MemoryUpdatedEvent:
     operation: str = ""
 
 
+@dataclass(frozen=True)
+class ActionProposedEvent:
+    """A mutating tool (send / external write / desktop action) is proposed and
+    awaiting the user's explicit approval. The side effect has NOT run. The
+    client shows a confirm sheet and resolves it via /actions/{id}/resolve.
+    `preview` is a privacy-safe human-readable dry-run; `recipient` is the
+    resolved display name (never a raw id)."""
+
+    type: Literal["action_proposed"] = "action_proposed"
+    action_id: str = ""
+    kind: str = ""  # send | mutate | desktop_action
+    tool: str = ""
+    preview: str = ""
+    expires_at: str = ""
+    recipient: str | None = None
+
+
+@dataclass(frozen=True)
+class ActionResultEvent:
+    """The outcome of a resolved pending action."""
+
+    type: Literal["action_result"] = "action_result"
+    action_id: str = ""
+    status: str = ""  # executed | rejected | expired | failed
+    detail: str = ""
+    undo_token: str | None = None
+
+
+@dataclass(frozen=True)
+class NarrationEvent:
+    """A short spoken status the client reads aloud during a multi-step action
+    ("Opening Mail…", "Drafted the reply — say send to send")."""
+
+    type: Literal["narration"] = "narration"
+    text: str = ""
+
+
+@dataclass(frozen=True)
+class DesktopActionEvent:
+    """A computer-use command the cloud brain emits for the macOS edge to run
+    locally; the Mac POSTs the typed result back to /desktop_result. `command`
+    is an AXorcist CommandEnvelope (opaque to the backend)."""
+
+    type: Literal["desktop_action"] = "desktop_action"
+    action_id: str = ""
+    command: dict[str, Any] = field(default_factory=dict)
+    device_target: str | None = None
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
@@ -223,6 +272,10 @@ CompanionEvent = (
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
+    | ActionProposedEvent
+    | ActionResultEvent
+    | NarrationEvent
+    | DesktopActionEvent
     | DoneEvent
     | ErrorEvent
 )

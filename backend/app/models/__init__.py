@@ -19,13 +19,13 @@ from app.models.billing import (
 )
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.mcp_connection import McpConnection, McpIngestionRun
-from app.models.memory_proposal import MemoryProposal
 from app.models.mcp_oauth import (
     McpOAuthAuthorizationCode,
     McpOAuthAuthorizationRequest,
@@ -33,6 +33,7 @@ from app.models.mcp_oauth import (
     McpOAuthConsent,
     McpOAuthToken,
 )
+from app.models.memory_proposal import MemoryProposal
 from app.models.person import (
     Person,
     PublicVoiceprint,
@@ -114,6 +115,7 @@ __all__ = [
     "Conversation",
     "ChatMessage",
     "MessageCitation",
+    "CompanionPendingAction",
     "DictationEntry",
     "DictationDictionaryWord",
     "McpOAuthClient",

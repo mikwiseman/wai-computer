@@ -355,6 +355,30 @@ export type CompanionEvent =
       model: string;
       latency_ms: number;
     }
+  | { type: "memory_updated"; block: string; operation: string }
+  | {
+      type: "action_proposed";
+      action_id: string;
+      kind: string;
+      tool: string;
+      preview: string;
+      expires_at: string;
+      recipient: string | null;
+    }
+  | {
+      type: "action_result";
+      action_id: string;
+      status: string;
+      detail: string;
+      undo_token: string | null;
+    }
+  | { type: "narration"; text: string }
+  | {
+      type: "desktop_action";
+      action_id: string;
+      command: Record<string, unknown>;
+      device_target: string | null;
+    }
   | { type: "error"; code: string; message: string };
 
 export interface SharedRecording {
