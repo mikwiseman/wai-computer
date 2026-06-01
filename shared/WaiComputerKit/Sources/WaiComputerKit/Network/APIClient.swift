@@ -1104,6 +1104,33 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/mcp-connections/\(id)")
     }
 
+    // MARK: - Comparison Sets (forward several -> compare)
+
+    public func createComparison(
+        itemIds: [String],
+        title: String? = nil,
+        intent: String? = nil
+    ) async throws -> ComparisonSet {
+        let payload = CreateComparisonRequest(itemIds: itemIds, title: title, intent: intent)
+        return try await request(.POST, path: "/api/comparisons", body: payload)
+    }
+
+    public func listComparisons(limit: Int = 50, offset: Int = 0) async throws -> [ComparisonListEntry] {
+        let queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        return try await request(.GET, path: "/api/comparisons", queryItems: queryItems)
+    }
+
+    public func getComparison(id: String) async throws -> ComparisonSet {
+        return try await request(.GET, path: "/api/comparisons/\(id)")
+    }
+
+    public func deleteComparison(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/comparisons/\(id)")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -1757,6 +1784,18 @@ private struct UpdateMcpConnectionRequest: Encodable {
     private enum CodingKeys: String, CodingKey {
         case enabled
         case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct CreateComparisonRequest: Encodable {
+    var itemIds: [String]
+    var title: String?
+    var intent: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case itemIds = "item_ids"
+        case title
+        case intent
     }
 }
 
