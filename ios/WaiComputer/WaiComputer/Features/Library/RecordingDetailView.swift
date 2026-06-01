@@ -21,7 +21,6 @@ struct RecordingDetailView: View {
     @State private var showRenameAlert = false
     @State private var renameDraft = ""
     @State private var exportShareItem: ExportShareItem?
-    @State private var shareLinkURL: URL?
     @State private var isExporting = false
     @State private var isSharing = false
 
@@ -237,17 +236,23 @@ struct RecordingDetailView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 if isTrash {
-                    Button {
-                        onRestore?()
-                        dismiss()
-                    } label: {
-                        Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
+                    if onRestore != nil {
+                        Button {
+                            onRestore?()
+                            dismiss()
+                        } label: {
+                            Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
+                        }
                     }
 
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label(t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash")
+                    // Only offer permanent delete when a handler is wired;
+                    // otherwise the action would silently no-op (no-fallbacks).
+                    if onPermanentDelete != nil {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label(t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash")
+                        }
                     }
                 } else {
                     Button {
@@ -304,10 +309,16 @@ struct RecordingDetailView: View {
                         }
                     }
 
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
+                    // Only offer trash when a handler is wired; without it the
+                    // action would silently no-op (no-fallbacks). Search-result
+                    // detail now passes a real onTrash, so this stays available
+                    // there too.
+                    if onTrash != nil {
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
+                        }
                     }
                 }
             } label: {

@@ -83,8 +83,12 @@ class RecordingDetailViewModel: ObservableObject {
         }
     }
 
-    /// Async-job summary generation: kick off the job, patch local state so the
-    /// UI flips to the in-progress indicator, then poll detail until it settles.
+    /// Async-job summary generation: kick off the job and patch local state so
+    /// the UI flips to the in-progress indicator. Polling is owned by the
+    /// `.task(id: detailRefreshKey)` observer in `RecordingDetailView`: patching
+    /// `detail` with `withSummaryGeneration(state)` changes the refresh key,
+    /// which re-arms that single polling loop. Do NOT also poll here, or two
+    /// loops run concurrently and systematically drop each other's results.
     func startSummaryGeneration(recordingId id: String, apiClient: APIClient) async {
         generatingSummaryRecordingId = id
         defer {
@@ -98,7 +102,6 @@ class RecordingDetailViewModel: ObservableObject {
             if detail?.id == id {
                 detail = detail?.withSummaryGeneration(state)
             }
-            await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
         } catch {
             self.error = error.userFacingMessage(context: .library)
         }
@@ -124,14 +127,30 @@ class RecordingDetailViewModel: ObservableObject {
         guard let id = detail?.id else { return false }
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+
+        // The PATCH is the source of truth for success. Once it returns, the
+        // rename has been persisted server-side, so reflect it locally right
+        // away and report success — even if the follow-up detail refresh fails.
         do {
             _ = try await apiClient.updateRecording(id: id, title: trimmed)
-            applyFetchedDetail(try await apiClient.getRecording(id: id))
-            return true
         } catch {
             self.error = error.userFacingMessage(context: .library)
             return false
         }
+
+        if detail?.id == id {
+            detail = detail?.withTitle(trimmed)
+        }
+
+        // Best-effort refresh of the full detail; a failure here must NOT turn a
+        // successful rename into a reported failure. Surface it as a dismissible
+        // banner instead and keep the locally-applied title.
+        do {
+            applyFetchedDetail(try await apiClient.getRecording(id: id))
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+        return true
     }
 
     /// Returns the exported content as a String for the caller to bridge to a

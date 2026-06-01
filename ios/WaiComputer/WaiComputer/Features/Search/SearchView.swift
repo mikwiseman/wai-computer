@@ -244,9 +244,21 @@ class SearchViewModel: ObservableObject {
     @Published var error: String?
     @Published var searchMode: LibrarySearchScope = .hybrid
 
+    /// Tracks the in-flight search so a mode change (or rapid re-submit) can
+    /// cancel the previous request before starting a new one. Without this,
+    /// two `@MainActor` searches interleave at every `await` and the slower
+    /// one's results clobber the newer mode's. Mirrors
+    /// `LibraryViewModel.processingRefreshTask`.
+    private var searchTask: Task<Void, Never>?
+
+    deinit {
+        searchTask?.cancel()
+    }
+
     /// Inject a deterministic response (DEBUG screenshot/UI-test fixture)
     /// without hitting the network. Mirrors `MacSearchViewModel`.
     func applySearchResponse(_ response: SearchResponse) {
+        searchTask?.cancel()
         error = nil
         hasSearched = true
         isLoading = false
@@ -255,6 +267,8 @@ class SearchViewModel: ObservableObject {
     }
 
     func reset() {
+        searchTask?.cancel()
+        searchTask = nil
         results = []
         totalResults = 0
         hasSearched = false
@@ -263,6 +277,19 @@ class SearchViewModel: ObservableObject {
     }
 
     func search(apiClient: APIClient) async {
+        // Cancel any in-flight search before starting a new one so a mode
+        // change or rapid re-submit can't let the older request clobber the
+        // newer mode's results.
+        searchTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performSearch(apiClient: apiClient)
+        }
+        searchTask = task
+        await task.value
+    }
+
+    private func performSearch(apiClient: APIClient) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -280,14 +307,19 @@ class SearchViewModel: ObservableObject {
             case .fulltext:
                 response = try await apiClient.fulltextSearch(query: trimmed)
             }
+            // A newer search (or reset) superseded this one while it was in
+            // flight — drop these results so they can't clobber the newer mode.
+            guard !Task.isCancelled else { return }
             results = response.results
             totalResults = response.total
         } catch {
+            guard !Task.isCancelled else { return }
             results = []
             totalResults = 0
             self.error = error.userFacingMessage(context: .generic)
         }
 
+        guard !Task.isCancelled else { return }
         isLoading = false
     }
 }
