@@ -178,9 +178,26 @@ export interface AdminBillingSubscription {
   status: string;
   provider: string;
   billing_period: string;
+  current_period_start: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  canceled_at: string | null;
+  trial_end: string | null;
+  tinkoff_next_charge_at: string | null;
   invoices: AdminBillingInvoice[];
+}
+
+export interface AdminSubscriptionPatchInput {
+  status?: string;
+  plan?: string;
+  billing_period?: "month" | "year";
+  current_period_start?: string | null;
+  current_period_end?: string | null;
+  trial_end?: string | null;
+  canceled_at?: string | null;
+  cancel_at_period_end?: boolean;
+  next_charge_at?: string | null;
+  reason?: string | null;
 }
 
 export interface AdminAuditLog {
@@ -222,7 +239,7 @@ export function updateAdminPromoCode(
   input: Partial<
     Pick<
       AdminPromoCode,
-      "active" | "note" | "duration_days" | "discount_percent" | "max_redemptions"
+      "active" | "note" | "duration_days" | "discount_percent" | "max_redemptions" | "expires_at"
     >
   >,
 ): Promise<AdminPromoCode> {
@@ -286,6 +303,26 @@ export function resumeAdminSubscription(
   input: { reason: string | null },
 ): Promise<Record<string, unknown>> {
   return apiFetch<Record<string, unknown>>(`/api/admin/subscriptions/${id}/resume`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAdminSubscription(
+  id: string,
+  input: AdminSubscriptionPatchInput,
+): Promise<AdminBillingSubscription> {
+  return apiFetch<AdminBillingSubscription>(`/api/admin/subscriptions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function runAdminSubscriptionRenewal(
+  id: string,
+  input: { reason: string | null } = { reason: null },
+): Promise<{ charged: boolean; skipped?: boolean; reason?: string; result?: string; status?: string }> {
+  return apiFetch(`/api/admin/subscriptions/${id}/run-renewal`, {
     method: "POST",
     body: JSON.stringify(input),
   });

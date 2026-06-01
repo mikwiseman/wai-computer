@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import urlencode
 
+import httpx
+
 from app.config import get_settings
 from app.core.personalization import sanitize_keyterms
+from app.core.transcript_utils import TranscriptResult, detect_wav_channels
 
 DEEPGRAM_REALTIME_WS_URL = "wss://api.deepgram.com/v1/listen"
 DEEPGRAM_REALTIME_MODEL = "nova-3"
@@ -212,3 +215,167 @@ def build_realtime_websocket_url(
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
     return f"{DEEPGRAM_REALTIME_WS_URL}?{urlencode(params)}"
+
+
+# --- Batch (pre-recorded) file transcription -------------------------------
+
+DEEPGRAM_BATCH_URL = "https://api.deepgram.com/v1/listen"
+DEEPGRAM_BATCH_MODEL = "nova-3"
+# diarize_model=latest selects the v2 batch diarizer. It is batch-only and must
+# NOT be combined with diarize=true (Deepgram rejects that pairing with HTTP 400).
+DEEPGRAM_BATCH_DIARIZE_MODEL = "latest"
+DEEPGRAM_BATCH_TIMEOUT_SECONDS = 300.0
+# Deepgram auto-detects container formats from the audio bytes, but we send a
+# canonical Content-Type so non-standard aliases (e.g. audio/x-m4a from web
+# uploads) never reach the API. Raw PCM (audio/raw) is intentionally not aliased.
+DEEPGRAM_CONTENT_TYPE_ALIASES = {
+    "audio/x-m4a": "audio/mp4",
+    "audio/m4a": "audio/mp4",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+}
+
+
+def build_batch_url(
+    *,
+    language: str,
+    multichannel: bool,
+    raw_pcm: bool = False,
+    channels: int = DEEPGRAM_REALTIME_CHANNELS,
+    model: str = DEEPGRAM_BATCH_MODEL,
+    keyterms: list[str] | None = None,
+) -> str:
+    """Build the Deepgram pre-recorded transcription URL for file STT."""
+    resolved_language = normalize_deepgram_language(language)
+    params: list[tuple[str, str | int]] = [
+        ("model", model),
+        ("smart_format", "true"),
+        ("punctuate", "true"),
+        ("paragraphs", "true"),
+        ("utterances", "true"),
+        ("language", resolved_language),
+    ]
+    if raw_pcm:
+        # Raw/headerless PCM needs explicit encoding hints; containerized audio
+        # is auto-detected by Deepgram, so these are omitted for it.
+        params.extend(
+            (
+                ("encoding", DEEPGRAM_REALTIME_ENCODING),
+                ("sample_rate", DEEPGRAM_REALTIME_SAMPLE_RATE),
+                ("channels", max(1, channels)),
+            )
+        )
+    if multichannel:
+        params.append(("multichannel", "true"))
+    else:
+        params.append(("diarize_model", DEEPGRAM_BATCH_DIARIZE_MODEL))
+    if supports_numerals(resolved_language):
+        params.append(("numerals", "true"))
+    params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
+    return f"{DEEPGRAM_BATCH_URL}?{urlencode(params)}"
+
+
+def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
+    """Map a Deepgram pre-recorded response into normalized transcript segments."""
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"Deepgram STT returned unexpected payload type={type(payload).__name__}"
+        )
+    results_obj = payload.get("results")
+    if not isinstance(results_obj, dict):
+        raise RuntimeError("Deepgram STT response missing results object")
+    utterances = results_obj.get("utterances")
+    if not isinstance(utterances, list):
+        raise RuntimeError(
+            "Deepgram STT response missing utterances; ensure utterances=true"
+        )
+
+    results: list[TranscriptResult] = []
+    for utterance in utterances:
+        if not isinstance(utterance, dict):
+            raise RuntimeError("Deepgram STT returned an invalid utterance entry")
+        text = str(utterance.get("transcript", "")).strip()
+        if not text:
+            continue
+        # Emit the canonical raw diarization label (``speaker_0``) that the rest
+        # of the stack expects (see app/core/speaker_labels.py and the web
+        # formatter); this matches the format the previous provider produced, so
+        # persisted segments and speaker-name extraction stay format-stable.
+        speaker_index = utterance.get("speaker")
+        channel_index = utterance.get("channel")
+        if speaker_index is not None:
+            speaker: str | None = f"speaker_{speaker_index}"
+        elif channel_index is not None:
+            speaker = f"Channel {channel_index + 1}"
+        else:
+            speaker = None
+        results.append(
+            TranscriptResult(
+                text=text,
+                speaker=speaker,
+                is_final=True,
+                start_ms=int(float(utterance.get("start", 0.0)) * 1000),
+                end_ms=int(float(utterance.get("end", 0.0)) * 1000),
+                confidence=float(utterance.get("confidence", 0.0)),
+            )
+        )
+    return results
+
+
+async def transcribe_audio_file(
+    audio_data: bytes,
+    *,
+    language: str = "en",
+    content_type: str = "audio/wav",
+    channels: int | None = None,
+    model: str | None = None,
+    keyterms: list[str] | None = None,
+    max_channels: int | None = None,
+) -> list[TranscriptResult]:
+    """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
+    api_key = require_deepgram_api_key()
+    resolved_content_type = DEEPGRAM_CONTENT_TYPE_ALIASES.get(content_type, content_type)
+
+    resolved_channels = channels
+    if resolved_channels is None and resolved_content_type == "audio/wav":
+        resolved_channels = detect_wav_channels(audio_data)
+    channel_count = max(1, resolved_channels or 1)
+
+    # Deepgram bills per channel. Notes/meetings are mono; clamp a stereo or
+    # crafted many-channel file so it cannot silently multiply per-minute cost.
+    # max_channels is supplied by the dispatcher (settings.deepgram_max_channels);
+    # direct callers leave it None and get no clamp.
+    if isinstance(max_channels, int) and 0 < max_channels < channel_count:
+        from app.core.observability import capture_sentry_anomaly
+
+        capture_sentry_anomaly(
+            "recording.file_stt.channels_clamped",
+            "Clamped multichannel audio before Deepgram (per-channel billing guard)",
+            category="recording",
+            extras={"detected_channels": channel_count, "clamped_to": max_channels},
+            level="warning",
+        )
+        channel_count = max_channels
+
+    url = build_batch_url(
+        language=language,
+        multichannel=channel_count > 1,
+        raw_pcm=resolved_content_type == "audio/raw",
+        channels=channel_count,
+        model=model or DEEPGRAM_BATCH_MODEL,
+        keyterms=keyterms,
+    )
+
+    async with httpx.AsyncClient(timeout=DEEPGRAM_BATCH_TIMEOUT_SECONDS) as client:
+        response = await client.post(
+            url,
+            headers={
+                "Authorization": f"Token {api_key}",
+                "Content-Type": resolved_content_type,
+            },
+            content=audio_data,
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+    return _results_from_deepgram_payload(payload)

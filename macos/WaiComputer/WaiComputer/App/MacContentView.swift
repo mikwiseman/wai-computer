@@ -1467,8 +1467,20 @@ struct MacAuthView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var languageManager: LanguageManager
 
-    private static let privacyPolicyURL = URL(string: "https://wai.computer/privacy")!
-    private static let termsOfServiceURL = URL(string: "https://wai.computer/terms")!
+    // Keep in sync with the backend minimum (RegisterRequest, auth.py).
+    private static let minPasswordLength = 8
+
+    // Legal pages are localized: link to the /ru variants in Russian (110).
+    private var termsOfServiceURL: URL {
+        URL(string: authLocale == "ru"
+            ? "https://wai.computer/ru/terms"
+            : "https://wai.computer/terms")!
+    }
+    private var privacyPolicyURL: URL {
+        URL(string: authLocale == "ru"
+            ? "https://wai.computer/ru/privacy"
+            : "https://wai.computer/privacy")!
+    }
 
     enum AuthMode: String, CaseIterable, Hashable {
         case login = "Login"
@@ -1594,6 +1606,23 @@ struct MacAuthView: View {
                         .frame(maxWidth: 380)
                         .accessibilityIdentifier("auth-confirm-password-field")
 
+                    // Communicate the length requirement up front (111b) and the
+                    // mismatch reason when the two passwords differ (111).
+                    authFieldHint(
+                        t(
+                            "At least \(Self.minPasswordLength) characters",
+                            "Минимум \(Self.minPasswordLength) символов"
+                        ),
+                        isError: !password.isEmpty && password.count < Self.minPasswordLength
+                    )
+                    if !confirmPassword.isEmpty && confirmPassword != password {
+                        authFieldHint(
+                            t("Passwords don't match", "Пароли не совпадают"),
+                            isError: true
+                        )
+                        .accessibilityIdentifier("auth-password-mismatch")
+                    }
+
                     legalConsentRow
                 }
 
@@ -1611,7 +1640,21 @@ struct MacAuthView: View {
                     .accessibilityIdentifier("auth-forgot-password-button")
                 }
             }
+
+            // New users requesting a magic link must accept the legal terms too,
+            // so surface the same consent checkbox here (100).
+            if authMode == .magicLink {
+                legalConsentRow
+            }
         }
+    }
+
+    @ViewBuilder
+    private func authFieldHint(_ text: String, isError: Bool) -> some View {
+        Text(text)
+            .font(Typography.caption)
+            .foregroundStyle(isError ? Palette.recording : Palette.textSecondary)
+            .frame(maxWidth: 380, alignment: .leading)
     }
 
     private var legalConsentRow: some View {
@@ -1627,10 +1670,10 @@ struct MacAuthView: View {
                     .foregroundStyle(Palette.textSecondary)
 
                 HStack(spacing: 6) {
-                    Link(t("Terms of Service", "Условия сервиса"), destination: Self.termsOfServiceURL)
+                    Link(t("Terms of Service", "Условия сервиса"), destination: termsOfServiceURL)
                     Text("·")
                         .foregroundStyle(Palette.textTertiary)
-                    Link(t("Privacy Policy", "Политика конфиденциальности"), destination: Self.privacyPolicyURL)
+                    Link(t("Privacy Policy", "Политика конфиденциальности"), destination: privacyPolicyURL)
                 }
                 .font(Typography.caption)
             }
@@ -1674,11 +1717,16 @@ struct MacAuthView: View {
 
         switch authMode {
         case .login:
-            return emailLooksValid && password.count >= 6
+            return emailLooksValid && !password.isEmpty
         case .register:
-            return emailLooksValid && password.count >= 6 && password == confirmPassword && acceptedLegalTerms
-        case .magicLink:
             return emailLooksValid
+                && password.count >= Self.minPasswordLength
+                && password == confirmPassword
+                && acceptedLegalTerms
+        case .magicLink:
+            // New users completing a magic-link signup must accept the legal terms
+            // too — the backend enforces it, so gate the button on it (100).
+            return emailLooksValid && acceptedLegalTerms
         }
     }
 
@@ -1702,7 +1750,10 @@ struct MacAuthView: View {
                     acceptedLegalTerms: acceptedLegalTerms
                 )
             case .magicLink:
-                await appState.requestMagicLink(email: email)
+                await appState.requestMagicLink(
+                    email: email,
+                    acceptedLegalTerms: acceptedLegalTerms
+                )
             }
         }
     }

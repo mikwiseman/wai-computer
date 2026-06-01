@@ -208,6 +208,96 @@ async def test_export_uses_assigned_person_display_name_when_present(
     assert "[speaker_0, 0:00]" not in response.text
 
 
+async def _recording_with_renamed_speaker(
+    client: AsyncClient,
+    headers: dict,
+    db_session: AsyncSession,
+) -> dict:
+    """Recording whose stored summary/highlights embed raw speaker tokens, with
+    speaker_0 assigned to a renamed Person 'Михаил'."""
+    recording = await _create_recording_with_segments(
+        client,
+        headers,
+        db_session,
+        title="Обсуждение больничного",
+        type_="meeting",
+        add_summary=True,
+        add_highlights=True,
+    )
+    recording_id = UUID(recording["id"])
+    rec = (
+        await db_session.execute(
+            select(Recording)
+            .where(Recording.id == recording_id)
+            .options(
+                selectinload(Recording.segments),
+                selectinload(Recording.summary),
+                selectinload(Recording.highlights),
+            )
+        )
+    ).scalar_one()
+    rec.language = "ru"
+    for index, segment in enumerate(sorted(rec.segments, key=lambda s: s.start_ms or 0)):
+        segment.speaker = f"speaker_{index % 2}"
+        segment.raw_label = segment.speaker
+    # Summary/highlights bake the raw diarization tokens at generation time.
+    rec.summary.summary = "speaker_0 обсудил больничный, speaker_1 согласился."
+    for highlight in rec.highlights:
+        highlight.speaker = "speaker_0"
+    person = Person(user_id=rec.user_id, display_name="Михаил")
+    db_session.add(person)
+    await db_session.flush()
+    for segment in rec.segments:
+        if segment.speaker == "speaker_0":
+            segment.person_id = person.id
+    await db_session.flush()
+    return recording
+
+
+@pytest.mark.asyncio
+async def test_export_propagates_renamed_speaker_into_summary_and_highlights(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """A renamed (assigned) speaker must show in the summary text and highlights of
+    the export, and unassigned speakers must localize — not leak raw tokens (123/123c)."""
+    recording = await _recording_with_renamed_speaker(client, auth_headers, db_session)
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "markdown", "locale": "ru"},
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Михаил обсудил больничный" in body  # summary: assigned name applied
+    assert "Спикер 2" in body  # summary: unassigned speaker_1 localized
+    assert "(Михаил," in body  # highlight speaker resolves to assigned name
+    assert "speaker_0" not in body
+    assert "speaker_1" not in body
+
+
+@pytest.mark.asyncio
+async def test_recording_detail_summary_reflects_renamed_speaker(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """The in-app summary (detail API) substitutes a renamed speaker (issue 123)."""
+    recording = await _recording_with_renamed_speaker(client, auth_headers, db_session)
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}", headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    summary_text = response.json()["summary"]["summary"]
+    assert "Михаил обсудил больничный" in summary_text
+    assert "speaker_0" not in summary_text
+
+
 # ---- Markdown export ----
 
 
@@ -310,6 +400,33 @@ async def test_export_txt_format(
     assert "Hello everyone, welcome to the standup." in body
     assert "[Speaker 2, 0:15]" in body
     assert "Thanks for joining." in body
+
+
+@pytest.mark.asyncio
+async def test_export_txt_includes_summary_and_highlights(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """TXT export carries the same summary + highlights sections as Markdown (124)."""
+    recording = await _create_recording_with_segments(
+        client,
+        auth_headers,
+        db_session,
+        add_summary=True,
+        add_highlights=True,
+    )
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "txt"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "Team discussed sprint progress" in body  # summary section present
+    assert "Budget approved for Q3" in body  # highlight present
+    assert "[Speaker 1, 0:00]" in body  # transcript still present
 
 
 # ---- SRT subtitle export ----

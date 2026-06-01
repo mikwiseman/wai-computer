@@ -11,11 +11,13 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -248,7 +250,7 @@ class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
         CheckConstraint(
             (
                 "promotion_type != 'discount' OR "
-                "(discount_percent IS NOT NULL AND discount_percent BETWEEN 1 AND 99)"
+                "(discount_percent IS NOT NULL AND discount_percent BETWEEN 1 AND 100)"
             ),
             name="ck_billing_promo_codes_discount_percent",
         ),
@@ -268,10 +270,18 @@ class BillingPromoCode(Base, UUIDMixin, TimestampMixin):
             "redeemed_count <= max_redemptions",
             name="ck_billing_promo_codes_redeemed_within_max",
         ),
+        # Code names are unique only among non-archived codes: archiving a code
+        # frees its name for reuse, while an active/paused code still reserves it.
+        Index(
+            "uq_billing_promo_codes_active_code_hash",
+            "code_hash",
+            unique=True,
+            postgresql_where=text("archived_at IS NULL"),
+        ),
     )
 
     code: Mapped[str | None] = mapped_column(String(128))
-    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     plan_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("billing_plans.id", ondelete="RESTRICT"), nullable=False
     )

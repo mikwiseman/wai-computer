@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WaiComputerKit
 
 struct MacRecordingDetailView: View {
@@ -238,14 +239,23 @@ struct MacRecordingDetailView: View {
     private func exportRecording(format: String) async {
         guard let id = viewModel.recordingDetail?.id else { return }
         do {
-            let content = try await appState.getAPIClient().exportRecording(id: id, format: format)
+            let exportLocale =
+                languageManager.preferredLocale.language.languageCode?.identifier == "ru"
+                ? "ru" : "en"
+            let content = try await appState.getAPIClient().exportRecording(
+                id: id,
+                format: format,
+                locale: exportLocale
+            )
             let ext = format == "markdown" ? "md" : format
             let title = viewModel.recordingDetail?.title ?? "recording"
             let safeName = title.replacingOccurrences(of: "/", with: "_")
 
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "\(safeName).\(ext)"
-            panel.allowedContentTypes = [.plainText]
+            // Constrain to the real format's type so the panel keeps the actual
+            // extension (.md/.srt/.txt) instead of appending ".txt" (125).
+            panel.allowedContentTypes = [UTType(filenameExtension: ext)].compactMap { $0 }
             let result = panel.runModal()
             if result == .OK, let url = panel.url {
                 try content.write(to: url, atomically: true, encoding: .utf8)
@@ -333,10 +343,8 @@ struct MacRecordingDetailView: View {
             }
 
             HStack(spacing: Spacing.sm) {
-                Text(recordingTypeLabel(detail.type))
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.typeColor(detail.type))
-
+                // Recording-type badge removed (119): always "meeting", always-on,
+                // and unclear to users. recording.type is still kept on the model.
                 Text(MacDateFormatting.string(
                     from: detail.createdAt,
                     dateStyle: .long,

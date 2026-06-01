@@ -475,7 +475,10 @@ struct OnboardingView: View {
         #endif
         triggeredOpenAccessibilitySettings = true
         _ = GlobalHotkeyManager.requestAccessibilityPermission()
-        MacInputPermission.revealAppInFinder()
+        // Open System Settings directly. The Finder reveal is intentionally not
+        // part of the grant flow anymore — it spawned a third window on top of
+        // the system prompt + Settings (108); it stays available only as an
+        // explicit recovery action when Settings shows a duplicate/empty row.
         MacPrivacySettings.openAccessibility()
     }
 
@@ -546,7 +549,8 @@ struct OnboardingView: View {
         triggeredOpenSystemAudioSettings = true
         isRequestingSystemAudioPermission = false
         refreshPermissions()
-        MacInputPermission.revealAppInFinder()
+        // Open System Settings directly; don't also spawn a Finder window on top
+        // of the system prompt — same redirect noise the tester hit (109, cf. 108).
         MacPrivacySettings.openSystemAudio()
     }
 

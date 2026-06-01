@@ -13,17 +13,19 @@ from app.api.routes.benchmarks import (
 )
 
 
-def test_configured_file_stt_options_returns_only_elevenlabs_when_configured(monkeypatch):
+def test_configured_file_stt_options_returns_only_deepgram_when_configured(monkeypatch):
     monkeypatch.setattr(
         benchmarks,
         "get_settings",
-        lambda: SimpleNamespace(elevenlabs_api_key="xi-key", openai_api_key="openai-test-key"),
+        lambda: SimpleNamespace(
+            deepgram_api_key="deepgram-test-key", elevenlabs_api_key="", openai_api_key="openai-test-key"
+        ),
     )
 
     options = benchmarks._configured_file_stt_options()
 
     assert [(option.provider, option.model) for option in options] == [
-        ("elevenlabs", "scribe_v2")
+        ("deepgram", "nova-3")
     ]
 
 
@@ -66,16 +68,16 @@ async def test_transcribe_candidate_returns_transcript_metadata(monkeypatch):
         audio_data=b"audio",
         content_type="audio/wav",
         language="ru",
-        provider="elevenlabs",
-        model="scribe_v2",
-        label="ElevenLabs Scribe v2",
+        provider="deepgram",
+        model="nova-3",
+        label="Deepgram Nova-3",
     )
 
     assert candidate.status == "ok"
     assert candidate.transcript == "hello world"
     assert candidate.word_count == 2
-    assert candidate.provider == "elevenlabs"
-    assert candidate.model == "scribe_v2"
+    assert candidate.provider == "deepgram"
+    assert candidate.model == "nova-3"
 
 
 @pytest.mark.asyncio
@@ -90,9 +92,9 @@ async def test_transcribe_candidate_returns_generic_provider_error(monkeypatch):
         audio_data=b"audio",
         content_type="audio/wav",
         language="multi",
-        provider="elevenlabs",
-        model="scribe_v2",
-        label="ElevenLabs Scribe v2",
+        provider="deepgram",
+        model="nova-3",
+        label="Deepgram Nova-3",
     )
 
     assert candidate.status == "error"
@@ -108,9 +110,9 @@ async def test_create_dictation_benchmark_battle_runs_configured_file_stt(monkey
         "_configured_file_stt_options",
         lambda: [
             SimpleNamespace(
-                provider="elevenlabs",
-                model="scribe_v2",
-                label="ElevenLabs Scribe v2",
+                provider="deepgram",
+                model="nova-3",
+                label="Deepgram Nova-3",
             )
         ],
     )
@@ -141,8 +143,8 @@ async def test_create_dictation_benchmark_battle_runs_configured_file_stt(monkey
 
     assert response.language == "ru"
     assert len(response.candidates) == 1
-    assert response.candidates[0].provider == "elevenlabs"
-    assert response.candidates[0].model == "scribe_v2"
+    assert response.candidates[0].provider == "deepgram"
+    assert response.candidates[0].model == "nova-3"
 
 
 @pytest.mark.asyncio
@@ -207,8 +209,8 @@ async def test_create_dictation_benchmark_vote_persists_normalized_choice():
     request = DictationBenchmarkVoteRequest(
         battle_id="battle-1",
         selected_candidate_id="candidate-1",
-        selected_provider=" ElevenLabs ",
-        selected_model=" scribe_v2 ",
+        selected_provider=" DeepGram ",
+        selected_model=" nova-3 ",
         language=" RU ",
         candidate_count=1,
     )
@@ -222,8 +224,8 @@ async def test_create_dictation_benchmark_vote_persists_normalized_choice():
     assert db.committed
     assert db.added is not None
     assert db.added.user_id == user_id
-    assert db.added.selected_provider == "elevenlabs"
-    assert db.added.selected_model == "scribe_v2"
+    assert db.added.selected_provider == "deepgram"
+    assert db.added.selected_model == "nova-3"
     assert db.added.language == "ru"
     assert response.vote_id == str(db.added.id)
 

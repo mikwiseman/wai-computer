@@ -23,6 +23,11 @@ def test_normalize_deepgram_language_maps_auto_to_multi() -> None:
     assert normalize_deepgram_language("zz-TEST") == "zz-test"
 
 
+def test_validate_deepgram_language_accepts_supported_language() -> None:
+    assert validate_deepgram_language("ru") == "ru"
+    assert validate_deepgram_language("multi") == "multi"
+
+
 def test_validate_deepgram_language_rejects_unsupported_language() -> None:
     with pytest.raises(ValueError, match="Unsupported Deepgram language"):
         validate_deepgram_language("zz-TEST")

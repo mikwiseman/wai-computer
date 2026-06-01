@@ -33,6 +33,7 @@ from app.core.speaker_name_extraction import (
 from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
+from app.core.transcription_guard import TranscriptionGuardError
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -474,6 +475,33 @@ async def process_staged_recording_upload(
         )
         return
 
+    # Idempotency: if a prior run already transcribed this recording (segments
+    # exist), a requeued / retried / duplicate-delivered task must NOT re-call
+    # Deepgram for the same audio. This is the primary guard against the
+    # 2026-05-31 batch cost incident (worker-loss requeue + visibility-timeout
+    # redelivery re-transcribing the same long recordings many times).
+    already_transcribed = await db.execute(
+        select(Segment.id).where(Segment.recording_id == recording_id).limit(1)
+    )
+    if already_transcribed.first() is not None:
+        logger.info(
+            "skipping re-transcription; recording already has segments recording_id=%s",
+            recording_id,
+        )
+        capture_sentry_anomaly(
+            "recording.transcription.duplicate_skipped",
+            "Skipped re-transcription of an already-transcribed recording",
+            category="recording",
+            extras={"recording_id": str(recording_id)},
+            level="warning",
+        )
+        recording.status = RecordingStatus.READY.value
+        recording.failure_code = None
+        recording.failure_message = None
+        await db.commit()
+        delete_staged_file(staged_path)
+        return
+
     try:
         await reset_recording_processing_state(recording_id, db)
 
@@ -502,6 +530,7 @@ async def process_staged_recording_upload(
                     else client_duration_seconds
                 ),
                 keyterms=keyterms,
+                user_id=str(user_id),
             )
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",
@@ -737,6 +766,28 @@ async def process_staged_recording_upload(
         )
         delete_staged_file(staged_path)
         logger.info("audio processing completed latency_ms=%s", processing_latency_ms)
+    except TranscriptionGuardError as exc:
+        await db.rollback()
+        logger.warning(
+            "recording transcription refused by cost/abuse guard recording_id=%s code=%s",
+            recording_id,
+            exc.code,
+        )
+        capture_sentry_anomaly(
+            "recording.transcription.guard_refused",
+            "Batch transcription refused by a Deepgram cost/abuse guard",
+            category="recording",
+            extras={"recording_id": str(recording_id), "guard_code": exc.code},
+            level="warning",
+        )
+        await mark_recording_processing_failed(
+            db,
+            recording_id=recording_id,
+            failure_code=exc.code,
+            failure_message=exc.message,
+        )
+        delete_staged_file(staged_path)
+        return
     except Exception as exc:
         await db.rollback()
         if _provider_reported_audio_too_short(exc):

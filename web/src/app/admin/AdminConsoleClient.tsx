@@ -16,10 +16,13 @@ import {
   listAdminUsers,
   refundAdminInvoice,
   resumeAdminSubscription,
+  runAdminSubscriptionRenewal,
   updateAdminPromoCode,
+  updateAdminSubscription,
   updateAdminUserStatus,
   type AdminAuditLog,
   type AdminBillingSubscription,
+  type AdminSubscriptionPatchInput,
   type AdminObservability,
   type AdminPromoCode,
   type AdminPromoRedemptionBucket,
@@ -37,6 +40,7 @@ type PromoDraft = {
   duration_days: number | null;
   discount_percent: number | null;
   max_redemptions: number;
+  expires_at: string; // yyyy-mm-dd; "" means no expiry
 };
 
 const TABS: Array<{ id: AdminTab; label: string }> = [
@@ -70,6 +74,17 @@ function defaultPromoExpiryDate(): string {
 function promoExpiryIso(dateValue: string): string | null {
   if (!dateValue) return null;
   return `${dateValue}T23:59:59.000Z`;
+}
+
+function isoToDateInput(value: string | null): string {
+  return value ? value.slice(0, 10) : "";
+}
+
+// Subscription date inputs map to noon UTC so a chosen day is unambiguously
+// in the past/future regardless of the viewer's timezone.
+function dateInputToIso(dateValue: string): string | null {
+  if (!dateValue) return null;
+  return `${dateValue}T12:00:00.000Z`;
 }
 
 function metricEntries(record: Record<string, number>): Array<[string, number]> {
@@ -146,6 +161,7 @@ export function AdminConsoleClient() {
             duration_days: promo.duration_days,
             discount_percent: promo.discount_percent,
             max_redemptions: promo.max_redemptions,
+            expires_at: isoToDateInput(promo.expires_at),
           },
         ]),
       ),
@@ -179,6 +195,30 @@ export function AdminConsoleClient() {
       setMessage(success);
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "Admin action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRunRenewal(subId: string) {
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await runAdminSubscriptionRenewal(subId, { reason: billingReason || null });
+      await refreshAll();
+      if (result.charged) {
+        setMessage("Renewal charged.");
+      } else if (result.skipped) {
+        // No charge was attempted — a gate (e.g. cancellation pending) stopped it.
+        setMessage(`Renewal skipped: ${result.reason ?? "not eligible"}.`);
+      } else {
+        // The charge was attempted and the provider rejected it (e.g. Tinkoff
+        // ErrorCode 10 on the DEMO terminal); the subscription is now past_due.
+        setError(`Renewal attempt failed at the provider (status: ${result.status ?? "unknown"}).`);
+      }
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "Renewal failed.");
     } finally {
       setBusy(false);
     }
@@ -356,7 +396,7 @@ export function AdminConsoleClient() {
               ) : null}
               <label>
                 <span>{newPromo.promotionType === "access" ? "Pro days" : "Discount %"}</span>
-                <input type="number" min={1} max={newPromo.promotionType === "discount" ? 99 : undefined} value={newPromo.promotionType === "access" ? newPromo.durationDays : newPromo.discountPercent} onChange={(event) => setNewPromo((current) => current.promotionType === "access" ? { ...current, durationDays: Number(event.target.value) } : { ...current, discountPercent: Number(event.target.value) })} />
+                <input type="number" min={1} max={newPromo.promotionType === "discount" ? 100 : undefined} value={newPromo.promotionType === "access" ? newPromo.durationDays : newPromo.discountPercent} onChange={(event) => setNewPromo((current) => current.promotionType === "access" ? { ...current, durationDays: Number(event.target.value) } : { ...current, discountPercent: Number(event.target.value) })} />
               </label>
               <label>
                 <span>Redemptions</span>
@@ -394,6 +434,7 @@ export function AdminConsoleClient() {
                       ? { duration_days: draft.duration_days }
                       : { discount_percent: draft.discount_percent }),
                     max_redemptions: draft.max_redemptions,
+                    expires_at: promoExpiryIso(draft.expires_at),
                   });
                 }, "Promo code updated.")
               }
@@ -467,7 +508,7 @@ export function AdminConsoleClient() {
                     setSelectedUser(await getAdminUser(selectedUser.id));
                   }, "Admin Pro granted.")}>Grant Pro</button>
                 </div>
-                <BillingList subscriptions={selectedUserBilling} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} />
+                <BillingList subscriptions={selectedUserBilling} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} />
               </div>
             ) : null}
           </div>
@@ -478,7 +519,7 @@ export function AdminConsoleClient() {
             <div className="admin-action-row admin-action-row--wide">
               <input value={billingReason} onChange={(event) => setBillingReason(event.target.value)} placeholder="billing reason" />
             </div>
-            <BillingList subscriptions={billing} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} />
+            <BillingList subscriptions={billing} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} />
           </div>
         ) : null}
 
@@ -705,7 +746,8 @@ function PromoTable({
             <th>Type</th>
             <th>Status</th>
             <th>Use</th>
-            <th>Benefit</th>
+            <th>Pro days</th>
+            <th>Discount %</th>
             <th>Period</th>
             <th>Expires</th>
             <th>Max</th>
@@ -720,6 +762,7 @@ function PromoTable({
               duration_days: promo.duration_days,
               discount_percent: promo.discount_percent,
               max_redemptions: promo.max_redemptions,
+              expires_at: isoToDateInput(promo.expires_at),
             };
             const code = promo.code ?? promo.normalized_code ?? "-";
             return (
@@ -733,11 +776,20 @@ function PromoTable({
                   {promo.promotion_type === "access" ? (
                     <input type="number" min={1} value={draft.duration_days ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, duration_days: Number(event.target.value) } }))} />
                   ) : (
-                    <input type="number" min={1} max={99} value={draft.discount_percent ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, discount_percent: Number(event.target.value) } }))} />
+                    <span className="muted-text">—</span>
+                  )}
+                </td>
+                <td>
+                  {promo.promotion_type === "discount" ? (
+                    <input type="number" min={1} max={100} value={draft.discount_percent ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, discount_percent: Number(event.target.value) } }))} />
+                  ) : (
+                    <span className="muted-text">—</span>
                   )}
                 </td>
                 <td>{promo.promotion_type === "discount" ? promo.billing_period : "-"}</td>
-                <td>{fmtDate(promo.expires_at)}</td>
+                <td>
+                  <input type="date" value={draft.expires_at} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, expires_at: event.target.value } }))} />
+                </td>
                 <td>
                   <input type="number" min={promo.redeemed_count || 1} value={draft.max_redemptions} onChange={(event) => setDrafts((current) => ({ ...current, [promo.id]: { ...draft, max_redemptions: Number(event.target.value) } }))} />
                 </td>
@@ -758,18 +810,73 @@ function PromoTable({
   );
 }
 
+type SubEditDraft = {
+  status: string;
+  plan: string;
+  billing_period: "month" | "year";
+  current_period_start: string;
+  current_period_end: string;
+  trial_end: string;
+  next_charge_at: string;
+  cancel_at_period_end: boolean;
+};
+
+const SUB_STATUSES = ["trialing", "active", "past_due", "canceled", "incomplete", "expired"];
+
+function subDraftFrom(sub: AdminBillingSubscription): SubEditDraft {
+  return {
+    status: sub.status,
+    plan: sub.plan,
+    billing_period: sub.billing_period === "year" ? "year" : "month",
+    current_period_start: isoToDateInput(sub.current_period_start),
+    current_period_end: isoToDateInput(sub.current_period_end),
+    trial_end: isoToDateInput(sub.trial_end),
+    next_charge_at: isoToDateInput(sub.tinkoff_next_charge_at),
+    cancel_at_period_end: sub.cancel_at_period_end,
+  };
+}
+
+// Build a PATCH body of ONLY the fields the admin actually changed, so e.g. an
+// untouched status doesn't trigger a spurious cancel/resume call on Stripe.
+function subPatchDiff(
+  sub: AdminBillingSubscription,
+  draft: SubEditDraft,
+  reason: string,
+): AdminSubscriptionPatchInput {
+  const original = subDraftFrom(sub);
+  const patch: AdminSubscriptionPatchInput = {};
+  if (draft.status !== original.status) patch.status = draft.status;
+  if (draft.plan !== original.plan) patch.plan = draft.plan;
+  if (draft.billing_period !== original.billing_period) patch.billing_period = draft.billing_period;
+  if (draft.cancel_at_period_end !== original.cancel_at_period_end)
+    patch.cancel_at_period_end = draft.cancel_at_period_end;
+  if (draft.current_period_start !== original.current_period_start)
+    patch.current_period_start = dateInputToIso(draft.current_period_start);
+  if (draft.current_period_end !== original.current_period_end)
+    patch.current_period_end = dateInputToIso(draft.current_period_end);
+  if (draft.trial_end !== original.trial_end) patch.trial_end = dateInputToIso(draft.trial_end);
+  if (draft.next_charge_at !== original.next_charge_at)
+    patch.next_charge_at = dateInputToIso(draft.next_charge_at);
+  if (Object.keys(patch).length > 0) patch.reason = reason || null;
+  return patch;
+}
+
 function BillingList({
   subscriptions,
   reason,
   busy,
   runAction,
+  onRunRenewal,
 }: {
   subscriptions: AdminBillingSubscription[];
   reason: string;
   setReason: (value: string) => void;
   busy: boolean;
   runAction: (action: () => Promise<void>, success: string) => Promise<void>;
+  onRunRenewal: (id: string) => void;
 }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<SubEditDraft | null>(null);
   return (
     <div className="admin-billing-list">
       {subscriptions.map((sub) => (
@@ -778,8 +885,26 @@ function BillingList({
             <div>
               <h3>{sub.user_email}</h3>
               <p>{sub.provider} · {sub.plan} · {sub.status} · {sub.cancel_at_period_end ? "cancel pending" : "renewing"}</p>
+              <p className="muted-text">
+                Period ends {fmtDate(sub.current_period_end)}
+                {sub.provider === "tinkoff"
+                  ? ` · next charge ${sub.cancel_at_period_end ? "—" : fmtDate(sub.tinkoff_next_charge_at)}`
+                  : ""}
+              </p>
             </div>
             <div className="admin-row-actions">
+              <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => {
+                if (editingId === sub.id) {
+                  setEditingId(null);
+                  setDraft(null);
+                } else {
+                  setEditingId(sub.id);
+                  setDraft(subDraftFrom(sub));
+                }
+              }}>{editingId === sub.id ? "Close" : "Edit"}</button>
+              {sub.provider === "tinkoff" ? (
+                <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => onRunRenewal(sub.id)}>Run renewal now</button>
+              ) : null}
               <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void runAction(async () => {
                 await cancelAdminSubscription(sub.id, { mode: "period_end", reason: reason || null });
               }, "Subscription cancellation scheduled.")}>Cancel later</button>
@@ -791,6 +916,63 @@ function BillingList({
               }, "Subscription resumed.")}>Resume</button>
             </div>
           </div>
+          {editingId === sub.id && draft ? (
+            <form className="admin-sub-edit" onSubmit={(event) => {
+              event.preventDefault();
+              const patch = subPatchDiff(sub, draft, reason);
+              if (Object.keys(patch).length === 0) return;
+              void runAction(async () => {
+                await updateAdminSubscription(sub.id, patch);
+                setEditingId(null);
+                setDraft(null);
+              }, "Subscription updated.");
+            }}>
+              <label>
+                <span>Status</span>
+                <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })}>
+                  {SUB_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Plan</span>
+                <select value={draft.plan} onChange={(event) => setDraft({ ...draft, plan: event.target.value })}>
+                  <option value="pro">pro</option>
+                  <option value="free">free</option>
+                </select>
+              </label>
+              <label>
+                <span>Billing period</span>
+                <select value={draft.billing_period} onChange={(event) => setDraft({ ...draft, billing_period: event.target.value as "month" | "year" })}>
+                  <option value="month">month</option>
+                  <option value="year">year</option>
+                </select>
+              </label>
+              <label>
+                <span>Period start</span>
+                <input type="date" value={draft.current_period_start} onChange={(event) => setDraft({ ...draft, current_period_start: event.target.value })} />
+              </label>
+              <label>
+                <span>Period end</span>
+                <input type="date" value={draft.current_period_end} onChange={(event) => setDraft({ ...draft, current_period_end: event.target.value })} />
+              </label>
+              <label>
+                <span>Trial end</span>
+                <input type="date" value={draft.trial_end} onChange={(event) => setDraft({ ...draft, trial_end: event.target.value })} />
+              </label>
+              <label>
+                <span>{sub.provider === "stripe" ? "Next charge (synced to Stripe)" : "Next charge"}</span>
+                <input type="date" value={draft.next_charge_at} onChange={(event) => setDraft({ ...draft, next_charge_at: event.target.value })} />
+              </label>
+              <label className="admin-checkbox">
+                <input type="checkbox" checked={draft.cancel_at_period_end} onChange={(event) => setDraft({ ...draft, cancel_at_period_end: event.target.checked })} />
+                <span>Cancel at period end</span>
+              </label>
+              {sub.provider === "stripe" ? (
+                <p className="muted-text admin-form-wide">Date, status and cancel edits are sent to Stripe; plan and period changes must be made in Stripe.</p>
+              ) : null}
+              <button type="submit" disabled={busy}>Save subscription</button>
+            </form>
+          ) : null}
           {sub.invoices.length ? (
             <table className="admin-table admin-table--compact">
               <thead>

@@ -96,10 +96,10 @@ def test_env_example_exposes_only_current_stt_stack():
 
     assert "OPENAI_API_KEY=" in content
     assert "DEEPGRAM_API_KEY=" in content
-    assert "ELEVENLABS_SPEECH_TO_TEXT_MODEL=scribe_v2" in content
 
     removed_stt_entries = (
         "ELEVENLABS_" + "REALTIME_SPEECH_TO_TEXT_MODEL",
+        "ELEVENLABS_SPEECH_TO_TEXT" + "_MODEL",
         "IN" + "WORLD_API_KEY",
         "SON" + "IOX_API_KEY",
         "scribe_v2" + "_realtime",

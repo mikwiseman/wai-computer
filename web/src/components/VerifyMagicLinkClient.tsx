@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { verifyMagicLink } from "@/lib/api";
+import { getCurrentUser, verifyMagicLink } from "@/lib/api";
 import { ApiError } from "@/lib/http";
 
 interface VerifyMagicLinkClientProps {
@@ -83,7 +83,17 @@ export function VerifyMagicLinkClient({ token, locale: rawLocale }: VerifyMagicL
       }
 
       setMessage(copy.verified);
-      router.replace(hasCompletedVoiceOnboarding() ? "/dashboard" : "/onboarding");
+      // Server-side enrollment is the cross-device source of truth: a returning
+      // user who already enrolled their voice skips onboarding even on a fresh
+      // browser. Fall back to the device-local flag if /me is unreachable.
+      let enrolled = false;
+      try {
+        enrolled = (await getCurrentUser()).has_enrolled_voice === true;
+      } catch {
+        enrolled = false;
+      }
+      const onboarded = enrolled || hasCompletedVoiceOnboarding();
+      router.replace(onboarded ? "/dashboard" : "/onboarding");
     })();
   }, [copy.genericFailure, copy.verified, locale, router, token]);
 

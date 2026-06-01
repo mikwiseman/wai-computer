@@ -55,16 +55,17 @@ async def retrieve_context(
                 s.content,
                 s.start_ms,
                 s.end_ms,
-                ts_rank(to_tsvector('english', s.content),
-                    plainto_tsquery('english', :query)) as fts_rank,
+                ts_rank(to_tsvector('russian', lower(s.content COLLATE "und-x-icu")),
+                    plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))) as fts_rank,
                 ROW_NUMBER() OVER (ORDER BY ts_rank(
-                    to_tsvector('english', s.content),
-                    plainto_tsquery('english', :query)) DESC) as fts_rn
+                    to_tsvector('russian', lower(s.content COLLATE "und-x-icu")),
+                    plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))) DESC) as fts_rn
             FROM segments s
             JOIN recordings r ON s.recording_id = r.id
             WHERE r.user_id = :user_id
               AND r.deleted_at IS NULL
-              AND to_tsvector('english', s.content) @@ plainto_tsquery('english', :query)
+              AND to_tsvector('russian', lower(s.content COLLATE "und-x-icu"))
+                  @@ plainto_tsquery('russian', lower(:query COLLATE "und-x-icu"))
               {recording_filter}
         ),
         semantic_results AS (

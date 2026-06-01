@@ -5,6 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.person import Person, Voiceprint
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
@@ -238,6 +239,41 @@ async def test_me_endpoint_returns_user(client: AsyncClient):
     assert "id" in data
     assert "created_at" in data
     assert data["has_password"] is True
+    # Fresh account has not enrolled a voice yet.
+    assert data["has_enrolled_voice"] is False
+
+
+@pytest.mark.asyncio
+async def test_me_reports_enrolled_voice(client: AsyncClient, db_session: AsyncSession):
+    """has_enrolled_voice flips to True once the account has a voiceprint (issue 102)."""
+    reg = await client.post(
+        "/api/auth/register",
+        json={"email": "enrolled@example.com", "password": "password123", **LEGAL_ACCEPTANCE},
+    )
+    headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+
+    before = await client.get("/api/auth/me", headers=headers)
+    assert before.json()["has_enrolled_voice"] is False
+
+    user = (
+        await db_session.execute(select(User).where(User.email == "enrolled@example.com"))
+    ).scalar_one()
+    person = Person(user_id=user.id, display_name="Me")
+    db_session.add(person)
+    await db_session.flush()
+    db_session.add(
+        Voiceprint(
+            user_id=user.id,
+            person_id=person.id,
+            embedding=[0.0] * 192,
+            model="test-model",
+            duration_s=6.0,
+        )
+    )
+    await db_session.flush()
+
+    after = await client.get("/api/auth/me", headers=headers)
+    assert after.json()["has_enrolled_voice"] is True
 
 
 @pytest.mark.asyncio
