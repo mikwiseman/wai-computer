@@ -83,3 +83,16 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
             },
         }
     ]
+
+
+def test_interrupted_failure_message_localizes_ru_and_en():
+    from app.core.recording_recovery import (
+        INTERRUPTED_PROCESSING_FAILURE_MESSAGES,
+        _interrupted_failure_message,
+    )
+
+    assert _interrupted_failure_message("ru") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["ru"]
+    assert _interrupted_failure_message("RU-foo") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["ru"]
+    assert _interrupted_failure_message("en") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
+    assert _interrupted_failure_message(None) == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
+    assert _interrupted_failure_message("") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
