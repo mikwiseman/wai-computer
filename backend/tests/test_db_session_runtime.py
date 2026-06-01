@@ -99,7 +99,7 @@ def test_async_session_maker_proxy_refreshes_after_loop_change(monkeypatch):
     monkeypatch.setattr(session_module, "_engine", None)
     monkeypatch.setattr(session_module, "_session_maker", None)
     monkeypatch.setattr(session_module, "_runtime_pid", None)
-    monkeypatch.setattr(session_module, "_runtime_loop_id", None)
+    monkeypatch.setattr(session_module, "_runtime_loop", None)
     monkeypatch.setattr(session_module.os, "getpid", lambda: 301)
     monkeypatch.setattr(session_module.asyncio, "get_running_loop", lambda: loop["value"])
 
