@@ -34,6 +34,25 @@ def test_mcp_sync_dispatch_task_registered():
     assert "app.tasks.mcp_sync.dispatch_due_mcp_syncs" in celery_app.tasks
 
 
+def test_worker_runtime_uses_nullpool_api_keeps_pooling():
+    """The Celery worker switches to NullPool (no connection survives a task's
+    asyncio.run() loop → no cross-loop close → no MissingGreenlet). The default
+    (API) process keeps real pooling."""
+    from app.db import session as s
+
+    try:
+        s._use_nullpool = False
+        s.reset_db_runtime()
+        assert type(s._engine.sync_engine.pool).__name__ != "NullPool"
+
+        s.enable_nullpool()
+        assert type(s._engine.sync_engine.pool).__name__ == "NullPool"
+    finally:
+        # Restore the default so global state doesn't leak into other tests.
+        s._use_nullpool = False
+        s.reset_db_runtime()
+
+
 def test_db_runtime_rebuilt_per_event_loop():
     """A fresh asyncio.run() loop must get a fresh engine, never a stale one
     bound to a previous (closed) loop — even if CPython recycles the loop id."""
