@@ -48,7 +48,7 @@ def test_build_realtime_websocket_url_includes_live_best_practice_params() -> No
     assert "interim_results=true" in url
     assert "smart_format=true" in url
     assert "utterance_end_ms=1000" in url
-    assert "endpointing=100" in url
+    assert "endpointing=300" in url
     assert "utterances=true" in url
     assert "diarize=true" in url
 
@@ -107,6 +107,33 @@ def test_build_realtime_websocket_url_limits_dictation_to_english() -> None:
     assert "dictation=true" not in russian
     assert "punctuate=true" not in russian
     assert "numerals=true" in russian
+
+
+def test_build_realtime_websocket_url_keeps_numeric_entities_whole() -> None:
+    """Multilingual dictation must not use aggressive endpointing.
+
+    Deepgram's streaming smart_format/numerals only convert a number once the
+    whole numeric phrase finalizes together. A 100ms endpointing used to split
+    multilingual phrases across finals so only part converted. The multilingual
+    path must share the same non-aggressive 300ms as single-language so numerals
+    stay whole.
+    """
+    multi = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="dictation",
+    )
+    russian = build_realtime_websocket_url(
+        language="ru",
+        channels=1,
+        purpose="dictation",
+    )
+
+    assert "endpointing=300" in multi
+    assert "endpointing=100" not in multi
+    assert "numerals=true" in multi
+    # Multilingual and single-language finalize at the same cadence.
+    assert "endpointing=300" in russian
 
 
 def test_require_deepgram_api_key_returns_configured_key() -> None:
