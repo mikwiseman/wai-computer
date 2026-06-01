@@ -38,6 +38,31 @@ public static class AudioMixer
     }
 
     /// <summary>
+    /// Average two equal-length int16 mono buffers ((a + b) / 2). The mean of two
+    /// int16 values always fits int16, so no clipping is needed — this matches the
+    /// macOS diarization mono-mix (<c>(mic + system) * 0.5</c>), unlike
+    /// <see cref="MixToMono"/> which sums and saturates.
+    /// </summary>
+    public static void MixToMonoAverage(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b, Span<byte> destination)
+    {
+        if (a.Length != b.Length || a.Length != destination.Length)
+        {
+            throw new ArgumentException("All three buffers must have equal length.");
+        }
+        if ((a.Length & 1) != 0)
+        {
+            throw new ArgumentException("Buffers must contain a whole number of int16 samples.");
+        }
+
+        for (int i = 0; i < a.Length; i += 2)
+        {
+            int sa = BinaryPrimitives.ReadInt16LittleEndian(a.Slice(i, 2));
+            int sb = BinaryPrimitives.ReadInt16LittleEndian(b.Slice(i, 2));
+            BinaryPrimitives.WriteInt16LittleEndian(destination.Slice(i, 2), (short)((sa + sb) / 2));
+        }
+    }
+
+    /// <summary>
     /// Interleave mic (left) and system (right) into a 2-channel int16 buffer.
     /// Output length is exactly twice the input length.
     /// </summary>

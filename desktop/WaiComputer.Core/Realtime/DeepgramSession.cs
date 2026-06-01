@@ -171,7 +171,8 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
         var endMs = startMs + durationMs;
         var confidence = ReadDouble(alternative, "confidence") ?? 0;
         var isFinal = ReadBool(root, "is_final") || ReadBool(root, "speech_final");
-        var segment = new LiveTranscriptSegment(transcript, Speaker: null, IsFinal: isFinal, StartMs: startMs, EndMs: endMs, Confidence: confidence);
+        var speaker = DominantSpeaker(alternative);
+        var segment = new LiveTranscriptSegment(transcript, Speaker: speaker, IsFinal: isFinal, StartMs: startMs, EndMs: endMs, Confidence: confidence);
 
         if (isFinal)
         {
@@ -185,6 +186,56 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
         }
 
         _ = _events.Writer.TryWrite(new TranscriptionEvent.Transcript(segment));
+    }
+
+    /// <summary>
+    /// Duration-weighted dominant speaker across the first alternative's words,
+    /// returned as a raw <c>"speaker_N"</c> label (or null when Deepgram sent no
+    /// diarization). Words with a negative speaker index are ignored; ties are
+    /// broken by the lower index. The index is preserved verbatim — display
+    /// localization happens later via <c>SpeakerLabelCopy</c>.
+    /// </summary>
+    private static string? DominantSpeaker(JsonElement alternative)
+    {
+        if (!alternative.TryGetProperty("words", out var words) || words.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var totals = new Dictionary<int, double>();
+        foreach (var word in words.EnumerateArray())
+        {
+            if (!word.TryGetProperty("speaker", out var sp)
+                || sp.ValueKind != JsonValueKind.Number
+                || !sp.TryGetInt32(out var speaker)
+                || speaker < 0)
+            {
+                continue;
+            }
+
+            var start = ReadDouble(word, "start") ?? 0;
+            var end = ReadDouble(word, "end") ?? start;
+            var weight = Math.Max(0.001, end - start);
+            totals[speaker] = totals.TryGetValue(speaker, out var cur) ? cur + weight : weight;
+        }
+
+        if (totals.Count == 0)
+        {
+            return null;
+        }
+
+        var dominant = -1;
+        var best = double.NegativeInfinity;
+        foreach (var kv in totals)
+        {
+            if (kv.Value > best || (kv.Value == best && kv.Key < dominant))
+            {
+                best = kv.Value;
+                dominant = kv.Key;
+            }
+        }
+
+        return $"speaker_{dominant}";
     }
 
     private async Task SendFinalizeAsync(CancellationToken ct)
