@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.1
     sentry_profiles_sample_rate: float = 0.1
+    # Shared secret (Client Secret of the Sentry internal integration) used to
+    # verify the HMAC signature on inbound client-app Sentry webhooks. Empty =
+    # the relay endpoint is disabled (returns 503).
+    sentry_webhook_secret: str = ""
 
     # Observability
     log_format: str = "json"
