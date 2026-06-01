@@ -7,15 +7,27 @@ import { ItemDetail } from "@/components/ItemDetail";
 
 interface ItemsFeedProps {
   onError?: (message: string) => void;
+  /** Bump to force a reload (e.g. after "Add anything" creates an item). */
+  reloadKey?: number;
 }
 
 const KIND_FILTERS = [
   { key: "", label: "All" },
   { key: "article", label: "Articles" },
   { key: "video", label: "Videos" },
+  { key: "pdf", label: "PDFs" },
   { key: "note", label: "Notes" },
   { key: "mcp_resource", label: "Connected" },
 ] as const;
+
+// status -> badge. "ready" has no badge (the calm default). needs_input/failed
+// carry the error message in a tooltip so a stuck item is never silent.
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  fetching: { label: "fetching…", cls: "items-feed__badge--pending" },
+  summarizing: { label: "summarizing…", cls: "items-feed__badge--pending" },
+  needs_input: { label: "needs input", cls: "items-feed__badge--attention" },
+  failed: { label: "failed", cls: "items-feed__badge--error" },
+};
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -32,7 +44,7 @@ function relativeTime(iso: string): string {
  * (articles, links, notes, MCP-pulled resources), filterable by kind, with a
  * drill-in to the item's summary + key-moments table.
  */
-export function ItemsFeed({ onError }: ItemsFeedProps) {
+export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
   const [entries, setEntries] = useState<ItemListEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [kind, setKind] = useState<string>("");
@@ -50,11 +62,38 @@ export function ItemsFeed({ onError }: ItemsFeedProps) {
     } finally {
       setLoading(false);
     }
-  }, [kind, onError]);
+    // reloadKey is an intentional dependency: bumping it forces a refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, onError, reloadKey]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Refresh when the tab/window regains focus so stale "summarizing…" badges
+  // and needs_input notices resolve without a manual reload.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "hidden") void load();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
+  // While any item is still processing, poll so its badge resolves on its own.
+  const hasPending = useMemo(
+    () => entries.some((e) => e.status === "fetching" || e.status === "summarizing"),
+    [entries],
+  );
+  useEffect(() => {
+    if (!hasPending) return undefined;
+    const id = window.setInterval(() => void load(), 4000);
+    return () => window.clearInterval(id);
+  }, [hasPending, load]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -122,11 +161,14 @@ export function ItemsFeed({ onError }: ItemsFeedProps) {
                     </span>
                     <span className="items-feed__row-meta">
                       <span className="items-feed__badge">{entry.kind}</span>
-                      {entry.has_summary ? null : (
-                        <span className="items-feed__badge items-feed__badge--pending">
-                          summarizing…
+                      {STATUS_BADGE[entry.status] ? (
+                        <span
+                          className={`items-feed__badge ${STATUS_BADGE[entry.status].cls}`}
+                          title={entry.error?.message ?? undefined}
+                        >
+                          {STATUS_BADGE[entry.status].label}
                         </span>
-                      )}
+                      ) : null}
                       <span className="items-feed__time">{relativeTime(entry.created_at)}</span>
                     </span>
                   </button>

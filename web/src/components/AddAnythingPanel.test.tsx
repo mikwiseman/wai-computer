@@ -21,6 +21,8 @@ function summarizedItem(overrides = {}) {
     body: "...",
     occurred_at: null,
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     created_at: "2026-06-01T00:00:00Z",
     summary: {
@@ -105,6 +107,30 @@ describe("AddAnythingPanel", () => {
     await waitFor(() => {
       expect(screen.getByText(/share the file or paste the text/i)).toBeInTheDocument();
     });
+  });
+
+  it("surfaces the backend's real error message on needs_input", async () => {
+    mockCreateItem.mockResolvedValue({ id: "item-4", state: "raw", summary: null });
+    mockGetItem.mockResolvedValue(
+      summarizedItem({
+        id: "item-4",
+        state: "needs_input",
+        status: "needs_input",
+        title: null,
+        summary: null,
+        error: { code: "youtube_no_transcript", message: "This video has no transcript." },
+      }),
+    );
+
+    render(<AddAnythingPanel />);
+    fireEvent.change(screen.getByPlaceholderText(/Paste a link or any text/i), {
+      target: { value: "https://youtube.com/watch?v=z" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add to brain/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText("This video has no transcript.")).toBeInTheDocument(),
+    );
   });
 
   it("surfaces API errors via onError", async () => {

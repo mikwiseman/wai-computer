@@ -20,6 +20,8 @@ function entry(overrides = {}) {
     kind: "article",
     title: "Solar Explainer",
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     occurred_at: null,
     created_at: new Date().toISOString(),
@@ -39,6 +41,8 @@ function detail() {
     body: "...",
     occurred_at: null,
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     created_at: new Date().toISOString(),
     summary: {
@@ -80,10 +84,36 @@ describe("ItemsFeed", () => {
     await waitFor(() => expect(mockListItems).toHaveBeenCalledWith({ kind: "video" }));
   });
 
-  it("shows a summarizing badge for items without a summary yet", async () => {
-    mockListItems.mockResolvedValue({ items: [entry({ has_summary: false })], total: 1 });
+  it("shows a summarizing badge for items still processing", async () => {
+    mockListItems.mockResolvedValue({
+      items: [entry({ has_summary: false, status: "summarizing" })],
+      total: 1,
+    });
     render(<ItemsFeed />);
     await waitFor(() => expect(screen.getByText(/summarizing/i)).toBeInTheDocument());
+  });
+
+  it("shows a failed badge carrying the error message as a tooltip", async () => {
+    mockListItems.mockResolvedValue({
+      items: [
+        entry({
+          has_summary: false,
+          status: "failed",
+          error: { code: "enqueue_failed", message: "Couldn't start processing." },
+        }),
+      ],
+      total: 1,
+    });
+    render(<ItemsFeed />);
+    const badge = await screen.findByText("failed");
+    expect(badge).toHaveAttribute("title", "Couldn't start processing.");
+  });
+
+  it("offers a PDFs filter chip and filters by it", async () => {
+    render(<ItemsFeed />);
+    await waitFor(() => expect(mockListItems).toHaveBeenCalledWith(undefined));
+    fireEvent.click(screen.getByRole("tab", { name: "PDFs" }));
+    await waitFor(() => expect(mockListItems).toHaveBeenCalledWith({ kind: "pdf" }));
   });
 
   it("deletes an item and reloads", async () => {

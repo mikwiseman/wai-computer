@@ -2349,6 +2349,17 @@ a.primary-button[aria-disabled="true"]:hover {
   border-color: var(--accent);
 }
 
+.items-feed__badge--attention {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+}
+
+.items-feed__badge--error {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
 .items-feed__time {
   margin-left: auto;
   color: var(--ink-faint);

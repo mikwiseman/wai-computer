@@ -63,9 +63,10 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
         ) : null}
       </header>
 
-      {item.state === "needs_input" && !summary?.summary ? (
+      {(item.status === "needs_input" || item.status === "failed") && !summary?.summary ? (
         <p className="item-detail__notice">
-          Couldn&apos;t read this automatically — share the file or paste the text.
+          {item.error?.message ??
+            "Couldn't read this automatically — share the file or paste the text."}
         </p>
       ) : null}
 
