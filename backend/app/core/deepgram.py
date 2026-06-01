@@ -18,8 +18,14 @@ DEEPGRAM_REALTIME_CHANNELS = 1
 DEEPGRAM_REALTIME_ENCODING = "linear16"
 DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS = 4
 DEEPGRAM_UTTERANCE_END_MS = 1_000
+# Silence (ms) before Deepgram finalizes a streaming segment (is_final=true).
+# Dictation commits each final segment immediately, and Deepgram's streaming
+# smart_format/numerals only convert a number once the whole numeric phrase is
+# finalized together. The multilingual path previously used an aggressive 100ms,
+# which split phrases like "десять десять тридцать" across finals so only part
+# converted ("десять 30"). All languages share 300ms so numeric (and other)
+# entities stay whole before formatting.
 DEEPGRAM_ENDPOINTING_MS = 300
-DEEPGRAM_MULTILINGUAL_ENDPOINTING_MS = 100
 DEEPGRAM_MAX_KEYTERMS = 100
 DEEPGRAM_MAX_KEYTERM_CHARS = 100
 DEEPGRAM_KEYTERM_TOKEN_BUDGET = 500
@@ -199,12 +205,7 @@ def build_realtime_websocket_url(
         ("smart_format", "true"),
         ("vad_events", "true"),
         ("utterance_end_ms", DEEPGRAM_UTTERANCE_END_MS),
-        (
-            "endpointing",
-            DEEPGRAM_MULTILINGUAL_ENDPOINTING_MS
-            if resolved_language == "multi"
-            else DEEPGRAM_ENDPOINTING_MS,
-        ),
+        ("endpointing", DEEPGRAM_ENDPOINTING_MS),
     ]
     if purpose == "recording":
         params.append(("utterances", "true"))
