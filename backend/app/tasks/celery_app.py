@@ -95,10 +95,12 @@ celery_app.conf.beat_schedule = {
 
 @worker_process_init.connect
 def reset_async_db_runtime(**_kwargs) -> None:
-    """Ensure forked workers do not inherit async DB connections from the parent process."""
-    from app.db.session import reset_db_runtime
+    """Forked workers must not inherit async DB connections from the parent, and
+    each task runs in its own asyncio.run() loop — so use NullPool here to avoid
+    closing a pooled connection from a dead loop (MissingGreenlet)."""
+    from app.db.session import enable_nullpool
 
-    reset_db_runtime()
+    enable_nullpool()
 
 
 @worker_process_init.connect
