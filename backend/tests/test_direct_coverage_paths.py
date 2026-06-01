@@ -132,6 +132,39 @@ async def test_deps_extract_token_and_optional_user_paths(
     assert resolved is not None
     assert resolved.id == user.id
 
+    # Suspended JWT user -> None (account_status guard, line 158)
+    user.account_status = "paused"
+    await db_session.flush()
+    assert await deps.get_optional_user(_dummy_request("valid"), None, db_session) is None
+    user.account_status = deps.ACTIVE_ACCOUNT_STATUS
+    await db_session.flush()
+
+    # --- API-key auth branch (lines 135-145) ---
+    api_user = await _create_user(db_session, "deps.apikey@example.com")
+    monkeypatch.setattr(deps, "is_api_key", lambda _t: True)
+
+    async def _fake_user_for_api_key(_db, _token):
+        return api_user
+
+    monkeypatch.setattr(deps, "_user_for_api_key", _fake_user_for_api_key)
+    req = _dummy_request("wc_live_token")
+    req.state = SimpleNamespace()  # the api-key branch sets request.state.auth_via_api_key
+    resolved_key = await deps.get_optional_user(req, None, db_session)
+    assert resolved_key is not None and resolved_key.id == api_user.id
+    assert getattr(req.state, "auth_via_api_key", False) is True
+
+    # Suspended API-key user -> None (line 141)
+    api_user.account_status = "deactivated"
+    await db_session.flush()
+    assert await deps.get_optional_user(_dummy_request("wc_live_token"), None, db_session) is None
+
+    # API key that resolves to no user -> None
+    async def _no_user(_db, _token):
+        return None
+
+    monkeypatch.setattr(deps, "_user_for_api_key", _no_user)
+    assert await deps.get_optional_user(_dummy_request("wc_live_token"), None, db_session) is None
+
 
 @pytest.mark.asyncio
 async def test_deps_get_current_user_error_and_success_paths(
