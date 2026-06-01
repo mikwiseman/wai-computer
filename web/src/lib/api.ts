@@ -10,6 +10,7 @@ import type {
   AnalyticsResponse,
   ApiKey,
   ApiKeyCreated,
+  BrainGraph,
   ComparisonListEntry,
   ComparisonSet,
   Item,
@@ -533,6 +534,16 @@ export function getItem(itemId: string): Promise<Item> {
 
 export function deleteItem(itemId: string): Promise<void> {
   return apiFetch<void>(`/api/items/${itemId}`, { method: "DELETE" });
+}
+
+// --- Second brain: knowledge graph ---
+
+export function getBrainGraph(params?: {
+  focus?: string;
+  include_sources?: boolean;
+  limit?: number;
+}): Promise<BrainGraph> {
+  return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
 }
 
 // --- Second brain: comparison sets ---

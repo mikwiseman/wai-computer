@@ -54,6 +54,7 @@ import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
 import { ItemsFeed } from "@/components/ItemsFeed";
+import { BrainPanel } from "@/components/BrainPanel";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
@@ -79,6 +80,7 @@ type DashboardView =
   | "wai"
   | "add"
   | "content"
+  | "brain"
   | "library"
   | "folder"
   | "trash"
@@ -1550,6 +1552,11 @@ export function DashboardClient() {
           count: null,
         },
         {
+          key: "brain",
+          label: locale === "ru" ? "Мозг" : "Brain",
+          count: null,
+        },
+        {
           key: "library",
           label: copy.nav.library.label,
           count: displayCount(recordings.length),
@@ -1832,6 +1839,11 @@ export function DashboardClient() {
         {view === "content" ? (
           <section className="tool-panel">
             <ItemsFeed onError={setMessage} reloadKey={itemsReloadKey} />
+          </section>
+        ) : null}
+        {view === "brain" ? (
+          <section className="tool-panel">
+            <BrainPanel locale={locale} onError={setMessage} />
           </section>
         ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
