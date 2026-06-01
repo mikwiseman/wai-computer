@@ -1,0 +1,211 @@
+import Foundation
+import XCTest
+@testable import WaiComputerKit
+
+/// Decoding tests for the second-brain Item / key-moments / unified-search models.
+final class ItemModelTests: XCTestCase {
+    private func decoder() -> JSONDecoder { JSONDecoder() }
+
+    func testItemWithSummaryAndKeyMomentsDecodes() throws {
+        let json = """
+        {
+          "id": "i1",
+          "source": "url",
+          "source_ref": null,
+          "url": "https://x/post",
+          "kind": "article",
+          "title": "Solar Explainer",
+          "body": "full text",
+          "occurred_at": null,
+          "state": "raw",
+          "folder_id": null,
+          "created_at": "2026-06-01T00:00:00Z",
+          "summary": {
+            "summary": "A clear explainer.",
+            "key_points": ["costs fell", "storage grew"],
+            "topics": ["energy"],
+            "key_moments": [
+              {
+                "timestamp": "00:42",
+                "moment": "Thesis stated",
+                "why_it_matters": "Frames the argument",
+                "quote": null,
+                "importance": "high",
+                "start_ms": 42000,
+                "end_ms": 50000
+              }
+            ],
+            "sentiment": "positive"
+          }
+        }
+        """.data(using: .utf8)!
+
+        let item = try decoder().decode(Item.self, from: json)
+        XCTAssertEqual(item.id, "i1")
+        XCTAssertEqual(item.kind, "article")
+        XCTAssertEqual(item.title, "Solar Explainer")
+        XCTAssertEqual(item.summary?.summary, "A clear explainer.")
+        XCTAssertEqual(item.summary?.keyPoints, ["costs fell", "storage grew"])
+        let moment = try XCTUnwrap(item.summary?.keyMoments?.first)
+        XCTAssertEqual(moment.timestamp, "00:42")
+        XCTAssertEqual(moment.moment, "Thesis stated")
+        XCTAssertEqual(moment.whyItMatters, "Frames the argument")
+        XCTAssertEqual(moment.startMs, 42000)
+    }
+
+    func testItemWithoutSummaryDecodes() throws {
+        let json = """
+        {
+          "id": "i2", "source": "paste", "source_ref": null, "url": null,
+          "kind": "note", "title": null, "body": "x", "occurred_at": null,
+          "state": "raw", "folder_id": null, "created_at": "2026-06-01T00:00:00Z",
+          "summary": null
+        }
+        """.data(using: .utf8)!
+        let item = try decoder().decode(Item.self, from: json)
+        XCTAssertNil(item.summary)
+        XCTAssertNil(item.title)
+    }
+
+    func testItemListResponseDecodes() throws {
+        let json = """
+        {
+          "items": [
+            {
+              "id": "i1", "source": "url", "url": "https://x", "kind": "article",
+              "title": "T", "state": "raw", "folder_id": null, "occurred_at": null,
+              "created_at": "2026-06-01T00:00:00Z", "has_summary": true
+            }
+          ],
+          "total": 1
+        }
+        """.data(using: .utf8)!
+        let response = try decoder().decode(ItemListResponse.self, from: json)
+        XCTAssertEqual(response.total, 1)
+        XCTAssertTrue(response.items[0].hasSummary)
+    }
+
+    func testUnifiedSearchResponseDecodes() throws {
+        let json = """
+        {
+          "results": [
+            {
+              "source_kind": "item", "parent_id": "p1", "chunk_id": "c1",
+              "title": "T", "kind": "article", "snippet": "snip", "score": 0.9,
+              "created_at": "2026-06-01T00:00:00Z"
+            },
+            {
+              "source_kind": "recording", "parent_id": "r1", "chunk_id": "seg1",
+              "title": null, "kind": "meeting", "snippet": "s2", "score": 0.5,
+              "created_at": null
+            }
+          ],
+          "total": 2
+        }
+        """.data(using: .utf8)!
+        let response = try decoder().decode(UnifiedSearchResponse.self, from: json)
+        XCTAssertEqual(response.total, 2)
+        XCTAssertEqual(response.results[0].sourceKind, "item")
+        XCTAssertEqual(response.results[0].parentId, "p1")
+        XCTAssertEqual(response.results[1].sourceKind, "recording")
+        XCTAssertNil(response.results[1].createdAt)
+    }
+}
+
+extension ItemModelTests {
+    func testMcpIngestionConnectionDecodes() throws {
+        let json = """
+        {
+          "id": "c1",
+          "server_label": "My Notes",
+          "server_url": "https://mcp.example.com/notes",
+          "transport": "streamable_http",
+          "auth_type": "pat",
+          "has_token": true,
+          "allowed_tools": [],
+          "privacy_level": "internal",
+          "sync_interval_minutes": 60,
+          "status": "active",
+          "enabled": true,
+          "last_sync_at": null,
+          "last_error": null,
+          "created_at": "2026-06-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let conn = try decoder().decode(McpIngestionConnection.self, from: json)
+        XCTAssertEqual(conn.id, "c1")
+        XCTAssertEqual(conn.serverLabel, "My Notes")
+        XCTAssertEqual(conn.authType, "pat")
+        XCTAssertTrue(conn.hasToken)
+        XCTAssertEqual(conn.syncIntervalMinutes, 60)
+        XCTAssertTrue(conn.enabled)
+    }
+}
+
+extension ItemModelTests {
+    func testComparisonSetDecodes() throws {
+        let json = """
+        {
+          "id": "cmp1",
+          "title": "Three videos",
+          "item_ids": ["a", "b"],
+          "columns": [
+            {"name": "Thesis", "type": "text"},
+            {"name": "Length", "type": "number"}
+          ],
+          "rows": [
+            {"item_id": "a", "title": "Vid A", "values": {"Thesis": "solar", "Length": "10"}},
+            {"item_id": "b", "title": "Vid B", "values": {"Thesis": "wind", "Length": null}}
+          ],
+          "schema_rationale": "differentiates the videos",
+          "status": "ready",
+          "created_at": "2026-06-01T00:00:00Z"
+        }
+        """.data(using: .utf8)!
+        let set = try decoder().decode(ComparisonSet.self, from: json)
+        XCTAssertEqual(set.id, "cmp1")
+        XCTAssertEqual(set.columns?.count, 2)
+        XCTAssertEqual(set.rows?.count, 2)
+        XCTAssertEqual(set.rows?[0].values["Thesis"], "solar")
+        // null value present-but-nil
+        let rowB = try XCTUnwrap(set.rows?[1])
+        XCTAssertEqual(rowB.values["Length"], String?.none)
+        XCTAssertEqual(set.status, "ready")
+    }
+
+    func testComparisonListEntryDecodes() throws {
+        let json = """
+        {"id": "cmp1", "title": "T", "item_count": 3, "status": "generating", "created_at": "2026-06-01T00:00:00Z"}
+        """.data(using: .utf8)!
+        let entry = try decoder().decode(ComparisonListEntry.self, from: json)
+        XCTAssertEqual(entry.itemCount, 3)
+        XCTAssertEqual(entry.status, "generating")
+    }
+}
+
+extension ItemModelTests {
+    func testBrainProjectionDecodes() throws {
+        let json = """
+        {
+          "memory_sections": [
+            {"label": "human", "body": "Lives in Lisbon.", "updated_at": "2026-06-01T00:00:00Z"},
+            {"label": "topics", "body": "", "updated_at": null}
+          ],
+          "entity_pages": [
+            {"id": "e1", "name": "Alice", "type": "person", "relations": [
+              {"relation_type": "works_on", "target_name": "Apollo", "target_type": "project", "context": "leads it"}
+            ]}
+          ],
+          "entity_count": 1
+        }
+        """.data(using: .utf8)!
+        let brain = try decoder().decode(BrainProjection.self, from: json)
+        XCTAssertEqual(brain.entityCount, 1)
+        XCTAssertEqual(brain.memorySections.first?.label, "human")
+        XCTAssertEqual(brain.memorySections.first?.body, "Lives in Lisbon.")
+        let page = try XCTUnwrap(brain.entityPages.first)
+        XCTAssertEqual(page.name, "Alice")
+        XCTAssertEqual(page.relations.first?.targetName, "Apollo")
+        XCTAssertEqual(page.relations.first?.relationType, "works_on")
+    }
+}

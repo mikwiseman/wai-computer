@@ -104,4 +104,97 @@ public class RecordingBackupStoreTests : IDisposable
         store.RemoveAll();
         store.ListBackups().Should().BeEmpty();
     }
+
+    [Fact]
+    public void FreshManifestDefaultsToLocalReady()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        store.GetManifest(id)!.SyncState.Should().Be(RecordingBackupSyncState.LocalReady);
+    }
+
+    [Fact]
+    public void MarkServerProcessingSetsStateAndJobId()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        store.MarkServerProcessing(id, "job-7");
+        var m = store.GetManifest(id)!;
+        m.SyncState.Should().Be(RecordingBackupSyncState.ServerProcessing);
+        m.ServerJobId.Should().Be("job-7");
+    }
+
+    [Fact]
+    public void RecordSyncAttemptIncrementsAndStamps()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        var at = new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+        store.RecordSyncAttempt(id, at);
+        store.RecordSyncAttempt(id, at);
+        var m = store.GetManifest(id)!;
+        m.SyncAttemptCount.Should().Be(2);
+        m.LastSyncAttemptAt.Should().Be(at);
+        m.SyncState.Should().Be(RecordingBackupSyncState.Uploading);
+    }
+
+    [Fact]
+    public void MarkRetryableFailureSetsCodeAndState()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        store.MarkRetryableFailure(id, "network");
+        var m = store.GetManifest(id)!;
+        m.SyncState.Should().Be(RecordingBackupSyncState.RetryableFailure);
+        m.LastFailureCode.Should().Be("network");
+    }
+
+    [Fact]
+    public void ClearAuthenticationRequiredResetsToLocalReady()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        store.MarkAuthenticationRequired(id);
+        store.GetManifest(id)!.SyncState.Should().Be(RecordingBackupSyncState.AuthRequired);
+        store.ClearAuthenticationRequired(id);
+        var m = store.GetManifest(id)!;
+        m.RequiresAuthentication.Should().BeFalse();
+        m.SyncState.Should().Be(RecordingBackupSyncState.LocalReady);
+    }
+
+    [Fact]
+    public void DiscardAudioFileRemovesWavAndClearsFlag()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id) with { HasAudioFile = true }, SampleSegments(), new byte[] { 1, 2, 3, 4 });
+        File.Exists(store.AudioPath(id)).Should().BeTrue();
+        store.DiscardAudioFile(id);
+        File.Exists(store.AudioPath(id)).Should().BeFalse();
+        store.GetManifest(id)!.HasAudioFile.Should().BeFalse();
+    }
+
+    [Fact]
+    public void EnsureDirectoryForRecordingCreatesDirectory()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        var dir = store.EnsureDirectoryForRecording(id);
+        Directory.Exists(dir).Should().BeTrue();
+    }
+
+    [Fact]
+    public void MarkPermanentFailureAlsoSetsSyncState()
+    {
+        var store = NewStore();
+        var id = Guid.NewGuid();
+        store.Save(SampleManifest(id), SampleSegments());
+        store.MarkPermanentFailure(id);
+        store.GetManifest(id)!.SyncState.Should().Be(RecordingBackupSyncState.PermanentFailure);
+    }
 }
